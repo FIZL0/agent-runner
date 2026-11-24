@@ -134,8 +134,17 @@ REDRAW = 0.4 if plat.WINDOWS else 0.08  # s the session is a row short, so it dr
 # pseudo-console loses the second of two sizes that come close together)
 
 
+QUEUE = 1 << 18  # bytes kept for a client that takes its output slowly
+FLUSH = 0.02  # s between two tries to give such a client more
+REDRAWS = 1.0  # s between two redraws for clients that fell behind
+GONE = 60.0  # s a client with output waiting may take none of it before it is gone, not slow: its size goes with it
+CATCH_UP = b'\x18\x1b[?2026l\x1b[0m'  # after a gap: ends a sequence cut in half, a held-back frame, and colours
+
+
 class Viewers:
-    """F114: the terminals attached to one session: what it prints goes to all of them (`out`), what they type to it
+    """F206: a slow client never stalls the session, nor is it dropped: what it has not taken waits (`queue`, QUEUE
+    bytes at most); with more than that, the rest is left out and the session draws its screen again once it caught up.
+    F114: the terminals attached to one session: what it prints goes to all of them (`out`), what they type to it
     (`write`), and it gets the smallest of their sizes (`resize`), so none of them gets lines wider than it is or
     rows it has no place for; with the last one gone, `size` again. A terminal that just came, when its own size
     changes nothing, has the session a row short for a moment, which draws the whole screen again. `lock` is for the
@@ -151,16 +160,32 @@ class Viewers:
         self.lock, self.ended = threading.RLock(), False
         self.waits: dict = {}  # F146: socket -> when it is dropped, its token not come
         self.asked: set = set()  # sockets whose token came (no token: every one)
+        self.queue: dict = {}  # socket -> what it has not taken yet
+        self.took: dict = {}  # socket -> when it last took something, while its queue is not empty
+        self.behind: set = set()  # sockets whose queue got too long: they get a redraw instead
+        self.redrew = 0.0  # when they last did
 
     def watched(self) -> list:
         return ([self.listener] if self.listener else []) + list(self.clients)
 
     def wait(self, most: float) -> float:
+        if self.queue:
+            most = min(most, FLUSH)
+        elif self.behind:
+            most = min(most, REDRAWS)
         return min(most, max(0.0, self.due - time.monotonic())) if self.due else most
 
     def tick(self) -> None:
         for c in [c for c, end in self.waits.items() if time.monotonic() >= end]:
             self.drop(c)
+        with self.lock:
+            for c in list(self.queue):
+                self.flush(c)
+        ready = self.behind - set(self.queue)
+        if ready and time.monotonic() - self.redrew >= REDRAWS:
+            self.redrew = time.monotonic()
+            self.behind -= ready
+            self.redraw()
         if self.due and time.monotonic() >= self.due:
             self.due = 0.0
             self._set(self.now)
@@ -170,10 +195,35 @@ class Viewers:
             for c in list(self.clients):
                 if self.token and c not in self.asked:
                     continue
-                try:
-                    c.sendall(data)
-                except OSError:  # gone, or too slow to take it: that client is dropped, not the session
-                    self.drop(c)
+                if c not in self.behind:
+                    self.give(c, data)
+
+    def give(self, c, data: bytes) -> None:
+        """Send `data` to client `c`, after what still waits for it."""
+        if c not in self.queue:
+            self.queue[c], self.took[c] = bytearray(), time.monotonic()
+        self.queue[c] += data
+        self.flush(c)
+        if len(self.queue.get(c, b'')) > QUEUE:
+            self.queue[c] = bytearray(CATCH_UP)
+            self.behind.add(c)
+
+    def flush(self, c) -> None:
+        """Give client `c` as much of its queue as it takes now."""
+        try:
+            while self.queue[c]:
+                n = c.send(self.queue[c][:65536])
+                del self.queue[c][:n]
+                self.took[c] = time.monotonic()
+        except BlockingIOError:
+            if time.monotonic() - self.took[c] > GONE:
+                self.drop(c)
+            return
+        except OSError:  # gone: that client is dropped, not the session
+            self.drop(c)
+            return
+        self.queue.pop(c)
+        self.took.pop(c)
 
     def take(self, ready: list) -> None:
         """Accept and read what `select` says is there."""
@@ -181,7 +231,7 @@ class Viewers:
             if self.listener and self.listener in ready:
                 try:
                     c, _ = self.listener.accept()
-                    c.settimeout(0.5)  # a client that takes no output for this long is dropped, once
+                    c.setblocking(False)
                     self.clients[c] = b''
                     if self.token:
                         self.waits[c] = time.monotonic() + TOKEN_WAIT
@@ -190,6 +240,8 @@ class Viewers:
             for c in [c for c in ready if c in self.clients]:
                 try:
                     got = c.recv(65536)
+                except BlockingIOError:
+                    continue
                 except OSError:
                     got = b''
                 if not got:
@@ -229,8 +281,12 @@ class Viewers:
             self.now, self.due = want, 0.0
             self._set(want)
         elif redraw:
-            self._set((want[0] - 1, want[1]))
-            self.due = time.monotonic() + REDRAW
+            self.redraw()
+
+    def redraw(self) -> None:
+        """The session is a row short for a moment, so it draws its whole screen again."""
+        self._set((self.now[0] - 1, self.now[1]))
+        self.due = time.monotonic() + REDRAW
 
     def _set(self, size: tuple[int, int]) -> None:
         if self.ended:  # what it resized may be gone
@@ -245,6 +301,9 @@ class Viewers:
             self.clients.pop(c)
             self.asked.discard(c)
             self.waits.pop(c, None)
+            self.queue.pop(c, None)
+            self.took.pop(c, None)
+            self.behind.discard(c)
             c.close()
             if self.sizes.pop(c, None):
                 self.fit()
@@ -265,8 +324,14 @@ class Viewers:
         with self.lock:
             self.ended = True
             for c in self.clients:
+                if c in self.queue:
+                    try:  # its last words
+                        c.settimeout(0.5)
+                        c.sendall(bytes(self.queue[c]))
+                    except OSError:
+                        pass
                 c.close()
-            self.clients, self.sizes, self.waits = {}, {}, {}
+            self.clients, self.sizes, self.waits, self.queue, self.took, self.behind = {}, {}, {}, {}, {}, set()
             if self.listener:
                 self.listener.close()
                 self.listener = None
@@ -336,6 +401,8 @@ def attach_session(sock: Path, name: str, stdin: int = 0, stdout: int = 1) -> in
     try:
         s = connect(sock)
     except OSError as e:
+        if os.environ.get('AGENT_RUNNER_WEB'):  # F206: the page says it; its last screen stays
+            return 1
         print(f'{name}: could not attach ({e})', file=sys.stderr)
         return 1
     if plat.WINDOWS:
@@ -403,7 +470,8 @@ def attach_session(sock: Path, name: str, stdin: int = 0, stdout: int = 1) -> in
             signal.signal(signal.SIGWINCH, signal.SIG_DFL if old is None else old)
         if saved:
             termios.tcsetattr(stdin, termios.TCSADRAIN, saved)
-        if os.isatty(stdout):
-            os.write(stdout, TERM_RESET)
-        os.write(stdout, f'\r\n[{why}]\r\n'.encode())
+        if not os.environ.get('AGENT_RUNNER_WEB'):  # F206: on the run page its last screen stays
+            if os.isatty(stdout):
+                os.write(stdout, TERM_RESET)
+            os.write(stdout, f'\r\n[{why}]\r\n'.encode())
     return 0

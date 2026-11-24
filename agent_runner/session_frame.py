@@ -5,6 +5,8 @@ its scrolling, its focus). ttyd itself listens on 127.0.0.1. `frame` answers one
 """
 from __future__ import annotations
 
+import gzip
+import hashlib
 import html
 import http.client
 import json
@@ -19,28 +21,68 @@ from agent_runner import box_font, plat, session_theme
 # when its socket opens and closes, and hands it files dropped on it. F170: arLook(look) sets its colours (a themed
 # session's follow the page, light or dark), and a wheel step is the page's first (feedTake: its bars go and come). B190:
 # so are a key and a paste (feedTyped: they go to its message box while the agent CLI's input is hidden).
+# F206: one page for every chat: ttyd gets a socket that never closes (Line), and arLine changes the connection behind it:
+# dial(name, look), hang(), keep() (a copy of the screen, a node of this page), show(node) (over the terminal until its
+# first whole draw, words near its bottom, or null). So ttyd never draws its Reconnect words, and nothing is loaded again. The next chat's first
+# output starts with ESC c, so what was written before ends there. It says 'up', 'drawn' and 'down'; the app dials again.
+# The login's keeps ttyd's own socket.
 # The box font is loaded before xterm.js measures its glyphs (and, when it was late, they are measured again).
 HEAD = '''<meta name="referrer" content="no-referrer"><style>
 __FONT__:root{--ar-bg:__BG__} html,body{overscroll-behavior:none;touch-action:none;background:var(--ar-bg)!important}
 #terminal-container{margin:0!important} #terminal-container .terminal{padding:__PAD__!important;height:100%!important;box-sizing:border-box}
+#terminal-container{position:relative} #ar-kept{position:absolute!important;inset:0;z-index:9;overflow:hidden;pointer-events:none;background:var(--ar-bg)} #ar-kept .xterm-rows{opacity:.75}
 .xterm .xterm-viewport{background:var(--ar-bg)!important;scrollbar-width:none} .xterm-viewport::-webkit-scrollbar{display:none}
 </style><script>(function(){
 var pressed=false, touch=matchMedia('(pointer:coarse)').matches, focus=HTMLElement.prototype.focus;
 HTMLElement.prototype.focus=function(o){if(pressed&&!touch)focus.call(this,o)};
 addEventListener('pointerdown',function(){pressed=true},true);
 addEventListener('blur',function(){pressed=false});
-function tell(m){parent.postMessage(Object.assign({session:__NAME__},m),location.origin)}
+var name=__NAME__, own=name==='login';
+function tell(m){parent.postMessage(Object.assign({session:name},m),location.origin)}
 var W=window.WebSocket;
-window.WebSocket=class extends W{constructor(u,p){super(u,p);
-this.addEventListener('open',function(){tell({state:'up'})});this.addEventListener('close',function(e){tell({state:'down',code:e.code})});
-var n=0;this.addEventListener('message',function(){if(n++<4)setTimeout(window.arLook,0)})}};
 var LOOKS=__LOOKS__, look=__LOOK__;
 window.arLook=function(to){if(to)look=to;var t=window.term, c=LOOKS[look];if(!c)return;
 document.documentElement.style.setProperty('--ar-bg',c.background);if(t)t.options.theme=c};
-if(LOOKS.light){try{look=parent.feedLook()}catch(e){look=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}window.arLook()}
+if(look==='page'){try{look='page-'+parent.feedLook()}catch(e){look='page-'+(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}window.arLook()}
+var line=null, url='', sock=null, turn=0, opened=false, set=false, drew=false;
+function Own(u,p){var s=new W(u,p);s.addEventListener('open',function(){tell({state:'up'})});s.addEventListener('close',function(e){tell({state:'down',code:e.code})});return s}
+Own.OPEN=W.OPEN;
+class Line extends EventTarget{constructor(u){super();url=u;line=this;this.binaryType='arraybuffer';var want=name;try{if(parent.feedWant){want=parent.feedWant();look=parent.feedWantLook()||look}}catch(e){}if(want)dial(want)}
+get readyState(){return sock?sock.readyState:W.CLOSED}
+send(d){if(sock&&sock.readyState===W.OPEN)sock.send(d)}
+close(){hang()}}
+Line.OPEN=W.OPEN;
+window.WebSocket=own?Own:Line;
+function hang(){turn++;var s=sock;sock=null;if(s)s.close()}
+function dial(to){hang();var other=to!==name;name=to;if(!line)return;
+if(other&&drew){window.term.write('\\x1bc');drew=false}
+var me=turn, at=0, out=0, quiet=0, done=false;
+var s=sock=new W(url.replace(/[^/]+[/]ws(?=[?]|$)/,encodeURIComponent(to)+'/ws'),['tty']);s.binaryType='arraybuffer';
+s.onopen=function(){if(me!==turn)return;at=Date.now();
+if(!opened){opened=true;line.dispatchEvent(new Event('open'))}
+else{var t=window.term;if(t.fit)t.fit();s.send(new TextEncoder().encode(JSON.stringify({AuthToken:'',columns:t.cols,rows:t.rows})))}
+tell({state:'up'})};
+s.onclose=function(e){if(me!==turn)return;clearTimeout(quiet);sock=null;tell({state:'down',code:e.code})};
+s.onmessage=function(e){if(me!==turn)return;
+var what=new Uint8Array(e.data)[0];
+if(what===48){if(!out){out=Date.now();if(drew)window.term.write('\\x1bc');drew=true}
+clearTimeout(quiet);if(!done)quiet=setTimeout(look4,out&&Date.now()-out>700?0:Math.max(150,250-(Date.now()-at)))}
+else if(set)return;
+else if(what===50){set=true;setTimeout(window.arLook,0)}
+line.dispatchEvent(new MessageEvent('message',{data:e.data}))};
+function look4(){var t=window.term;if(me!==turn||!t)return;
+t.write('',function(){if(me!==turn||done)return;var b=t.buffer.active, y=t.rows, low=Date.now()-out>1500?0:y-8, text=false;
+while(y--){var l=b.getLine(b.baseY+y);if(l&&l.translateToString(true).trim()){text=true;if(y<low)break;done=true;requestAnimationFrame(function(){if(me===turn)tell({state:'drawn'})});return}}
+if(text)quiet=setTimeout(look4,200)})}
+}
+window.arLine={dial:function(to,l){if(l)window.arLook(l);dial(to)},hang:hang,
+keep:function(){var t=window.term, rows=t&&t.element&&t.element.querySelector('.xterm-rows');if(!rows||!rows.textContent.trim())return null;
+var k=document.createElement('div'), s=document.createElement('div');k.id='ar-kept';k.setAttribute('aria-hidden','true');k.className=t.element.className;
+s.className='xterm-screen';s.style.cssText=rows.parentNode.style.cssText;s.appendChild(rows.cloneNode(true));k.appendChild(s);return k},
+show:function(k){var o=document.getElementById('ar-kept'), c=document.getElementById('terminal-container');if(o===k)return;if(o)o.remove();if(k&&c)c.appendChild(k)}};
 document.fonts.load('13px ar-box','\\u2500').then(function(){var t=window.term;if(t)t.options.fontFamily+=',monospace'});
 addEventListener('wheel',function(e){var px=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?innerHeight:1);
-if(__NAME__!=='login'&&!e.ctrlKey&&e.isTrusted&&parent.feedTake&&parent.feedTake(px)){e.preventDefault();e.stopImmediatePropagation()}},{capture:true,passive:false});
+if(!own&&!e.ctrlKey&&e.isTrusted&&parent.feedTake&&parent.feedTake(px)){e.preventDefault();e.stopImmediatePropagation()}},{capture:true,passive:false});
 function ours(e,paste){try{if(parent.feedTyped&&parent.feedTyped(e,paste)){e.preventDefault();e.stopImmediatePropagation()}}catch(x){}}
 addEventListener('keydown',function(e){ours(e)},true);
 addEventListener('paste',function(e){var s=e.clipboardData&&e.clipboardData.getData('text/plain');if(s)ours(e,s)},true);
@@ -88,14 +130,44 @@ def ttyd_options(look: str) -> list[str]:
 def with_head(page: bytes, name: str, look: str) -> bytes:
     """ttyd's page with HEAD in it; `look` 'page' (a session with the run's theme), 'dark' or 'light'."""
     head = HEAD
-    looks = {k: session_theme.page_look(k) for k in THEMES} if look == 'page' else {}
-    ground = looks['dark']['background'] if looks else THEMES[look]['background']
+    looks = {**THEMES, **{f'page-{k}': session_theme.page_look(k) for k in THEMES}}  # the page outlives one chat
+    ground = looks['page-dark' if look == 'page' else look]['background']
     for at, what in (('__FONT__', BOX_FONT), ('__BG__', ground), ('__PAD__', PAD), ('__NAME__', json.dumps(name)),
                      ('__LOOKS__', json.dumps(looks, separators=(',', ':'))), ('__LOOK__', json.dumps(look))):
         head = head.replace(at, what)
     i = page.find(b'<head>')
     at = i + len(b'<head>') if i >= 0 else 0
     return page[:at] + head.encode() + page[at:]
+
+
+_gz: dict[str, bytes] = {}  # ETag -> the page compressed
+
+
+def send_page(handler, data: bytes, ctype: str) -> None:
+    """Answer with ttyd's page: compressed for a browser that takes it (740 KB, 194 KB compressed), and not at all for one
+    that kept this very page: it asks each time, so only the key opens it."""
+    tag = '"' + hashlib.sha256(data).hexdigest()[:24] + '"'
+    same = handler.headers.get('If-None-Match', '').removeprefix('W/') == tag
+    zipped = 'gzip' in handler.headers.get('Accept-Encoding', '')
+    if zipped and not same:
+        if not (got := _gz.get(tag)):
+            if len(_gz) > 8:
+                _gz.clear()
+            got = _gz[tag] = gzip.compress(data, 6)
+        data = got
+    handler.send_response(304 if same else 200)
+    handler.send_header('ETag', tag)
+    handler.send_header('Vary', 'Accept-Encoding')
+    handler.send_header('Cache-Control', 'private, no-cache')
+    handler.send_header('Referrer-Policy', 'no-referrer')
+    if not same:
+        handler.send_header('Content-Type', ctype)
+        handler.send_header('Content-Length', str(len(data)))
+        if zipped:
+            handler.send_header('Content-Encoding', 'gzip')
+    handler.end_headers()
+    if not same:
+        handler.wfile.write(data)
 
 
 LOGIN = 'login'  # F126b: the terminal that runs watch.LOGIN_CMD and nothing else
@@ -133,7 +205,7 @@ def frame(handler, port: int, target: str, name: str, look: str) -> None:
     finally:
         conn.close()
     if code == 200 and ctype.startswith('text/html'):
-        data, ctype = with_head(data, name, look), 'text/html; charset=utf-8'
+        return send_page(handler, with_head(data, name, look), 'text/html; charset=utf-8')
     handler.send(code, data, ctype)
 
 

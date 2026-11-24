@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import gzip
 import json
 import os
 import re
@@ -831,29 +832,34 @@ const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
 const part = page.slice(page.indexOf('const FD={'), page.indexOf('/* the touch layer over the frame'));
 const el = () => ({hidden: false, kids: [], appendChild(x) { this.kids.push(x); x.box = this }, classList: {toggle() {}}});
-const els = {feed: el(), body: el(), feedframe: el(), feedsay: el()}, $ = k => els[k];
+const els = {feed: el(), body: el(), feedframe: el(), feedsay: el(), feedstand: el(), feedline: el()}, $ = k => els[k];
 const on = {}, docOn = {}, location = {origin: 'https://x'}, addEventListener = (t, f) => on[t] = f;
 const typed = [], term = {modes: {applicationCursorKeysMode: false}, input: t => typed.push(t), rows: 2,
   buffer: {active: {viewportY: 1, getLine: y => ({translateToString: () => ['old', 'one  ', 'two'][y]})}}};
+const hold = {}, calls = [], arLine = {dial: (n, l) => calls.push('dial ' + n + ' ' + l), hang: () => calls.push('hang'), keep: () => 'screen of ' + hold.FD.n, show: k => { arLine.shown = k }};
+const requestAnimationFrame = f => f(), md = t => t, feedOf = n => n === 'c12' ? [{kind: 'you', text: 'Hi'}, {kind: 'tool', text: 'ls'}, {kind: 'say', text: 'Hello back'}] : [];
+let lost = false;
 const document = {hidden: false, documentElement: {classList: {toggle() {}}}, addEventListener: (t, f) => docOn[t] = f,
-  createElement: () => ({contentWindow: {term}, remove() { const k = this.box.kids; k.splice(k.indexOf(this), 1) }})};
+  createElement: () => ({contentWindow: {term, arLine, arLook() {}}, remove() { const k = this.box.kids; k.splice(k.indexOf(this), 1) }})};
 const window = {}, T = 'TOK', esc = t => String(t), LOGO = () => '', I = {ext: ''}, tq = p => p, card = h => h;
 const timers = [], setTimeout = (f, ms) => timers.push({f, ms}), clearTimeout = () => {};
 const said = [], toast = t => said.push(t), sheets = [], openSheet = n => sheets.push(n), upload = f => said.push(f);
-const S = {snap: {sessions: [{name: 'c6', link: 'L'}], fixups: {resume: [{id: 'F1'}]}}, sent: {}, ob: [], last: {s3: {task: 'F1', title: 'a'}}};
+const S = {snap: {sessions: [{name: 'c6', link: 'L'}, {name: 'c12'}], fixups: {resume: [{id: 'F1'}]}}, sent: {}, ob: [], last: {s3: {task: 'F1', title: 'a'}}};
 const isAgent = n => !/^(c\d+|@.+)$/.test(n), sessionOf = n => S.snap.sessions.find(s => s.name === n), threadTitle = n => n;
 const starting = n => n === 'c8', sentBubbles = () => '', obBubbles = () => 'WAITS', controlOf = () => ({}), ctlBusy = () => false;
 const setHTML = (e, h) => { e.innerHTML = h }, render = () => feedDraw(S.thread);
-const feedGone = () => {}, feedUp = () => {}, feedShown = () => {}, feedAt = (x, y) => [x, y];
+const feedGone = () => {}, feedUp = () => {}, feedSee = () => {}, feedPlace = () => {}, feedLook = () => 'dark', feedShown = on => { hold.FD.shown = on }, feedAt = (x, y) => [x, y];
 let answers = {};
-const fetch = async p => ({json: async () => answers[p.split('/')[1]]});
+const fetch = async p => { if (lost) throw new Error('lost'); return {json: async () => answers[p.split('/')[1]]} };
 eval(logic + part + `
+hold.FD = FD;
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() };
 const at = () => [!$('feed').hidden, !$('body').hidden, $('feedframe').kids.map(k => k.src)];
 (async () => {
   const out = {}, show = async n => { S.thread = n; render(); await settle(); return at() };
   answers.c6 = {ok: true, path: '/t/TOK/c6/'};
-  out.c6 = await show('c6'); out.waits = [$('feedsay').hidden, $('feedsay').innerHTML.includes('Connecting')];
+  out.c6 = await show('c6'); out.waits = [$('feedsay').hidden, $('feedline').hidden, $('feedstand').hidden, FD.frame.className, timers.some(t => t.ms > 4000)];
+  FD.since -= 6000; feedSkin(); out.long = [$('feedsay').hidden, $('feedsay').innerHTML.includes('Connecting')];
   render(); out.once = $('feedframe').kids.length;
   feedKey('up'); out.early = said.slice();
   const f = FD.frame, word = (d, src = f.contentWindow, origin = location.origin) => on.message({data: {session: 'c6', ...d}, source: src, origin});
@@ -863,18 +869,33 @@ const at = () => [!$('feed').hidden, !$('body').hidden, $('feedframe').kids.map(
   out.keys = typed.splice(0); term.modes.applicationCursorKeysMode = true; feedKey('up'); out.app = typed.splice(0);
   feedText(); out.text = [S.feedText, sheets];
   word({files: ['pic']}); out.files = said.pop();
-  // its socket closes: the page asks again; the session has ended
+  word({state: 'drawn'}); out.drawn = [FD.frame.className, $('feedline').hidden, $('feedstand').hidden, $('feedsay').hidden];
+  // F206: its connection breaks: its screen stays, and it dials again by itself, with no load
+  FD.foot = {}; calls.length = 0; lost = true; word({state: 'down'});
+  out.down = [arLine.shown, FD.frame.className, $('feedline').hidden, $('feedsay').hidden, timers.some(t => t.ms === 250)];
+  timers.filter(t => t.ms === 250).pop().f(); await settle();
+  out.lost = [at(), calls.slice(), arLine.shown]; FD.since -= 6000; feedSkin(); out.re = $('feedsay').innerHTML; lost = false;
+  word({state: 'up'}); word({state: 'drawn'}); out.again = [arLine.shown, $('feedline').hidden, FD.frame === f];
+  // another chat: the same frame; back: its last screen at once, and it is dialed before the run's answer
+  answers.c12 = {ok: true, look: 'page'}; calls.length = 0; const go = show('c12'); out.other = [$('feedstand').hidden, $('feedstand').innerHTML, feedWant()]; await go;
+  out.dialed = [calls.slice(), FD.frame === f, $('feedframe').kids.length, feedWant(), FD.frame.className];
+  word({state: 'up'}); out.stale = FD.up; word({session: 'c12', state: 'up'}); word({session: 'c12', state: 'drawn'});
+  calls.length = 0; const back2 = show('c6'); out.back6 = [arLine.shown, FD.frame.className, $('feedstand').hidden, calls.slice()]; await back2; out.one = calls.filter(c => c.startsWith('dial')).length;
+  word({state: 'up'}); word({state: 'drawn'});
+  // the session ends: its last screen stays, with what to do over the box
+  FD.foot = null; arLine.keep = () => 'its goodbye';
   word({state: 'down'}); answers.c6 = {ok: false, mode: 'none', live: false, link: 'https://claude.ai/code/x', resume: true, out: 'c6 is not up'};
-  timers.pop().f(); await settle(); out.ended = [at(), feedHTML('c6')];
+  timers.filter(t => t.ms === 250).pop().f(); await settle(); out.ended = [at().slice(0, 2), feedHTML('c6'), feedEnd('c6'), arLine.shown, feedWant(), $('feedline').hidden];
+  arLine.keep = () => 'screen of ' + FD.n;
   answers.s3 = {ok: false, mode: 'none', live: false, out: 'x'}; await show('s3'); out.idle = feedHTML('s3');
   answers.s4 = {ok: false, mode: 'none', live: true, out: 's4 runs headless'}; await show('s4'); out.none = [at(), feedHTML('s4')];
   answers.c9 = {ok: false, mode: 'install', out: 'ttyd is not installed'}; await show('c9'); out.install = [at(), feedHTML('c9')];
   answers.c8 = {ok: false, mode: 'none', live: false, out: 'x'}; await show('c8'); out.starting = feedHTML('c8');
-  answers.c8 = {ok: true}; timers.pop().f(); await settle(); out.started = at();
+  answers.c8 = {ok: true, look: 'dark'}; timers.filter(t => t.ms === 3000).pop().f(); await settle(); out.started = at();
   await show('@k'); out.stand = [at(), feedHTML('@k')];
   // out of sight a while: the frame goes, so the session has its other viewers' size; back: it comes again
-  await show('c8'); document.hidden = true; docOn.visibilitychange(); timers.pop().f(); out.away = $('feedframe').kids.length;
-  document.hidden = false; docOn.visibilitychange(); await settle(); out.back = $('feedframe').kids.length;
+  await show('c8'); document.hidden = true; calls.length = 0; docOn.visibilitychange(); timers.filter(t => t.ms === 15000).pop().f(); out.away = [calls.slice(), $('feedframe').kids.length, feedWant()];
+  document.hidden = false; docOn.visibilitychange(); await settle(); out.back = [calls.slice(), feedWant()];
   await show(null); out.home = at();
   console.log(JSON.stringify(out));
 })();`);
@@ -887,12 +908,12 @@ def test_session_feed_f114(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     order = [page.index(x) for x in ('<div class="body" id="body">', '<div class="feed" id="feed" hidden>', '<div class="dock" id="dock">')]
     eq(order, sorted(order), 'the session stands between the header and the message box')
-    check("dock=(isNew(n)?'':sessRow(n)+keysRow())+box(" in page and 'convo(n)' not in page.split('function render(', 1)[1].split('\n}\n', 1)[0],
+    check("dock=(isNew(n)?'':feedEnd(n)+sessRow(n)+keysRow())+box(" in page and 'convo(n)' not in page.split('function render(', 1)[1].split('\n}\n', 1)[0],
           'a chat draws its box, and no thread')
     check('touch-action:pinch-zoom' in page and '@media (pointer:coarse){.feedtouch{display:block} .keyb{display:inline-flex}' in page,
           'a touch device has the touch layer and the key row')
     head = W.session_frame.with_head(b'<html><head><title>t</title>', 'c6', 'dark').decode()
-    check(head.startswith('<html><head><meta name="referrer"') and 'if(pressed&&!touch)focus.call' in head and 'session:"c6"' in head,
+    check(head.startswith('<html><head><meta name="referrer"') and 'if(pressed&&!touch)focus.call' in head and 'name="c6"' in head,
           "ttyd's page takes the keyboard only from a mouse press in it", head[:300])
     (tmp / '.claude').mkdir()
     eq(W.session_frame.session_look(tmp), 'dark', 'no theme set: dark')
@@ -909,23 +930,56 @@ def test_session_feed_f114(tmp: Path) -> None:
     o = json.loads(r.stdout)
     eq(o['c6'][:2], [True, False], 'a chat shows the session, not the body')
     check(len(o['c6'][2]) == 1 and o['c6'][2][0].startswith('t/TOK/c6/'), "c6's own terminal, on the page's address", o['c6'])
-    eq((o['waits'], o['once'], o['up']), ([False, True], 1, [True, True]), 'it says it is connecting; a redraw keeps the one frame')
+    eq((o['waits'], o['once'], o['up']), ([True, False, False, 'blank', True], 1, [True, False]),
+       'F206: until it is drawn a line moves and no blank frame shows; a redraw keeps the one frame')
+    eq(o['long'], [False, True], 'after 5 s it says it is connecting')
+    eq(o['drawn'], ['', True, True, True], 'drawn: the terminal, and nothing over it')
+    eq(o['down'], ['screen of c6', '', False, True, True], 'F206: the connection breaks: its screen stays under the line, and it tries again soon')
+    eq(o['lost'], [[True, False, ['t/TOK/c6/?fontSize=13']], ['dial c6 '], 'screen of c6'], 'by itself, with no page load, though the run cannot be asked')
+    check('Reconnecting…' in o['re'], 'after 5 s it says so', o['re'])
+    eq(o['again'], [None, True, True], 'the terminal again, in the same frame')
+    eq(o['other'][0], False, 'a chat not seen here: its latest messages stand in')
+    check('Hi</div>' in o['other'][1] and 'Hello back' in o['other'][1] and 'ls' not in o['other'][1], 'your words and the replies', o['other'][1])
+    eq((o['other'][2], o['dialed']), ('', [['hang', 'dial c12 page-dark'], True, 1, 'c12', 'blank']), 'the one frame, connected to it')
+    eq(o['stale'], False, "a word of the chat before is nothing")
+    eq((o['back6'], o['one']), (['screen of c6', '', True, ['hang', 'dial c6 ']], 1), 'back: its last screen at once, and one dial, before the run answers')
     eq((len(o['early']), o['foreign']), (1, False), 'a key before it is connected says so; a word from elsewhere is nothing')
     eq(o['keys'], ['\x1b', '\t', '\x1b[A', '\r', '\x03', '\x1b[D', '\x1b[B', '\x1b[C'], 'the key row types its keys')
     eq(o['app'], ['\x1bOA'], 'as the terminal would, in application cursor mode')
     eq(o['text'], ['one\ntwo', ['text']], "the screen's text in a sheet, to copy")
     eq(o['files'], 'pic', 'files dropped on the session are attached')
-    eq(o['ended'][0], [False, True, []], 'ended: the frame goes')
+    eq((o['ended'][0], o['ended'][3:]), ([True, False], ['screen of c6', '', True]), 'ended: its last screen stays, not its goodbye, and it is not connected')
+    check('This chat has ended' in o['ended'][2] and 'class="col' not in o['ended'][2], 'with the card over its box', o['ended'][2])
     for part in ('This chat has ended', 'https://claude.ai/code/x', 'data-resume="c6"'):
         check(part in o['ended'][1], f'ended says {part}', o['ended'][1])
     check('data-ctl="resume" data-tid="F1"' in o['idle'], 'a slot whose task was cut off: Resume', o['idle'])
-    check('s4 runs headless' in o['none'][1] and o['none'][0] == [False, True, []], 'no terminal: why', o['none'])
-    check('ttyd is not installed' in o['install'][1] and o['install'][0] == [False, True, []], 'no ttyd: how to install it', o['install'])
+    check('s4 runs headless' in o['none'][1] and o['none'][0][:2] == [False, True], 'no terminal: why', o['none'])
+    check('ttyd is not installed' in o['install'][1] and o['install'][0][:2] == [False, True], 'no ttyd: how to install it', o['install'])
     check('Starting the chat' in o['starting'], 'a starting chat says so', o['starting'])
-    check(o['started'][0] and 't/TOK/c8/' in o['started'][2][0], 'then shows its session', o['started'])
-    check('WAITS' in o['stand'][1] and o['stand'][0] == [False, True, []], "a stand-in shows what waits for it", o['stand'])
-    eq((o['away'], o['back']), (0, 1), 'out of sight the frame goes; back, it comes again')
-    eq(o['home'], [False, True, []], 'another view has no session')
+    check(o['started'][0], 'then shows its session', o['started'])
+    check('WAITS' in o['stand'][1] and o['stand'][0][:2] == [False, True], "a stand-in shows what waits for it", o['stand'])
+    eq((o['away'], o['back']), ([['hang'], 1, ''], [['hang', 'dial c8 dark'], 'c8']), 'out of sight it hangs up, the frame stays; back, it dials again')
+    eq(o['home'][:2], [False, True], 'another view has no session')
+
+
+def test_switcher_f206(tmp: Path) -> None:
+    """F206: a chat's last line in the title's switcher, the stand-in's messages, and how many screens are kept."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('data-chats aria-haspopup="dialog"' in page and 'SHEETS.chats=chatsSheet' in page, "a chat's title opens the switcher")
+    check('viewTransitionName' not in page and '||S.thread&&n!==S.thread){go();return}' in page, 'a switch is at once: no title flies')
+    if not shutil.which('node'):
+        return
+    say, you, tool = {'kind': 'say', 'text': 'One\n\nTwo\n'}, {'kind': 'you', 'text': 'Go\non'}, {'kind': 'tool', 'text': 'Read x'}
+    got = logic_js([['chatLast', [you, say], False], ['chatLast', [say, you], False], ['chatLast', [say, tool, {'kind': 'out', 'text': 'o'}], True],
+                    ['chatLast', [say, tool], False], ['chatLast', None, True], ['standMsgs', [tool, you, say] * 5]])
+    eq(got[:5], ['Two', 'You: Go', 'Working: Read x', 'Two', ''], 'the last line')
+    eq([m['w'] for m in got[5]], ['u', 'a'] * 4, 'the latest messages')
+    js = page.split('<script id="logic">', 1)[1].split('</script>', 1)[0] + (
+        "\nconst k=new Map();for(let i=0;i<14;i++)keptPut(k,'c'+i,i);console.log(JSON.stringify([keptPut(k,'c2','x'),k.get('c2')]))")
+    (tmp / 'k.js').write_text(js, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'k.js')], capture_output=True, text=True, timeout=60)
+    names, two = json.loads(r.stdout or '[[], 0]')
+    eq((len(names), names[0], names[-1], two), (12, 'c3', 'c2', 'x'), 'the last 12 chats, the newest kept longest')
 
 
 def test_session_proxy_f114(tmp: Path) -> None:
@@ -965,7 +1019,13 @@ def test_session_proxy_f114(tmp: Path) -> None:
     try:
         with mock.patch.object(srv.terms, 'ttyd', lambda name, sock='': {'ok': True, 'port': ttyd.server_address[1]}):
             code, body = get(f'{base}/t/{token}/c6/?fontSize=12')
-            check(code == 200 and b'session:"c6"' in body and f'/t/{token}/c6/?fontSize=12'.encode() in body, "ttyd's page", body[-200:])
+            check(code == 200 and b'name="c6"' in body and f'/t/{token}/c6/?fontSize=12'.encode() in body, "ttyd's page", body[-200:])
+            with urllib.request.urlopen(urllib.request.Request(f'{base}/t/{token}/c6/?fontSize=12', headers={'Accept-Encoding': 'gzip'}), timeout=10) as r:
+                tag, zipped = r.headers['ETag'], r.read()
+                eq((r.headers['Content-Encoding'], r.headers['Cache-Control'], gzip.decompress(zipped)), ('gzip', 'private, no-cache', body),
+                   'F206: compressed, and kept by the browser')
+            eq(get(f'{base}/t/{token}/c6/?fontSize=12', {'If-None-Match': tag}), (304, b''), 'which asks each time, and gets it only when it changed')
+            eq(get(f'{base}/t/wrong/c6/', {'If-None-Match': tag})[0], 403, 'never without the token')
             eq(get(f'{base}/t/wrong/c6/')[0], 403, 'only with the token')
             eq(get(f'{base}/t/{token}/x')[0], 403, 'no name: refused')
             eq(get(f'{base}/t/{token}/..x/')[0], 404, 'not a session name')
@@ -1054,7 +1114,8 @@ def test_session_controls_f170(tmp: Path) -> None:
           'room between the lines, text that reads')
     head = W.session_frame.with_head(b'<head>', 'c6', 'page').decode()
     check('"light":{' in head and '"dark":{' in head and 'look="page"' in head and 'ar-box' in head, 'a themed session: both looks', head[:200])
-    check('LOOKS={}, look="light"' in W.session_frame.with_head(b'<head>', 'c6', 'light').decode(), 'one from before: its one ground')
+    check('look="light"' in W.session_frame.with_head(b'<head>', 'c6', 'light').decode(), 'one from before: its one ground')
+    check('"page-light":{' in head and '"page-dark":{' in head, 'F206: every look, as the page outlives one chat')
 
 
 def test_bars_over_text_b192(tmp: Path) -> None:
@@ -1253,4 +1314,4 @@ def test_session_run_side_f170(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_session_run_side_f170)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_session_run_side_f170)]))
