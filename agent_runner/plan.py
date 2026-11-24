@@ -2077,19 +2077,26 @@ NEEDS_WIDTH = 72  # chars of an ask's first sentence `needs` keeps, before its r
 def needs_lines(items: list, sheet=lambda tid: False) -> list[str]:
     """F44 `needs`: per ask that is not shelved one 'ID - what to do' line ('R7 - pick which config changes to
     build'; the ask's own 'reply with …' kept: 'R6 - Windows desktop check, reply with what you saw'), then one summary line ('2 things need you', 'Nothing needs you'). `items`
-    are asks tuples in the order to show; `sheet(tid)` says a DECIDE has a pick sheet. No links, bodies or notes."""
+    are asks tuples in the order to show; `sheet(tid)` says a DECIDE has a pick sheet. No links, bodies or notes.
+    B223a: a DECIDE shows its question, not the first sentence."""
+    from agent_runner import need_detail
     out = []
     for label, tid, k, what, _url, title, sh, *_ in items:
         if sh:
             continue
         own = re.search(r'[\s,;:.–—-]*\b(reply (?:with|yes|no|done|go|A/)[^.;]*)[.;]?\s*$', what or '')
         what = what[:own.start()] if own else what  # the agent's own 'reply with …' replaces the generic hint
+        asked = ''
+        if label == 'DECIDE':
+            what = need_detail.decide_options(tid, what or '')[1]
+            asked = need_detail.question_of(what)
+            what = asked or need_detail.asks_file(tid).get('summary') or what
         said = plain_ask(label, what, title, label == 'DECIDE' and sheet(tid))
         generic = f' - {REPLY_HINT.get(label, "reply when you can")}'
         said = said[:-len(generic)] if said.endswith(generic) else \
             said.replace('. Pick on the sheet', ', pick on the sheet')  # a pick sheet's ask keeps its how
         hint = own.group(1) if own else ''  # only the agent's own words: the generic one is noise here
-        said = re.split(r'(?<=[.?!])\s', said, maxsplit=1)[0].rstrip('.')  # its first sentence
+        said = said if asked else re.split(r'(?<=[.?!])\s', said, maxsplit=1)[0].rstrip('.')  # its first sentence
         if len(said) > NEEDS_WIDTH:
             cut = said[:NEEDS_WIDTH].rsplit(' ', 1)[0]
             if cut.count('`') % 2 and (end := said.find('`', len(cut))) >= 0:  # B150: never cut inside a command

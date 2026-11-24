@@ -1282,7 +1282,7 @@ def test_need_detail_f162(tmp: Path) -> None:
     eq((got['B163']['said'], got['B163']['steps']), ('Stuck', ['Waits for its Windows run']), 'B163')
     eq((len(got['B177']['steps']), len(got['B177']['expect'])), (3, 1), 'B177: then is a step, the colon what to see')
     eq((len(got['R6']['steps']), got['R6']['expect']), (3, ['Is the run still going?']), 'R6: (1) and (2)')
-    eq(N.detail('DECIDE', 'F1', 'Which look: Full, Small?', '', '', U.ask_short)['steps'], ['Which look: Full, Small?'], 'a question is one piece')
+    eq(N.detail('DECIDE', 'F1', 'Which look: Full, Small?', '', '', U.ask_short)['question'], 'Which look: Full, Small?', 'a question is one piece')
     for semi, do, see in (  # F162a1: after a colon each piece after a ';' is classed again
             ('Tap Save: it says Saved; tap Undo; the list returns', ['Tap Save', 'Tap Undo'], ['It says Saved', 'The list returns']),
             ('Tap Save: it says Saved; and the list returns; and tap Undo', ['Tap Save', 'And tap Undo'], ['It says Saved', 'And the list returns']),
@@ -1318,6 +1318,61 @@ def test_need_detail_f162(tmp: Path) -> None:
         eq(d3(), plain, f'the fallback for {bad[:20]!r}')
     js.write_bytes(b'\xff\xfe\x00')
     eq(d3(), plain, 'and for one that is no text')
+
+
+def test_decide_question_b223a(tmp: Path) -> None:
+    """B223a: a DECIDE is a question with its background as paragraphs, no steps unless its ask file has them; a CONFIRM
+    or BLOCKED keeps its steps. `needs` shows the question."""
+    from agent_runner import need_detail as N, plan as P
+    repo = fake_run(tmp)
+
+    def row(ask: str, label: str = 'DECIDE') -> dict:
+        return U.needs_rows([(label, 'D9', '', ask, '', 'T', False)], NOW)[0][0]
+    need = lambda ask: P.needs_lines([('DECIDE', 'D9', '', ask, '', 'T', False)])[0]  # noqa: E731
+    b221 = ('And a fix. This is finished, but held because R8 was research, which changes no product. "Ship them" merges it '
+            'with the findings. "Queue them as their own task" keeps only the findings now and queues the rest. '
+            f'Ship these changes? {P.RESEARCH_BUTTONS}')
+    r = row(b221)
+    d = r['detail']
+    eq((d['question'], d['summary'], d['steps'], d['expect']), ('Ship these changes?', 'Ship these changes?', [], []), 'B221: one question, no steps')
+    eq(d['lead'], [b221.split(' Ship these changes?')[0]], 'B221: the rest is its background, whole')
+    eq(d['notes'], ['Reply with your answer'], 'its notes kept')
+    eq([o['name'] for o in r['options']], [P.SHIP, P.QUEUE], 'its buttons')
+    check(not any('[' in x for x in [*d['lead'], d['question'], *d['notes']]), 'no bracket repeated', d)
+    eq(need(b221), 'D9 - Ship these changes?', 'needs shows the question')
+    old = ('R90 is research, but its diff changes code (done.log), so it did not merge. Answer `follow-up` (the code is filed) or '
+           '`merge anyway` (the code lands); the attempt is parked on wip/R90')
+    d = row(old)['detail']
+    eq((d['question'], d['steps']), ('R90 is research, but its diff changes code, so it did not merge.', []), 'an old ask: its first sentence')
+    eq((d['summary'], d['lead'], d['notes']), (d['question'], [old], ['Reply with your answer']), 'all of it is kept as background')
+    eq(need('pick a layout. Full is larger'), 'D9 - pick a layout', 'needs: the first sentence when nothing is asked')
+    d = row('Pick a layout')['detail']
+    eq((d['question'], d['lead']), ('Pick a layout', []), 'said whole in the question, so not again')
+    for ask, want in (('It is slow; then keep it? Full is larger. Evidence is in the log', ('It is slow; then keep it?', ['Full is larger.'], 'Evidence is in the log')),
+                      ('Keep it? (asked with `run ask`: your answer resumes its session)',
+                       ('Keep it?', ['(asked with `run ask`: your answer resumes its session)'], None)),
+                      ('The log is already kept, drop it?', ('The log is already kept, drop it?', [], None)),
+                      ('Keep e.g. the log?', ('Keep e.g. the log?', [], None)),
+                      ('It is old. Which? https://example.com/b', ('Which?', ['It is old.', 'https://example.com/b'], None)),
+                      ('One.\n\nTwo. Keep it?', ('Keep it?', ['One.', 'Two.'], None))):
+        d = row(ask)['detail']
+        eq((d['question'], d['lead'], d['notes']), (*want[:2], [n for n in (want[2], 'Reply with your answer') if n]), ask)
+    eq(need('It is old. Keep e.g. the log? Yes is simpler'), 'D9 - Keep e.g. the log?', 'needs: the whole question')
+    f = repo / '.runner' / 'asks' / 'D9.json'
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({'summary': 'Choose a look', 'steps': ['Open both'], 'expect': ['Two'], 'options': [{'name': 'Full'}, {'name': 'Small'}]}), encoding='utf-8')
+    r = row('Two are ready. Which look? [A / B]')
+    d = r['detail']
+    eq((d['question'], d['summary'], d['steps'], d['expect'], d['lead']), ('Which look?', 'Which look?', ['Open both'], ['Two'], []), 'an ask file: its steps')
+    eq([o['name'] for o in r['options']], ['Full', 'Small'], 'and its options')
+    d = row('The look')['detail']
+    eq((d['question'], d['summary']), ('Choose a look',) * 2, 'no question mark: the file summary')
+    eq(need('The look'), 'D9 - Choose a look', 'in needs too')
+    f.unlink()
+    for label in ('CONFIRM', 'BLOCKED'):
+        d = row('Open Home; tap Undo: the list returns', label)['detail']
+        eq((d['steps'], d['expect'], d['lead'], d['question'], d['summary']),
+           (['Open Home', 'Tap Undo'], ['The list returns'], [], '', 'Open Home'), f'{label}: unchanged')
 
 
 def test_old_script_c37a(tmp: Path) -> None:
@@ -1493,7 +1548,7 @@ def test_plan_facts_f150(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_manage_releases_f193), in_tmp(test_new_release_f186), in_tmp(test_drop_release_f186), in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_manage_releases_f193), in_tmp(test_new_release_f186), in_tmp(test_drop_release_f186), in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),

@@ -398,8 +398,72 @@ def named_shots(text: str) -> list[dict]:
             ][:SHOTS_MAX]
 
 
+ASKS = re.compile(r'\?[*`"\'”’]*$')  # how a question's sentence ends
+
+
+def _sentences(ask: str) -> list[list[tuple[str, str]]]:
+    """B223a: `ask`'s pieces (`split_ask`, as a question) by sentence, without the reply hint (always a note)."""
+    out: list[list[tuple[str, str]]] = []
+    going = False
+    for kind, text in split_ask(ask, False):
+        if kind == 'note' and HINT.match(text):
+            out.append([(kind, text)])
+            going = False
+            continue
+        for part in re.split(r'(?<=\?)(?=\s+https?://)', text):  # a second link after the question
+            if going:
+                out[-1].append((kind, part))
+            else:
+                out.append([(kind, part)])
+            going = not re.search(r'[.?!][*`"\'”’)\]]*\s*$|\n\s*\n\s*$', part)
+    return out
+
+
+def _said(sentence: list[tuple[str, str]]) -> str:
+    s = re.sub(r'[\s,;:]+$', '', ' '.join(''.join(t for _, t in sentence).split()))
+    return s if is_link(s.split(' ')[0]) else s[:1].upper() + s[1:]
+
+
+def _asked(sentences: list[list[tuple[str, str]]]) -> int:
+    """Which of `sentences` is the question: the last that ends in a question mark; -1 for none."""
+    return next((i for i in range(len(sentences) - 1, -1, -1) if ASKS.search(_said(sentences[i]))), -1)
+
+
+def question_of(ask: str) -> str:
+    """B223a: the question in a DECIDE's words, the sentence that ends in a question mark; '' for none."""
+    ss = _sentences(ask)
+    return _said(ss[at]) if (at := _asked(ss)) >= 0 else ''
+
+
+def decide_words(ask: str, summary: str, short) -> tuple[str, list[str], list[str]]:
+    """B223a: a DECIDE's (question, background as paragraphs, notes). Without a question mark the question is
+    `summary`, else the first sentence, `short`; what it says whole is not in the background."""
+    ss = _sentences(ask)
+    at = _asked(ss)
+    if at >= 0:
+        question = _said(ss[at])
+    else:
+        first = _said(next((s for s in ss if s[0][0] != 'note'), ss[0] if ss else [('do', ask)]))
+        question = summary or short(first)
+        at = next((i for i, s in enumerate(ss) if _said(s).rstrip('.') == question.rstrip('.')), -1)
+    paras, notes = [''], []
+    for i, s in enumerate(ss):
+        if i == at:
+            paras.append('')
+            continue
+        for kind, text in s:
+            if kind == 'note':
+                notes.append(shown(text))
+            else:
+                paras[-1] += text
+                if re.search(r'\n\s*\n\s*$', text):
+                    paras.append('')
+    return question, [p for x in paras if (p := _said([('do', x)]))], [n for n in notes if n]
+
+
 def detail(label: str, tid: str, ask: str, title: str, text: str, short) -> dict:
     """What the card and the popup of one item say: said, title, where, summary, lead, steps, expect, notes and shots;
+    B223a: `question`, what a DECIDE asks ('' for the others), which is its summary too; it has steps only from its ask file.
     F175: `step_more` (each step's link, cmd and on) and `inputs` (what the person gives, `ui_model.need_give`). `text` is its task's text, `short` ui_model's ask_short."""
     d = asks_file(tid)
     pieces = split_ask(ask, label in ('CONFIRM', 'BLOCKED'))
@@ -408,10 +472,16 @@ def detail(label: str, tid: str, ask: str, title: str, text: str, short) -> dict
     if old[0]:
         d = {**d, 'steps': old[0], 'step_more': old[1]}
     steps, expect = d.get('steps') or of('do'), d.get('expect') or ([] if d.get('steps') else of('see'))
+    summary, lead = d.get('summary') or short((steps or expect or [ask])[0]), [] if d.get('steps') else of('lead')
+    notes, question = of('note'), ''
+    if label == 'DECIDE':
+        question, lead, notes = decide_words(ask, d.get('summary') or '', short)
+        summary, steps = question, d.get('steps') or []
+        lead = [] if steps else lead
     shots = d.get('shots') or []
     shots = shots + [s for s in named_shots(text) if s['path'] not in {x['path'] for x in shots}]
     return {'said': SAID.get(label, label), 'title': P.short_title(title) if title else tid,
-            'where': d.get('where') or place(ask), 'summary': d.get('summary') or short((steps or expect or [ask])[0]),
-            'lead': [] if d.get('steps') else of('lead'), 'steps': steps, 'expect': expect, 'notes': of('note'),
+            'where': d.get('where') or place(ask), 'summary': summary, 'question': question,
+            'lead': lead, 'steps': steps, 'expect': expect, 'notes': notes,
             'shots': shots, 'step_more': d.get('step_more') or [],
             'inputs': (d.get('inputs') or []) if label in INPUT_LABELS else []}
