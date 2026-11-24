@@ -608,11 +608,11 @@ const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.
 const planQueue=snap=>{const r=snap&&snap.release_row;
   return queueGroups(snap&&snap.queue)[0].concat(r&&r.placeholder?[r]:[])};
 /* F87: a concept card's buttons, in order: one per option (pick: its index, rec: the recommended one, named
-   without its '(recommended)'), then Chat, New chat, and View when it has a local copy or a page */
+   without its '(recommended)'), then Chat, and View when it has a local copy or a page */
 const optionName=o=>o.name.replace(/\s*[(\[—–-]*\s*recommended\s*[)\]]?\s*$/i,'')||o.name;
 function conceptButtons(c){
   const bs=(c.options||[]).map((o,j)=>({label:optionName(o),pick:j,rec:!!o.rec}));
-  bs.push({label:'Chat',about:true},{label:'New chat',cchat:true});
+  bs.push({label:'Chat',about:true});
   if(c.copy||c.url)bs.push({label:'View',view:true});
   return bs;
 }
@@ -1263,7 +1263,7 @@ function obDone(it,j){
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
-  else if(it.need&&(it.name==='answer'||it.name==='need_drop'||it.name==='pitch_no')){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&j.gone))){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
@@ -1520,7 +1520,7 @@ const ctlSure=(c,tid)=>sureHTML(cutsOff(c)+c.confirm,c.label.charAt(0).toLowerCa
 /* C34: a panel's row actions ('queue', 'release': ui_model.RUN_CONTROLS' `where`): the buttons for a row's `acts` (the
    keys ui_model allowed on it), each through the one data-ctl handler, and the confirm one asks in place */
 const obActs=(x,where)=>!!x.ctl&&(controlOf(x.ctl.split(':')[0])||{}).where===where;
-const obRun=x=>!!x.ctl&&!['queue','release'].includes((controlOf(x.ctl.split(':')[0])||{}).where);
+const obRun=x=>!!x.ctl&&!['queue','release','need','concept'].includes((controlOf(x.ctl.split(':')[0])||{}).where);
 const actBtns=(acts,tid)=>(acts||[]).map(controlOf).filter(Boolean).map(c=>`<button class="btn${ctlBusy(c.key,tid)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(tid)}">${esc(c.label)}</button>`).join('');
 const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+':'+tid).map(c=>ctlSure(c,tid)).join('');
 function slotRow(s){
@@ -1552,14 +1552,14 @@ function pitchNo(n,i){
 function pitchCard(n,i){
   const open=!!(S.pitchOpen||{})[n.id], href=n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):'');
   return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.age?` · ${esc(n.age)}`:''}</div>
-    <div class="btns"><button class="btn pri" data-ans="${i}" data-v="Approve">Approve</button><button class="btn" data-pitchopen="${i}" aria-expanded="${open}">Not this…</button><button class="btn" data-needchat="${i}" title="A new chat that shows the question">Chat</button>${href?`<a class="btn" href="${esc(href)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>${open?pitchNo(n,i):''}`,'need',`data-k="need:${esc(n.id)}"`);
+    <div class="btns"><button class="btn pri" data-ans="${i}" data-v="Approve">Approve</button><button class="btn" data-pitchopen="${i}" aria-expanded="${open}">Not this…</button>${actBtns(n.acts,n.id)}${href?`<a class="btn" href="${esc(href)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>${open?pitchNo(n,i):''}`,'need',`data-k="need:${esc(n.id)}"`);
 }
 function needCard(n,i){
   if(n.label==='PITCH')return pitchCard(n,i);
   if(n.label==='TOOL')return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.title)}${n.age?` · ${esc(n.age)}`:''}</div>`,'need',`data-k="need:${esc(n.id)}"`);  // F168: nothing to answer, it clears once the tool is back
   const os=answerOpts(n);
   return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.title?` · ${esc(n.title)}`:''}${n.age?` · ${esc(n.age)}`:''}</div>
-    <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button class="btn" data-later="${i}">Later</button><button class="btn" data-needchat="${i}" title="A new chat that shows the question">Chat</button>${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}<button class="btn" data-needdrop="${i}">Drop</button></div>${S.sure==='need:'+n.id?sureHTML(`Drop ${n.id}? It leaves the plan, and its work is not done.`,'drop it',`data-needdrop="${i}"`):''}`,'need',`data-k="need:${esc(n.id)}"`);
+    <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}${actBtns(n.acts,n.id)}${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>${actSure(n.acts,n.id)}`,'need',`data-k="need:${esc(n.id)}"`);
 }
 /* F85: a task's row: one line; a tap folds its whole text (plan ID) open in place */
 function taskRow(q,title){
@@ -1587,10 +1587,9 @@ function conceptCard(c,i){
   const os=c.options||[], view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
   const b=x=>x.pick!=null?`<button class="btn ${x.rec?'pri':''}" data-pick="${i}" data-o="${x.pick}">${esc(x.label)}</button>`
     :x.about?`<button class="btn" data-about="concept:${i}">Chat</button>`
-    :x.cchat?`<button class="btn" data-cchat="${i}" title="A new chat about this concept">New chat</button>`
     :`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`;
   return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${esc(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(optionName(os.find(o=>o.rec)))}`:''}`:''}</span>
-    <div class="btns">${conceptButtons(c).map(b).join('')}</div>`,'',`data-k="concept:${esc(c.id)}"`);
+    <div class="btns">${conceptButtons(c).map(b).join('')}${actBtns(c.acts,c.id)}</div>${actSure(c.acts,c.id)}`,'',`data-k="concept:${esc(c.id)}"`);
 }
 function box(ph,foot){
   const a=S.atts, shownNow=shownSession(), real=!!S.thread&&!isNew(S.thread), busyNow=!!shownNow&&(real?sessWorks(shownNow):busy(shownNow));
@@ -2918,20 +2917,16 @@ document.addEventListener('click',async e=>{
     if(rq.ask){S.sure=c.key+(tid?':'+tid:'');render(true);return}  // F82: asked in the page, no browser dialog
     if(c.needs==='n'&&!/^\d+$/.test(n))return toast('Type how many slots first',true);
     S.sure=null;S.f.slotsn='';
-    if(c.key==='task_take'||c.key==='queue_take'){newChat(rq.name,rq.args,`${c.label} ${tid}`,`do ${tid} here`);return}  // B139: it asks a new chat
+    if(c.chat){const n=c.where==='need'&&(S.snap.needs||[]).find(x=>x.id===tid);  // B139, C35: it asks a new chat
+      newChat(rq.name,rq.args,`${c.label} ${tid}`,n?needChatAsk(n):c.where==='concept'?'':`do ${tid} here`);return}
     if(S.sheet)closeSheet();
-    outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:c.label+(tid?` ${tid}`:'')});return}  // F124: through the outbox
-  if(x=q('[data-needdrop]')){const n=S.snap.needs[+x.dataset.needdrop];if(!n)return;  // F110
-    if(!x.hasAttribute('data-sure')){S.sure='need:'+n.id;render(true);return}
-    S.sure=null;outbox('need_drop',{tid:n.id,confirm:true},{need:n.id,say:`${n.id} · Drop`});return}
+    outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:c.label+(tid?` ${tid}`:''),...(c.where==='need'?{need:tid}:c.where==='concept'?{concept:tid}:{})});return}  // F124: through the outbox
   if(x=q('[data-pitchopen]')){const n=S.snap.needs[+x.dataset.pitchopen];if(!n)return;  // F98
     S.pitchOpen={...(S.pitchOpen||{}),[n.id]:!(S.pitchOpen||{})[n.id]};S.sure=null;render(true);return}
   if(x=q('[data-pitchno]')){const n=S.snap.needs[+x.dataset.pitchno];if(!n)return;
     const how=x.dataset.how, tid=x.dataset.tid||'';
     if(!x.hasAttribute('data-sure')){S.sure=`pitch:${n.id}:${how}:${tid}`;render(true);return}
     S.sure=null;outbox('pitch_no',{pid:n.id,how,tid,confirm:true},{need:n.id,say:`${n.id} · Not this${tid?': '+tid:''}`});return}
-  if(x=q('[data-needchat]')){const n=S.snap.needs[+x.dataset.needchat];if(!n)return;  // F143
-    newChat('need_chat',{tid:n.id},`About ${n.id}`,needChatAsk(n));return}
   if(x=q('[data-task]')){openTask(x.dataset.task);return}  // F85
   if(x=q('[data-setopen]')){const id=x.dataset.setopen;S.setOpen[id]=!S.setOpen[id];render(true);return}  // F97
   if(q('[data-setload]')){loadSettings();return}
@@ -2943,15 +2938,11 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
   if(q('[data-newtalk]'))return newTalk();  // F157
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
-  if(x=q('[data-cchat]')){const c=S.snap.concepts[+x.dataset.cchat];if(!c)return;  // F86
-    newChat('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||'',copy:c.copy||''},`Chat about ${c.concept||c.id}`);return}
   if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;  // B138: the plan command, no AI session
     // F137: the card folds away at once (obHide) and stands as 'sending' until answer returns (obDone)
     outbox('answer',{tid:n.id,text:x.dataset.v,button:true},{need:n.id,say:`${n.id} · answered “${x.dataset.v}”`});return}
   if(x=q('[data-more]')){const n=S.snap.needs[+x.dataset.more];if(!n)return;  // B152: the whole ask, in place
     S.askOpen={...(S.askOpen||{}),[n.id]:!(S.askOpen||{})[n.id]};render(true);return}
-  if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;
-    outbox('shelve',{tid:n.id},{need:n.id,say:`${n.id} · Later`,done:`${n.id} is set aside until you bring it back`});return}
   if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
   if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);

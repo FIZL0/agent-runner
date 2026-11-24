@@ -271,12 +271,14 @@ def test_row_actions(tmp: Path) -> None:
     Unpark and Release tests)."""
     fake_repo(tmp)
     page = W.PAGE.read_text(encoding='utf-8')
-    for part in ('actBtns(q.acts,q.id)', 'actSure(q.acts,q.id)', 'S.snap.release_acts', "c.key==='queue_take'"):
+    for part in ('actBtns(q.acts,q.id)', 'actSure(q.acts,q.id)', 'S.snap.release_acts', 'if(c.chat){',
+                 'actBtns(n.acts,n.id)', 'actSure(n.acts,n.id)', 'actBtns(c.acts,c.id)', 'actSure(c.acts,c.id)'):
         check(part in page, f'the page has {part}')
-    for gone in ('data-unpark', "outbox('unpark'", 'data-rel=', "outbox('release'"):
+    for gone in ('data-unpark', "outbox('unpark'", 'data-rel=', "outbox('release'", 'data-later=', 'data-needdrop=',
+                 'data-needchat=', 'data-cchat=', "outbox('shelve'", "outbox('need_drop'"):
         check(gone not in page, f'the page has no {gone}: one handler')
-    cs = [c for c in U.controls() if c['where'] in ('queue', 'release')]
-    eq(len(cs), 6, 'the row actions the page draws')
+    cs = [c for c in U.controls() if c['where'] in ('queue', 'release', 'need', 'concept')]
+    eq(len(cs), 11, 'the row actions the page draws (C35: Needs you and Concepts too)')
     if shutil.which('node'):
         reqs = logic_js([['controlReq', c, {'tid': 'F83', 'sure': True}] for c in cs])
     else:
@@ -288,8 +290,11 @@ def test_row_actions(tmp: Path) -> None:
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
     url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
     try:
+        chat = lambda tid, wait: U.call(['control', '--new', tid])  # noqa: E731
         with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
-                mock.patch.object(U, 'queue_row', lambda tid: {'id': tid, 'pri': 'normal', 'state': 'parked'}):
+                mock.patch.dict(U.ROW_FNS, {'need_chat': chat, 'concept_chat': chat}), \
+                mock.patch.object(U, 'row_of', lambda where, tid: {'id': tid, 'pri': 'normal', 'state': 'parked',
+                                                                    'label': 'CONFIRM', 'concept': tid}):
             for c, rq in zip(cs, reqs):
                 ran.clear()
                 code, out = post(url, rq)
@@ -474,9 +479,9 @@ def test_page(tmp: Path) -> None:
                  'side.open', 'class="scrim"', 'data-menu',  # a drawer on a phone
                  'greeting()', 'How can I help with the run?', 'data-quick="since">', 'Since my last look',
                  'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
-                 '>Needs you<', 'data-ans=', 'data-later=', 'data-needchat=', 'data-needdrop=', '>Working now<', '>Up next<',
+                 '>Needs you<', 'data-ans=', 'actBtns(n.acts,n.id)', '>Working now<', '>Up next<',
                  'data-about="plan:', 'S.snap.release_acts',
-                 "outbox('answer'", "outbox('shelve'","newChat('quick_ask'", "outbox('chat_to'",
+                 "outbox('answer'", "newChat('quick_ask'", "outbox('chat_to'",
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
                  '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # Talk's words
                  'id="feed"', 'feedHTML(n)', "tq('feed/'",
@@ -808,10 +813,10 @@ def test_concepts_view(tmp: Path) -> None:
     got = logic_js([['conceptButtons', c], ['conceptButtons', {'id': 'K6', 'options': []}],
                     ['newConceptReq', '  a dark mode  '], ['newConceptReq', '   '],
                     ['queuedId', 'added K12 a dark mode'], ['queuedId', 'ok']])
-    eq([b['label'] for b in got[0]], ['A: tabs', 'B: drawer', 'Chat', 'New chat', 'View'],
-       "a concept's buttons: its options (no '(recommended)'), Chat, New chat, View")
-    eq([b.get('rec', False) for b in got[0]], [False, True, False, False, False], 'the recommended option stands out')
-    eq([b['label'] for b in got[1]], ['Chat', 'New chat'], 'no copy and no page: no options and no View')
+    eq([b['label'] for b in got[0]], ['A: tabs', 'B: drawer', 'Chat', 'View'],
+       "a concept's buttons: its options (no '(recommended)'), Chat, View")
+    eq([b.get('rec', False) for b in got[0]], [False, True, False, False], 'the recommended option stands out')
+    eq([b['label'] for b in got[1]], ['Chat'], 'no copy and no page: no options and no View')
     eq(got[2], {'name': 'plan_add', 'args': {'kind': 'K', 'text': 'a dark mode'}}, '+ sends plan add K TEXT')
     eq(got[3], None, 'an empty box sends nothing')
     eq(got[4:], ['K12', ''], 'the queued id, from plan add\'s output')
@@ -2015,7 +2020,7 @@ def test_card_chat_b139(tmp: Path) -> None:
     ran = []
     with mock.patch.object(U, 'SEND', [no_send]), \
             mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 9 is starting'))[1]]):
-        q, t = U.act('quick_ask', key='since', wait=False), U.act('take', tid='F1', wait=False)
+        q, t = U.act('quick_ask', key='since', wait=False), U.run_control('task_take', tid='F1', wait=False)
     eq(ran, [['control', '--new', '--no-wait', '--ask', 'what happened since my last look?', '--no-feed'],
              ['control', '--new', '--no-wait', '--ask', 'do F1 here', '--no-feed']], 'quick_ask and take use new_control')
     eq((q['name'], t['name']), ('c9', 'c9'), 'each names its new chat for the page to open')
@@ -2024,7 +2029,7 @@ def test_card_chat_b139(tmp: Path) -> None:
     check('sendReq(ctx,to,msg)' in send and "newChat(rq.name,rq.args," in send,
           'send() starts a new chat when a card set the context', send)
     check("newChat('quick_ask'" in page and "outbox('quick_ask'" not in page, 'a quick ask starts a new chat', '')
-    check("if(c.key==='task_take'||c.key==='queue_take'){newChat(" in page, "Take back opens the new chat it started", '')
+    check("if(c.chat){" in page and "newChat(rq.name,rq.args,`${c.label} ${tid}`" in page, "Take back opens the new chat it started", '')
     if not shutil.which('node'):
         print('  (no node here: the send script test is skipped)')
         return
@@ -3118,29 +3123,11 @@ def test_chats_f128(tmp: Path) -> None:
 
 
 def test_needs_drop_chat_f110(tmp: Path) -> None:
-    """F110, F143: a Needs you card's Drop asks in the page, then need_drop; its Chat sends need_chat and opens a new chat."""
+    """F110, F143: a Needs you card's Drop asks in the page, then need_drop; its Chat sends need_chat and opens a new chat (run_control)."""
     fake_repo(tmp)
     page = W.page_html().decode()
-    for part in ("outbox('need_drop',{tid:n.id,confirm:true},{need:n.id", "S.sure='need:'+n.id", 'data-needdrop="${i}">Drop</button>',
-                 "newChat('need_chat',{tid:n.id}", 'data-needchat="${i}"'):
+    for part in ('actBtns(n.acts,n.id)', 'actSure(n.acts,n.id)', 'needChatAsk(n)'):
         check(part in page, f'the run app has {part}')
-    repo = S.ROOT
-    (repo / 'plan' / 'TODO.md').write_text(TODO + '- [~] **D3** Write the guide | files: d.md BLOCKED: DECIDE: which layout\n',
-                                           encoding='utf-8')
-    ran, token = [], W.web_token()
-    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
-    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
-    try:
-        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 7 is starting'))[1]]):
-            code, out = post(url, {'name': 'need_chat', 'args': {'tid': 'D3', 'wait': False}})
-            check(out.get('ok') and out.get('name') == 'c7' and 'D3' in out.get('ask', ''), 'need_chat opens c7', out)
-            check(ran and ran[0][:2] == ['control', '--new'] and 'hich layout' in ran[0][-2], 'its first message holds the ask', ran)
-            ran.clear()
-            eq(post(url, {'name': 'need_drop', 'args': {'tid': 'D3'}})[1].get('ok'), False, 'need_drop asks first')
-            eq(post(url, {'name': 'need_drop', 'args': {'tid': 'D3', 'confirm': True}})[1].get('gone'), 'D3', 'then it is gone')
-            eq(ran, [['plan', 'drop', 'D3', 'dropped from Needs you']], 'plan drop ID, from Needs you')
-    finally:
-        srv.stop()
     ask = logic_js([['needChatAsk', {'id': 'R1', 'title': 'Phone', 'label': 'CONFIRM', 'ask': 'Does it work?',
                                      'answers': U.need_answers({'label': 'CONFIRM'})}]])[0]
     check('R1' in ask and 'Does it work?' in ask and '- Yes' in ask and '- No' in ask, 'the question and its answers show at once', ask)

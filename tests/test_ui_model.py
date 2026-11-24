@@ -6,12 +6,13 @@
 A fake run (a plan, STATE, run.log) is read into the snapshot: status lines, c1 and each slot with its task,
 title, minutes, state, files and links, the queue with kind/title/files/after/pri, Needs you, concepts, the
 log tail and the release line. Then each action, with the runner call swapped for a recorder, runs the plan
-command it stands for, and chat, answers and take reach c1.
+command it stands for, and chat and answers reach c1.
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -77,7 +78,7 @@ def test_snapshot(tmp: Path) -> None:
     names = [s['name'] for s in snap['sessions']]
     eq(names, ['s1', 's2', 's3'], 'every slot of the 3-slot run in order, the idle s3 too')
     eq(snap['sessions'][2], {'name': 's3', 'task': '', 'title': '', 'minutes': None, 'state': 'idle',
-                             'files': [], 'link': '', 'terminal': '', 'task_controls': False}, 'an idle slot: no task, state idle')
+                             'files': [], 'link': '', 'terminal': '', 'task_controls': False, 'acts': []}, 'an idle slot: no task, state idle')
     s1, s2 = snap['sessions'][0], snap['sessions'][1]
     eq((s1['task'], s1['title'], s1['minutes'], s1['state'], s1['files']),
        ('F1', 'Board page for the run', 14, 'running', ['a.py', 'tests/test_a.py']), 'slot 1 row')
@@ -99,7 +100,8 @@ def test_snapshot(tmp: Path) -> None:
     eq((needs['D3']['label'], needs['D3']['url']), ('DECIDE', 'https://claude.ai/artifact/abc'), 'decide with link')
     check(needs['D3']['ask'], 'an ask in plain words', needs['D3'])
     eq(snap['concepts'], [{'id': 'F4', 'concept': 'K5', 'title': 'lazy layout',
-                           'url': 'https://claude.ai/artifact/k5', 'copy': ''}], 'concept with its page link')
+                           'url': 'https://claude.ai/artifact/k5', 'copy': '',
+                           'acts': ['concept_chat', 'concept_drop']}], 'concept with its page link')
     eq(snap['log'], [f'=== 2026-11-21T10:{i:02d}:00 line {i}' for i in range(25, 30)], 'run log tail')
     eq(snap['release'], 'release: V6 Release the next version · waits for 2 open ahead', 'release line')
 
@@ -158,16 +160,12 @@ def test_actions(tmp: Path) -> None:
         eq(r['ok'], True, 'an action that exits 0 is ok')
         U.act('plan_change', tid='F1', text='Board page, new words', files='a.py')
         U.act('drop', tid='B2', why='overtaken')
-        U.act('shelve', tid='D3')
         eq(ran, [['plan', 'add', 'B', 'Fix X', '--files', 'a.py,tests/test_a.py', '--after', 'F1', '--pri', 'low'],
                  ['plan', 'edit', 'F1', 'Board page, new words', '--files', 'a.py'],
-                 ['plan', 'drop', 'B2', 'overtaken'],
-                 ['plan', 'shelve', 'D3']], 'each action runs its plan command')
+                 ['plan', 'drop', 'B2', 'overtaken']], 'each action runs its plan command')
         U.act('chat', text='how is it going?')
         U.act('answer', tid='D3', text='the lazy one')
-        U.act('take', tid='F1')
         eq(sent, ['how is it going?', 'D3 (Write the guide): the lazy one'], 'chat and answers go through SEND')
-        eq(ran[-1], ['control', '--new', '--ask', 'do F1 here', '--no-feed'], 'B139: take starts a new control session, not c1')
         eq(U.act('nope')['ok'], False, 'an unknown action is an error result')
         eq(U.act('drop', tid='B2')['code'], 2, 'a missing argument is an error result')
         U.RUN[0] = lambda argv: (3, 'looks like F1')
@@ -196,7 +194,8 @@ def test_run_controls(tmp: Path) -> None:
                                                                              'argv': []})[1]]):
         for windows in (False, True):  # B163: no re-exec on Windows, so no restart there
             want = {*RUN_CONTROL_ARGV, 'task_take', 'queue_take', 'queue_drop', 'queue_priority', 'queue_unpark',
-                    'release_wait', 'release_now'} - ({'restart'} if windows else set())
+                    'release_wait', 'release_now', 'need_later', 'need_chat', 'need_drop', 'concept_chat',
+                    'concept_drop', 'session_close'} - ({'restart'} if windows else set())
             on = ' (Windows)' if windows else ''
             with mock.patch('agent_runner.plat.WINDOWS', windows):
                 cs = U.controls()
@@ -213,7 +212,7 @@ def test_run_controls(tmp: Path) -> None:
         eq(U.run_control('stop_now', confirm='yes')['ok'], False, 'only confirm=true confirms')
         r = U.act('run_control', key='task_take', tid='F1', wait=False)
         eq((r['ok'], sent, ran), (True, [], [['control', '--new', '--no-wait', '--ask', 'do F1 here', '--no-feed']]),
-           'B139: take back asks a new control session "do F1 here", as take does, not c1')
+           'B139: take back asks a new control session "do F1 here", not c1')
         ran.clear()
         for bad in ({'key': 'slots_set', 'n': '-2'}, {'key': 'slots_set', 'n': '4; rm'}, {'key': 'slots_set'},
                     {'key': 'task_drop', 'tid': '--force'}, {'key': 'nope'}, {'key': 'resume'},
@@ -232,7 +231,7 @@ def test_row_actions(tmp: Path) -> None:
     fake_run(tmp)
     seen = set()
     for c in U.RUN_CONTROLS:
-        check(c.get('argv') or c.get('ask') or c['key'] == 'start', f'{c["key"]} has an action', c)
+        check(c.get('argv') or c.get('ask') or c.get('fn') or c['key'] == 'start', f'{c["key"]} has an action', c)
         for k in (c['tui'], c.get('tui_also')):
             check(k is None or (c['where'], k) not in seen, f'{c["key"]}: {k} is no other key of {c["where"]}')
             seen.add((c['where'], k))
@@ -241,6 +240,11 @@ def test_row_actions(tmp: Path) -> None:
     eq(acts['F1'], ['queue_priority', 'queue_take', 'queue_drop'], 'a queued task: priority, do it here, drop')
     eq(acts['R8'], ['queue_unpark', 'queue_take', 'queue_drop'], 'a parked task: unpark, not priority')
     eq(snap['release_acts'], ['release_wait', 'release_now'], 'the release tab\'s actions')
+    eq({n['id']: n['acts'] for n in snap['needs']}, {'D3': ['need_later', 'need_chat', 'need_drop'],
+                                                     'F4': ['need_later', 'need_chat', 'need_drop']}, 'C35: a Needs you item')
+    eq([c['acts'] for c in snap['concepts']], [['concept_chat', 'concept_drop']], 'a concept: chat, drop')
+    eq({s['name']: s['acts'] for s in snap['sessions'] if s['acts']}, {n: ['session_close'] for n in
+       [s['name'] for s in snap['sessions'] if re.fullmatch(r'c\d+', s['name'])]}, 'only a control session closes')
     ran = []
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
         eq(U.run_control('queue_priority', tid='F1')['ok'], True, 'priority runs')
@@ -258,12 +262,25 @@ def test_row_actions(tmp: Path) -> None:
         ran.clear()
         U.run_control('release_now')
         eq(ran, [['plan', 'add', 'V', '--now']], 'release now')
+        ran.clear()
+        r = U.run_control('need_drop', tid='D3')
+        check(not r['ok'] and r['confirm'].startswith('Drop D3?') and not ran, 'C35: a Needs you drop asks first', r)
+        r = U.run_control('need_drop', tid='D3', confirm=True)
+        eq((r['ok'], r['gone'], ran), (True, 'D3', [['plan', 'drop', 'D3', 'dropped from Needs you']]), 'then drops it')
+        ran.clear()
+        eq(U.run_control('concept_drop', tid='K5', confirm=True)['ok'], True, 'a concept drops by its concept id too')
+        eq(ran, [['plan', 'drop', 'K5', 'dropped from agent-runner ui']], 'plan drop')
+        for key, tid in (('need_later', 'ZZ9'), ('need_drop', '--x'), ('concept_drop', 'D3'), ('session_close', 'x')):
+            eq(U.run_control(key, tid=tid, confirm=True)['code'], 1, f'{key} on {tid} is refused')
+        with mock.patch('agent_runner.control.close_from_tui', lambda n: {'ok': True, 'out': f'c{n} closed'}):
+            eq(U.run_control('session_close', tid='c6')['out'], 'c6 closed', 'a control session closes')
 
 
 def test_real_command(tmp: Path) -> None:
-    """One action through the real runner: `plan shelve` shelves D3 in the fake run's plan."""
+    """One action through the real runner: Later (`plan shelve`) shelves D3 in the fake run's plan."""
     repo = fake_run(tmp)
-    r = U.shelve('D3')
+    r = U.run_control('need_later', tid='D3')
+    eq((r.get('said'), r.get('gone')), ('D3 is set aside until you bring it back', 'D3'), 'its toast, and gone')
     check(r['ok'], 'plan shelve ran', r)
     check('BLOCKED: shelved: DECIDE' in (repo / 'plan' / 'TODO.md').read_text(encoding='utf-8'),
           'D3 is shelved in TODO.md', (repo / 'plan' / 'TODO.md').read_text(encoding='utf-8'))
@@ -582,9 +599,6 @@ def test_concept_chat(tmp: Path) -> None:
         eq(len(ran), n, 'and runs nothing')
     finally:
         U.RUN[0] = real
-    html = (Path(U.__file__).parent / 'web_page.html').read_text(encoding='utf-8')
-    check('data-cchat="${i}"' in html and "newChat('concept_chat',{cid:c.concept||c.id" in html,  # F137: through the outbox
-          "the Concepts card's New chat button sends concept_chat with the concept's id")
 
 
 def test_hidden_send(tmp: Path) -> None:
@@ -806,18 +820,6 @@ def test_need_chat_f143(tmp: Path) -> None:
         eq(len(ran), n, 'a refused one starts nothing')
 
 
-def test_need_drop_f110(tmp: Path) -> None:
-    """F110: Drop on a Needs you item asks first, then runs plan drop ID 'dropped from Needs you', and is gone."""
-    fake_run(tmp)
-    ran = []
-    with ran_by(ran):
-        r = U.act('need_drop', tid='D3')
-        check(not r['ok'] and r['confirm'].startswith('Drop D3?') and not ran, 'it asks first', r)
-        r = U.act('need_drop', tid='D3', confirm=True)
-        eq((r['ok'], r['gone'], ran), (True, 'D3', [['plan', 'drop', 'D3', 'dropped from Needs you']]), 'then drops it')
-        eq(U.act('need_drop', tid='--x', confirm=True)['ok'], False, 'a task id only')
-
-
 def test_feed_ids_b134(tmp: Path) -> None:
     """B134: a feed entry carries its transcript entry's id, the same in every later feed."""
     rows = [{'type': 'user', 'uuid': 'u1', 'message': {'content': 'hi'}},
@@ -873,4 +875,4 @@ if __name__ == '__main__':
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
                          in_tmp(test_delete_chats), in_tmp(test_chat_list_f133),
                          in_tmp(test_status_f124), in_tmp(test_chat_rows_f128), in_tmp(test_need_chat_f143),
-                         in_tmp(test_need_drop_f110), in_tmp(test_feed_ids_b134), in_tmp(test_need_answers_c33)]))
+                         in_tmp(test_feed_ids_b134), in_tmp(test_need_answers_c33)]))

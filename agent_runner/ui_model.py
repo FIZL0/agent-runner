@@ -38,7 +38,7 @@ entries); and the actions `chat_to` (any control session), `interrupt`, `new_con
 
 Each action calls what the CLI already does, as a subprocess of the runner (`runner_cmd()`), so a page and a
 terminal change the run exactly as a person typing the command would (B138: a Needs you button's `answer` runs
-`plan confirm|change` or `sheet` itself); `chat`, a typed `answer` and `take` open a new control session with the
+`plan confirm|change` or `sheet` itself); `chat`, a typed `answer` and a Chat or Take back control open a new control session with the
 message as its first (F176). Standard library only.
 """
 
@@ -631,8 +631,9 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
            'state': run_state(up, st)}  # F124
     queue = pin_release(queue_rows(ls, st, now), row)
     tools = tool_rows(bool(up), ls, st, now)  # F168
-    for q in queue:
-        q['acts'] = row_acts('queue', q)  # C34
+    for where, rows in (('queue', queue), ('need', needs), ('concept', concepts), ('session', sessions)):
+        for r in rows:
+            r['acts'] = row_acts(where, r)  # C34, C35
     fix = fixups(st, ls)
     return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
             'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
@@ -708,11 +709,6 @@ def plan_change(tid: str, text: str = '', files=None, after=None, pri: str = '',
 def drop(tid: str, why: str) -> dict:
     """`plan drop ID WHY`: not wanted; a slot running it is stopped."""
     return call(['plan', 'drop', tid, why])
-
-
-def shelve(tid: str) -> dict:
-    """`plan shelve ID`: later; stays blocked, off Needs you."""
-    return call(['plan', 'shelve', tid])
 
 
 def to_new(text: str) -> dict:
@@ -798,12 +794,6 @@ def answer(tid: str, text: str, button: bool = False) -> dict:
     return SEND[0](f'{tid}{f" ({title})" if title else ""}: {text}')
 
 
-def take(tid: str, wait: bool = True) -> dict:
-    """Take (do it here): a new control session is asked "do ID here" (B139), and does it as its take guide says (`take ID`, the work in that worktree), so the page
-    never makes a worktree nobody works in. The result is `new_control`'s: 'name' the new cN to open."""
-    return new_control(f'do {tid} here', wait)
-
-
 def open_session(slot: str) -> dict:
     """F68: open slot `slot` (s2) in claude.ai/code and the apps (`slots.slot_open`): under `[run] sessions =
     'one'` a slot is listed there only once opened. Its link as 'out', or why not."""
@@ -824,7 +814,7 @@ def move(tid: str, where: str, other: str) -> dict:
 # One list for the web page and agent-runner ui alike, so the two cannot drift apart: each control's key, its
 # label, the runner command it runs ('{n}' the slot count typed, '{id}' the task), its key in agent-runner ui,
 # where it shows ('run': the run's own; 'task': a slot's task), and what it asks before it runs ('' nothing).
-# Take back is the one that is no runner command of its own: a new chat is asked "do ID here", as `take` does.
+# Take back is the one that is no runner command of its own: a new chat is asked "do ID here".
 
 # F124: `group` is the More… sheet's group ('' on the Run card itself), 'fix' where a Fix up control's choices come
 # from (the snapshot's `fixups`; it shows only while there are some, and '{id}' is the one picked). A control with
@@ -886,6 +876,26 @@ RUN_CONTROLS = (
     {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
      'confirm': 'It leaves the plan, and a slot running it is stopped. Drop it?'},
+    # C35: the other panels' row actions, the same shape: 'need' (a Needs you item), 'concept', 'session' (a control
+    # session cN). 'fn' one of ROW_FNS run with the row's id (a new chat, a close); 'chat' it opens a chat; 'said' its
+    # toast, and a Needs you item it is done with leaves the list. '{id}' in a confirm is the row's id.
+    {'key': 'need_later', 'label': 'Later', 'argv': ('plan', 'shelve', '{id}'), 'tui': 'L', 'where': 'need',
+     'said': '{id} is set aside until you bring it back', 'fits': lambda r: r.get('label') not in ('PITCH', 'TOOL')},
+    {'key': 'need_chat', 'label': 'Chat', 'fn': 'need_chat', 'chat': True, 'tui': 'N', 'where': 'need',
+     'fits': lambda r: r.get('label') != 'TOOL'},
+    {'key': 'need_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
+     'where': 'need', 'why': 'dropped from Needs you', 'said': '{id} dropped',
+     'confirm': 'Drop {id}? It leaves the plan, and its work is not done.',
+     'fits': lambda r: r.get('label') not in ('PITCH', 'TOOL')},
+    {'key': 'concept_chat', 'label': 'New chat', 'fn': 'concept_chat', 'chat': True, 'tui': 'N', 'where': 'concept',
+     'help': 'chat about it'},
+    {'key': 'concept_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'd',
+     'where': 'concept', 'why': 'dropped from agent-runner ui', 'tui_sure': False, 'tui_main': False,
+     'confirm': 'It leaves the plan. Drop it?'},
+    {'key': 'session_close', 'label': 'Close', 'fn': 'close_session', 'tui': 'd', 'where': 'session',
+     'tui_main': False,
+     'help': 'close a control session (its transcript stays)',
+     'fits': lambda r: bool(re.fullmatch(r'c\d+', str(r.get('name', ''))))},
     {'key': 'release_wait', 'label': 'Release when the running tasks land', 'argv': ('plan', 'add', 'V'), 'tui': '⏎',
      'where': 'release'},
     {'key': 'release_now', 'label': 'Release now, without them', 'argv': ('plan', 'add', 'V', '--now'), 'tui': 'f',
@@ -941,6 +951,22 @@ def queue_row(tid: str) -> dict | None:
     return next((q for q in queue_rows(P.lines(S.C.todo), _state(S.run_up())) if q['id'] == tid), None)
 
 
+ROW_WORDS = {'queue': 'a queued task', 'need': 'something that needs you', 'concept': 'a concept waiting',
+             'session': 'a control session'}
+
+
+def row_of(where: str, tid: str) -> dict | None:
+    """C35: the row of panel `where` that `tid` names as the plan has it now (None: it is not there)."""
+    if where == 'queue':
+        return queue_row(tid)
+    if where == 'session':
+        return {'name': tid} if re.fullmatch(r'c\d+', tid or '') else None
+    from agent_runner.status import waiting_ok
+    needs, concepts = needs_rows(waiting_ok(), dt.datetime.now())
+    return next((r for r in (needs if where == 'need' else concepts)
+                 if tid == r['id'] or (where == 'concept' and tid == r['concept'])), None)
+
+
 def run_control_of(key: str) -> dict | None:
     return next((c for c in RUN_CONTROLS if c['key'] == key), None)
 
@@ -954,11 +980,14 @@ def controls() -> list[dict]:
         if c.get('fix'):
             return 'pick'
         words = c.get('argv') or (c.get('ask') or '',)
+        if c.get('fn'):
+            return 'id'
         return 'n' if any('{n}' in w for w in words) else 'id' if any('{id}' in w for w in words) else ''
     return [{'key': c['key'], 'label': c['label'], 'tui': c['tui'], 'where': c['where'], 'needs': needs(c),
              'confirm': c.get('confirm', ''), 'group': c.get('group', ''), 'fix': c.get('fix', ''),
              'each': bool(c.get('each')), 'up': c.get('up', True), 'tui_also': c.get('tui_also', ''),
-             'tui_sure': c.get('tui_sure', True)} for c in RUN_CONTROLS
+             'tui_sure': c.get('tui_sure', True), 'chat': bool(c.get('ask') or c.get('chat')), 'fn': bool(c.get('fn')),
+             'tui_main': c.get('tui_main', True)} for c in RUN_CONTROLS
             if not (plat.WINDOWS and c['key'] == 'restart')]  # no re-exec there
 
 
@@ -993,27 +1022,32 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
         bad = next((r for r in rs if not r['ok']), None)
         return bad or {**rs[-1], 'out': ', '.join(r['out'] for r in rs)}
     pri = ''
-    if c and c['where'] == 'queue':  # C34: allowed on this row now (the snapshot's `acts`, checked again)
-        row = queue_row(tid)
-        if row is None or key not in row_acts('queue', row):
-            return {'ok': False, 'code': 1, 'out': f'{c["label"]}: {tid or "no task"} is not a queued task it fits',
-                    'argv': []}
-        pri = 'normal' if row['pri'] == 'critical' else 'critical'
+    if c and c['where'] in ROW_WORDS:  # C34, C35: allowed on this row now (the snapshot's `acts`, checked again)
+        row = row_of(c['where'], tid)
+        if row is None or key not in row_acts(c['where'], row):
+            return {'ok': False, 'code': 1, 'out': f'{c["label"]}: {tid or "none"} is not {ROW_WORDS[c["where"]]} it '
+                                                   f'fits', 'argv': []}
+        pri = 'normal' if row.get('pri') == 'critical' else 'critical'
+    if c and c.get('fn'):
+        return ROW_FNS[c['fn']](tid, wait)
     try:
         argv = control_argv(key, n, tid, why, pri)
     except ValueError as e:
         return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
     if c.get('confirm') and confirm is not True:
-        return {'ok': False, 'code': 3, 'out': c['confirm'], 'confirm': c['confirm'], 'argv': argv}
+        ask = c['confirm'].replace('{id}', tid)
+        return {'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'argv': argv}
     if c.get('ask'):
         return new_control(c['ask'].replace('{id}', tid), wait)
     r = call(argv)
     FIXUPS[0] = float('-inf')  # what there is to fix is looked up anew
+    if r['ok'] and c.get('said'):  # C35
+        r.update(said=c['said'].replace('{id}', tid), **({'gone': tid} if c['where'] == 'need' else {}))
     return r
 
 
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
-           'take': take, 'shelve': shelve, 'open_session': open_session, 'move': move,
+           'open_session': open_session, 'move': move,
            'run_control': run_control}
 
 
@@ -1411,24 +1445,9 @@ ACTIONS['delete_chats'] = delete_chats
 
 # --- F83: the combined run app rework: Needs you Drop and Chat, Rename, Settings, a task's whole text ----------
 
-NEED_DROP_WHY = 'dropped from Needs you'  # F110
-
-
-def need_drop(tid: str, confirm: bool = False) -> dict:
-    """F110: Drop on a Needs you item: `plan drop ID`, after a confirm (without `confirm` the result is not ok and
-    carries the question, as a run control's); an ok result carries 'gone', so the item leaves the list at once."""
-    if not TASK_ID.fullmatch(tid or ''):
-        return {'ok': False, 'code': 2, 'out': f'need_drop: a task id (F83), not {tid!r}', 'argv': []}
-    ask = f'Drop {tid}? It leaves the plan, and its work is not done.'
-    if confirm is not True:
-        return {'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'argv': []}
-    r = drop(tid, NEED_DROP_WHY)
-    return {**r, 'said': f'{tid} dropped', 'gone': tid} if r['ok'] else r
-
-
 def pitch_no(pid: str, how: str = 'reopen', tid: str = '', confirm: bool = False) -> dict:
     """F98: Not this on a pitch, for all of it or the one change `tid`: the run undoes it here and reopens or drops
-    its task. After a confirm, as `need_drop`."""
+    its task. After a confirm, as a run control's."""
     from agent_runner import pitch
     if not pitch.PITCH_ID.fullmatch(pid or '') or how not in ('reopen', 'drop') or \
             (tid and not P.TASK_ID.fullmatch(tid)):
@@ -1629,6 +1648,17 @@ def need_chat(tid: str, wait: bool = True) -> dict:
     return new_control(need_chat_text(row), wait)
 
 
+def close_session(tid: str, wait: bool = True) -> dict:
+    """C35: close control session `tid` (c6): its process goes, its transcript stays (`control.close_from_tui`)."""
+    from agent_runner import control as K
+    return K.close_from_tui(int(tid[1:]))
+
+
+# what a run control with an 'fn' runs, given the row's id and `wait` (C35)
+ROW_FNS = {'need_chat': need_chat, 'concept_chat': lambda tid, wait: concept_chat(tid, wait=wait),
+           'close_session': close_session}
+
+
 def rename_chat(chat: str, title: str) -> dict:
     """F129: the person's own name for control session `chat` (c6): `control --rename N NAME`."""
     title = ' '.join(str(title or '').split())
@@ -1755,5 +1785,5 @@ def setting_project(table: str, key: str, value=None, unset: bool = False) -> di
     return call(['plan', 'add', 'C', text, '--files', name, '--force'])
 
 
-ACTIONS.update({'pitch_no': pitch_no, 'need_drop': need_drop, 'need_chat': need_chat, 'rename_chat': rename_chat,
+ACTIONS.update({'pitch_no': pitch_no, 'need_chat': need_chat, 'rename_chat': rename_chat,
                 'setting_device': setting_device, 'setting_reset': setting_reset, 'setting_project': setting_project})
