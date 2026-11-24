@@ -675,16 +675,14 @@ _FILE_AGENT: dict = {}  # `agent_problem`: root -> its settings files as last re
 
 
 def agent_problem(c=None, st: dict | None = None) -> str:
-    """B764b: what is wrong with `[run] agent` of config `c` (default: this one), else ''. A run that is up keeps its
-    agent when a wrong one is saved, so what the files say now counts too. `st`: an up run's STATE, which says what that
+    """B764b: what is wrong with `[run] agent` of config `c` (default: this one), else ''. What its files say
+    now counts: a wrong agent saved under a run that keeps its own, a fix this process has not loaded. `st`: an up run's STATE, which says what that
     run finds (its PATH may not be this process's)."""
     if st and 'agent_problem' in st:
         return str(st['agent_problem'] or '')
     c = c or S.C
     if not c:
         return ''
-    if said := c.agent_problem:
-        return said
     from agent_runner import config
     now = config.settings_print(c.root)
     if _FILE_AGENT.get(c.root, (None,))[0] != now:

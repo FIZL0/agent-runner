@@ -298,6 +298,9 @@ def test_wrong_agent_b764b(tmp: Path) -> None:
     S.init(repo)  # it died here
     snap = U.snapshot(up=False, links={}, windows={})
     check('install it' in snap['agent_problem'] and snap['agent_problem'] in snap['status'], 'the run page and the TUI say it', snap['status'])
+    local.write_text("[run]\nagent = 'my-claude'\n", encoding='utf-8')
+    eq(U.agent_problem(), '', 'fixed in the file: gone, in a process that has not loaded it too')
+    local.write_text("[run]\nagent = 'nosuchagent'\n", encoding='utf-8')
     eq(tui.RunPage.row(None, 1, snap['agent_problem'])[0][1], 'yellow', 'the TUI as a warning')
     eq((U.agent_problem(st={'agent_problem': 'x'}), U.agent_problem(st={'agent_problem': ''})), ('x', ''), "an up run's own word wins")
     row = cmds.picker_rows([], repo, info=lambda r: {'up': False})[0]

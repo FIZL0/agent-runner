@@ -1042,7 +1042,7 @@ def agent_missing(root: Path, v: str) -> str:
     relative path is from the main checkout)."""
     if Path(v).name == v and shutil.which(v):  # the usual one, with no git call: every snapshot asks (B764b)
         return ''
-    at = main_checkout(root) / v
+    at = Path(v) if Path(v).is_absolute() else main_checkout(root) / v
     if at.is_file() or shutil.which(str(at)):
         return ''
     return f'[run] agent = {v!r}: no such command on PATH on this machine, and no such file'
