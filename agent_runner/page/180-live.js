@@ -430,11 +430,14 @@ document.addEventListener('pointerdown',e=>{
 });
 /* B162: a pointercancel (iOS took the touch) does not end the hold: the finger is still down. Its touchend does, and
    after a touchcancel the mic stops by itself at a silence, or at the next hold's end */
-const letGo=by=>{if(TK.hold){TK.hold=false;TK.upAt=Date.now();micStop(by);talkNext()}};
+const letGo=by=>{if(TK.hold){TK.hold=false;TK.upAt=Date.now();micStop(by);if(by!=='page hidden')unlockAudio();talkNext()}};
 document.addEventListener('pointerup',e=>{if(e.pointerId===TK.holdId)letGo('pointerup')});
 const onMic=e=>e.target.closest&&e.target.closest('[data-mic]');  // a touch event's target is where that finger went down
 document.addEventListener('pointercancel',e=>{if(e.pointerId===TK.holdId&&e.pointerType!=='touch'){TK.hold=false;talkNext()}});  // a pen or mouse has no touchend
 document.addEventListener('touchend',e=>{if(onMic(e)&&!(e.targetTouches&&e.targetTouches.length))letGo('touchend')},{passive:true});
+/* B166: Hold's release is a tap that lets the page play sound; which of its events the browser takes for one differs, so
+   each tries until one played. Not in Tap: its touchend comes before the mic's start (B132) */
+for(const t of ['touchend','click'])document.addEventListener(t,e=>{if(TS.mic==='hold'&&!TK.hold&&onMic(e))unlockAudio()},{passive:true});
 document.addEventListener('touchcancel',e=>{if(onMic(e)){TK.hold=false;talkNext()}},{passive:true});
 document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('[data-mic]'))e.preventDefault()});
 /* F124: a swipe right anywhere opens the sidebar drawer and a swipe left closes it, following the finger;

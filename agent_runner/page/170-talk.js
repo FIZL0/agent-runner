@@ -17,7 +17,7 @@ if(window.speechSynthesis&&speechSynthesis.addEventListener)speechSynthesis.addE
    tap on the speaker unlocks for good. AU.got: the run's voices, null until it answered; AU.ok: it has played */
 const AU={el:null,got:null,ok:false,url:'',hold:null,holding:false};  /* B178: hold: the element that plays silence, holding: for a reply */
 const runVoices=()=>(AU.got&&AU.got.voices)||[];
-function loadVoices(){if(HOME_PAGE)return;fetch(tq('speech')).then(r=>r.ok?r.json():null).then(j=>{if(j&&Array.isArray(j.voices)){AU.got=j;if(S.sheet==='talk')render(true)}}).catch(()=>{})}
+function loadVoices(){if(HOME_PAGE){AU.got={voices:[]};return}fetch(tq('speech')).then(r=>r.ok?r.json():null).then(j=>{if(j&&Array.isArray(j.voices)){AU.got=j;if(S.sheet==='talk')render(true)}}).catch(()=>{})}
 loadVoices();
 try{if(navigator.audioSession)navigator.audioSession.onstatechange=()=>{if(TK.trail)micLog(`audio session is ${navigator.audioSession.state}`)}}catch(e){}  // B178
 /* the Voice setting's first options: with run voices, the default one, theirs by engine, then this device's (a group left open) */
@@ -29,9 +29,10 @@ function voiceOpts(){
 }
 function audioEl(){return AU.el||(AU.el=new Audio())}
 function audioSrc(blob){const a=audioEl();a.onended=a.onerror=a.onpause=null;if(AU.url)URL.revokeObjectURL(AU.url);a.src=AU.url=URL.createObjectURL(blob);return a}
-/* inside a tap that starts no mic: the silent clip, so a later reply plays by itself. Not while a clip plays */
+/* inside a tap: the silent clip, so a later reply plays by itself. Not while a clip plays, nor while the mic listens: a tap
+   that ends a listen (B166) plays it once the recognizer was told to stop */
 function unlockAudio(){
-  if(AU.ok||TK.ear||TK.state==='speaking'||TK.playing||!runVoice(AU.got,TS.voice))return;
+  if(AU.ok||(TK.ear&&!TK.ear.stopped)||TK.state==='speaking'||TK.playing||!audioWanted())return;
   soundAs('playback');
   try{const h=holdEl(), q=h.play();if(q)q.then(()=>{if(!AU.holding)h.pause()}).catch(()=>{})}catch(e){}
   try{const p=audioSrc(new Blob([silentWav()],{type:'audio/wav'})).play();if(p)p.then(()=>{AU.ok=true;pastSound('silent')}).catch(()=>{})}catch(e){}
@@ -317,12 +318,12 @@ function playReply(k){
 }
 function listen(){
   const why=micWhy();if(why)return toast(why,true);
-  if(TK.state==='listening')return micStop('a tap');
+  if(TK.state==='listening'){micStop('a tap');return unlockAudio()}  // B166
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
      and recognition hears nothing (talkSend unlocks speech). B174: a press during a reply cuts it and listens: clips
      stop here, the browser's voice right after rec.start(), or here when this listen must wait for a recognizer. */
   const cut=talkReads();TK.playing='';TK.turn=(TK.turn||0)+1;
-  if(cut)shush(!MIC.rec);
+  if(cut)shush(!MIC.rec);else unlockEnd();
   TK.note=TK.held='';if(!(TK.report&&TK.report.sound))TK.report='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   /* B162: the listen: its tries, the words so far, and whether the person ended it (stopped) or held the mic again */
   const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:'',err:'',ms:null,stopped:false,more:false,on:false,was:false,fails:0,msg:'',by:'',until:0,timer:0,longer:false,cut:cut&&!MIC.rec};
@@ -330,6 +331,7 @@ function listen(){
   TK.trail.used=true;t.trail=TK.trail;micLog(`listen ${t.mode}${MIC.rec?', waits for the last one to end':''}`);
   TK.state='listening';TK.heard='';render(true);
   micWhenFree(()=>hear(t));
+  if(!again)audioReady();  // B166
 }
 /* B162: one recognizer for the listen t. Aborted before any words, it is tried once more by itself */
 function hear(t){

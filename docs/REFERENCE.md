@@ -321,8 +321,8 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   per machine: $AGENT_RUNNER_SPEECH, else $XDG_DATA_HOME/agent-runner/speech or ~/.local/share/agent-runner/speech (on
   Windows %LOCALAPPDATA%\agent-runner\speech). It holds the engines' packages (venv) and their voice files. The worker
   that makes the clips ends after 10 idle minutes and starts again on the next one. Sound plays after a tap on the
-  speaker (or a play button, or Send) has let the browser play it; if the browser blocks it, the talk line says to tap
-  the speaker, and the reply is held for that tap. While the mic listens or is held, no reply sound starts; a reply that lands
+  speaker, a play button, Send or the mic (its press, Hold's release, Tap's second tap) has let the browser play it; if
+  the browser blocks it, the talk line says to tap the speaker, and the reply is held for that tap. While the mic listens or is held, no reply sound starts; a reply that lands
   then plays by itself once the mic has ended (words sent or nothing heard) if read-aloud is on, several in order, and one that
   lands while another is read waits for it. iOS can skip a sound's end event, so once a second while a reply is read the page
   checks that sound is really playing (run speech, the browser's voice, and again when the page is shown) and clears the
