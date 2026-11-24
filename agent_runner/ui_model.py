@@ -35,6 +35,7 @@ copy, and the actions they share.
     fixups    F124: what the Fix up controls would work on (`fixups`): {'resume', 'unclaim', 'wip': [{'id', 'label'}]}
     claude_login  F126a: the Claude login warning (`watch.claude_login_line`), the page's banner, else ''
     no_settings  F178: the warning when no settings file was found (`no_settings`), else ''
+    agent_problem  B764b: what is wrong with `[run] agent` and the fix (`agent_problem`), else ''
     chat_quiet  F128: `[ui] chat_quiet` in seconds (0 off)
     version   the run's agent-runner version, from STATE ('' when no run is up or an older run wrote none);
               F90: the TUI restarts and the run page reloads when it changes
@@ -670,8 +671,31 @@ def no_settings(c=None, st: dict | None = None) -> str:
     return NO_SETTINGS
 
 
+_FILE_AGENT: dict = {}  # `agent_problem`: root -> its settings files as last read, and the agent they name
+
+
+def agent_problem(c=None, st: dict | None = None) -> str:
+    """B764b: what is wrong with `[run] agent` of config `c` (default: this one), else ''. What its files say
+    now counts: a wrong agent saved under a run that keeps its own, a fix this process has not loaded. `st`: an up run's STATE, which says what that
+    run finds (its PATH may not be this process's)."""
+    if st and 'agent_problem' in st:
+        return str(st['agent_problem'] or '')
+    c = c or S.C
+    if not c:
+        return ''
+    from agent_runner import config
+    now = config.settings_print(c.root)
+    if _FILE_AGENT.get(c.root, (None,))[0] != now:
+        try:
+            v = config.Config(c.root).run['agent']
+        except (Exception, SystemExit):  # noqa: BLE001 - a file that does not load: the run log says it
+            v = c.run['agent']
+        _FILE_AGENT[c.root] = now, v
+    return config.agent_problem(c.root, _FILE_AGENT[c.root][1])
+
+
 def status_rows(up: bool, st: dict, progress: str, login: str | None = None) -> list[str]:
-    """The status lines: the run's state, progress, the no-settings or no-gate warning, and usage. `login`: the Claude
+    """The status lines: the run's state, progress, the no-settings, no-gate and wrong-agent warnings, and usage. `login`: the Claude
     login warning, when it is read already."""
     from agent_runner.land import no_gate_line
     out = [f'run up: {st.get("state", "starting")}' if up else 'no run is up']
@@ -683,6 +707,8 @@ def status_rows(up: bool, st: dict, progress: str, login: str | None = None) -> 
             out.append(line)
     except Exception:  # noqa: BLE001
         pass
+    if line := agent_problem(st=st if up else None):  # B764b
+        out.append(line)
     from agent_runner.watch import claude_login_line
     if login := claude_login_line() if login is None else login:  # F126
         out.append(login)
@@ -873,6 +899,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'release_said': rel_ask['said'] if rel_ask else '',
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(rel_ask),
             'no_settings': no_settings(st=st if up else None),  # F178
+            'agent_problem': agent_problem(st=st if up else None),  # B764b
             'claude_login': login,  # F126a
             'unpushed': unpushed_line(),  # F98
             'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(),

@@ -341,8 +341,7 @@ def test_brief(env: Env):
 
 def test_no_pi(env: Env):
     """F106d: the Pi backend is gone; a file that still names it is told the [models] provider form instead."""
-    for run in ('agent = "pi"', 'agent = "/opt/bin/pi"', 'agent = "pi.cmd"', 'backend = "pi"',
-                'agent = "my-wrapper"\nbackend = "pi"'):
+    for run in ('backend = "pi"', 'agent = "my-wrapper"\nbackend = "pi"'):
         try:
             env.configure(run)
         except SystemExit as e:
@@ -357,14 +356,10 @@ def test_no_pi(env: Env):
             has(str(e), r'AGENT_RUNNER_BACKEND=pi.*Pi backend is gone.*\[models\]', 'so is AGENT_RUNNER_BACKEND=pi')
         else:
             check(False, 'AGENT_RUNNER_BACKEND=pi must be refused')
-    for agent in ('copilot', 'C:\\\\tools\\\\copilot.exe'):
-        try:
-            env.configure(f'agent = "{agent}"')
-        except SystemExit as e:
-            has(str(e), r'copilot.*is gone.*\[models\] code = "copilot:<model>"',
-                f'agent = {agent!r} (the removed Copilot CLI backend) points to the copilot provider')
-        else:
-            check(False, f'agent = {agent!r} must be refused')
+    for agent in ('pi', '/opt/bin/pi', 'pi.cmd', 'copilot', 'C:\\\\tools\\\\copilot.exe'):  # B764b: it loads, and says so
+        env.configure(f'agent = "{agent}"')
+        has(R.C.agent_problem, r'was removed: set it to "claude".*\[models\] as "<provider>:<model>"',
+            f'agent = {agent!r} (a removed backend) points to the [models] provider form')
     try:
         env.configure('backend = "claude"')
         check(any('[run] backend is ignored' in w for w in R.C.warnings),

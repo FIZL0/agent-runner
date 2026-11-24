@@ -325,6 +325,7 @@ def test_run_facts_https_link():
 
         class FakeConfig:
             def __init__(self, root):
+                self.root, self.run = root, {'agent': 'claude'}
                 self.file = notes / 'runner.toml'
                 self.todo = notes / 'TODO.md'
 

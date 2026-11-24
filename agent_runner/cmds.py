@@ -328,9 +328,10 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
+    from agent_runner.ui_model import agent_problem
     from agent_runner.watch import claude_login_line
     print(status_text(up, st, read_events(), P.titles(C.done, C.todo),time.time(), waiting=waiting_ok(), wips=wip_main_info(),
-                      login=claude_login_line(),
+                      login=claude_login_line(), agent=agent_problem(st=st),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     from agent_runner.web import page_line
     if said := page_line():  # F66: the run page's address, with its token
@@ -1043,12 +1044,13 @@ def run_facts(root: Path, run: dict, https=None, site=None) -> dict:
     """What the run picker and the launcher say of the project at `root` beside `run` (`run_info`): tasks left,
     stopping (a stop was asked for), and the run page link ('' while no run serves one; its https address first,
     B135; B146: the device site's /p/KEY/ address when one routes the project, `site(root)`, home.site_links)."""
-    out = {'left': None, 'stopping': False, 'link': '', 'no_settings': ''}
+    out = {'left': None, 'stopping': False, 'link': '', 'no_settings': '', 'agent_problem': ''}
     try:
         from agent_runner.config import Config
         from agent_runner.status import tasks_left
         c = Config(root)
-        from agent_runner.ui_model import no_settings
+        from agent_runner.ui_model import agent_problem, no_settings
+        out['agent_problem'] = agent_problem(c, run if run.get('up') else None)  # B764b
         out['no_settings'] = no_settings(c, run if run.get('up') else None)  # F178
         out['left'] = tasks_left(c.todo.read_text(encoding='utf-8').splitlines())[0]
         out['stopping'] = bool(run.get('up')) and c.notes('STOP').exists()
@@ -1061,6 +1063,11 @@ def run_facts(root: Path, run: dict, https=None, site=None) -> dict:
     except (OSError, SystemExit, ValueError, KeyError, TypeError):
         pass
     return out
+
+
+def warnings_of(row: dict) -> list[str]:
+    """The warning lines under a picker row: no settings found (F178), a wrong `[run] agent` (B764b)."""
+    return [row[k] for k in ('no_settings', 'agent_problem') if row.get(k)]
 
 
 def picker_rows(projects: list[dict], here: Path | None, info=None, facts=None) -> list[dict]:
@@ -1167,7 +1174,7 @@ def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint, hint: str = 
         what = ' · '.join(x for x in (slots, left) if x)
         gap = ' ' * max(1, 29 - len(what))
         name = f'{r["name"]:<16} '
-        warn = '\n' + p.c('yellow', f'     {r["no_settings"]}') if r.get('no_settings') else ''
+        warn = ''.join('\n' + p.c('yellow', f'     {w}') for w in warnings_of(r))
         slot_tok = 'green' if up else 'dim'
         left_tok = 'yellow' if r.get('stopping') else 'dim'
         if i == sel:
@@ -1196,7 +1203,7 @@ def launcher_text_painted(row: dict, said: str, p: PickerPaint, no_tui: str = ''
         p.c('dim', no_link_words(row))
     button = lambda k, label: p.c('dim', '[') + p.key(k) + f' {label}' + p.c('dim', ']')  # noqa: E731
     out = [p.c('accent', row['name'], True) + ' ' + button('0', 'all runs') + '  ' + p.c('dim', str(row['root'])),
-           status, *([p.c('yellow', row['no_settings'])] if row.get('no_settings') else []), link, '',
+           status, *(p.c('yellow', w) for w in warnings_of(row)), link, '',
            '  '.join(button(k, label) for k, label in launcher_keys(row, no_tui)),
            '', *([p.c('dim', no_tui), ''] if no_tui else [])]
     if said:
@@ -1218,7 +1225,7 @@ def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None, hi
         what = ' · '.join(x for x in (slots_words(r['run']) if up else '(not running)', left_words(r)) if x)
         mark = '>' if i == sel else ' '
         line = f'{mark} {i + 1}  {r["name"]:<16} {what:<28} {r["root"]}' + ('  here' if r['here'] else '')
-        out += [f'{BOLD}{line}{RESET}' if i == sel else line, *([f'     {r["no_settings"]}'] if r.get('no_settings') else [])]
+        out += [f'{BOLD}{line}{RESET}' if i == sel else line, *(f'     {w}' for w in warnings_of(r))]
     out += ['', hint] if hint else []
     out += ['', f'{DIM}j/k or arrows move · 1-9 picks · Enter picks · q quits{RESET}']
     return '\n'.join(out) + '\n'
@@ -1247,7 +1254,7 @@ def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None, n
     status = ' · '.join(x for x in ('● run up' if up else 'not running', slots_words(row['run']) if up else '',
                                     left_words(row)) if x)
     more = {'w': ' in the browser', 't': ' (agent-runner ui)'}
-    out = [f'{BOLD}{row["name"]}{RESET} [0 all runs]  {row["root"]}', status, *([row['no_settings']] if row.get('no_settings') else []),
+    out = [f'{BOLD}{row["name"]}{RESET} [0 all runs]  {row["root"]}', status, *warnings_of(row),
            row['link'] or f'{DIM}{no_link_words(row)}{RESET}', '',
            *(f'  {k}  {"open the " if k == "t" else ""}{label}{more.get(k, "")}' for k, label in launcher_keys(row, no_tui)),
            f'  q  back · ⏎ {enter_words(no_tui)}', '', *([f'{DIM}{no_tui}{RESET}', ''] if no_tui else [])]

@@ -26,7 +26,7 @@ file everyone shares. It may wrap its tables in `[agent-runner]` too. `run` crea
 adding it to the clone's `.git/info/exclude`.
 
 Every session runs on Claude Code, or on the harness loop for another provider's model (`[models] code =
-"<provider>:<model>"`); the Pi backend (`[run] agent = "pi"`) is gone (F106d) and refused with that hint.
+"<provider>:<model>"`); the Pi backend (`[run] agent = "pi"`) is gone (F106d): `Config.agent_problem` says so (B764b).
 """
 from __future__ import annotations
 
@@ -712,12 +712,6 @@ class Config:
         if isinstance(self.run['remote_slots'], bool):
             self.warnings.append('[run] remote_slots is now "open" (a slot is listed once you open it) or "always"')
         self.run['remote_slots'] = slots_in_apps(self.run['remote_slots'], old_sessions(sessions))
-        agent_stem = Path(str(self.run['agent']).replace('\\', '/')).stem.lower()
-        if agent_stem == 'copilot':
-            raise SystemExit('agent-runner: [run] agent = "copilot" is gone (GitHub Copilot CLI support was '
-                             'removed); use the harness loop\'s copilot provider: [models] code = "copilot:<model>"')
-        if agent_stem == 'pi':
-            raise SystemExit(f'agent-runner: [run] agent = {self.run["agent"]!r}: {PI_GONE}')
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
         for k in ('approve', 'approve_wait', 'approve_batch', 'releases', 'split_files'):  # F98, F193, F200b
@@ -755,6 +749,12 @@ class Config:
         self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
         self.models = self.resolve_models(given_models)
         self.loaded = copy.deepcopy(settled(self))  # F202a: what the files said
+
+    @property
+    def agent_problem(self) -> str:
+        """B764b: why no session can start with this `[run] agent` on this machine, and the fix, in one line; '' when
+        one can. Looked up each time: installing the program mends it too."""
+        return agent_problem(self.root, self.run['agent'])
 
     def resolve_models(self, given: dict) -> dict:
         """F101: `[models]`, each role settled: a role the files set wins, else the default. `C.run['model']` and
@@ -1040,10 +1040,23 @@ def agent_value_problem(v: str) -> str:
 def agent_missing(root: Path, v: str) -> str:
     """B764a: why this machine cannot start `[run] agent` = `v` ('' when it can): it is neither on PATH nor a file (a
     relative path is from the main checkout)."""
-    at = main_checkout(root) / v
-    if at.is_file() or shutil.which(str(at)) or (Path(v).name == v and shutil.which(v)):
+    if Path(v).name == v and shutil.which(v):  # the usual one, with no git call: every snapshot asks (B764b)
+        return ''
+    at = Path(v) if Path(v).is_absolute() else main_checkout(root) / v
+    if at.is_file() or shutil.which(str(at)):
         return ''
     return f'[run] agent = {v!r}: no such command on PATH on this machine, and no such file'
+
+
+def agent_problem(root: Path, v) -> str:
+    """B764b: `Config.agent_problem` of the value `v`. Short, as a status line: the fix must not be cut off."""
+    if isinstance(v, str) and v.strip() and agent_value_problem(v):
+        return f'[run] agent = {v!r} was removed: set it to "claude"; other models go in [models] as "<provider>:<model>"'
+    if problem := setting_problem('run', 'agent', v):
+        return problem if isinstance(v, str) else f'{problem}: set it to "claude"'
+    if agent_missing(root, v):
+        return f'[run] agent = {v!r} is not on this machine: install it, or set it to the path of Claude Code'
+    return ''
 
 
 def tools_problem(v) -> str:

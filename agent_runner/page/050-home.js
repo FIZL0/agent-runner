@@ -123,9 +123,11 @@ function mainBtn(p){const b=projectMain(p);
   return !b?'':b.open?`<a class="btn" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">Open</a>`:`<button class="btn${b.busy?' busy':' pri'}" ${b.busy?'disabled':''} data-pact="${b.a}" data-pkey="${esc(p.key)}">${b.label}</button>`}
 const dotsBtn=p=>`<button class="btn" data-projmore="${esc(p.key)}" aria-label="More for ${esc(p.name||p.key)}" title="More">…</button>`;
 function landedLine(p){const l=p.landed||[], n=p.landed_n||l.length;return n?`<div class="ptasks small"><div>Landed today · ${n}</div>${l.map(x=>`<div class="ell">${esc(x)}</div>`).join('')}</div>`:''}
+/* the project's warnings: no settings found, a wrong [run] agent */
+const projectWarn=p=>[p.no_settings,p.agent_problem].filter(Boolean).map(w=>`<div class="small"><span class="v-warn">${esc(w)}</span></div>`).join('');
 function projectCard(p){
   const off=projectGroup(p)==='off', words=projectWords(p), tasks=p.running||[], name=`<a class="pname grow ell" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">${esc(p.name||p.key)}</a>`;
-  const warn=p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:'';
+  const warn=projectWarn(p);
   return card(`<div class="row"><span class="pdot ${projectGroup(p)}"></span>${name}${off&&p.left?`<span class="small">${esc(words)}</span>`:''}${mainBtn(p)}${dotsBtn(p)}</div>${off?'':
     `${tasks.length?`<div class="ptasks">${tasks.map(id=>`<div class="ell" title="${esc(id)}">${esc((p.titles||{})[id]||id)}</div>`).join('')}</div>`:''}<div class="small">${esc(words)}</div>${landedLine(p)}`}${warn}${hobOf(p.key)}`,
     `pcard tap${off?' off':''}`,`data-pgo="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}" data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`);
@@ -157,7 +159,7 @@ function offHTML(){
   if(!p)return `<div class="col">${homeErr()||emptyCard(H.projects===null?'Loading…':'Runner Home does not list this project.')}</div>`;
   const up=p.state&&p.state!=='off', more=(p.left||0)-qs.length;
   const said=up?'Its run is up and its page is on its way.':p.starting?'Starting its run. This page turns into its app once it is up.':'No run is up.';
-  return `<div class="col">${homeErr()}${card(`<div class="row"><div class="grow"><b>${esc(p.name||p.key)}</b><div class="small">${p.starting?'<span class="livedot"></span> ':''}${said}</div></div>${up?'':mainBtn(p)}${dotsBtn(p)}</div>${p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:''}${landedLine(p)}${hobOf(p.key)}`,'pcard',`data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`)}
+  return `<div class="col">${homeErr()}${card(`<div class="row"><div class="grow"><b>${esc(p.name||p.key)}</b><div class="small">${p.starting?'<span class="livedot"></span> ':''}${said}</div></div>${up?'':mainBtn(p)}${dotsBtn(p)}</div>${projectWarn(p)}${landedLine(p)}${hobOf(p.key)}`,'pcard',`data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`)}
     <div class="sec">Needs you${p.needs?` · <span data-k="n:sec" data-roll data-v="${p.needs}">${p.needs}</span>`:''}<span class="ln"></span></div>${asks.length?asks.map(a=>card(`<b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.id)}${a.id?' · ':''}answer it once the run is up</div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)).join(''):emptyCard('Nothing needs you.')}
     <div class="sec">Queue${p.left?` · <span data-k="n:queue" data-roll data-v="${p.left}">${p.left}</span>`:''}<span class="ln"></span></div>${qs.length?card(qs.map(q=>`<div class="lrow" data-k="pq:${esc(q.id)}"><span>${esc(q.title)}</span><span class="small">${esc(q.id)}</span></div>`).join(''),'','data-k="pq"')+(more>0?`<div class="small">and ${more} more</div>`:''):emptyCard(p.left?'Nothing in it can start by itself.':'The queue is empty.')}</div>`;
 }

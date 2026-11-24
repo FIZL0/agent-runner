@@ -343,7 +343,7 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said, p
     """What Home shows of one project: {'key', 'name', 'root', 'state' (running|idle|off), 'paused',
     'stopping', 'slots', 'running' (task ids), 'titles' (F150: the running tasks' titles by id), 'queue' (the next
     tasks, [{'id', 'title'}]), 'landed' (the last 3 titles that landed today) and 'landed_n' (how many did), 'left', 'needs' (how many), 'asks'
-    (their 'ID - what to do' lines), 'no_settings' (F178: its warning or ''), 'example' (F194b: the example project),
+    (their 'ID - what to do' lines), 'no_settings' (F178: its warning or ''), 'agent_problem' (B764b: the same), 'example' (F194b: the example project),
     'page' (its run app through Home, or '')}."""
     from agent_runner.demo import is_demo
     n, asks = needs(root)
@@ -366,6 +366,7 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said, p
             'queue': [q for q in said.get('queue') or [] if q['id'] not in running], 'landed': (said.get('landed') or [])[:3], 'landed_n': len(said.get('landed') or []),
             'left': f.get('left'), 'needs': n, 'asks': asks[:ASKS],
             'no_settings': f.get('no_settings') or '',  # F178
+            'agent_problem': f.get('agent_problem') or '',  # B764b
             'example': is_demo(root),  # F194b: its page shows the walkthrough
             'page': f'p/{key}/' if up and f.get('link') else ''}
 
