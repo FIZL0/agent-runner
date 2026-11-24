@@ -313,9 +313,11 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   `feedKeep()`; a reload empties it). A switch to a kept chat shows that screen at once, slightly dimmed, under a thin moving
   line (`.feedline`), and `feedBack()` puts it back where it was placed. It stays until the terminal's first whole draw
   (`feedDrawn()`), then the terminal shows its own end. No blank frame and no move. A chat not seen in this page shows its
-  latest messages from its feed in that place (`.feedstand`, `standHTML()`).
+  latest messages from its feed in that place (`.feedstand`, `standHTML()`). The chips row stands from the first frame, and
+  the frame is placed in the same frame its screen is drawn, so a redraw with a row more or less does not move the text.
 - **Connection lost.** The text stays. The page dials again by itself after 250 ms, doubling to 15 s. After 5 s a pill
-  (`feedSay()`) says Reconnecting…, or Connecting to the session… the first time.
+  (`feedSay()`) says Reconnecting…, or Connecting to the session… the first time. A silent network (socket open, no answer
+  and no output for 5 s) shows the same moving line and Reconnecting… over the undimmed screen.
 - **Ended.** An ended chat keeps its last screen, and its ended card with Resume sits above the message box (`.feedend`,
   `feedEnd()`). After a reload, with nothing kept, the card is in the body as before.
 - **New chat opens at once.** A press that starts a chat about something (Chat on a plan task, concept or setting, Add a task, New concept) opens the
