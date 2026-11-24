@@ -329,7 +329,8 @@ What you ask of a person (a CONFIRM, DECIDE or BLOCKED, or `ask`) is read in Nee
 one short sentence, at most about 100 characters. When there is more to say, write it first to the ask file {path}, as \
 JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place>, "steps": [<what to do>, …], \
 "expect": [<what they should see>, …], "shots": [{{"file": <a picture's path>, "caption": <what it shows>}}]}}; leave out \
-what you do not need. One action per step, in words the person sees on screen, no file names or code. When the \
+what you do not need. One action per step, in words the person sees on screen, no file names or code (the command that failed and its error, \
+when too long for the line, go in the commit message). When the \
 check or choice is about how something looks, take screenshots: small ones, put under {shots}/, with no secrets or \
 tokens in them. The file is optional, and it is gone once they answer, so write a new one for each ask."""
 

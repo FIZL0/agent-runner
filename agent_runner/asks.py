@@ -132,7 +132,8 @@ def clear_ask(tid: str, todo: str | Path | None = None) -> None:
     for c in _plans(todo):
         try:
             d = c.notes('x').parent / 'asks'
-            (d / f'{tid}.json').unlink(missing_ok=True)
+            for f in (f'{tid}.json', f'{tid}.taken', f'{tid}.said'):
+                (d / f).unlink(missing_ok=True)
             pics = d / tid
             if pics.is_symlink():
                 pics.unlink()
@@ -142,12 +143,32 @@ def clear_ask(tid: str, todo: str | Path | None = None) -> None:
             continue
 
 
+def taken_ask(tid: str, todo: str | Path | None, again: bool) -> None:
+    """A block takes task `tid`'s ask file as its own (its time is kept in <notes>/asks/ID.taken). `again`: the task
+    was blocked already, so the file that block took, not written since, is an old ask's and goes."""
+    for c in _plans(todo):
+        try:
+            f = ask_file(tid, c)
+            at = str(f.stat().st_mtime_ns) if f.is_file() else ''
+            mark = f.with_name(f'{tid}.taken')
+            if again and at and mark.is_file() and mark.read_text(encoding='utf-8') == at:
+                clear_ask(tid, todo)
+            elif at:
+                mark.write_text(at, encoding='utf-8')
+        except OSError:
+            continue
+
+
 def long_line(tid: str, why: str, c=None) -> str:
     """What `done --blocked` says about an ask line too long to read in Needs you, with no ask file; '' else."""
     if len(why) <= LINE_MAX or not any(a[1] == tid for a in P.asks((c or S.cfg()).todo)):
         return ''
     f = ask_file(tid, c)
-    return '' if f.is_file() else (
+    said = f.with_name(f'{tid}.said')  # once per ask: `clear_ask` takes it away
+    if f.is_file() or said.exists():
+        return ''
+    said.touch()
+    return (
         f'the line is {len(why)} characters, hard to read in Needs you, and it has no ask file. Blocked all the same; '
         f'write the steps to {f} now as {{"summary", "where", "steps": [...], "expect": [...], "shots": [{{"file", '
         f'"caption"}}]}} and Needs you shows those (no need to block again)')

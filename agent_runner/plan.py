@@ -606,6 +606,7 @@ def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> 
     todo, _ = ensure(todo)
     ls = list(lines(todo))
     i = _find(ls, tid)
+    again = ITEM.match(ls[i]).group(2) == '~'
     why = stamp_ask(one_line(why))
     if after is None and asking(why):
         after = []  # it waits on a person (`asks`), not on a task its words happen to name
@@ -624,6 +625,9 @@ def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> 
     _write(todo, ls)
     if not keep_ask:
         _clear_ask(tid, todo)
+    elif not after or asking(why):
+        from agent_runner.asks import taken_ask
+        taken_ask(tid, todo, again)
 
 
 def _clear_ask(tid: str, todo) -> None:
