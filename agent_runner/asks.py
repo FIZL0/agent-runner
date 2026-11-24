@@ -248,7 +248,7 @@ def taken_ask(tid: str, todo: str | Path | None, again: bool) -> None:
     and goes; the other, written since, stays."""
     if not re.fullmatch(r'\w[\w.-]*', tid or ''):
         return
-    for c in _plans(todo):
+    for c in {c.notes('x').parent: c for c in _plans(todo)}.values():  # once a folder: a second look takes a new file for an old
         for f, clear in ((ask_file(tid, c), _clear_file), (sheet_file(tid, c), _clear_sheet)):
             try:
                 at = str(f.stat().st_mtime_ns) if f.is_file() else ''

@@ -287,6 +287,15 @@ def test_clear_b204():
 
         put()
         P.block('F2', f'DECIDE: pick {URL}', todo=todo, keep_ask=True)
+        here = os.getcwd()
+        os.chdir(root)  # both state's config and the folder's are this plan's
+        try:
+            at = f.stat().st_mtime_ns + 10**9
+            os.utime(f, ns=(at, at))
+            P.block('F2', f'DECIDE: pick again {URL}', todo=todo, keep_ask=True)
+        finally:
+            os.chdir(here)
+        check(f.is_file(), 'blocked again in the run\'s own process: a sheet written since stays')
         P.block('F2', 'fix first', todo=todo, after=['F1'])
         check(f.is_file(), 'waiting on a task first: the same ask comes back, with its sheet')
         P.block('F2', 'DECIDE: failed its merge', todo=todo, after=[])

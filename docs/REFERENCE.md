@@ -574,6 +574,8 @@ is answered (confirm, change, unblock), the task is ticked or dropped, it blocks
 and `run ask`, which may have written it), or a new session starts on the task. A block that waits on a task first and
 then returns to the person keeps the file.
 
+The task's pick sheet (`<notes>/sheets/ID.json`) goes in the same cases, so a later `sheet ID --go` cannot run an old one; one written just before its own block (`done --blocked`, `run ask`) is kept, and a second `done --blocked` while still blocked removes a sheet not written since the last block, whether or not the ask file goes, and a block that waits on a task first keeps it.
+
 ### Approve to push
 
 Off by default: a merge is pushed as soon as it is tested (`[git] push_merge`). With `[run] approve = true`, and a push
