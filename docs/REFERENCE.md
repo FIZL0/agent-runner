@@ -408,7 +408,7 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   view. A reload reopens it without focus, and it has no session keys or interrupt.
 - **Plan.** The queue in plain words (a row folds open to `plan ID`'s text, with Chat), a Parked group (the parked tasks, then the shelved ones with Bring back and Drop; shown when there is either), and Add a task. Tasks are not
   edited here directly: ask in a chat. A task that waits for a shared tool reads `waits for iPhone 15, held by F389, 12 min` on its row (### Shared tools).
-- **Concepts.** Each concept with a button per option (taken from its page's headings, by `ui_model.concept_options`; `ui_model.concept_page` builds the page), plus Chat, New chat and View. The New concept button (also on Home, beside Add a task) opens an empty New chat view for a new concept.
+- **Concepts.** Each concept with a button per option (taken from its page's headings, by `ui_model.concept_options`; `ui_model.concept_page` builds the page), plus Chat, New chat and View. A concept's page itself has no answer buttons: the guide and the K brief (`brief.CONCEPT_PROMPT`) no longer have an agent run `pick-links` (the Claude app's buttons did not work); the person picks here, in Needs you, or in the chat. The New concept button (also on Home, beside Add a task) opens an empty New chat view for a new concept.
 
 How the app looks, moves and speaks is in [STYLE.md](STYLE.md); a change to it follows those rules.
 
