@@ -234,7 +234,9 @@ a{color:var(--accent)}
 .main.sess.slim .notices{transform:translateY(calc(-1*var(--slimtop,100%) - env(safe-area-inset-top,0px)));opacity:0;visibility:hidden;pointer-events:none}
 .main.sess .dockwrap .dock{background:none;background-color:var(--bg);transition:translate var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease),background-color 0s linear var(--dur-slow)}
 .main.sess.slim .dockwrap .dock{translate:0 var(--slimride,48px);opacity:0;background-color:transparent;pointer-events:none;transition-delay:0s}
-.main.sess.slim .dock .box{background:none;border-color:transparent;box-shadow:none}
+.main.sess .dock .box:not(:focus-within){transition:background-color 0s linear var(--dur-slow),border-color 0s linear var(--dur-slow),box-shadow 0s linear var(--dur-slow)}
+.main.sess.slim .dock .box:not(#_){background-color:transparent;border-color:transparent;box-shadow:none;transition-delay:0s}
+.slimbox button:not([data-slimbox]){opacity:0;transition:opacity var(--dur-fast) var(--ease)} .main.sess.slim .slimbox button:not([data-slimbox]){opacity:1;transition-delay:calc(var(--dur-slow) - var(--dur-fast))}
 .main.sess .dockclip{clip-path:inset(-100vh -100vw -100vh -100vw round 0 0 var(--r-m) var(--r-m));transition:clip-path 0s linear var(--dur-slow)}
 .main.sess.slim .dockclip{--in:max(0px,(100% - 720px - var(--edgel) - var(--edger))/2);clip-path:inset(-100vh calc(var(--in) + var(--edger)) calc(var(--slimgap) + 1px) calc(var(--in) + var(--edgel)) round 0 0 var(--r-m) var(--r-m));transition-delay:0s}
 .main.sess.slim .dockwrap{pointer-events:none}
@@ -250,7 +252,7 @@ a{color:var(--accent)}
 .main.sess.slim .slimskin i:nth-child(n){transform:none}
 .slimbox{position:absolute;left:0;right:0;bottom:0;height:calc(var(--slimgap,14px) + 48px);padding:4px 0 var(--slimgap,14px);padding-left:var(--edgel);padding-right:var(--edger);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;pointer-events:none;translate:0 calc(-1*var(--slimride,48px));transition:translate var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
 .main.sess.slim .slimbox{translate:none;opacity:1;visibility:visible;pointer-events:auto}
-.main.sess.still :is(.top,.top>*,.notices,.dock,.dockclip,.slimground,.slimground i,.slimskin,.slimskin i,.slimfoot,.slimbox){transition:none}
+.main.sess.still :is(.top,.top>*,.notices,.dock,.dockclip,.slimground,.slimground i,.slimskin,.slimskin i,.slimfoot,.slimbox,.slimbox button,.box:not(#_)){transition:none}
 .slimbox>div{display:flex;align-items:center;width:100%;max-width:720px;min-width:0;height:var(--tap)}
 .slimbox button{flex:none;height:100%;min-width:var(--tap);border:0;background:none;color:var(--muted);font-size:var(--fs-m);padding:0 10px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer} .slimbox svg{width:14px;height:14px}
 .slimbox [data-slimbox]{flex:1;min-width:0;padding-left:13px;gap:8px;font:16px/1.45 var(--mono);color:var(--faint)} .slimbox [data-slimbox] span{overflow:hidden;text-overflow:ellipsis} .slimbox .draft{color:var(--fg)}
@@ -2553,8 +2555,8 @@ function slimSize(){
   if(rest)m.classList.add('still');  // nothing moves now: the new sizes are not a motion
   set('--slimd',by);set('--slimride',by-Math.min(8,Math.max(0,mid))+'px');set('--slimgap',slimGap()+'px');set('--slimgrow',d.offsetHeight/(48+slimGap()));
   const f=d.querySelector('.foot');setHTML($('slimfoot'),f?f.innerHTML:'');
-  if(!FD.slim)set('--slimtop',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px');
-  if(rest){for(const e of [d,$('slimbox'),...document.querySelectorAll('.slimground i,.slimskin i')])getComputedStyle(e).translate;m.classList.remove('still')}
+  set('--slimtop',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px');
+  if(rest){for(const e of [d,b,$('top'),document.querySelector('.notices'),$('slimbox'),...document.querySelectorAll('.slimground i,.slimskin i')])getComputedStyle(e).translate;m.classList.remove('still')}
 }
 /* what the frame's place is made of; null while there is none */
 function feedPlace(){

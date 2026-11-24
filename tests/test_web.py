@@ -5026,6 +5026,8 @@ def test_style_f83(tmp: Path) -> None:
         eq(re.findall(pat, rules), [], f'no {what} outside the tokens')
     for kind in re.findall(r'transition:([^;}]+)', rules):
         for part in re.split(r',(?![^(]*\))', kind):
+            if part.split()[0] in ('border-color', 'box-shadow') and ' 0s ' in part:  # B218: a step, not a motion
+                continue
             check(part.split()[0] in ('transform', 'translate', 'opacity', 'clip-path', 'visibility', 'background-color', 'none', 'none!important'),
                   f'a transition on {part.split()[0]}', kind)
     for name, frames in re.findall(r'@keyframes (\w+)\{((?:[^{}]*\{[^}]*\})+)\}', bare):
