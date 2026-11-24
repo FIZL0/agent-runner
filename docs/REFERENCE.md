@@ -382,7 +382,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   send interrupts with Escape, waits until Claude Code's status is at rest, then sends once. Scrolling up hides the chips,
   box and top bar and leaves a thin strip that says Working; scrolling down, at the end, a tap on the strip or typing
   brings them back.
-- **Message box.** On a computer Enter sends and Shift+Enter starts a new line; on a touch phone or tablet Enter starts a new line and only Send (or Force send, or Ctrl/Cmd+Enter on a hardware keyboard) sends. A composing input method never sends. Each chat keeps its own draft. Messages that never landed are listed in the Outbox popup as not delivered, with Retry and Discard. Attachments are uploaded to the run (`POST /upload`), kept under
+- **Message box.** On a computer Enter sends and Shift+Enter starts a new line; on a touch phone or tablet Enter starts a new line and only Send (or Force send, or Ctrl/Cmd+Enter on a hardware keyboard) sends. A composing input method never sends. Each chat keeps its own draft and unsent attachments. Messages that never landed are listed in the Outbox popup as not delivered, with Retry and Discard. Attachments are uploaded to the run (`POST /upload`), kept under
   `.runner/uploads` (`<notes>/uploads`, git-ignored with the rest of the notes folder), and handed to the
   session as paths on this machine. On a computer, a file dropped on the session is attached the same way.
 - **New chat view.** Chat on a plan task, a concept or a setting ("Ask a chat to change it"), Add a task, and New concept open an
