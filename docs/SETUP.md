@@ -31,13 +31,13 @@ That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone:
 Bash calls in its Git Bash). Each slot runs hidden: in a ConPTY pseudo-console with no window (Windows 10 1809 and
 later), or before that in a console whose window starts hidden. Run `agent-runner run 3` from any terminal;
 `agent-runner attach s2` puts this terminal on the session's own (1809 and later; Ctrl-b d leaves it running), and
-`winget install tsl0922.ttyd` is what lets the run page show sessions.
+`winget install tsl0922.ttyd` is what lets the run page show sessions, and `agent-runner setup` offers to run it.
 
 **Linux and macOS** need nothing more for the run (it uses no tmux). The slots run hidden, in a
 pseudo-terminal with no window, their output in `.runner/slotN.log`. `agent-runner attach` is the run view
 (its log, live, and its keys), `agent-runner attach s2` puts this terminal on slot 2's own terminal (Ctrl-b d
 leaves it running), and `status`, `ui`, control sessions and `plan tell` watch and steer them.
-`[run] links` need no Developer Mode: without it they become junctions and hard links. See the reference's
+`[run] links` need no Developer Mode: without it they become junctions and hard links. The run page needs ttyd to show sessions, and `agent-runner setup` offers to install it. See the reference's
 [Terminals, and Windows](REFERENCE.md#terminals-and-windows).
 
 **Latest, or a tag.** Without `@…` it installs `main`, which is always the latest release (every commit
@@ -133,11 +133,14 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    index and its branch are not changed: the files stay uncommitted where they are.
 2. It writes `runner.toml` when there is none, with the gate guessed from `package.json`, `Cargo.toml`,
    `go.mod`, a Makefile `test`/`check` target or a `tests/` folder. An existing one is left as it is.
-3. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
+3. When ttyd is not found, it asks in one line to install it, naming this machine's command, before the
+   Claude session. The run page needs ttyd to show sessions. Yes runs the command here; no, or no way to
+   run it, goes on without it. It asks also on a repo already set up, and `--yes` does not answer it.
+4. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
    lean brief) that reads the repo, checks the gate, writes the goal and a first task list with
    `agent-runner plan goal` and `plan add`, adds a short `## Agent notes` section to CLAUDE.md or AGENTS.md,
    and commits it all.
-4. It prints what it set up; `agent-runner` then opens the run picker, where `s` starts the run.
+5. It prints what it set up; `agent-runner` then opens the run picker, where `s` starts the run.
 
 Run again on a repo that has a plan, it asks before the session touches it (`--yes`: go on without asking).
 

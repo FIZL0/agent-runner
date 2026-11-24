@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: `agent-runner setup` asks, when ttyd is not found, to install it with this machine's command (run only on yes), since the run page needs ttyd to show sessions (F403).
 - Changed: on the run page, coming back to Settings after 5 minutes or more away clears its search (Find a setting); a shorter trip keeps it (F204b). Away is another view, a thread, or the page hidden; a trip counts over Refresh of the page too. The Changed filter and unsaved words in other settings fields stay as they are.
 - Fixed: on the run page, + Chat at the top right of an open chat or a slot's session is disabled for one second after the file picker closes (a file picked or cancelled), as + Task on Home and Plan already is, so a double press in the picker cannot start a chat. It comes back by itself, also while a redraw waits; attachments, Send and the sidebar's + Chat are not held (B768).
 - Added: Settings > Advanced > This machine: Claude Code program is now a picker of the Claude Code programs found on this machine (PATH, ~/.local/bin, ~/.claude/local, /opt/homebrew/bin, /usr/local/bin), each with its name, version and path; a pick saves at once. A kept wrong value stays listed, marked not found, with the reason, and Other path… takes a wrapper. Under it, Providers lists each provider's login, and says a provider is chosen per role in [models] (F405)
