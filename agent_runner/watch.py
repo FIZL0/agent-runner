@@ -16,13 +16,13 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import config, cost, gitops, plat, shared_tools
+from agent_runner import cost, gitops, plat, shared_tools
 from agent_runner.config import finished_mark, runner_cmd
 from agent_runner.tools import ended
-from agent_runner.state import (banner, C, FORCED, forced, git, LANDING, log, PAUSED, POWER, queued, READING,
-    ROOT, share, SLOTS_DIR, stopped_by, stopping)
+from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING,
+    SLOTS_DIR, stopped_by, stopping)
 from agent_runner.sched import open_tasks
-from agent_runner.slots import entries, GB, KEPT, marker_pid, MUX, sids, slot_env, SLOTS, tmp_roots, transcript
+from agent_runner.slots import entries, GB, marker_pid, MUX, sids, slot_env, SLOTS, tmp_roots, transcript
 from agent_runner.slots import claude_drift, remote_off_why
 
 
@@ -826,83 +826,6 @@ def watch_code(merging: bool, now: float | None = None) -> None:
     RESTART_NEEDED[0] = '' if UPGRADED[0] and not plat.WINDOWS else '-'.join(x for x in (newer, CODE['person']) if x)
 
 
-SETTINGS_SEEN: list = []  # F202a: `settings_print` as last read, taken or refused
-
-
-def settings_start() -> None:
-    """F202a: as the run starts, on the settings it has read."""
-    SETTINGS_SEEN[:] = [config.settings_print(ROOT)]
-
-
-def read_settings(before=lambda: None, once: bool = False) -> dict:
-    """F202a: the run loop's tick: the settings files changed, so the run takes them, without a restart; the changed keys
-    ({} when nothing changed, or they cannot be taken: the run keeps what it has and run.log says why). `before` runs
-    first, on the old settings; `once`: the slot count is the run's own."""
-    if not SETTINGS_SEEN or LANDING.locked():  # a merge is moving the checkout: its files may be half written
-        return {}
-    now = config.settings_print(ROOT)
-    if now == SETTINGS_SEEN[0]:
-        return {}
-    time.sleep(SETTINGS_STILL)  # a save by hand or a git checkout may be under way: the next tick looks again
-    if config.settings_print(ROOT) != now or LANDING.locked():
-        return {}
-    SETTINGS_SEEN[0] = now
-    told = list(C.warnings)
-    try:
-        new, changed, waits = config.read_again(C)
-    except ValueError as e:
-        log(f'settings: changed, but not taken, so the run keeps the ones it has: {e}')
-        return {}
-    before()
-    config.reload(C, new, waits)
-    for w in C.warnings:
-        if w not in told:
-            log(w)
-    for what, keys in (('now in force (running tasks keep their own)', changed), ('waits for the next run', waits)):
-        if keys:
-            log(f'settings: {what}: ' + ', '.join(f'[{t}] {k}' + (
-                f' = {config.toml_value(changed[t, k])[:60]}' if isinstance(changed.get((t, k)), (bool, int, float, str))
-                else '') for t, k in keys))
-    try:
-        apply_settings(changed, once)
-    except Exception as e:  # noqa: BLE001 - the run goes on
-        log(f'settings: {type(e).__name__}: {e}')
-    return changed
-
-
-SETTINGS_STILL = 0.2  # s the changed files must hold still
-
-
-def apply_settings(changed: dict, once: bool = False) -> None:
-    """F202a: what changed settings do beyond being read from now on."""
-    run = {k: v for (t, k), v in changed.items() if t == 'run'}
-    if 'slots' in run and not once and run['slots'] != SLOTS:
-        share(SLOTS=run['slots'])
-        log(f'slots: {SLOTS}')
-    if 'auto_upgrade' in run:
-        AUTO_UPGRADE[0] = bool(run['auto_upgrade'])
-    from agent_runner import control as K
-    from agent_runner.slots import remote_line
-    if {'remote', 'control'} & set(run):
-        K.settle_control_server()
-    if {'remote', 'remote_slots'} & set(run):
-        log(remote_line() or 'remote control off')
-    if 'silent' in run:
-        K.settle_quiet()
-    if run.get('install_skill') or run.get('rules_pointer'):
-        threading.Thread(target=_add_pointers, daemon=True).start()
-
-
-def _add_pointers() -> None:
-    from agent_runner.guide import install, point_rules
-    if C.run['install_skill'] and (said := install()):
-        log(said)
-    with LANDING:  # it commits in the main checkout
-        said = point_rules(C, git)
-    if said:
-        log(said)
-
-
 def ask_restart() -> None:
     """F97: the `restart` key: the settings that apply on the next run wait for it."""
     RESTART[0] = not plat.WINDOWS
@@ -913,9 +836,10 @@ def ask_restart() -> None:
 def restart_run() -> None:
     """Re-exec this run as it was started; the new process reads the settings again and adopts the sessions."""
     sys.stdout.flush()
+    from agent_runner.settings_live import KEPT
     # what the keys set lives in this process: the new one takes it over (see `kept_keys`)
     os.environ['AGENT_RUNNER_KEEP'] = json.dumps({'slots': SLOTS, 'paused': PAUSED[0], 'power': POWER,
-                                                  'stop': stopping(), 'forced': FORCED[0], 'kept': KEPT})
+                                                  'stop': stopping(), 'forced': FORCED[0], **({'kept': KEPT} if KEPT else {})})
     os.execv(sys.executable, sys.orig_argv)  # run.lock's fd closes on exec; the new process takes it again
 
 

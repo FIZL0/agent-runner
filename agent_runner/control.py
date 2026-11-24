@@ -1329,8 +1329,8 @@ SERVER_TURN: list[tuple[threading.Thread, threading.Event]] = []  # the control 
 
 def start_control_server() -> None:
     if remote_on() and C.run['control']:
-        off, before = threading.Event(), SERVER_TURN.pop()[0] if SERVER_TURN else None
-        t = threading.Thread(target=keep_control_server, args=(off, before), name='control-server', daemon=True)
+        off, before = threading.Event(), next((t for t, o in SERVER_TURN if o.is_set()), None)
+        t = threading.Thread(target=lambda: keep_control_server(off, before), name='control-server', daemon=True)
         SERVER_TURN[:] = [(t, off)]
         t.start()
 

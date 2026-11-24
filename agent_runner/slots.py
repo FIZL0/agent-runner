@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import inbox_lock, plan as P, plat, session_theme, shared_tools, stack
+from agent_runner import settings_live, inbox_lock, plan as P, plat, session_theme, shared_tools, stack
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -957,7 +957,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     on that model goes on with the work in the worktree instead, told to read it and the journal first.
     """
     from agent_runner.fallback import FALLBACK, note_model, session_model
-    model = fallback or (KEPT[sid][0] if sid in KEPT else task_model(tid, model, branch))  # F105: on its task's model, as at its start
+    model = fallback or (settings_live.KEPT[sid][0] if sid in settings_live.KEPT else task_model(tid, model, branch))  # F105: on its task's model, as at its start
     if not fallback and on_harness(model) != bool(HARNESS.find_transcript(sid)):
         model = session_model(sid)  # F142: the chain started it on the other kind of agent: only that can resume it
     d = worktree(n, branch)
@@ -1460,15 +1460,6 @@ def task_spend(sid: str) -> tuple[int, float]:
     return tokens, usd
 
 
-KEPT: dict[str, tuple] = {}  # F202a: session -> (its model, its budget caps), from before the settings changed
-
-
-def keep_own(sid: str, tid: str, model: str, branch: str) -> None:
-    """F202a: the settings are about to change: session `sid` of `tid` goes on with the model and caps it has."""
-    if sid not in KEPT:
-        KEPT[sid] = task_model(tid, model, branch), (C.run.get('task_tokens') or 0, C.run.get('task_usd') or 0)
-
-
 def budgets(procs: dict, running: dict, type_into) -> None:
     """Each running task's spend, kept in SPENT for `status`; one past `[run] task_tokens` or `task_usd` is told
     to stop at a clean point, commit and write its journal (its branch is parked as wip/<ID> when the session
@@ -1479,13 +1470,12 @@ def budgets(procs: dict, running: dict, type_into) -> None:
     BUDGET_AT[0] = time.time()
     from agent_runner.brief import BUDGET_STOP
     from agent_runner.cost import over_budget, spend_text
-    now = C.run.get('task_tokens') or 0, C.run.get('task_usd') or 0
     for k in [k for k in SPENT if not k.isdigit() or int(k) not in procs]:
         SPENT.pop(k)
     for n, (pid, sid, _) in list(procs.items()):
         if n not in running:
             continue
-        tid, caps = running[n][0], KEPT[sid][1] if sid in KEPT else now
+        tid, caps = running[n][0], settings_live.caps(sid)
         tokens, usd = task_spend(sid)
         SPENT[str(n)] = [tokens, round(usd, 2)]
         if not (why := over_budget(tokens, usd, *caps)) or ((m := finished_mark(n)) and m.exists()):

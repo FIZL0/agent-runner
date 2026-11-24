@@ -14,10 +14,10 @@ from _check import check, eq, git, report
 
 os.environ.pop('CLAUDE_CODE_SESSION_ID', None)  # not the session running this
 
-from agent_runner import config, control as K, loop as L, runner as R, slots as SL, state as S, ui_model as U, watch as WT  # noqa: E402
+from agent_runner import config, control as K, loop as L, runner as R, slots as SL, state as S, settings_live as SV, ui_model as U, watch as WT  # noqa: E402
 
 LOGS: list[str] = []
-WT.SETTINGS_STILL = 0.01
+SV.SETTINGS_STILL = 0.01
 
 
 def run_of(toml: str = '', once: bool = False, model: str | None = None) -> tuple[Path, L.Run]:
@@ -30,8 +30,7 @@ def run_of(toml: str = '', once: bool = False, model: str | None = None) -> tupl
     git(d, 'commit', '-qm', 'start')
     R.init(d)
     S.share(SLOTS=S.C.run['slots'])
-    WT.settings_start()
-    U.settings_start()
+    SV.start()
     a = argparse.Namespace(model=model, force=False)
     LOGS.clear()
     return d, L.Run(a, SL.SLOTS, once, 'main', model or S.C.run['model'], 30, 1200, 60)
@@ -48,11 +47,11 @@ def test_takes_changes() -> None:
     print('a change in either file is taken between ticks, by everyone who holds the config')
     d, run = run_of('[run]\nslots = 2\n')
     c, r = S.C, S.C.run
-    run.read_settings()
+    SV.take(run)
     eq(LOGS, [], 'nothing changed: nothing read')
     (d / 'runner.toml').write_text('[run]\nslots = 4\nweekly_max = 50\nauto_upgrade = false\n[ui]\ntheme = "light"\n'
                                    '[models]\ncode = "sonnet"\n')
-    run.read_settings()
+    SV.take(run)
     check(S.C is c and config.cfg(d) is c and L.C is c and WT.C is c, 'the config is the same object everywhere')
     eq((c.run['weekly_max'], run.r['weekly_max'], c.raw['ui']['theme']), (50, 50, 'light'), 'caps and the rest')
     eq((L.SLOTS, WT.SLOTS, SL.SLOTS), (4, 4, 4), 'the slot count')
@@ -60,19 +59,19 @@ def test_takes_changes() -> None:
     eq(r['weekly_max'], 90, 'what is under way goes on with the values it took')
     check(any('now in force' in x and '[run] weekly_max = 50' in x for x in LOGS), 'said', LOGS)
     (d / 'runner.local.toml').write_text('[run]\nweekly_max = 40\n')
-    run.read_settings()
+    SV.take(run)
     eq(S.C.run['weekly_max'], 40, 'a new runner.local.toml')
     (d / 'runner.local.toml').unlink()
-    run.read_settings()
+    SV.take(run)
     eq(S.C.run['weekly_max'], 50, 'and its removal')
     S.share(SLOTS=7)  # the + key
     (d / 'runner.toml').write_text('[run]\nslots = 4\nweekly_max = 60\n')
-    run.read_settings()
+    SV.take(run)
     eq(L.SLOTS, 7, 'another key leaves the slot count a key set')
     d, run = run_of(once=True, model='haiku')
     S.C.run['model_flag'] = 'haiku'
     (d / 'runner.toml').write_text('[run]\nslots = 5\n[models]\ncode = "sonnet"\n')
-    run.read_settings()
+    SV.take(run)
     eq((L.SLOTS, run.model, S.C.run['model_flag']), (3, 'haiku', 'haiku'), '`run once` and `--model` hold')
 
 
@@ -85,22 +84,22 @@ def test_bad_kept() -> None:
         for f in ('runner.toml', 'runner.local.toml'):
             LOGS.clear()
             (d / f).write_text(bad)
-            run.read_settings()
-            run.read_settings()
+            SV.take(run)
+            SV.take(run)
             eq((S.C.run['weekly_max'], S.C.run['slots'], L.SLOTS), (70, 3, 3), f'{f}: {bad!r} changes nothing')
             eq([x[:30] for x in LOGS], ['settings: changed, but not tak'], 'said once')
             check(len(LOGS[0]) > 70, 'and why', LOGS)
             (d / f).write_text('[run]\nweekly_max = 70\n')
-            run.read_settings()
+            SV.take(run)
     (d / 'runner.toml').write_text('[run]\nweekly_max = 65\n')
     (d / 'runner.local.toml').unlink()
-    run.read_settings()
+    SV.take(run)
     eq(S.C.run['weekly_max'], 65, 'the next good file is taken')
-    with mock.patch.object(WT, 'SETTINGS_STILL', 0), S.LANDING:
+    with mock.patch.object(SV, 'SETTINGS_STILL', 0), S.LANDING:
         (d / 'runner.toml').write_text('')
-        run.read_settings()
+        SV.take(run)
         eq(S.C.run['weekly_max'], 65, 'not while a merge moves the checkout')
-    run.read_settings()
+    SV.take(run)
     eq(S.C.run['weekly_max'], 90, 'but once it is done')
 
 
@@ -110,7 +109,7 @@ def test_next_run() -> None:
     home, notes = S.C.home, S.C.notes('x')
     (d / 'runner.local.toml').write_text('[run]\nweb_port = 9001\nhome = "/nowhere"\nnotes = "elsewhere"\nsession_max = 33\n'
                                          '[plan]\ndir = "other"\n[git]\nmaster_branch = "gone"\n')
-    run.read_settings()
+    SV.take(run)
     eq((S.C.run['session_max'], S.C.run['web_port'], S.C.home, S.C.notes('x'), S.C.plan_dir, S.C.master_branch),
        (33, 8770, home, notes, d / 'plan', None), 'the rest of the file is in force')
     eq(sorted(U.settings()['waits']), ['git.master_branch', 'plan.dir', 'run.home', 'run.notes', 'run.web_port'], 'waits')
@@ -127,7 +126,7 @@ def test_next_run() -> None:
         eq((got.run['session_max'], got.run['command_timeout'], got.root), (33, 3600, wt.resolve()), 'a worktree read while a file is bad')
         config._cfg.cache_clear()
     (d / 'runner.local.toml').unlink()
-    run.read_settings()
+    SV.take(run)
     eq((U.settings()['waits'], config.cfg(d).run['session_max']), ([], 90), 'set back: nothing waits')
 
 
@@ -136,8 +135,8 @@ def test_running_keep() -> None:
     d, run = run_of('[run]\ntask_tokens = 1000\n[models.kinds]\nF = "opus"\n')
     run.running, run.procs = {1: ('F1', '', set(), set())}, {1: (os.getpid(), 'sid-live-1', 0.0)}
     (d / 'runner.toml').write_text('[run]\ntask_tokens = 10\n[models.kinds]\nF = "haiku"\n')
-    run.read_settings()
-    eq(SL.KEPT['sid-live-1'], ('opus', (1000, 0)), 'its own')
+    SV.take(run)
+    eq(SV.KEPT['sid-live-1'], ('opus', (1000, 0)), 'its own')
     eq((SL.task_model('F2', run.model, 'main'), S.C.run['task_tokens']), ('haiku', 10), 'a new one has the new')
     with mock.patch.object(os, 'execv') as ex, mock.patch.dict(os.environ):
         WT.restart_run()
@@ -149,8 +148,8 @@ def test_running_keep() -> None:
         SL.budgets(run.procs, run.running, lambda n, procs, text: told.append(n))
     eq(told, [2], 'only the new one is past its budget')
     (d / 'runner.toml').write_text('[run]\ntask_tokens = 5\n[models.kinds]\nF = "sonnet"\n')
-    run.read_settings()
-    eq(SL.KEPT['sid-live-1'], ('opus', (1000, 0)), 'a second change too')
+    SV.take(run)
+    eq(SV.KEPT['sid-live-1'], ('opus', (1000, 0)), 'a second change too')
 
 
 def test_remote_and_silent() -> None:
@@ -163,7 +162,7 @@ def test_remote_and_silent() -> None:
 
     def write(text):
         (d / 'runner.toml').write_text(text)
-        run.read_settings()
+        SV.take(run)
     quiet = S.C.notes('quiet-server')
     (S.C.notes('control2.live')).write_text('1')
     pids: list[int] = []

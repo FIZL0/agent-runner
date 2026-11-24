@@ -37,12 +37,12 @@ from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_ask
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
-from agent_runner.slots import budget_mark, budgets, keep_own, KEPT, SPENT
-from agent_runner import fallback as FB
+from agent_runner.slots import budget_mark, budgets, SPENT
+from agent_runner import fallback as FB, settings_live
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
-    read_settings, settings_start, START_TRIES, state_line, stats, stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, watch_code, weekly)
+    START_TRIES, state_line, stats, stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, watch_code, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
 from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main, no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
@@ -1039,10 +1039,7 @@ def run(argv: list[str], prog: str) -> int:
         return slot_shim(a.slot_shim)
 
     init()
-    settings_start()  # F202a: what changes from here on is read by the loop
-    from agent_runner import ui_model
-    ui_model.settings_start()  # what `waits` compares with
-    r = C.run
+    r = settings_live.start()  # F202a: what changes from here on is read by the loop
     if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
         a.model = claude_model(a.model, C.providers, C.models_local, 'run --model')
     once = a.slots == 'once'
@@ -1054,10 +1051,9 @@ def run(argv: list[str], prog: str) -> int:
         ap.error(f"slots must be a number or 'once', not {a.slots!r}")
     global SLOTS
     SLOTS = slots
-    if keep := kept_keys():  # restarted on an upgrade: the slot count, pause, power and stop typed before it hold
+    if keep := settings_live.restore(kept_keys()):  # restarted on an upgrade: the slot count, pause, power and stop typed before it hold
         SLOTS = slots = keep['slots']
         POWER, PAUSED[0], FORCED[0] = keep['power'], keep['paused'], keep.get('forced', False)
-        KEPT.update(keep.get('kept') or {})  # F202a
     share(POWER=POWER, SLOTS=SLOTS)
     idle, stall, pause = a.idle or r['idle'], a.stall or r['stall'], a.pause or r['pause']
     model = a.model or r['model']
@@ -1116,7 +1112,7 @@ class Run:
 
     def __init__(self, a: argparse.Namespace, slots: int, once: bool, branch: str, model: str, idle: int,
                  stall: int, pause: int):
-        self.a = a
+        self.a, self.r = a, C.run
         self.slots, self.once, self.branch, self.model = slots, once, branch, model
         self.idle, self.stall, self.pause = idle, stall, pause
         self.running: dict[int, tuple] = {}
@@ -1135,26 +1131,12 @@ class Run:
         self.waiting: dict[int, tuple] = {}  # slot -> (task, session id, why) queued to resume there
         self.tagged: dict | None = None  # MUX.panes(), looked at once a tick and only for a free slot
 
-    @property
-    def r(self) -> dict:
-        return C.run
-
-    def read_settings(self) -> None:
-        """F202a: take changed settings; the sessions there are (running, or cut off and waiting to resume) keep theirs."""
-        def before() -> None:
-            own = [(p[1], self.running[n][0]) for n, p in self.procs.items() if n in self.running]
-            for sid, tid in own + [(q[1], q[0]) for q in queued().values()]:
-                keep_own(sid, tid, self.model, self.branch)
-        if read_settings(before, self.once):
-            self.model = self.a.model or C.run['model']
-
     def go(self) -> int:
         STOP_SAID[0] = False
         self.open()
-        while True:
-            if (code := self.tick()) is not None:
-                return code
+        while (code := self.tick()) is None:
             nap(10)
+        return code
 
     def merge_in(self, tid: str, n: int, sid: str) -> None:
         """Merge a finished task in a thread of its own."""
@@ -1217,7 +1199,7 @@ class Run:
         """The start of a tick: keys typed, the slot count, forced stops, tells and halts, the stop note."""
         procs, running = self.procs, self.running
         sweep_tmp()
-        self.read_settings()
+        settings_live.take(self)  # F202a
         prune_wips(self.branch)  # F23: now and then, for tasks ticked or dropped by hand while the run is up
         take_keys()
         IDLE[0] = self.idle_said
