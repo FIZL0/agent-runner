@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: Settings refuses a wrong `[run] agent` and says why at the field, writing nothing (B764a): `pi` or `copilot` (name the model in `[models]` as `"<provider>:<model>"`), an empty value, and, saved on this device, a command that is neither on PATH nor a file. A save for everyone skips that last check, as other machines share it.
 - Added: `[git] no_push = true` (off by default) is a no-push policy: the runner pushes nothing, and every session it starts (task, repair, control, one-shot) makes `git push` fail in any repository with git's message, so `--no-verify`, `-c` and child processes do not get around it. Settings > Merging shows it as Never push. It is a guard, not a sandbox (docs/REFERENCE.md, ### No-push policy) (F400).
 
 ## 0.63.0 (2026-11-24)
