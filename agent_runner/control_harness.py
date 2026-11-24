@@ -56,6 +56,11 @@ def in_harness_chat() -> bool:
         return False
 
 
+def other_kind(sid: str) -> bool:
+    """Session `sid` ran on the other kind of agent (the harness loop, Claude Code) than a control session does now."""
+    return harness_control() != harness_session(sid)
+
+
 def resumable(sid: str) -> bool:
     """Session `sid` has a transcript that a control session starting now can go on from: Claude Code and the harness
     loop cannot read each other's."""

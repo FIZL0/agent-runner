@@ -103,7 +103,7 @@ def controls_to_reopen(booted: float | None = None) -> list[tuple[int, str]]:
             forget_control(n, 'its transcript is gone')
         elif K.closed_online(K.entries(sid, skip_bad=True)):
             forget_control(n, 'its Remote Control session was closed online')
-        elif not control_harness.resumable(sid):  # F406f
+        elif control_harness.other_kind(sid):  # F406f
             forget_control(n, '[models] control is another kind of agent now, which cannot read its conversation')
         else:
             out.append((n, sid))
@@ -127,6 +127,9 @@ def reopen_control(n: int, sid: str) -> str:
     with no ConPTY. Where it went, or '' when it could not start."""
     if bad := K.agent_held():  # B764c
         state.log(f'control {n}: not reopened: {bad}')
+        return ''
+    if control_harness.other_kind(sid):  # F406f
+        state.log(f'control {n}: not reopened: [models] control is another kind of agent now')
         return ''
     cmd = [*runner_cmd(), 'control', str(n), '--reopen']
     if plat.WINDOWS and not plat.has_conpty():
