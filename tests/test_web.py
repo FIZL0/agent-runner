@@ -2453,7 +2453,7 @@ def test_scroll_f83(tmp: Path) -> None:
     got = json.loads(r.stdout or '{}')
     for v, (same, above) in (got.get('views') or {}).items():
         eq((same, above), (70, 105), f'{v}: a refresh keeps scrollTop, and a card above it moves nothing on screen')
-    eq(len(got.get('views') or {}), 5, 'every view was looked at')
+    eq(len(got.get('views') or {}), 6, 'every view was looked at')
     eq(got.get('atTop'), 0, 'at the very top, the new thing shows')
     eq((got.get('entered'), got.get('still')), (['top'], 0), 'only what is new comes in moving; a redraw moves nothing')
     eq(got.get('back'), 50, 'coming back to a view returns to where it was')
