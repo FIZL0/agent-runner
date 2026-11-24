@@ -262,6 +262,55 @@ def test_releases_f193(tmp: Path) -> None:
     eq(CF.Config(repo).run['releases'], False, 'off')
 
 
+def test_wrong_agent_b764b(tmp: Path) -> None:
+    """B764b: a wrong [run] agent in a settings file loads, and the problem is said with its fix."""
+    import os
+    import subprocess as sp
+    from agent_runner import cmds, tui
+    repo = project(tmp)
+    wrapper = repo / 'my-claude'
+    wrapper.write_text('#!/bin/sh\n', encoding='utf-8')
+    wrapper.chmod(0o755)
+    for v, said in (('pi', 'set it to "claude"'), ('/opt/bin/copilot', 'set it to "claude"'), ('nosuchagent', 'install it'),
+                    ('', 'is empty'), (5, 'set it to "claude"'), ('./my-claude', ''), (str(wrapper), '')):
+        (repo / 'runner.local.toml').write_text(f'[run]\nagent = {v!r}\n', encoding='utf-8')
+        c = CF.Config(repo)
+        eq(c.run['agent'], v, f'agent = {v!r} loads')
+        got = c.agent_problem
+        check((said in got and got.startswith('[run] agent') and '\n' not in got) if said else got == '',
+              f'and its problem is {said or "none"}', got)
+    late = repo / 'late-agent'
+    (repo / 'runner.local.toml').write_text('[run]\nagent = "late-agent"\n', encoding='utf-8')
+    c = CF.Config(repo)
+    check(c.agent_problem, 'a program that is not there')
+    late.write_text('#!/bin/sh\n', encoding='utf-8')
+    eq(c.agent_problem, '', 'until it is installed')
+
+    local = repo / 'runner.local.toml'
+    local.write_text("[run]\nagent = 'my-claude'\n", encoding='utf-8')
+    S.init(repo)
+    eq(U.snapshot(up=False, links={}, windows={})['agent_problem'], '', 'a right one: nothing')
+    local.write_text("[run]\nagent = 'pi'\n", encoding='utf-8')
+    line = U.snapshot(up=False, links={}, windows={})['agent_problem']
+    check("'pi'" in line, 'a wrong one saved under a run that keeps its own is said too', line)
+    local.write_text("[run]\nagent = 'nosuchagent'\n", encoding='utf-8')
+    CF._cfg.cache_clear()
+    S.init(repo)  # it died here
+    snap = U.snapshot(up=False, links={}, windows={})
+    check('install it' in snap['agent_problem'] and snap['agent_problem'] in snap['status'], 'the run page and the TUI say it', snap['status'])
+    eq(tui.RunPage.row(None, 1, snap['agent_problem'])[0][1], 'yellow', 'the TUI as a warning')
+    eq((U.agent_problem(st={'agent_problem': 'x'}), U.agent_problem(st={'agent_problem': ''})), ('x', ''), "an up run's own word wins")
+    row = cmds.picker_rows([], repo, info=lambda r: {'up': False})[0]
+    check(snap['agent_problem'] in cmds.picker_text([row], 0) and snap['agent_problem'] in cmds.launcher_text(row), 'the picker says it')
+    r = sp.run([*CF.runner_cmd(), 'status'], cwd=repo, capture_output=True, text=True, encoding='utf-8',
+               env={**os.environ, 'AGENT_RUNNER_REPO': str(repo)}, timeout=60)
+    check(r.returncode == 0 and snap['agent_problem'] in r.stdout.splitlines(), 'status prints the line', r.stdout + r.stderr)
+    local.write_text("[run]\nagent = 'my-claude'\n", encoding='utf-8')
+    CF._cfg.cache_clear()
+    S.init(repo)
+    eq(U.agent_problem(), '', 'fixed: gone')
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -273,4 +322,4 @@ def in_tmp(f):
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(f) for f in (test_one_key, test_line_ends, test_waits_for_a_merge, test_refused, test_push_fails,
                                                  test_device_over_it, test_other_files, test_external_plan, test_trusted_networks,
-                                                 test_releases_f193)]))
+                                                 test_releases_f193, test_wrong_agent_b764b)]))

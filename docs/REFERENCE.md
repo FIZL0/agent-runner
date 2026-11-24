@@ -1569,6 +1569,8 @@ With no settings file at all (no `runner.toml`, no `AGENT_RUNNER_CONFIG` file, a
 TUI's Status panel say "no settings found, so no test gate and nothing is pushed". A run that is up says what
 it itself found (its STATE).
 
+A `[run] agent` that is wrong in a settings file (a removed `pi` or `copilot`, empty, not text, or a command not found on this machine) does not stop the run app or Home: the settings load, and the places above say the problem and its fix in one line. A run that is up keeps its agent and says what it itself found (its STATE), and a wrong value saved by hand is said then too. The line goes once the value is fixed or the program is installed.
+
 If `AGENT_RUNNER_CONFIG` names a file, the settings come from that file instead: from its
 `[agent-runner]` table (`[agent-runner.run]`, …) if it has one, else from its top level. This lets a
 project keep them in its own config file (see [docs/SETUP.md](SETUP.md#your-own-cli-for-tools-only)).
@@ -1929,7 +1931,7 @@ Renamed or folded in 0.58.0 (the config trim):
 - `[run] control_close` is folded into `control_idle`: `control_close = false` is read as `control_idle = false`.
 - `[run] batch` is folded into `batch_max`: `batch = false` is read as `batch_max = 1`.
 - `[run] backend` is ignored, with a warning to delete it, and the Pi backend it could name is gone (F106d, see the CHANGELOG):
-  `backend = "pi"`, `agent = "pi"` and `AGENT_RUNNER_BACKEND=pi` fail at start. Name the model in `[models]` as
+  `backend = "pi"` and `AGENT_RUNNER_BACKEND=pi` fail at start; `agent = "pi"` no longer does: it loads and the line is said (B764b). Name the model in `[models]` as
   `<provider>:<model>` instead.
 - `[run] slot_env` keeps its name but defaults to `[]`: every slot gets `AGENT_SLOT=<n>` whatever it says, so
   a `slot_env` no longer needs to repeat it.

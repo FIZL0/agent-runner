@@ -131,5 +131,19 @@ rows = H.project_rows(reg, row=lambda key, root: {'key': key, 'name': root.name,
 eq([r['name'] for r in rows], ['bravo', 'foxtrot', 'delta', 'Echo', 'alpha', 'Charlie'],
    'running by name, then idle or paused, then off')
 
+print('B764b: a wrong [run] agent does not hide the run from Home, and Home says it')
+from unittest import mock  # noqa: E402
+from agent_runner import web as W  # noqa: E402
+(repo / LOCAL).unlink(missing_ok=True)
+for agent in ('pi', 'nosuchagent'):
+    (repo / 'runner.toml').write_text(f'[run]\nagent = "{agent}"\n', encoding='utf-8')
+    Config(repo).notes('web.url').write_text('http://box:45678/?t=abc123\n', encoding='utf-8')
+    with mock.patch('agent_runner.cmds.run_info', return_value={'up': True}):
+        eq(H.run_link(repo), (45678, 'abc123'), f'agent = {agent}: the run page still has its port')
+    row = H.project_row('p', repo, info=lambda r: {'up': False}, needs=lambda r: (0, []))
+    has(row['agent_problem'], rf"\[run\] agent = '{agent}'", 'and Home says what is wrong')
+check('p.agent_problem' in W.PAGE.read_text(encoding='utf-8') and 'S.snap.agent_problem' in W.PAGE.read_text(encoding='utf-8'),
+      'in All projects and on the Run card')
+
 os.environ['AGENT_RUNNER_HOME'] = env
 raise SystemExit(1 if FAILED else print('\nall checks passed'))

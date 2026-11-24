@@ -221,13 +221,14 @@ def write_state(running: dict) -> None:
     got = _account[1] if isinstance(_account[1], dict) else {}
     use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
     tmp = C.notes('STATE.tmp')
-    from agent_runner.ui_model import no_settings
+    from agent_runner.ui_model import agent_problem, no_settings
     try:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
                                    'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
                                    'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping(),
                                    'forced': FORCED[0], 'power': POWER, 'version': run_version(),
+                                   'agent_problem': agent_problem(C),  # B764b
                                    'no_settings': bool(no_settings(C))}),  # F178
                        encoding='utf-8')
         os.replace(tmp, C.notes('STATE'))
