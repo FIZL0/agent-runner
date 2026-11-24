@@ -127,5 +127,56 @@ def test_need_field_stays_b222a(tmp: Path) -> None:
     eq(o['inputGone'], [False, 'hunter2', True], 'its input left the item: it goes, the other stays')
 
 
+# the other sheets' real code on the same DOM, in place of the Needs you presses
+OTHER_DRIVER = DRIVER.split('(async () => {')[0].replace("line('SHEETS.need=')", "line('SHEETS.need=') + line('SHEETS.addproject=') + slice('async function addProject(', '/* F118')"
+    " + slice('const toolOf=', '/* the fingerprint that waits') + slice('const devText=', 'async function toolClick(') + 'Object.assign(env,{toolEdit,toolForget,addProject,openSheet});'", 1) + r"""
+S.tools = {aliases: [], tools: [], secure: true}; S.toolSaid = {}; env.H = {machine: 'box', said: '', adding: false}; env.loadProjects = () => {};
+const steps = f => { const x = field(f), h = el._h; type(x, 'teh words'); env.render(); return [kept(x), el._h === h, !el._h.includes('teh words')] };
+const dev = {name: 'mac', description: 'A rig', kind: 'ssh', host: 'mac.local', user: 'me', port: 22};
+const vals = () => ['name', 'description', 'host', 'user', 'port'].map(k => field('dev:' + k).value);
+(async () => {
+  env.openSheet('addproject'); out.padd = steps('padd');
+  env.H.said = 'No such folder'; env.render(); out.said = [field('padd').value, el.text.includes('No such folder')]; env.H.said = '';
+  env.closeSheet(); env.openSheet('addproject'); out.paddBack = field('padd').value;
+  env.closeSheet(); env.toolEdit(null); env.closeSheet(); env.openSheet('addproject'); out.paddOther = field('padd').value;
+  let answer; env.homePost = () => new Promise(r => { answer = r }); const adding = env.addProject(); env.closeSheet(); answer({ok: true}); await adding;
+  env.openSheet('addproject'); out.added = field('padd').value; env.closeSheet();
+  env.toolEdit(dev); out.vals = vals(); out.dev = ['name', 'description', 'host', 'user', 'port'].map(k => steps('dev:' + k));
+  S.toolSaid = {mac: {ok: false, out: 'Refused'}}; env.render(); out.refused = [vals(), el.text.includes('Refused')];
+  env.closeSheet(); out.gone = [Object.keys(S.f).filter(k => k.startsWith('dev:')), vals()];
+  env.toolEdit(dev); out.again = vals(); env.closeSheet(); env.toolEdit(dev); out.twice = vals(); env.closeSheet();
+  env.toolEdit(null); out.blank = vals(); S.f['dev:kind'] = 'other'; env.render(); out.reach = steps('dev:reach');
+  console.log(JSON.stringify(out)); process.exit(0);
+})();
+"""
+
+
+def test_other_fields_stay_b222b(tmp: Path) -> None:
+    """B222b: the add-project and device sheets' markup is the same before and after typing; words come back after
+    reopening the add-project sheet, and a device opens with its saved values each time."""
+    if not shutil.which('node'):
+        print('  (no node here: the sheet fields test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(OTHER_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), '[]', json.dumps(U.controls())], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node types in the sheets', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    same = [[True, True, True, 'teh words', 0, 0, 2], True, True]
+    eq(o['padd'], same, 'add project: a refresh after typing draws nothing')
+    eq(o['said'], ['teh words', True], 'a refusal keeps its words')
+    eq((o['paddBack'], o['paddOther']), ('teh words', 'teh words'), 'its words come back on reopening, another sheet between or not')
+    eq(o['added'], '', 'the words of an added project do not')
+    saved = ['mac', 'A rig', 'mac.local', 'me', '22']
+    eq(o['vals'], saved, 'a device opens with its saved values')
+    eq(o['dev'], [same] * 5, 'each of its fields: a refresh after typing draws nothing')
+    eq(o['refused'], [['teh words'] * 5, True], 'a refused save keeps its words')
+    eq(o['gone'], [[], [''] * 5], 'closing forgets them')
+    eq((o['again'], o['twice']), (saved, saved), 'and opening it again shows the saved values, each time')
+    eq(o['blank'], [''] * 5, 'a new device opens empty')
+    eq(o['reach'], same, 'the command or address too')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_need_field_stays_b222a)]))
+    raise SystemExit(report([in_tmp(test_need_field_stays_b222a), in_tmp(test_other_fields_stay_b222b)]))
