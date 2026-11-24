@@ -2,8 +2,8 @@
 
 The shim (`slots.run_pty`, `slots.run_conpty`) listens on <notes>/slotN.sock (controlN.sock), removed when the
 session ends: a Unix socket, mode 0600; on Windows a small file that holds a port on 127.0.0.1 and a token, which a
-client sends first (a frame of kind b'k'), or is dropped after TOKEN_WAIT s. It sends what the session prints to every attached client as is; a client
-sends frames: one kind byte, a 2-byte big-endian length, the payload. Kind b'd' is input for the session, b'w' that
+client sends first (a frame of kind b'k'), or is dropped after TOKEN_WAIT s. It sends what the session prints to every
+attached client as is; a client sends frames: one kind byte, a 2-byte big-endian length, the payload. Kind b'd' is input for the session, b'w' that
 client's terminal size (2-byte rows, 2-byte columns): the session gets the smallest of its clients' (`Viewers`, F114).
 `attach_session` is the client `attach sN|cN` runs: Ctrl-b d detaches.
 """

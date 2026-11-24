@@ -98,7 +98,8 @@ its panels) is attached to its own terminal, the way dtach does it, on Linux, ma
 and macOS the shim listens on a Unix socket beside its marker (`.runner/slotN.sock`, `controlN.sock`, mode 0600, gone
 when the session ends). On Windows it listens on a free 127.0.0.1 port, and that `.sock` file is a small file holding the
 port and a token, readable by this user only and gone when the session ends; `attach_windows.py` is the client, and it
-sends the token first. A client that does not send it within 5 s, or sends a wrong one, is dropped with nothing sent to it. Either way the shim sends what the session prints to every attached
+sends the token first. A client that does not send it within 5 s, or sends a wrong one, is dropped with nothing sent to
+it. Either way the shim sends what the session prints to every attached
 terminal and types in what you type. The session takes the smallest size of its viewers (each attached terminal, each
 open session frame of the run app), 200 by 50 when there are none, and a new viewer makes it redraw. Detach with Ctrl-b d
 (Ctrl-b Ctrl-b types one Ctrl-b); the session keeps running. The run app's session frame has no detach key: with
@@ -1835,6 +1836,8 @@ Removed since 0.58.0:
 
 - `[plan] release_alone` is ignored, with one warning: tag the release `(alone)` instead (`plan edit V7
   --alone`); any task can run alone that way (F130).
+- `[run] wizards` is removed (C37), ignored with one warning: a task that needs a person writes its steps in an ask
+  file; delete the key.
 
 Removed in 0.58.0 (the config trim):
 
