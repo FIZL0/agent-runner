@@ -427,7 +427,7 @@ _Avoid_: dashboard, hub
 A task tagged `(alone)` that starts only when nothing else runs or waits to merge in the run, and starts nothing beside it; any kind of task, a release included
 _Said_: runs alone, nothing beside it
 _On screen_: runs alone, (alone)
-_In code_: `(alone)` tag, plan.alone, plan.alone_ids, plan add/edit --alone, Held.alone, sched.clash
+_In code_: `(alone)` tag, plan.alone, plan.alone_ids, plan add/edit --alone, Held.alone, sched.clash, sched.turn_of
 _Avoid_: exclusive, release_alone
 
 **Task budget**:
