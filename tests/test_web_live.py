@@ -901,6 +901,7 @@ const at = () => [!$('feed').hidden, !$('body').hidden, $('feedframe').kids.map(
   answers.s3 = {ok: false, mode: 'none', live: false, out: 'x'}; await show('s3'); out.idle = feedHTML('s3');
   answers.s4 = {ok: false, mode: 'none', live: true, out: 's4 runs headless'}; await show('s4'); out.none = [at(), feedHTML('s4')];
   answers.c9 = {ok: false, mode: 'install', out: 'ttyd is not installed: install it with winget install tsl0922.ttyd and', cmd: 'winget install tsl0922.ttyd'}; S.snap.ttyd_install = answers.c9.cmd; await show('c9'); out.install = [at(), feedHTML('c9')];
+  answers.c10 = {ok: false, mode: 'install', out: 'install it (the list)', cmd: ''}; await show('c10'); out.nocmd = feedHTML('c10');
   answers.c8 = {ok: false, mode: 'none', live: false, out: 'x'}; await show('c8'); out.starting = feedHTML('c8');
   answers.c8 = {ok: true, look: 'dark'}; timers.filter(t => t.ms === 3000).pop().f(); await settle(); out.started = at();
   await show('@k'); out.stand = [at(), feedHTML('@k')];
@@ -982,6 +983,7 @@ def test_session_feed_f114(tmp: Path) -> None:
     check('s4 runs headless' in o['none'][1] and o['none'][0][:2] == [False, True], 'no terminal: why', o['none'])
     check('ttyd is not installed' in o['install'][1] and o['install'][0][:2] == [False, True], 'no ttyd: how to install it', o['install'])
     check(o['install'][1].count('winget install') == 1 and '<code>winget install tsl0922.ttyd</code>' in o['install'][1], 'B761: the command once, as code', o['install'])
+    check('install it (the list)' in o['nocmd'] and '<code>' not in o['nocmd'], 'B761: with no command, the list as it is', o['nocmd'])
     check('Starting the chat' in o['starting'], 'a starting chat says so', o['starting'])
     check(o['started'][0], 'then shows its session', o['started'])
     check('WAITS' in o['stand'][1] and o['stand'][0][:2] == [False, True], "a stand-in shows what waits for it", o['stand'])
