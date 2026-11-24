@@ -37,7 +37,7 @@ var pressed=false, touch=matchMedia('(pointer:coarse)').matches, focus=HTMLEleme
 HTMLElement.prototype.focus=function(o){if(pressed&&!touch)focus.call(this,o)};
 addEventListener('pointerdown',function(){pressed=true},true);
 addEventListener('blur',function(){pressed=false});
-var name=__NAME__, own=name==='login';
+var name=__NAME__, own=name==='login'||name.indexOf('login-')===0;
 function tell(m){parent.postMessage(Object.assign({session:name},m),location.origin)}
 var W=window.WebSocket;
 var LOOKS=__LOOKS__, look=__LOOK__;
@@ -180,15 +180,16 @@ def login_argv() -> list[str]:
     return ['-t', 'disableReconnect=true', plat.exe(cmd), *rest]
 
 
-def login_frame(handler, terms, path: str) -> None:
-    """F126b: answer `handler`'s request for the login's terminal of `terms` (web.Terminals), at `path` under it."""
-    got = terms.ttyd(LOGIN)
+def login_frame(handler, terms, path: str, name: str = LOGIN) -> None:
+    """F126b: answer `handler`'s request for the login's terminal of `terms` (web.Terminals), at `path` under it.
+    F406a: `name` may be a provider's login (provider_login)."""
+    got = terms.ttyd(name)
     if not got['ok']:
         return handler.send(502, f'<pre>{html.escape(got["out"])}</pre>', 'text/html; charset=utf-8')
-    target = f'/t/{terms.token}/{LOGIN}/{path}'
+    target = f'/t/{terms.token}/{name}/{path}'
     if 'websocket' in handler.headers.get('Upgrade', '').lower():
-        return terms.login.serve(handler, got['port'], target)
-    frame(handler, got['port'], target, LOGIN, session_look())
+        return terms.hold(name).serve(handler, got['port'], target)
+    frame(handler, got['port'], target, name, session_look())
 
 
 def frame(handler, port: int, target: str, name: str, look: str) -> None:
