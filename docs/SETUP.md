@@ -29,8 +29,9 @@ That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone:
 
 **Windows:** Python 3.11+ from python.org (not the Store's `python3` alias), Git for Windows (Claude Code runs hooks and
 Bash calls in its Git Bash). Each slot runs hidden: in a ConPTY pseudo-console with no window (Windows 10 1809 and
-later), or before that in a console whose window starts hidden (`agent-runner attach s2` shows that one). Run
-`agent-runner run 3` from any terminal.
+later), or before that in a console whose window starts hidden. Run `agent-runner run 3` from any terminal;
+`agent-runner attach s2` puts this terminal on the session's own (1809 and later; Ctrl-b d leaves it running), and
+`winget install tsl0922.ttyd` is what lets the run page show sessions.
 
 **Linux and macOS** need nothing more for the run (it uses no tmux). The slots run hidden, in a
 pseudo-terminal with no window, their output in `.runner/slotN.log`. `agent-runner attach` is the run view

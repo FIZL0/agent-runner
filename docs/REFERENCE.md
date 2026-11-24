@@ -97,7 +97,8 @@ A hidden session (`attach s2`, `attach c3`, or the session tab of `agent-runner 
 its panels) is attached to its own terminal, the way dtach does it, on Linux, macOS and Windows 1809 and later. On Linux
 and macOS the shim listens on a Unix socket beside its marker (`.runner/slotN.sock`, `controlN.sock`, mode 0600, gone
 when the session ends). On Windows it listens on a free 127.0.0.1 port, and that `.sock` file is a small file holding the
-port and a token; `attach_windows.py` is the client. Either way the shim sends what the session prints to every attached
+port and a token, readable by this user only and gone when the session ends; `attach_windows.py` is the client, and it
+sends the token first. A client that does not send it within 5 s, or sends a wrong one, is dropped with nothing sent to it. Either way the shim sends what the session prints to every attached
 terminal and types in what you type. The session takes the smallest size of its viewers (each attached terminal, each
 open session frame of the run app), 200 by 50 when there are none, and a new viewer makes it redraw. Detach with Ctrl-b d
 (Ctrl-b Ctrl-b types one Ctrl-b); the session keeps running. The run app's session frame has no detach key: with
