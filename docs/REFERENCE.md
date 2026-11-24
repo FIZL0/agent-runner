@@ -1894,7 +1894,7 @@ gemini -> google.
 
 Logins are Pi's. The loop reads and refreshes `~/.pi/agent/auth.json` (or `$PI_CODING_AGENT_DIR/auth.json`), taking
 Pi's lock on it, so log in once with `agent-runner login <provider>` (see SETUP.md). API keys from the providers' usual env vars also work (e.g.
-GEMINI_API_KEY, COPILOT_GITHUB_TOKEN). A model id the provider does not list is refused with the ids it has.
+GEMINI_API_KEY, COPILOT_GITHUB_TOKEN). A model id the provider does not list is refused with the ids it has. On a GitHub Enterprise domain (`enterpriseUrl` in the login), refresh and login go to the domain and `api.<domain>`, and the model list and calls to `copilot-api.<domain>`, unless the token names another address on that domain. The models are those the domain lists for the account (that the login package knows).
 
 Tools: bash (each call starts in the worktree; timeout default 120 s, at most 3600 s; output over 30000 characters
 is cut in the middle), read, edit, write, finish (runs `run finish`), ask (runs `run ask`; the task is parked under

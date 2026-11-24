@@ -414,8 +414,8 @@ globalThis.fetch = async (input, init) => {
 def test_enterprise(tmp: Path):
     """F406b: Copilot on a GitHub Enterprise domain: login, refresh, model list and a model call, none off it."""
     js = Path(R.__file__).with_name('harness.mjs')
-    eq([L.enterprise_host(t) for t in ('corp.ghe.com', ' https://Corp.ghe.com/ ', 'corp.ghe.com/', '', 'http://[')],
-       ['corp.ghe.com', 'corp.ghe.com', 'corp.ghe.com', '', 'http://['], 'a domain is trimmed to its host')
+    eq([L.enterprise_host(t) for t in ('corp.ghe.com', ' https://Corp.ghe.com/ ', 'corp.ghe.com/', '', 'https://github.com/', 'http://[')],
+       ['corp.ghe.com', 'corp.ghe.com', 'corp.ghe.com', '', '', 'http://['], 'a domain is trimmed to its host')
     has(L.login_of('copilot', {}, {'github-copilot': {'type': 'oauth', 'enterpriseUrl': 'https://corp.ghe.com/'}})[1],
         r'GitHub Enterprise corp\.ghe\.com\)', 'login_of names the host')
     version = re.search(r"PI_AI_VERSION = '([^']+)'", js.read_text(encoding='utf-8')).group(1)

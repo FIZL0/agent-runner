@@ -76,13 +76,14 @@ def needs_none(provider: str, providers: dict) -> bool:
 
 
 def enterprise_host(text: str) -> str:
-    """F406b: the host of a GitHub Enterprise domain as a person writes it (https://company.ghe.com/ too); text that
-    holds none comes back as it is, for the login package to refuse."""
+    """F406b: the host of a GitHub Enterprise domain as a person writes it (https://company.ghe.com/ too); github.com is
+    '' (none), and text that holds no host comes back as it is, for the login package to refuse."""
     text = text.strip()
     try:
-        return urlsplit(text if '://' in text else f'https://{text}').hostname or text
+        host = urlsplit(text if '://' in text else f'https://{text}').hostname or text
     except ValueError:
         return text
+    return '' if host == 'github.com' else host
 
 
 def login_of(provider: str, providers: dict, creds: dict | None = None,
@@ -98,8 +99,8 @@ def login_of(provider: str, providers: dict, creds: dict | None = None,
     pid = provider if custom else PI_IDS.get(provider, provider)
     if isinstance(c := creds.get(pid), dict) and c:
         kind = 'OAuth' if c.get('type') == 'oauth' else 'API key' if c.get('type') == 'api_key' else 'login'
-        domain = f', GitHub Enterprise {enterprise_host(str(c["enterpriseUrl"]))}' \
-            if provider == 'copilot' and c.get('enterpriseUrl') else ''
+        host = enterprise_host(str(c.get('enterpriseUrl') or '')) if provider == 'copilot' else ''
+        domain = f', GitHub Enterprise {host}' if host else ''
         return True, f'{kind} in {auth_file()} ({pid}{domain})'
     var = custom.get('key_env') if custom else ENV_KEYS.get(provider)
     if var and env.get(var):
