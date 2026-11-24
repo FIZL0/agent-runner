@@ -277,9 +277,13 @@ def _write(path, ls: list[str]) -> None:
 
 def one_line(text: str) -> str:
     """B189: `text` as it goes on a task line, which is one line of TODO.md: its lines joined by a space (a
-    newline would end the task's block there, and what follows would belong to no task)."""
+    newline would end the task's block there, and what follows would belong to no task). A later line that starts
+    as a task line's own markup does (a field, a note, a BLOCKED) gets a `>` before it, so the join makes none."""
     ls = text.splitlines()
-    return ' '.join(x for l in ls if (x := l.strip())) if len(ls) > 1 else ''.join(ls)
+    if len(ls) < 2:
+        return ''.join(ls)
+    ls = [x for l in ls if (x := l.strip())]
+    return ' '.join(ls[:1] + [f'>{x}' if x.startswith(('| ', '— ', 'BLOCKED: ')) else x for x in ls[1:]])
 
 
 def _mark(ls: list[str], i: int, box: str) -> None:
@@ -913,8 +917,8 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         if (v := vals.get(f'--{key}')) is not None:
             keyed += f' | {key}: ' + (v if key in ('test', 'model') else ', '.join(
                 LAST if x == LAST else ', '.join(re.split(r'[,\s]+', x)) for x in re.split(r',\s*', v.strip(', '))))
-    t, _, w = one_line(' '.join(text)).partition(' @ ')
-    keyed = one_line(keyed)
+    t, _, w = ' '.join(text).partition(' @ ')
+    t, w, keyed = one_line(t), one_line(w), one_line(keyed)
     return t, ' '.join(where) or w or ('bottom' if last else ''), keyed, pri, force
 
 
@@ -1474,8 +1478,8 @@ def hold(tid: str, rid: str, style: str, todo=None) -> None:
     i = _find(ls, tid)
     _mark(ls, i, '~')
     end = i + len(_item_block(ls, i)) - 1
-    ls[end] += (f' BLOCKED: {RESTYLE_HELD}{rid} (style: {one_line(style)}): reopens with the style noted once the restyle '
-                f'page is approved')
+    ls[end] += (f' BLOCKED: {RESTYLE_HELD}{rid} (style: {one_line(style)}): reopens with the style noted once the '
+                f'restyle page is approved')
     _write(todo, ls)
 
 

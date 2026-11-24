@@ -1558,9 +1558,14 @@ def test_multi_line_text():
         plan.block('F4', f'DECIDE: {said}', todo=todo, after=[])
         back('F4', 'a block', '~')
         has([a[3] for a in plan.asks(todo) if a[1] == 'F4'][0], 'last words', 'and Needs you asks it whole')
-        plan.edit('F5', said + '\n| test: tests/test_e.py', todo=todo)
+        plan.edit('F5', said, todo=todo)
         back('F5', 'an edit')
-        eq(plan.fields(plan.section(todo, 'F5')[0]).get('test'), ['tests/test_e.py'], 'with a field on its own line')
+        eq(plan.fields(plan.section(todo, 'F5')[0]).get('files'), ['e.py'], 'and its fields are kept')
+        plan.note('F1', 'log:\n| files: z.py\nBLOCKED: foo\n— end', todo=todo)
+        eq(plan.fields(plan.section(todo, 'F1')[0]).get('files'), ['a.py'], 'a pasted line makes no field')
+        plan.block('F1', 'DECIDE: which?', todo=todo, after=[])
+        plan.confirm('F1', 'this', **kw)
+        has(plan.section(todo, 'F1')[0], r'>BLOCKED: foo >— end — your answer', 'and no BLOCKED an answer would cut off')
         plan.add('F', said, **kw)
         made += 1
         back('F6', 'an add')
@@ -1568,6 +1573,7 @@ def test_multi_line_text():
         eq(plan.held_on({'K1'}, todo=todo), [('F6', 'K1', 'blue and round')], "a hold's style stays on its line")
         text, _, keyed, _, _ = plan.add_args(['one\ntwo', '--files', 'a.py,\nb.py'])
         eq((text, keyed), ('one two', ' | files: a.py, b.py'), 'add and edit join their arguments')
+        eq(plan.add_args(['the log:\n@ line 3\nmore'])[:2], ('the log: @ line 3 more', ''), 'a line with @ is no place')
         eq(plan.one_line('  as  given\n'), '  as  given', 'text of one line keeps its spaces')
 
 
