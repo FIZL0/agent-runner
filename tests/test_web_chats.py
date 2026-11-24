@@ -76,7 +76,7 @@ def test_new_chat(tmp: Path) -> None:
     page = W.page_html().decode()
     check('<div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button>' in page,
           'the + Chat sits at the end of the Chats heading row')
-    eq(len(re.findall(r'<button[^>]* data-new[ >]', page)), 1, 'F150: and nowhere else')
+    eq(len(re.findall(r'<button[^>]* data-new[ >]', page)), 1, 'F150: and nowhere else but the top bar (plusBtn, B762)')
     check("newChat('new_control',{},'New chat')" in page and "outbox(name,{...args,wait:false}" in page,
           'data-new sends new_control through the outbox, without waiting (F137)')
     token = W.web_token()
@@ -1682,5 +1682,44 @@ def test_plus_hold_b213(tmp: Path) -> None:
     eq(o['other'], False, 'another view\'s + is not disabled')
 
 
+PLUS_CHAT_DRIVER = r"""
+const page = require('fs').readFileSync(0, 'utf8');
+const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const at = (thread, view, HOME_PAGE, all) => new Function('S', 'I', 'HOME_PAGE', 'atAll', 'PLUS_HOLD', 'controlOf',
+  line('const isNew=') + grab('function plusBtn(') + 'return plusBtn()')({thread, view, snap: {up: true}, tools: {secure: true}}, {plus: ''}, HOME_PAGE, () => all, 0, () => true);
+const o = {views: {}};
+for (const t of ['c1', 'F12', 's1', '+new', '+plan:F1', '@k1']) o[t] = at(t, 'plan', false, false);
+for (const v of ['home', 'plan', 'concepts', 'status', 'tools', 'talk', 'settings', 'projects']) o.views[v] = at(null, v, false, false);
+o.homeAll = at(null, 'projects', true, true); o.homeOne = at(null, 'home', true, false);
+console.log(JSON.stringify(o));
+"""
+
+
+def test_plus_chat_b762(tmp: Path) -> None:
+    """B762: + Chat is at the top right in an open chat and in a slot's session; not in a new or starting chat, and the
+    other views keep their own +."""
+    if not shutil.which('node'):
+        print('  (no node here: the + Chat test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(PLUS_CHAT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js')], input=W.PAGE.read_text(encoding='utf-8'),
+                       capture_output=True, text=True, encoding='utf-8', timeout=60)
+    check(r.returncode == 0, 'node draws the + of each place', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    chat = '<button class="btn plus" data-new title="New chat">Chat</button>'
+    for t in ('c1', 'F12', 's1'):
+        eq(o[t], chat, f'{t}: + Chat')
+    for t in ('+new', '+plan:F1', '@k1'):
+        eq(o[t], '', f'{t}: none in a new or starting chat')
+    words = {v: re.sub('<[^>]*>', '', h) for v, h in o['views'].items()}
+    eq(words, {'home': 'Task', 'plan': 'Task', 'concepts': 'Concept', 'status': 'Slot', 'tools': 'Device',
+               'talk': 'New talk', 'settings': '', 'projects': 'Project'}, 'the other views keep their own +')
+    check(not any('data-new ' in h for h in o['views'].values()), 'and none of them starts a chat')
+    eq([re.sub('<[^>]*>', '', o['homeAll']), o['homeOne']], ['Project', ''], "Runner Home's own page is unchanged")
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_swipe_or_scroll_b167), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_swipe_or_scroll_b167), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762)]))

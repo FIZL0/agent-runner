@@ -17,7 +17,8 @@ function seeBar(){
 /* F150: the one + of a view, at the top right: what it adds is its word */
 function plusBtn(){
   const b=(attr,word,title,off)=>`<button class="btn plus" ${attr} title="${title}"${off?' disabled':''}>${I.plus}${word}</button>`;
-  if(S.thread||HOME_PAGE&&!atAll())return '';
+  if(HOME_PAGE?S.thread||!atAll():S.thread&&(isNew(S.thread)||S.thread[0]==='@'))return '';
+  if(S.thread)return b('data-new','Chat','New chat');  // B762: a chat or a slot's session; not one still empty or starting
   return{projects:()=>b('data-addproject','Project','Add a project'),home:()=>b('data-about="new"','Task','Add a task',!!PLUS_HOLD),plan:()=>b('data-about="new"','Task','Add a task',!!PLUS_HOLD),
     concepts:()=>b('data-about="newconcept"','Concept','New concept'),status:()=>S.snap.up!==false&&controlOf('slot_add')?b('data-plusslot','Slot','Add a slot'):'',
     tools:()=>S.tools&&S.tools.secure?b('data-tool="add"','Device','Add a device'):'',talk:()=>b('data-newtalk','New talk','New Talk chat')}[S.view]?.()||'';
