@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agent_runner import pitch, plan as P, shared_tools
 from agent_runner.gitops import missing_remote
-from agent_runner.guide import GLOSSARY, SAFE_SHELL, VERIFY
+from agent_runner.guide import GLOSSARY, OWN_FILES, SAFE_SHELL, SPLIT_FILES, VERIFY
 from agent_runner.state import C, default_branch, git, ROOT
 
 
@@ -210,6 +210,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         policies.append(f'Include task ID `{tid}` at the start of the commit subject.')
     else:
         policies.append(f'Do not include task ID `{tid}` in the commit subject; task tracking is separate.')
+    if not P.concept(tid):  # F200a: a policy, so a project's own prompt template carries it too
+        policies.append(f'{OWN_FILES} {SPLIT_FILES}')
     if pitch.on(C):  # F98
         policies.append(PITCH_PROMPT.format(path=C.notes('pitches', f'{tid}.json')))
     if P.concept(tid):
@@ -246,7 +248,7 @@ SPLIT_PROMPT = """\
 Split {tid} first: it is too big for one session ({why}). Before any other work, choose its first part (one outcome \
 that passes the gate and can be checked alone) and file each other part with `{runner} plan add {tid} "<what, why, \
 how to check>" --files …` (they become {tid}a, {tid}b, … and start once {tid} has landed; `--after` another part it \
-needs, never {tid}). Nothing the task asks for may be lost between them. Then `{runner} plan edit {tid} "<the first \
+needs, never {tid}). """ + SPLIT_FILES + """ Nothing the task asks for may be lost between them. Then `{runner} plan edit {tid} "<the first \
 part's whole text>" --files <its files>`, and do only that part. Skip what an earlier attempt already did or filed."""
 
 

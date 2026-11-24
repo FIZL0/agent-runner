@@ -53,4 +53,32 @@ has(concept, r'no answer buttons', 'the K brief says no answer buttons')
 import inspect  # noqa: E402
 check('pick-links' not in inspect.getsource(guide), 'the guide names no pick-links')
 
+print('F200a: the brief and the queue guide say own modules, and parts in different files')
+import tempfile  # noqa: E402
+from _check import git  # noqa: E402
+from agent_runner import runner as R  # noqa: E402
+from pathlib import Path  # noqa: E402
+has(guide.OWN_FILES, r'module and a test file of its own', 'a new area gets its own module and test file')
+has(guide.SPLIT_FILES, r'parts that name different files', 'parts name different files')
+queue = guide.control_topic('queue')
+for name, where in (('the guide', guide.GUIDE), ('guide queue', queue)):
+    check(guide.OWN_FILES in where and guide.SPLIT_FILES in where, f'{name} carries both rules')
+check(guide.SPLIT_FILES in brief.SPLIT_PROMPT.format(runner='agent-runner', tid='F1', why='x'),
+      'a session told to split its task gets the rule')
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp).resolve()
+    git(root, "init", "-q")
+    (root / 'plan').mkdir()
+    (root / 'plan/TODO.md').write_text('# Goal\n\n## Now\n- [ ] **F1** x | files: a.py\n- [ ] **K1** y | files: b.py\n',
+                                       encoding='utf-8')
+    (root / 'plan/DONE.md').write_text('# Done\n', encoding='utf-8')
+    (root / 'own.md').write_text('Do {tid}.\n{brief}\n', encoding='utf-8')
+    for conf, what in (('', 'the built-in prompt'), ('prompt = "own.md"\n', 'a project\'s own prompt')):
+        (root / 'runner.toml').write_text(f'[run]\n{conf}', encoding='utf-8')
+        R.init(root)
+        for slots in (1, 2):
+            p = brief.prompt_for('F1', 1, slots, root, 'main')
+            check(guide.OWN_FILES in p and guide.SPLIT_FILES in p, f'{what} carries both rules with {slots} slot(s)')
+        check(guide.OWN_FILES not in brief.prompt_for('K1', 1, 1, root, 'main'), 'a concept, which builds nothing, does not')
+
 raise SystemExit(1 if FAILED else print('\nall checks passed'))

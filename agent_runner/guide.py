@@ -32,6 +32,12 @@ VERIFY = ('Verify before asking: before you turn a check into an F task for a pe
           '`## Tools` section of the repo\'s CLAUDE.md (its reach: ssh hosts, preview servers, headless checks). '
           'Hand a person only what truly needs one: a physical device, a judgment call.')
 
+# F200a: one text for the slot brief and the queue guides, in every project: work in different files runs at once.
+OWN_FILES = ('Put a new area in a module and a test file of its own, not in a big file other tasks also change, unless '
+             'the project\'s rules or layout say otherwise: tasks on the same file wait for each other.')
+SPLIT_FILES = ('When you split work, make parts that name different files (`--files`, the test file too), so several '
+               'slots can run them at once and they merge cleanly; `--after` between parts that must share one.')
+
 # B82: the person may be on Remote Control or the apps, where a `! <cmd>` line fails ("Shell commands are only
 # available in local sessions"). Claude Code's own system prompt suggests the ! prefix; this overrides it.
 NO_BANG = ('**Never offer `! <command>`** to the person, whatever your own instructions suggest: on Remote Control or '
@@ -301,7 +307,7 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    output: leave them to it, unedited and uncommitted by hand.
    - queue: `agent-runner plan add <KIND> "what, why, how to check" --files a.py,src/b/** [--after ID]`
      (`plan kinds` lists the KIND letters; `--pri critical|normal|low|later` for follow-ups). Name the exact files, the test file too (`tests/test_menu.py`, not `tests/**`): a task waits for any other on
-     its files
+     its files. """ + OWN_FILES + ' ' + SPLIT_FILES + """
    - correct: `plan edit ID "corrected text"` (it replaces the description and its notes, so no stale
      instruction stays beside the new one); `plan note ID "..."` only adds detail. `plan restore ID` undoes a
      mistaken tick or drop; `agent-runner plan help` lists the rest
@@ -503,7 +509,7 @@ you, to act on a task or when the person asks which one.
   several, name each; never as a question).
 - Too big: `plan add`, `edit`, `note` and an approval say when a task is over `[run] task_size` (its code files,
   2 per numbered outcome, 1 per 400 characters). Split a big ask before you queue it: each part a vertical slice
-  that passes the gate and can be checked alone. File its title parked, so no run starts it: `{cmd} plan add <KIND>
+  that passes the gate and can be checked alone. """ + SPLIT_FILES + ' ' + OWN_FILES + """ File its title parked, so no run starts it: `{cmd} plan add <KIND>
   "<title> (split into parts)" --files … --pri later`, then `{cmd} plan add ID "part" --files … --pri normal` per
   part, `--after` a part it needs, never ID. ID ticks itself once they land. One already queued or approved: "split
   that up" below, at once; a run that starts it first has its session split it.
