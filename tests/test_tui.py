@@ -66,6 +66,8 @@ SNAP['queue'][1].update(id='B2', state='critical', pri='critical')
 SNAP['queue'][2].update(id='C3', state='after', after=['Q4'], after_title='Q4 Queued task number 4')
 
 U.queue_row = lambda tid: next((q for q in SNAP['queue'] if q['id'] == tid), None)  # C34: no TODO.md here
+U.row_of = lambda where, tid: U.queue_row(tid) if where == 'queue' else {'name': tid} if where == 'session' else next(
+    (r for r in SNAP['needs' if where == 'need' else 'concepts'] if tid in (r['id'], r.get('concept') or r['id'])), None)  # C35
 
 DIFF = 'diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,2 +1,2 @@\n-old line\n+new line\n context'
 
@@ -556,10 +558,7 @@ def test_new_chat_key_f153() -> None:
             started.clear()
     with mock.patch.object(T.RunPage, 'new_chat', lambda self: started.append('n')):
         p = page()
-        p.panel, p.dropping = 2, 'D7'
-        p.key('n')
-        eq((started, p.dropping, p.msg), ([], '', 'D7: not dropped'), 'n at a drop question: only no')
-        p.panel, p.confirm = 2, 'stop_now'
+        p.panel, p.confirm = 2, 'need_drop'
         p.key('n')
         eq((started, p.confirm), ([], ''), 'n at a run control question: only no')
         p.panel, p.main = 4, False
@@ -1051,7 +1050,8 @@ def test_concept_chat() -> None:
     ran = []
     p = page()
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'c7 is open: https://claude.ai/code/x\n'))[1]]), \
-            mock.patch.object(status, 'waiting_ok', lambda: []):
+            mock.patch.object(status, 'waiting_ok', lambda: [('CONCEPT', 'F4', 'K5', '', 'https://claude.ai/artifact/k5', 'Lazy layout', False)]), \
+            mock.patch.object(U, 'concept_copy', lambda k: f'/notes/concepts/{k}.html'):
         p.key('5')
         check(('N', 'chat about it') in p.hint_keys(), 'the Concepts footer names N', p.hint_keys())
         p.key('N')
@@ -1611,12 +1611,12 @@ def test_d_drops_f116() -> None:
         p.key('d')
         check(ran == [] and 'Drop D7?' in p.msg and 'D again' in p.msg, 'd on a Needs you item asks first', (ran, p.msg))
         p.key('x')
-        check(ran == [] and 'not dropped' in p.msg, 'any other key keeps it', (ran, p.msg))
+        check(ran == [] and 'not done' in p.msg, 'any other key keeps it', (ran, p.msg))
         p.key('D')
         p.key('D')
         eq(ran, [['plan', 'drop', 'D7', 'dropped from Needs you']], 'D, then D again, drops it')
         check('D7' not in [n['id'] for n in p.snap['needs']], 'and the item leaves the list', p.snap['needs'])
-        check('D D      drop' in T.HELP, 'HELP lists it')
+        check('d D      drop' in T.HELP, 'HELP lists it')
         ran.clear()
         p.key('5')
         p.cur[5] = 0  # K5
@@ -1681,7 +1681,7 @@ def test_close_control_quiet_b136() -> None:
             mock.patch.object(sys, 'stdout', out):
         p = page()
         p.repaint = False
-        p.close_control({'name': 'c6'})
+        p.run_control('session_close', tid='c6')
     eq(out.getvalue(), '', 'close_control writes nothing to sys.stdout')
     eq(logged, ['control 6: closed from the TUI'], 'the line still goes to the run log')
     eq((p.repaint, p.msg_ok), (True, True), 'and the next frame repaints every cell')

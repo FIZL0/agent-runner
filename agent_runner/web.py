@@ -10,7 +10,7 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
                                  concept's options (`run_snapshot`)
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
-                                 drop, shelve, chat, answer, take, move, run_control, rename_chat, need_chat,
+                                 drop, chat, answer, take, move, run_control, rename_chat, need_chat,
                                  setting_device …; F93 `talk`, the Talk view's words to its own control
                                  session), its result as JSON
     GET  /terminal/NAME?t=TOKEN  where slot NAME's (or cN's) own terminal is served by ttyd (`attach NAME`),

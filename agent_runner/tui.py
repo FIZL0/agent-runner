@@ -179,8 +179,8 @@ Sessions [2]
   g        a slot's diff in place of its session (again: the session; its pane goes, then back)
   n        new chat               o        open the session link
   y        copy the session link (the terminal's clipboard, so over ssh too)
-  H        take its task back     d D      drop its task from the slot
-  d        close a control session cN (its transcript stays)
+{task_actions}
+{session_actions}
   r        rename a control session cN: the name is yours, so it is never closed when idle
   l ^l     into the session's tmux pane (back: ^h, or tmux's prefix and an arrow)
   Enter    the same; its pane closed: show it beside again
@@ -191,19 +191,21 @@ Queue [3]
   ^S       save the direct edit
   t k K   what, kind (cycles, back)        p f a    priority, files, after
 Needs you [4]
-  a        answer                 L        later
-  D D      drop (D or d, then D again)
-  y n      yes, no                a b c    a pick's options (answer tab)
+  a        answer                 y n      yes, no
+{need_actions}
+  a b c    a pick's options (answer tab)
 Concepts [5]
   j/k      option                 Enter    go with it
   i        what to change         O        open in the browser
-  d        drop the concept
-  N        chat about it (a new session)
+{concept_actions}
   n        new concept (queued as a K task)
 Typing (a task, an answer, a concept: a session takes its own typing)
   Enter    send                   Shift+Enter  new line (or Alt+Enter)
   Esc      leave the box
 Esc closes this."""
+
+
+ROW_PANELS = {2: 'session', 3: 'queue', 4: 'need', 5: 'concept'}  # C35: the panels whose rows have actions
 
 
 def action_help(where: str) -> str:
@@ -216,7 +218,8 @@ def action_help(where: str) -> str:
                      (cells[i:i + 2] for i in range(0, len(cells), 2)))
 
 
-HELP = HELP.replace('{queue_actions}', action_help('queue'))
+for _w in ('queue', 'need', 'concept', 'task', 'session'):
+    HELP = HELP.replace('{%s_actions}' % _w, action_help(_w))
 
 
 def help_line(line: str) -> list[tuple[str, str]]:
@@ -345,7 +348,6 @@ class RunPage:
         self.confirm_id = ''  # F124: what that control works on (a moved-aside branch), '' none
         self.last_result: dict = {}  # C34: the last run control's result
         self.output: list[str] = []  # F124: what the last W showed
-        self.dropping = ''  # F110: the Needs you item waiting for D again, '' none
         self.restart = False  # F90: the run is on a newer version: start this TUI again on it (`follow_upgrade`)
         self.pick = False  # B153: quit for the pick-a-run screen (0, the project name's key)
         self.followed = ''  # F90: the version the last restart was for (never restart twice for one version)
@@ -714,15 +716,21 @@ class RunPage:
     def control_by_tui(self, k: str, where: str) -> dict | None:
         k = '⏎' if k == 'ENTER' else k
         return next((c for c in self.snap.get('controls') or U.controls() if c['where'] == where
-                     and (c['tui'] == k or (c.get('tui_also') == k and not self.main)) and not c['needs'] == 'n'),
+                     and ((c['tui'] == k and (not self.main or c.get('tui_main', True)))
+                          or (c.get('tui_also') == k and not self.main)) and not c['needs'] == 'n'),
                     None)
 
-    def row_controls(self, it) -> list[dict]:
-        """C34: the Queue row's actions allowed on it now: the snapshot row's `acts` (else asked of ui_model)."""
+    def row_controls(self, it, where: str = 'queue') -> list[dict]:
+        """C34, C35: the actions of panel `where` allowed on row `it` now: its `acts` (else asked of ui_model)."""
         if not isinstance(it, dict) or it.get('new') or it.get('placeholder'):
             return []
-        acts = it['acts'] if 'acts' in it else U.row_acts('queue', it)
-        return [c for c in self.snap.get('controls') or U.controls() if c['key'] in acts]
+        acts = it['acts'] if 'acts' in it else U.row_acts(where, it)
+        return [c for c in self.snap.get('controls') or U.controls() if c['key'] in acts and c['where'] == where]
+
+    def row_id(self, it, where: str) -> str:
+        """The id the actions of panel `where` take: a concept's, a control session's name, else the row's id."""
+        return (it.get('concept') if where == 'concept' else it.get('name') if where == 'session' else '') \
+            or self.tid(it)
 
     def run_control(self, key: str, **args) -> None:
         """F82: one run control by its key; one with a confirm question waits for its TUI key again."""
@@ -749,15 +757,22 @@ class RunPage:
             args['confirm'] = True  # the page asks; here the key is the answer
         if c.get('confirm') and not args.get('confirm'):
             self.confirm, self.confirm_id = key, args.get('tid', '')
-            self.panel, self.main = 1, True
-            self.set_tab('controls')
-            self.msg, self.msg_ok = f'{c["confirm"]} {c["tui"]} again: yes', False
+            if c['where'] == 'run':
+                self.panel, self.main = 1, True
+                self.set_tab('controls')
+            self.msg, self.msg_ok = f'{c["confirm"].replace("{id}", args.get("tid", ""))} {c["tui"]} again: yes', False
             return
         if c['where'] == 'queue':
             args.setdefault('why', 'dropped from agent-runner ui')
-        self.control_done(key, U.run_control(key, **args))
+        self.control_done(key, self.quiet(U.run_control, key, **args) if c.get('fn') else U.run_control(key, **args))
+        r = self.last_result
+        if c['where'] in ('need', 'concept') and c.get('chat') and r.get('ok') and r.get('link'):  # F86
+            self.msg = f'new control session about {args["tid"]}: {r["link"]}'
+        elif c.get('chat'):
+            self.say_new_session(r)
+        if c['where'] == 'need':  # B138: the item is off Needs you; the pane closes
+            self.main = False
         if c['where'] == 'queue':  # C34: the selection follows its task, or leaves the pane when the task is gone
-            self.say_new_session(self.last_result)
             ids = [t.get('id') for t in self.items(3)]
             if args['tid'] in ids:
                 self.cur[3] = ids.index(args['tid'])
@@ -1036,8 +1051,7 @@ class RunPage:
                 keys.append(('g', 'session' if self.tab()[0] == 'diff' else 'diff'))
             if self.task_controls_on(it):
                 keys += [('H', 'take back'), ('d', 'drop')]
-            elif is_control(it):
-                keys.append(('d', 'close'))  # F116
+            keys += [(c['tui'], c['label'].lower()) for c in self.row_controls(it, 'session')]  # F116
             return keys
         if self.panel == 3:
             if isinstance(it, dict) and it.get('placeholder'):  # F131: the release tab's own keys
@@ -1047,11 +1061,12 @@ class RunPage:
             return [('e', 'edit'), ('E', 'chat edit')] + ([('J/K', 'reorder')] if (it or {}).get('state') != 'parked' else []) \
                 + [(c['tui_also'] or c['tui'], c['label'].lower()) for c in self.row_controls(it)]
         if self.panel == 4:
-            return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')] + ([('D', 'drop')] if it is not None else [])
+            return [('⏎', 'open'), ('a', 'answer')] + [(c['tui'], c['label'].lower())
+                                                       for c in self.row_controls(it, 'need')]
         if isinstance(it, dict) and it.get('new'):
             return [('⏎', 'type')]
-        return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it'), ('n', 'new concept'),
-                ('d', 'drop')]
+        return [('⏎', 'view'), ('O', 'open in the browser'), ('n', 'new concept')] + \
+            [(c['tui'], 'chat about it' if c.get('chat') else c['label'].lower()) for c in self.row_controls(it, 'concept')]
 
     GLOBAL = [('1-5', 'panel'), ('c', 'new chat'), ('?', 'keys')]
 
@@ -1354,19 +1369,11 @@ class RunPage:
         if k == '^F':  # F112: the session full-screen between the bars, and back
             self.toggle_full()
             return False
-        if self.dropping:  # F110: Drop on a Needs you item runs only on D (or d) again
-            tid, self.dropping = self.dropping, ''
-            if k in ('D', 'd'):
-                self.done(U.need_drop(tid, confirm=True))
-                self.main = False
-            else:
-                self.msg, self.msg_ok = f'{tid}: not dropped', True
-            return False
         if self.confirm:  # F82: stop now runs only on its key again
             key, self.confirm = self.confirm, ''
             tid, self.confirm_id = self.confirm_id, ''
             c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == key), {})
-            if k == c.get('tui'):
+            if k in (c.get('tui'), c.get('tui_also')):
                 self.control_done(key, U.run_control(key, confirm=True, **({'tid': tid} if tid else {})))
             else:
                 self.msg, self.msg_ok = f'{c.get("label", key)}: not done', True
@@ -1652,8 +1659,6 @@ class RunPage:
             self.run_control(c['key'])
         elif self.panel == 2 and self.task_controls_on(it) and (c := self.control_by_tui(k, 'task')):
             self.run_control(c['key'], tid=it['task'])
-        elif self.panel == 2 and k == 'd' and not self.main and is_control(it):
-            self.close_control(it)
         elif self.panel == 2 and k == 'r' and is_control(it):  # F129
             self.typing = f'rename:{it["name"]}'
             self.set_text(self.typing, it.get('title', '') if it.get('renamed') else '')
@@ -1677,34 +1682,19 @@ class RunPage:
         elif self.panel == 3 and k == 'E' and it is not None and not it.get('placeholder'):
             self.set_tab('chat edit')
             self.type_in()
-        elif self.panel == 3 and tid and (c := self.control_by_tui(k, 'queue')) and c in self.row_controls(it):
-            self.run_control(c['key'], tid=tid)  # C34: the Queue's row actions, from ui_model's one list
+        elif (w := ROW_PANELS.get(self.panel)) and self.row_id(it, w) and (c := self.control_by_tui(k, w)) \
+                and c in self.row_controls(it, w):
+            self.run_control(c['key'], tid=self.row_id(it, w))  # C34, C35: a row's actions, from ui_model's one list
         elif self.panel == 3 and k in ('J', 'K') and tid and it.get('state') != 'parked':
             self.reorder(1 if k == 'J' else -1)
         elif self.panel == 4 and k == 'a' and it is not None:
             self.set_tab('answer')
-        elif self.panel == 4 and k == 'L' and it is not None:
-            self.done(U.shelve(it['id']))
-            self.main = False
-        elif self.panel == 4 and (k == 'D' or (k == 'd' and not self.main)) and it is not None:
-            # F110, F116: a pick's d stays its option; D works there too
-            self.dropping = it['id']
-            self.msg, self.msg_ok = f'{U.need_drop(it["id"]).get("confirm", "Drop it?")} D again: yes', False
-        elif self.panel == 5 and k == 'd' and not self.main and it is not None and not it.get('new'):
-            self.done(U.drop(it.get('concept') or it['id'], 'dropped from agent-runner ui'))
         elif self.panel == 5 and k == 'n':  # F87: a new concept, in its row's box
             self.cur[5] = len(rows) - 1
             self.set_tab('new concept')
             self.type_in()
         elif self.panel == 5 and k == 'O' and it is not None and not it.get('new'):
             self.open_link(it.get('url', ''), it.get('title', 'the concept'))
-        elif self.panel == 5 and k == 'N' and it is not None and not it.get('new'):
-            self.concept_chat(it)
-
-    def close_control(self, it: dict) -> None:
-        """F116: d on control session cN: close it (`control.close_from_tui`)."""
-        from agent_runner import control as K
-        self.done(self.quiet(K.close_from_tui, int(str(it['name'])[1:])))
 
     def quiet(self, fn, *args, **kw):
         """B136: run an in-process action with its stdout and stderr swallowed (its run-log lines still go to
@@ -1716,14 +1706,6 @@ class RunPage:
                 return fn(*args, **kw)
         finally:
             self.repaint = True
-
-    def concept_chat(self, it: dict) -> None:
-        """F86: N on a concept: a new control session about it (`concept_chat`), its link in the message line."""
-        r = self.quiet(U.concept_chat, it.get('concept') or it.get('id', ''), it.get('title', ''),
-                       it.get('url', ''), it.get('copy', ''))
-        self.done(r)
-        if r.get('ok') and r.get('link'):
-            self.msg = f'new control session about {it.get("concept") or it.get("id")}: {r["link"]}'
 
     def diff_toggle(self) -> None:
         """F127 g: a slot's diff in place of its session, and back. The session pane beside goes while
