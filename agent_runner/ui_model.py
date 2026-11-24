@@ -5,7 +5,7 @@ copy, and the actions they share.
 
     status    the status lines: run up or not, its state, progress, release, no-settings or no-gate warning, usage
     slots     the run's slot count (0 when no run is up; while it starts, [run] slots)
-    sessions  c1 and every other live control session (cN, its title from state), then each slot s1..s<slots>
+    sessions  every live control session (cN, its title from state), then each slot s1..s<slots>
               and any past the count still on a task: task, title, minutes, state (running, merging, idle: no
               task), files, session link, terminal URL
     sessions_note  '' (kept for pages that read it: C26 has no older run to tell apart)
@@ -21,7 +21,7 @@ copy, and the actions they share.
     release   the release line ('' when no release is queued)
     release_row  F131: the release as one row at the queue's end (`release_row`): the V task (also moved last
               in `queue`, with `release`: this row), or a placeholder while `[run] auto_release` counts; None
-    quick_asks  the Status chat's quick asks sent to c1: key, label, text
+    quick_asks  the Status chat's quick asks, each a new chat: key, label, text
     terminal_mode  how a session's terminal shows: 'ttyd', or 'install' (no ttyd yet)
     run       paused, stopping, forced, power, and `state`: the state pill's words (F124: `run_state`)
     usage     F124: the account's usage, [{'name': 'session'|'week', 'pct'}]
@@ -38,8 +38,8 @@ entries); and the actions `chat_to` (any control session), `interrupt`, `new_con
 
 Each action calls what the CLI already does, as a subprocess of the runner (`runner_cmd()`), so a page and a
 terminal change the run exactly as a person typing the command would (B138: a Needs you button's `answer` runs
-`plan confirm|change` or `sheet` itself); `chat`, a typed `answer` and `take` hand a message to c1 the way the runner feed hands one on (typed into c1, else a new control session with
-it as its first message). Standard library only.
+`plan confirm|change` or `sheet` itself); `chat`, a typed `answer` and `take` open a new control session with the
+message as its first (F176). Standard library only.
 """
 
 from __future__ import annotations
@@ -376,21 +376,6 @@ def _bridge_link(sid: str) -> str:
         return ''
 
 
-def c1_row() -> dict:
-    """c1, the run's own control session: live or not, and its claude.ai/code link."""
-    try:
-        from agent_runner.control import control_live
-        pid = control_live(1)
-    except Exception:  # noqa: BLE001
-        pid = 0
-    try:
-        sid = S.C.notes('control1.pid').read_text(encoding='utf-8').strip().partition(' ')[2] if pid else ''
-    except OSError:
-        sid = ''
-    return {'name': 'c1', 'task': '', 'title': 'control session', 'minutes': None,
-            'state': 'live' if pid else 'off', 'files': [], 'terminal': '', **chat_row(1, sid)}
-
-
 def chat_row(n: int, sid: str) -> dict:
     """F128: what a control session's row adds from its transcript (`chat_state`); its title only when the person
     gave it one (F129)."""
@@ -446,27 +431,21 @@ def given_title(name: str, n: int) -> str:
 
 
 def control_titles() -> dict[int, str]:
-    """C26: {N: title} of this repository's live control sessions (c1 and those with a live pid file), each
+    """C26: {N: title} of this repository's live control sessions (those with a live pid file), each
     titled from the name kept in state (`<notes>/controlN.title`, `given_title`); no window names are read."""
     try:
-        from agent_runner.control import control_given, control_live, control_live_numbers
-        live = ([1] if control_live(1) else []) + control_live_numbers()
-        return {n: given_title(control_given(n), n) for n in live}
+        from agent_runner.control import control_given, control_live_numbers
+        return {n: given_title(control_given(n), n) for n in control_live_numbers()}
     except Exception:  # noqa: BLE001 - no notes dir yet
         return {}
 
 
 def control_rows(windows: dict[int, str], links=None) -> list[dict]:
-    """B113: c1 (`c1_row`, titled from state when it is live), then each other live control session as cN with
+    """B113: each live control session as cN with
     its title (`windows`, as `control_titles`); `links` as `session_rows` (None: each link from its pid file's
     transcript)."""
-    c1 = c1_row()
-    if windows.get(1):
-        c1['title'], c1['state'] = c1['title'] if c1.get('renamed') else windows[1], 'live'
-    if links and 'c1' in links:
-        c1['link'] = links['c1']
-    out = [c1]
-    for n in sorted(k for k in windows if k > 1):
+    out = []
+    for n in sorted(windows):
         try:
             sid = S.C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')[2]
         except Exception:  # noqa: BLE001 - no pid file (or no notes dir): a plain row
@@ -481,7 +460,7 @@ def control_rows(windows: dict[int, str], links=None) -> list[dict]:
 
 def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, links=None,
                  terminal_base: str = '', slots: int = 0, windows: dict[int, str] | None = None) -> list[dict]:
-    """c1 and the other control sessions (B113: `control_rows`; `windows` as `control_titles`, None: read from
+    """The control sessions (B113: `control_rows`; `windows` as `control_titles`, None: read from
     state), then each slot of STATE `st` in slot order: s1..s<slots> (F71: an idle one, no task, as `idle_row`)
     and any slot past the count still on its task. `links` ({'s2': url}) replaces the lookup by session;
     `terminal_base` is where the run page serves terminals ('' none yet: each row's `terminal` stays '')."""
@@ -736,24 +715,17 @@ def shelve(tid: str) -> dict:
     return call(['plan', 'shelve', tid])
 
 
-def to_c1(text: str) -> dict:
-    """Hand `text` to c1 the way the runner feed hands on a message: typed into c1 when it is live (through its
-    hidden shim's FIFO, `control.control_type`), else a new control session that gets it as its first message
-    (`control --new --ask`)."""
-    try:
-        from agent_runner.control import control_live, control_type
-        if control_live(1) and control_type(1, text):
-            return {'ok': True, 'code': 0, 'out': 'sent to c1', 'argv': []}
-    except Exception:  # noqa: BLE001 - no c1 to type into: a new control session takes it
-        pass
-    return call(['control', '--new', '--ask', text, '--no-feed'])
+def to_new(text: str) -> dict:
+    """F176: a prompt opens a chat of its own: a new control session with `text` as its first message, started
+    without waiting for its link (`control --new --no-wait --ask`)."""
+    return call(['control', '--new', '--no-wait', '--ask', text, '--no-feed'])
 
 
-SEND = [to_c1]  # how chat and answers reach c1; a test swaps it
+SEND = [to_new]  # how chat and answers start a chat; a test swaps it
 
 
 def chat(text: str) -> dict:
-    """The page's chat box: the person's words to c1, as they typed them."""
+    """The page's chat box: the person's words, as they typed them, to a new chat."""
     return SEND[0](text)
 
 
@@ -778,10 +750,10 @@ def need_label(tid: str) -> str:
 
 def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], str]:
     """B138: the runner command that settles a Needs you reply at once, and what to say once it did; ([], '')
-    when the reply is c1's to read. A button's Yes (or a pick, or done) is `plan confirm ID "<reply>"`, a
+    when the reply is a chat's to read. A button's Yes (or a pick, or done) is `plan confirm ID "<reply>"`, a
     CONFIRM's No is `plan change ID "No: the check failed"`; a pick sheet's go or Send line is `sheet ID
     --go|--picks`; a concept's option button is `plan approve ID "<option>"` (B149). Free words typed in the
-    reply box are c1's."""
+    reply box are a new chat's."""
     said, label = (text or '').strip(), need_label(tid)
     if label == 'PITCH' and button:  # F98
         if said.lower() == 'approve':
@@ -811,7 +783,7 @@ def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], s
 def answer(tid: str, text: str, button: bool = False) -> dict:
     """A reply to a Needs you item. B138: a button's answer runs the plan command itself (`answer_argv`), with
     no AI session, and an ok result carries 'said' (what was done, for the toast) and 'gone' (the item, off
-    Needs you); the words typed in a reply box go to c1 to settle as its needs guide says."""
+    Needs you); the words typed in a reply box go to a new chat to settle as its needs guide says."""
     argv, done = answer_argv(tid, text, button)
     if button and not argv and not need_label(tid):  # answered already, or never asked: say so, no AI session
         return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
@@ -827,8 +799,7 @@ def answer(tid: str, text: str, button: bool = False) -> dict:
 
 
 def take(tid: str, wait: bool = True) -> dict:
-    """Take (do it here): a new control session is asked "do ID here" (B139: not c1, whose whole history each
-    send would carry), and does it as its take guide says (`take ID`, the work in that worktree), so the page
+    """Take (do it here): a new control session is asked "do ID here" (B139), and does it as its take guide says (`take ID`, the work in that worktree), so the page
     never makes a worktree nobody works in. The result is `new_control`'s: 'name' the new cN to open."""
     return new_control(f'do {tid} here', wait)
 
@@ -853,7 +824,7 @@ def move(tid: str, where: str, other: str) -> dict:
 # One list for the web page and agent-runner ui alike, so the two cannot drift apart: each control's key, its
 # label, the runner command it runs ('{n}' the slot count typed, '{id}' the task), its key in agent-runner ui,
 # where it shows ('run': the run's own; 'task': a slot's task), and what it asks before it runs ('' nothing).
-# Take back is the one that is no runner command of its own: c1 is asked "do ID here", as `take` does.
+# Take back is the one that is no runner command of its own: a new chat is asked "do ID here", as `take` does.
 
 # F124: `group` is the More… sheet's group ('' on the Run card itself), 'fix' where a Fix up control's choices come
 # from (the snapshot's `fixups`; it shows only while there are some, and '{id}' is the one picked). A control with
@@ -1012,7 +983,7 @@ def control_argv(key: str, n='', tid: str = '', why: str = '', pri: str = '') ->
 def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True) -> dict:
     """F82: run one run control (RUN_CONTROLS) for the web page or agent-runner ui. One with a confirm question
     runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'. B139:
-    one with an 'ask' starts a new control session with it (`new_control`, `wait` as there), not c1."""
+    one with an 'ask' starts a new control session with it (`new_control`, `wait` as there)."""
     c = run_control_of(key)
     if c and c.get('each') and not tid:  # every one there is: 'Release stale claims (2)'
         ids = [x['id'] for x in fixups(_state(S.run_up()), P.lines(S.C.todo)).get(c['fix']) or []]
@@ -1326,17 +1297,17 @@ def keys(session: str, text: str = '', key: str = '') -> dict:
     return _no_pane(session)
 
 
-def interrupt(session: str = 'c1') -> dict:
+def interrupt(session: str) -> dict:
     """F74: interrupt `session` (Escape typed into it), as a person pressing Esc in it would."""
     r = keys(session, key='Escape')
     return {**r, 'out': f'interrupted {session}'} if r['ok'] else r
 
 
 def send(name: str, text: str) -> dict:
-    """F74: the person's words to session `name` as they typed them: c1 as `chat` hands them on (`SEND`), any
-    other control session or slot typed in through its hidden shim's FIFO as a bracketed paste and Enter
+    """F74: the person's words to session `name` as they typed them: '' a new one (`SEND`), a control session
+    or slot typed in through its hidden shim's FIFO as a bracketed paste and Enter
     (`slots.send_fifo`; F89)."""
-    if name == 'c1':
+    if not name:
         return SEND[0](text)
     from agent_runner import plat, slots
     if inbox := hidden_inbox(name):
@@ -1349,17 +1320,17 @@ def send(name: str, text: str) -> dict:
             'argv': []}
 
 
-def chat_to(text: str, to: str = 'c1', force: bool = False, unsent: bool = False) -> dict:
-    """F74: the chat box of any control session: `to` (c1, c6) gets `text`. B154: 'at' is when it was typed, and
-    'name' the new control session that took it when c1 was not up. F170: `force` interrupts it first while it works
+def chat_to(text: str, to: str = '', force: bool = False, unsent: bool = False) -> dict:
+    """F74: the chat box of any control session: `to` (c6) gets `text`, with no `to` a new one (F176). B154: 'at' is when it was typed, and
+    'name' the new control session. F170: `force` interrupts it first while it works
     (`session_now.force_send`); `unsent`: the page sees words in its input, so the text goes below them."""
     at = time.time()
-    if force or unsent:
+    if to and (force or unsent):
         from agent_runner.session_now import force_send
         r = {**force_send(to, text, send, unsent), 'at': at}
     else:
         r = {**send(to, text), 'at': at}
-    n = re.search(r'\bcontrol (\d+) ', r.get('out') or '') if to == 'c1' and r['ok'] else None
+    n = re.search(r'\bcontrol (\d+) ', r.get('out') or '') if not to and r['ok'] else None
     return {**r, 'name': f'c{n.group(1)}'} if n else r
 
 
@@ -1406,7 +1377,7 @@ def concept_chat(cid: str, title: str = '', url: str = '', copy: str = '', wait:
 
 def quick_ask(key: str, wait: bool = True) -> dict:
     """F74: one of the Status chat's quick asks (QUICK_ASKS: since, yesterday, needs, usage). B139: it starts a
-    new control session with the ask as its first message (`new_control`, `wait` as there), not c1."""
+    new control session with the ask as its first message (`new_control`, `wait` as there)."""
     text = next((t for k, _, t in QUICK_ASKS if k == key), '')
     if not text:
         return {'ok': False, 'code': 2, 'out': f'quick_ask: key is one of {", ".join(k for k, _, _ in QUICK_ASKS)}, '
@@ -1420,15 +1391,13 @@ ACTIONS['concept_chat'] = concept_chat  # F86
 
 def delete_chats(names: list | None = None) -> dict:
     """F118: the run page's chat delete: end each named control session (`control.end_control`) so it drops off
-    the chat list. c1, the Project chat, is never deleted: a list naming it is refused whole, nothing ended."""
+    the chat list."""
     names = [n for n in (names or []) if isinstance(n, str)]
     if not names:
         return {'ok': False, 'code': 2, 'out': 'delete_chats: no chats named', 'argv': []}
     bad = [n for n in names if not re.fullmatch(r'c\d+', n)]
     if bad:
         return {'ok': False, 'code': 2, 'out': f'delete_chats: not a chat: {", ".join(bad)}', 'argv': []}
-    if any(int(n[1:]) <= 1 for n in names):
-        return {'ok': False, 'code': 2, 'out': 'The Project chat (c1) cannot be deleted.', 'argv': []}
     from agent_runner import control as K
     gone = [n for n in names if K.end_control(int(n[1:]), 'deleted from the run page')]
     left = [n for n in names if n not in gone]
@@ -1661,7 +1630,7 @@ def need_chat(tid: str, wait: bool = True) -> dict:
 
 
 def rename_chat(chat: str, title: str) -> dict:
-    """F129: the person's own name for control session `chat` (c1, c6): `control --rename N NAME`."""
+    """F129: the person's own name for control session `chat` (c6): `control --rename N NAME`."""
     title = ' '.join(str(title or '').split())
     if not re.fullmatch(r'c\d+', chat or ''):
         return {'ok': False, 'code': 2, 'out': f'rename_chat: not a chat: {chat!r}', 'argv': []}

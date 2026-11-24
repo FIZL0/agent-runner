@@ -362,16 +362,16 @@ rules are behind `{cmd} guide <topic>`: when an ask fits one, read its page firs
 follow it: `summary`, `output` (/since, long output), `queue` (correct, order, split, park, drop, release;
 tell a running task), `watch`, `take`, `concepts`, `needs`, `grill`, `settings`, `voice`.
 
-**Open the session.** c1 (started with the run) opens with the summary (`guide summary`) before anything else; a session opened later (`control --new`, /control) starts blank: answer the person's
-first message, with a summary only when they ask. A `<runner-waiting>` block at the end of a handed-on first
+**Open the session.** Every session is the person's one talk about one thing: answer their
+first message, with a summary (`guide summary`) only when they ask. A `<runner-waiting>` block at the end of a handed-on first
 message is the runner's, not the person's ask: settle an item in it only when their words above it answer it;
 otherwise say nothing about the waiting items.
-**Name the session.** In any session but c1, once you have read its first message, run `{cmd} control --title
+**Name the session.** Once you have read its first message, run `{cmd} control --title
 "<what it is for, 2-5 words, a task id first>"` (`R43 site deploy`); again when the talk moves
 to another task or topic (not for a follow-up on the same one), and after /new or /clear. A name the person
 gave is never overwritten: --title leaves it.
-**Leave blocked and "{needs}" items alone**: never mention, list, count or ask about them, in an answer, the
-opening summary or a status, unless they bear on what the person is discussing or the person asks ("what needs
+**Leave blocked and "{needs}" items alone**: never mention, list, count or ask about them, in an answer,
+a summary or a status, unless they bear on what the person is discussing or the person asks ("what needs
 me?", "what is blocked?"). The run page and the TUI show them.
 **Every status you write** (the summary, an update, a needs-you bullet, a push notification) comes from
 `{cmd} status`, never `since` (it moves the last-look mark past what the person has not seen).
@@ -687,16 +687,6 @@ with no lines, re-arm it silently: start it again with no text at all; speak onl
 CONTROL_FEED_WATCH = """\
 **The runner feed tells the person when the run needs them.** The session "{repo} · runner" watches the run
 and pushes what needs the person to their phone, so start no needs-you watch of your own."""
-
-CONTROL_START = ("Open with the summary your control brief describes (its layout: `{cmd} guide summary`; "
-                 "`{cmd} status` only, not since: a headline "
-                 "first, the groups under their headings, then the hints line; nothing about blocked items or ones "
-                 "that need me unless I ask), "
-                 "{watch_start}and wait for me.")
-CONTROL_START_WATCH = ("start the needs-you watch your brief describes (the Monitor tool on "
-                       "`{cmd} since --follow --needs-you`, timeout_ms 1800000, re-armed silently when it times "
-                       "out), ")
-
 
 SKILL = """\
 ---

@@ -1073,11 +1073,11 @@ def run(argv: list[str], prog: str) -> int:
     C.notes('POWER').unlink(missing_ok=True)
     global MUX
     MUX = HiddenMux()  # C26: every OS runs its slots hidden
-    HIDDEN[0] = True  # Windows: c1's console starts hidden too
+    HIDDEN[0] = True  # Windows: consoles start hidden
     share(MUX=MUX)
     log(hidden_line())
     rc_sweep_start()  # B12: end the feed or control server an earlier run left on Remote Control
-    start_control()  # c1 beside the run ([run] control) unless [run] remote, where the control server stands in
+    start_control()  # F176: no session of an earlier run is picked up, but those a shutdown cut off come back
     start_control_server()
     start_board()  # the runner feed's window ([run] remote); reopened if closed
     from agent_runner.web import start_web

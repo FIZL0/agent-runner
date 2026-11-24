@@ -1,17 +1,17 @@
 """F68: the claude.ai copy of the run page (the run page copy).
 
-With `[run] remote_slots = 'open'` the Claude apps list one entry per project, c1. For when this machine (and so the
+With `[run] remote_slots = 'open'` a slot is in the Claude apps only once opened. For when this machine (and so the
 run page it serves) is not reachable, the run keeps a copy of the run page on claude.ai: it writes the page from
 F65's snapshot to <notes>/run-page-copy.html and, on a run event (a task starts, lands or blocks, a needs-you
 item, a concept, the release), publishes it to the same URL each time (<notes>/run-page-copy.url). The copy
 shows the run as the page does, read-only, with the terminal and the chat as session links: a slot's
-claude.ai/code link (once opened) and c1's.
+claude.ai/code link (once opened) and each chat's.
 
 B122: the publish is a one-shot headless `claude -p` with only Artifact and Read (`page_copy_argv`), never a
-control session: typing the ask into c1 cost a turn (~8k tokens) in the person's chat on every run event. Not
+control session: typing the ask into a chat cost a turn (~8k tokens) there on every run event. Not
 the runner feed either: it has no Artifact tool, and adding one would grow every one of its turns. At most one
 publish every PAGE_COPY_EVERY s, and only when the page changed apart from its clock (`page_copy_key`). When
-the one-shot cannot publish, the copy stops for the run (`PAGE_COPY_OFF`): it never falls back to c1.
+the one-shot cannot publish, the copy stops for the run (`PAGE_COPY_OFF`): it never falls back to a chat.
 """
 from __future__ import annotations
 
@@ -94,15 +94,9 @@ a{color:var(--blue)}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;col
 def page_copy_html(snap: dict) -> str:
     """The run page copy, from F65's snapshot `snap`: the run page's five panels and its log, read-only, with
     the terminal and the chat as session links (no token, no address of this machine)."""
-    c1 = next((s for s in snap.get('sessions') or [] if s.get('name') == 'c1'), {})
-    chat = c1.get('link', '')
     rows = []
     for s in snap.get('sessions') or []:
-        if s.get('name') == 'c1':
-            rows.append(f'<div class="row"><span class="r">c1</span><span>the project\'s chat</span>'
-                        f'{_a(chat, "chat") or "<span class=d>" + _h(s.get("state")) + "</span>"}</div>')
-            continue
-        if re.fullmatch(r'c\d+', str(s.get('name') or '')):  # F73: another control session, not a slot
+        if re.fullmatch(r'c\d+', str(s.get('name') or '')):  # F73: a control session, not a slot
             rows.append(f'<div class="row"><span class="r">{_h(s.get("name"))}</span><span>{_h(s.get("title"))}'
                         f'</span>{_a(s.get("link", ""), "session") or "<span class=d>" + _h(s.get("state")) + "</span>"}'
                         '</div>')
@@ -137,7 +131,7 @@ def page_copy_html(snap: dict) -> str:
     return (f'<title>{project} run</title>\n'
             '<meta name="claude:viewport-fit-sides" content="cover">\n' + PAGE_COPY_STYLE
             + f'<div class="top"><span><b>{project}</b> · run page copy</span>'
-            f'<span>as of {_h(snap.get("at"))}</span>{_a(chat, "chat with c1")}'
+            f'<span>as of {_h(snap.get("at"))}</span>'
             '<span>read-only: the live page is served by the run on its machine</span></div>'
             '<div class="grid">' + box(1, 'Status', status, 'no run is up') + box(2, 'Sessions', rows, 'none')
             + box(3, 'Queue', queue, 'nothing queued') + box(4, 'Needs you', needs, 'Nothing needs you.')

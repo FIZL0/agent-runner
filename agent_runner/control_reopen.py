@@ -1,7 +1,6 @@
-"""B121: control sessions c2+ that a shutdown or reboot ended come back on run start.
+"""B121: control sessions that a shutdown or reboot ended come back on run start.
 
-A control session outlives the run, but not the machine. c1 resumes its kept conversation (control.sid); every
-other number N keeps its own in control<N>.sid and its pid file ("pid sid"). On run start each N > 1 whose pid
+A control session outlives the run, but not the machine. Control session N keeps its conversation in control<N>.sid and its pid file ("pid sid"). On run start each N whose pid
 file is still there while its process is gone, and was written before this boot, was live at the shutdown: it is
 reopened with `control N --reopen` (--resume <its sid>, under the name it had). One closed on purpose stays
 closed: closing it (idle, B26; closed online, B53) removes its pid file, one closed online while the machine was
@@ -51,10 +50,10 @@ def boot_time() -> float:
 
 
 def ended_control_numbers() -> list[int]:
-    """The numbers N > 1 with a control<N>.pid whose process is gone."""
+    """The numbers N with a control<N>.pid whose process is gone."""
     out = []
     for f in state.C.notes().glob('control*.pid'):
-        if (m := re.fullmatch(r'control(\d+)\.pid', f.name)) and int(m[1]) > 1 and not K.control_live(int(m[1])):
+        if (m := re.fullmatch(r'control(\d+)\.pid', f.name)) and not K.control_live(int(m[1])):
             out.append(int(m[1]))
     return sorted(out)
 
@@ -78,7 +77,7 @@ def forget_control(n: int, why: str) -> None:
 
 
 def forget_ended_controls(booted: float | None = None) -> list[int]:
-    """Forget the control sessions c2+ whose process ended during this boot (the person quit them), so a later
+    """Forget the control sessions whose process ended during this boot (the person quit them), so a later
     run start does not reopen them. The numbers forgotten."""
     booted = boot_time() if booted is None else booted
     if not booted:
@@ -90,13 +89,15 @@ def forget_ended_controls(booted: float | None = None) -> list[int]:
 
 
 def controls_to_reopen(booted: float | None = None) -> list[tuple[int, str]]:
-    """[(N, sid)] of the control sessions c2+ live at the last shutdown, to reopen; the other ended ones are
+    """[(N, sid)] of the control sessions live at the last shutdown, to reopen; the other ended ones are
     forgotten (`forget_control`)."""
     booted = boot_time() if booted is None else booted
     out = []
     for n in ended_control_numbers():
         sid = K.control_kept_sid(n)
-        if not control_shut_down(n, booted):
+        if n < K.FIRST_CONTROL:  # F176
+            forget_control(n, 'it was the chat an older runner kept')
+        elif not control_shut_down(n, booted):
             forget_control(n, 'it ended while the machine was up')
         elif not sid or not K.transcript(sid):
             forget_control(n, 'its transcript is gone')
@@ -120,7 +121,7 @@ def reopen_name(n: int, sid: str) -> str:
 
 
 def reopen_control(n: int, sid: str) -> str:
-    """Start `control N --reopen` the way the run starts c1: a hidden terminal, or a hidden console on Windows
+    """Start `control N --reopen`: a hidden terminal, or a hidden console on Windows
     with no ConPTY. Where it went, or '' when it could not start."""
     cmd = [*runner_cmd(), 'control', str(n), '--reopen']
     if plat.WINDOWS and not plat.has_conpty():

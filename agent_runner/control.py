@@ -19,8 +19,8 @@ from pathlib import Path
 from agent_runner import pitch, plan as P, plansync, plat, session_theme
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.control_settled import LEAD  # F160: how the runner's own typed line starts
-from agent_runner.config import RUNNER, runner_cmd, shown_cmd
-from agent_runner.state import C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, ROOT
+from agent_runner.config import RUNNER, runner_cmd
+from agent_runner.state import C, commit_plan, git, init, log, MERGE, note, plan_rel, ROOT
 from agent_runner.brief import has_sheet
 from agent_runner.slots import (backend, entries, marker_pid, PRESENCE_ENV, quiet_file, remote_on,
     REMOTE_URL, silent, transcript)
@@ -262,8 +262,7 @@ def control_session_start(n: int, hook: dict) -> str:
             pidf.write_text(f'{pid_s} {new}', encoding='utf-8')
         except OSError:
             pass
-        if n > 1:
-            control_keep_sid(n, new)  # B121: a reopen after a shutdown resumes the conversation it has now
+        control_keep_sid(n, new)  # B121: a reopen after a shutdown resumes the conversation it has now
     if old and transcript(old) and control_renamed(control_state(entries(old, skip_bad=True)), n):
         return ''  # the person named it: never overwritten
     base, given = control_base_name(n), control_given(n)
@@ -412,33 +411,23 @@ def control_model() -> str:
     return (C.raw.get('models') or {}).get('control') or C.run['model']
 
 
-def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str = '', local: bool = False,
-                 images: list[str] | tuple = (), typed: bool | None = None) -> list[str]:
+def control_argv(n: int, sid: str, resume: bool, ask: str = '', images: list[str] | tuple = (),
+                 typed: bool | None = None) -> list[str]:
     """Control session `n`: interactive, on `[models] control`, the brief from its settings
-    file; with `[run] remote` on Remote Control as "<repo> · control N". Control 1 (the kept session the run
-    starts) gets a first message asking for the status summary (`status` only: `since` would move the last-look
-    mark past updates the person has not seen); any other (`control --new`, /control) gets none and stays blank
-    until the person types, its brief still loaded by the SessionStart hook. bypassPermissions, as the slots: it
-    is driven from a phone or the web as often as from here, and a permission prompt there stalls it. Not lean: a
-    person is there (all tools, so /statusline and the like work). `blank` (`control 1 --blank`: the c1 a run
-    with `[run] remote` opens): no first message either, so it costs nothing until the person types. `local`
-    (`control 1 --local`, the same c1): not on Remote Control even with `[run] remote` on, so it is in the
-    terminal only and its start pushes nothing; the control server is the apps' one entry. `ask`
-    (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead; `images` (`--file
+    file; with `[run] remote` on Remote Control as "<repo> · control N". F176: with no `ask` it gets no first
+    message and stays blank until the person types, its brief still loaded by the SessionStart hook.
+    bypassPermissions, as the slots: it is driven from a phone or the web as often as from here, and a permission
+    prompt there stalls it. Not lean: a person is there (all tools, so /statusline and the like work). `ask`
+    (`control --new --ask TEXT`, from the runner feed): TEXT is its first message; `images` (`--file
     PATH`, alias `--image`, repeatable) adds a line per attached file to it (`control_ask`). B147: on Remote
     Control a positional first message runs before the bridge connects, so the claude.ai/code thread would start
     at the reply; there (`typed`, by default `first_typed`) it is left off the command line and kept in
     CONTROL_FIRST for `type_first` to type in once Remote Control is up (control_first.py)."""
     from agent_runner.control_first import CONTROL_FIRST, first_typed
     CONTROL_FIRST[0] = ''
-    from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
-    cmd = control_cmd()  # B93: [run] command, as the brief and the feed name it
-    opening = CONTROL_START.format(cmd=cmd, watch_start='' if feed_on() else CONTROL_START_WATCH.format(cmd=cmd))
-    if n == 1 and not resume and CONTROL_FRESH[0]:  # F27: a bloated c1 started over; the summary says so first
-        opening = f'Say first, in one line: "{CONTROL_FRESH[0]}." Then: {opening}'
     ask_text, ask = ask, control_ask(ask, images)
-    first = [ask] if ask else [opening] if n == 1 and not blank else []
-    remote = remote_on() and not local
+    first = [ask] if ask else []
+    remote = remote_on()
     if first and remote and (first_typed(n) if typed is None else typed):  # B147: typed in once RC is up
         CONTROL_FIRST[0], first = first[0], []
     return [plat.exe(C.run['agent']), *first,
@@ -466,18 +455,18 @@ def control_live(n: int) -> int:
     return pid if args is None or not sid or sid in args or any('control' in a for a in args) else 0
 
 
+FIRST_CONTROL = 2  # F176: numbers start here; 1 was the kept session's, and what it left is never a new chat's
+
+
 def control_number() -> int:
-    """The first control number with no live session: 1 (the kept session) when it is free."""
-    n = 1
+    """The first control number, from FIRST_CONTROL, with no live session."""
+    n = FIRST_CONTROL
     while control_live(n):
         n += 1
     return n
 
 
-RESTART_GAP = 300  # s: a run started this soon after the last one ended is a restart (F27: c1 resumes)
-CONTROL_FRESH = ['']  # F27: why this c1 started a fresh session, for its opening line ('' when it did not)
-
-
+RESTART_GAP = 300  # s: a run started this soon after the last one ended is a restart
 RECOVER_GAP = 6 * 3600  # s: a run that never logged its stop, and was last alive this recently, is recovered
 
 
@@ -520,65 +509,36 @@ def run_restart(now: float | None = None) -> bool:
     return bool(stamps) and now - max(stamps) < gap
 
 
-def control_bloated(sid: str) -> int:
-    """F27: session `sid`'s last context in k tokens when it is over [run] context_warn (0 is off), else 0."""
-    from agent_runner.watch import usage
-    try:
-        warn = int(C.run.get('context_warn') or 0)
-    except (TypeError, ValueError):
-        return 0
-    ctx = usage(sid)[1]
-    last = ctx[-1] // 1000 if ctx else 0
-    return last if warn > 0 and last > warn else 0
-
-
-def control_sid(n: int, new_run: bool = False, handed: bool = False, reopen: bool = False) -> tuple[str, bool]:
-    """(session id, resume?): c1 keeps its id in `<notes>/control.sid` and resumes it across runs while its
-    transcript is there; any other control session starts fresh. F27: `new_run` (`control 1 --new-run`, from a
-    run a person started, not a restart: `run_restart`) starts c1 fresh, with a new id in control.sid, when
-    the kept transcript's last context is over [run] context_warn; the plan, ledger and since hold the state,
-    so the opening summary covers it. CONTROL_FRESH then says why, in one line. B96: `handed` (a session opened
-    for a handed-on ask, `control --new --ask`, that got number 1 because c1 was not live) always starts fresh
-    and leaves control.sid as it is: that kept session stays the run's own c1. B121: any other number N keeps
-    its id in `<notes>/control<N>.sid` (`control_sid_file`), and `reopen` (`control N --reopen`, from
-    `reopen_controls` on run start) resumes it while its transcript is there; a plain `control N` starts fresh."""
-    f = C.notes('control.sid')
-    CONTROL_FRESH[0] = ''
-    if n > 1 and reopen:
+def control_sid(n: int, reopen: bool = False) -> tuple[str, bool]:
+    """(session id, resume?) control session `n` starts with. F176: always a new session, never one an earlier run
+    left: its id is kept in `<notes>/control<N>.sid` (`control_sid_file`) only so that `reopen` (`control N
+    --reopen`, from `reopen_controls` after a shutdown, or Resume) can carry that conversation on (B121)."""
+    if reopen:
         sid = control_kept_sid(n)
         if sid and backend().find_transcript(sid):
             return sid, True
-    if handed:
-        sid = str(uuid.uuid4())
-        if n > 1:
-            control_keep_sid(n, sid)
-        return sid, False
-    if n == 1:
-        try:
-            sid = f.read_text(encoding='utf-8').strip()
-        except OSError:
-            sid = ''
-        if sid and backend().find_transcript(sid):
-            if not (new_run and (k := control_bloated(sid))):
-                return sid, True
-            CONTROL_FRESH[0] = (f'c1 starts a fresh session: the last one reached {k}k context (over [run] '
-                                f'context_warn {C.run["context_warn"]}k); the plan, ledger and since carry on')
-            log(f'control: {CONTROL_FRESH[0]}')
     sid = str(uuid.uuid4())
-    if n == 1:
-        f.write_text(sid + '\n', encoding='utf-8')
-    else:
-        control_keep_sid(n, sid)
+    control_keep_sid(n, sid)
     return sid, False
 
 
+def drop_kept_chat() -> None:
+    """F176: what a run start leaves behind of earlier runs' sessions, before anything opens: the id of the kept c1
+    an older runner resumed in every run (control.sid) and, on a new run (not a restart, `run_restart`), the
+    runner feed's: a run that was killed never forgot it."""
+    C.notes('control.sid').unlink(missing_ok=True)
+    if not run_restart():
+        from agent_runner.feed import feed_forget_session
+        feed_forget_session()
+
+
 def control_sid_file(n: int) -> Path:
-    """B121: where control session `n` (> 1) keeps its session id: `<notes>/control<n>.sid` (c1's is control.sid)."""
+    """B121: where control session `n` keeps its session id: `<notes>/control<n>.sid`."""
     return C.notes(f'control{n}.sid')
 
 
 def control_keep_sid(n: int, sid: str) -> None:
-    """B121: record `sid` as control session `n`'s (> 1) conversation, for `reopen_controls` after a shutdown."""
+    """B121: record `sid` as control session `n`'s conversation, for `reopen_controls` after a shutdown."""
     try:
         control_sid_file(n).write_text(sid + '\n', encoding='utf-8')
     except OSError:
@@ -586,7 +546,7 @@ def control_keep_sid(n: int, sid: str) -> None:
 
 
 def control_kept_sid(n: int) -> str:
-    """B121: control session `n`'s (> 1) kept session id: the one its pid file names (it follows /clear), else
+    """B121: control session `n`'s kept session id: the one its pid file names (it follows /clear), else
     control<n>.sid; '' for none."""
     try:
         sid = C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')[2].strip()
@@ -600,16 +560,14 @@ def control_kept_sid(n: int) -> str:
         return ''
 
 
-def control_open(n: int, ask: str = '', images: list[str] | tuple = (), new_run: bool = False, blank: bool = False,
-                 local: bool = False, reopen: bool = False) -> tuple[str, bool, list[str]]:
-    """(session id, resume?, argv) control session `n` starts with (`control N`). B96: one opened with an ask
-    (or files) starts fresh even as number 1 (`control_sid`). A fresh session gets the name the runner gives it
+def control_open(n: int, ask: str = '', images: list[str] | tuple = (),
+                 reopen: bool = False) -> tuple[str, bool, list[str]]:
+    """(session id, resume?, argv) control session `n` starts with (`control N`). A fresh session gets the name the runner gives it
     (F32: never an earlier session N's or a task's) and, opened for an ask, the one-ask mark (F56). B121:
     `reopen` resumes session N's kept conversation under the name it had (`reopen_name`)."""
-    handed = bool(ask or images)
-    sid, resume = control_sid(n, new_run=new_run, handed=handed, reopen=reopen and not handed)
-    argv = control_argv(n, sid, resume, blank=blank, ask=ask, local=local, images=images)
-    if resume and n > 1 and '--remote-control' in argv:
+    sid, resume = control_sid(n, reopen=reopen and not (ask or images))
+    argv = control_argv(n, sid, resume, ask=ask, images=images)
+    if resume and '--remote-control' in argv:
         from agent_runner.control_reopen import reopen_name
         argv[argv.index('--remote-control') + 1] = reopen_name(n, sid)
     if not resume:
@@ -690,37 +648,16 @@ def hand_hook_exclude(root: Path) -> None:
 
 
 def start_control() -> None:
-    """The run opens control session c1 beside it, unless `[run] control = false` or c1 already runs (it outlives
-    a stopped run). With `[run] remote` it opens blank (no opening summary, so no tokens until the person types)
-    and local (`--local`: no Remote Control, so no second app entry beside the control server's "<repo> ·
-    control" and no start push). Windows with no ConPTY: a console of its own (hidden). Else a pseudo-terminal
-    with no window (`hidden_control`, F59, F145). B121: first the control sessions c2+ a shutdown ended are
-    reopened (`reopen_controls`)."""
+    """The run's start. F176: it opens no control session and resumes none (`drop_kept_chat`): each prompt opens one
+    of its own. B121: the ones a shutdown cut off are reopened (`reopen_controls`), unless `[run] control = false`."""
     mark_board()
+    drop_kept_chat()
     if C.run['control']:
         try:
             from agent_runner.control_reopen import reopen_controls
             reopen_controls()
         except Exception as e:  # never stops the run from starting
             log(f'control: could not reopen the control sessions a shutdown ended: {e}')
-    if not C.run['control']:
-        return
-    cmd = [*runner_cmd(), 'control', '1', *([] if run_restart() else ['--new-run']),  # F27: a restart resumes c1
-           *(['--blank', '--local'] if remote_on() else [])]  # remote: free till you type, terminal only
-    if pid := control_live(1):
-        log(f'control: c1 already runs (pid {pid})')
-        return
-    if plat.WINDOWS and not plat.has_conpty():
-        plat.spawn_console(cmd, ROOT, control_env(), hidden=HIDDEN[0])
-        where = 'a console of its own' + (' (hidden)' if HIDDEN[0] else '')
-    else:  # F59: a pseudo-terminal with no window
-        pid, why = hidden_control(1, cmd)
-        if not pid:
-            log(f'control: c1 could not start hidden: {why}')
-            return
-        where = f'a hidden terminal ({"" if plat.WINDOWS else f"{shown_cmd()} attach c1 shows it; "}' \
-                f'its output in {hidden_control_log(1)})'
-    log(f'control: c1 is up in {where} ({shown_cmd()} control opens another)')
 
 
 NO_BOARD = 'no-board'  # F59: <notes>/no-board while the run that is up has no runner feed (Windows)
@@ -834,8 +771,8 @@ def person_turn(d: dict) -> bool:
 
 # --- B26: idle control sessions are closed, so the apps' session list stops piling up ----------------------
 #
-# Every CONTROL_CLOSE_EVERY s the run reads the transcript of each live control session N (not c1, the kept
-# one) and closes it (ends its process, removes controlN.pid; the transcript stays, resumable) when Claude
+# Every CONTROL_CLOSE_EVERY s the run reads the transcript of each live control session N
+# and closes it (ends its process, removes controlN.pid; the transcript stays, resumable) when Claude
 # spoke last, nothing runs in it, and it has been quiet `[run] control_idle`; or, when its last line is
 # `DECIDE: <question>` (F135; an offer is not filed), quiet `[run] control_ask`: then the question is filed under
 # Needs you as a DECIDE item (an F task) first. `control_idle = false` closes none for idleness, `control_ask =
@@ -1056,10 +993,11 @@ def control_link(bridge: str) -> str:
 
 
 def control_live_numbers() -> list[int]:
-    """The numbers of the control sessions with a pid file and a live process, c1 left out."""
+    """The numbers of the control sessions with a pid file and a live process (F176: none is special, so one an
+    older runner started as c1 counts too)."""
     out = []
     for f in C.notes().glob('control*.pid'):
-        if (m := re.fullmatch(r'control(\d+)\.pid', f.name)) and int(m[1]) > 1 and control_live(int(m[1])):
+        if (m := re.fullmatch(r'control(\d+)\.pid', f.name)) and control_live(int(m[1])):
             out.append(int(m[1]))
     return sorted(out)
 
@@ -1135,10 +1073,9 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
 # another device or app (code 4090)" (or "— the server no longer reports this session — it may have been
 # deleted …", same code), and goes on locally. So its controlN.pid stays live and control_number() never hands
 # N out again. Every CONTROL_CLOSE_EVERY s (and before `control --new` picks a number) each live control
-# session N > 1 whose transcript's last word is that disconnect, with no message the person typed since (one
+# session whose transcript's last word is that disconnect, with no message the person typed since (one
 # typed in its terminal after it means they still use it there) and no new Remote Control session since, is
-# ended: its process, controlN.pid and controlN.title. The transcript stays, resumable. c1 is
-# left alone: it is the run's kept session (resumed across runs, local-only under [run] remote), as in B26.
+# ended: its process, controlN.pid and controlN.title. The transcript stays, resumable.
 
 RC_CLOSED = re.compile(r'Remote Control disconnected\b.*\(code 4090\)')
 CONTROL_GONE_AT = [0.0]
@@ -1246,11 +1183,9 @@ def claim_control_number() -> int:
 
 
 def end_control(n: int, why: str) -> bool:
-    """F118: end control session `n` (> 1) on purpose, as closing it does (B26, B53): its process, controlN.pid and
+    """F118: end control session `n` on purpose, as closing it does (B26, B53): its process, controlN.pid and
     controlN.title go, so it leaves the chat list and no run start reopens it (B121); the transcript stays,
-    resumable. c1 is never ended here: it is the run's kept session. Whether it was there to end."""
-    if n <= 1:
-        return False
+    resumable. Whether it was there to end."""
     pidf = C.notes(f'control{n}.pid')
     try:
         pid_s, _, sid = pidf.read_text(encoding='utf-8').strip().partition(' ')
@@ -1272,10 +1207,7 @@ def end_control(n: int, why: str) -> bool:
 
 def close_from_tui(n: int) -> dict:
     """F116: d on control session cN in agent-runner ui's Sessions: close it through `end_control` (its process,
-    controlN.pid and controlN.title go; the transcript stays) and log 'control N: closed from the TUI'. c1 is the
-    run's kept session: it is left alone. An action result: {'ok', 'code', 'out', 'argv'}."""
-    if n <= 1:
-        return {'ok': False, 'code': 2, 'out': "c1 is the run's kept session: it stays open", 'argv': []}
+    controlN.pid and controlN.title go; the transcript stays) and log 'control N: closed from the TUI'. An action result: {'ok', 'code', 'out', 'argv'}."""
     if not end_control(n, 'as agent-runner ui asked'):
         return {'ok': False, 'code': 1, 'out': f'c{n} was already closed', 'argv': []}
     log(f'control {n}: closed from the TUI')
@@ -1284,29 +1216,43 @@ def close_from_tui(n: int) -> dict:
 
 def control_server_argv() -> list[str]:
     """With `[run] remote`: Claude Code's Remote Control server in the main checkout, so new control sessions can
-    be started from claude.ai/code and the Claude apps, each with the control settings (its brief)."""
+    be started from claude.ai/code and the Claude apps, each with the control settings (its brief). F176: it
+    pre-creates no session (NO_PRECREATE): Claude Code keeps that one when the server stops, and every later
+    server in the same folder adopts it, so one old chat would come back in every run."""
     exe = plat.exe(C.run['agent'])
     return [exe, 'remote-control', '--spawn', 'same-dir', '--name', f'{ROOT.name} · control',
             '--permission-mode', 'bypassPermissions',
+            *([NO_PRECREATE] if server_can(exe, '[no-]create-session-in-dir', NO_PRECREATE) else []),
             *(['--settings', str(control_settings())] if server_takes_settings(exe) else [])]
 
 
-_SERVER_SETTINGS: dict[str, bool] = {}
+NO_PRECREATE = '--no-create-session-in-dir'
+_SERVER_HELP: dict[str, str] = {}
 
 
-def server_takes_settings(exe: str) -> bool:
-    """Whether this agent's `remote-control` takes `--settings` (asked of its --help once a run): an older Claude
-    Code exits at once on it, which would crash-loop the control server. An agent whose help cannot be read
-    (missing, hangs, prints nothing) is taken to have it, as before."""
-    if exe not in _SERVER_SETTINGS:
+def server_help(exe: str) -> str:
+    """What this agent's `remote-control --help` prints (asked once a run); '' when it cannot be read."""
+    if exe not in _SERVER_HELP:
         try:
             r = sp.run([exe, 'remote-control', '--help'], stdin=sp.DEVNULL, capture_output=True, text=True,
                        errors='replace', timeout=30)
-            said = (r.stdout or '') + (r.stderr or '')
-            _SERVER_SETTINGS[exe] = '--settings' in said or not said.strip()
+            _SERVER_HELP[exe] = ((r.stdout or '') + (r.stderr or '')).strip()
         except (OSError, sp.SubprocessError):
-            _SERVER_SETTINGS[exe] = True
-    return _SERVER_SETTINGS[exe]
+            _SERVER_HELP[exe] = ''
+    return _SERVER_HELP[exe]
+
+
+def server_can(exe: str, *flags: str) -> bool:
+    """Whether this agent's `remote-control` takes one of `flags` (as its help spells it): an older Claude Code
+    exits at once on one it does not know, which would crash-loop the control server. An agent whose help cannot
+    be read (missing, hangs, prints nothing) is taken to have it, as before."""
+    said = server_help(exe)
+    return not said or any(x in said for x in flags)
+
+
+def server_takes_settings(exe: str) -> bool:
+    """Whether this agent's `remote-control` takes `--settings` (`server_can`)."""
+    return server_can(exe, '--settings')
 
 
 def server_last_error(err: Path, since: int) -> str:

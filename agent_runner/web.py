@@ -13,7 +13,7 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
                                  drop, shelve, chat, answer, take, move, run_control, rename_chat, need_chat,
                                  setting_device …; F93 `talk`, the Talk view's words to its own control
                                  session), its result as JSON
-    GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) own terminal is served by ttyd (`attach NAME`),
+    GET  /terminal/NAME?t=TOKEN  where slot NAME's (or cN's) own terminal is served by ttyd (`attach NAME`),
                                  started on demand; without one, why (no ttyd, not up), its session link and whether
                                  it can be resumed
     GET  /t/TOKEN/NAME/...       F114: that terminal, ttyd's page and WebSocket, on this address (session_frame.py)
@@ -366,10 +366,10 @@ padding:32px max(16px,env(safe-area-inset-left,0px))}}h1{{font-size:1.3rem;margi
 </style></head><body><h1>{head}</h1><p>{H.escape(said)}</p></body></html>""".encode('utf-8')
 
 
-# --- c1 and the terminals ---------------------------------------------------------------------------------------
+# --- the sessions' terminals ---------------------------------------------------------------------------------------
 
 def socket_of(name: str) -> str:
-    """C26: the attach socket of session `name` (s2, c1, c6) as a path, '' when it has none (not up)."""
+    """C26: the attach socket of session `name` (s2, c6) as a path, '' when it has none (not up)."""
     try:
         from agent_runner.attach import session_socket
         sock = session_socket(name)
@@ -402,8 +402,8 @@ def headless(name: str) -> bool:
 
 
 def resumable(name: str) -> str:
-    """F114: the conversation an ended chat (cN, not c1) can be resumed with, as a session id; '' for none."""
-    if not re.fullmatch(r'c\d+', name) or name == 'c1':
+    """F114: the conversation an ended chat (cN) can be resumed with, as a session id; '' for none."""
+    if not re.fullmatch(r'c\d+', name):
         return ''
     try:
         from agent_runner.control import control_kept_sid
@@ -419,7 +419,7 @@ def no_session(name: str) -> dict:
     and whether it can be resumed."""
     if not re.fullmatch(r'[cs]\d+', name):
         return {'ok': False, 'mode': 'none', 'live': False, 'out': f'{name} is not a session.', 'link': '', 'resume': False}
-    live, sid = session_live(name), '' if name == 'c1' else resumable(name)
+    live, sid = session_live(name), resumable(name)
     if live and name[0] == 's' and headless(name):
         out = f'{name} runs headless ([run] engine = "stream"), so it has no terminal to show. Messages still reach it.'
     elif live and plat.WINDOWS and not plat.has_conpty():
@@ -435,8 +435,8 @@ def no_session(name: str) -> dict:
 def resume_chat(chat: str) -> dict:
     """F114: Resume on an ended chat: its conversation comes up again under its number (`control N --reopen`)."""
     bad = {'ok': False, 'code': 2, 'argv': []}
-    if not re.fullmatch(r'c\d+', str(chat)) or chat == 'c1':
-        return {**bad, 'out': f'resume_chat: a chat (c2 and up), not {chat!r}'}
+    if not re.fullmatch(r'c\d+', str(chat)):
+        return {**bad, 'out': f'resume_chat: a chat, not {chat!r}'}
     if session_live(chat):
         return {'ok': True, 'code': 0, 'out': f'{chat} is up already', 'argv': [], 'name': chat}
     if not (sid := resumable(chat)):

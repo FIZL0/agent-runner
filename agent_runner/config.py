@@ -116,15 +116,16 @@ DEFAULTS: dict = {
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
                                 # when it can work (Claude Code on a claude.ai login), true/false force it
         'remote_slots': 'open', # the slots in the Claude apps. open = a slot is listed only once opened from the run
-                                # page, c1 is the project's chat, and the run keeps a claude.ai copy of the run page;
+                                # page, and the run keeps a claude.ai copy of the run page;
                                 # always = every slot its own entry, "<task title> · <repo> s2 · B646", and no copy
         'web': True,            # the run page on the web, served by the run from this machine on web_port for the
                                 # LAN/Tailscale (its address, with the token it needs, in `status` and the run log)
         'web_port': 8770,       # where the run page is served (its ttyds take the next ports); with Home, only if set (F165)
         'silent': False,        # phone pushes from the run's Remote Control sessions: true = none after each
                                 # one's start push (that one cannot be stopped), false = Claude Code's usual
-        'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
-        'control_idle': '3h',   # the run closes control sessions 2, 3, … (never c1) quiet this long with Claude
+        'control': True,        # the run reopens the control sessions a shutdown cut off and, with remote, keeps the
+                                # control server up; it opens none of its own (F176). false: neither
+        'control_idle': '3h',   # the run closes control sessions quiet this long with Claude
                                 # last and nothing running in them; transcripts kept. false: none closed idle
         'control_ask': '2h',    # quiet this long on a question marked with a last line `DECIDE: …` (F135):
                                 # filed under Needs you as a DECIDE item, then closed. false: such a session stays open
@@ -245,7 +246,7 @@ DEFAULTS: dict = {
                                 # accent), omarchy (the current Omarchy theme's colors.toml, else ryha), terminal
                                 # (the terminal's own 16 colours and background), light
         'chat_quiet': '6h',     # a chat that needs no reply, with nothing said in it for this long, is grayed at the
-                                # bottom of the run app's Chats (never c1, a pinned or a renamed one); false: off
+                                # bottom of the run app's Chats (never a pinned or a renamed one); false: off
     },
     'models': {
         'code': 'opus',         # a task's own session when its kind has no model below
@@ -253,7 +254,7 @@ DEFAULTS: dict = {
         'fix': 'opus',          # a merge-conflict fix or repair session
         'docs': 'haiku',        # the `docs` subagent a task hands CHANGELOG, docs, README, journal and plan-text
                                 # edits to, then checks; false: no docs subagent
-        'control': 'opus',      # control sessions (c1, c2, ...)
+        'control': 'opus',      # control sessions (c2, c3, ...)
         'feed': 'haiku',        # the runner feed and the one-shot that publishes the run page's claude.ai copy
         'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
                   'R': 'sonnet'},  # a task's session by its kind (the id's letters): a kind set here replaces

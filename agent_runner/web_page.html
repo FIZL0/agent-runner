@@ -93,9 +93,8 @@ a{color:var(--accent)}
 .crow .del svg{width:15px;height:15px} .crow .del.undo{padding:0 8px;color:var(--accent)}
 @media (hover:none){.crow .del{opacity:1}}
 /* F133: the pin button beside delete (always shown on a pinned chat), and a row being dragged */
-.crow[data-crow] .thread{padding-right:68px} .crow[data-crow="c1"] .thread{padding-right:38px}
+.crow[data-crow] .thread{padding-right:68px}
 .crow .pin{position:absolute;right:34px;top:50%;transform:translateY(-50%);height:28px;width:28px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0}
-.crow[data-crow="c1"] .pin{right:4px}
 .crow:hover .pin,.crow:focus-within .pin,.crow .pin.on{opacity:1} .crow .pin.on{color:var(--accent)} .crow .pin:hover{background:var(--line2);color:var(--fg)}
 .crow .pin svg{width:15px;height:15px}
 @media (hover:none){.crow .pin{opacity:1}}
@@ -352,7 +351,7 @@ a{color:var(--accent)}
 @media (hover:none){
   .crow .del:not(.undo),.crow .pin:not(.on){display:none}
   .crow .rowmenu{position:absolute;right:0;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center}
-  .crow .pin.on{right:38px} .crow[data-crow] .thread,.crow[data-crow="c1"] .thread{padding-right:44px} .crow.pinned .thread{padding-right:74px!important} .crow[data-crow="c1"] .pin.on{right:38px}
+  .crow .pin.on{right:38px} .crow[data-crow] .thread{padding-right:44px} .crow.pinned .thread{padding-right:74px!important}
   .thread,.ni,.newchat,.prow{min-height:var(--tap)}
 }
 /* a row that folds open in place (a slot, a task, a setting) */
@@ -453,7 +452,7 @@ const GONE_MS=30000;
 function goneMark(gone,r,now){const g={...(gone||{})};if(r&&r.ok&&r.gone)g[r.gone]=now;return g}
 function needsShown(needs,gone,now){return(needs||[]).filter(n=>!(gone&&gone[n.id]!=null&&now-gone[n.id]<GONE_MS))}
 /* what the toast says once an answer button's command ran: the run's own words ('R13 ticked'), else the reply */
-function answerSaid(r,id,v){return(r&&r.said)||(r&&r.gone?`${id}: ${v}`:`Sent to the project chat: ${id} ${v}`)}
+function answerSaid(r,id,v){return(r&&r.said)||(r&&r.gone?`${id}: ${v}`:`Sent to a new chat: ${id} ${v}`)}
 /* F93: Talk's words: a session's feed entries as a conversation, yours {w:'u'} and the replies {w:'a'}; k, its entry's id */
 function talkMsgs(entries){return(entries||[]).filter(e=>e.kind==='you'||e.kind==='say').map(e=>({w:e.kind==='you'?'u':'a',text:e.text,...(e.id?{k:e.id}:{})}))}
 /* F114: what a chat or slot shows. o: stand (a chat still starting, '@cid'), starting (its first message went), info
@@ -568,8 +567,8 @@ function compose(ctx,text,paths){
   return msg;
 }
 /* B139: where the message box sends msg: with a card's context (Add a task, a card's Chat) a new control
-   session that gets it as its first message, so it carries none of c1's history; else chat_to the open chat */
-function sendReq(ctx,to,msg){return ctx?{name:'new_control',args:{ask:msg}}:{name:'chat_to',args:{text:msg,to:to||'c1'}}}
+   session that gets it as its first message; F176: with no chat open (Home) too; else chat_to the open chat */
+function sendReq(ctx,to,msg){return ctx||!to?{name:'new_control',args:{ask:msg}}:{name:'chat_to',args:{text:msg,to}}}
 /* F172: the new chat view of a card's Chat, before its first message: its name in S.thread ('+plan:F1'; no session has it) */
 const ctxKey=ctx=>'+'+(ctx.kind==='new'?'new':ctx.kind+':'+ctx.id);
 const isNew=n=>String(n||'')[0]==='+';
@@ -586,7 +585,7 @@ function logKind(line){
 /* a reply as one plain line, for a card's quote: no markdown marks */
 const plain=s=>String(s||'').replace(/```[\s\S]*?(```|$)/g,' ').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1')
   .replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/^\s*(?:[-*]|\d+[.)]|#+)\s+/gm,'').replace(/\s+/g,' ').trim();
-const chatName=s=>s.renamed&&s.title?s.title:s.name==='c1'?'Project chat':(s.title&&s.title!=='control session'?s.title:`Chat ${s.name.slice(1)}`);
+const chatName=s=>s.title&&(s.renamed||s.title!=='control session')?s.title:`Chat ${s.name.slice(1)}`;
 /* F82: a run control's request to /act (run_control, from the snapshot's one list of controls): o.n the slot
    count typed, o.tid the slot's task, o.sure only from the page's own confirm step (a control with a confirm
    question is refused without it) */
@@ -667,12 +666,12 @@ function controlGroups(snap){
 /* F128: does a chat wait for the person's reply: an open question, or the session spoke after they last opened it
    (seen: epoch s) */
 const needsReply=(s,seen)=>!!s.needs_reply||(s.last==='claude'&&(s.at||0)>(seen||0));
-/* F128: the Chats list in two: the chats, then the quiet ones (no reply needed, nothing said for `quiet` s). c1, a
+/* F128: the Chats list in two: the chats, then the quiet ones (no reply needed, nothing said for `quiet` s). A
    pinned chat and one the person named stay up. */
 function chatGroups(rows,o){
   const top=[],quiet=[];
   for(const s of rows||[]){
-    const q=o.quiet>0&&s.name!=='c1'&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.open&&s.at>0
+    const q=o.quiet>0&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.open&&s.at>0
       &&o.now-s.at>o.quiet&&!needsReply(s,(o.seen||{})[s.name]);
     (q?quiet:top).push(s);
   }
@@ -872,9 +871,9 @@ function talkReply(entries,mark,said){
 }
 /* F118: the chats picked for delete after a click on `name`: `names` the chats in list order, `sel` those picked,
    `last` the last one clicked, `how` 'toggle' (Ctrl/Cmd+click: in or out), 'range' (Shift+click: every chat from
-   `last` to `name`), else a plain click (nothing picked, `name` the new last). c1, the Project chat, is never picked. */
+   `last` to `name`), else a plain click (nothing picked, `name` the new last). */
 function chatPick(names,sel,last,name,how){
-  names=names||[];const ok=n=>n!=='c1'&&names.includes(n);
+  names=names||[];const ok=n=>names.includes(n);
   const order=s=>names.filter(n=>s.has(n));
   let s=new Set((sel||[]).filter(ok));
   if(how==='range'&&names.includes(name)&&names.includes(last)){
@@ -1135,8 +1134,8 @@ const tabStore={get(k){try{return sessionStorage.getItem(k)||''}catch(e){return'
 const DRAFT_KEY=k=>'ar-draft:'+k;  /* a box's draft, kept per thread (and Home) across refreshes */
 const boxKey=()=>S.thread||(S.view==='talk'?'talk':'home');
 /* B141: the session the page shows, which Ctrl+C and Stop interrupt: the open chat, else the Talk session in
-   the Talk view ('' before it has one), else c1 (Home and the other views talk to c1) */
-const shownSession=()=>isNew(S.thread)?'':S.thread||(S.view==='talk'?talkName():'c1');
+   the Talk view ('' before it has one); F176: none on Home and the other views, whose message starts a new chat */
+const shownSession=()=>isNew(S.thread)?'':S.thread||(S.view==='talk'?talkName():'');
 /* B120: each chat's sent messages (localStorage, so a reload keeps them; store's try/catch when it is blocked), and
    HI where Up / Down stands in them: the chat, the place (null: not looking back) and the draft it left */
 const HIST_KEY=k=>'ar-hist:'+k;
@@ -1259,8 +1258,7 @@ function obDone(it,j){
   if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
-  else if(it.name==='chat_to'){const to=j.name||it.args.to;  // B154: c1 was not up: the new chat that took it
-    addSent(to,it.args.text,j.at,j.name?{first:true}:{});if(to!==it.args.to&&S.thread===it.args.to)open(to)}
+  else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
   else if(it.need&&(it.name==='answer'||it.name==='need_drop'||it.name==='pitch_no')){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
@@ -1359,7 +1357,7 @@ function markSeen(){
 }
 const replyDue=s=>needsReply(s,(S.seen||{})[s.name])&&!(S.thread===s.name&&!s.needs_reply);
 const shownChats=()=>chatGroups(chats(),{pins:chatPins(),quiet:+S.snap.chat_quiet||0,now:Date.now()/1000,seen:S.seen||{},open:S.thread});
-const threadTitle=n=>{if(isNew(n))return S.ctx?S.ctx.label:'New chat';if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n==='c1'?'Project chat':n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
+const threadTitle=n=>{if(isNew(n))return S.ctx?S.ctx.label:'New chat';if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
 const upNext=()=>S.snap.queue.filter(q=>q.state!=='running'&&q.state!=='parked');
 const feedOf=n=>(S.feeds[n]||{}).entries||[];
 function lastWords(n){const e=feedOf(n).filter(x=>x.kind==='say');return e.length?plain(e[e.length-1].text):''}
@@ -1464,14 +1462,14 @@ async function homePost(path,body){
   catch(e){toast(`Could not reach Runner Home: ${plainErr(e)}`,true)}
   H.busy=false;loadProjects();
 }
-/* F118: a chat row: its delete button (none for c1), dimmed with Undo in that spot once deleted; the Delete N bar */
+/* F118: a chat row: its delete button, dimmed with Undo in that spot once deleted; the Delete N bar */
 function chatRow(s,quiet){
   const n=s.name,u=S.undo,gone=!!(u&&u.names.includes(n)),cls=[S.thread===n&&!gone?'on':'',S.sel.includes(n)?'sel':'',gone?'gone':''].join(' ');
   if(S.ren&&S.ren===n)return `<form class="renform" data-renform><input data-f="ren" aria-label="The chat's name" maxlength="80" autocomplete="off"></form>`;  // F129
   const due=!gone&&replyDue(s);  // F128
   const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}" title="Double-click to rename"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatTitle(s))}</span>${due?'<span class="bdot" role="img" aria-label="needs your reply" title="needs your reply"></span>':''}</button>`;
   const btn=gone?(u.bar?'':`<button class="del undo" data-undo>Undo</button>`):
-    n==='c1'?'':`<button class="del" data-del="${esc(n)}" aria-label="Delete this chat" title="Delete this chat">${I.trash}</button>`;
+    `<button class="del" data-del="${esc(n)}" aria-label="Delete this chat" title="Delete this chat">${I.trash}</button>`;
   const pinned=chatPins().includes(n), pin=gone?'':`<button class="pin${pinned?' on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat" title="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button>`;
   const menu=gone?'':`<button class="rowmenu" data-rowmenu="${esc(n)}" aria-label="More for this chat">${I.dots}</button>`;
   return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
@@ -1596,7 +1594,7 @@ function box(ph,foot){
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
     <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread&&!isNew(S.thread)?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}${real?'<button type="button" class="tool" data-slashopen aria-label="Commands" title="Commands">/</button>':''}${real&&busyNow?'':`<span class="to">${esc(isNew(S.thread)?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>`}${real&&busyNow?`<button type="button" class="act halt" data-halt="${esc(shownNow)}">${I.stop}Stop</button><button class="act force">Force send</button></div></form>`:`${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>`}${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread&&!isNew(S.thread)?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}${real?'<button type="button" class="tool" data-slashopen aria-label="Commands" title="Commands">/</button>':''}${real&&busyNow?'':`<span class="to">${esc(isNew(S.thread)?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to a new chat')}</span>`}${real&&busyNow?`<button type="button" class="act halt" data-halt="${esc(shownNow)}">${I.stop}Stop</button><button class="act force">Force send</button></div></form>`:`${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>`}${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 /* B177: a chat with a transcript that the run no longer lists (one just started is not listed yet: its message waits) */
 const ended=n=>!!(S.snap.at&&S.feeds[n]&&S.feeds[n].ok&&!sessionOf(n)&&!(S.sent[n]&&(S.sent[n].pending||[]).length));
@@ -1674,8 +1672,8 @@ function feedHTML(n){
   let title='', words=i.out||'', btns=open;
   if(st==='install'){title='The session cannot be shown here';if(S.snap.ttyd_install)words+=` On this machine: ${S.snap.ttyd_install}`}
   else if(st==='ended'){
-    title=n==='c1'?'The project chat is not running':'This chat has ended';
-    words=n==='c1'?'Your next message starts it.':i.resume?'Resume brings it back with everything said in it.':'';
+    title='This chat has ended';
+    words=i.resume?'Resume brings it back with everything said in it.':'';
     if(i.resume)btns=`<button class="btn pri${S.ob.some(x=>x.res===n&&x.state==='sending')?' busy':''}" data-resume="${esc(n)}">Resume</button>`+open;
   }else if(st==='idle'){
     const tid=(sessionOf(n)||{}).task||last.task||'', cut=tid&&((S.snap.fixups||{}).resume||[]).some(x=>x.id===tid)&&controlOf('resume');
@@ -1943,7 +1941,7 @@ const SHEETS={
   chat(){  // a chat row's menu, on touch
     const x=sessionOf(S.sheetArg), n=S.sheetArg;if(!x)return '<div class="small">That chat has ended.</div>';
     const pinned=chatPins().includes(n);
-    return `<h2>${esc(chatTitle(x))}</h2><button class="it" data-ren="${esc(n)}"><span>Rename</span>${I.edit}</button><button class="it" data-pin="${esc(n)}"><span>${pinned?'Unpin':'Pin'}</span>${I.pin}</button>${n==='c1'?'':`<button class="it bad" data-del="${esc(n)}"><span>Delete</span>${I.trash}</button>`}`;
+    return `<h2>${esc(chatTitle(x))}</h2><button class="it" data-ren="${esc(n)}"><span>Rename</span>${I.edit}</button><button class="it" data-pin="${esc(n)}"><span>${pinned?'Unpin':'Pin'}</span>${I.pin}</button><button class="it bad" data-del="${esc(n)}"><span>Delete</span>${I.trash}</button>`;
   },
   talk(){  // Talk's settings
     const vs=voices(), t=TS;
@@ -1967,7 +1965,7 @@ Object.assign(SHEETS,{
     return `<h2>Shells</h2>${ts.map(t=>`<div class="it setrow"><span class="grow"><span class="ell">${esc(t.name)}</span><span class="small">${esc(taskWhen(t))}</span></span>${t.running?`<button class="btn" data-sesstask="${esc(t.id)}" data-do="stop">Stop</button>`:''}</div>${t.tail?`<pre class="out">${esc(t.tail)}</pre>`:''}`).join('')||'<div class="small">No shells are in its transcript. The agent CLI lists them with /tasks.</div>'}`},
   sessagents(){const ts=sessTasks('agent'), f=FD.foot||{};
     return `<h2>Agents</h2>${ts.map(t=>`<div class="it setrow"><span class="grow"><span class="ell">${esc(t.name)}</span><span class="small">${esc(taskWhen(t))}</span></span><button class="btn" data-sesstask="${esc(t.id)}" data-do="open">Open</button></div>`).join('')||'<div class="small">This session has started none lately.</div>'}${f.agents?`<div class="small">The agent CLI counts ${f.agents} in its own agent view, which is outside this session.</div>`:''}`},
-  sessupdate(){const cmd=(FD.foot||{}).update||'', busyUp=S.ob.some(x=>x.upd&&x.state==='sending'), own=/^c\d+$/.test(FD.n)&&FD.n!=='c1';
+  sessupdate(){const cmd=(FD.foot||{}).update||'', busyUp=S.ob.some(x=>x.upd&&x.state==='sending'), own=/^c\d+$/.test(FD.n);
     return `<h2>Update the agent CLI</h2>${cmd&&cmd!=='…'?`<div class="small">This runs on ${esc(S.snap.machine||'the machine of the run')}:</div><pre class="out">${esc(cmd)}</pre><div class="btns"><button class="btn pri${busyUp?' busy':''}" data-update="${esc(cmd)}">Update</button></div>`:'<div class="small">Its command does not fit the window: turn the phone, or use a wider one.</div>'}<div class="small">Open chats keep their version until they restart.</div>${own?`<div class="btns"><button class="btn" data-restart="${esc(FD.n)}"${sessIdle()?'':' disabled'}>Restart chat</button></div>${sessIdle()?'':'<div class="small">It can restart once it has nothing running.</div>'}`:''}`},
 });
 function openSheet(name,arg){if(name==='talk')loadVoices();S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
@@ -2809,16 +2807,15 @@ async function send(){
   if(!S.thread&&S.view==='talk'){const key=boxKey(), atts=S.atts;  // F93; F83: out of the box at once, back in it if it did not go
     histAdd(key,text);HI.i=null;store.set(DRAFT_KEY(key),'');if(ta)ta.value='';S.atts=[];
     if(!await talkSend(compose(null,text,paths))){if(!store.get(DRAFT_KEY(key)))store.set(DRAFT_KEY(key),text);S.atts=atts;render(true)}return}
-  const ctx=S.ctx, to=S.thread||'c1', key=boxKey();
+  const ctx=S.ctx, to=S.thread||'', key=boxKey();
   const msg=compose(ctx,text,paths);
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
   S.atts=[];
   const rq=sendReq(ctx,to,msg);
-  if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.label,msg);return}  // B139
+  if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx?ctx.label:text||`${paths.length} attachment(s)`,msg);return}  // B139, F176
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
   outbox('chat_to',{text:msg,to,...(S.thread===to&&sessWorks(to)?{force:true}:{}),...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
-  if(S.thread!==to)open(to);
 }
 /* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
    waiting, and its messages go once it has a name. B139: ask, its first message, shows in the stand-in. */
@@ -2951,10 +2948,10 @@ document.addEventListener('click',async e=>{
   if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
   if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
-  if(x=q('[data-quick]')){S.ctx=null;const t=x.textContent.trim();  // B139: a new chat, not c1
+  if(x=q('[data-quick]')){S.ctx=null;const t=x.textContent.trim();  // B139: a new chat
     newChat('quick_ask',{key:x.dataset.quick},t,t);return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
-    outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});open('c1');return}
+    outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});return}
   if(x=q('[data-unatt]')){S.atts.splice(+x.dataset.unatt,1);render(true);return}
   if(q('[data-clip]')){$('file').click();return}
   if(q('[data-dict]'))return dictate();  // F115
@@ -2983,7 +2980,7 @@ document.addEventListener('keydown',e=>{
   /* B116: Ctrl+C interrupts the open chat while it works (not while text is selected, so copying still works);
      B120: in the message box Esc closes the menu, then interrupts a working chat (never goes back), else leaves
      the box; out of the box Esc never interrupts, it goes back */
-  if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='c'||e.key==='C')&&!selectedText(e.target)){const n=shownSession();if(n&&busy(n)){e.preventDefault();act('interrupt',{session:n});return}}  // B141: c1 too
+  if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='c'||e.key==='C')&&!selectedText(e.target)){const n=shownSession();if(n&&busy(n)){e.preventDefault();act('interrupt',{session:n});return}}  // B141
   if(e.target.matches&&e.target.matches('[data-f="ren"]')){  // F129: Enter keeps the name (its form), Esc does not
     if(e.key==='Escape'){e.preventDefault();S.ren=null;render(true)}
     return}
@@ -3136,7 +3133,6 @@ if(HOME_PAGE){  // F134: Home's own page: no run behind it, only Home's projects
   loadProjects();loadDevices();setInterval(loadProjects,5000);setInterval(loadDevices,30000);
 }else{
 connect();
-loadFeed('c1');
 placeLoad();  // B177
 drain();  // F137: what a reload left in the outbox goes now (the run page runs each cid once)
 if(HB){loadProjects();let tick=0;  // F134: the switcher: every 5 s while it or All projects shows, else every 30 s

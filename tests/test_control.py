@@ -1,4 +1,4 @@
-"""Control sessions: a handed-on ask as c1, the brief, take back, sessions one/each, reopening after a
+"""Control sessions: a handed-on ask, the brief, take back, sessions one/each, reopening after a
 shutdown. (C26 dropped B94's tests of the background tmux session, which is gone.)"""
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from _check import check, eq, git, report
 from agent_runner import control as K  # noqa: E402
 
 
-def test_handed_ask_as_c1_starts_fresh():
-    print('B96: control --new --ask that gets number 1 starts fresh, named; the kept c1 session stays kept')
+def test_handed_ask_starts_fresh():
+    print('B96, F176: control --new --ask starts fresh, named, whatever id an older runner kept for its c1')
     from agent_runner import runner as R
     d = Path(tempfile.mkdtemp(prefix='agent-runner-control-'))
     git(d, 'init', '-q')
@@ -37,7 +37,7 @@ def test_handed_ask_as_c1_starts_fresh():
     ask = 'install IPAS looks wrong'
     with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: '/x.jsonl'), \
             mock.patch.object(K, 'remote_on', lambda: True), mock.patch.object(K, 'ask_waiting', lambda: ''):
-        eq(K.control_sid(1), (kept, True), 'c1 with no ask still resumes its kept session')
+        check(K.control_sid(1)[0] != kept and not K.control_sid(1)[1], 'the kept session is not resumed')
         sid, resume, argv = K.control_open(1, ask=ask)
         check(not resume and sid != kept, 'the ask starts a new session', (sid, resume))
         check('--resume' not in argv, 'no --resume', argv)
@@ -47,8 +47,6 @@ def test_handed_ask_as_c1_starts_fresh():
         eq(argv[argv.index('--remote-control') + 1], K.control_name(1, ask), 'Remote Control gets the ask\'s name')
         eq(K.control_given(1), K.control_name(1, ask), 'control_give recorded that name')
         check(K.control_one_ask(1, sid), 'marked as opened for one ask')
-        eq(sidf.read_text(encoding='utf-8').strip(), kept, 'control.sid still holds the run\'s own c1')
-        eq(K.control_sid(1), (kept, True), 'and the run\'s c1 resumes it afterwards')
         files_only = K.control_open(1, images=['/tmp/shot.png'])
         check(not files_only[1] and files_only[0] not in (kept, sid), 'a files-only ask starts fresh too')
 
@@ -197,7 +195,7 @@ def test_take_back_from_a_slot_just_started():
 
 def test_sessions_one_and_each():
     print('F68: [run] remote_slots = open keeps a slot off Remote Control until opened, its link then in the snapshot, '
-          'and c1 republishes the claude.ai copy; always puts every slot there as before')
+          'and the run keeps the claude.ai copy; always puts every slot there as before')
     import os
     from agent_runner import page_copy as PC, runner as R, slots as S, ui_model as U
     d = Path(tempfile.mkdtemp(prefix='agent-runner-f68-'))
@@ -239,12 +237,12 @@ def test_sessions_one_and_each():
     with mock.patch.object(S, 'MUX', FakeMux()), mock.patch.object(S, 'remote_off_why', lambda dialog=True: ''), \
             mock.patch.object(S, 'entries', lambda s, skip_bad=False: list(bridged) if s == sid else []):
         rows = U.session_rows(st, P_lines(d), {'T1': 'fix the widget'}, 0)
-        eq(rows[1]['link'], '', 'one: before it is opened the slot has no claude.ai link')
+        eq(rows[0]['link'], '', 'one: before it is opened the slot has no claude.ai link')
         got, why = S.slot_open('s2', wait=2)
         eq((got, why), (link, ''), 'slot_open types /remote-control and returns the link')
         check(typed and typed[0][1].startswith('/remote-control ') and 's2' in typed[0][1], 'typed into s2', typed)
         rows = U.session_rows(st, P_lines(d), {'T1': 'fix the widget'}, 0)
-        eq(rows[1]['link'], link, "one: once opened, the slot's link is in F65's snapshot")
+        eq(rows[0]['link'], link, "one: once opened, the slot's link is in F65's snapshot")
         eq(U.act('open_session', slot='s2'), {'ok': True, 'code': 0, 'out': link, 'argv': []},
            'the run page action open_session gives the link, typing nothing more')
         eq(len(typed), 1, 'an open slot is not told again')
@@ -332,7 +330,7 @@ def test_reopen_after_shutdown():
 
         started = []
         with mock.patch.object(CR, 'reopen_control', lambda n, sid: started.append((n, sid)) or 'a test window'):
-            eq(CR.reopen_controls(), [2], 'run start reopens c2 only')
+            eq(CR.reopen_controls(), [2], 'run start reopens c2 only: not an older runner\'s c1')
         eq(started, [(2, sid2)], 'with its own session id')
         check(R.C.notes('control2.pid').exists(), 'c2 is still listed until it is up again')
         for n in (3, 4, 5):
@@ -351,7 +349,7 @@ def test_reopen_after_shutdown():
         eq(named[named.index('--remote-control') + 1], 'deploy talk', 'a name the person gave it wins')
         fresh, again, _ = K.control_open(2)
         check(not again and fresh != sid2, 'a plain control 2 (control --new) starts fresh', (fresh, again))
-        eq(K.control_sid(1), (sid1, True), 'c1 still resumes its kept session')
+        check(not K.control_sid(1)[1], 'nor is c1 resumed')
 
         got = []
         with mock.patch.object(S, 'MUX', object()), mock.patch.object(K.plat, 'WINDOWS', False), \
@@ -462,8 +460,8 @@ def test_first_message_typed_after_remote_control():
             check(ask not in argv and argv[1] == '--session-id', 'remote on + ask: no positional prompt', argv)
             check('--remote-control' in argv, 'still on Remote Control', argv)
             eq(KF.CONTROL_FIRST[0], K.control_ask(ask), 'the ask is kept to be typed in after start')
-            c1 = K.control_argv(1, 'sid', False, typed=True)
-            check(c1[1] == '--session-id' and 'summary' in KF.CONTROL_FIRST[0], "c1's status ask is typed in too", c1)
+            eq(K.control_argv(3, 'sid', False, typed=True)[1], '--session-id', 'no ask: no prompt')
+            eq(KF.CONTROL_FIRST[0], '', 'and nothing typed in')
             with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': ''}):
                 argv = K.control_argv(3, 'sid', False, ask=ask)
             eq(argv[1], K.control_ask(ask), 'not under a hidden shim (a terminal): the positional prompt stays')
@@ -473,8 +471,6 @@ def test_first_message_typed_after_remote_control():
             with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/control3.live'}), \
                     mock.patch.object(K.plat, 'WINDOWS', False):
                 eq(K.control_argv(3, 'sid', False, ask=ask)[1], '--session-id', "under c3's own shim it is typed in")
-            argv = K.control_argv(3, 'sid', False, ask=ask, local=True, typed=True)
-            eq(argv[1], K.control_ask(ask), '--local: the positional prompt stays')
         with mock.patch.object(K, 'remote_on', lambda: False):
             argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
             eq(argv[1], K.control_ask(ask), 'Remote Control off: the positional prompt stays')
@@ -797,8 +793,8 @@ def test_held_resent_and_runner():
         w.rows['b'] = [said('yes', T0 + 500), answer('done', T0 + 510), said(ORDER[0], T0 + 520), answer('x', T0 + 530)]
         w.tick(RESET + 61)
         check('Message 2 of 2' in w.typed[0][1], 'a bare yes, or the same words without the image, is no resend', w.typed)
-    from agent_runner import control_held as H, guide as G
-    start = G.CONTROL_START.format(cmd='run', watch_start='')
+    from agent_runner import control_held as H
+    start = 'Open with the summary your control brief describes (its layout: …), and wait for me.'  # an older runner's c1
     copy = 'agent-runner: the run changed. Publish the run page copy x. This is the runner, not the person'
     for t in (start, f'Say first, in one line: "c1 starts a fresh session: x." Then: {start}', copy):
         eq(H.walk([said(t, T0), limit(T0 + 1)])['asks'], [], 'the runner\'s own message')
@@ -854,7 +850,7 @@ def test_held_reopened():
         w.outside.clear()
         w.tick(RESET + 91)
         eq([s for _, s in w.opened], ['a'], 'reopened after its pid file is gone')
-        check(w.opened[0][0] not in (1, 5), 'under a free number, never c1\'s', w.opened)
+        check(w.opened[0][0] not in (1, 5), 'under a free number', w.opened)
         eq(w.H.pid_sid(5), (50, 'new'), 'the session that has its number is left alone')
     for how in ('end', 'exit', 'clear', 'online'):
         with held_world() as w:
@@ -984,7 +980,7 @@ def test_held_app_session():
         w.tick(RESET + 80)
         eq([s for _, s in w.opened], [new], 'the copy is opened once')
         n = w.opened[0][0]
-        check(n > 1, 'as a numbered session, never c1', n)
+        check(n > 1, 'under a number from FIRST_CONTROL', n)
         w.up(n, new, 42, ago=-75)
         w.tick(RESET + 300)
         w.tick(RESET + 400)
@@ -1235,7 +1231,7 @@ def test_settled_rule_in_guide():
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
+    raise SystemExit(report([test_handed_ask_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
                              test_first_message_typed_after_remote_control, test_rename_f129, test_held_delivered_once,

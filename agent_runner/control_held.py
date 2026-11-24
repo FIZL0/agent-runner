@@ -45,7 +45,7 @@ HELD_LEAD = '[agent-runner: held by the usage limit]'
 CLOSED_BY = re.compile(r'<command-name>/(exit|quit|clear)</command-name>')
 WAITING_BLOCK = re.compile(r'\s*<runner-waiting>.*?</runner-waiting>', re.S)
 RUNNER_SAID = ('Open with the summary your control brief describes', 'Say first, in one line: "c1 starts a fresh',
-               'agent-runner: the run changed. ', LEAD)  # the first messages the runner itself gives (CONTROL_START, F27, F68)
+               'agent-runner: the run changed. ', LEAD)  # the first messages the runner itself gives (F68, and older runners' c1 openings)
 HELD, RUNNER = 'held', 'runner'  # what `walk` keeps for a message with no reply yet that is not the person's
 APP_TAIL = 65536  # bytes of the control server's log read for how an app session ended
 COPIED = ('user', 'assistant', 'attachment', 'system', 'summary', 'custom-title', 'ai-title')  # entries `copy_app`
@@ -466,26 +466,10 @@ def reopen(rec: dict) -> bool:
     the first free one, which `rec` then names. Whether it started."""
     from agent_runner import control_reopen as CR
     n, sid = rec['n'], rec['sid']
-    if n == 1:
-        try:
-            kept = state.C.notes('control.sid').read_text(encoding='utf-8').strip()
-        except OSError:
-            kept = ''
-        if kept == sid and not K.control_taken(1):  # the run's own c1, as the run opens it, with no opening summary
-            cmd = [*K.runner_cmd(), 'control', '1', '--blank', *(['--local'] if K.remote_on() else [])]
-            if plat.WINDOWS and not plat.has_conpty():
-                plat.spawn_console(cmd, state.ROOT, K.control_env(), hidden=True)
-                return True
-            return bool(K.hidden_control(1, cmd)[0])
-    if n > 1 and not K.control_taken(n) and K.control_claim(n):
+    if n >= K.FIRST_CONTROL and not K.control_taken(n) and K.control_claim(n):
         m = n
     else:
         m = K.claim_control_number()
-    if m == 1:  # number 1 is the run's kept session's
-        K.control_unclaim(1)
-        m = 2
-        while K.control_taken(m) or not K.control_claim(m):
-            m += 1
     try:
         if m != n:
             look(m)
