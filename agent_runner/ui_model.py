@@ -1772,19 +1772,36 @@ def setting_project(table: str, key: str, value=None, unset: bool = False) -> di
     return mine['got'] or {'ok': False, 'code': 1, 'out': 'not saved', 'argv': []}
 
 
+def _setting_push() -> str:
+    """Push the commit as a plan edit is: what there is to say of it, '' when pushed (or nowhere to push)."""
+    try:
+        why = P._push(S.ROOT)
+    except (Exception, SystemExit) as e:  # noqa: BLE001 - it is committed: never 'not saved'
+        why = f'{type(e).__name__}: {e}'
+    if why:
+        return f'saved here, not pushed: {why}'
+    return 'saved here; it is pushed with the next change you approve' if S.C.approve and S.C.push_remote else ''
+
+
 def _save_project(batch: list[dict]) -> None:
     """Write the waiting saves (into `batch`) to runner.toml as one commit on the shared branch and push it as a plan
     edit is; each gets its result as `got`. It holds LANDING, which every merge takes to move the main checkout, and not
     MERGE: that one is held through a whole test gate, and a save must not wait an hour. A merge that is testing takes
     the commit in as it does any other the branch gets meanwhile."""
     from agent_runner import config as CF
-    f = CF.config_file(S.ROOT) or CF.main_checkout(S.ROOT) / 'runner.toml'
     if not (free := S.LANDING.acquire(timeout=SETTING_WAIT)):
         why = 'a merge is landing and has not finished. Nothing was changed'
     with _SETTING_LOCK:
         batch[:] = _SETTING_QUEUE
         _SETTING_QUEUE.clear()
     bad = lambda x, why: x.update(got={'ok': False, 'code': 1, 'out': why, 'argv': []})  # noqa: E731
+    try:
+        f = CF.config_file(S.ROOT) or CF.main_checkout(S.ROOT) / 'runner.toml'
+    except SystemExit as e:  # AGENT_RUNNER_CONFIG names a file that is gone
+        why = f'{e}. Nothing was changed'
+        if free:
+            S.LANDING.release()
+        free = False
     if not free:
         for x in batch:
             bad(x, why)
@@ -1805,6 +1822,8 @@ def _save_project(batch: list[dict]) -> None:
         return data, f'settings: {short}'
     try:
         ok, note = plansync.commit_file(S.ROOT, f, edit, S.default_branch())
+        if ok and not note:  # committed; the push in LANDING too: it may rebase the main checkout when no run is up
+            note = _setting_push()
     except SystemExit as e:  # [git] master_branch is not out in the main checkout
         ok, note = False, f'{e}. Nothing was changed'
     finally:
@@ -1814,12 +1833,7 @@ def _save_project(batch: list[dict]) -> None:
             if x['got'] is None:
                 bad(x, note)
     else:
-        if not note:  # committed: out of LANDING, so a slow push holds no merge
-            if why := P._push(S.ROOT):
-                note = f'saved here, not pushed: {why}'
-            elif S.C.approve and S.C.push_remote:
-                note = 'saved here; it is pushed with the next change you approve'
-        elif note == 'nothing to change':
+        if note == 'nothing to change':
             note = ''
         for x in last.values():
             if x['got'] is None:

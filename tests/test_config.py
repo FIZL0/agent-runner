@@ -172,6 +172,13 @@ def test_push_fails(tmp: Path) -> None:
     r = save()
     check(r['ok'] and 'saved here, not pushed' in r['out'], 'said', r)
     eq((commits(repo), status(repo)), (2, ''), 'committed here')
+    with mock.patch.object(P, '_push', side_effect=OSError('boom')):
+        r = save(value=70)
+    check(r['ok'] and 'not pushed' in r['out'] and 'boom' in r['out'], 'a push that breaks too', r)
+    with mock.patch.dict('os.environ', AGENT_RUNNER_CONFIG=str(tmp / 'none.toml')), mock.patch.object(CF, 'setting_check', lambda *a: ''):
+        r = save(value=60)
+    check(not r['ok'] and 'does not exist' in r['out'], 'a settings file that is gone', r)
+    eq((U._SETTING_QUEUE, S.LANDING.locked()), ([], False), 'leaves nothing behind')
 
 
 def test_device_over_it(tmp: Path) -> None:

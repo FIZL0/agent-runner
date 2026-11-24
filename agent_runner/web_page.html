@@ -953,8 +953,8 @@ const obOld=x=>obRefused(x)&&!x.ctl&&!(x.args&&x.args.confirm);
 const obDue=(box,boot)=>boot?(box||[]).filter(x=>obOld(x)&&!obTo(x).startsWith('@')&&(x.boot||'')!==boot):[];
 const obBootCid=(x,boot)=>x.cid.split('~')[0]+'~'+boot;
 const obTo=x=>String((x&&x.args&&x.args.to)||'');
-/* take an item in; a setting's own later save takes the place of one that did not go yet (`at`: the one going now) */
-function obAdd(box,it,at){return(box||[]).filter(x=>!(it.set&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending'&&x.cid!==at)).concat([it])}
+/* take an item in; a setting's own later save for everyone takes the place of one that did not go yet (`at`: the one going now) */
+function obAdd(box,it,at){return(box||[]).filter(x=>!(it.name==='setting_project'&&it.set&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending'&&x.cid!==at)).concat([it])}
 /* the next item to send: the first still sending, skipping messages to a chat that is not up yet */
 function obNext(box){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@'))||null}
 /* a starting chat (placeholder '@cid') got its name: its messages go there */
