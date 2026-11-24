@@ -301,7 +301,8 @@ def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) 
     while not done.wait(AHEAD_POLL):
         if ahead_gate_running():  # the gate `base` waits on is merge2's own: checking out there swaps its tree
             continue
-        if cands := sorted(WAITING - taken - set(LANDED) - ALONE - criticals(branch) - releases(WAITING)):
+        cands = sorted(WAITING - taken - set(LANDED) - ALONE - criticals(branch) - releases(WAITING))
+        if cands := [x for x in cands if not research_unasked(x, branch)]:
             break
     else:
         return
@@ -921,6 +922,28 @@ def research_asked(tid: str, branch: str, item: str) -> str:
     return P.asked_for(messages, P.person_words(item, tid, long, told))
 
 
+def plan_item(tid: str, branch: str) -> str:
+    """`tid`'s item in the plan, with its continuation lines; '' when it has none."""
+    ls = plan_text(branch)
+    i = next((i for i, l in enumerate(ls) if (m := P.ITEM.match(l)) and m.group(3).rstrip('.') == tid), None)
+    return '\n'.join(P._item_block(ls, i)) if i is not None else ''
+
+
+def research_ok(tid: str, branch: str, item: str) -> str:
+    """How the person let `tid`'s code land with its findings, for "as the person …": their answer ships it, or
+    their own words asked for it; '' when they did not."""
+    if P.research_ships(item, tid):
+        return 'answered'
+    quote = research_asked(tid, branch, item)
+    return f'asked for it: "{quote}"' if quote else ''
+
+
+def research_unasked(tid: str, branch: str) -> bool:
+    """B225: whether `research_held` would hold task/<tid>, without blocking it: such a task is never a rider in
+    another task's merge, so its own turn asks the person."""
+    return bool(research_code(tid, branch)) and not research_ok(tid, branch, plan_item(tid, branch))
+
+
 def research_held(tid: str, branch: str) -> str | None:
     """F36: why task/<tid> does not merge: a research task whose diff touches code. It is blocked on a person
     (`DECIDE:`, B221) to ship the code or queue it as its own task; the branch is parked on wip/ by the caller.
@@ -928,15 +951,10 @@ def research_held(tid: str, branch: str) -> str | None:
     (`research_asked`), or their answer ships it (`P.research_ships`)."""
     if not (code := research_code(tid, branch)):
         return None
-    ls = plan_text(branch)
-    i = next((i for i, l in enumerate(ls) if (m := P.ITEM.match(l)) and m.group(3).rstrip('.') == tid), None)
-    item = '\n'.join(P._item_block(ls, i)) if i is not None else ''
+    item = plan_item(tid, branch)
     shown = ', '.join(code[:8]) + (f' and {len(code) - 8} more' if len(code) > 8 else '')
-    if P.research_ships(item, tid):
-        log(f'{tid}: research that changes code ({shown}); merged, as the person answered')
-        return None
-    if quote := research_asked(tid, branch, item):
-        log(f'{tid}: research that changes code ({shown}); merged, as the person asked for it: "{quote}"')
+    if ok := research_ok(tid, branch, item):
+        log(f'{tid}: research that changes code ({shown}); merged, as the person {ok}')
         return None
     why = f'research changes no product, and this diff changes code: {shown}'
     ask = (f'DECIDE: {research_says(tid, branch, P.title_of(item) if item else tid)}. This is finished, but held '
@@ -1241,7 +1259,8 @@ def batch_build(t: BatchTurn):
     clean(d)
     t.base = base = git('rev-parse', branch).stdout.strip()
     git('checkout', '-q', '--detach', base, cwd=d)
-    ahead = next((a for a in AHEADS if reusable(a, tid, base)), None)
+    ahead = next((a for a in AHEADS if reusable(a, tid, base) and  # one adopted may hold research not asked about
+                  not any(research_unasked(x, branch) for x in a['tids'] if x != tid)), None)
     if ahead:
         AHEADS.remove(ahead)
         clean(d, ahead['merged'])
@@ -1261,7 +1280,7 @@ def batch_build(t: BatchTurn):
                          if not untestable(f)]
                 log(f'{tid}: not reusing the merge gated with {", ".join(x for x in a["tids"] if x != tid)}: '
                     + (f'{branch} moved in tested files ({", ".join(moved[:5])}; `[run] untested` leaves '
-                       f'them in)' if moved else 'its tasks changed'))
+                       f'them in)' if moved else 'its tasks changed, or it holds research to ask about'))
             drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
         own = fixed(tid)
         ref = renumber_doubles(own, base, tid, d)
@@ -1279,6 +1298,8 @@ def batch_build(t: BatchTurn):
         for x in ([] if t.solo else sorted(WAITING - set(LANDED) - ALONE - t.crit - releases(WAITING))):
             if C.run['batch_max'] and len(riders) + 1 >= C.run['batch_max']:
                 break  # the rest go in the next batch: a failure here costs fewer tasks a retest
+            if research_unasked(x, branch):
+                continue  # its own turn asks the person (`research_held`)
             own = fixed(x)
             ref = renumber_doubles(own, 'HEAD', x, d)
             msg = merge_message(x, f'task/{x}' if own != f'task/{x}' else ref)
