@@ -1216,6 +1216,35 @@ def test_settled_verbs_and_openers():
           'the run app\'s command is the person\'s, not the session\'s that started the run')
 
 
+def test_settled_concept_chat():
+    print('B219a1: a chat whose first message the run page made for a concept is told of its pick and its drop')
+    from agent_runner import plan as P, ui_model as U
+    url, title = 'https://claude.ai/code/artifact/aaa', "the run page's (new) menu"
+    lead = U.concept_chat_text({'concept': 'K1', 'id': 'F1', 'title': title, 'url': url, 'copy': '/x/K1.html'})
+    for argv, what in ((('approve', 'F1', 'option B'), 'K1 was approved'), (('confirm', 'K1', 'option B'), 'K1 was answered'),
+                       (('drop', 'F1', 'no need'), 'K1 was dropped')):
+        with settled_world() as w:
+            w.R.C.todo.write_text(w.R.C.todo.read_text(encoding='utf-8') +
+                                  f"- [~] **F1** Build the option a person approves on concept K1's page: {title} "
+                                  f'BLOCKED: {P.WAIT_OK}{url} (asked 2026-11-24 10:00)\n', encoding='utf-8')
+            # as 020-chats.logic.js compose() words them: now, and by a page kept open from before B219a
+            first = {4: f"{lead}\n\nwhy B?\n\nK9: isn't it\nthe 'same'?\n\nAttached: /x/a.png", 5: lead,
+                     6: f'About concept K1 ({title}): why B?\nR90: and this?', 7: 'About concept K1: why B?',
+                     8: 'what About concept K1: is it?'}
+            for n, text in first.items():
+                w.rows[f's{n}'] = [said(text, w.base - 900), answer('Reading it.', w.base - 890)]
+                if n > 6:
+                    w.up(n, f's{n}', 40 + n)
+                os.utime(w.notes(f'control{n}.pid'), (w.base - 800, w.base - 800))
+                K.control_give(n, f'{w.R.ROOT.name} · {n}')
+            w.look()
+            eq(w.typed, [], f'{argv[0]}: nothing settled, nothing typed')
+            eq(w.plan(*argv), 0, f'{argv[0]} {argv[1]}')
+            w.look()
+            eq(sorted(n for n, _ in w.typed), [4, 5, 6, 7], f'{argv[0]} {argv[1]}: each chat opened from it, not a mention')
+            check(all(f'{what} at ' in t for _, t in w.typed), f'worded: {what}', w.typed)
+
+
 def test_settled_waits_and_skips():
     print('F160: not typed where it would be lost; ended and closed sessions are left alone; no person\'s message')
     with settled_world() as w:
@@ -1325,5 +1354,5 @@ if __name__ == '__main__':
                              test_first_message_typed_after_remote_control, test_takes_input_b158, test_rename_f129, test_held_delivered_once,
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once,
-                             test_settled_verbs_and_openers, test_settled_waits_and_skips, test_settled_landing,
+                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_waits_and_skips, test_settled_landing,
                              test_settled_rule_in_guide, test_decide_options_f181d]))
