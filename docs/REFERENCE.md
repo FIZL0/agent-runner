@@ -460,7 +460,7 @@ Each snapshot row of queue, needs, concepts, shelved and sessions has `acts`, th
 
 The TUI takes its hint keys, buttons, panel key branches and the Queue lines of the keys list (`tui.action_help`) from the list. The page draws the needs and concepts buttons from `acts` (`actBtns`, `actSure`) and sends them through the one `data-ctl` click handler (`controlReq`), with the confirm asked in place; the old per-button actions `need_drop`, `shelve` and `take` and the TUI `dropping` state are gone. So a new row action is one entry in RUN_CONTROLS and nothing in `tui.py` or `web_page.html`. Open (a link), pitch Approve / Not this, the typed boxes, chat edit, direct edit and reorder (J/K) are still hand-written.
 
-The test: `tests/test_ui_model.py` `test_row_actions` goes over the list (every entry has an action, and no two share a TUI key on a panel); the TUI and web tests run and draw them.
+The test: `tests/test_ui_model_controls.py` `test_row_actions` goes over the list (every entry has an action, and no two share a TUI key on a panel); the TUI and web tests run and draw them.
 
 `ui_model.unpark` and `ui_model.release` (and their `/act` names) are gone: use `run_control` with `queue_unpark`, `release_wait` or `release_now`.
 
