@@ -25,7 +25,7 @@ function keepTyped(){
   tabStore.set(TYPED_KEY,text);
   const ta=document.querySelector('[data-in]');
   return tabStore.get(TYPED_KEY)===text&&(!ta||!ta.value||HI.i!==null||store.get(DRAFT_KEY(boxKey()))===ta.value)
-    &&(!S.ob.length||store.get(OB_KEY)===JSON.stringify(S.ob));
+    &&!S.draftLost&&(!S.ob.length||store.get(OB_KEY)===JSON.stringify(S.ob));
 }
 function takeTyped(){
   let k=null;try{k=JSON.parse(tabStore.get(TYPED_KEY)||'null')}catch(e){}

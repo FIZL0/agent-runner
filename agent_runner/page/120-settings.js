@@ -2,25 +2,30 @@
 async function loadSettings(){
   // B164: only a whole answer is kept: an error (a run without this route) leaves the settings already there
   try{const r=await fetch(tq('settings')), j=await r.json();S.setOld=false;
-    if(r.ok&&j&&Array.isArray(j.tables)){S.set=j;S.setErr=j.out||''}
+    if(r.ok&&j&&Array.isArray(j.tables)){S.set=j;S.setErr=j.out||'';draftTidy()}
     else{S.setOld=oldRun(j);S.setErr=plainOut(j,'The settings could not be read.')}}
   catch(e){S.setOld=false;S.setErr='Could not reach the run page to read the settings.'}
   render(true);
 }
 /* F166: the Settings view: the everyday settings with their control on the row, the rest behind Advanced and Project
-   file. A setting has one home: 'device' saves in runner.local.toml, 'everyone' in runner.toml, both at once. `side` is where its row saves. */
+   file. A setting has one home: 'device' is runner.local.toml, 'everyone' runner.toml. `side` is where its row saves. F202b: a change
+   goes to the draft, and the bar (122-settings.js) saves it. */
 const settingId=k=>`${k.table}.${k.key}`;
 const settingOf=id=>{const x=S.set&&S.set.tables&&S.set.tables.find(t=>t.table===id.split('.')[0]);return x&&x.keys.map(k=>({...k,table:x.table})).find(k=>settingId(k)===id)};
 const settingsAll=d=>d.tables.flatMap(t=>t.keys.map(k=>({...k,table:t.table}))).sort((a,b)=>a.order-b.order);
 const PLACE={device:'this device',project:'everyone',everyone:'everyone'};
-const setField=(id,side)=>`set:${side}:${id}`;
-/* the words in a setting's field on `side`: what is typed, else what is kept */
+/* a change of `id` on `side` that is on its way to the run */
+const setGoing=(id,side)=>S.ob.filter(x=>x.setbar&&x.state==='sending').flatMap(x=>x.args.changes).filter(c=>`${c.table}.${c.key}`===id&&c.side===side).pop();
+/* the words in a setting's field on `side`: the change not saved yet or on its way, else what is kept */
 function settingNow(k,side,field){
   const f=setField(settingId(k),side);
+  if(setUnset(f))return settingText(resetValue(k,side));
   if(f in S.f)return S.f[f];
+  const c=setGoing(settingId(k),side);if(c)return settingText(c.unset?resetValue(k,side):c.value);
   return k['has_'+side]?settingText(k[side]):field?settingText(k.value):'';
 }
-/* F174: its two controls; on its row a change saves at once */
+const setUnset=f=>!!((S.draft||{})[f]||{}).unset;
+/* F174: its two controls; on its row a change goes to the draft */
 function partsField(k,side,onRow){
   const t=settingNow(k,side,true), v=partsNow(t), p=k.parts, d=`data-id="${esc(settingId(k))}" data-side="${side}"${onRow?' data-now':''}`, at=esc(`, ${k.name}, ${PLACE[side]}`);
   return `<div class="setparts"><label>${esc(p.every.label)} <select class="fld" data-setpart="every" ${d} aria-label="${esc(p.every.label)}${at}">${partOptions(k,t).map(([n,l])=>`<option value="${n}" ${n===v.every?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
@@ -29,9 +34,9 @@ function partsField(k,side,onRow){
 function savePart(el){
   const {id,side,setpart}=el.dataset, k=settingOf(id);if(!k)return;
   S.f[setField(id,side)]=partSet(settingNow(k,side,true),setpart,setpart==='idle'?el.checked:Number(el.value));
-  if(el.dataset.now!==undefined)saveSetting(id,side);
+  if(el.dataset.now!==undefined){draftSet(id,side,{text:S.f[setField(id,side)]});render(true)}
 }
-/* F405: the program a session runs: a pick of those found here, saved at once on its row; Other path… brings a field, kept in S.f (so a
+/* F405: the program a session runs: a pick of those found here; Other path… brings a field, kept in S.f (so a
    refused path stays) until it is what is saved */
 const otherField=(id,side)=>`setother:${side}:${id}`;
 function agentOther(k,side){
@@ -42,15 +47,15 @@ function agentOther(k,side){
 function agentField(k,side,onRow){
   const id=settingId(k), now=settingNow(k,side,true), other=agentOther(k,side), p=agentPick(k,now), d=`data-id="${esc(id)}"`;
   return `<select class="fld" data-setagent="${side}" ${d}${onRow?' data-now':''} aria-label="${esc(k.name)}, ${PLACE[side]}">${agentOptions(k,now).map(([v,l])=>`<option value="${esc(v)}" ${v===(other?AGENT_OTHER:now)?'selected':''}>${esc(l)}</option>`).join('')}</select>
-    ${other?`<input class="fld" data-f="${esc(otherField(id,side))}" value="${esc(S.f[otherField(id,side)])}" aria-label="Path of the program, ${PLACE[side]}" placeholder="Path of the program" autocomplete="off" autocapitalize="off" spellcheck="false">${onRow?`<div class="btns"><button class="btn pri" data-setsave="${side}" ${d}>${side==='device'?'Save on this device':'Save for everyone'}</button></div>`:''}`
+    ${other?`<input class="fld" data-f="${esc(otherField(id,side))}" value="${esc(S.f[otherField(id,side)])}" aria-label="Path of the program, ${PLACE[side]}" placeholder="Path of the program" autocomplete="off" autocapitalize="off" spellcheck="false"${onRow?' data-now':''}>`
       :agentSays(p)?`<div class="small setpath${p.bad?' v-bad':''}">${esc(agentSays(p))}</div>`:''}`;
 }
 function pickAgent(el){
   const {id,setagent:side}=el.dataset, k=settingOf(id), f=otherField(id,side);if(!k)return;
-  if(el.value===AGENT_OTHER){S.f[f]='';delete S.f[setField(id,side)];render(true);
+  if(el.value===AGENT_OTHER){S.f[f]='';delete S.f[setField(id,side)];if(el.dataset.now!==undefined)draftDrop(setField(id,side));render(true);
     const at=[...document.querySelectorAll('[data-f]')].find(x=>x.dataset.f===f);if(at)kbFocus(at);return}
   delete S.f[f];S.f[setField(id,side)]=el.value;
-  if(el.dataset.now!==undefined)saveSetting(id,side);
+  if(el.dataset.now!==undefined)draftSet(id,side,{text:el.value});
   render(true);
 }
 /* the providers stand beside the program, and their models are picked elsewhere */
@@ -88,39 +93,54 @@ function settingControl(k,side,readonly){
 /* this device's own value over the one everyone has, in words; '' for none */
 const overSays=k=>k.has_device&&k.has_project?`This device overrides everyone's (${settingSays(k,settingText(k.project))})`:'';
 function settingRow(k,o={}){
-  const id=settingId(k), open=!!S.setOpen[id], side=settingSide(k), busy=S.ob.filter(x=>x.set&&x.set.id===id&&!x.set.part);
+  const id=settingId(k), open=!!S.setOpen[id], side=settingSide(k), busy=settingBusy(id);
   const place=side==='device'?'device':'everyone', off=o.home&&place!==o.home, e=esc(id);
   const where=k.source==='default'?'the default':k.source==='device'?'this device':'everyone';
   return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side,o.readonly)}</div>
     ${hasParts(k)&&!o.readonly?partsField(k,side,true):hasPicks(k)&&!o.readonly?agentField(k,side,true):''}
-    ${busy.map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
+    ${busy}${notSaved(k,side)}
     ${overSays(k)?`<div class="small">${esc(overSays(k))}</div>`:off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
     ${open?foldIn('set:'+id,`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
-      ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side)}
-      <div class="btns">${onRow(k)||id==='run.slots'?'':`<button class="btn pri" data-setsave="${side}" data-id="${e}">${side==='device'?'Save on this device':'Save for everyone'}</button>`}<button class="btn" data-setmore="${e}">More…</button></div>`}`):''}
+      ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side,true)}
+      <div class="btns"><button class="btn" data-setmore="${e}">More…</button></div>`}`):''}
     ${hasPicks(k)?providersHTML(S.set):''}
     ${o.reset?`<div class="btns" data-k="reset:${e}">${resetBtn(k)}</div>`:''}</div>`;
 }
+const settingBusy=id=>S.ob.filter(x=>x.setbar&&x.args.changes.some(c=>`${c.table}.${c.key}`===id)).map(x=>`<div class="small">${x.setbar==='undo'?'Undo':'Save'}: ${esc(obState(x))}</div>`).join('');
+/* F202b: the row's changes that are not saved yet, with where they go when that is not where the row saves */
+function notSaved(k,side){
+  return ['device','project'].map(s=>{
+    const d=(S.draft||{})[setField(settingId(k),s)], where=s==='device'?'on this device':'for everyone';if(!d)return '';
+    return `<div class="small setnew${d.err?' v-bad':''}">Not saved yet${d.unset?`: reset ${where}`:s===side?'':`: ${esc(settingSays(k,d.text))} ${where}`}${d.err?`. ${esc(d.err)}`:''}</div>`}).join('');
+}
+/* the settings with the changes of the draft and those on their way, to say which rows show */
+const draftedAll=all=>all.map(k=>{const s=settingSide(k), d=(S.draft||{})[setField(settingId(k),s)], c=!d&&setGoing(settingId(k),s), r=d?draftValue(k,d):c&&{v:c.unset?resetValue(k,s):c.value};return r&&!r.err?{...k,value:r.v}:k});
 const resetBtn=k=>(k.has_device?`<button class="btn" data-setreset="device" data-id="${esc(settingId(k))}">Reset on this device</button>`:'')+(k.has_project?`<button class="btn" data-setreset="project" data-id="${esc(settingId(k))}">Reset for everyone</button>`:'');
 /* the two rows that pick the models of a few kinds at once: [models.kinds] */
 function kindsValue(k){
   const side=settingSide(k), f=setField(settingId(k),side);
+  if(setUnset(f))return resetValue(k,side);
   if(f in S.f){const r=settingValue(k,S.f[f]);if(r.v)return r.v}
+  const c=setGoing('models.kinds',side);if(c)return c.unset?resetValue(k,side):c.value;
   return k['has_'+side]?k[side]:{};
 }
 function kindsRow(g,k){
   const open=!!S.setOpen['kinds:'+g.id], now=kindsModel(g.kinds,{...k.default,...kindsValue(k)}), ms=[...new Set(['opus','sonnet','haiku',...(now?[now]:[])])];
   return `<div class="srow" data-k="setkinds:${g.id}"><div class="row setline"><button class="fold setname" data-setopen="kinds:${g.id}" aria-expanded="${open}"><span class="grow"><b>${g.name}</b><span class="small">${g.desc}</span></span></button>
     <select class="fld setpick" data-kinds="${g.id}" aria-label="${g.name}">${now?'':'<option value="" selected>Mixed</option>'}${ms.map(m=>`<option ${m===now?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
-    ${S.ob.filter(x=>x.set&&x.set.part===g.id).map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
+    ${settingBusy('models.kinds')}${kindsNote(g,k)}
     ${k.has_device?`<div class="small">${k.has_project?'This device overrides what everyone has':'Saved on this device only'}</div>`:''}
     ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies now.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`):''}</div>`;
+}
+function kindsNote(g,k){
+  const d=(S.draft||{})[setField('models.kinds',settingSide(k))];
+  return d&&(d.unset||d.err||kindsDrafted(k,d).some(x=>x.id===g.id))?`<div class="small setnew${d.err?' v-bad':''}">Not saved yet${d.err?`. ${esc(d.err)}`:''}</div>`:'';
 }
 function saveKinds(gid,model){
   const k=settingOf('models.kinds'), g=KINDS_ROWS.find(x=>x.id===gid);if(!k||!g||!model)return;
   const side=settingSide(k), v={...kindsValue(k)};for(const x of g.kinds)v[x]=model;
   S.f[setField('models.kinds',side)]=JSON.stringify(v);
-  outbox(side==='device'?'setting_device':'setting_project',{table:'models',key:'kinds',value:v},{set:{id:'models.kinds',applies:k.applies,part:gid},say:`Save ${g.name} on ${model}`});
+  draftSet('models.kinds',side,{text:S.f[setField('models.kinds',side)]});render(true);
 }
 const setErrHTML=()=>S.setErr?`${S.setOld?oldRunHTML(S.setErr):`<div class="small v-bad">${esc(S.setErr)}</div>`}<div class="btns"><button class="btn" data-setload>Try again</button></div>`:'';
 function setGroup(d,g,ks,o){
@@ -138,7 +158,7 @@ function settingsHTML(){
   const all=settingsListed(settingsAll(d)), rows=kindsRows(all), rc=controlOf('restart'), waits=(d.waits||[]).length, changed=all.filter(settingChanged);
   const kinds=all.find(k=>settingId(k)==='models.kinds'), kr=kinds?rows.map(g=>kindsRow(g,kinds)).join(''):'';
   const groups=(ks,o,w)=>d.groups.filter(g=>!w||g[2]===w).map(g=>setGroup(d,g,ks.filter(k=>k.group===g[0]),o)).join('');
-  const shown=all.filter(k=>settingShows(k,all));
+  const seen=draftedAll(all), shown=all.filter(k=>settingShows(k,seen));
   let body;
   if(q||S.setChanged){
     const ks=(S.setChanged?changed:all).filter(k=>settingHit(k,q)), un=S.setChanged?d.unknown.filter(u=>!q||`${u.table} ${u.key} ${u.value}`.toLowerCase().includes(q)):[];
@@ -151,10 +171,11 @@ function settingsHTML(){
     ${setErrHTML()}${obCards(x=>x.ctl==='restart:')}${body}
     ${waits&&S.snap.up!==false&&rc?card(`<div class="row"><span class="grow">${waits===1?'1 change waits':`${waits} changes wait`} for a restart</span>${S.sure==='restart'?'':'<button class="btn acc" data-ctl="restart">Restart the run</button>'}</div>${S.sure==='restart'?ctlSure(rc):''}`,'','data-k="setwait"'):''}</div>`;
 }
-/* F204a: the search field in use stays the same element while what is under it changes (as B222a) */
+/* F204a: the search field in use stays the same element while what is under it changes (as B222a); F202b: so does a field typed in */
 function settingsDraw(el,h){
   if(el._h!==h&&el._gone)for(const g of el._gone)g.remove();  // leaving() puts them back
-  return fieldHTML(el,h,'setq');
+  const a=document.activeElement, f=a&&a.dataset&&a.dataset.f, text=f&&/^set(other)?:/.test(f)&&(a.tagName==='TEXTAREA'||a.tagName==='INPUT'&&a.type!=='checkbox');
+  return fieldHTML(el,h,text?f:'setq');
 }
 /* the x in a search (Settings', and F212 the Plan view's): the full list, and focus in the field */
 function setqClear(f='setq'){
@@ -168,30 +189,33 @@ function settingSheet(){
   const id=settingId(k), side=settingSide(k), other=side==='device'?'project':'device';
   return `<h2>${esc(k.name)}</h2><div class="small">${esc(k.desc)}</div>
     <div class="sec">${other==='device'?'Only on this device':'For everyone'}<span class="ln"></span></div>
-    <div class="small">${other==='device'?`Saved at once in ${esc(S.set.device)}, and wins over everyone's.`:`Saved at once in ${esc(S.set.project)}, and committed.${k.has_device?' This device keeps its own.':''}`}</div>
-    ${settingField(k,other)}<div class="btns"><button class="btn pri" data-setsave="${other}" data-id="${esc(id)}">${other==='device'?'Save on this device':'Save for everyone'}</button></div>
+    <div class="small">${other==='device'?`Goes in ${esc(S.set.device)} when you save, and wins over everyone's.`:`Goes in ${esc(S.set.project)} when you save, and is committed.${k.has_device?' This device keeps its own.':''}`}</div>
+    ${settingField(k,other)}<div class="btns"><button class="btn pri" data-setsave="${other}" data-id="${esc(id)}">${other==='device'?'Change on this device':'Change for everyone'}</button></div>
     ${k.has_device||k.has_project?`<div class="sec">Reset<span class="ln"></span></div><div class="btns">${k.has_device?`<button class="btn" data-setreset="device" data-id="${esc(id)}">Reset on this device</button>`:''}${k.has_project?`<button class="btn" data-setreset="project" data-id="${esc(id)}">Reset for everyone</button>`:''}</div>`:''}
     <div class="btns"><button class="btn" data-closesheet>Close</button></div>`;
 }
 SHEETS.setting=settingSheet;
+/* More…'s Change button: its field goes to the draft */
 function saveSetting(id,side){
   const k=settingOf(id);if(!k)return;
   const f=setField(id,side), el=[...document.querySelectorAll('[data-f]')].find(e=>e.dataset.f===f);
   const text=hasPicks(k)&&agentOther(k,side)?S.f[otherField(id,side)].trim():f in S.f&&!(el&&el.type!=='checkbox'&&el.tagName!=='SELECT')?S.f[f]:el?(el.type==='checkbox'?String(el.checked):el.value):settingNow(k,side,true);
   const r=pickOptions(k,text)?{v:pickValue(k,text)}:settingValue(k,text);if(r.err)return toast(r.err,true);
-  outbox(side==='device'?'setting_device':'setting_project',{table:k.table,key:k.key,value:r.v},{set:{id,applies:k.applies},say:`Save ${k.name}: ${settingSays(k,text)}`});
+  S.f[f]=text;draftSet(id,side,{text,set:true});
+  if(S.sheet==='setting')closeSheet();
+  render(true);
 }
 function resetSetting(id,side){
   const k=settingOf(id);if(!k)return;
   delete S.f[otherField(id,side)];
-  if(side==='device')outbox('setting_reset',{table:k.table,key:k.key},{set:{id,applies:k.applies},say:`Reset ${k.name}`});
-  else outbox('setting_project',{table:k.table,key:k.key,unset:true},{set:{id,applies:k.applies},say:`Reset ${k.name} for everyone`});
+  draftSet(id,side,{unset:true});
+  if(S.sheet==='setting')closeSheet();
+  render(true);
 }
-/* the stepper: what it shows moves at once; one save goes once the taps stop */
-let stepWait={};
+/* the stepper: what it shows moves at once, in the draft */
 function stepSetting(id,by){
   const k=settingOf(id);if(!k)return;
   const side=settingSide(k), f=setField(id,side);
-  S.f[f]=String(Math.max(1,Number(settingNow(k,side,true))+by));render(true);
-  clearTimeout(stepWait[id]);stepWait[id]=setTimeout(()=>{delete stepWait[id];saveSetting(id,side)},700);
+  S.f[f]=String(Math.max(1,Number(settingNow(k,side,true))+by));
+  draftSet(id,side,{text:S.f[f]});render(true);
 }

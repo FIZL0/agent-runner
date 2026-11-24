@@ -69,6 +69,7 @@ async function drain(){
 function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
   const later=it.set&&S.ob.some(x=>x.cid!==it.cid&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending');  // F174: the field holds a newer value that goes next
+  if(it.setbar&&!oldRun(j)){settingsDone(it,j);return}  // F202b
   if(it.set&&!later&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
   if(j&&j.seen&&j.confirm&&it.ctl){  // F186: a release the last snapshot did not show is open: asked where New release stands
     obChange(b=>obDrop(b,it.cid));for(const c of controlsOf('release'))Object.assign(c,{confirm:j.confirm,seen:j.seen});
@@ -81,7 +82,7 @@ function obDone(it,j){
   else if(it.shelved){if(S.gone)delete S.gone[it.shelved];toast(j.said||`${it.say}: done`);snapNow()}  // F184: Needs you may show it at once
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
-  else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
+  else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
     else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
   if(it.res&&FD.n===it.res)feedLoad();  // F114

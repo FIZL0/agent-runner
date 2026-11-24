@@ -61,7 +61,7 @@ def _setting_now(table: str, key: str, name: str) -> dict | None:
     if (table, key) != ('run', 'slots') or not S.run_up():
         return None
     r = call(['slots', str(_setting_row(table, key)['value'])])
-    return None if r['ok'] else {**r, 'out': f'saved in {name}, but the run did not take it: {r["out"]}'}
+    return None if r['ok'] else {**r, 'saved': True, 'out': f'saved in {name}, but the run did not take it: {r["out"]}'}
 
 
 def setting_device(table: str, key: str, value=None) -> dict:
@@ -88,11 +88,17 @@ def setting_project(table: str, key: str, value=None, unset: bool = False) -> di
         return {'ok': False, 'code': 2, 'out': f'[{table}] {key} is not a setting', 'argv': []}
     if problem := '' if unset else CF.setting_check(S.ROOT, table, key, value):
         return {'ok': False, 'code': 2, 'out': problem, 'argv': []}
-    mine = {'table': table, 'key': key, 'value': value, 'unset': unset, 'got': None}
+    return _project_saves([{'table': table, 'key': key, 'value': value, 'unset': unset}])[0]['got']
+
+
+def _project_saves(mine: list[dict]) -> list[dict]:
+    """Write these checked saves for everyone as one commit, with what else waits; each has its result as `got`."""
+    for x in mine:
+        x['got'] = None
     with _SETTING_LOCK:
-        _SETTING_QUEUE.append(mine)
+        _SETTING_QUEUE.extend(mine)
     with _SETTING_WRITE:
-        if mine['got'] is None:  # not taken along by the save before it
+        if any(x['got'] is None for x in mine):  # not taken along by the save before it
             time.sleep(SETTING_SETTLE)
             batch: list[dict] = []
             try:
@@ -100,7 +106,78 @@ def setting_project(table: str, key: str, value=None, unset: bool = False) -> di
             except Exception as e:  # noqa: BLE001 - every save of the batch hears of it
                 for x in batch:
                     x['got'] = x['got'] or {'ok': False, 'code': 1, 'out': f'not saved: {e}', 'argv': []}
-    return mine['got'] or {'ok': False, 'code': 1, 'out': 'not saved', 'argv': []}
+    for x in mine:
+        x['got'] = x['got'] or {'ok': False, 'code': 1, 'out': 'not saved', 'argv': []}
+    return mine
+
+
+def _setting_has(row: dict, side: str) -> dict:
+    """What `side`'s file holds for a setting: {'has', 'value'}, as JSON carries it."""
+    return {'has': row[f'has_{side}'], 'value': json.loads(json.dumps(row.get(side), default=str))}
+
+
+def _change_problem(c: dict, rows: dict) -> dict:
+    """Why a change of `settings_save` is not taken ({'why', 'changed'}), {} when it is."""
+    from agent_runner import config as CF
+    table, key, side = str(c.get('table')), str(c.get('key')), c.get('side')
+    row = rows.get((table, key))
+    if row is None or side not in ('device', 'project'):
+        return {'why': f'[{table}] {key} is not a setting' if row is None else f'{side!r} is not a place of a setting'}
+    want = c.get('expect')
+    if isinstance(want, dict) and _setting_has(row, side) != {'has': want.get('has'), 'value': want.get('value')}:
+        return {'why': f'[{table}] {key} was changed since, so it stays as it is', 'changed': True}
+    why = '' if c.get('unset') else CF.setting_check(S.ROOT, table, key, c.get('value'), device=side == 'device')
+    return {'why': why} if why else {}
+
+
+def _setting_rows() -> dict:
+    from agent_runner import config as CF
+    return {(t['table'], k['key']): k for t in CF.settings_snapshot(S.ROOT)['tables'] for k in t['keys']}
+
+
+def _save_round(changes: list[dict]) -> tuple[list, list, list]:
+    """Check and write `changes`: (change, its save, what its file had, what it has) of those saved, and (change, why)
+    of those whose write failed, then of those refused."""
+    before, take, refused = _setting_rows(), [], []
+    for c in changes:
+        why = _change_problem(c, before)
+        refused.append((c, why)) if why else take.append(c)
+    project = [c for c in take if c['side'] == 'project']
+    mine = [{'table': c['table'], 'key': c['key'], 'value': c.get('value'), 'unset': bool(c.get('unset'))} for c in project]
+    got = list(zip(project, _project_saves(mine))) if mine else []
+    for c in take:
+        if c['side'] == 'device':
+            got.append((c, {'got': _setting_done(c['table'], c['key'], c.get('value'), bool(c.get('unset')))}))
+    after, saved, failed = _setting_rows(), [], []
+    for c, x in got:
+        at = c['table'], c['key']
+        if x['got']['ok'] or x['got'].get('saved'):
+            saved.append((c, x, _setting_has(before[at], c['side']), _setting_has(after[at], c['side'])))
+        else:
+            failed.append((c, {'why': x['got']['out']}))
+    return saved, failed, refused
+
+
+def settings_save(changes: list) -> dict:
+    """F202b: the Settings page's Save: every change ({'table', 'key', 'side': 'device' or 'project', 'value' or
+    'unset'}), each to its home; those for everyone are one commit. A change that is not taken leaves the others alone.
+    `was`: what each saved one had before and has `now`, in its file (the page's Undo); `bad`: those not taken, with
+    `why`; `say`: what there is to say of the saved ones (not pushed, the run did not take it). With `expect` (a `now` of an earlier save) a change is taken only while the file still holds that."""
+    if not isinstance(changes, list) or not changes or not all(isinstance(c, dict) for c in changes):
+        return {'ok': False, 'code': 2, 'out': 'no changes to save', 'argv': []}
+    saved, failed, refused = _save_round(changes)
+    if refused and any(c['table'] == 'models' and c['key'] in ('local', 'providers') for c, *_ in saved):
+        more, fails, refused = _save_round([c for c, _ in refused])  # the models they name are there by now
+        saved, failed = saved + more, failed + fails
+    bad = [{'table': c.get('table'), 'key': c.get('key'), 'side': c.get('side'), **why} for c, why in failed + refused]
+    warn = [x['got']['out'] for _, x, _, _ in saved if not x['got']['ok']]
+    notes = list(dict.fromkeys(x['note'] for _, x, _, _ in saved if x.get('note')))
+    out = bad[0]['why'] if bad else warn[0] if warn else saved[0][1]['got']['out'] if len(saved) == 1 else \
+        f'{len(saved)} settings saved' + ''.join(f' ({n})' for n in notes)
+    return {'ok': not bad, 'code': 1 if bad else 0, 'out': out, 'argv': [], 'bad': bad, 'warn': bool(warn),
+            'say': out if warn or notes else '',
+            'was': [{'table': c['table'], 'key': c['key'], 'side': c['side'], 'was': had, 'now': has}
+                    for c, _, had, has in saved if had != has]}
 
 
 def _setting_push() -> str:
@@ -170,6 +247,7 @@ def _save_project(batch: list[dict]) -> None:
             if x['got'] is None:
                 row = _setting_row(x['table'], x['key'])
                 out = f'{_setting_said(x["table"], x["key"], x["value"], x["unset"])} in {f.name}'
+                x['note'] = note
                 if note:
                     out += f' ({note})'
                 if row['has_device']:
@@ -181,4 +259,5 @@ def _save_project(batch: list[dict]) -> None:
 
 
 ACTIONS.update({'pitch_no': pitch_no, 'need_chat': need_chat, 'rename_chat': rename_chat,
-                'setting_device': setting_device, 'setting_reset': setting_reset, 'setting_project': setting_project})
+                'setting_device': setting_device, 'setting_reset': setting_reset, 'setting_project': setting_project,
+                'settings_save': settings_save})
