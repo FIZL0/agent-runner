@@ -36,7 +36,7 @@ name its own size).
 | `--r-xs --r-s --r-m --r-l --r-xl --r-full` | 4 a bar, 8 small control, 10 button and row, 16 card and sheet, 20 message box, pill |
 | `--s1` to `--s6` | 4, 8, 12, 16, 24, 32: gaps and padding |
 | `--tap` | 44px: the least a finger gets (40 in the message box's own row) |
-| `--dur-fast --dur --dur-slow --ease` | motion, below |
+| `--dur-fast --dur --dur-slow --dur-spring --ease --spring --spring-soft` | motion, below |
 
 A state colour is never the only sign: there is a word or an icon with it. Text on `--bg` and `--surface` uses `--fg`
 or `--muted`; `--faint` is for what you can do without.
@@ -134,29 +134,63 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 | Token | Value | For |
 |---|---|---|
 | `--dur-fast` | 150ms | a press, a chevron, a fade out |
-| `--dur` | 200ms | a card or message coming in, a cross-fade, a view |
-| `--dur-slow` | 250ms | the drawer and the sheet |
-| `--ease` | `cubic-bezier(.2,.8,.2,1)` | all of them: ease-out |
+| `--dur` | 200ms | a card, row or message coming in, a cross-fade, a view's fade |
+| `--dur-slow` | 250ms | what leaves collapsing, the scrim, the project list's slide (`.sghost`) |
+| `--dur-spring` | 450ms | the time of either spring |
+| `--spring` | `linear()` curve, about 4% overshoot | cards, messages, pills, what glides, a press let go |
+| `--spring-soft` | `linear()` curve, no overshoot | the drawer, the sheet and views, whose edge must not show a gap |
+| `--ease` | `cubic-bezier(.2,.8,.2,1)` | fades and the rest: ease-out |
 | `--pulse` | 1.6s | the one loop: work going on now, or the mic listening |
 
+- **Springs.** Both are CSS `linear()` curves, with a `cubic-bezier` fallback for browsers without `linear()` (`@supports`).
 - **Only `transform` and `opacity`**, with `visibility` to take a closed thing out of reach, and a switch's
-  `background-color`. Never height, width, top or margin.
-- **What animates:** the drawer and the sheet slide; their scrim fades; the Talk dock's mic and box cross-fade;
-  Talk's top bar slides off when you scroll up (`.away`, transform only); a session's chips, box and top bar fade or slide over its text as the reader scrolls up (`.slim`, and the slim message box `.slimbox` stays), and no line moves when they go or come back (`feedShare()` takes part of an upward scroll only while they are away); a card
-  or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns; the message box, Talk's words and the sheet glide (transform
-  only) to their place when the keyboard opens or closes (`kbGlide()`).
-- **The one exception to first load:** the project list slides in from the left over the project's own sidebar and back
-  out (`.sghost`, transform only, `--dur-slow`), and so does arriving at another project from the list (`sideShow()`).
-- **What never animates:** a refresh of what is already there, a list reordering under the reader, text being
-  typed, the scroll position, anything on first load.
+  `background-color`. Never height, width, top or margin. Every `el.animate()` goes through `moAnim()`, which reads the
+  tokens and returns nothing when `calm()`; `kbGlide()` and the velocity spring `springRun()` check `calm()` themselves.
+  `calm()` is reduced motion or a hidden page.
+- **Views.** A chat opens: its view slides in from the right over the one that was there, and back slides it out,
+  wherever it was pressed (a row, a card, Back, Esc). `viewGo()` runs this as a View Transition where the browser has
+  them; the chat row's title in the sidebar is carried to the top bar's title and back while that row is on screen.
+  Without View Transitions, with the keyboard open, or where focus must move in the tap (`about()`, new chat),
+  `viewSlide()` slides the new view in. A View Transition never takes pointer events, so a tap during one works, and
+  refreshes wait while it runs, as for a press. The real session's frame slides whole; nothing animates inside the
+  terminal. Another view (Home, Plan...) fades in and rises 10px.
+- **Sending.** Your message springs out of the message box to its place in Talk and in a starting chat (`sentFrom()`).
+  To a real session, a copy of the bubble leaves the box upward and fades (`sendFly()`); the session itself draws it.
+- **Talk.** A new reply's blocks fade in one after another. When a reply grows, only the added words fade
+  (`freshWords()`). While at work a wave of three dots (`.wave`) stands beside the words. The `--pulse` loops stay in
+  step over redraws (`loopsInStep()`).
+- **Lists.** `glideSpot()` notes where each keyed thing and section heading is on screen before a redraw, and `glide()`
+  moves it from there to its new place after (FLIP, `--spring`). A card or row that left collapses; its copy has no
+  `data-`, ids or typed words, takes no pointer events and is `aria-hidden`, so it reads as gone at once. A new one fades
+  in and rises 14px (`enter()`, which remembers when a key was born, so a redraw mid-way continues it). No glide when the
+  view changed, while typing in a field of that list, or for more than 8 leaving at once (the whole list changed).
+- **Counts and states.** A count rolls (`roll()`, class `.roll`): up when it grew, down when it fell. An element
+  with `data-roll` and its words in `data-v` does this; any other state word that changed fades in. The state pill rolls and morphs from its old width. The message box grows and shrinks by a glide (`grow()`).
+- **Press.** Buttons, chips and rows scale down a little while pressed, and spring back when let go (`--spring`).
+- **Drawer and sheet.** They open and close on `--spring-soft`. Released by a finger, they go on from where they are
+  with the finger's speed (`springRun()`, frames from `springFrames()`). A finger can catch one mid-way, and a flick
+  closes a sheet even when it is short.
+- **Kept.** The scrim fades. The Talk dock's mic and box cross-fade. Talk's top bar slides off when you scroll up
+  (`.away`, transform only). A session's chips, box and top bar fade or slide over its text as the reader scrolls up
+  (`.slim`, and the slim message box `.slimbox` stays), and no line moves when they go or come back (`feedShare()` takes
+  part of an upward scroll only while they are away). A chevron turns. The message box, Talk's words and the sheet glide
+  (transform only) to their place when the keyboard opens or closes (`kbGlide()`). The one exception to first load: the
+  project list slides in from the left over the project's own sidebar and back out (`.sghost`, transform only,
+  `--dur-slow`), and so does arriving at another project from the list (`sideShow()`).
+- **Interruptible.** A new motion starts from where the thing is on screen now, and nothing waits for a motion to end.
+  State and focus are final at once; only the drawing follows.
+- **What never animates:** the thing the person is reading: a refresh keeps the first keyed thing on screen where it was
+  (see Scroll; `keepScroll()` measures without transforms under way). Also anything inside the terminal, the scroll
+  position, anything on first load, and a redraw of the same thing.
 - **New means new:** give a thing that can come and go `data-k="its key"` (and `data-v="its state"` if it has one).
   `enter()` animates only the keys that were not there before, and nothing before the first snapshot. Your own message
   has `data-t` too, so it comes in once, not again when it is sent and when it lands. Never animate from a class in
   the markup: the markup is drawn again on every refresh.
-- **A finger leads.** While it drags, the drawer follows it with no transition; on release it settles.
+- **A finger leads.** While it drags, the drawer follows it with no transition; on release it goes on with the
+  finger's speed (see Drawer and sheet).
 - **Reduced motion:** under `prefers-reduced-motion:reduce` there is none. One rule at the end of the stylesheet
-  zeroes every duration, so nothing needs its own. A script's `el.animate()` is not in that rule: it checks
-  `matchMedia` itself.
+  zeroes every duration, so nothing needs its own. `calm()` is true then too, so every script motion returns at once,
+  and no View Transition is started.
 
 ## Scroll
 
@@ -278,4 +312,5 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 3. Reduced motion on: everything still works.
 4. Scroll half way down, wait for a refresh: nothing moved.
 5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up fades the chips, box and top bar away over the text, the slim message box stays, and scrolling down brings them back; no line moves when they go or come back.
-6. `python3 tests/test_web.py`.
+6. A changed motion is watched as a recording or frame strip at 390px, not only stills.
+7. `python3 tests/test_web.py`.
