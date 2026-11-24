@@ -3,8 +3,10 @@
 # already has: a Docker container with Windows, sshd, Python and git inside. It never creates or changes a VM.
 #
 #   tools/windows_vm.sh [--keep] [test file ...]        (default: tests/test_windows.py)
+#   tools/windows_vm.sh [--keep] --all                  (every tests/test_*.py)
 #
 #   --keep   leave the container up when this script started it
+#   --all    say how long each file took, and end with one line that names the failed files
 #
 # Exit code: the first failing test file's; 2 for a setup problem (no VM, no key, no such file), said in one line.
 # Environment, with the defaults:
@@ -29,18 +31,22 @@ wait_s=${WINDOWS_VM_WAIT:-300}
 say() { echo "windows_vm: $*" >&2; }
 die() { say "$*"; exit 2; }
 
-keep='' files=()
+keep='' all='' files=()
 for a in "$@"; do
   case $a in
     --keep) keep=1 ;;
+    --all) all=1 ;;
     -h|--help) sed -n '2,/^set /{/^#/s/^# \{0,1\}//p}' "$0"; exit 0 ;;
     -*) die "unknown option $a" ;;
     *) files+=("$a") ;;
   esac
 done
-[ ${#files[@]} -gt 0 ] || files=(tests/test_windows.py)
-
 root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel) || die 'not in a git checkout'
+if [ -n "$all" ]; then
+  [ ${#files[@]} -eq 0 ] || die '--all takes no test files'
+  for f in "$root"/tests/test_*.py; do files+=("${f#"$root/"}"); done
+fi
+[ ${#files[@]} -gt 0 ] || files=(tests/test_windows.py)
 for f in "${files[@]}"; do
   case $f in /*|*..*) die "test files are named from the repo's root: $f" ;; esac
   [ -f "$root/$f" ] || die "no such test file: $f"
@@ -57,7 +63,7 @@ opts=(-i "$key" -o IdentitiesOnly=yes -o BatchMode=yes -o "UserKnownHostsFile=$k
 # 9>&-: the lock is this script's alone, so nothing it leaves running can hold it
 vm_ssh() { ssh "${opts[@]}" -p "$port" "$host" "$@" 9>&-; }
 
-started='' tmp='' dir='' child=''
+started='' tmp='' dir='' child='' last=''
 cleanup() {
   code=$?
   trap - EXIT
@@ -90,6 +96,7 @@ PY
     say "stopping $vm"
     docker stop -t 120 "$vm" >/dev/null || say "could not stop $vm"
   fi
+  [ -z "$last" ] || echo "$last"
   exit "$code"
 }
 trap cleanup EXIT
@@ -125,7 +132,7 @@ GIT_INDEX_FILE=$tmp/index git -C "$root" diff --cached --binary --no-color --no-
   >"$tmp/work.diff" || die 'git diff failed'
 printf '%s\n' "${files[@]}" >"$tmp/files.txt"
 cat >"$tmp/run.py" <<'PY'
-import os, pathlib, subprocess, sys
+import os, pathlib, subprocess, sys, time
 here = pathlib.Path(__file__).resolve().parent
 (here / 'pid').write_text(str(os.getpid()))
 src, temp = here / 'repo', here / 'temp'
@@ -143,10 +150,18 @@ if (here / 'work.diff').stat().st_size:
     git('apply', '--whitespace=nowarn', str(here / 'work.diff'))
 env = dict(os.environ, PYTHONUTF8='1', PYTHONUNBUFFERED='1', **dict.fromkeys(('TEMP', 'TMP', 'TMPDIR'), str(temp)))
 code = 0
-for f in (here / 'files.txt').read_text(encoding='utf-8').splitlines():
+files, failed = (here / 'files.txt').read_text(encoding='utf-8').splitlines(), []
+for f in files:
     print('== ' + f, flush=True)
+    t = time.monotonic()
     c = subprocess.run([sys.executable, '-X', 'utf8', f], cwd=src, env=env, stdin=subprocess.DEVNULL).returncode
     code = code or (c if 0 <= c < 255 else 1)  # ssh's own failure is 255
+    if c:
+        failed.append(f)
+    if 'all' in sys.argv:
+        print(f"-- {f}: {'failed' if c else 'passed'}, {time.monotonic() - t:.1f}s", flush=True)
+(here / 'last').write_text(f'{len(failed)} of {len(files)} files failed: ' + ' '.join(failed) if failed
+                           else f'all {len(files)} files passed')
 sys.exit(code)
 PY
 
@@ -163,8 +178,15 @@ dir=$out
 scp -q "${opts[@]}" -P "$port" "$tmp/repo.bundle" "$tmp/work.diff" "$tmp/files.txt" "$tmp/run.py" "$host:$dir/" 9>&- \
   || die "could not copy the worktree to $vm"
 # in the background: a signal to this script is then handled at once, not when the tests end
-vm_ssh "$python -X utf8 \"$dir/run.py\"" </dev/null & child=$!
+vm_ssh "$python -X utf8 \"$dir/run.py\"${all:+ all}" </dev/null & child=$!
 wait "$child"
 code=$?
 child=''
+if [ -n "$all" ]; then  # printed at the very end, by cleanup
+  last=$(vm_ssh "$python -X utf8 -" <<PY
+print(open(r'''$dir/last''').read())
+PY
+  ) || { last="did not finish: see the output above"; [ "$code" != 0 ] || code=1; }
+  last="windows_vm: ${last//$'\r'/}"
+fi
 exit "$code"

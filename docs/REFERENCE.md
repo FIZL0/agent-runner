@@ -2018,12 +2018,17 @@ python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessi
 
 ### Windows CI for a task branch
 
-Windows-only code (ConPTY, attach) cannot run on Linux: run its gate on Windows before the merge. Push with `run done
-<ID> "<msg>" --blocked "waits for its Windows run"` (the git fence refuses `git push`; a plain `done` ticks the task and
-cannot be repeated after a fix), then `gh workflow run ci.yml --ref task/<ID> -f system=windows` (or `linux`, `both`;
-`-f tests="tests/test_windows.py tests/test_cmds.py"` for those files only), which prints the run's link. Wait in the
-foreground, again until it ends: `timeout 540 gh run watch <run-id> --exit-status` (exit 124: not yet); `gh run view
-<run-id> --log-failed` says why it failed. Once it is green, plain `done`, then `finish`.
+Windows-only code (ConPTY, attach) cannot run on Linux, and the GitHub ci workflow is disabled since 2026-11-24 (too
+many emails; its file stays), so a run of it by hand with gh fails. Before the merge, and before a plain `run done`,
+run the Windows tests on this machine's Windows VM as a background command and wait for it to end: `tools/windows_vm.sh
+<test files the change touches>`, or `tools/windows_vm.sh --all` for every `tests/test_*.py`. It tests the worktree,
+uncommitted changes included, so there is no push, no gh and no block needed. With `--all`, it prints after each file
+`-- FILE: passed|failed, N.Ns`; the last line is `windows_vm: all N files passed`, or `windows_vm: N of M files failed:
+FILE FILE`, or `windows_vm: did not finish: see the output above` when the VM or its ssh was cut off. A failing file:
+fix it and run again. A file that also fails without the change is not yours: file it if no task covers it. Once the
+files pass, plain `done`, then `finish`. Without a VM (exit 2 and only a line like `windows_vm: … no Windows VM to
+use`, with no test run) the task is blocked and says so: `run done <ID> "<msg>" --blocked "BLOCKED: no Windows VM on
+this machine to run its Windows tests: <the script's line>"`.
 
 ### Test entries in ~/.claude.json
 
@@ -2039,10 +2044,11 @@ temp config); if a suite still leaks on Windows, its check names the entries it 
 
 ### Windows code from a Linux slot
 
-A slot on Linux cannot run the Windows tests itself. For a quick check, run `tools/windows_vm.sh [--keep] [test
-file ...]` first: it runs the test files (default `tests/test_windows.py`) of this worktree, uncommitted changes
-included, on the Windows VM, starting the Docker container named by `WINDOWS_VM` (default `windows-vm`) if it is
-stopped and stopping it again if it started it (`--keep` leaves it up). The output and exit code come back, and two
-callers wait on a lock. Without the container or the ssh key it says so in one line and exits 2 without creating a
-VM; then go straight to the Windows CI job run on request for the task branch (T13, `gh workflow run ci.yml --ref
-task/<ID>`), which is the proof either way. The settings by environment are in the script's header.
+A slot on Linux cannot run the Windows tests itself. Run `tools/windows_vm.sh [--keep] [test file ...]` (default
+`tests/test_windows.py`), or `tools/windows_vm.sh [--keep] --all` for every `tests/test_*.py` (it takes no file names):
+it runs them on the Windows VM, of this worktree with uncommitted changes included, starting the Docker container
+named by `WINDOWS_VM` (default `windows-vm`) if it is stopped and stopping it again if it started it (`--keep` leaves
+it up). The output and exit code come back, and two callers wait on a lock. Without the container or the ssh key it
+says so in one line and exits 2 without creating a VM; then the task is blocked as in
+[Windows CI for a task branch](#windows-ci-for-a-task-branch). That run is the proof before the merge. The settings by
+environment are in the script's header.
