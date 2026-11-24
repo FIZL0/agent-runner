@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: this repo's merge joins a conflict in CHANGELOG.md itself, with no fix session: `[run] joinable` holds it and `[run.join]` runs `tools/changelog_join.py`, which keeps both branches' new entries once and puts an entry written before a release under Unreleased, not the released version (C47).
 - Fixed: on the run page, on a touch device, a tap on the slim message box while the session still scrolls with momentum stops the scroll and opens the message box with the keyboard, and it stays open; before, the scroll went on and the box did not open (B218b1).
 - Added: `[models] control` takes another provider's model (`<provider>:<model>`): a control session then runs on the harness loop in chat mode (many turns, waits for the person between them, control brief as system text, closes when idle and reopens as Claude's do, `agent-runner control --resume SID` goes on by session id). No Remote Control (so no control server), push, Artifact or Monitor there; pages go through publish-page and `plan concept --page` takes `/concept/ID` for one with no claude.ai link. Its git fence: no push in the project, no commit/merge in the main checkout, no edits of its tracked files (F406f).
 - Changed: on the run page, one tap on the slim message box of a chat or slot opens the full message box with the keyboard on a touch device too; before, a phone needed a second tap. The draft and the session's size stay (B218b).
