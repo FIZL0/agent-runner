@@ -328,7 +328,7 @@ def control_set_title(n: int, summary: str) -> int:
 def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
     """The first message a handed-on request opens a control session with: `ask`, and for each `--file PATH`
     (`--image`: an alias) a line saying the person attached that file, by name and saved path, and to Read or open
-    it before answering (the runner feed forwards text only, so a screenshot or an upload reaches the new session
+    it before answering (a message carries text only, so a screenshot or an upload reaches the new session
     by its saved path, B30)."""
     lines = [ask] if ask else []
     lines += [f'The person attached {attached_name(p)}, saved at "{p}": Read or open it before you answer.'
