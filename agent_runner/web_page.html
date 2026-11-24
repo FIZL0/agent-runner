@@ -2623,7 +2623,6 @@ if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
   document.addEventListener('focusout',e=>{if(kbH&&!typingIn(e.relatedTarget))queueMicrotask(()=>{if(typingIn(document.activeElement))return;if(IOS)kbWatch();kbFit()})});
   if(IOS){document.addEventListener('touchstart',kbTapStart,{passive:true});document.addEventListener('touchcancel',()=>{KT=null},{passive:true});
     document.addEventListener('touchend',kbTapEnd,{passive:false})}}
-/* B181: the new concept box grows with its lines on touch; a computer's keeps its drag handle */
 function grow(ta){ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
 /* B119: the slash command menu. SL.cmds the session's commands from /commands (null until they come, then
    SLASH_FALLBACK's list stands in), SL.items the rows shown, SL.i the highlighted one */
