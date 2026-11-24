@@ -298,6 +298,27 @@ _On screen_: More…, Talk settings
 _In code_: SHEETS, openSheet
 _Avoid_: modal, popup, dialog (a pick sheet is another thing: a DECIDE's page of options)
 
+**Overview**:
+The run app's main page on Home, all projects at once: Needs you over all projects, then a card per project (running, idle or paused first, then off, by name)
+_Said_: all projects page
+_On screen_: Overview
+_In code_: projectsHTML, projectCard
+_Avoid_: dashboard
+
+**All projects**:
+The sidebar's first row, and the level it opens: the sidebar turns into the project list (Overview, Running, Idle, Off, Devices) with a count of what needs you in other projects; a project turns it back
+_Said_: All projects row, project list
+_On screen_: All projects
+_In code_: allSide, allRow, goUp, goDown
+_Avoid_: project switcher, switcher
+
+**Off page**:
+The page of a project with no run up: its name and state, Start run, what it needs and its queue; it becomes the run's app once the run is up
+_Said_: off page
+_On screen_: the project's name and state, Start run
+_In code_: offHTML, HomeHandler.off_page
+_Avoid_: stopped page, off project page
+
 **Quiet chat**:
 A chat that needs no reply and has had nothing said in it for `[ui] chat_quiet`: grayed, at the bottom of Chats. Opening it does not move it; the quiet ends when something is said in it, or it is pinned or renamed
 _Said_: quiet chats

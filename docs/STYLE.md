@@ -69,6 +69,15 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   its items (`.it`) under `.sec`, closes on the scrim, Esc, a swipe down, or a pick. One sheet, never a sheet over a
   sheet. Its markup comes from `SHEETS[name]()`. A button whose label ends in … opens one or folds open. A Needs you item's
   sheet is a centred dialog (`.dlg`) from 760px wide, not a sheet from the bottom. A sheet is visible from the first frame so it can take focus when it opens (its visibility is only animated on closing; no ring around the sheet itself), and closing gives focus back to what opened it while that is still drawn (a Needs you card, also when it was drawn again since).
+- **Sidebar level** (`.slevel`, `.prow`, `sideShow()`): the sidebar's level is the view. The first row is All projects
+  (`allRow()`, with a count of what needs you in other projects, hidden when Home lists one project); the level it
+  opens is the project list (`allSide()`), and a project's own list turns it back. A `.prow` is one project: its state
+  dot, its name, and a `.n` only for what needs you in that project. Badge rules apply as below.
+- **+ button** (`.btn.plus`, `plusBtn()`): one per view, top right, its word kept on a phone (Project, Task, Concept,
+  Slot, New talk, Device). `+ Chat` stands only beside Chats. None in Settings or in a chat.
+- **Project card** (`.pcard`, `projectCard()`): one project on the Overview or in a list: its state dot and name, its
+  tasks by title, what landed today. One main button (`mainBtn()`: Start run or Open); the rest is in the
+  … sheet (`dotsBtn()`), never beside it.
 - **Badge** (`.n`): a count of what waits on the person, never of anything else. **Dot** (`.bdot`): something
   waits, no count. **Pill** (`.pill`): a state in a word or two. Same words on every page: Running, Paused,
   Stopping, Caps forced, Not up.
@@ -92,6 +101,10 @@ action until the run answers, and sends it again after a lost connection. A card
 once; its stand-in shows in the same place. A failure brings Retry, Edit or Discard. `act()` is only for what has
 nothing to draw (an interrupt, an order kept) and for Talk, which draws the person's words itself.
 
+Home's own actions (start, pause, slots, stop) go through `homeAct()`, an outbox of their own shared by every page of
+that Home, so one started before a switch to another project is still followed there. Home runs each one once, and a
+failure brings Retry there too.
+
 A secret never goes through `outbox()`, which the browser keeps: a device's change goes straight to the run
 (`toolPost()`; its secret's field is emptied when sent), and an input goes straight to the run too (`giveSend()`), a text or link as well. A refusal or a
 question keeps what was typed, the secret too, while the sheet is open; a secret is forgotten when the sheet closes
@@ -111,7 +124,8 @@ saved secret is shown only as `set, changed <date>`.
 The page is drawn again from the snapshot, whole parts at a time. `setHTML()` draws a part only when its markup changed,
 so markup holds no clock that ticks faster than a minute and no state a gesture is holding: what changes while a finger
 is down (the mic, the drawer, the sheet) is set on the node that is there (`talkDraw()`). `render()` waits while a press or
-a text selection is under way (15 s at most).
+a text selection is under way (15 s at most). The last snapshot seen is drawn first (`snapTake()`), before the run answers, and it holds
+no token.
 
 ## Motion
 
@@ -131,6 +145,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   Talk's top bar slides off when you scroll up (`.away`, transform only); a session's chips, box and top bar fade or slide over its text as the reader scrolls up (`.slim`, and the slim message box `.slimbox` stays), and no line moves when they go or come back (`feedShare()` takes part of an upward scroll only while they are away); a card
   or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns; the message box, Talk's words and the sheet glide (transform
   only) to their place when the keyboard opens or closes (`kbGlide()`).
+- **The one exception to first load:** the project list slides in from the left over the project's own sidebar and back
+  out (`.sghost`, transform only, `--dur-slow`), and so does arriving at another project from the list (`sideShow()`).
 - **What never animates:** a refresh of what is already there, a list reordering under the reader, text being
   typed, the scroll position, anything on first load.
 - **New means new:** give a thing that can come and go `data-k="its key"` (and `data-v="its state"` if it has one).
@@ -149,6 +165,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session scrolls it, and its bars fade away over the text; the slim message box stays (see The session).
 - Going to a view starts at its top; coming back to one you left returns to where you were.
 - **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form and a typed secret (`givesec:` keys) are not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
+- **The off page turns into the app.** An off project's page (see Off page in GLOSSARY.md) becomes its run's app once the
+  run is up, at the same address (`turnIntoApp()`), but not while a sheet is open on it.
 - A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll.

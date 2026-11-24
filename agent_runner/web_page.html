@@ -63,8 +63,13 @@ a{color:var(--accent)}
 
 /* the sidebar: a drawer on a phone */
 .side{position:absolute;inset:0 auto 0 0;width:280px;max-width:85%;background:var(--side);border-right:1px solid var(--line);z-index:6;
-  transform:translateX(-102%);transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);display:flex;flex-direction:column;padding:12px 10px;
-  padding-left:max(10px,env(safe-area-inset-left,0px));overflow:auto;touch-action:pan-y pinch-zoom}
+  transform:translateX(-102%);transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);display:flex;flex-direction:column;overflow:hidden auto;touch-action:pan-y pinch-zoom}
+/* F150: the sidebar's two levels: a project's own, and All projects, which slides in over it from the left and back out.
+   .sghost: the level that was there, for the length of the slide */
+.sidein{position:relative;flex:1 0 auto;display:flex;flex-direction:column;background:var(--side);padding:12px 10px;padding-left:max(10px,env(safe-area-inset-left,0px))}
+.sghost{position:absolute;left:0;right:0;min-height:100%;pointer-events:none}
+.side.up #sidein,.sghost.out{z-index:1}
+.side.up #sidein{animation:listin var(--dur-slow) var(--ease)} .sghost.out{animation:listout var(--dur-slow) var(--ease) forwards}
 .side.open{transform:none;box-shadow:8px 0 30px var(--shadow)}
 .side:not(.open):not(.drag){visibility:hidden}
 .scrim{position:absolute;inset:0;background:var(--scrim);z-index:5;opacity:0;visibility:hidden;touch-action:pan-y pinch-zoom;transition:opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
@@ -73,17 +78,14 @@ a{color:var(--accent)}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;color:inherit;text-decoration:none}
 .logo{width:28px;height:28px;border-radius:var(--r-s);background:var(--accent);color:var(--onaccent);display:grid;place-items:center;font:600 13px var(--serif);flex:none}
 .brand b{font:500 17px var(--serif)}
-.newchat{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:var(--r-m);padding:8px 10px;cursor:pointer;font-weight:500;color:var(--accent)}
-.newchat .plus{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--onaccent);display:grid;place-items:center}
-.newchat .plus svg{width:14px;height:14px;stroke-width:2.2}
 .nav{display:grid;gap:1px;margin-top:6px}
 .ni{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:var(--r-m);padding:8px 10px;cursor:pointer;text-align:left;color:var(--fg)}
 .ni:hover{background:var(--bubble)} .ni.on{background:var(--bubble);font-weight:500}
 .ni .n{margin-left:auto;font-size:var(--fs-s);background:var(--accent);color:var(--onaccent);border-radius:var(--r-full);padding:0 7px}
 .shead{font-size:var(--fs-s);color:var(--muted);padding:14px 10px 4px}
 .shead.row{display:flex;align-items:center;justify-content:space-between;padding-block:8px 0}
-.shadd{width:26px;height:26px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;flex:none}
-.shadd:hover{background:var(--bubble);color:var(--fg)} .shadd svg{width:16px;height:16px;stroke-width:2}
+.shadd{height:28px;border:0;border-radius:var(--r-s);padding:0 8px;background:none;color:var(--accent);font-size:var(--fs-m);font-weight:500;display:flex;align-items:center;gap:4px;cursor:pointer;flex:none}
+.shadd:hover{background:var(--bubble)} .shadd svg{width:14px;height:14px;stroke-width:2.2}
 .thread{display:flex;align-items:center;gap:8px;border:0;background:none;border-radius:var(--r-m);padding:7px 10px;cursor:pointer;text-align:left;width:100%;color:var(--fg);font-size:var(--fs-n)}
 .thread:hover{background:var(--bubble)} .thread.on{background:var(--bubble)}
 .thread .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -112,17 +114,17 @@ a{color:var(--accent)}
 .me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px 4px;border-top:1px solid var(--line);font-size:var(--fs-m);color:var(--muted)}
 .me .av{width:28px;height:28px;border-radius:50%;background:var(--fg);color:var(--bg);display:grid;place-items:center;font:600 12px var(--sans);flex:none}
 .me .sub{font-size:var(--fs-xs)}
-/* F134: the project switcher at the top of the sidebar (through Runner Home), and its list of Home's projects */
-.psw{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:var(--r-m);padding:6px 8px;margin-bottom:8px;cursor:pointer;text-align:left;color:var(--fg)}
-.psw:hover{background:var(--bubble)} .psw b{font:500 17px var(--serif);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.psw .cv{transition:transform var(--dur-fast) var(--ease);color:var(--muted)} .psw.open .cv{transform:rotate(90deg)}
-.plist{display:grid;gap:1px;margin:-4px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+/* F150: All projects at the top of the sidebar (through Runner Home), and its list: one row per project */
+.slevel{font:500 17px var(--serif);padding:8px 10px 2px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ni.allp{width:100%} .ni.allp svg{color:var(--muted)} .plist{display:grid;gap:1px} .plist .qline{padding-inline:10px}
 .prow{display:flex;align-items:center;gap:8px;border-radius:var(--r-m);padding:7px 10px;text-decoration:none;color:var(--fg);font-size:var(--fs-n)}
 .prow:hover{background:var(--bubble)} .prow.on{background:var(--bubble);font-weight:500}
-.prow .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .prow .st{font-size:var(--fs-s);color:var(--muted)}
+.prow.off{color:var(--muted)} .prow .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .prow .st{font-size:var(--fs-s);color:var(--muted)}
 .prow .n{font-size:var(--fs-s);background:var(--accent);color:var(--onaccent);border-radius:var(--r-full);padding:0 7px}
-.pdot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--line2)} .pdot.running{background:var(--ok)} .pdot.idle{background:var(--warn)}
-.padd{display:flex;gap:8px;flex-wrap:wrap} .padd input{flex:1;min-width:0;border:1px solid var(--line);border-radius:var(--r-m);padding:7px 10px;font:16px/1.35 var(--sans);background:var(--bg);color:var(--fg)}
+.pdot{width:8px;height:8px;border-radius:50%;flex:none;background:none;border:1.5px solid var(--muted)} .pdot.running{background:var(--ok);border-color:var(--ok)} .pdot.idle{background:var(--warn);border-color:var(--warn)}
+.pcard .row{gap:var(--s2)} .pcard .btn{flex:none} .pcard a.pname{color:inherit;text-decoration:none;font-weight:600} .pcard.off{padding-block:8px} .pcard.off a.pname{font-weight:500;color:var(--muted)}
+.pcard .ell{min-width:0} .ptasks{display:grid;gap:2px;min-width:0}
+.top .plus{flex:none;padding:6px 12px} .top .plus svg{width:15px;height:15px;stroke-width:2.2}
 .meter{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:var(--fs-m)}
 .meter .bar{height:6px;background:var(--line);border-radius:var(--r-xs);overflow:hidden} .meter .bar i{display:block;height:100%;background:var(--ok)}
 .meter .bar i.w{background:var(--warn)} .meter .bar i.b{background:var(--bad)} .meter .r{color:var(--muted)}
@@ -283,7 +285,7 @@ a{color:var(--accent)}
 
 @container (min-width:760px){
   .shell{grid-template-columns:260px minmax(0,1fr)}
-  .side,.side:not(.open):not(.drag){position:static;transform:none;box-shadow:none;width:auto;max-width:none;visibility:visible}
+  .side,.side:not(.open):not(.drag){position:relative;transform:none;box-shadow:none;width:auto;max-width:none;visibility:visible}
   .scrim:not(.sheetscrim),.top .menu{display:none!important}
   .top{padding:12px 18px 6px}
   .top .title{text-align:left}
@@ -361,7 +363,7 @@ a{color:var(--accent)}
   .crow .del:not(.undo),.crow .pin:not(.on){display:none}
   .crow .rowmenu{position:absolute;right:0;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center}
   .crow .pin.on{right:38px} .crow[data-crow] .thread{padding-right:44px} .crow.pinned .thread{padding-right:74px!important}
-  .thread,.ni,.newchat,.prow{min-height:var(--tap)}
+  .thread,.ni,.prow,.shadd{min-height:var(--tap)}
 }
 /* a row that folds open in place (a slot, a task, a setting) */
 .srow{display:grid;gap:var(--s2);border-top:1px solid var(--line);padding-top:var(--s3)} .srow:first-child{border-top:0;padding-top:0}
@@ -434,6 +436,8 @@ a{color:var(--accent)}
 /* motion (docs/STYLE.md, Motion): enter() sets these on what is new or changed, never the markup */
 @keyframes enter{from{opacity:0;transform:translateY(6px)}}
 @keyframes fadein{from{opacity:0}}
+@keyframes listin{from{transform:translateX(-100%)}}
+@keyframes listout{to{transform:translateX(-100%)}}
 .enter{animation:enter var(--dur) var(--ease)} .changed,.viewin{animation:fadein var(--dur) var(--ease)}
 .obpop:not([hidden]),.toast:not([hidden]){animation:fadein var(--dur-fast) var(--ease)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
@@ -443,7 +447,7 @@ a{color:var(--accent)}
 <div class="app" id="app">
   <div class="shell">
     <div class="scrim" id="scrim"></div>
-    <aside class="side" id="side" aria-label="Sidebar"></aside>
+    <aside class="side" id="side" aria-label="Sidebar"><div class="sidein" id="sidein"></div></aside>
     <section class="main">
       <div class="top" id="top"></div>
       <div class="notices"><div class="offline" id="offline" role="status" hidden>Lost the run page's connection: trying again…</div>
@@ -717,6 +721,7 @@ const viewOf=v=>v==='agents'||v==='activity'?'status':v;
 function placeOf(text,hash,projects,starting){
   const known=v=>NAV.some(n=>n[0]===v)||!!projects&&v==='projects', h=String(hash||'').replace(/^#/,''), hv=viewOf(h);
   if(known(hv))return{v:hv,t:'',link:true};
+  const nd=h.match(/^need-([A-Za-z0-9][\w.-]*)$/);if(nd)return{v:'home',t:'',link:true,need:nd[1]};  // F150: an item of Needs you
   if(/^[cs]\d+$/.test(h))return{v:'home',t:h,link:true};
   let o;try{o=JSON.parse(text||'{}')}catch(e){}
   if(!o||typeof o!=='object')o={};
@@ -1166,8 +1171,8 @@ function obPill(c,offline){const p=[];if(c.sending)p.push(`${c.sending} ${offlin
    its own page (homePage) at /, a run's app at /p/KEY/. The switcher lists Home's /projects and moves to /p/KEY/
    on the same Home address, with Home's token (the page's own: Home swaps it for the run's on every call). */
 function homeBase(path,homePage){
-  if(homePage)return String(path||'/').replace(/[^/]*$/,'')||'/';
-  const m=String(path||'').match(/^(.*?\/)p\/[^/]+\//);return m?m[1]:'';
+  const m=String(path||'').match(/^(.*?\/)p\/[^/]+\//);if(m)return m[1];  // F150: Home's page for a project that is off is there too
+  return homePage?String(path||'/').replace(/[^/]*$/,'')||'/':'';
 }
 function homeKey(path){const m=String(path||'').match(/^.*?\/p\/([^/]+)\//);try{return m?decodeURIComponent(m[1]):''}catch(e){return m[1]}}
 const projectLink=(base,key,t)=>base+'p/'+encodeURIComponent(key)+'/?t='+encodeURIComponent(t||'');
@@ -1192,29 +1197,56 @@ function homeHref(base,t,home,loc){
 }
 /* B153: the window title: the project's name first */
 const pageTitle=project=>project?project+' · runner':'agent-runner';
-/* a project's state as the switcher says it: off, idle, running, or paused */
-const projectState=p=>p.state!=='off'&&p.paused?'paused':p.state||'off';
-/* the switcher's rows: one per Home project, with its link, its state and how many things need you */
-function switcherRows(projects,key,base,t){
-  return(projects||[]).map(p=>({key:p.key,name:p.name||p.key,state:p.state||'off',said:projectState(p),needs:p.needs||0,
-    href:projectLink(base,p.key,t),on:p.key===key}));
+/* a project's state in a word: off, starting…, stopping, paused, running or idle */
+const projectState=p=>p.state==='off'||!p.state?(p.starting?'starting…':'off'):p.stopping?'stopping':p.paused?'paused':p.state;
+/* F150: where a project stands, as home.row_group: running, up but idle or paused, off; by name in each */
+const PGROUPS=[['running','Running'],['idle','Idle'],['off','Off']];
+const projectGroup=p=>(p.state||'off')==='off'?'off':p.state==='running'&&!p.paused?'running':'idle';
+const projectOrder=ps=>PGROUPS.flatMap(([g])=>(ps||[]).filter(p=>projectGroup(p)===g).sort((a,b)=>{const x=String(a.name||a.key).toLowerCase(), y=String(b.name||b.key).toLowerCase();return x<y?-1:x>y?1:0}));
+/* F150: a project as the Home actions still on their way (hob) leave it: shown at once */
+function projectNow(p,hob){
+  let q={...p};
+  for(const x of hob||[])if(x.state==='sending'&&x.args&&x.args.project===p.key)q=projectDid(q,x.name,x.args.arg);
+  return q;
 }
-/* the words under a project in All projects */
-function projectWords(p){const w=[];
-  if(p.state==='off')w.push('off');else{w.push(p.paused?'paused':p.state);if(p.slots!=null)w.push(p.slots+' slot'+(p.slots==1?'':'s'));
-    if((p.running||[]).length)w.push(p.running.join(', '));if(p.stopping)w.push('stopping')}
-  if(p.left!=null)w.push(p.left?p.left+' queued':'nothing queued');return w.join(' · ')}
-/* a project's buttons in All projects: Start run while off; else Open (its run app), Pause or Go on, -1 / +1 slot,
-   Stop; Unlist always. a: Home's /act name, arg its arg, open: the run app's link */
-function projectButtons(p){
-  const b=[];
-  if(p.state==='off')b.push({label:'Start run',a:'start',go:true});
-  else{if(p.page)b.push({label:'Open',open:true,go:true});
-    b.push(p.paused?{label:'Go on',a:'resume'}:{label:'Pause',a:'pause'});
-    b.push({label:'−1 slot',a:'slots',arg:'-1'},{label:'+1 slot',a:'slots',arg:'+1'},{label:'Stop',a:'stop'})}
-  b.push({label:'Unlist',unlist:true});
-  return b;
+function projectDid(p,name,arg){
+  if(name==='start')return p.state==='off'||!p.state?{...p,starting:true}:p;
+  if(p.state==='off'||!p.state)return p;
+  return name==='pause'?{...p,paused:true}:name==='resume'?{...p,paused:false}:name==='stop'?{...p,stopping:true}:name==='slots'&&/^\d+$/.test(arg)?{...p,slots:+arg}:p;
 }
+/* the list's rows: one per Home project in its order, with its link (tab: the view it opens in), its state and how
+   many things need you */
+function switcherRows(projects,key,base,t,tab){
+  return projectOrder(projects).map(p=>({key:p.key,name:p.name||p.key,state:p.state||'off',group:projectGroup(p),said:projectState(p),needs:p.needs||0,
+    href:projectLink(base,p.key,t)+(tab?'#'+tab:''),on:p.key===key}));
+}
+/* F150: the All projects row is there once Home lists another project; its count is the others' */
+const oneProject=ps=>!!ps&&ps.length<2;
+const needsOf=(ps,but)=>(ps||[]).reduce((n,p)=>n+(p.key===but?0:p.needs||0),0);
+/* what waits on the person, over all projects: [{key, name, id, what}] (Home's 'ID - what to do' lines) */
+function projectAsks(ps){
+  return projectOrder(ps).flatMap(p=>(p.asks||[]).map(a=>{const m=String(a).match(/^(\S+) - (.+)$/);
+    const what=m?m[2]:String(a);return{key:p.key,name:p.name||p.key,id:m?m[1]:'',what:what.charAt(0).toUpperCase()+what.slice(1)}}));
+}
+/* the words under a project: its state when the group it stands in does not say it, its slots, its queue */
+function projectWords(p){
+  const w=[], s=projectState(p), n=(p.running||[]).length;
+  if(!['running','idle','off'].includes(s))w.push(s);
+  if(p.state&&p.state!=='off'&&p.slots!=null)w.push(`${n} of ${p.slots} slot${p.slots==1?'':'s'}`);
+  if(p.left!=null)w.push(p.left?p.left+' queued':'nothing queued');
+  return w.join(' · ');
+}
+/* a project's one main button, and what its … sheet holds: a: Home's /act name; sure: it asks first */
+const projectMain=p=>p.state==='off'||!p.state?{label:p.starting?'Starting…':'Start run',a:'start',busy:!!p.starting}:p.page?{label:'Open',open:true}:null;
+function projectMore(p){
+  const up=!!p.state&&p.state!=='off';
+  return[...(up?[p.paused?{label:'Go on',a:'resume'}:{label:'Pause',a:'pause'}]:[]),...(up&&p.slots!=null?[{label:'Slots',step:p.slots}]:[]),
+    ...(up&&!p.stopping?[{label:'Stop',a:'stop',sure:`Stop ${p.name||p.key}? Its running tasks finish and nothing new starts.`}]:[]),
+    {label:'Unlist',unlist:true,sure:`Unlist ${p.name||p.key}? Its run and files stay as they are.`}];
+}
+/* F150: the last snapshot as it is kept for the next time the project opens: what it shows, not what tells one run or
+   one version from another, and no token */
+function snapKept(s){const{home,boot,at,page,restart_needed,version,...keep}=s||{};return keep}
 /* F149: the popup for an answer of the run (or Home): {kind: 'refresh', key}, the page it serves is not this one;
    {kind: 'restart', key}, newer code waits for a person to restart the run; else null. later: the keys put off. The
    page never reloads by itself. */
@@ -1229,7 +1261,7 @@ function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploa
   :o.form?'Save or close the device form first. It is not kept over a refresh.'
   :o.secret?'Send or clear the secret first. It is not kept over a refresh.'
   :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
-if(typeof module!=='undefined')module.exports={giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1244,17 +1276,15 @@ const ROOT=HB||location.pathname.replace(/[^/]*$/,'');
   const add=(rel,href)=>{const l=document.createElement('link');l.rel=rel;l.href=href;document.head.appendChild(l)};
   add('manifest',manifestLink(HB,HKEY,T));add('apple-touch-icon',(HB||'./')+'icon-180.png?t='+encodeURIComponent(T));
   const m=document.createElement('meta');m.name='apple-mobile-web-app-title';
-  m.content=HOME_PAGE?'Runner Home':HKEY||document.title.replace(/ · runner$/,'');document.head.appendChild(m);
+  m.content=HOME_PAGE&&!HKEY?'Runner Home':HKEY||document.title.replace(/ · runner$/,'');document.head.appendChild(m);
 })();
-const H={projects:null,machine:'',devices:null,alerts:[],open:false,add:'',err:''};
+const H={projects:null,machine:'',devices:null,alerts:[],err:'',said:'',turn:0,begun:{},more:false,at:0};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 const I={
   keys:ic('<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
  menu:ic('<path d="M4 7h16M4 12h16M4 17h10"/>'),
  edit:ic('<path d="M12 20h8"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
- // F84: the top bar's New chat: a speech bubble with a +, stroked in currentColor so it reads in both themes
- newchat:`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l.9-4.4A8 8 0 1 1 20 12z"/><path d="M12 8.5v7M8.5 12h7"/></svg>`,
  talk:ic('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>'),  // F93: a mic
  home:ic('<path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/>'),
  status:ic('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
@@ -1466,17 +1496,17 @@ function oldRunHTML(msg){const rc=controlOf('restart');
 const obBtns=x=>`${x.state==='failed'&&!obOld(x)?`<button class="btn pri" data-obretry="${esc(x.cid)}">Retry</button>`:''}${x.state==='failed'&&x.name==='chat_to'?`<button class="btn" data-obedit="${esc(x.cid)}">Edit</button>`:''}<button class="btn" data-obdrop="${esc(x.cid)}">Discard</button>`;
 const obState=x=>obOld(x)?OLD_WAIT:x.state==='failed'?`Not sent: ${obRefused(x)?OLD_RUN:x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
 function obDraw(){
-  const c=obCounts(S.ob), old=S.ob.filter(obOld).length;c.failed-=old;
+  const all=S.ob.concat(S.hob||[]), c=obCounts(all), old=S.ob.filter(obOld).length;c.failed-=old;
   const lost=notDelivered();
   const parts=[...obPill(c,OB.offline),...(old?[`${old} waiting for a restart`]:[]),...(lost.length?[`${lost.length} not delivered · tap to see`]:[])], bar=$('obbar'), pop=$('obpop');
   bar.hidden=!parts.length;
   setHTML(bar,parts.length?`<button class="obpill${c.failed||lost.length?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'');
-  if(!S.ob.length&&!S.oldRun&&!lost.length)S.obOpen=false;
+  if(!all.length&&!S.oldRun&&!lost.length)S.obOpen=false;
   if(!S.obOpen)S.oldRun=false;
   pop.hidden=!S.obOpen;
   setHTML(pop,S.obOpen?`<div class="obcard" role="dialog" aria-label="Outbox"><div class="row"><b class="grow">Outbox</b><button class="btn" data-obclose>Close</button></div>
     ${S.oldRun||S.ob.some(obRefused)?oldRunHTML(OLD_RUN):''}
-    ${S.ob.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}
+    ${all.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}
     ${lost.map(({n,p})=>`<div class="obrow failed"><div class="grow"><div class="ell2">${esc(p.text)}</div><div class="small">Not delivered: it is not in ${esc(threadTitle(n))}</div></div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" data-n="${esc(n)}">Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" data-n="${esc(n)}">Discard</button></div></div>`).join('')}</div>`:'');
 }
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
@@ -1592,65 +1622,199 @@ function side(){
   const count={home:needs,concepts:cn};
   const cs=chats(), ws=working_();
   S.sel=S.sel.filter(n=>cs.some(c=>c.name===n));  // F118: a picked chat that ended elsewhere leaves the pick
-  if(HOME_PAGE){  // F134: Home's own page: the switcher, All projects and this machine
-    sideHTML(`${switcher()}<div class="nav"><button class="ni on" data-view="projects">${I.home}All projects${homeNeeds()?`<span class="n">${homeNeeds()}</span>`:''}</button></div>
-     <div class="me"><div class="av">${esc((H.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(H.machine||'this machine')}</span><div class="sub">Runner Home</div></div></div>`);
-    $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);return;
-  }
+  const due0=homeNeeds()+H.alerts.length;
+  if(atAll()){S.menuDot=!!due0;sideShow(allSide(),'all');return}  // F150
+  if(HOME_PAGE){S.menuDot=!!due0;sideShow(offSide(),'in');return}  // F134: no run behind it
   const g=shownChats(), due=needs||cn;S.menuDot=!!due;  // F128: the phone's menu button gets a dot
-  sideHTML(`${HB?switcher():brand()}
-   <button class="newchat" data-new><span class="plus">${I.plus}</span>New chat</button>
-   <div class="nav">${(HB?nav.concat([['projects','All projects']]):nav).map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
-   <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?g.top.map(x=>chatRow(x)).join('')+obChatRows()+(g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>chatRow(x,true)).join(''):''):'<div class="none">No chats yet</div>'+obChatRows()}
+  sideShow(`${allRow()}
+   <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
+   <div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button></div>${chatBar()}${cs.length?g.top.map(x=>chatRow(x)).join('')+obChatRows()+(g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>chatRow(x,true)).join(''):''):'<div class="none">No chats yet</div>'+obChatRows()}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
-   <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>`);
-  $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
+   <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>`,'in');
 }
 /* the sidebar drawn again only when it changed, its scroll and a name being typed kept */
-function sideHTML(h){const el=$('side'), put=keepScroll(el), f=keepFields(el);if(setHTML(el,h)){f();put();const t=el.querySelector('[data-f="ren"]');if(t&&S.renFocus){S.renFocus=false;kbFocus(t);kbReveal(t);t.select()}}}
-/* --- F134: Runner Home in the app: the switcher, All projects, Devices ------------------------------------ */
-const homeNeeds=()=>(H.projects||[]).reduce((n,p)=>n+(p.needs||0),0);
+function sideHTML(h){const box=$('side'), el=$('sidein'), put=keepScroll(box), f=keepFields(el);if(setHTML(el,h)){f();put();const t=el.querySelector('[data-f="ren"]');if(t&&S.renFocus){S.renFocus=false;kbFocus(t);kbReveal(t);t.select()}}}
+/* --- F150: Home's actions (start, pause, slots, stop): an outbox of their own, shared by every page of this Home, so one
+   started before a switch to another project is still followed there. Home runs each cid once, so any tab may send it */
+const HO_KEY='ar-outbox:@home', HO={busy:new Set(),kept:true,timer:0,wait:2000};
+S.hob=HB?obParse(store.get(HO_KEY)):[];
+function homeLoad(){if(HB&&HO.kept)S.hob=obParse(store.get(HO_KEY))}
+function homeChange(fn){homeLoad();S.hob=fn(S.hob);const t=S.hob.length?JSON.stringify(S.hob):'';store.set(HO_KEY,t);HO.kept=store.get(HO_KEY)===t}
+function homeAct(key,name,arg,say){
+  homeChange(b=>obAdd(b.filter(x=>!(x.state==='failed'&&x.args.project===key&&x.name===name)),{cid:newCid(),name,args:{project:key,...(arg?{arg:String(arg)}:{})},state:'sending',err:'',at:Date.now(),say}));
+  render(true);homeDrain();
+}
+/* one at a time per project; a start, which is slow, holds up no other project */
+function homeDrain(){clearTimeout(HO.timer);homeLoad();for(const k of new Set(S.hob.map(x=>x.args.project)))homeSend(k)}
+async function homeSend(key){
+  if(HO.busy.has(key))return;HO.busy.add(key);
+  try{
+    for(let it;homeLoad(),(it=obNext(S.hob.filter(x=>x.args.project===key)));){
+      let j;
+      try{const r=await fetch(tq(HB+'act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...it.args,name:it.name,cid:it.cid})});
+        if(r.status>=500)throw new Error(`HTTP ${r.status}`);
+        j=await r.json()}
+      catch(e){HO.timer=setTimeout(homeDrain,HO.wait);HO.wait=Math.min(HO.wait*2,30000);obDraw();return}
+      HO.wait=2000;homeLoad();
+      if(!S.hob.some(x=>x.cid===it.cid))continue;  // discarded while it went
+      homeChange(b=>obSettle(b,it.cid,j,''));
+      homeDone(it,j);
+    }
+  }finally{HO.busy.delete(key)}
+  render(true);
+}
+function homeDone(it,j){
+  const key=it.args.project;
+  if(!j||!j.ok){toast(`Not done: ${it.say}`,true);return}
+  if(it.name==='start')H.begun[key]=Date.now();else if(it.name==='stop')delete H.begun[key];
+  H.turn++;  // a list asked for before this is older than it
+  H.projects=H.projects&&H.projects.map(p=>p.key===key?projectDid(p,it.name,it.args.arg):p);
+  toast(String(j.out||'').split('\n')[0]||`${it.say}: done`);
+  loadProjects();
+}
+const homeHas=cid=>S.hob.some(x=>x.cid===cid);
+function homeRetry(cid){homeChange(b=>obRetry(b,cid,newCid(),''));render(true);homeDrain()}
+addEventListener('storage',e=>{if(e.key===HO_KEY){homeLoad();render(true)}});
+addEventListener('online',()=>homeDrain());
+/* --- F150: Runner Home in the app (option D of K7's page): All projects is the sidebar's first row; tapping it turns the
+   sidebar into the project list and the main page into the Overview; a project turns it back. The level is the view */
+const homeNeeds=()=>needsOf(H.projects);
+const projectsNow=()=>(H.projects||[]).map(p=>projectNow(H.begun[p.key]&&(p.state||'off')==='off'&&Date.now()-H.begun[p.key]<START_MS?{...p,starting:true}:p,S.hob));
+const START_MS=90000;  // how long a run that was started reads as starting
+const atAll=()=>S.view==='projects'&&!S.thread;
+/* the view a project opens in: the one last open in this tab ('' in a chat) */
+const TAB_KEY='ar-tab', LEVEL_KEY='ar-level';
+const lastTab=()=>{const v=tabStore.get(TAB_KEY);return NAV.some(n=>n[0]===v)?v:''};
+const rowsNow=()=>switcherRows(projectsNow(),HKEY,HB,T,lastTab()||'home');
+const projectHref=key=>projectLink(HB,key,T)+'#'+(lastTab()||'home');
+/* the list's level or the project's, drawn, and slid when it is another one than before */
+let level='';
+function sideShow(h,to){
+  const el=$('side'), was=level, calm=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  if(was!==to){
+    if(!was&&to==='in'&&tabStore.get(LEVEL_KEY)==='all'&&HB&&H.projects&&!oneProject(H.projects)){sideHTML(allSide());level='all';return sideShow(h,to)}  // it came from another page's list
+    level=to;tabStore.set(LEVEL_KEY,to);
+    for(const g of el.querySelectorAll('.sghost'))g.remove();
+    el.classList.remove('up');
+    if(was&&!calm){
+      const g=$('sidein').cloneNode(true);g.removeAttribute('id');g.classList.add('sghost');g.setAttribute('aria-hidden','true');g.inert=true;g.style.top=-el.scrollTop+'px';
+      for(const x of g.querySelectorAll('[id]'))x.removeAttribute('id');
+      el.appendChild(g);if(to==='in')g.classList.add('out');else el.classList.add('up');
+      g.addEventListener('animationend',()=>g.remove());$('sidein').addEventListener('animationend',()=>{g.remove();el.classList.remove('up')},{once:true});
+      setTimeout(()=>{g.remove();if(level===to)el.classList.remove('up')},400);
+    }
+    if(was==='in')S.sideAt=el.scrollTop;
+    sideHTML(h);el.scrollTop=to==='in'?S.sideAt||0:0;
+  }else sideHTML(h);
+  el.classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
+}
+const meRow=(name,sub)=>`<div class="me"><div class="av">${esc((name||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(name||'this machine')}</span><div class="sub">${sub}</div></div></div>`;
+/* a project's level starts with the way up: its count is what needs you in the other projects */
+function allRow(){
+  if(!HB||oneProject(H.projects))return brand();
+  const n=needsOf(H.projects,HKEY)+H.alerts.length, cur=(H.projects||[]).find(p=>p.key===HKEY);
+  return `<button class="ni allp" data-up title="All projects">${I.back}All projects${n?`<span class="n" title="need you in other projects">${n}</span>`:''}</button><div class="slevel">${esc(cur&&cur.name||S.snap.project||HKEY)}</div>`;
+}
+function allSide(){
+  const rows=rowsNow(), n=homeNeeds()+H.alerts.length;let i=0;
+  const row=r=>{const k=++i, hint=k<10?` title="Alt+${k}"`:'';
+    return `<a class="prow ${r.on?'on ':''}${r.group}" href="${esc(r.href)}" data-pkey="${esc(r.key)}"${hint}><span class="pdot ${esc(r.group)}"></span><span class="t">${esc(r.name)}</span>${['running','idle','off'].includes(r.said)?'':`<span class="st">${esc(r.said)}</span>`}${r.needs?`<span class="n" title="needs you">${r.needs}</span>`:''}</a>`};
+  return `<div class="slevel">All projects</div><div class="nav"><button class="ni ${H.tab!=='devices'?'on':''}" data-alltab="">${I.projects}Overview${n?`<span class="n">${n}</span>`:''}</button></div>
+    <div class="plist">${H.projects===null?'<div class="none">Loading…</div>':PGROUPS.map(([g,label])=>{const rs=rows.filter(r=>r.group===g);return rs.length?`<div class="shead">${label}</div>${rs.map(row).join('')}`:''}).join('')||'<div class="none">No projects</div>'}</div>
+    <div class="nav"><button class="ni ${H.tab==='devices'?'on':''}" data-alltab="devices">${I.tools}Devices</button></div>${meRow(H.machine,'Runner Home')}`;
+}
+/* a project with no run up: its name and state, the way up, and nothing of a run */
+function offSide(){const p=projectOf(HKEY);
+  return `${allRow()}<div class="nav"><button class="ni on" data-view="home">${I.home}${p?esc(projectState(p)).replace(/^./,c=>c.toUpperCase()):'Project'}</button></div>${meRow(H.machine,'Runner Home')}`}
+const projectOf=key=>projectsNow().find(p=>p.key===key);
+/* up to the list, with Back to come down again (the drawer stays open), and down to the open project where it was left */
+function goUp(stay,keys){
+  if(atAll()||!HB||oneProject(H.projects))return;
+  S.below={v:S.view,t:S.thread,c:S.ctx};H.tab='';tabStore.set('ar-alltab','');
+  if(!stay)try{history.pushState({level:'all'},'')}catch(e){}
+  const open=S.drawer;goView('projects');if(open){S.drawer=true;render(true)}
+  if(keys)focusSide('[data-alltab]');
+  loadProjects();loadDevices();
+}
+function goDown(stay,keys){
+  if(!atAll()||!HKEY)return;
+  const p=!HOME_PAGE&&!stay&&projectOf(HKEY);if(p&&projectGroup(p)==='off'&&!p.starting){location.href=projectLink(HB,HKEY,T);return}  // its run ended meanwhile: its page as it is off
+  const b=S.below||{v:lastTab()||'home',t:null,c:null};S.below=null;
+  if(!stay)try{history.pushState({level:'in'},'')}catch(e){}
+  if(b.t){S.view=b.v;S.ctx=b.c;open(b.t)}else goView(b.v==='projects'?'home':b.v);
+  if(keys)focusSide('[data-up]');
+}
+function focusSide(s){const el=$('sidein').querySelector(s);if(el)el.focus({preventScroll:true})}
+addEventListener('popstate',e=>{if(e.state&&e.state.level==='all')goUp(true);else if(atAll())goDown(true)});
+function goProject(r){if(r.on)atAll()?goDown():0;else location.href=r.href}
 /* B153: the run's own page top-left: the project's name, a link to Runner Home when it is installed */
 function brand(){const href=homeHref(HB,T,S.snap.home,location), inner=`<div class="logo">${esc(PN().charAt(0).toLowerCase())}</div><b>${esc(PN())}</b>`;
   return href?`<a class="brand" href="${esc(href)}" title="Runner Home: every project's run">${inner}</a>`:`<div class="brand">${inner}</div>`}
-function switcher(){
-  const rows=switcherRows(H.projects,HKEY,HB,T), cur=rows.find(r=>r.on);
-  const name=HOME_PAGE?'All projects':cur?cur.name:HKEY||'agent-runner';
-  const list=!H.open?'':`<div class="plist">${H.projects===null?'<div class="none">Loading…</div>':rows.length?rows.map(r=>
-    `<a class="prow ${r.on?'on':''}" href="${esc(r.href)}"><span class="pdot ${esc(r.state)}"></span><span class="t">${esc(r.name)}</span><span class="st">${esc(r.said)}</span>${r.needs?`<span class="n" title="needs you">${r.needs}</span>`:''}</a>`).join(''):'<div class="none">No projects</div>'}
-    <a class="prow ${HOME_PAGE?'on':''}" href="${esc(homeLink(HB,T))}">${I.projects}<span class="t">All projects</span></a></div>`;
-  return `<button class="psw ${H.open?'open':''}" data-psw aria-expanded="${H.open}" title="Switch project"><div class="logo">${esc(name.charAt(0).toLowerCase()||'a')}</div><b>${esc(name)}</b><span class="cv">${I.chev}</span></button>${list}`;
-}
 function meterHTML(m){const pct=Math.max(0,Math.min(100,+m.pct||0)), c=pct>=90?'b':pct>=75?'w':'';
   return `<div class="meter"><span>${esc(m.name)}</span><div class="bar"><i class="${c}" style="width:${pct}%"></i></div><span class="r">${esc(m.said)}</span></div>`}
+const hobOf=(key)=>(S.hob||[]).filter(x=>x.args.project===key&&x.state==='failed').map(x=>`<div class="row obstand failed" data-k="ob:${esc(x.cid)}"><div class="grow"><div>${esc(x.say)}</div><div class="small">Not done: ${esc(x.err||'it did not work')}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('');
+function mainBtn(p){const b=projectMain(p);
+  return !b?'':b.open?`<a class="btn" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">Open</a>`:`<button class="btn${b.busy?' busy':' pri'}" ${b.busy?'disabled':''} data-pact="${b.a}" data-pkey="${esc(p.key)}">${b.label}</button>`}
+const dotsBtn=p=>`<button class="btn" data-projmore="${esc(p.key)}" aria-label="More for ${esc(p.name||p.key)}" title="More">…</button>`;
+function landedLine(p){const l=p.landed||[], n=p.landed_n||l.length;return n?`<div class="ptasks small"><div>Landed today · ${n}</div>${l.map(x=>`<div class="ell">${esc(x)}</div>`).join('')}</div>`:''}
 function projectCard(p){
-  const bs=projectButtons(p).map(b=>b.open?`<a class="btn acc" href="${esc(projectLink(HB,p.key,T))}">${esc(b.label)}</a>`:
-    b.unlist?`<button class="btn" data-punlist="${esc(p.key)}" title="Unlist it from Home">${esc(b.label)}</button>`:
-    `<button class="btn ${b.go?'acc':''}" data-pact="${esc(b.a)}" data-parg="${esc(b.arg||'')}" data-pkey="${esc(p.key)}">${esc(b.label)}</button>`).join('');
-  const need=p.needs?`<div><b class="v-bad">${p.needs} need${p.needs==1?'s':''} you</b>${(p.asks||[]).map(a=>`<div class="small">${esc(a)}</div>`).join('')}</div>`:'';
-  return card(`<div class="row"><span class="pdot ${esc(p.state)}"></span><div class="grow"><b>${esc(p.name)}</b><div class="small">${esc(projectWords(p))}</div>${p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:''}</div></div>${need}<div class="btns">${bs}</div>`,
-    `${p.page?'tap':''} ${p.needs?'need':''}`,p.page?`data-pgo="${esc(projectLink(HB,p.key,T))}"`:'');
+  const off=projectGroup(p)==='off', words=projectWords(p), tasks=p.running||[], name=`<a class="pname grow ell" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">${esc(p.name||p.key)}</a>`;
+  const warn=p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:'';
+  return card(`<div class="row"><span class="pdot ${projectGroup(p)}"></span>${name}${off&&p.left?`<span class="small">${esc(words)}</span>`:''}${mainBtn(p)}${dotsBtn(p)}</div>${off?'':
+    `${tasks.length?`<div class="ptasks">${tasks.map(id=>`<div class="ell" title="${esc(id)}">${esc((p.titles||{})[id]||id)}</div>`).join('')}</div>`:''}<div class="small">${esc(words)}</div>${landedLine(p)}`}${warn}${hobOf(p.key)}`,
+    `pcard tap${off?' off':''}`,`data-pgo="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}" data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`);
 }
+/* a thing that waits on the person, in any project: it opens there */
+function askRow(a){const here=a.key===HKEY&&!HOME_PAGE;
+  return card(`<div class="row"><div class="grow"><b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.name)}${a.id?` · ${esc(a.id)}`:''}</div></div><a class="btn" href="${esc(projectLink(HB,a.key,T)+('#'+(a.id?'need-'+a.id:'home')))}"${here?` data-askhere="${esc(a.id)}"`:''}>Open</a></div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)}
 function deviceCard(d){const v=d.verdict||{};
   return card(`<div class="row"><div class="grow"><b>${esc(d.host)}</b>${d.here?' <span class="small">· this one</span>':''}<div class="v-${esc(v.level)}" style="font-weight:500">${esc(v.said)}</div></div></div>${(d.meters||[]).map(meterHTML).join('')}`,
     'tap',`data-pgo="${esc(tq(HB+'device?id='+encodeURIComponent(d.id)))}"`);
 }
+const ASKS_SHOWN=3;
+const homeErr=()=>H.err?card(`<div class="small"><span class="v-bad">${esc(H.err)}</span></div><div class="btns"><button class="btn" data-pload>Retry</button></div>`):'';
+function devicesHTML(){const ds=H.devices;
+  return `<div class="col">${homeErr()}<div class="sec">Devices<span class="ln"></span></div>${ds===null?emptyCard('Loading…'):ds.length?ds.map(deviceCard).join(''):emptyCard('No devices')}</div>`}
 function projectsHTML(){
-  const ps=H.projects, ds=H.devices;
-  return `<div class="col">${H.err?`<div class="small v-bad">${esc(H.err)}</div>`:''}
-    ${H.alerts.length?`<div class="sec">Needs you<span class="ln"></span></div>`+H.alerts.map(a=>card(`<div class="row"><div class="who">${I.alert}</div><div class="grow">${esc(a.what)}</div>${a.clean?`<a class="btn acc" href="${esc(tq(HB+'device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`,'need')).join(''):''}
-    <div class="sec">Projects<span class="ln"></span></div>${ps===null?card('<div class="small">Loading…</div>'):ps.length?ps.map(projectCard).join(''):card('<div class="small">No projects yet: none under the scanned folders. Add one below.</div>')}
-    <form class="padd" data-padd><input data-paddin placeholder="Add a project: its folder on this machine" aria-label="Add a project"><button class="btn">Add</button></form>
-    <div class="sec">Devices<span class="ln"></span></div>${ds===null?card('<div class="small">Loading…</div>'):ds.length?ds.map(deviceCard).join(''):card('<div class="small">No devices</div>')}</div>`;
+  if(HOME_PAGE&&!atAll())return offHTML();
+  if(H.tab==='devices')return devicesHTML();
+  const ps=projectsNow(), asks=projectAsks(ps), total=homeNeeds()+H.alerts.length;
+  const alerts=H.alerts.map(a=>card(`<div class="row"><div class="who">${I.alert}</div><div class="grow">${esc(a.what)}</div>${a.clean?`<a class="btn acc" href="${esc(tq(HB+'device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`,'need')).join('');
+  const more=asks.length-ASKS_SHOWN, all=H.more?PGROUPS.length&&projectOrder(ps).filter(p=>(p.asks||[]).length).map(p=>`<div class="qline">${esc(p.name||p.key)}</div>${projectAsks([p]).map(askRow).join('')}`).join(''):asks.slice(0,ASKS_SHOWN).map(askRow).join('');
+  const needs=`<div class="sec">Needs you${total?` · ${total}`:''}<span class="ln"></span></div>${alerts}${all}${more>0?`<div><button class="btn" data-pmore aria-expanded="${H.more}">${H.more?'Show fewer':`Show ${more} more, by project`}</button></div>`:''}${total?'':card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does, in any project.</div></div></div>`,'','data-k="noneed"')}`;
+  const groups=PGROUPS.map(([g,label])=>{const l=projectOrder(ps).filter(p=>projectGroup(p)===g);return l.length?`<div class="sec">${label}<span class="ln"></span></div>${l.map(projectCard).join('')}`:''}).join('');
+  return `<div class="col">${homeErr()}${H.projects===null?(H.err?'':emptyCard('Loading…')):needs+(groups||emptyCard('No projects yet: none under the scanned folders. Add one with + Project.'))}</div>`;
 }
+/* a project with no run up, on its own page: what it has, and Start run; it turns into its app once up */
+function offHTML(){
+  const p=projectOf(HKEY), asks=p?projectAsks([p]):[], qs=p&&p.queue||[];
+  if(!p)return `<div class="col">${homeErr()||emptyCard(H.projects===null?'Loading…':'Runner Home does not list this project.')}</div>`;
+  const up=p.state&&p.state!=='off', more=(p.left||0)-qs.length;
+  const said=up?'Its run is up and its page is on its way.':p.starting?'Starting its run. This page turns into its app once it is up.':'No run is up.';
+  return `<div class="col">${homeErr()}${card(`<div class="row"><div class="grow"><b>${esc(p.name||p.key)}</b><div class="small">${p.starting?'<span class="livedot"></span> ':''}${said}</div></div>${up?'':mainBtn(p)}${dotsBtn(p)}</div>${p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:''}${landedLine(p)}${hobOf(p.key)}`,'pcard',`data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`)}
+    <div class="sec">Needs you${p.needs?` · ${p.needs}`:''}<span class="ln"></span></div>${asks.length?asks.map(a=>card(`<b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.id)}${a.id?' · ':''}answer it once the run is up</div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)).join(''):emptyCard('Nothing needs you.')}
+    <div class="sec">Queue${p.left?` · ${p.left}`:''}<span class="ln"></span></div>${qs.length?card(qs.map(q=>`<div class="lrow"><span>${esc(q.title)}</span><span class="small">${esc(q.id)}</span></div>`).join(''),'','data-k="pq"')+(more>0?`<div class="small">and ${more} more</div>`:''):emptyCard(p.left?'Nothing in it can start by itself.':'The queue is empty.')}</div>`;
+}
+/* its run came up: the page is its app now, at the same address. Not while something is open on it */
+function turnIntoApp(){
+  const p=HOME_PAGE&&HKEY&&!atAll()&&projectOf(HKEY);
+  if(!p||!p.page||S.sheet||Date.now()-Number(tabStore.get('ar-turned'))<8000)return;
+  tabStore.set('ar-turned',String(Date.now()));location.reload();
+}
+const PCACHE='ar-projects';
+function projectsKept(){let o;try{o=JSON.parse(store.get(PCACHE)||'null')}catch(e){}
+  if(HB&&o&&Array.isArray(o.projects)){H.projects=o.projects.filter(p=>p&&typeof p.key==='string');H.machine=String(o.machine||'')}}
 async function loadProjects(){
-  if(!HB||H.busy)return;
+  if(!HB||H.busy)return;H.busy=true;const turn=H.turn;
   try{const d=await (await fetch(tq(HB+'projects'))).json();
     if(d.ok){if(HOME_PAGE){S.snap.page=d.page;S.snap.restart_needed=d.restart_needed}  // F149
-      H.projects=d.projects||[];H.machine=d.machine||'';H.err='';
-      if(HOME_PAGE)document.title=(H.machine?H.machine+' · ':'')+'Runner Home'}else H.err=d.out||''}
-  catch(e){}
-  render();
+      H.err='';
+      if(turn===H.turn){H.projects=d.projects||[];H.machine=d.machine||'';store.set(PCACHE,JSON.stringify({projects:H.projects,machine:H.machine}))
+        for(const p of H.projects)if((p.state||'off')!=='off')delete H.begun[p.key]}
+      if(HOME_PAGE)document.title=HKEY?pageTitle((projectOf(HKEY)||{}).name||HKEY):(H.machine?H.machine+' · ':'')+'Runner Home'}else H.err=d.out||'The projects could not be read.'}
+  catch(e){H.err=`Could not reach Runner Home: ${plainErr(e)}`}
+  H.busy=false;render();S.live=S.live||HOME_PAGE;turnIntoApp();
+  if(turn!==H.turn)loadProjects();  // an action settled meanwhile
 }
 async function loadDevices(){
   if(!HB)return;
@@ -1658,11 +1822,16 @@ async function loadDevices(){
   render();
 }
 async function homePost(path,body){
-  H.busy=true;toast('…');
-  try{const d=await (await fetch(tq(HB+path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
-    toast(d.out||(d.ok?'Done':'That did not work'),!d.ok)}
-  catch(e){toast(`Could not reach Runner Home: ${plainErr(e)}`,true)}
-  H.busy=false;loadProjects();
+  let d;
+  try{d=await (await fetch(tq(HB+path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json()}
+  catch(e){d={ok:false,out:`Could not reach Runner Home: ${plainErr(e)}`}}
+  H.turn++;loadProjects();return d;
+}
+async function addProject(){
+  const path=String(S.f.padd||'').trim();if(!path)return;
+  H.said='';H.adding=true;render(true);
+  const d=await homePost('add',{path});H.adding=false;
+  if(d.ok){delete S.f.padd;if(S.sheet==='addproject')closeSheet();toast(d.out||'Added')}else{H.said=d.out||'It was not added';render(true)}
 }
 /* F118: a chat row: its delete button, dimmed with Undo in that spot once deleted; the Delete N bar */
 function chatRow(s,quiet){
@@ -2274,6 +2443,16 @@ function sheetDraw(){
   giveForget(S.sheet==='need'?S.sheetArg:'');  // F175a
   el.classList.toggle('open',!!S.sheet);$('sheetscrim').classList.toggle('on',!!S.sheet);
 }
+/* F150: a project's …, and + Project */
+SHEETS.project=()=>{
+  const p=projectOf(S.sheetArg);if(!p)return '<div class="small">Runner Home no longer lists it.</div>';
+  const k=esc(p.key);
+  return `<h2>${esc(p.name||p.key)}</h2><div class="small">${esc([projectState(p),projectWords(p)].filter(Boolean).join(' · '))}</div>${hobOf(p.key)}${projectMore(p).map(b=>{
+    const at=b.unlist?`data-punlist data-pkey="${k}"`:`data-pact="${b.a}" data-pkey="${k}"`;
+    if(b.step!=null)return `<div class="it setrow"><span>Slots</span><span class="step"><button class="btn" data-pact="slots" data-parg="${b.step-1}" data-pkey="${k}" aria-label="One slot less" ${b.step<2?'disabled':''}>−</button><b>${b.step}</b><button class="btn" data-pact="slots" data-parg="${b.step+1}" data-pkey="${k}" aria-label="One slot more" ${b.step>98?'disabled':''}>+</button></span></div>`;
+    return S.sure===`proj:${b.label}:${p.key}`?sureHTML(b.sure,b.label.toLowerCase(),at):`<button class="it${b.sure?' bad':''}" ${at}>${b.label}${b.sure?'…':''}</button>`}).join('')}`;
+};
+SHEETS.addproject=()=>`<h2>Add a project</h2><form data-padd style="display:grid;gap:var(--s3)"><label class="small">Its folder on ${esc(H.machine||'this machine')}<input class="fld" data-f="padd" value="${esc(S.f.padd||'')}" placeholder="~/repos/myproject" autocomplete="off" autocapitalize="off" spellcheck="false"></label>${H.said?`<div class="small"><span class="v-bad">${esc(H.said)}</span></div>`:''}<div class="btns"><button class="btn pri${H.adding?' busy':''}">Add</button><button type="button" class="btn" data-closesheet>Cancel</button></div></form>`;
 /* --- F97: Settings ------------------------------------------------------------------------------------------- */
 async function loadSettings(){
   // B164: only a whole answer is kept: an error (a run without this route) leaves the settings already there
@@ -2474,7 +2653,7 @@ function toolsHTML(){
   const d=S.tools, err=S.toolErr?(S.toolOld?oldRunHTML(S.toolErr):`<div class="small v-bad">${esc(S.toolErr)}</div>`)+'<div class="btns"><button class="btn" data-tool="load">Try again</button></div>':'';
   if(!d)return `<div class="col">${err||emptyCard('Loading…')}</div>`;
   const toml=d.tools.filter(t=>t.source!=='device'), devs=d.tools.filter(t=>t.source==='device');
-  return `<div class="col">${d.secure?`<div><button class="btn acc" data-tool="add">${I.plus}Add a device</button></div>`:card(`<b>Read only here</b><div class="small">Devices and secrets are saved only over https or on the machine itself.${d.https?'':' There is no https link yet: Tailscale Serve gives one.'}</div>${d.https?`<div class="btns"><a class="btn pri" href="${esc(d.https)}">Open the https link</a></div>`:''}`)}
+  return `<div class="col">${d.secure?'':card(`<b>Read only here</b><div class="small">Devices and secrets are saved only over https or on the machine itself.${d.https?'':' There is no https link yet: Tailscale Serve gives one.'}</div>${d.https?`<div class="btns"><a class="btn pri" href="${esc(d.https)}">Open the https link</a></div>`:''}`)}
     ${err}<div class="sec">Devices<span class="ln"></span></div>${devs.length?devs.map(toolCard).join(''):emptyCard('No device yet. Add a machine or test rig for agents to reach.')}
     ${toml.length?`<div class="sec">From runner.toml<span class="ln"></span></div>${toml.map(toolCard).join('')}`:''}
     <div class="small">Devices belong to this machine and its projects share them. Keys and passwords stay out of every chat, but agents run as the same user here, so this is no wall against an agent that goes looking.</div></div>`;
@@ -2538,15 +2717,13 @@ async function toolClick(x){
 }
 function planHTML(){
   const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=planQueue(S.snap);
-  return `<div class="col"><div><button class="btn acc" data-about="new">${I.plus}Add a task</button></div>
-    <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join(''):emptyCard('The queue is empty.')}
+  return `<div class="col"><div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join(''):emptyCard('The queue is empty.')}
     ${obCards(x=>obActs(x,'queue'))}${pk.length||sh.length||shOb?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}${shOb}${sh.map(shelvedCard).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
 function conceptsHTML(){
   const cs=S.snap.concepts||[];
-  return `<div class="col"><div><button class="btn acc" data-about="newconcept">${I.plus}New concept</button></div>
-    <div class="sec">Concepts<span class="ln"></span></div>
+  return `<div class="col"><div class="sec">Concepts<span class="ln"></span></div>
     ${obCards(x=>x.concept)}${cs.length?cs.map(conceptCard).join(''):emptyCard(`${NO_CONCEPT}`)}</div>`;
 }
 /* F83: where each view was scrolled to (S.at), whether Talk follows its newest words (S.pin) */
@@ -2565,10 +2742,23 @@ function seeBar(){
   if(chatShown())SEE=barAway(SEE,$('body'));else SEE={top:0,size:'',run:0,away:false};
   document.querySelector('.main').classList.toggle('away',SEE.away);
 }
-/* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, New chat (in Talk, New Talk chat: F157) */
+/* F150: the one + of a view, at the top right: what it adds is its word */
+function plusBtn(){
+  const b=(attr,word,title)=>`<button class="btn plus" ${attr} title="${title}">${I.plus}${word}</button>`;
+  if(S.thread||HOME_PAGE&&!atAll())return '';
+  return{projects:()=>b('data-addproject','Project','Add a project'),home:()=>b('data-about="new"','Task','Add a task'),plan:()=>b('data-about="new"','Task','Add a task'),
+    concepts:()=>b('data-about="newconcept"','Concept','New concept'),status:()=>S.snap.up!==false&&controlOf('slot_add')?b('data-plusslot','Slot','Add a slot'):'',
+    tools:()=>S.tools&&S.tools.secure?b('data-tool="add"','Device','Add a device'):'',talk:()=>b('data-newtalk','New talk','New Talk chat')}[S.view]?.()||'';
+}
+/* + Slot: shown at once (the toast, the Run card's stand-in), through the outbox */
+function plusSlot(){
+  const n=(S.snap.slots||0)+S.ob.filter(x=>x.ctl==='slot_add:'&&x.state==='sending').length+1;
+  outbox('run_control',{key:'slot_add'},{ctl:'slot_add:',say:`Add a slot: ${n} slots`});toast(`${n} slots`);
+}
+/* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, and the view's + (F150) */
 function topHTML(){
   const n=S.thread, p=runPill(S.snap), x=n&&sessionOf(n);
-  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}${x&&!isAgent(n)?`<button type="button" class="title" data-ren="${esc(n)}" title="Rename">${esc(threadTitle(n))}</button>`:`<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',tools:'Tools',settings:'Settings',projects:'All projects'}[S.view]}</div>`}${p.text?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${!n&&S.view==='talk'?`<button class="icon" data-newtalk aria-label="New Talk chat" title="New Talk chat">${I.newchat}</button>`:`<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`}`;
+  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}${x&&!isAgent(n)?`<button type="button" class="title" data-ren="${esc(n)}" title="Rename">${esc(threadTitle(n))}</button>`:`<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',tools:'Tools',settings:'Settings',projects:H.tab==='devices'?'Devices':'Overview'}[S.view]}</div>`}${p.text&&!atAll()?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${plusBtn()}`;
 }
 function render(force){
   keepPlace();  // B177
@@ -2577,18 +2767,17 @@ function render(force){
   markSeen();  // F128
   obHide();
   const n=S.thread, body=$('body'), dockEl=$('dock');
-  const place=HOME_PAGE?'home page':n?'t:'+n:'v:'+S.view, moved=place!==lastPlace, chatOn=!!n||S.view==='talk';
+  if(HOME_PAGE){S.thread=null;if(!HKEY||S.view!=='projects')S.view=HKEY?'home':'projects'}
+  const place=HOME_PAGE?'home page:'+S.view+(H.tab||''):n?'t:'+n:'v:'+S.view+(S.view==='projects'&&H.tab?':'+H.tab:''), moved=place!==lastPlace, chatOn=!!n||S.view==='talk';
   const put=keepScroll(body), had=keysIn(body), hadTop=keysIn($('top')), keep=keepFields(body);
   if(moved&&lastPlace)S.at[lastPlace]=body.scrollTop;
   obDraw();  // F137
   newsDraw();  // F149
   side();sheetDraw();
-  if(HOME_PAGE){  // F134: Home's own page has only All projects
-    S.view='projects';S.thread=null;
-    setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button><div class="title">All projects</div><span class="icon"></span>`);
-    const pin=document.querySelector('[data-paddin]'), pf=pin&&document.activeElement===pin;
-    if(setHTML(body,projectsHTML())){const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(pf)np.focus({preventScroll:true})}
-      put();enter(body,had)}
+  if(HOME_PAGE){  // F134: Home's own page: All projects, and F150 a project with no run up
+    setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button><div class="title">${atAll()?H.tab==='devices'?'Devices':'Overview':esc((projectOf(HKEY)||{}).name||HKEY)}</div>${plusBtn()||'<span class="icon"></span>'}`);
+    if(moved)body._h=null;
+    if(setHTML(body,projectsHTML())){keep();if(moved){body.scrollTop=S.at[place]||0;if(S.live&&lastPlace)viewIn(body)}else{put();enter(body,had)}}
     pageColor(false);lastPlace=place;dockEl.hidden=true;return;
   }
   if(setHTML($('top'),topHTML()))enter($('top'),hadTop);
@@ -2615,7 +2804,6 @@ function render(force){
   if(!force&&!drew&&!drewDock){lastPlace=place;return}
   const nta=document.querySelector('[data-in]');
   if(nta){const v=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));if(nta.value!==v)nta.value=v;grow(nta);if(focused&&nta!==ta){nta.focus({preventScroll:true});if(sel)nta.setSelectionRange(sel[0],sel[1])}if(focused)slashShow(nta)}  // B119: the menu stays open; B120: so does a recalled message
-  const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(H.addFocus){np.focus({preventScroll:true});kbReveal(np)}}  // F134
   if(drew)keep();
   if(moved){
     const follow=lastPlace&&(lastPlace.startsWith('t:@')&&n||lastPlace.startsWith('t:+')&&n&&n[0]==='@');  // a starting chat got its name, a new one started: the same chat
@@ -3176,7 +3364,7 @@ const devTyped=()=>Object.keys(S.f).some(k=>k.startsWith('dev:'));
 function keepTyped(){
   const f=Object.fromEntries(Object.entries(S.f).filter(([k])=>!k.startsWith('dev:')&&!k.startsWith('givesec:')));
   const atts=Object.fromEntries(Object.entries(S.atts).map(([k,l])=>[k,l.filter(a=>a.path).map(a=>({name:a.name,path:a.path}))]).filter(([,l])=>l.length));
-  const some=Object.keys(f).length||Object.keys(atts).length||H.add||S.ren, text=some?JSON.stringify({f,atts,add:H.add,ren:S.ren,setOpen:S.setOpen}):'';
+  const some=Object.keys(f).length||Object.keys(atts).length||S.ren, text=some?JSON.stringify({f,atts,ren:S.ren,setOpen:S.setOpen}):'';
   tabStore.set(TYPED_KEY,text);
   const ta=document.querySelector('[data-in]');
   return tabStore.get(TYPED_KEY)===text&&(!ta||!ta.value||HI.i!==null||store.get(DRAFT_KEY(boxKey()))===ta.value)
@@ -3186,7 +3374,7 @@ function takeTyped(){
   let k=null;try{k=JSON.parse(tabStore.get(TYPED_KEY)||'null')}catch(e){}
   tabStore.set(TYPED_KEY,'');
   if(!k||typeof k!=='object')return;
-  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?{[boxKey()]:k.atts}:k.atts||{};H.add=k.add||'';S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};
+  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?{[boxKey()]:k.atts}:k.atts||{};S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};
 }
 function newsRefresh(){
   const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
@@ -3212,7 +3400,7 @@ function takeSnap(s){
   if(S.kept)keptCheck();  // B177
   for(const x of S.snap.sessions||[])if(x.task||x.link)S.last[x.name]={task:x.task,title:x.title,link:x.link};  // F114: what it was, once it has ended
   const tw=talkWaitName();if(tw&&TK.wait.sent){addSent(tw,TK.wait.sent.text,TK.wait.sent.at,{talk:true,first:true},0);TK.wait.sent=null}if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
-  render();S.live=true;
+  render();S.live=true;if(S.needGo)needGo();
 }
 function connect(){
   let es;try{es=new EventSource(tq('events'))}catch(e){return poll()}
@@ -3242,12 +3430,12 @@ setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited
 /* B177: the open view and chat, per project and per tab (the title names the project on the run's own address) */
 const PLACE_KEY='ar-place:'+(HKEY||document.title);
 let placeWas='';
-function keepPlace(){const p=JSON.stringify({v:S.view,t:S.thread||'',...(isNew(S.thread)?{c:S.ctx}:{})});if(!HOME_PAGE&&p!==placeWas)tabStore.set(PLACE_KEY,placeWas=p)}
+function keepPlace(){const p=JSON.stringify({v:S.view,t:S.thread||'',...(isNew(S.thread)?{c:S.ctx}:{})});if(!HOME_PAGE&&p!==placeWas){tabStore.set(PLACE_KEY,placeWas=p);if(S.view!=='projects')tabStore.set('ar-tab',S.thread?'':S.view)}}
 /* before the first draw; the link's # goes from the address, so a later reload opens what was open then */
 function takePlace(){
   if(HOME_PAGE)return;
   const p=placeOf(tabStore.get(PLACE_KEY),location.hash,!!HB,S.ob.filter(x=>x.newchat).map(x=>'@'+x.cid));
-  S.view=p.v;S.thread=p.t||null;S.ctx=p.c||null;S.kept=p.t;S.quiet=p.t[0]==='@'?p.t:'';
+  S.view=p.v;S.thread=p.t||null;S.ctx=p.c||null;S.kept=p.t;S.quiet=p.t[0]==='@'?p.t:'';S.needGo=p.need||'';
   if(p.link)try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
 }
 /* the chat a reload opened: true when the run has no such chat, and Home is open instead */
@@ -3260,8 +3448,10 @@ function keptCheck(){
 /* a link to this page, followed in the tab that has it open */
 addEventListener('hashchange',()=>{
   if(HOME_PAGE||!placeOf('',location.hash,!!HB).link)return;
-  takePlace();S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();
+  takePlace();S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();if(S.needGo)needGo();
 });
+/* F150: a link to an item of Needs you: its sheet, once the run's word is there */
+function needGo(){const id=S.needGo;if(!id||!S.snap.at)return;S.needGo='';if(needOf(id))needOpen(id)}
 function placeLoad(){if(S.thread)loadFeed(S.thread);if(S.view==='tools')loadTools();if(S.view==='settings')loadSettings()}
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
@@ -3339,19 +3529,31 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-slashpick]')){slashTake(+x.dataset.slashpick);return}  // B119
   if(q('[data-obopen]')){S.obOpen=true;obDraw();return}  // F137: the outbox's pill opens its popup
   if(q('[data-obclose]')||e.target.id==='obpop'){S.obOpen=false;obDraw();return}
-  if(x=q('[data-obretry]')){obRetryClick(x.dataset.obretry);return}
+  if(x=q('[data-obretry]')){const id=x.dataset.obretry;homeHas(id)?homeRetry(id):obRetryClick(id);return}
   if(x=q('[data-sentdrop]')){sentDrop(x.dataset.n,x.dataset.sentdrop);render(true);return}  // B154
   if(x=q('[data-sentretry]')){const n=x.dataset.n, p=sentDrop(n,x.dataset.sentretry);
     if(p&&p.talk&&!talkOld().includes(n))talkSend(p.text);else if(p)outbox('chat_to',{text:p.text,to:n},{text:p.text,key:n,say:`To ${threadTitle(n)}: ${p.text}`});return}
-  if(x=q('[data-obdrop]')){obChange(b=>obDrop(b,x.dataset.obdrop));
+  if(x=q('[data-obdrop]')){if(homeHas(x.dataset.obdrop)){homeChange(b=>obDrop(b,x.dataset.obdrop));render(true);return}obChange(b=>obDrop(b,x.dataset.obdrop));
     if(String(S.thread||'')[0]==='@'&&!S.ob.some(y=>'@'+y.cid===S.thread))S.thread=null;  // its stand-in chat went
     if(S.waitNew&&S.waitNew.ph&&!S.ob.some(y=>'@'+y.cid===S.waitNew.ph))S.waitNew=null;
     render(true);return}
   if(x=q('[data-obedit]')){obEditBack(x.dataset.obedit);return}
-  // F134: the switcher, and All projects' buttons (Runner Home's /act and /remove)
-  if(q('[data-psw]')){H.open=!H.open;if(H.open)loadProjects();render(true);return}
-  if(x=q('[data-pact]')){homePost('act',{project:x.dataset.pkey,name:x.dataset.pact,arg:x.dataset.parg||''});return}
-  if(x=q('[data-punlist]')){homePost('remove',{project:x.dataset.punlist});return}
+  // F150: the levels of the sidebar, and All projects' buttons (Runner Home's /act and /remove)
+  if(q('[data-up]')){goUp(false,!e.detail);return}
+  if(x=q('[data-alltab]')){H.tab=x.dataset.alltab;tabStore.set('ar-alltab',H.tab);S.drawer=false;render(true);loadDevices();return}
+  if(q('[data-pmore]')){H.more=!H.more;render(true);return}
+  if(q('[data-pload]')){loadProjects();loadDevices();return}
+  if(q('[data-addproject]')){H.said='';openSheet('addproject');const i=$('sheet').querySelector('input');if(i)kbFocus(i);return}
+  if(q('[data-plusslot]')){plusSlot();return}
+  if(x=q('[data-projmore]')){openSheet('project',x.dataset.projmore);return}
+  if(x=q('[data-pact]')){const k=x.dataset.pkey, p=projectOf(k), a=x.dataset.pact, arg=x.dataset.parg||'', m=p&&projectMore(p).find(b=>b.a===a);if(!p)return;
+    if(m&&m.sure&&!x.hasAttribute('data-sure')){S.sure=`proj:${m.label}:${k}`;render(true);return}
+    S.sure=null;homeAct(k,a,arg,`${{start:'Start run',pause:'Pause',resume:'Go on',stop:'Stop',slots:`${arg} slot${arg==='1'?'':'s'}`}[a]} · ${p.name||k}`);return}
+  if(x=q('[data-punlist]')){const k=x.dataset.pkey;if(!x.hasAttribute('data-sure')){S.sure='proj:Unlist:'+k;render(true);return}
+    closeSheet();homePost('remove',{project:k}).then(d=>toast(d.out||(d.ok?'Unlisted':'That did not work'),!d.ok));return}
+  if(x=q('[data-askhere]')){e.preventDefault();S.needGo=x.dataset.askhere;goDown();goView('home');needGo();return}
+  if((x=q('a[data-pkey]'))&&x.dataset.pkey===HKEY&&atAll()&&!(e.ctrlKey||e.metaKey||e.shiftKey)){e.preventDefault();goDown(false,!e.detail);return}
+  if((x=q('[data-pgo]'))&&x.dataset.pkey===HKEY&&HKEY&&atAll()&&!q('a,button,input,form')){goDown();return}
   if((x=q('[data-pgo]'))&&!q('a,button,input,form')){location.href=x.dataset.pgo;return}
   if(slashOpen()&&!q('[data-in]'))slashClose();
   if(q('[data-undo]')){S.undo=null;render(true);return}
@@ -3428,7 +3630,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-stop]')){const n=x.dataset.stop||shownSession();if(n)act('interrupt',{session:n});return}
 });
 document.addEventListener('submit',e=>{e.preventDefault();
-  if(e.target.matches('[data-padd]')){const v=H.add.trim();if(v){H.add='';homePost('add',{path:v})}return}  // F134
+  if(e.target.matches('[data-padd]'))return addProject();  // F150
   if(e.target.matches('[data-renform]'))return saveRename();  // F129
   send()});
 /* F124, F97: a switch or a select acts at once; a setting's on its row saves at once too */
@@ -3443,12 +3645,17 @@ document.addEventListener('change',e=>{
   S.f[f]=t.type==='checkbox'?String(t.checked):t.value;
   if(t.dataset.now!==undefined){const [,side,...id]=f.split(':');saveSetting(id.join(':'),side)}  // F166: a row's own switch or select
 });
-document.addEventListener('focusin',e=>{if(e.target.matches&&e.target.matches('[data-paddin]'))H.addFocus=true});
-document.addEventListener('focusout',e=>{if(e.target.matches&&e.target.matches('[data-paddin]'))H.addFocus=false});
 function selectedText(t){
   if(t&&typeof t.selectionStart==='number'&&t.selectionEnd>t.selectionStart)return true;
   return !!String(window.getSelection&&window.getSelection()||'');
 }
+/* F150: Alt+1 to 9: the project at that place of All projects. Not where Alt types a character (a Mac's text box) */
+addEventListener('keydown',e=>{
+  const m=/^Digit([1-9])$/.exec(e.code||'');
+  if(!m||!HB||!e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.getModifierState&&e.getModifierState('AltGraph')||typingIn(e.target)&&e.key!==m[1])return;
+  const r=rowsNow()[m[1]-1];if(!r||oneProject(H.projects))return;
+  e.preventDefault();goProject(r);
+});
 document.addEventListener('keydown',e=>{
   /* B116: Ctrl+C interrupts the open chat while it works (not while text is selected, so copying still works);
      B120: in the message box Esc closes the menu, then interrupts a working chat (never goes back), else leaves
@@ -3483,7 +3690,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
@@ -3583,16 +3790,19 @@ document.addEventListener('touchmove',e=>{
     if(!SW.on){if(Math.abs(dy)<10&&Math.abs(dx)<10)return;if(dy<Math.abs(dx)||$('sheet').scrollTop>0){SW=null;return}SW.on=true;$('sheet').classList.add('drag')}
     SW.d=Math.max(0,dy);$('sheet').style.transform=`translateY(${SW.d}px)`;return;
   }
-  if(!SW.on){if(!e.cancelable||scrolled(SW.scr)){SW=null;return}  // B167: it is a scroll
-    const s=swipeTakes(dx,dy,SW.open);if(s==='wait')return;if(!s){SW=null;return}
-    SW.on=true;if(DR)dragEnd();$('side').classList.add('drag');$('scrim').classList.add('drag','on')}
+  if(!SW.on&&!SW.lvl){if(!e.cancelable||scrolled(SW.scr)){SW=null;return}  // B167: it is a scroll
+    if(SW.open&&HB&&!atAll()&&!oneProject(H.projects)&&swipeTakes(dx,dy,false)==='drag'){SW.lvl=true;if(DR)dragEnd()}  // F150: up a level
+    else{const s=swipeTakes(dx,dy,SW.open);if(s==='wait')return;if(!s){SW=null;return}
+    SW.on=true;if(DR)dragEnd();$('side').classList.add('drag');$('scrim').classList.add('drag','on')}}
   if(e.cancelable)e.preventDefault();  // B167: no scroll until the finger lifts
-  SW.d=dx;if(e.timeStamp>SW.lt){SW.v=(t.clientX-SW.lx)/(e.timeStamp-SW.lt);SW.lx=t.clientX;SW.lt=e.timeStamp}
+  SW.d=dx;if(SW.lvl)return;
+  if(e.timeStamp>SW.lt){SW.v=(t.clientX-SW.lx)/(e.timeStamp-SW.lt);SW.lx=t.clientX;SW.lt=e.timeStamp}
   const at=Math.max(-SW.w,Math.min(0,SW.open?dx:dx-SW.w));
   $('side').style.transform=`translateX(${at}px)`;$('scrim').style.opacity=String(1+at/SW.w);
 },{passive:false});
 function swipeEnd(done){
-  const w=SW;SW=null;if(!w||!w.on)return;
+  const w=SW;SW=null;if(w&&w.lvl){noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;if(done&&w.d>48)goUp();return}
+  if(!w||!w.on)return;
   if(w.sheet){const el=$('sheet');el.classList.remove('drag');el.style.transform='';if(done&&w.d>80)closeSheet();return}
   $('side').classList.remove('drag');$('scrim').classList.remove('drag');$('side').style.transform='';$('scrim').style.opacity='';
   S.drawer=done?swipeOpens(w.d,w.v,w.w,w.open):w.open;
@@ -3600,20 +3810,39 @@ function swipeEnd(done){
 }
 document.addEventListener('touchend',e=>{if(SW&&SW.on&&!SW.sheet&&[...e.touches].some(f=>f.identifier===SW.id))return;swipeEnd(true)},{passive:true});
 document.addEventListener('touchcancel',()=>swipeEnd(false),{passive:true});
+/* F150: switching draws the project's last snapshot at once. One is kept per project, the last SNAPS of them, each up to
+   SNAP_MAX characters (the rest of this browser's room is the outbox's) */
+const SNAP='ar-snap:', SNAPS=6, SNAP_MAX=200000;
+function snapKeep(){
+  if(HOME_PAGE||!HKEY||!S.snap.at)return;
+  const text=JSON.stringify(snapKept(S.snap));if(text.length>SNAP_MAX){store.set(SNAP+HKEY,'');return}
+  let l;try{l=JSON.parse(store.get(SNAP+'@')||'[]')}catch(e){}
+  l=[HKEY,...(Array.isArray(l)?l:[]).filter(k=>k!==HKEY)];
+  for(const k of l.slice(SNAPS))store.set(SNAP+k,'');
+  store.set(SNAP+'@',JSON.stringify(l.slice(0,SNAPS)));store.set(SNAP+HKEY,text);
+}
+function snapTake(){
+  if(HOME_PAGE||!HKEY)return;
+  let s;try{s=JSON.parse(store.get(SNAP+HKEY)||'null')}catch(e){}
+  if(s&&typeof s==='object'&&['status','sessions','queue','needs','concepts','log'].every(k=>Array.isArray(s[k])))S.snap={...S.snap,...s};
+}
+addEventListener('pagehide',snapKeep);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)snapKeep()});
 addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pending delete final
 
+projectsKept();snapTake();H.tab=tabStore.get('ar-alltab');  // F150: what was last seen draws at once
 takePlace();  // B177: before the first draw
 takeTyped();  // F149
 render(true);
 if(HOME_PAGE){  // F134: Home's own page: no run behind it, only Home's projects and devices
-  loadProjects();loadDevices();setInterval(loadProjects,5000);setInterval(loadDevices,30000);
+  loadProjects();loadDevices();homeDrain();setInterval(loadProjects,HKEY?2500:5000);setInterval(loadDevices,30000);
 }else{
 connect();
 placeLoad();  // B177
 drain();  // F137: what a reload left in the outbox goes now (the run page runs each cid once)
-if(HB){loadProjects();let tick=0;  // F134: the switcher: every 5 s while it or All projects shows, else every 30 s
-  setInterval(()=>{if(H.open||S.view==='projects'||++tick%6===0)loadProjects()},5000);
-  setInterval(()=>{if(S.view==='projects')loadDevices()},30000);loadDevices()}
+if(HB){loadProjects();homeDrain();let tick=0;  // F134: every 5 s while All projects shows, else every 30 s
+  setInterval(()=>{if(atAll()||++tick%6===0)loadProjects()},5000);
+  setInterval(()=>{if(atAll())loadDevices()},30000);loadDevices()}
 }
 /* B179: a concept's page in the Home Screen app, where a new tab would be iOS's browser over the app */
 function conceptOpen(src,title){

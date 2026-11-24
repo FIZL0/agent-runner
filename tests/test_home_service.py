@@ -109,6 +109,12 @@ def test_rows(tmp: Path) -> None:
                              facts=lambda r, run: {'left': 4, 'stopping': False,
                                                    'link': 'http://h:9/?t=x' if run.get('up') else ''},
                              needs=lambda r: (1, ['B2 - pick one - reply A/B'])) for k, v in infos.items()}
+    r = H.project_row('p', root, info=lambda r: infos['running'], facts=lambda r, run: {}, needs=lambda r: (0, []),
+                      plan=lambda r: {'titles': {'B4': 'Fix it'}, 'queue': [{'id': 'B4', 'title': 'Fix it'}, {'id': 'F1', 'title': 'Next'}],
+                                      'landed': ['d', 'c', 'b', 'a']})
+    eq((r['titles'], [q['id'] for q in r['queue']], r['landed'], r['landed_n']), ({'B4': 'Fix it'}, ['F1'], ['d', 'c', 'b'], 4),
+       'F150: its tasks by title, the next ones, and what landed today')
+    eq(H.plan_said(tmp / 'nothing'), {}, 'a folder with no plan: none of it')
     eq(rows['off']['asks'], ['B2 - pick one - reply A/B'], 'and what each one is')
     eq((rows['off']['state'], rows['off']['page'], rows['off']['slots']), ('off', '', None),
        'no run up: off, nothing to open')
@@ -227,7 +233,7 @@ def test_routing(tmp: Path) -> None:
         eq(code, 200, 'the Home page with its token')
         has(body.decode(), 'Runner Home', 'is the Home page')
         page = body.decode()
-        check('const HOME_PAGE=true;' in page and 'data-psw' in page and 'function switcher()' in page
+        check('const HOME_PAGE=true;' in page and 'data-up' in page and 'function allSide()' in page
               and 'class="app"' in page, "F134: Home's page is the run app's markup, with the project switcher",
               page[:400])
         src = Path(H.__file__).read_text(encoding='utf-8')
@@ -249,11 +255,16 @@ def test_routing(tmp: Path) -> None:
         code, _, hd = get(f'{base}/p/alpha?t=HOMETOKEN', follow=False)
         eq((code, hd.get('Location')), (302, '/p/alpha/?t=HOMETOKEN'), '/p/KEY goes to /p/KEY/, where the app\'s calls are relative')
         code, body, _ = get(f'{base}/p/beta/?t=HOMETOKEN')
-        eq(code, 502, 'a project with no run up has no app to route to')
-        has(body.decode(), 'no run up', 'and says so, with the way back to Home')
+        eq((code, 'const HOME_PAGE=true;' in body.decode()), (200, True), "F150: a project with no run up: Home's page, showing it")
+        code, body, _ = get(f'{base}/p/beta/snapshot?t=HOMETOKEN')
+        eq(code, 502, 'and nothing of a run app to route to')
+        has(body.decode(), 'no run up', 'which it says')
         eq(get(f'{base}/p/gamma/?t=HOMETOKEN')[0], 404, 'an unknown project: 404')
         code, body, _ = get(f'{base}/act?t=HOMETOKEN', json.dumps({'project': 'alpha', 'name': 'slots', 'arg': '+1'}).encode())
         eq((json.loads(body)['ok'], acted), (True, [(alpha, 'slots', '+1')]), "a button's POST acts on that project")
+        for _ in range(2):  # F150: one action sent twice is run once
+            body = get(f'{base}/act?t=HOMETOKEN', json.dumps({'project': 'alpha', 'name': 'stop', 'cid': 'k1'}).encode())[1]
+        eq((json.loads(body)['ok'], len(acted)), (True, 2), 'an action with a cid is run once, and answered each time')
         eq(get(f'{base}/act?t=HOMETOKEN', json.dumps({'project': 'nope', 'name': 'stop'}).encode())[0], 404,
            'one for an unknown project: 404')
         # B179: the Home Screen app

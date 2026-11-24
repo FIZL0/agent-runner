@@ -1178,8 +1178,32 @@ def test_part_of_part_b199(tmp: Path) -> None:
     check('- [ ] **F162a2**' in todo.read_text(encoding='utf-8'), 'and it reopens', todo.read_text(encoding='utf-8'))
 
 
+def test_plan_facts_f150(tmp: Path) -> None:
+    """F150: what All projects says of any project's plan: titles, the next tasks, what landed today."""
+    import datetime as dt
+    from agent_runner.config import Config
+    repo = fake_run(tmp)
+    c = Config(repo)
+    (repo / 'plan' / 'TODO.md').write_text('# TODO\n### Next\n- [ ] **F1** First\n- [~] **B2** Stuck\n- [x] **F3** Done\n'
+                                           '### Parked\n- [ ] **F9** Later\n', encoding='utf-8')
+    (repo / 'plan' / 'DONE.md').write_text('# DONE\n- [x] **F4** Old\n', encoding='utf-8')
+    log = c.notes('events.jsonl')
+    ev = lambda at, kind, tid: json.dumps({'time': at, 'kind': kind, 'id': tid, 'text': ''}) + '\n'
+    log.write_text(ev('2026-11-23T10:00:00', 'landed', 'F0') + ev('2026-11-24T09:00:00', 'landed', 'F4') + 'half a li\n'
+                   + ev('2026-11-24T09:30:00', 'started', 'F1') + ev('2026-11-24T10:00:00', 'landed', 'F3'), encoding='utf-8')
+    day = dt.datetime(2026, 11, 24, 12)
+    f = U.plan_facts(c, day)
+    eq(f['titles'], {'F1': 'First', 'B2': 'Stuck', 'F9': 'Later'}, 'the open tasks by title')
+    eq(f['queue'], [{'id': 'F1', 'title': 'First'}], 'the next ones: not stuck, not parked')
+    eq(f['landed'], ['Done', 'Old'], 'what landed today, newest first')
+    check(U.plan_facts(c, day) is f, 'kept while no file changes')
+    log.write_text(log.read_text(encoding='utf-8') + ev('2026-11-24T11:00:00', 'landed', 'F1'), encoding='utf-8')
+    eq(U.plan_facts(c, day)['landed'], ['First', 'Done', 'Old'], 'and read again when one does')
+    eq(U.plan_facts(c, day + dt.timedelta(days=1))['landed'], [], 'nothing yet the next day')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),

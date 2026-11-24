@@ -249,15 +249,16 @@ link when there is one) and a run's link through Home (`/p/<project>/`) list a T
 Home's port first, then http by hostname and LAN address; Talk's mic and dictation need https. With no Tailscale
 Serve for Home, `home install` offers (in a terminal, y/n) to run `tailscale serve --bg --https=8771
 http://127.0.0.1:8770` (Home's port plus one), or prints that command. Home's page
-is now the run app itself: at `/` it is the "All projects" view, one row per project with Start run, Open, Pause or
-Go on, −1 slot, +1 slot, Stop and Unlist, plus an add-project box, Needs you alerts and Devices. Through Home, a
-run's app (`/p/<project>/`) has a project switcher at the top of the sidebar (the current project's name; tap it to
-list every Home project as running, idle, paused or off, with its needs-you count; each moves to `/p/<project>/` on
-the same Home address) and an "All projects" item in the sidebar. Both list projects with a run up (running, idle or
-paused) first, then those off, by name in each group.
+is now the run app itself: at `/` it is the Overview, Needs you over all projects, then a card per project with one
+main button (Start run or Open) and a … sheet for the rest (Pause or Go on, Slots, Stop and Unlist; the last two ask first), plus
+a + Project button and Devices. Projects with a run up (running, idle or paused) come first, then
+those off, by name in each group. Through Home, a run's app (`/p/<project>/`) has an "All projects" row at the top of
+the sidebar, with a count of what needs you in other projects; tapping it turns the sidebar into the project list
+(Overview, Running, Idle, Off, Devices), and each project in it moves to `/p/<project>/` on the same Home address. An
+off project's page has Start run and turns into its app once the run is up.
 
 On a phone's Home Screen: add the app from Home's link. Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
-from, or on All projects if it was added from Home. An icon added before this change: remove it and add it again once,
+from, or on the Overview if it was added from Home. An icon added before this change: remove it and add it again once,
 since iOS may keep the old scope. The manifest and icon hold the token the link has, so whoever has the manifest has it
 already. A run's own address (no Home, or its own `web_port`) is an app of its own; its project name leads to Home's
 address, another origin, which iOS opens outside the app.
@@ -310,7 +311,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   lands while another is read waits for it. iOS can skip a sound's end event, so once a second while a reply is read the page
   checks that sound is really playing (run speech, the browser's voice, and again when the page is shown) and clears the
   speaking state when it is not: the browser's voice quiet for 2 checks (4 if it never began) or with no start in 10 s, or a clip paused or not moving for 10 s; the next waiting reply is then read. A reply is read in few clips: its first sentence alone, then about 200 letters, then 400 each. While a reply is read, a second element plays silence so a Bluetooth route stays open between clips; the audio session is play-and-record for the mic and playback once it ended (browsers with navigator.audioSession, iOS). A pause nobody asked for (a call, a route change) is undone once per reply, unless a mic listens; a second one ends the reply, and the lock screen's or the earbuds' pause stops it. A clip request with no answer is tried again twice (after 0.5 s and 2 s; once when none came in 25 s); what was fetched plays on, then the phone's voice reads the rest of that reply, so it is heard to its end, and a toast says "No connection to the run; reading with the phone's voice" (the next reply tries run speech again). An engine's own failure is not retried. With no engine installed, or when one fails, the browser's own speech reads.
-- **Sidebar.** New chat, Talk, Home (with the Needs you count), Status, Plan, Concepts, Tools and Settings. Chats are the
+- **Sidebar.** All projects (through Runner Home), Talk, Home (with the Needs you count), Status, Plan, Concepts, Tools and Settings. Chats are the
   control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
   and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (a pinned or a renamed one is left alone by the run; by hand any chat can go Quiet or be deleted). Opening a quiet chat does not move it; it comes up again only when something new is said in it, or it is pinned or renamed. Double-click a chat's name (on a phone: its ⋯) to rename it; the name is yours, so the
   run neither closes that chat when idle nor renames it. Agents working are the slots on a task. On a phone the
@@ -1456,7 +1457,7 @@ stay local: with no gate, `[git] push_merge` pushes a merge only when a settings
 without its own `runner.toml` (because it's git-ignored) reads the main checkout's.
 
 With no settings file at all (no `runner.toml`, no `AGENT_RUNNER_CONFIG` file, and no gate or `push_merge` in
-`runner.local.toml`), the run picker and its launcher, the run page's Run card, Home's All projects and the
+`runner.local.toml`), the run picker and its launcher, the run page's Run card, Home's Overview and the
 TUI's Status panel say "no settings found, so no test gate and nothing is pushed". A run that is up says what
 it itself found (its STATE).
 

@@ -600,6 +600,58 @@ def lately(titles: dict[str, str], n: int = 6) -> list[dict]:
     return _LATELY[1]
 
 
+_PLAN_FACTS: dict = {}  # `plan_facts` by the project's files: what they held when last read
+FACTS_TAIL = 512 * 1024  # bytes of the event log's end that `plan_facts` reads: more than a day of events
+
+
+def plan_facts(c, now: dt.datetime | None = None) -> dict:
+    """F150: what All projects says of the plan of config `c` (any project, up or off, `state.init` or not):
+    {'titles' (open tasks, {id: title}), 'queue' (the next tasks, [{'id', 'title'}]), 'landed' (today's titles, newest
+    first)}. Kept until a file it reads changes."""
+    now = now or dt.datetime.now()
+    files = (c.todo, c.done, c.notes('events.jsonl'))
+
+    def mark(f):
+        try:
+            s = f.stat()
+            return s.st_size, s.st_mtime_ns
+        except OSError:
+            return None
+    marks = (now.date(), *map(mark, files))
+    hit = _PLAN_FACTS.get(str(c.todo))
+    if hit and hit[0] == marks:
+        return hit[1]
+    ls = P.lines(c.todo)
+    queue = [{'id': tid, 'title': P.short_title(rest, 200)} for section, box, tid, rest, _ in P.iter_tasks(ls)
+             if box == ' ' and not section.startswith(P.SKIPPED)][:10]
+    names = P.titles(c.done, c.todo, width=200)
+    out = {'titles': {tid: names[tid] for _, box, tid, _, _ in P.iter_tasks(ls) if box in ' ~'}, 'queue': queue,
+           'landed': [names.get(tid, tid) for tid in landed_on(files[2], now.date().isoformat())]}
+    _PLAN_FACTS[str(c.todo)] = (marks, out)
+    return out
+
+
+def landed_on(events: Path, day: str) -> list[str]:
+    """The ids that landed on `day` (YYYY-MM-DD), newest first, from a project's event log."""
+    try:
+        with open(events, 'rb') as f:
+            f.seek(max(0, events.stat().st_size - FACTS_TAIL))
+            tail = f.read().decode('utf-8', 'replace').splitlines()
+    except OSError:
+        return []
+    ids: list[str] = []
+    for line in reversed(tail):
+        if f'"{day}T' not in line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:  # the first line of the tail is cut
+            continue
+        if isinstance(e, dict) and e.get('kind') in (S.EV_LANDED, S.EV_PART) and e.get('id') and e['id'] not in ids:
+            ids.append(e['id'])
+    return ids
+
+
 FIXUPS: list = [0.0, '', {}]  # when `fixups` last looked (monotonic), at which root, and what it found
 FIXUPS_FOR = 20.0  # s: it runs git and reads the slot logs, and a page reads a snapshot every few seconds
 

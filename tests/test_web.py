@@ -630,14 +630,12 @@ def test_views(tmp: Path) -> None:
 
 
 def test_new_chat(tmp: Path) -> None:
-    """F84: a + on the Chats heading row starts a new chat (new_control through /act, which runs control --new),
-    and the top bar's New chat has its own inline new-chat icon."""
+    """F84: a + on the Chats heading row starts a new chat (new_control through /act, which runs control --new)."""
     fake_repo(tmp)
     page = W.page_html().decode()
-    check('<div class="shead row"><span>Chats</span><button class="shadd" data-new' in page,
-          'the + sits at the end of the Chats heading row')
-    check('data-new aria-label="New chat" title="New chat">${I.newchat}' in page and 'newchat:`<svg' in page,
-          'the top bar keeps New chat, with the new-chat icon')
+    check('<div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button>' in page,
+          'the + Chat sits at the end of the Chats heading row')
+    eq(len(re.findall(r'<button[^>]* data-new[ >]', page)), 1, 'F150: and nowhere else')
     check("newChat('new_control',{},'New chat')" in page and "outbox(name,{...args,wait:false}" in page,
           'data-new sends new_control through the outbox, without waiting (F137)')
     token = W.web_token()
@@ -906,18 +904,18 @@ PAGE_PRINT = '/' + '*PAGE_PRINT*/'; out.raw = draw({page: 'bbb'})[0]; PAGE_PRINT
 out.noReload = reloads;
 // Refresh keeps what is written, or waits
 const go = () => { const n = reloads; said = []; newsRefresh(); return [reloads - n, said[0] || ''] };
-fresh({}, {'set:project:x': '5', setq: 'cap'}); H.add = '/x'; S.ren = 'c2'; S.setOpen = {a: 1};
+fresh({}, {'set:project:x': '5', setq: 'cap'}); S.f.padd = '/x'; S.ren = 'c2'; S.setOpen = {a: 1};
 S.atts = {c1: [{name: 'p.png', path: '/up/p.png', thumb: 'data:'}], c2: []}; S.ob = [{cid: '1'}]; store.set('ob', JSON.stringify(S.ob));
 ta = {value: 'half a thought'}; store.set('d:home', ta.value);
 out.kept = go();
-fresh({}); takeTyped(); out.back = [S.f, H.add, S.ren, S.setOpen, S.atts]; out.once = tabStore.get(TYPED_KEY);
+fresh({}); takeTyped(); out.back = [S.f, S.f.padd, S.ren, S.setOpen, S.atts]; out.once = tabStore.get(TYPED_KEY);
 fresh({}); ta = null; out.nothing = [go(), tabStore.get(TYPED_KEY)];
 fresh({}); tabStore.set(TYPED_KEY, JSON.stringify({atts: [{name: 'o', path: '/o'}]})); takeTyped(); out.oldAtts = S.atts;  // kept by a page before B182
 fresh({}); S.atts = {c9: [{name: 'x'}]}; out.uploading = go();
 fresh({}); TK.rec = {}; out.mic = go(); TK.rec = null; DK.rec = {}; out.dict = go(); DK.rec = null;
 fresh({}, {'dev:password': 'hunter2', setq: 'a'}); out.form = [go(), JSON.stringify(tabStore.m).includes('hunter2')];
 fresh({}); ta = {value: 'not kept'}; store.set('d:home', ''); out.unkept = go();
-dead = true; fresh({}); ta = null; H.add = 'x'; out.dead = go(); fresh({}); S.ob = [{cid: '9'}]; out.deadOb = go();
+dead = true; fresh({}); ta = null; S.f.padd = 'x'; out.dead = go(); fresh({}); S.ob = [{cid: '9'}]; out.deadOb = go();
 HOME_PAGE = true; fresh({}); S.later = []; out.home = [draw({page: 'bbb'})[1], draw({page: 'aaa', restart_needed: true})[1]];
 console.log(JSON.stringify(out));
 """
@@ -933,7 +931,8 @@ def test_news_f149(tmp: Path) -> None:
     eq((snap['page'], snap['restart_needed']), (W.PAGE_PRINT, ''), 'the snapshot names the page the run serves')
     with mock.patch.object(W.watch, 'RESTART_NEEDED', ['k']):
         eq(W.with_extras({})['restart_needed'], 'k', 'and that a person must restart the run')
-    eq(page.count('location.reload()'), 1, 'one reload in the page, the Refresh button')
+    eq((page.count('location.reload()'), page.split('function turnIntoApp(){')[1].split('\n}')[0].count('location.reload()')), (2, 1),
+       'one reload in the page, the Refresh button, and one on the page of a project that is off, once its run is up (F150)')
     from agent_runner import home as H
     stamps = [('a', 1)]
     with mock.patch.object(H, 'package_stamp', lambda: stamps[0]):
@@ -968,7 +967,7 @@ def test_news_f149(tmp: Path) -> None:
     eq(o['restartLater'], [True, False], 'Later holds for that code; newer code shows')
     eq(o['noReload'], 0, 'nothing of that reloads the page')
     eq(o['kept'], [1, ''], 'Refresh with a draft and an outbox reloads')
-    eq(o['back'], [{'set:project:x': '5', 'setq': 'cap'}, '/x', 'c2', {'a': 1},
+    eq(o['back'], [{'set:project:x': '5', 'setq': 'cap', 'padd': '/x'}, '/x', 'c2', {'a': 1},
                    {'c1': [{'name': 'p.png', 'path': '/up/p.png'}]}], 'and what was written comes back, an attachment to its own box')
     eq(o['oldAtts'], {'home': [{'name': 'o', 'path': '/o'}]}, "B182: an older page's attachments come back in the open box")
     eq((o['once'], o['nothing']), ('', [[1, ''], '']), 'once; with nothing written nothing is kept')
@@ -1317,7 +1316,7 @@ def test_talk_new_chat_f157(tmp: Path) -> None:
     'to', and the new session is the one Talk keeps, also over a reload, while an old chat titled Talk is live."""
     page = W.page_html().decode()
     top = page.split('function topHTML(){', 1)[1].split('\n}', 1)[0]
-    check("!n&&S.view==='talk'?`<button class=\"icon\" data-newtalk aria-label=\"New Talk chat\"" in top
+    check('${plusBtn()}' in top and "talk:()=>b('data-newtalk','New talk','New Talk chat')" in page
           and "if(q('[data-newtalk]'))return newTalk()" in page, "in Talk the top bar's button is New Talk chat")
     if not shutil.which('node'):
         print('  (no node here: the New Talk chat script test is skipped)')
@@ -2343,8 +2342,7 @@ def test_new_chat_view_f172(tmp: Path) -> None:
           and 'Add a task</button><button class="chip" data-about="newconcept">' in home and 'New concept</button></span>' in home,
           "F183: Home has New concept beside Add a task, the two on one row when a phone's width wraps the chips", home)
     check('.chips{display:flex;gap:8px;flex-wrap:wrap' in page, "the chips wrap to a phone's width")
-    for what, h in (('concepts', some), ('none', none)):
-        check('<button class="btn acc" data-about="newconcept">' in h and 'New concept</button>' in h, f'{what}: the button', h)
+    check("concepts:()=>b('data-about=\"newconcept\"','Concept'" in page, "F150: the Concepts view's button is + Concept, at the top right")
     check('No concept waits' in none and 'No concept waits' not in some, 'the empty state stays', none)
     eq(o['kdraft'], 'a dark mo', 'the draft is kept, from Concepts to Home')
     eq(o['kreload'], ['home', '+newconcept', {'kind': 'newconcept', 'label': 'New concept'}], 'a reload keeps the view')
@@ -2787,10 +2785,8 @@ def test_home_switcher_f134(tmp: Path) -> None:
     address; Home's own page is the same app in Home mode (HOME_PAGE), with All projects and Devices."""
     page = W.PAGE.read_text(encoding='utf-8')
     check("fetch(tq(HB+'projects'))" in page, "the switcher reads Home's /projects, with the page's token")
-    check('${HB?switcher():' in page and 'data-psw' in page, 'the sidebar starts with the switcher when Home is around')
-    check('ps.map(projectCard)' in page, "All projects keeps Home's order (F148)")
-    check("nav.concat([['projects','All projects']])" in page and 'projects:projectsHTML' in page,
-          'and the run app has an All projects view')
+    check('sideShow(`${allRow()}' in page and 'data-up' in page, 'F150: the sidebar starts with All projects when Home is around')
+    check('projects:projectsHTML' in page, 'and the run app has an All projects view')
     run_page = W.page_html().decode()
     home_page = W.page_html(home=True).decode()
     check('const HOME_PAGE=/*HOME_PAGE*/false;' in run_page and 'const HOME_PAGE=true;' in home_page and
@@ -2804,20 +2800,97 @@ def test_home_switcher_f134(tmp: Path) -> None:
     got = logic_js([['switcherRows', ps, 'alpha', '/', 'HT&1'],
                     ['homeBase', '/p/alpha/', False], ['homeBase', '/', True], ['homeBase', '/', False],
                     ['homeKey', '/p/beta%20two/'], ['homeKey', '/'],
-                    ['projectButtons', {'state': 'off'}],
-                    ['projectButtons', {'state': 'running', 'paused': False, 'page': 'p/alpha/'}],
-                    ['projectWords', {'state': 'idle', 'paused': True, 'slots': 1, 'running': [], 'left': 3}]])
+                    ['projectMain', {'state': 'off'}], ['projectMain', {'state': 'off', 'starting': True}],
+                    ['projectMain', {'state': 'idle', 'page': 'p/a/'}],
+                    ['projectMore', {'name': 'a', 'state': 'off'}], ['projectMore', {'name': 'a', 'state': 'running', 'slots': 2}],
+                    ['projectWords', {'state': 'idle', 'paused': True, 'slots': 1, 'running': [], 'left': 3}],
+                    ['projectOrder', [{'key': k, 'state': s, 'paused': z} for k, s, z in
+                                      (('off2', 'off', False), ('Off1', 'off', False), ('paused', 'running', True),
+                                       ('Idle', 'idle', False), ('b', 'running', False), ('A', 'running', False))]],
+                    ['switcherRows', ps, 'alpha', '/', 'T', 'plan'],
+                    ['oneProject', ps], ['oneProject', ps[:1]], ['oneProject', None], ['needsOf', ps], ['needsOf', ps, 'alpha'],
+                    ['projectAsks', [{'key': 'z', 'name': 'z', 'state': 'off', 'asks': ['F2 - check - it']},
+                                     {'key': 'a', 'name': 'a', 'state': 'idle', 'asks': ['K1 - pick one']}]],
+                    ['snapKept', {'home': {'t': 'TOKEN'}, 'boot': 'b', 'at': 'now', 'page': 'p', 'version': '1', 'queue': [1]}],
+                    ['homeBase', '/p/alpha/', True], ['placeOf', '{}', '#need-F162a2', True, []], ['placeOf', '{}', '#need-', True, []]])
+    up = {'key': 'a', 'state': 'running', 'slots': 2}
+    act = lambda n, arg='', st='sending', key='a': {'name': n, 'state': st, 'args': {'project': key, 'arg': arg}}
+    now = logic_js([['projectNow', {'key': 'a', 'state': 'off'}, [act('start')]], ['projectNow', up, [act('pause'), act('slots', '5')]],
+                    ['projectNow', up, [act('pause', st='failed'), act('stop', key='b')]], ['projectNow', up, [act('stop')]],
+                    ['projectNow', {**up, 'paused': True}, [act('resume')]]])
+    eq([now[0].get('starting'), (now[1]['paused'], now[1]['slots']), now[2], now[3]['stopping'], now[4]['paused']],
+       [True, (True, 5), up, True, False], 'F150: an action on its way shows at once; one that failed, or of another project, does not')
     eq([(r['key'], r['said'], r['needs'], r['href'], r['on']) for r in got[0]],
        [('alpha', 'running', 2, '/p/alpha/?t=HT%261', True), ('beta two', 'paused', 0, '/p/beta%20two/?t=HT%261', False),
         ('gamma', 'off', 0, '/p/gamma/?t=HT%261', False)],
        "the switcher lists Home's projects with their state and needs-you count, each linking /p/KEY/?t=TOKEN")
     eq(got[1:6], ['/', '/', '', 'beta two', ''],
        "Home's address from the page's path: /p/KEY/ through Home, / on Home's own page, none on a run's own port")
-    eq([b['label'] for b in got[6]], ['Start run', 'Unlist'], 'a project that is off: Start run')
-    eq([(b['label'], b.get('a'), b.get('arg')) for b in got[7]],
-       [('Open', None, None), ('Pause', 'pause', None), ('−1 slot', 'slots', '-1'), ('+1 slot', 'slots', '+1'),
-        ('Stop', 'stop', None), ('Unlist', None, None)], "one that runs: Open, Pause, the slots and Stop, as Home's were")
-    eq(got[8], 'paused · 1 slot · 3 queued', 'the words under a project')
+    eq([got[6]['label'], got[7]['label'], got[8]['label']], ['Start run', 'Starting…', 'Open'], "a card's one main button")
+    eq([b['label'] for b in got[9]], ['Unlist'], 'the rest is in its … sheet')
+    eq([(b['label'], b.get('a'), bool(b.get('sure'))) for b in got[10]],
+       [('Pause', 'pause', False), ('Slots', None, False), ('Stop', 'stop', True), ('Unlist', None, True)], 'Stop and Unlist ask first')
+    eq(got[11], 'paused · 0 of 1 slot · 3 queued', 'the words under a project')
+    eq([r['key'] for r in got[12]], ['A', 'b', 'Idle', 'paused', 'Off1', 'off2'], 'F150: running, idle or paused, off; by name in each')
+    eq([r['href'] for r in got[13]][0], '/p/alpha/?t=T#plan', 'switching keeps the tab')
+    eq(got[14:19], [False, True, False, 2, 0], "All projects' row hides with one project; its count is the others'")
+    eq([(a['key'], a['id'], a['what']) for a in got[19]], [('a', 'K1', 'Pick one'), ('z', 'F2', 'Check - it')], 'what needs you, over all projects')
+    eq(got[20], {'queue': [1]}, 'the snapshot kept for the next visit holds no token and nothing of one run or version')
+    eq(got[21], '/', "Home's page at /p/KEY/ (a project that is off) knows where Home is")
+    eq((got[22], got[23]['link']), ({'v': 'home', 't': '', 'link': True, 'need': 'F162a2'}, False), 'a link to an item of Needs you')
+
+
+HOME_ACT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const i = page.indexOf("/* --- F150: Home's actions"), src = page.slice(i, page.indexOf('/* --- F150: Runner Home in the app', i));
+const m = {}, store = {get: k => m[k] || '', set: (k, v) => { if (v) m[k] = v; else delete m[k] }};
+let cids = 0, posts = [], answer = null, said = [];
+const open = () => {
+  const S = {}, H = {begun: {}, turn: 0, projects: [{key: 'a', state: 'running', slots: 2}, {key: 'b', state: 'off'}]};
+  const api = new Function('S', 'H', 'store', 'fetch', logic + `
+    const HB='/', tq=p=>p, newCid=()=>'k'+nextCid(), render=()=>{}, obDraw=()=>{}, toast=t=>said.push(t), loadProjects=()=>{}, addEventListener=()=>{}, setTimeout=f=>{later.push(f)}, clearTimeout=()=>{};
+    ` + src + ';return {homeAct,homeDrain,homeRetry,homeHas}').bind(null);
+  return {S, H, ...api(S, H, store, async (u, o) => { const b = JSON.parse(o.body); posts.push(b); const j = await answer(b); if (j === 'lost') throw new Error('lost'); return {status: 200, json: async () => j} })};
+};
+global.nextCid = () => ++cids; global.said = said; global.later = [];
+const settle = async () => { for (let n = 0; n < 8; n++) await new Promise(r => setImmediate(r)) };
+(async () => {
+  const out = {}, hold = {};
+  // a slow start holds up no other project, and the next page follows it with the same cid
+  answer = b => b.name === 'start' ? new Promise(r => hold.start = r) : {ok: true, out: 'paused'};
+  let p = open(); p.homeAct('b', 'start', '', 'Start run · b'); p.homeAct('a', 'pause', '', 'Pause · a'); await settle();
+  out.slow = [posts.map(x => [x.project, x.name, x.cid]), p.S.hob.map(x => x.name), p.H.projects[0].paused];
+  answer = () => ({ok: true, out: 'started'}); posts = [];
+  let q = open(); out.kept = q.S.hob.map(x => x.name); q.homeDrain(); await settle();
+  out.follows = [posts.map(x => x.cid), q.S.hob.length, !!q.H.begun.b, m['ar-outbox:@home'] || ''];
+  // a refusal stays with Retry, under a new cid; a lost connection is sent again with the same one
+  answer = () => ({ok: false, out: 'no'}); posts = []; q.homeAct('a', 'slots', '3', '3 slots · a'); await settle();
+  out.failed = q.S.hob.map(x => [x.state, x.err]); const bad = q.S.hob[0].cid;
+  answer = () => 'lost'; q.homeRetry(bad); await settle(); out.lost = q.S.hob.map(x => x.state);
+  answer = () => ({ok: true, out: '3 slots'}); later.pop()(); await settle();
+  out.again = [posts.length, posts[1].cid === posts[2].cid, posts[0].cid !== posts[1].cid, q.S.hob.length, q.H.projects[0].slots];
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_home_actions_f150(tmp: Path) -> None:
+    """F150: start, pause, slots and stop go through Home's own outbox, followed over a switch to another project."""
+    if not shutil.which('node'):
+        print('  (no node here: the Home actions script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(HOME_ACT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, encoding='utf-8')
+    eq(r.returncode, 0, 'node runs the Home actions')
+    if r.returncode:
+        print(r.stderr)
+        return
+    o = json.loads(r.stdout)
+    eq(o['slow'], [[['b', 'start', 'k1'], ['a', 'pause', 'k2']], ['start'], True], 'a slow start holds up no other project')
+    eq((o['kept'], o['follows']), (['start'], [['k1'], 0, True, '']), 'the next page follows it, with the same id')
+    eq((o['failed'], o['lost']), ([['failed', 'no']], ['sending']), 'a refusal stays, a lost connection waits')
+    eq(o['again'], [3, True, True, 0, 3], 'and is sent again: the same id after a lost connection, a new one on Retry')
 
 
 def test_home_screen_b179(tmp: Path) -> None:
@@ -2848,8 +2921,8 @@ def test_home_screen_b179(tmp: Path) -> None:
             check(tag in page, f'the {what} has {tag}')
         check("add('manifest',manifestLink(HB,HKEY,T))" in page and "add('apple-touch-icon'" in page,
               f'the {what} links its manifest and icon')
-        links = re.findall(r'<a class="(?:prow|btn acc|brand)[^>]*>', page)
-        check(len(links) >= 4, f'the {what} has the switcher, All projects and project card links', links)
+        links = re.findall(r'<a class="(?:prow|btn|pname|brand)[^>]*(?:projectLink|projectHref|r\.href|esc\(href\))[^>]*>', page)
+        check(len(links) >= 4, f'the {what} has the list, Overview and project card links', links)
         for a in links:
             check('_blank' not in a, f'{what}: a link between projects opens no tab', a)
     if not shutil.which('node'):
@@ -2872,7 +2945,7 @@ def test_project_name_b153(tmp: Path) -> None:
     run_page = W.page_html().decode()
     check('<title>proj · runner</title>' in run_page, 'the served title is the project first', run_page[:400])
     check("document.title=pageTitle(S.snap.project)" in run_page, 'and the snapshot keeps it')
-    check('${HB?switcher():brand()}' in run_page and '<b>agent-runner</b>' not in run_page,
+    check('if(!HB||oneProject(H.projects))return brand();' in run_page and '<b>agent-runner</b>' not in run_page,
           'the top-left is the project name (brand), not agent-runner')
     check('class="logo">ar<' not in run_page and "'agent-runner')}</div>" not in run_page,
           'no ar logo, no agent-runner lead label')
@@ -4889,7 +4962,7 @@ if __name__ == '__main__':
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_once_b161), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
-                           in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
+                           in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
                            in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190)]))
