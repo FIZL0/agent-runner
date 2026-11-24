@@ -8,6 +8,7 @@ import re
 import threading
 import time
 from contextlib import ExitStack
+from pathlib import Path
 from typing import NamedTuple
 
 from agent_runner import plan as P, plansync, shared_tools, stack
@@ -405,7 +406,8 @@ def clash_or_stack(t: tuple, h: Held) -> tuple[tuple | None, dict]:
 
 def turn_of(tried: set, h: Held, branch: str) -> str:
     """F208: the critical `(alone)` task whose turn is next, else '': this run's tasks are all that hold it, and each
-    will end by itself. Until they have, `choose` starts only critical tasks. Other `(alone)` tasks hold no start:
+    will end by itself. Until they have and it has started, `choose` starts only critical tasks (not even one that
+    goes on after a wait for a shared tool). Other `(alone)` tasks hold no start:
     they wait for an empty run, as they queue."""
     for t in h.todo:
         if t[0] not in h.alone or t[0] not in h.critical:
@@ -413,7 +415,7 @@ def turn_of(tried: set, h: Held, branch: str) -> str:
         if (holds(t, tried, h._replace(busy=[], users={})) or ('merging',))[0] != 'merging':
             continue  # more than running and merging tasks holds it
         bs = [b for b in h.busy if clash(t, b, h.shared, h.alone) and not passes(t, b, h)]
-        if bs and all(ends(b[0], h, branch) for b in bs):
+        if all(ends(b[0], h, branch) for b in bs):
             return t[0]
     return ''
 
@@ -421,7 +423,7 @@ def turn_of(tried: set, h: Held, branch: str) -> str:
 def ends(tid: str, h: Held, branch: str) -> bool:
     """F208: busy task `tid` ends with nobody's help: it runs in a slot, or its merge is to come. Not one taken by hand
     or of another runner, one that waits for a usage reset, nor a finished branch that waits for a person: a
-    closed task's, one held by edits in the main checkout, or one whose merge crashed."""
+    closed task's, one checked out elsewhere, one held by edits in the main checkout, or one whose merge crashed."""
     if tid in h.away:
         return False
     if tid in h.live:
@@ -429,8 +431,13 @@ def ends(tid: str, h: Held, branch: str) -> bool:
     if tid in h.busy_ids or tid not in open_tasks(branch) | blocked_tasks(branch):
         return False  # queued to resume; or no run merges it (`slots.unmerged`)
     from agent_runner import loop  # loop reads sched; imported here, not at the top
-    if tid in loop.SWEPT and not any(x.name == f'merge:{tid}' for x in threading.enumerate()):
-        return False  # its merge crashed, or waits for the next run: a sweep tries once
+    if not any(x.name == f'merge:{tid}' for x in threading.enumerate()):
+        if tid in loop.SWEPT:
+            return False  # its merge crashed, or waits for the next run: a sweep tries once
+        for wt in git('worktree', 'list', '--porcelain').stdout.split('\n\n'):
+            at = Path(wt.partition('\n')[0].removeprefix('worktree '))
+            if f'branch refs/heads/task/{tid}' in wt.splitlines() and SLOTS_DIR.resolve() not in at.resolve().parents:
+                return False  # checked out in a person's worktree: no sweep merges it
     if git('diff', '--cached', '--quiet').returncode:
         return False  # `blocked_by_edits`' first checks, without its alarm
     return not blocked_by_edits(tid, branch)
@@ -517,9 +524,9 @@ def choose(h: Held, tried: set, branch: str, claim: bool = False):
     """The first open task nothing holds back (`holds`), claimed first when `claim` (see `claim_task`), or None.
     Parked tasks are skipped, not blocked: that is `pick`'s part. Critical tasks are tried first, wherever their
     lines stand (B126): one whose blocker has just landed takes the next free slot ahead of the normal ones. One
-    still blocked holds nothing back (B140), unless it runs alone: the free slot goes to the next task that may start. A task that gave up
-    its slot for a shared tool goes ahead of them all, the longest wait first (F168). While a critical `(alone)` task
-    waits for the running ones to end, only critical tasks start (F208, `turn_of`)."""
+    still blocked holds nothing back (B140): the free slot goes to the next task that may start. A task that gave up
+    its slot for a shared tool goes ahead of them all, the longest wait first (F168), but for this: while a critical `(alone)` task
+    waits for its turn, only critical tasks start (F208, `turn_of`)."""
     turn = turn_of(tried, h, branch)
     for t in sorted(h.todo, key=lambda t: (h.waits[t[0]][1] if t[0] in h.waits else float('inf'),
                                            t[0] not in h.critical)):

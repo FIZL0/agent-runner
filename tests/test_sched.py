@@ -287,6 +287,8 @@ def test_alone_turn(tmp: Path):
     why = S.explain(one, set(), 'main')
     eq((why['T2'], why['B1']), (('runs alone', 'C1 runs alone next'), ('free', '')), 'the dry run says so')
     eq(first({}, {'B1'}), 'C1', 'the running ones have ended: its turn')
+    h = S.held({}, 'main')._replace(waits={'T2': ('X', 1)})
+    eq(S.choose(h, {'B1'}, 'main')[0], 'C1', 'ahead of a task that waited for a shared tool')
     eq(first(one, {'B1', 'C1'}), 'T2', 'C1 tried this run holds nothing')
     h = S.held(one, 'main')
     parked = h._replace(parked={'C1': ['wip/C1', 'wip/C1-2']})
@@ -330,6 +332,9 @@ def test_alone_turn(tmp: Path):
     git(repo, 'checkout', '-q', '--', 'a.py')
     with mock.patch.object(loop, 'SWEPT', {'T1'}):
         eq(first({}, {'B1'}), 'T2', 'nor when its merge crashed')
+    git(repo, 'worktree', 'add', '-q', str(tmp / 'mine'), 'task/T1')
+    eq(first({}, {'B1'}), 'T2', "nor while its branch is out in a person's worktree: no sweep merges it")
+    git(repo, 'worktree', 'remove', str(tmp / 'mine'))
     with mock.patch.object(S, 'queued', lambda: {1: ('T1', 'sid', 'usage limit')}):
         eq(first({}, {'B1'}), 'T2', 'nor when its session waits for a usage reset')
     (repo / 'plan/TODO.md').write_text(todo.replace('[ ] **T1**', '[x] **T1**'), encoding='utf-8')
