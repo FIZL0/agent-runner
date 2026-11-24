@@ -356,7 +356,7 @@ class El {
   querySelectorAll(s) { return s === '*' ? this.all() : this.all().filter(e => e.dataset.k) }
   contains(e) { return this === e || this.all().includes(e) }
   matches(s) { return s.split(',').some(x => x[0] === '.' && this.cls.has(x.slice(1))) }
-  closest(s) { for (let e = this; e; e = e.parentElement) if (s === '[data-k]' ? e.dataset.k : e.matches(s)) return e; return null }
+  closest(s) { for (let e = this; e; e = e.parentElement) if (s.startsWith('[data-k]') ? e.dataset.k : e.matches(s)) return e; return null }
   cloneNode() { const c = new El('', this.y, [...this.cls].join(' ')); c.dead = this.attributes.map(a => a.name); c.of = this.dataset.k; return c }
   removeAttribute(n) { this.dead = this.dead.filter(x => x !== n) } setAttribute(n, v) { this.attrs[n] = v }
   appendChild(e) { e.isConnected = true; this.gone.push(e) } append(...xs) { this.childNodes.push(...xs) } remove() { this.isConnected = false }
@@ -479,6 +479,67 @@ const js = {reveal: grab('function kbReveal('), slash: grab('function slashShow(
 """
 
 
+FOLD_DRIVER = MOTION_DRIVER.split('const out = {};')[0] + r"""const out = {}; El.prototype.textContent = '';
+Object.defineProperty(El.prototype, 'previousElementSibling', {get() { const k = this.parentElement.kids; return k[k.indexOf(this) - 1] || null }});
+const tall = (k, y, h, cls) => Object.assign(new El(k, y, cls), {h});
+const list = open => box(tall('a', 0, open ? 140 : 40, 'card').add(new El('', 10, 'fold'), ...(open ? [tall('fold:a', 40, 100, 'foldin').add(tall('text:a', 40, 100))] : [])), new El('b', open ? 150 : 50, 'card'));
+const look = () => ran.map(a => [a.el.dataset.k || 'copy of ' + a.el.of, a.o.easing, a.o.duration, a.kf.map(f => f.clipPath || f.transform)]);
+const go = (was, is) => { redraw(was, is); return {anims: look(), came: is.all().filter(e => e.cls.has('enter')).map(e => e.dataset.k), room: is.kids[0].style.marginBottom || ''} };
+const press = () => { now += 5000; MO.folded = now };
+press(); out.open = go(list(false), list(true));
+now += 100; out.half = (() => { const r = go(list(true), list(true)), a = ran.find(a => a.el.dataset.k === 'fold:a'); return [r.came, a && a.currentTime] })();
+press(); const shut = list(false); out.close = go(list(true), shut); const edge = ran.find(a => a.el.dataset.k === 'a'); edge.onfinish(); out.after = shut.kids[0].style.marginBottom;
+// in a sheet, anchored to its foot: what the fold shows goes with its button
+const sheet = open => box(tall('head', open ? 100 : 200, 40), tall('btn', open ? 140 : 240, 40, 'fold'), ...(open ? [tall('fold:x', 180, 100, 'foldin')] : []), tall('foot', 280, 40));
+press(); redraw(sheet(false), sheet(true)); out.up = look();
+press(); redraw(sheet(true), sheet(false)); out.down = look();
+now += 5000; out.refresh = go(list(false), list(true));
+press(); document.activeElement = {matches: () => true}; const typed = list(false); typed.all().forEach(() => 0); typed.contains = () => true; out.typing = go(typed, list(true)).anims.length;
+now += 5000; out.typingRefresh = go(typed, list(true)).anims.length; document.activeElement = null;
+reduced = true; press(); out.calm = [go(list(false), list(true)), go(list(true), list(false))];
+reduced = false; document.hidden = true; press(); out.hidden = [go(list(false), list(true)), go(list(true), list(false))];
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_folds_f189b(tmp: Path) -> None:
+    """F189b: a fold that a press opens or closes moves: what it shows is revealed and what stands under it glides, on
+    one curve; a refresh half way goes on; instant when calm()."""
+    if not shutil.which('node'):
+        print('  (no node here: the fold script test is skipped)')
+        return
+    p = subprocess.run(['node', '-e', FOLD_DRIVER], input=W.page_html().decode(), capture_output=True, text=True, encoding='utf-8', timeout=30)
+    check(p.returncode == 0, 'the fold script runs', p.stderr[-1500:])
+    if p.returncode:
+        return
+    o = json.loads(p.stdout)
+    clip = 'inset(0px 0px {}px 0px round 0px)'.format
+    soft = ['ease', 450]
+    eq(o['open']['anims'], [['fold:a', *soft, ['inset(0px 0px 100% 0px)', 'inset(0px 0px 0% 0px)']],
+                            ['a', *soft, [clip(100), clip(0)]], ['b', *soft, ['translate(0px,-100px)', 'none']]],
+       'open: the words are revealed, the card grows, the next card glides down')
+    eq(o['open']['came'], [], 'nothing in it rises in as well')
+    eq(o['half'], [[], 100], 'a refresh half way: it goes on from there')
+    eq(o['close']['anims'], [['a', *soft, [clip(0), clip(100)]], ['b', *soft, ['translate(0px,100px)', 'none']],
+                             ['copy of fold:a', *soft, ['inset(0px 0px 0px 0px)', 'inset(0px 0px 100px 0px)']]],
+       'close: the card shrinks, the next card glides up, a copy of the words closes')
+    eq((o['close']['room'], o['after']), ('-100px', ''), 'the card keeps room for what it lost until then')
+    eq(o['up'][0], ['fold:x', *soft, ['inset(0px 0px 100% 0px)', 'inset(0px 0px 0% 0px)']], 'in a sheet it opens upward')
+    eq({x[0]: x[3] for x in o['up'][1:]}, {'head': ['translate(0px,100px)', 'none'], 'btn': ['translate(0px,100px)', 'none'], 'fold:x': ['translate(0px,100px)', 'none']},
+       'what it shows goes with its button; the foot stays')
+    eq([(x[0], x[3]) for x in o['down'] if x[0] != 'copy of fold:x'], [('head', ['translate(0px,-100px)', 'none']), ('btn', ['translate(0px,-100px)', 'none'])], 'and closes downward')
+    eq(o['refresh']['came'], ['fold:a', 'text:a'], 'no press: a new thing comes in as any other')
+    check(o['typing'] > 0 and o['typingRefresh'] == 0, 'while a field is in use: a press moves it, a refresh does not', (o['typing'], o['typingRefresh']))
+    for k in ('calm', 'hidden'):
+        eq([x['anims'] for x in o[k]], [[], []], f'{k}: at once')
+        eq([x['room'] for x in o[k]], ['', ''], f'{k}: no room kept')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("if(q('[aria-expanded],#sheet button'))MO.folded=Date.now()" in page, 'a press on a fold, or on a button of a sheet, moves it')
+    for name, k in (('a Needs you fold', "foldIn('ask:'"), ('a task', 'foldIn(q.id'), ('a setting', "foldIn('set:'"), ('the models of a few kinds', "foldIn('kinds:'"),
+                    ('Advanced and Project file', "foldIn('#'+id"), ('Not this', "foldIn('pitch:'"), ('Fix up', "foldIn('fix:'")):
+        check(k in page, f'{name}: what it shows is one box')
+
+
 def test_jumps_f189a(tmp: Path) -> None:
     """F189a: a scroll jump that a press causes glides (Talk's end, a field to look at, the slash menu's row); calm() makes
     it instant; a refresh, a reply, a view's own place, the first load and typing never glide."""
@@ -579,4 +640,4 @@ def test_page_parts_c41a(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_style_f83), in_tmp(test_page_parts_c41a)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_page_parts_c41a)]))

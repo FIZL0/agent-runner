@@ -16,7 +16,7 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import pitch, plan as P, plansync, plat, session_theme
+from agent_runner import control_settled, pitch, plan as P, plansync, plat, session_theme
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.control_settled import LEAD  # F160: how the runner's own typed line starts
 from agent_runner.config import RUNNER, runner_cmd
@@ -992,6 +992,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
             if not C.plan_external:
                 git('checkout', '-q', '--', rel)
             return ''
+        control_settled.filed(C, [tid], {'n': n, 'sid': sid})  # F209a: reopened, it is about its question
         return tid
     finally:
         hold.close()

@@ -116,3 +116,5 @@ const TALK_SET={read:true,voice:'',mic:'tap',auto:false};
 function talkSetParse(text){let o;try{o=JSON.parse(text||'{}')}catch(e){o={}}
   if(!o||typeof o!=='object')o={};
   return{read:o.read!==false,voice:typeof o.voice==='string'?o.voice:'',mic:o.mic==='hold'?'hold':'tap',auto:o.auto===true}}
+/* F189b: what a fold shows, in one box that its button reveals; k: its key */
+const foldIn=(k,h)=>`<div class="foldin" data-k="fold:${E_(k)}">${h}</div>`;

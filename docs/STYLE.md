@@ -171,7 +171,9 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   Without View Transitions, with the keyboard open, or where focus must move in the tap (`about()`, new chat),
   `viewSlide()` slides the new view in. A press during a View Transition ends it and lands on what is there, and
   refreshes wait while it runs, as for a press. The real session's frame slides whole; nothing animates inside the
-  terminal. Another view (Home, Plan...) fades in and rises 10px.
+  terminal. Another view (Home, Plan...) fades in and rises 10px. A concept's page in the Home Screen app
+  slides in from the right and back out, out of reach at once (`conceptOpen()`, `conceptClose()`); a new Talk chat's
+  view fades in and rises. The outbox popup fades out too (`popOut()`).
 - **Sending.** Your message springs out of the message box to its place in Talk and in a starting chat (`sentFrom()`).
   To a real session, a copy of the bubble leaves the box upward and fades (`sendFly()`); the session itself draws it.
 - **Talk.** A new reply's blocks fade in one after another. When a reply grows, only the added words fade
@@ -181,7 +183,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   moves it from there to its new place after (FLIP, `--spring`). A card or row that left collapses; its copy has no
   `data-`, ids or typed words, takes no pointer events and is `aria-hidden`, so it reads as gone at once. A new one fades
   in and rises 14px (`enter()`, which remembers when a key was born, so a redraw mid-way continues it). No glide when the
-  view changed, while typing in a field of that list, or for more than 8 leaving at once (the whole list changed).
+  view changed, while typing in a field of that list (unless a fold's press asked, see Folds), or for more than 8 leaving at once (the whole list changed).
 - **Counts and states.** A count rolls (`roll()`, class `.roll`): up when it grew, down when it fell. An element
   with `data-roll` and its words in `data-v` does this; any other state word that changed fades in. The state pill rolls and morphs from its old width. The message box grows and shrinks by a glide (`grow()`).
 - **Press.** Buttons, chips and rows scale down a little while pressed, and spring back when let go (`--spring`).
@@ -191,7 +193,17 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   touch or wheel on the box stops it (`scrollStop()`); another view or sheet ends it. Everything else jumps at once:
   first load, a refresh (`keepScroll()`), Talk following a reply (a glide under way is left to reach the end), `kbReveal()`
   while typing, a view's or sheet's own place, a new Talk chat, a notice's row (`noticeRoom()`), and all of it under `calm()`.
-- **Drawer and sheet.** They open and close on `--spring-soft`. Released by a finger, they go on from where they are
+- **Folds.** A fold (a button with `aria-expanded`) wraps what it shows in `foldIn(key, html)`, a `.foldin` box with its
+  `data-k`. A press on one, or on any button of the sheet, sets `MO.folded`; for the next `--dur-spring` all the motion it
+  causes is on `--spring-soft` (`folding()`, `FOLD_MO`), also over a redraw, so words that load in that time go on too,
+  and later ones for the fold that is open. `enter()` reveals the box with a clip from its button, `glide()` moves what
+  stands after it, `foldEdge()` moves the card's lower edge (`clip-path`; room is kept by padding until it ends), and
+  `leave()` closes a copy of it that goes with its button. `sheetMoves()` does the same in the sheet with its edges
+  (`shotEdges()`). It works with a field in use too, since a press asked for it. Without a press (a refresh) the Lists
+  rule holds. A chat row's buttons (three dots, touch) slide in and out (`rowExpand`, `rowActsOut`), and the session's
+  key row slides in and out while the frame follows (`keysToggle`). Instant under `calm()`.
+- **Drawer and sheet.** They open and close on `--spring-soft`. A sheet that takes another's place moves its edges from
+  there and its words fade in (`sheetOver()`); its scroll is at the top at once. Released by a finger, they go on from where they are
   with the finger's speed (`springRun()`, frames from `springFrames()`). A finger can catch one mid-way, and a flick
   closes a sheet even when it is short.
 - **Pictures.** A picture in the Needs you sheet opens out of its thumbnail and goes back into it (`shotGo()`:

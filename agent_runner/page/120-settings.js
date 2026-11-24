@@ -60,10 +60,10 @@ function settingRow(k,o={}){
     ${hasParts(k)&&!o.readonly?partsField(k,side,true):''}
     ${busy.map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
     ${overSays(k)?`<div class="small">${esc(overSays(k))}</div>`:off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
-    ${open?`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
+    ${open?foldIn('set:'+id,`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
       ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side)}
-      <div class="btns">${onRow(k)||id==='run.slots'?'':`<button class="btn pri" data-setsave="${side}" data-id="${e}">${side==='device'?'Save on this device':'Save for everyone'}</button>`}<button class="btn" data-setmore="${e}">More…</button></div>`}`:''}
-    ${o.reset?`<div class="btns">${resetBtn(k)}</div>`:''}</div>`;
+      <div class="btns">${onRow(k)||id==='run.slots'?'':`<button class="btn pri" data-setsave="${side}" data-id="${e}">${side==='device'?'Save on this device':'Save for everyone'}</button>`}<button class="btn" data-setmore="${e}">More…</button></div>`}`):''}
+    ${o.reset?`<div class="btns" data-k="reset:${e}">${resetBtn(k)}</div>`:''}</div>`;
 }
 const resetBtn=k=>(k.has_device?`<button class="btn" data-setreset="device" data-id="${esc(settingId(k))}">Reset on this device</button>`:'')+(k.has_project?`<button class="btn" data-setreset="project" data-id="${esc(settingId(k))}">Reset for everyone</button>`:'');
 /* the two rows that pick the models of a few kinds at once: [models.kinds] */
@@ -78,7 +78,7 @@ function kindsRow(g,k){
     <select class="fld setpick" data-kinds="${g.id}" aria-label="${g.name}">${now?'':'<option value="" selected>Mixed</option>'}${ms.map(m=>`<option ${m===now?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
     ${S.ob.filter(x=>x.set&&x.set.part===g.id).map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
     ${k.has_device?`<div class="small">${k.has_project?'This device overrides what everyone has':'Saved on this device only'}</div>`:''}
-    ${open?`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies when the run restarts.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`:''}</div>`;
+    ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies when the run restarts.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`):''}</div>`;
 }
 function saveKinds(gid,model){
   const k=settingOf('models.kinds'), g=KINDS_ROWS.find(x=>x.id===gid);if(!k||!g||!model)return;
@@ -94,7 +94,7 @@ function setGroup(d,g,ks,o){
 }
 function setFold(id,name,about,body){
   const open=!!S.setOpen['#'+id];
-  return `${card(`<button class="fold setname" data-setopen="#${id}" aria-expanded="${open}"><span class="grow"><b>${name}</b><span class="small">${about}</span></span><span class="chev">${I.chev}</span></button>`,'',`data-k="setfold:${id}"`)}${open?body():''}`;
+  return `${card(`<button class="fold setname" data-setopen="#${id}" aria-expanded="${open}"><span class="grow"><b>${name}</b><span class="small">${about}</span></span><span class="chev">${I.chev}</span></button>`,'',`data-k="setfold:${id}"`)}${open?foldIn('#'+id,body()):''}`;
 }
 function settingsHTML(){
   const d=S.set&&S.set.tables?S.set:null, q=String(S.f.setq||'').trim().toLowerCase();

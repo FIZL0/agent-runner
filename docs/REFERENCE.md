@@ -167,7 +167,10 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   server have no number and are not covered; a message whose reply had begun before the limit is not held. Not tried
   against a real limit yet: it was checked against transcripts only (the real ones of 2026-11-22 were read).
 - **Items settled elsewhere**: a control session about a task or a Needs you item (its title starts with the id, or it was
-  opened from that item: the first message of the chat gives it) is told, once per change, when a command settles or changes
+  opened from that item: the first message of the chat gives it; or it filed the item itself: a concept, with its build task, by
+  `plan concept`, a `plan block ID "DECIDE: …"`, or its own open question, which the run filed when it
+  closed the chat, once that is open again; kept per session id in `<notes>/settled/<session id>.filed`, so another
+  session that gets the same number is not it) is told, once per change, when a command settles or changes
   that item: plan drop, change, edit, confirm, approve, revise, shelve, unshelve, restore or unblock; a tick of an item under
   Needs you; `sheet`; pitch approve or no; or the run's undo. That holds whether the command runs from the run page, the TUI
   or a terminal. The run types one line into the session: `From the runner, not the person: R81 was dropped at 13:28 by c4:
@@ -179,7 +182,8 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   person's message: it is never held and not counted for the idle close (Claude's reply to it is activity,
   as any turn is; a `DECIDE:` line that still stands is repeated in it, as the needs guide says). An ordinary landing says nothing. An item a live
   chat waits on under Needs you (`waits.json`) that leaves Needs you with no command is told about two minutes after, as are
-  changes no command announces (a pulled plan, a hand edit). Limits: sessions open in a terminal with no hidden shim, and
+  changes no command announces (a pulled plan, a hand edit). When a concept and its build task leave Needs you with no command,
+  one line is typed, not two. Limits: sessions open in a terminal with no hidden shim, and
   those started from the apps' control server, are not told; events older than a day are dropped; a run must be up. Not tried
   with real Claude sessions: typed-in delivery, a message arriving mid-turn, and how the transcript records it were tested
   only against made-up transcripts.
