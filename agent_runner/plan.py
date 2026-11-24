@@ -21,7 +21,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  --last: at the end of Next, with `after: all above` (below)
                                  add V [TEXT] [--now]: a release (below); --alone: it runs alone (below)
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
-                                 a slot running it is stopped, its branch deleted unmerged (B19)
+                                 a slot running it is stopped, its branch deleted unmerged (B19). The last open
+                                 part of a split task: that ticks if a part landed, else is one whole task again
     ./run plan restore <ID> [WHERE]   undo a mistaken tick or drop: back from DONE.md as open [ ], same id, text
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
@@ -323,21 +324,36 @@ def subtasks(tid: str, line: str, ids) -> set[str]:
     return {t for t in ids if t != tid and (child(tid, t) or t in named)}
 
 
-def _close_parents(ls: list[str], dl: list[str]) -> None:
+def _dropped(ls: list[str], i: int) -> bool:
+    """Whether the closed task at ls[i] was dropped (`drop` noted it), so it never landed."""
+    return any(DROPPED in l for l in _item_block(ls, i))
+
+
+def _close_parents(ls: list[str], dl: list[str]) -> list[str]:
     """Tick each `(split into …)` parent whose subtasks are all done (in DONE.md, or ticked here). Only a
-    parent that says it was split: a task whose ids merely look like children is left to its own session."""
+    parent that says it was split: a task whose ids merely look like children is left to its own session.
+    B197: when every subtask was dropped none of it was done, so the parent stays, its `(split into …)` taken
+    off: one whole task again (a BLOCKED on it stays). Returns the ids of those."""
+    whole: list[str] = []
+    landed = {m.group(3).rstrip('.') for x in (dl, ls) for i, l in enumerate(x)
+              if (m := ITEM.match(l)) and not m.group(1) and m.group(2) == 'x' and not _dropped(x, i)}
     boxes = {m.group(3).rstrip('.'): m.group(2) for m in map(ITEM.match, dl + ls) if m and not m.group(1)}
     for i, l in enumerate(ls):
         m = ITEM.match(l)
         if m and not m.group(1) and m.group(2) != 'x' and SPLIT.search(l):
             kids = subtasks(m.group(3).rstrip('.'), l, boxes)
             if kids and all(boxes[k] == 'x' for k in kids):
-                _mark(ls, i, 'x')
+                if kids & landed:
+                    _mark(ls, i, 'x')
+                else:
+                    ls[i] = re.sub(r'\s*' + SPLIT.pattern, '', l)
+                    whole.append(m.group(3).rstrip('.'))
+    return whole
 
 
 def archive(todo, done) -> int:
     """Move every top-level [x] task (with its sub-lines) from todo into done, under the same ### heading;
-    a split parent goes too once its subtasks are all done.
+    a split parent goes too once its subtasks are all done, at least one of them landed.
 
     Needed because a session or a human sometimes ticks by hand, and a merge then brings that tick in
     without moving the line. Running it is always safe.
@@ -345,7 +361,7 @@ def archive(todo, done) -> int:
     ls, dl, sec, moved = list(lines(todo)), list(lines(done)), '', 0
     if not dl:
         dl = ['# DONE — the archive', '']
-    _close_parents(ls, dl)
+    whole = _close_parents(ls, dl)
     i = 0
     while i < len(ls):
         if _level(ls[i]):
@@ -370,6 +386,7 @@ def archive(todo, done) -> int:
         moved += 1
     if moved:
         _write(done, dl)
+    if moved or whole:
         _write(todo, ls)
     return moved
 
@@ -392,11 +409,21 @@ def tick(tid: str, todo=None, done=None, plan_dir=None) -> int:
     return archive(todo, done)
 
 
-def drop(tid: str, why: str, todo=None, done=None) -> int:
+def _split_ids(todo) -> set[str]:
+    """Ids of the tasks in `todo` not done that say `(split into …)`."""
+    ls = lines(todo)
+    return {tid for _, box, tid, _, i in iter_tasks(ls) if box != 'x' and SPLIT.search(ls[i])}
+
+
+def drop(tid: str, why: str, todo=None, done=None) -> list[str]:
     """Close a task nobody will do (a duplicate, work another task overtook): noted, then archived as ticked,
-    so its id stays used and what waits on it reopens. """
+    so its id stays used and what waits on it reopens. Returns the split parents it made one whole task again:
+    this was their last open part and none landed (B197)."""
+    todo, done = ensure(todo, done)
+    was = _split_ids(todo)
     note(tid, f'dropped: {why}', todo=todo)
-    return tick(tid, todo, done)
+    tick(tid, todo, done)
+    return sorted(was & open_ids(lines(todo)) - _split_ids(todo))
 
 
 DROPPED = ' — dropped: '
@@ -2855,8 +2882,10 @@ def _p_tick(a, x):
 
 
 def _p_drop(a, x):
-    drop(a.id, _text(a))
-    return x.say(f'dropped {a.id}')
+    whole = drop(a.id, _text(a))
+    return x.say(f'dropped {a.id}' + ''.join(
+        f'\nno part of {k} landed, so {k} is one whole task again (`{PROG} {k}`: edit it if its text lacks the work '
+        f'the parts held)' for k in whole))
 
 
 def _p_restore(a, x):
