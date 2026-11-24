@@ -93,6 +93,26 @@ def test_reap():
         check(not run.merging and not run.tried, 'neither merged nor tried')
 
 
+def test_answered_ask_and_tell():
+    print('B767: the loop tries a task answered before its block again, and keeps a tell no slot could take')
+    said: list = []
+    run = new_run()
+    run.tried = {'T1', 'T2'}
+    with ExitStack() as st:
+        stubs(st, said, block_asks=lambda branch, tried: tried.discard('T1'), watch_ci=None, watch_issues=None, stopping=True,
+              keep_claims=None, take_keys=None, queued={})
+        st.enter_context(mock.patch.object(loop.undo, 'tick', mock.Mock()))
+        run.after()
+    eq(run.tried, {'T2'}, 'answered: back in the pool')
+    with ExitStack() as st:
+        m = stubs(st, said, tell_requests={'T9': {'how': 'tell', 'text': 'use red'}}, tell_answer=None)
+        st.enter_context(mock.patch.object(loop, 'MUX', argparse.Namespace(typed=False)))
+        st.enter_context(mock.patch('agent_runner.asks.log', said.append))
+        loop.tells({}, {})
+    eq(m['tell_answer'].call_args.args[:2], ('T9', False), 'told false')
+    check('T9: not told: use red' in said, 'its words are in the run log', said)
+
+
 def test_reap_finish_and_ask():
     print('Run.reap (F102): a finish logs its summary and merges; an ask parks the task instead of merging it')
     said: list = []
@@ -231,7 +251,7 @@ def test_stop_ends_own_b144():
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         R.init(make(Path(t)))
-        return report([test_state, test_reap, test_reap_finish_and_ask, test_fill, test_end, test_stop_ends_own_b144])
+        return report([test_state, test_reap, test_answered_ask_and_tell, test_reap_finish_and_ask, test_fill, test_end, test_stop_ends_own_b144])
 
 
 if __name__ == '__main__':

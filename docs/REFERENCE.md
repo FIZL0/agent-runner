@@ -599,7 +599,7 @@ pictures under `<notes>/asks/ID/`. A `done --blocked` line over 200 characters t
 file is not refused: it says so once, names the file, and blocks. The file and its pictures are removed when the item
 is answered (confirm, change, unblock), the task is ticked or dropped, it blocks again (any block but `done --blocked`
 and `run ask`, which may have written it), or a new session starts on the task. A block that waits on a task first and
-then returns to the person keeps the file.
+then returns to the person keeps the file. `plan confirm ID` and `plan change ID` also settle an ask the run has not blocked yet (its block is held, e.g. by a merge): the answer is noted, the item never shows under Needs you, and the session resumes with the answer.
 
 The task's pick sheet (`<notes>/sheets/ID.json`) goes in the same cases, so a later `sheet ID --go` cannot run an old one; one written just before its own block (`done --blocked`, `run ask`) is kept, and a second `done --blocked` while still blocked removes a sheet not written since the last block, whether or not the ask file goes, and a block that waits on a task first keeps it.
 
@@ -812,7 +812,7 @@ still code. Tasks that are not research are unchanged.
   overtaken): archived with `dropped: WHY`, so its id stays used and what waits on it reopens. Dropping every part of a `(split into …)` task does not tick it: see A12 below.
 - Reaching a running agent: `plan tell ID TEXT` types `A note on your task, from the person running this run: TEXT` into
   the session of the slot running ID, through its shim's FIFO, or on Windows its named pipe (Claude Code queues it for
-  its next turn while busy), and edits no plan; it fails when no slot of a run here runs ID. `plan change ID TEXT` on a
+  its next turn while busy), and edits no plan. It fails when no slot of a run here runs ID, and then drops nothing: if the task asks the person (its `run ask` parked in `<notes>/ID.ask`, the block committed or not, or any block waiting on a person) it prints the question and the exact `plan confirm ID "TEXT"` or `plan change ID "TEXT"` to run if the text answers it; otherwise the `plan note ID` to run. A tell never answers by itself, and one the run found no slot for is kept in the run log (`ID: not told: TEXT`). `plan change ID TEXT` on a
   running task notes the change in the plan as usual, then types `Your task changed: TEXT` into it, and the agent works
   on. Both print `told s1 (ID)` once the text is in. They go through the run like a halt: a request in
   `<notes>/tell/<ID>.json`, answered in `<notes>/tell/<ID>.done`. With no live session (Windows before 1809 or a stream
