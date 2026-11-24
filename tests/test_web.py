@@ -678,6 +678,20 @@ def test_new_chat(tmp: Path) -> None:
         srv.stop()
 
 
+def test_page_copy_options(tmp: Path) -> None:
+    """B203: the run page copy shows a DECIDE's options after its ask, and no answers for any other item."""
+    from agent_runner import page_copy as PC, plan as P
+    from agent_runner.status import waiting_ok
+    fake_repo(tmp)
+    P.block('F1', 'DECIDE: Which look? [Small / A<b (recommended)]', todo=S.C.todo)
+    P.block('B2', 'BLOCKED: log in', todo=S.C.todo)
+    needs = U.needs_rows(waiting_ok(), dt.datetime.now())[0]
+    copy = PC.page_copy_html({'needs': needs})
+    check('Which look? - reply with your answer</span><span>A&lt;b (recommended) / Small</span><span class="d">' in copy,
+          "a DECIDE's options are drawn, the recommended first, escaped", copy)
+    check('Log in - reply' in copy and 'Done' not in copy, "a blocked item's Done is not an option", copy)
+
+
 def test_page_copy_publish(tmp: Path) -> None:
     """B122: a run change publishes the run page copy through a one-shot `claude -p` with only Artifact and Read,
     never by typing into a control session's pane; at most once every PAGE_COPY_EVERY s, only when the page
@@ -5533,7 +5547,7 @@ if __name__ == '__main__':
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
-                           in_tmp(test_new_chat), in_tmp(test_page_copy_publish), in_tmp(test_parked), in_tmp(test_shelved_f184),
+                           in_tmp(test_new_chat), in_tmp(test_page_copy_publish), in_tmp(test_page_copy_options), in_tmp(test_parked), in_tmp(test_shelved_f184),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_news_f149), in_tmp(test_login_banner_f126a),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),

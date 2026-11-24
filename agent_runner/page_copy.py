@@ -90,6 +90,13 @@ a{color:var(--blue)}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;col
 </style>'''
 
 
+def need_opts(n: dict) -> str:
+    """B203: a DECIDE's options after its ask (F181c takes their bracket off it), as its answer buttons say them."""
+    if n.get('label') != 'DECIDE' or not n.get('options'):
+        return ''
+    return f'<span>{_h(" / ".join(a["label"] for a in n.get("answers") or []))}</span>'
+
+
 def page_copy_html(snap: dict) -> str:
     """The run page copy, from F65's snapshot `snap`: the run page's five panels and its log, read-only, with
     the terminal and the chat as session links (no token, no address of this machine)."""
@@ -117,7 +124,7 @@ def page_copy_html(snap: dict) -> str:
              + (f'<span class="r">{_h(q.get("pri"))}</span>' if q.get('pri') not in (None, '', 'normal') else '')
              + '</div>' for q in snap.get('queue') or [] if not q.get('release')]
     needs = [f'<div class="row"><span class="y">{_h(n.get("id"))}</span><span>{_h(n.get("ask") or n.get("title"))}'
-             f'</span><span class="d">{_h(n.get("age"))}</span>{_a(n.get("url") or "", "page")}</div>'
+             f'</span>{need_opts(n)}<span class="d">{_h(n.get("age"))}</span>{_a(n.get("url") or "", "page")}</div>'
              for n in snap.get('needs') or []]
     concepts = [f'<div class="row"><span class="m">{_h(c.get("id"))}</span><span>{_h(c.get("title"))}</span>'
                 f'{_a(c.get("url") or "", "options")}</div>' for c in snap.get('concepts') or []]
