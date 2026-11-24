@@ -35,9 +35,11 @@ LEFT_AT = [0.0]
 TRIES = 3
 ID = r'(?:[A-Z]+\d+[a-z0-9]*|pitch\d+)'
 TITLE_ID = re.compile(rf'({ID})(?=[\s:,.;·]|$)')
-# the first message of a chat opened from an item: ui_model.need_chat_text, concept_chat_text, answer; or, from a page
-# kept open from before B219a, 'About concept K1 (title): words'
-OPENED = re.compile(rf"This chat is about (?:concept )?({ID}) '|(?:About concept )?({ID})(?: \([^\n]*\))?: ")
+# the first message of a chat opened from an item: ui_model.need_chat_text, concept_chat_text, answer; or 020-chats.logic.js
+# compose(): 'About F1 (title): words', 'About R81 (title), which needs me: words', and, from a page kept open from before
+# B219a, 'About concept K1 (title): words'
+OPENED = re.compile(rf"This chat is about (?:concept )?({ID}) '"
+                    rf"|(?:About (?:concept )?)?({ID})(?: \([^\n]*\))?(?:, which needs me)?: ")
 ASKS_PERSON = ('AskUserQuestion', 'ExitPlanMode')  # typed text would answer these dialogs
 # the plan commands that settle or change an item, and what is said of them
 VERBS = {'drop': 'was dropped', 'change': 'was changed', 'edit': 'was changed', 'confirm': 'was answered',

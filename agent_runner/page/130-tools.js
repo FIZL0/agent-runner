@@ -21,8 +21,8 @@ async function toolPost(body,name){
 const toolOf=n=>S.tools&&S.tools.tools.find(t=>t.name===n&&t.source==='device');
 const toolField=k=>`dev:${k}`, toolVal=k=>S.f[toolField(k)]||'';
 const SECRET_FIELDS=['key','passphrase','password'].map(k=>'dev:'+k);
-/* what is typed in a device's sheet goes when it closes, a secret first of all */
-function toolForget(){for(const k of Object.keys(S.f))if(k.startsWith('dev:'))delete S.f[k];for(const el of $('sheet').querySelectorAll('[data-f^="dev:"]'))if(el.type!=='checkbox')el.value='';S.secretOpen=''}
+/* what is typed in a device's sheet goes when it closes, a secret first of all; emptied fields are drawn again (B222b) */
+function toolForget(){for(const k of Object.keys(S.f))if(k.startsWith('dev:'))delete S.f[k];for(const el of $('sheet').querySelectorAll('[data-f^="dev:"]')){if(el.type!=='checkbox')el.value='';$('sheet')._h=''}S.secretOpen=''}
 const SECRET_NAME={key:'Private key',passphrase:'Key passphrase',password:'Password'};
 const toolSaid=n=>{const s=(S.toolSaid||{})[n];return s?`<div class="small ${s.ok?'':'v-bad'}" role="status">${esc(s.out)}${s.https?` <a href="${esc(s.https)}">${esc(s.https.split('?')[0])}</a>`:''}</div>`:''};
 const toolBusy=(op,n,what)=>S.toolBusy===`${op}:${n||''}:${what||''}`?' busy':'';
@@ -54,11 +54,12 @@ function toolsHTML(){
     ${toml.length?`<div class="sec">From runner.toml<span class="ln"></span></div>${toml.map(toolCard).join('')}`:''}
     <div class="small">Devices belong to this machine and its projects share them. Keys and passwords stay out of every chat, but agents run as the same user here, so this is no wall against an agent that goes looking.</div></div>`;
 }
-const devText=(k,label,o={})=>`<label class="small">${label}${o.area?`<textarea class="fld" rows="${o.area}" data-f="${toolField(k)}" ${o.hint?`placeholder="${o.hint}"`:''}>${esc(toolVal(k))}</textarea>`:`<input class="fld" data-f="${toolField(k)}" value="${esc(toolVal(k))}" ${o.num?'inputmode="numeric"':''} ${o.hint?`placeholder="${o.hint}"`:''} autocomplete="off" autocapitalize="off" spellcheck="false">`}</label>`;
+/* B222b: no typed word is in a device sheet's markup: keepFields() puts it back */
+const devText=(k,label,o={})=>`<label class="small">${label}${o.area?`<textarea class="fld" rows="${o.area}" data-f="${toolField(k)}" ${o.hint?`placeholder="${o.hint}"`:''}></textarea>`:`<input class="fld" data-f="${toolField(k)}" ${o.num?'inputmode="numeric"':''} ${o.hint?`placeholder="${o.hint}"`:''} autocomplete="off" autocapitalize="off" spellcheck="false">`}</label>`;
 const devPick=(k,label,opts)=>`<label class="small">${label}<select class="fld" data-f="${toolField(k)}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===toolVal(k)?'selected':''}>${esc(l)}</option>`).join('')}</select></label>`;
 SHEETS.device=()=>{
   const edit=S.sheetArg, d=S.tools||{aliases:[]}, ssh=toolVal('kind')!=='other', n=edit||'';
-  return `<h2>${edit?`Edit ${esc(edit)}`:'Add a device'}</h2>${devText('name','Name, as tasks name it',{hint:'macmini'})}${edit&&toolVal('name')!==edit?'<div class="small">A task that needs it keeps the old name until it is edited.</div>':''}
+  return `<h2>${edit?`Edit ${esc(edit)}`:'Add a device'}</h2>${devText('name','Name, as tasks name it',{hint:'macmini'})}${edit?'<div class="small">If you rename it, a task that needs it keeps the old name until it is edited.</div>':''}
     ${devText('description','What it is, what it is for, and its rules (agents read this; no secrets here)',{area:4})}
     ${devPick('kind','How agents reach it',[['ssh','SSH'],['other','Another way (a command or address)']])}
     ${ssh?`${d.aliases.length||toolVal('alias')?devPick('alias','Host',[['','Its own host, below'],...[...new Set([...(toolVal('alias')?[toolVal('alias')]:[]),...d.aliases])].map(a=>[a,`${a}, in ~/.ssh/config`])]):''}${toolVal('alias')?'<div class="small">Signs in as ~/.ssh/config says. No secret is copied.</div>':devText('host','Host name or address',{hint:'macmini.local'})+devText('user','User')+devText('port','Port',{num:true,hint:'22'})}`
