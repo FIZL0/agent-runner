@@ -120,9 +120,9 @@ function settingsDraw(el,h){
   if(el._h!==h&&el._gone)for(const g of el._gone)g.remove();  // leaving() puts them back
   return fieldHTML(el,h,'setq');
 }
-/* the x in the search: the full list, and focus in the field */
-function setqClear(){
-  const at=()=>document.querySelector('[data-f="setq"]'), was=at();S.f.setq='';if(was)was.value='';
+/* the x in a search (Settings', and F212 the Plan view's): the full list, and focus in the field */
+function setqClear(f='setq'){
+  const at=()=>document.querySelector(`[data-f="${f}"]`), was=at();S.f[f]='';if(was)was.value='';
   render(true);
   const el=at();if(el&&document.activeElement!==el)kbFocus(el);
 }

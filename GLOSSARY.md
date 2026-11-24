@@ -781,3 +781,10 @@ _Said_: pull down past the top to refresh
 _On screen_: Let go to refresh; Refreshing
 _In code_: pullPane, pullStart, pullMove, pullEnd, PULL_AT
 _Avoid_: swipe to refresh, hot reload
+
+**Plan search**:
+The Plan view's field that finds tasks by words or a task id, open, parked and done ones, and shows the matches in place of the groups while it holds text.
+_Said_: a search in plan
+_On screen_: Find a task
+_In code_: plan_search, planFound, planq
+_Avoid_: task filter, lookup

@@ -126,6 +126,7 @@ function planWords(q,sessions){
   if(q.state==='tool'&&q.tool_wait)return q.tool_wait.charAt(0).toUpperCase()+q.tool_wait.slice(1);  // F168
   if(q.state==='shelved')return 'Shelved until you bring it back';  // F184
   if(q.state==='parked')return "Parked: a run won't start it";  // B118: never 'Ready'
+  if(q.state==='done'||q.state==='dropped'||q.state==='open')return q.state.charAt(0).toUpperCase()+q.state.slice(1);  // F212: a search hit
   return 'Ready to start when a slot is free';
 }
 /* what the message box sends: the About line, your words, then the attachments' paths on this machine */

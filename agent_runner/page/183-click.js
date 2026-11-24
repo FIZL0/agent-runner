@@ -108,6 +108,8 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-setreset]')){resetSetting(x.dataset.id,x.dataset.setreset);return}
   if(x=q('[data-setstep]')){stepSetting(x.dataset.id,+x.dataset.setstep);return}
   if(x=q('[data-setmore]')){openSheet('setting',x.dataset.setmore);return}
+  if(q('[data-planqclear]')){setqClear('planq');return}  // F212
+  if(q('[data-planqload]')){PQ.err='';planLoad();render(true);return}
   if(q('[data-setqclear]')){setqClear();return}
   if(q('[data-setchanged]')){S.setChanged=!S.setChanged;render(true);return}
   if(x=q('[data-thread]')){const n=x.dataset.thread;return viewGo(()=>{S.ctx=null;open(n)},n===S.thread?null:n)}

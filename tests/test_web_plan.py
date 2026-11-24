@@ -27,6 +27,7 @@ from agent_runner import config as CF  # noqa: E402
 from agent_runner import state as S  # noqa: E402
 from agent_runner import ui_model as U  # noqa: E402
 from agent_runner import web as W  # noqa: E402
+from test_web_sheet import DOM  # noqa: E402
 from _web import TODO, fake_repo, get, post, LOGIC_DRIVER, logic_js, in_tmp  # noqa: E402
 
 
@@ -422,8 +423,8 @@ const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g
 const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1);
 const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
 const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
-const S = {ob: [], taskOpen: {}, sure: null, snap: null};
-const no = () => '', env = {S, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
+const S = {ob: [], taskOpen: {}, sure: null, snap: null, f: {}};
+const no = () => '', env = {S, planField: no, planWant: no, planAsk: no, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
   ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}, upNext: () => S.snap.queue, LOGO: no, greeting: no, box: no, keysLine: no, agentCard: no, esc: no};
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
   + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + ['planCard', 'nextReleaseCard', 'relCard', 'newReleaseCard', 'statusHTML', 'planHTML', 'homeHTML'].map(f => grab(`function ${f}(`)).join('');
@@ -530,5 +531,93 @@ def test_run_card_b763a(tmp: Path) -> None:
         check(f'class="btn acc" data-ctl="{k}"' in cards[i], f'{k} is the main button', cards[i])
 
 
+SEARCH_DRIVER = DOM + r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1), slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
+const S = {f: {}, ob: [], taskOpen: {}, tasks: {}, sure: null, view: 'plan', snap: JSON.parse(process.argv[3])}, I = {chev: '', x: 'x'}, SHEETS = {};
+const card = (h, cls = '', attr = '') => `<div class="card" ${attr}>${h}</div>`, emptyCard = t => card(t), obCards = () => '', oldRunHTML = esc0 => esc0, releaseCard = () => '', nextReleaseCard = () => '', newReleaseCard = () => '';
+const controlOf = k => S.snap.controls.find(c => c.key === k), ctlBusy = () => false, ctlSure = () => '', actSure = () => '', MO = {}, HKEY = 'k', T = 't';
+const field = () => root.querySelectorAll('[data-f]').find(x => x.dataset.f === 'planq'), x = () => root.querySelectorAll('[data-planqclear]')[0];
+const ears = {}, n = null, body = root, document = {get activeElement() { return doc.activeElement }, querySelector: field, createElement: () => ({content: new Node(11, '#fragment'), set innerHTML(h) { this.content.innerHTML = h }}),
+  addEventListener: (k, f) => { (ears[k] = ears[k] || []).push(f) }};
+const kbFocus = e => e.focus(), $ = () => root, grow = () => {}, calls = []; let press, timers = [];
+const setTimeout_ = setTimeout, fetch = url => new Promise((ok, no) => calls.push({url, say: j => ok({json: async () => j}), fail: () => no(Error('down'))}));
+{ const setTimeout = f => timers.push(f), clearTimeout = i => { timers[i - 1] = null };
+eval(logic + line('const esc=') + line('const tq=') + slice('const actBtns=', '\n') + '\n' + slice('function setHTML(', '/* F83') + slice('function keepFields(', '/* a press under way')
+  + slice('function fieldHTML(', '/* F189b: a press in the sheet') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + grab('function planCard(') + grab('function parkedCard(') + grab('function shelvedCard(')
+  + slice('/* F212: the search', '/* F87: the Concepts view') + grab('function setqClear(') + line("document.addEventListener('input',") + slice("/* F114, F204a", "document.addEventListener('visibilitychange'")
+  + "function render() { const keep = keepFields(body), h = planHTML(); " + slice('const drew=', '\n').replace("!n&&S.view==='settings'?settingsDraw(body,h):", '') + " if (drew) keep() }"
+  + "press = q => { " + slice("if(q('[data-planqclear]'))", "if(q('[data-setqclear]'))") + " };"
+  + "Object.assign(globalThis, {render, openTask, PQ});"); }
+const type = v => { field().typed = v; field().writes = 0; field().focused = 0; field().selectionStart = 1; field().matches = s => s === '[data-f]'; ears.input[0]({target: field()}) };
+const due = () => { const l = timers.filter(Boolean); timers.fill(null); l.forEach(f => f()); return l.length }, tick = () => new Promise(r => setTimeout_(r, 5));
+const secs = () => root.all.filter(e => e.getAttribute('class') === 'sec').map(e => e.text), hit = (id, title, state) => ({id, title, state});
+const cards = () => root.querySelectorAll('[data-k]').map(e => e.dataset.k).filter(k => k.startsWith('task:')).map(k => k.slice(5));
+const none = {ok: true, open: [], parked: [], done: [], more: 0};
+(async () => {
+  const out = {}; render(); const f = field(); f.focus(); out.groups = [secs(), cards(), x().hasAttribute('hidden'), calls.length];
+  const kept = () => [field() === f, doc.activeElement === f, f.writes, f.focused];
+  type('me'); type('merge &'); out.loading = [root.text.includes('Loading…'), kept(), calls.length, due(), calls.map(c => c.url), x().hasAttribute('hidden')];
+  type('merge'); due(); calls[1].say({...none, q: 'merge', open: [hit('B2', 'Fix <b>', 'open'), hit('F9', 'New & <i>one</i>', 'open')], parked: [hit('D3', 'Shelf', 'shelved'), hit('F83', 'Later', 'parked')], done: [hit('F0', 'Old <script>', 'done')], more: 2}); await tick();
+  calls[0].say({...none, q: 'merge &', open: [hit('F1', 'Late', 'open')]}); await tick();
+  out.found = [secs(), cards(), kept(), root.querySelectorAll('[data-ctl]').map(e => e.dataset.ctl + ' ' + e.dataset.tid), root.text, root.all.filter(e => ['script', 'i'].includes(e.nodeName)).length];
+  S.snap.at = 'later'; render(); out.same = due();
+  S.snap.queue = S.snap.queue.filter(q => q.id !== 'F1'); render(); out.moved = [due(), cards().length]; calls[2].fail(); await tick(); out.kept = [root.text.includes('Could not reach the run page.'), cards().length];
+  press(s => s === '[data-planqload]'); calls[3].say({...none, q: 'merge', done: [hit('F0', 'Old', 'done')], more: 1}); await tick(); out.again = [secs(), root.text.includes('1 more done task.'), root.text.includes('Could not')];
+  const p = openTask('F0'); out.url = calls[4].url; calls[4].say({ok: true, text: 'whole <text>'}); await p; out.fold = root.text.includes('whole <text>');
+  type('zzz'); due(); calls[5].say({...none, q: 'zzz'}); await tick(); out.none = [secs(), root.text];
+  type('zz'); due(); calls[6].fail(); await tick(); out.failed = [secs(), root.text];
+  press(s => s === '[data-planqclear]'); out.cleared = [secs(), cards(), S.f.planq, kept().slice(0, 2), due(), PQ.got];
+  type('q'); type('  '); out.blank = [secs(), due()];
+  type('late'); due(); type(''); calls[7].say({...none, q: 'late'}); await tick(); out.lateGone = [secs(), PQ.got];
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_search_f212(tmp: Path) -> None:
+    """F212: the Plan view's search: matches in place of the groups, the snapshot's own cards, no match, a failed read, a
+    late answer dropped, the groups back when it is emptied, and the field the same element through all of it."""
+    if not shutil.which('node'):
+        print('  (no node here: the Plan search script test is skipped)')
+        return
+    fake_repo(tmp)
+    q = [{'id': 'F1', 'title': 'Board', 'state': 'ready', 'acts': []},
+         {'id': 'B2', 'title': 'Fix <b>', 'state': 'ready', 'acts': ['queue_drop']},
+         {'id': 'F83', 'title': 'Later', 'state': 'parked', 'acts': ['queue_unpark']}]
+    snap = {'queue': q, 'shelved': [{'id': 'D3', 'title': 'Shelf', 'state': 'shelved', 'ask': 'Which?', 'acts': ['shelved_back']}],
+            'manage_releases': False, 'sessions': [], 'controls': U.controls()}
+    (tmp / 'search.js').write_text(SEARCH_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'search.js'), str(W.PAGE), json.dumps(snap)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node types in the search', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    groups = [['Queue', 'Parked'], ['F1', 'B2', 'F83', 'D3']]
+    still = [True, True, 0, 0]
+    eq(o['groups'], [*groups, True, 0], 'empty: the groups, no x, nothing asked')
+    eq(o['loading'], [True, still, 0, 1, ['plan-search?q=merge%20%26&t=t'], False],
+       'two words typed fast are one ask, with the words encoded and the key; the field is left alone, and has its x')
+    secs, cards, kept, acts, text, tags = o['found']
+    eq((secs, cards), (['Open', 'Parked', 'Done'], ['B2', 'F9', 'D3', 'F83', 'F0']), 'the matches, in the order found; a late answer is dropped')
+    eq(acts, ['shelved_back D3', 'queue_unpark F83'], "each with the snapshot's actions")
+    check('New & <i>one</i>' in text and 'Old <script>' in text and tags == 0, 'titles are escaped', text)
+    check('F0 · Done' in text and 'F9 · Open' in text and '2 more done tasks.' in text, 'what each is, and how many more', text)
+    eq(kept, still, 'the field is the same one')
+    eq(o['same'], 0, 'a refresh with the same tasks asks nothing')
+    eq(o['moved'][0], 1, 'one with other tasks asks again')
+    eq(o['kept'], [True, 5], 'and when that fails, it says so over what it had')
+    eq(o['again'], [['Done'], True, False], 'Try again asks again')
+    eq((o['url'], o['fold']), ('task/F0?t=t', True), "a done task's fold opens its text")
+    check(o['none'][0] == [] and 'No task matches.' in o['none'][1], 'no match says so', o['none'])
+    check(o['failed'][0] == [] and 'Could not reach the run page.' in o['failed'][1] and 'No task' not in o['failed'][1],
+          'a failed read says so, not that nothing matches', o['failed'])
+    eq(o['cleared'], [['Queue', 'Parked'], ['B2', 'F83', 'D3'], '', [True, True], 0, None], 'the x brings the groups back, with focus')
+    eq(o['blank'], [['Queue', 'Parked'], 0], 'and spaces are no search')
+    eq(o['lateGone'], [['Queue', 'Parked'], None], 'an answer after the field is emptied changes nothing')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_run_card_b763a)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_run_card_b763a), in_tmp(test_search_f212)]))
