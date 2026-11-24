@@ -257,13 +257,11 @@ where the remaining tokens go, by kind of tool call.
   every session loads against a 12 KB budget (`[plan] context_kb`).
 - **Order only what must be ordered.** An *in this order* section runs one task at a time; a plain
   section starts tasks side by side whenever their files don't overlap.
-- **Hand steps come as a wizard.** When an agent blocks on something only you can do (a login, a signing
-  certificate, a secret, a dashboard click), it also writes a step-by-step bash wizard, and `status` shows
-  `run: agent-runner wizard <ID>` under the item. The wizard opens each page, takes secrets with hidden
-  entry, writes `.env` or `gh secret`, asks before anything irreversible, and confirms the item when it
-  ends. Bare `agent-runner wizard` runs the one that waits, or lists them when there are several. Its
-  template comes from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering/wizard)
-  (MIT). `[run] wizards = false` turns it off.
+- **Hand steps go in the ask file.** When an agent blocks on something only you can do (a login, a signing
+  certificate, a secret, a dashboard click), it writes the steps, their links and commands, and the inputs it
+  needs to `<notes>/asks/<ID>.json`, and a secret goes to `<notes>/asks/<ID>.env`. Needs you shows them as
+  steps with buttons and fields, so you need no terminal. An old script left in `<notes>/wizards/` shows as
+  text steps and is never run.
 - **Choices come as a pick sheet.** When an agent needs you to choose (options, settings to change or keep),
   it publishes a page of plain questions with the recommended answers preselected, and Needs you shows one
   line with its link. Send stores your picks on the page (its artifact db), where the control session reads
