@@ -323,8 +323,9 @@ tokens in them. The file is optional, and it is gone once they answer, so write 
 
 When you block with `BLOCKED:` because of steps only a person can take (a login, a certificate or signing key, \
 a secret, a click in a third-party dashboard), write the steps, links, commands and inputs they have to do in that \
-file: a step is words or {{"text", "link", "cmd", "on"}}, and "inputs" lists what they give back (a secret goes in \
-under its own key). Write only steps you cannot do yourself, say only what you know of each page or command, checked \
+file: a step is words or {{"text", "link", "cmd", "on"}}, and "inputs" lists what they give back (a secret is only \
+named there; the person's answer carries its value). Here a step may hold a link or a command, though a plain step \
+has no file names or code. Write only steps you cannot do yourself, say only what you know of each page or command, checked \
 and not guessed, and put no secret in the file. Never tell the person to run a script. When they answer, the \
 reopening note gives you their values, and a secret is in {env} as NAME='value'."""
 
