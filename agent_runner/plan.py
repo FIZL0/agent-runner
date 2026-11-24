@@ -728,7 +728,10 @@ def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> 
     ls = list(lines(todo))
     i = _find(ls, tid)
     again = ITEM.match(ls[i]).group(2) == '~'
-    why = stamp_ask(one_line(why))
+    why = one_line(why)
+    if after:  # B211: a wait on a task that says BLOCKED: asks the person nothing; it reopens for an agent
+        why = re.sub(r'^\s*(?:BLOCKED:\s*)+(?=\S)', '', why)
+    why = stamp_ask(why)
     if after is None and asking(why):
         after = []  # it waits on a person (`asks`), not on a task its words happen to name
     if after is None:

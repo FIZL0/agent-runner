@@ -4843,13 +4843,15 @@ def test_person_check_after(repo: Path):
     todo = repo / 'plan/TODO.md'
     todo.write_text(todo.read_text(encoding='utf-8').replace(
         '### Stretch', '- [ ] **X7** upstream fix | files: x7.py\n- [ ] **R7** check it on Windows | files: r7.py\n'
-        '- [ ] **R8** check it on a Mac | files: r8.py\n- [ ] **R9** sign it | files: r9.py\n\n### Stretch'),
+        '- [ ] **R8** check it on a Mac | files: r8.py\n- [ ] **R9** sign it | files: r9.py\n'
+        '- [ ] **R10** check it on the phone | files: r10.py\n\n### Stretch'),
         encoding='utf-8')
     try:
         P.block('R7', 'CONFIRM: run it on Windows and say what you saw', todo=todo)
         P.block('R7', 'needs X7 first', todo=todo, after=['X7'])  # the blocked ask itself sent to wait
         P.block('R9', 'BLOCKED: needs the signing key', todo=todo)
         P.block('R9', 'needs X7 first', todo=todo, after=['X7'])
+        P.block('R10', 'BLOCKED: the phone lock was held by X7, reopen when X7 lands', todo=todo, after=['X7'])
         P.block('R8', 'DECIDE: zip or dmg?', todo=todo)
         P.change('R8', 'wait for X7, then ask me again', todo=todo)  # R6's route: change reopens it ...
         git(repo, 'commit', '-qam', 'R8 changed')
@@ -4873,7 +4875,8 @@ def test_person_check_after(repo: Path):
         check(all(t in r.stdout for t in ('R7', 'R8', 'R9')), 'plan waiting lists them', r.stdout + r.stderr)
         picked = [t[0] for t in R.tasks('main')]
         check(not {'R7', 'R8', 'R9'} & set(picked), 'and no slot picks them', picked)
-        has(git(repo, 'log', '-1', '--format=%s'), r'^Plan: reopen R7, R8, R9', 'the plan edit is committed')
+        check('R10' in picked and 'R10' not in a, 'B211: a wait on X7 labelled BLOCKED: reopens for an agent', picked)
+        has(git(repo, 'log', '-1', '--format=%s'), r'^Plan: reopen R7, R8, R9, R10', 'the plan edit is committed')
         eq(P.confirm('R7', 'works', todo=todo), 'confirmed and ticked R7', 'the person answers it as before')
     finally:
         git(repo, 'reset', '-q', '--hard', head)
