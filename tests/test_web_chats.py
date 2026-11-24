@@ -1228,7 +1228,7 @@ def test_new_chat_view_f172(tmp: Path) -> None:
 SWIPE_DRIVER = r"""
 const fs = require('fs'), page = fs.readFileSync(0, 'utf8');
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
-const on = {}, els = {}, S = {}, PD = {}, render = () => {}, getComputedStyle = () => ({overflowX: 'auto'});
+const on = {}, els = {}, S = {}, PD = {}, HB = '', render = () => {}, getComputedStyle = () => ({overflowX: 'auto'});
 let DR = null, noClick = false, skip = '';
 const dragEnd = () => { DR = null }, closeSheet = () => { S.sheet = '' };
 const cls = () => ({add() {}, remove() {}});
@@ -1242,7 +1242,7 @@ const fire = (t, x, y, o = {}) => { let stopped = false;
   on[t].forEach(f => f({target: el, touches: Array(o.n || (t === 'touchstart' || t === 'touchmove' ? 1 : 0)).fill().map((_, i) => ({identifier: i, clientX: x, clientY: y})), timeStamp: now += 100,
     cancelable: o.cancelable !== false, preventDefault() { if (o.cancelable !== false) stopped = true }}));
   return stopped };
-eval(logic + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'")) + `
+eval(logic + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'", page.indexOf('/* F124: a swipe right anywhere'))) + `
 // a touch from (100, 300) through these [dx, dy, options]: the moves it kept from scrolling, and where the drawer ends
 function touch(open, moves, end = 'touchend') {
   S.drawer = open; S.sheet = ''; DR = null; skip = ''; box.scrollTop = 500; box.scrollHeight = 3000; fire('touchstart', 100, 300);
@@ -1592,4 +1592,4 @@ def test_plus_hold_b213(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_swipe_or_scroll_b167), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213)]))
