@@ -1368,8 +1368,8 @@ def rc_forget(rec: dict | Path | None, killed: bool = False) -> None:
 def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
              keep_server: bool = False) -> tuple[list[str], list[str]]:
     """End the Remote Control processes the run owns, so the apps list only live sessions: on a run's start,
-    those an earlier run left (its control server unless `keep_server`: this run adopts it, so no new entry) and any
-    runner feed (B195: an older version started it, under this run's own key when the run restarted in place);
+    any control server unless `keep_server` (this run adopts it, so no new entry) and any runner feed (B195: an
+    older version started it), also one under this run's own key (B220: a restart in place keeps the key);
     with `stopping`, this run's own as well. Each gets SIGTERM and up to `wait` s for its teardown,
     which archives its entry; one still up then is left (the next start tries again), never SIGKILLed.
     Control sessions are the person's and stay up, and nothing the run did not record (a session the person
@@ -1383,10 +1383,10 @@ def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
                 log(f'remote: "{s.get("name")}" was killed before it could archive itself; if it is still listed '
                     f'at {REMOTE_URL}, archive it there')
             rc_forget(s)
-        elif s.get('kind') not in RC_RUN_KINDS or s.get('run') == mine and not stopping and s.get('kind') != 'feed':
-            continue  # a control session, or this run's own while it runs (a feed is never: B195)
-        elif s.get('kind') == 'server' and keep_server and s.get('run') != mine:
-            continue  # keep_control_server adopts it (or restarts it when its flags differ)
+        elif s.get('kind') not in RC_RUN_KINDS:
+            continue  # a control session: the person's
+        elif s.get('kind') == 'server' and keep_server and not (stopping and s.get('run') == mine):
+            continue  # keep_control_server adopts it (or restarts it when its flags differ), or it is this run's own
         else:
             ending.append(s)
     for s in ending:
