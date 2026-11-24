@@ -280,7 +280,7 @@ where the remaining tokens go, by kind of tool call.
   one line to your voice file, `~/.config/agent-runner/voice.md` (all projects; `.runner/voice.md`, when it
   has lines, overrides it for one project), says which file, and words things that way from then on. When
   you ask "what?" or say back what it said in your words, it says it again plainly and offers one line to
-  add, added only on yes. Every control session, the runner feed and the task agents (for the commit
+  add, added only on yes. Every control session and the task agents (for the commit
   messages status and since show) read the file. "show my wording" prints it, "forget X" drops
   a line (`agent-runner voice show|add|forget`); `[run] voice` moves the file, `[run] voice_learn = "off"`
   stops the offers.
