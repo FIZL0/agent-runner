@@ -292,10 +292,9 @@ a{color:var(--accent)}
 .mic{background:var(--accent);color:var(--onaccent);transition:transform var(--dur-fast) var(--ease)}
 .mic:active{transform:scale(.95)} .mic svg{width:28px;height:28px;stroke-width:1.8}
 .spk{justify-self:end;background:var(--surface);border:1px solid var(--line2);color:var(--fg)} .spk svg{width:26px;height:26px}
-.spk.off{color:var(--muted)}
+.spk.off{color:var(--muted)} .spk.on,.tool.spkbox{color:var(--accent)}
 .kbd{justify-self:start;width:var(--tap);height:var(--tap);border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer}
 .mic.on{background:var(--bad);color:var(--onbad);animation:pulse var(--pulse) infinite}
-.mic.speaking{background:var(--accent2)}
 .mic:disabled{background:var(--line2);color:var(--muted);cursor:default}
 .talkline{font-size:var(--fs-m);line-height:1.45;color:var(--muted);text-align:center;min-height:1.45em;max-width:34em;overflow-wrap:anywhere}
 .speakb{justify-self:start;display:inline-grid;place-items:center;width:32px;height:32px;border:0;background:none;border-radius:var(--r-s);color:var(--muted);cursor:pointer;margin-left:-6px}
@@ -877,6 +876,45 @@ function micLog(what,fresh,own){
 function soundAs(type){
   try{const a=navigator.audioSession;if(!a||a.type===type||(type==='playback'&&(MIC.rec||MIC.next||TK.ear)))return;
     a.type=type;micLog(`audio session ${type}, ${a.state||''}`)}catch(e){}
+}
+/* B174: a reply is read now, by itself or by its play button; and what Talk's state is once nothing is read */
+const talkReads=()=>TK.state==='speaking'||!!TK.playing, talkRest=()=>TK.wait?'thinking':'';
+/* B174: the replies that landed while the mic was on (or another was read), played in order once it has ended */
+function talkNext(){
+  if(!TK.later||!TK.later.length)return;
+  if(!TS.read){TK.later=[];return}
+  if(!(TK.ear||TK.hold||MIC.rec||MIC.next||talkReads()))speak(TK.later.shift());
+}
+/* B174: iOS can skip a sound's last event, so a look each second while a reply is read ends one that makes no sound.
+   w: turn, the reply's TK.turn; own, the browser's voice reads; clip, the element that plays a clip; at, the last sign
+   of sound, and limit, how long without one is too long; begun, heard at all; hid, the page was hidden; end(e) */
+const SOUND_LOOK=1000, SOUND_LIMIT=10000;
+function soundWatch(w){TK.watch=w;setTimeout(()=>soundCheck(w,true),SOUND_LOOK)}
+function soundCheck(w,more){
+  if(TK.watch!==w||TK.turn!==w.turn||!talkReads())return;
+  if(more)setTimeout(()=>soundCheck(w,true),SOUND_LOOK);
+  const late=Date.now()-w.at>w.limit, a=w.clip;
+  if(w.own){
+    const ss=window.speechSynthesis, quiet=ss.paused||!(ss.speaking||ss.pending);
+    w.quiet=quiet?w.quiet+1:0;
+    if(!late&&w.quiet<(w.begun?2:4))return;
+    if(TK.trail)micLog(`sound: the browser's own voice ${w.begun?'ended, with no event':'never started'}`);
+    const ok=quiet&&w.begun&&!w.hid;  // read to its end: auto listen may follow, so no speechSynthesis call (B132)
+    if(!ok)ss.cancel();
+    w.end(ok?null:{type:'error'});
+  }else if(a){
+    if(a.ended){if(a.onended)a.onended()}
+    else if(a.error){if(a.onerror)a.onerror()}
+    else if(a.paused){if(++w.quiet>1){if(TK.trail)micLog('sound: the clip stays paused');hush()}}
+    else if(a.currentTime!==w.spot){w.spot=a.currentTime;w.at=Date.now();w.quiet=0}
+    else if(late){if(TK.trail)micLog('sound: the clip stands still');hush()}
+  }
+}
+/* the page was hidden, or shows again: look at once, with 3 s left for a sound that goes on */
+function soundSeen(hidden){
+  const w=TK.watch;if(!w)return;
+  if(hidden){w.hid=true;return}
+  w.at=Math.max(w.at,Date.now()-w.limit+3000);soundCheck(w);
 }
 /* B178: an error in plain words: a fetch with no answer is 'Load failed' in Safari, 'Failed to fetch' elsewhere */
 const plainErr=e=>e&&((e.name==='TypeError'&&/load failed|fetch|network|connection|offline|cancelled|hostname|timed out/i.test(e.message))||e.name==='NetworkError'||e.name==='AbortError')?'no connection':e&&e.name==='SyntaxError'?'its answer made no sense':String((e&&e.message)||e);
@@ -1623,7 +1661,7 @@ function box(ph,foot){
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
     <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in${enterHint()} placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread&&!isNew(S.thread)?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}${real?'<button type="button" class="tool" data-slashopen aria-label="Commands" title="Commands">/</button>':''}${real&&busyNow?'':`<span class="to">${esc(isNew(S.thread)?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to a new chat')}</span>`}${real&&busyNow?`<button type="button" class="act halt" data-halt="${esc(shownNow)}">${I.stop}Stop</button><button class="act force">Force send</button></div></form>`:`${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>`}${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?`<button type="button" class="tool spkbox" id="spkbox" data-spk hidden aria-label="Stop speaking" title="Stop speaking">${I.stop}</button>`+(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread&&!isNew(S.thread)?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}${real?'<button type="button" class="tool" data-slashopen aria-label="Commands" title="Commands">/</button>':''}${real&&busyNow?'':`<span class="to">${esc(isNew(S.thread)?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to a new chat')}</span>`}${real&&busyNow?`<button type="button" class="act halt" data-halt="${esc(shownNow)}">${I.stop}Stop</button><button class="act force">Force send</button></div></form>`:`${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>`}${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 /* B177: a chat with a transcript that the run no longer lists (one just started is not listed yet: its message waits) */
 const ended=n=>!!(S.snap.at&&S.feeds[n]&&S.feeds[n].ok&&!sessionOf(n)&&!(S.sent[n]&&(S.sent[n].pending||[]).length));
@@ -2507,7 +2545,7 @@ const TALK_FOR=':'+(HKEY||document.title), TALK_KEY='ar-talk'+TALK_FOR, TALK_OLD
    browser's last. '-': this tab has none, whatever another tab keeps. talkWas: the tab's chat, also once it has ended */
 const talkKept=()=>{const v=tabStore.get(TALK_KEY);return v==='-'?'':v||store.get(TALK_KEY)}, talkKeep=v=>{tabStore.set(TALK_KEY,v||'-');store.set(TALK_KEY,v)}, talkWas=()=>{const v=tabStore.get(TALK_KEY);return/^c\d+$/.test(v)?v:''};
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',held:'',playing:'',hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* gen: counts New Talk chat presses; starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads; held: the reply the browser wants a tap for (F158) */
+const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',held:'',playing:'',later:[],watch:null,hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* later, watch: talkNext(), soundWatch() (B174);  gen: counts New Talk chat presses; starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads; held: the reply the browser wants a tap for (F158) */
 /* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
 const TS_KEY='ar-talkset', TM_KEY='ar-talkmode';
 let TS=talkSetParse(store.get(TS_KEY));
@@ -2554,10 +2592,10 @@ function routeFree(){
   if(!AU.holding)return;
   AU.holding=false;pauseKeys(null);if(AU.hold)AU.hold.pause();
 }
-/* what reads now stops, whichever of the two it is */
-function shush(){
+/* what reads now stops, whichever of the two it is; clips: only the run's */
+function shush(clips){
   if(AU.holding)routeFree();
-  if(window.speechSynthesis)speechSynthesis.cancel();
+  if(window.speechSynthesis&&!clips)speechSynthesis.cancel();
   const a=AU.el;if(a){a.onended=a.onerror=a.onpause=null;if(!a.paused)a.pause()}
 }
 /* one clip from the run. Its error's message is plain words; net: no answer came, so asking again can help (late: none in 25 s, asked once more) */
@@ -2594,7 +2632,9 @@ async function playClips(clips,voice,turn,end,fall,held){
       next=ask(i+1);  // made while this one plays, so there is no gap
       for(let n=0;!i&&MIC.rec&&n<15;n++){await wait(100);if(!on())return}  // B178: a mic still ending
       soundAs('playback');routeHold();
+      const w=TK.watch&&TK.watch.turn===turn?TK.watch:{};
       await new Promise((done,no)=>{const a=audioSrc(b);
+        w.clip=a;w.at=Date.now();w.spot=-1;w.quiet=0;  // B174
         a.onended=done;a.onerror=()=>{log(`clip ${i+1} error ${a.error?a.error.code:''}`,true);no(new Error('the clip did not play'))};
         for(const k of ['playing','waiting','stalled'])a['on'+k]=()=>log(k);
         a.onpause=()=>{  // a call, a route change; the lock screen's pause goes to pauseKeys()
@@ -2607,7 +2647,7 @@ async function playClips(clips,voice,turn,end,fall,held){
             log('play again');soundAs('playback');routeHold();
             const q=a.play();if(q)q.catch(e=>{if(!on())return;log(`play again refused: ${e.name}`);if(e.name==='NotAllowedError')no(e);else hush()})},PLAY_AGAIN)};
         const p=a.play();if(p)p.then(()=>{AU.ok=true}).catch(e=>{if(e&&e.name==='AbortError')return;log(`play refused: ${e&&e.name}`,true);no(e)})});  // AbortError: a pause came first, onpause has it
-      log(`clip ${i+1} ended`);
+      w.clip=null;log(`clip ${i+1} ended`);
     }catch(e){if(!on())return;routeFree();log(e&&e.name==='NotAllowedError'?'held for a tap':`clip ${i+1} and on: the browser's own voice`,true);
       if(e&&e.name==='NotAllowedError'){AU.ok=false;return held()}
       return fall(clips.slice(i).join(' '),e&&e.net!=null?e.message:'the clip did not play',!!(e&&e.net))}
@@ -2641,12 +2681,12 @@ function newTalk(){
   if(known.length)store.set(TALK_OLD,JSON.stringify(talkOld().filter(n=>known.includes(n))));  // a chat that is gone: its name can come again
   talkLeave([...talkTitled(),was,talkKept()].filter(n=>n&&n!=='new'));
   talkKeep('new');TK.gen++;talkStartsKeep();
-  const rec=TK.rec, spoke=TK.state==='speaking'||!!TK.playing;
+  const rec=TK.rec, spoke=talkReads();
   if(TK.ear)micLog('stop by New Talk chat');
   TK.ear=TK.rec=null;TK.hold=TK.again=false;TK.wait=null;
   TK.state=TK.heard=TK.said=TK.note=TK.report=TK.playing='';TK.turn=(TK.turn||0)+1;
   if(rec)rec.stop();
-  TK.held='';
+  TK.held='';TK.later=[];
   if(spoke)shush();
   S.drawer=false;S.pin=true;render(true);
 }
@@ -2682,7 +2722,7 @@ function micWhenFree(start,cancel){
 }
 function micFree(rec){
   if(MIC.rec!==rec)return;
-  const n=MIC.next;MIC.rec=MIC.next=null;clearTimeout(MIC.timer);if(n)n.start();
+  const n=MIC.next;MIC.rec=MIC.next=null;clearTimeout(MIC.timer);if(n)n.start();else talkNext();
 }
 function dictShow(words){
   const v=dictInsert(DK.base,words);store.set(DRAFT_KEY(DK.key),v);
@@ -2720,26 +2760,28 @@ function talkHTML(){
   if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
   return `<div class="col">${talkConvo(n)}${going}</div>`;
 }
-/* F124: the dock's mic: the speaker and the mic (64px), the keyboard beside them. Its markup never changes while it
+/* F124, B174: the dock's mic, always the mic: the speaker (the stop while a reply is read) and the mic (64px), the keyboard beside them. Its markup never changes while it
    listens or speaks (talkDraw sets that), so a finger holding the mic keeps it */
 const talkMic=()=>`<div class="talkline" id="talkline" role="status"></div><button type="button" class="btn" id="micrep" data-micreport hidden>Copy mic report</button><div class="talkrow"><button type="button" class="spk" id="spk" data-spk></button><button type="button" class="mic" id="mic" data-mic></button><button type="button" class="kbd" data-talkmode="type" aria-label="Type instead" title="Type instead">${I.keys}</button></div>`;
 const talkFoot=()=>{const why=micWhy();return why?esc(why):keysLine()};
 function talkDraw(){
   const why=micWhy(), st=TK.state, hold=TS.mic==='hold', mic=$('mic'), spk=$('spk'), line=$('talkline');
+  const reads=talkReads(), stop=$('spkbox');
   $('dock').classList.toggle('typing',talkTyping());
+  if(stop)stop.hidden=!reads;
   if(!mic)return;
-  line.textContent=why||(st==='listening'?(TK.heard||(TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…')):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop.':(TK.note||(hold?'Hold to talk':'Tap to talk')));
+  line.textContent=why||(st==='listening'?(TK.heard||(TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…')):st==='thinking'?'Thinking…':st==='speaking'?'Speaking…':(TK.note||(hold?'Hold to talk':'Tap to talk')));
   $('micrep').hidden=!!why||!!st||!TK.report;
-  const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking':hold?'Hold to talk':'Talk');
-  mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':st==='speaking'?' speaking':'');mic.disabled=!!why;
-  mic.setAttribute('aria-label',label);mic.title=label;setHTML(mic,st==='speaking'?I.stop:I.talk);
-  const sl=st==='speaking'||TK.playing?'Stop reading':TK.held?'Read the reply aloud':TS.read?'Read replies aloud: on':'Read replies aloud: off';
-  spk.className='spk'+(TS.read?'':' off');spk.setAttribute('aria-label',sl);spk.setAttribute('aria-pressed',String(TS.read));spk.title=sl;setHTML(spk,TS.read?I.speak:I.mute);
+  const label=why||(st==='listening'?'Stop listening':hold?'Hold to talk':'Talk');
+  mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':'');mic.disabled=!!why;
+  mic.setAttribute('aria-label',label);mic.title=label;setHTML(mic,I.talk);
+  const sl=reads?'Stop speaking':TK.held?'Read the reply aloud':TS.read?'Read replies aloud: on':'Read replies aloud: off';
+  spk.className='spk'+(reads?' on':TS.read?'':' off');spk.setAttribute('aria-label',sl);if(reads)spk.removeAttribute('aria-pressed');else spk.setAttribute('aria-pressed',String(TS.read));spk.title=sl;setHTML(spk,reads?I.stop:TS.read?I.speak:I.mute);
 }
 /* the person's words to the Talk session; true once sent */
 async function talkSend(msg){
   const to=talkName(), len=to?feedOf(to).length:0, mark=to&&S.feeds[to]?feedMark(feedOf(to)):null;  // B134
-  TK.state='thinking';TK.said=msg;TK.note=TK.held='';S.pin=true;unlockSpeech();loadVoices();render(true);
+  if(TK.state!=='speaking')TK.state='thinking';TK.said=msg;TK.note=TK.held='';S.pin=true;unlockSpeech();loadVoices();render(true);
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
   const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true,gen:TK.gen};TK.wait=w;
@@ -2749,7 +2791,7 @@ async function talkSend(msg){
   const r=await act('talk',{text:msg,to});w.out=false;
   const left=w.gen!==TK.gen;  // F157: New Talk chat was pressed meanwhile: these words belong to the chat it left
   if(!r.ok||r.session)talkStarts(TK.starting.filter(x=>x!==w));
-  if(!r.ok){if(TK.wait===w)TK.wait=null;if(!left){TK.state='';if(asked&&!talkKept())talkKeep('new')}render(true);return false}
+  if(!r.ok){if(TK.wait===w)TK.wait=null;if(!left){if(TK.state==='thinking')TK.state='';if(asked&&!talkKept())talkKeep('new')}render(true);return false}
   const n=r.session||to, fresh=n!==to;
   if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
   if(n){if(left)talkLeave([n]);else{talkKeep(n);store.set(TALK_OLD,JSON.stringify(talkOld().filter(x=>x!==n)))}addSent(n,msg,r.at,{talk:true,...(fresh?{first:true}:{})},fresh?0:len);loadFeed(n)}
@@ -2763,7 +2805,9 @@ function talkHear(n){
   const said=talkReply(feedOf(n),w.since,w.said);
   if(!said||said!==w.last){w.last=said;return}
   TK.wait=null;
-  if(TS.read)speak(said);else{TK.state='';render(true)}  // F124: read replies aloud is off
+  if(TK.state==='thinking')TK.state='';
+  if(TS.read){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off
+  render(true);
 }
 function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
   soundAs('playback');unlockAudio();  // F158
@@ -2773,20 +2817,23 @@ function unlockSpeech(){  /* Safari speaks later only after a first utterance in
    once a Talk reply was read to its end, the mic listens again */
 function speak(text,key){
   const ss=window.speechSynthesis, rv=runVoice(AU.got,TS.voice);
-  if(!(ss||rv)||!text){TK.state='';render(true);return}
+  if(!(ss||rv)||!text){TK.state='';TK.later=[];render(true);return}
   if(key&&TK.ear){micLog('stop by a play button');const r=TK.rec;TK.ear=TK.rec=null;TK.heard='';if(r)r.stop()}  // a play button stops the mic, so it does not hear the reply; nothing is sent
   if(TK.held)TK.note='';
-  if(!key||TK.state!=='thinking')TK.state='';TK.playing=TK.held='';shush();
+  TK.state=talkRest();TK.playing=TK.held='';shush();
   const parts=text.match(/[^.!?]+[.!?]*\s*/g)||[text];  /* sentence by sentence: Chrome cuts one long utterance short */
   const voice=pickVoice(voices(),TS.voice), turn=TK.turn=(TK.turn||0)+1;
   const ended=e=>{if(TK.turn!==turn||!(key?TK.playing===key:TK.state==='speaking'))return;
-    TK.state=TK.state==='speaking'?'':TK.state;TK.playing='';render(true);
-    if(!key&&TS.auto&&(!e||e.type!=='error')&&S.view==='talk'&&!S.thread&&!talkTyping()){TK.again=true;listen()}};
-  const own=ps=>ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;
-    if(rv&&!i)u.onstart=()=>{if(TK.turn===turn&&TK.trail)micLog("sound: the browser's own voice started")};  // B178
-    if(i===ps.length-1)u.onend=u.onerror=e=>{if(rv&&TK.turn===turn&&TK.trail)micLog(`sound: the browser's own voice ${e&&e.type==='error'?'error '+e.error:'ended'}`);ended(e)};
-    ss.speak(u)});
-  soundAs('playback');
+    if(TK.state==='speaking')TK.state=talkRest();TK.playing='';render(true);
+    if(TK.later.length)talkNext();
+    else if(!key&&!TK.wait&&TS.auto&&(!e||e.type!=='error')&&S.view==='talk'&&!S.thread&&!talkTyping()){TK.again=true;listen()}};
+  const w={turn,own:!rv,clip:null,at:Date.now(),limit:SOUND_LIMIT,quiet:0,spot:-1,begun:false,hid:false,us:[],end:ended};  // B174; us: an utterance nobody holds can lose its end
+  const own=ps=>{w.own=true;w.clip=null;w.quiet=0;w.begun=false;w.at=Date.now();ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;w.us.push(u);
+    const log=x=>{if(rv&&TK.turn===turn&&TK.trail)micLog("sound: the browser's own voice "+x)};  // B178
+    u.onstart=()=>{w.begun=true;w.quiet=0;w.at=Date.now();w.limit=SOUND_LIMIT+200*p.length;if(!i)log('started')};
+    u.onend=u.onerror=e=>{w.at=Date.now();w.limit=SOUND_LIMIT;if(i===ps.length-1){log(e&&e.type==='error'?'error '+e.error:'ended');ended(e)}};
+    ss.speak(u)})};
+  soundAs('playback');soundWatch(w);
   if(!rv)own(parts);
   else{
     unlockAudio();  // a play button's tap
@@ -2794,13 +2841,14 @@ function speak(text,key){
       const mine=/iPhone|Android/.test(navigator.userAgent||'')?"the phone's voice":"this device's voice";
       toast(net?ss?`No connection to the run; reading with ${mine}`:'No connection to the run; the reply is not read aloud':ss?`The run could not read this aloud (${why}), so this browser does.`:`The run could not read this aloud: ${why}`,true);
       if(ss)own(rest.match(/[^.!?]+[.!?]*\s*/g)||[rest]);else ended({type:'error'});
-    },()=>{TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn++;TK.held=text;TK.note='The browser wants a tap first. Tap the speaker to hear the reply';
+    },()=>{TK.playing='';if(TK.state==='speaking')TK.state=talkRest();TK.turn++;TK.held=text;TK.note='The browser wants a tap first. Tap the speaker to hear the reply';
       if(talkTyping())toast('The browser wants a tap first. Tap the play button on the reply to hear it.',true);render(true)});
   }
   if(key)TK.playing=key;else TK.state='speaking';
   render(true);
 }
-function hush(){TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn=(TK.turn||0)+1;shush();render(true)}
+/* the person stops the reading; replies still waiting keep their play buttons */
+function hush(){TK.playing='';TK.later=[];if(TK.state==='speaking')TK.state=talkRest();TK.turn=(TK.turn||0)+1;shush();render(true)}
 /* a Talk reply's play button: reads that reply, or stops it */
 function playReply(k){
   if(TK.playing===k)return hush();
@@ -2811,11 +2859,13 @@ function listen(){
   const why=micWhy();if(why)return toast(why,true);
   if(TK.state==='listening')return micStop('a tap');
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
-     and recognition hears nothing (talkSend unlocks speech). A tap during a reply only stops it; the next one listens. */
-  if(TK.state==='speaking'||TK.playing){if(TK.state==='speaking')TK.state='';TK.playing='';TK.note='';TK.turn=(TK.turn||0)+1;shush();render(true);return}
+     and recognition hears nothing (talkSend unlocks speech). B174: a press during a reply cuts it and listens: clips
+     stop here, the browser's voice right after rec.start(), or here when this listen must wait for a recognizer. */
+  const cut=talkReads();TK.playing='';TK.turn=(TK.turn||0)+1;
+  if(cut)shush(!MIC.rec);
   TK.note=TK.held='';if(!(TK.report&&TK.report.sound))TK.report='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   /* B162: the listen: its tries, the words so far, and whether the person ended it (stopped) or held the mic again */
-  const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:'',err:'',ms:null,stopped:false,more:false,on:false,msg:''};
+  const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:'',err:'',ms:null,stopped:false,more:false,on:false,msg:'',cut:cut&&!MIC.rec};
   if(!TK.trail||TK.trail.used)micLog('listen',true);  // a press began it already
   TK.trail.used=true;t.trail=TK.trail;micLog(`listen ${t.mode}${MIC.rec?', waits for the last one to end':''}`);
   TK.state='listening';TK.heard='';render(true);
@@ -2824,7 +2874,8 @@ function listen(){
 /* B162: one recognizer for the listen t. Aborted before any words, it is tried once more by itself */
 function hear(t){
   if(TK.ear!==t)return;  // ended while it waited
-  let rec;try{rec=new SR()}catch(e){micLog(`no recognizer: ${e.message||e}`,false,t.trail);TK.report=t.trail;TK.ear=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);return render(true)}
+  const cut=()=>{if(t.cut&&window.speechSynthesis)speechSynthesis.cancel();t.cut=false};  // B174
+  let rec;try{rec=new SR()}catch(e){cut();micLog(`no recognizer: ${e.message||e}`,false,t.trail);TK.report=t.trail;TK.ear=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);return talkNext()}
   MIC.rec=TK.rec=rec;t.tries++;t.err=t.msg='';t.ms=null;t.on=false;talkDraw();micLog(`try ${t.tries}`);
   rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
   const log=x=>micLog(x,false,t.trail);  // a dropped one's late events stay in its own report
@@ -2850,16 +2901,16 @@ function hear(t){
     else earEnd(t);
   };
   soundAs('play-and-record');
-  try{rec.start()}catch(e){log(`start failed: ${e.message||e}`);TK.report=t.trail;TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}
+  try{rec.start();cut()}catch(e){cut();log(`start failed: ${e.message||e}`);TK.report=t.trail;TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}
 }
 /* the listen is over: its words go out, or the talk line says why there are none */
 function earEnd(t){
   TK.ear=null;TK.heard='';if(TK.state==='listening')TK.state='';
   soundAs('playback');  // B178
-  if(t.words)return talkSend(t.words);
+  if(t.words){const sent=talkSend(t.words);talkNext();return sent}  // B174: what waited is read now
   if(t.tries&&!(t.mode==='auto'&&(!t.err||t.err==='no-speech')))TK.report=t.trail;  // the Copy mic report button
   TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.on,t.msg):'';
-  render(true);
+  render(true);talkNext();
 }
 /* the person ends the listen: the recognizer gives its last words, or a start still waiting is off */
 function micStop(by){
@@ -3054,8 +3105,8 @@ document.addEventListener('click',async e=>{
     if(twice&&!S.drawer){startRename(x.dataset.thread);return}
   }
   if(q('[data-micreport]'))return micCopy();
-  if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(TS.mic==='hold'&&TK.state!=='speaking'&&!TK.playing&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
-  if(q('[data-spk]')){if(TK.state==='speaking'||TK.playing)return hush();if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);unlockAudio();talkSet('read',!TS.read);return}
+  if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(TS.mic==='hold'&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
+  if(q('[data-spk]')){if(talkReads())return hush();if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);unlockAudio();talkSet('read',!TS.read);return}
   if(x=q('[data-talkmode]'))return talkMode(x.dataset.talkmode);
   if(x=q('[data-speak]'))return playReply(x.dataset.speak);
   if(q('[data-menu]')){S.drawer=true;render();return}
@@ -3219,10 +3270,11 @@ for(const t of ['pointerdown','pointerup','pointercancel','gotpointercapture','l
   if(!(e.target&&e.target.closest&&e.target.closest('[data-mic]'))&&!(TK.hold&&e.pointerId!=null&&e.pointerId===TK.holdId))return;
   micLog([t,e.pointerType,e.pointerId==null?'':'id '+e.pointerId,document.hidden?'page hidden':''].filter(Boolean).join(' '),t==='pointerdown'&&!TK.ear);
 },{capture:true,passive:true});
-document.addEventListener('visibilitychange',()=>{if(TK.ear)micLog(document.hidden?'page hidden':'page shown')});
+document.addEventListener('visibilitychange',()=>{if(TK.ear)micLog(document.hidden?'page hidden':'page shown');
+  if(document.hidden)TK.hold=false;soundSeen(document.hidden);if(!document.hidden)talkNext()});  // B174
 /* F124: hold to talk: the mic listens while it is held, and sends when it is let go */
 document.addEventListener('pointerdown',e=>{
-  if(!(e.target.closest&&e.target.closest('[data-mic]'))||TS.mic!=='hold'||TK.state==='speaking'||TK.playing||e.button>0)return;
+  if(!(e.target.closest&&e.target.closest('[data-mic]'))||TS.mic!=='hold'||e.button>0)return;
   TK.hold=true;TK.holdId=e.pointerId;
   try{e.target.closest('[data-mic]').setPointerCapture(e.pointerId)}catch(err){}  // B162: a finger that drifts off it still holds it
   if(TK.state!=='listening')listen();  // auto listen is on already: letting go sends it
@@ -3230,12 +3282,12 @@ document.addEventListener('pointerdown',e=>{
 });
 /* B162: a pointercancel (iOS took the touch) does not end the hold: the finger is still down. Its touchend does, and
    after a touchcancel the mic stops by itself at a silence, or at the next hold's end */
-const letGo=by=>{if(TK.hold){TK.hold=false;TK.upAt=Date.now();micStop(by)}};
+const letGo=by=>{if(TK.hold){TK.hold=false;TK.upAt=Date.now();micStop(by);talkNext()}};
 document.addEventListener('pointerup',e=>{if(e.pointerId===TK.holdId)letGo('pointerup')});
 const onMic=e=>e.target.closest&&e.target.closest('[data-mic]');  // a touch event's target is where that finger went down
-document.addEventListener('pointercancel',e=>{if(e.pointerId===TK.holdId&&e.pointerType!=='touch')TK.hold=false});  // a pen or mouse has no touchend
+document.addEventListener('pointercancel',e=>{if(e.pointerId===TK.holdId&&e.pointerType!=='touch'){TK.hold=false;talkNext()}});  // a pen or mouse has no touchend
 document.addEventListener('touchend',e=>{if(onMic(e)&&!(e.targetTouches&&e.targetTouches.length))letGo('touchend')},{passive:true});
-document.addEventListener('touchcancel',e=>{if(onMic(e))TK.hold=false},{passive:true});
+document.addEventListener('touchcancel',e=>{if(onMic(e)){TK.hold=false;talkNext()}},{passive:true});
 document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('[data-mic]'))e.preventDefault()});
 /* F124: a swipe right anywhere opens the sidebar drawer and a swipe left closes it, following the finger;
    a swipe down closes the sheet. B167: a touch is one thing until the finger lifts: one that scrolled never becomes a
