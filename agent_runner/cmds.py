@@ -586,12 +586,14 @@ EV_STARTED_BY = 'run started by'  # B145: who asked for the run (by, tty, ppid, 
 
 def started_by_record(by: str) -> dict:
     """B145: who is starting the run: `by` (bare agent-runner, picker, --attach or Home start), the caller's
-    tty ('no tty' without one), its parent pid and that parent's command name ('' where it cannot be read)."""
+    tty ('no tty' without one, 'terminal' on Windows, which has no tty names), its parent pid and that parent's
+    command name ('' where it cannot be read)."""
     tty = 'no tty'
+    ttyname = getattr(os, 'ttyname', lambda fd: 'terminal')  # B760: Windows Python has no os.ttyname
     for fd in (0, 1, 2):
         try:
             if os.isatty(fd):
-                tty = os.ttyname(fd)
+                tty = ttyname(fd)
                 break
         except OSError:
             pass
