@@ -143,7 +143,8 @@ def test_theme(tmp: Path) -> None:
             check((b + .05) / (a + .05) >= 4.5, f'{look} {k} reads at 4.5:1')
         eq((len(got['extendedAnsi']), got['extendedAnsi'][T.ROLES['accent'][0] - 16]), (240, T.ROLES['accent'][at]), 'its slots')
     with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(tmp)}):
-        eq(T.settings('dark'), {'theme': 'custom:agent-runner', 'spinnerTipsEnabled': False, 'prefersReducedMotion': True}, 'the settings')
+        eq(T.settings('dark'), {'theme': 'custom:agent-runner', 'spinnerTipsEnabled': False, 'prefersReducedMotion': True,
+                                'bashEditDiffEnabled': False}, 'the settings')
         d = json.loads((tmp / 'themes' / 'agent-runner.json').read_text(encoding='utf-8'))
         eq((d['base'], d['overrides']['success']), ('dark', 'ansi256(108)'), 'the theme file')
         T.settings('light')
