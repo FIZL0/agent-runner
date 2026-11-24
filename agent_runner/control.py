@@ -182,7 +182,7 @@ def control_name(n: int, ask: str = '', images: list[str] | tuple = ()) -> str:
 CONTROL_N_ENV = 'AGENT_RUNNER_CONTROL'  # F29: a control session's number, in its tools' environment
 
 
-SUMMARY_TASK_RE = re.compile(r'^([A-Z]\d+[a-z]?)[:,.;]?$')  # F32: a summary's leading task id (R43, P17a)
+SUMMARY_TASK_RE = re.compile(rf'^{P.TASK_ID.pattern}[:,.;]?$')  # F32/B201: a summary's leading task id (R43, F162a2)
 
 
 def control_summary_name(n: int, summary: str) -> str:
