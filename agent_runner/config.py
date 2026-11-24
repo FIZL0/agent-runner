@@ -979,6 +979,8 @@ def setting_problem(table: str, key: str, v) -> str:
         from agent_runner.trust import network_problem
         if problem := next((p for x in v if (p := network_problem(x))), ''):
             return f'{where}: {problem}'
+    if (table, key) == ('run', 'agent') and (problem := agent_value_problem(v)):  # B764a
+        return problem
     if num and v < 0:
         return f'{where} cannot be below 0, not {v!r}'
     if (table, key) == ('run', 'slots') and v < 1:
@@ -990,6 +992,26 @@ def setting_problem(table: str, key: str, v) -> str:
         if not re.fullmatch(r'\s*\d+(?:\.\d+)?\s*[smhd]?\s*', v):
             return f'{where} must be a time like "6h" or "30m", or false, not {v!r}'
     return ''
+
+
+def agent_value_problem(v: str) -> str:
+    """B764a: why `v` cannot be `[run] agent` on any machine ('' when it can): nothing, or a backend that is gone."""
+    if not v.strip():
+        return '[run] agent is empty: name the Claude Code program, "claude" or a wrapper around it'
+    stem = Path(v.strip().replace('\\', '/')).stem.lower()
+    if stem == 'copilot':
+        return (f'[run] agent = {v!r}: GitHub Copilot CLI support was removed. Name the model in [models] as '
+                '"<provider>:<model>", e.g. [models] code = "copilot:<model>"')
+    return f'[run] agent = {v!r}: {PI_GONE}' if stem == 'pi' else ''
+
+
+def agent_missing(root: Path, v: str) -> str:
+    """B764a: why this machine cannot start `[run] agent` = `v` ('' when it can): it is neither on PATH nor a file (a
+    relative path is from the main checkout)."""
+    at = main_checkout(root) / v
+    if at.is_file() or shutil.which(str(at)) or (Path(v).name == v and shutil.which(v)):
+        return ''
+    return f'[run] agent = {v!r}: no such command on PATH on this machine, and no such file'
 
 
 def tools_problem(v) -> str:
@@ -1147,10 +1169,15 @@ def local_settings_file(root: Path) -> Path:
     return local_file(root) or main_checkout(root) / LOCAL
 
 
-def setting_check(root: Path, table: str, key: str, v) -> str:
-    """`setting_problem`, and for [models] whether each model named is one the runner takes ('' when all is well)."""
-    if (problem := setting_problem(table, key, v)) or table != 'models':
+def setting_check(root: Path, table: str, key: str, v, device: bool = False) -> str:
+    """`setting_problem`, and for [models] whether each model named is one the runner takes ('' when all is well).
+    `device`: a save to this machine's file, so [run] agent must be here too; other machines share the project's."""
+    if problem := setting_problem(table, key, v):
         return problem
+    if device and (table, key) == ('run', 'agent'):  # B764a
+        return agent_missing(root, v)
+    if table != 'models':
+        return ''
     snap = {(t['table'], k['key']): k['value'] for t in settings_snapshot(root)['tables'] for k in t['keys']}
     snap[(table, key)] = v
     try:
@@ -1188,7 +1215,7 @@ def setting_edit(data: bytes, table: str, key: str, value=None, unset: bool = Fa
 
 def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool = False) -> Path:
     """F97: set (or `unset`) one key in this machine's runner.local.toml, in place; ValueError says why not."""
-    if problem := ('' if unset else setting_check(root, table, key, value)):
+    if problem := ('' if unset else setting_check(root, table, key, value, device=True)):
         raise ValueError(problem)
     if unset and (table not in DEFAULTS or key not in DEFAULTS[table]):
         raise ValueError(f'[{table}] {key} is not a setting')

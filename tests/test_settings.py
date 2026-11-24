@@ -203,4 +203,43 @@ has(refused(lambda: load('[run]\nremote_slots = "yes"\n')), r"must be 'open' or 
 (repo / 'runner.local.toml').write_text('slots = 2\n', encoding='utf-8')
 has(config.settings_snapshot(repo)['unknown'][0]['why'], r'no \[run\] line is above it', 'a limit with no [run] line above it says so')
 
+print('B764a: a wrong [run] agent is refused, and nothing is written')
+from unittest import mock
+from agent_runner import state as S, ui_model as U
+proj = Path(tempfile.mkdtemp(prefix='agent-runner-agent-'))
+git(proj, 'init', '-q')
+(proj / 'plan').mkdir()
+(proj / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
+(proj / '.gitignore').write_text('.runner/\nrunner.local.toml\n', encoding='utf-8')
+toml, mine = proj / 'runner.toml', proj / 'runner.local.toml'
+toml.write_text('[run]\nslots = 2\n', encoding='utf-8')
+mine.write_text('[run]\nslots = 4\n', encoding='utf-8')
+wrapper = proj / 'my-claude'
+wrapper.write_text('#!/bin/sh\n', encoding='utf-8')
+wrapper.chmod(0o755)
+git(proj, 'add', '-A')
+git(proj, 'commit', '-qm', 'start')
+S.init(proj)
+HINT = r'\[models\].*"<provider>:<model>"'
+before = toml.read_bytes(), mine.read_bytes()
+for save in (U.setting_device, U.setting_project):
+    for v, why in (('pi', HINT), ('/opt/bin/Pi', HINT), ('copilot', HINT), ('copilot.exe', HINT), ('', 'is empty'),
+                   ('  ', 'is empty'), (5, 'must be text')):
+        r = save('run', 'agent', v)
+        eq((r['ok'], (toml.read_bytes(), mine.read_bytes())), (False, before), f'{save.__name__} refuses {v!r}')
+        has(r['out'], why, 'and says why')
+for v in ('nosuchagent-b764a', str(proj / 'gone' / 'claude'), str(proj / 'plan'), 'claude-b764a --x'):
+    r = U.setting_device('run', 'agent', v)
+    eq((r['ok'], mine.read_bytes()), (False, before[1]), f'a device save refuses {v!r}')
+    has(r['out'], 'no such command on PATH', 'and says why')
+for v in (str(wrapper), './my-claude'):
+    r = U.setting_device('run', 'agent', v)
+    eq((r['ok'], tomllib.loads(mine.read_text(encoding='utf-8'))['run']['agent']), (True, v), f'a wrapper that exists saves: {v}')
+with mock.patch.dict('os.environ', PATH=f'{proj}{__import__("os").pathsep}{__import__("os").environ["PATH"]}'):
+    eq(U.setting_device('run', 'agent', 'my-claude')['ok'], True, 'and a command on PATH')
+eq(U.setting_reset('run', 'agent')['ok'], True, 'a reset is never refused')
+for v in (str(wrapper), 'nosuchagent-b764a'):
+    r = U.setting_project('run', 'agent', v)
+    eq((r['ok'], tomllib.loads(toml.read_text(encoding='utf-8'))['run']['agent']), (True, v), f'a project save takes {v}: other machines share it')
+
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
