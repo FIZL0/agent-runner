@@ -19,7 +19,7 @@ function kbHeight(vv,full,typing){return vv&&typing&&Math.abs(vv.scale-1)<.02&&f
 const typingIn=el=>!!(el&&el.matches&&el.matches('textarea,input,select,[contenteditable]'));
 function kbFit(){
   const app=$('app'), el=document.activeElement;
-  if(kbGone&&Math.abs(VV.height-kbGone)>1)kbGone=0;
+  if(kbGone&&Math.abs(VV.scale-1)<.02&&Math.abs(VV.height-kbGone)>1)kbGone=0;
   const h=kbGone?0:kbHeight(VV,document.documentElement.clientHeight,typingIn(el));
   const moving=Date.now()<kbUntil&&Math.abs(VV.scale-1)<.02;  // a pan comes before the resize, or outlasts the blur: follow it, at full height
   const pin=chatShown()&&S.pin, changed=h!==kbH;  // before the new height can move the chat
@@ -100,7 +100,7 @@ if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
      drew the box again has put the focus back by then */
   document.addEventListener('focusout',e=>{if(typingIn(e.target)&&!typingIn(e.relatedTarget))kbLeft=Date.now();if(kbH&&!typingIn(e.relatedTarget))queueMicrotask(()=>{if(typingIn(document.activeElement))return;if(IOS)kbWatch();kbFit()})});
   if(IOS){for(const t of ['pointerup','mousedown','click'])document.addEventListener(t,kbPressed,true);
-    document.addEventListener('input',e=>{if(kbGone&&e.isTrusted){kbGone=0;kbFit()}});  // typed: there is a keyboard after all
+    for(const t of ['input'])document.addEventListener(t,e=>{if(kbGone&&e.isTrusted){kbGone=0;kbFit()}});  // typed: there is a keyboard after all (a loop: tests find the page's main listener by its first words)
     /* another app puts the keyboard away, can leave the box in focus, and no event may say so: the focus goes with it */
     document.addEventListener('visibilitychange',()=>{if(document.hidden&&kbH)document.activeElement.blur()});
     document.addEventListener('touchstart',kbTapStart,{passive:true});document.addEventListener('touchcancel',()=>{KT=null},{passive:true});
