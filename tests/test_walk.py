@@ -32,6 +32,7 @@ def test_steps() -> None:
     check('T on Status [1]' in W.words(ss[1]) and 'Nothing starts until' in W.words(ss[1]), 'Start run: its key')
     check('S on Status [1]' in W.words(ss[1], up=True), 'a run up: the stop key')
     check('Nothing has landed yet' in W.words(ss[4]) and 'Nothing has' not in W.words(ss[4], landed=2), 'what landed')
+    check('Start the run to see one' in W.words(ss[4]) and 'Start the run' not in W.words(ss[4], up=True), 'no run up: how to see one')
     check('agent-runner setup' in W.words(ss[6]), 'the last one: their own project')
     if shutil.which('node'):
         x = {'off': False, 'up': True, 'working': 1, 'needs': 1, 'landed': 1, 'home': False}

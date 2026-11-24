@@ -212,6 +212,11 @@ def test_hint() -> None:
     eq(cmds.picker_text([], 0, None, line).count(line), 1, 'the run picker shows it')
     from agent_runner import theme as TH
     check(line in cmds.picker_text([], 0, cmds.PickerPaint(TH.get(TH.DEFAULT), 256), line), 'in colour too')
+    for rows in ([], [{'name': 'a', 'root': 'a', 'run': {'up': True}, 'here': False}]):
+        seen = []
+        with mock.patch.object(cmds, 'picker_rows', lambda *a: rows):
+            cmds.cmd_pick(None, lambda: 'q', seen.append, sessions=list, hint=line)
+        eq(line in seen[0], not rows, f'outside a repository the picker says it only with no run up ({len(rows)})')
     for tty in (True, False):
         out, got = io.StringIO(), []
         with in_dir(repo), contextlib.redirect_stderr(out), \

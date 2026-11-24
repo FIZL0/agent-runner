@@ -1394,6 +1394,8 @@ def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=
     link. q on screen 2 goes back to screen 1. F109: drawn to the terminal (no `show`), both screens take the
     run page's colours (`picker_paint`)."""
     rows = picker_rows((sessions or device_sessions)(), here)
+    if here is None and rows:  # F194c: a run is up on this device: no first time
+        hint = ''
     if paint is None and show is None:
         paint = picker_paint(here)
     while True:
