@@ -186,6 +186,53 @@ def test_cli() -> None:
     check('agent-runner demo' in run(TMP, '--help').stdout, 'it is in the usage')
 
 
+@contextlib.contextmanager
+def in_dir(d: Path):
+    was = Path.cwd()
+    os.chdir(d)
+    try:
+        yield
+    finally:
+        os.chdir(was)
+
+
+def test_hint() -> None:
+    print('F194c: a first agent-runner in a folder that is not set up names demo, in one line')
+    from agent_runner import cli, cmds
+    bare, repo = TMP / 'bare', TMP / 'repo'
+    for d in (bare, repo):
+        d.mkdir()
+    git(repo, 'init', '-q')
+    r = run(bare)
+    lines = [l for l in r.stderr.splitlines() if ' demo' in l]
+    check(r.returncode == 2 and len(lines) == 1 and 'not set up' in lines[0], 'outside a repository', r.stderr)
+    line = D.hint(None)
+    check(line and '\n' not in line and 'demo' in line, 'one line', line)
+    eq(D.hint(repo), line, 'in a repository with no settings and no plan')
+    eq(cmds.picker_text([], 0, None, line).count(line), 1, 'the run picker shows it')
+    from agent_runner import theme as TH
+    check(line in cmds.picker_text([], 0, cmds.PickerPaint(TH.get(TH.DEFAULT), 256), line), 'in colour too')
+    for tty in (True, False):
+        out, got = io.StringIO(), []
+        with in_dir(repo), contextlib.redirect_stderr(out), \
+                mock.patch.object(cli, 'skill'), mock.patch.object(cli, 'user_hook'), \
+                mock.patch.object(cmds, 'picker_wanted', lambda: tty), \
+                mock.patch.object(cmds, 'cmd_pick', lambda here, **k: got.append(k.get('hint')) or 0), \
+                mock.patch('agent_runner.runner.cmd_background', lambda a: got.append('run') or 0):
+            cli.main([])
+        eq((got, out.getvalue().count(line)), ([line], 0) if tty else (['run'], 1), f'bare agent-runner (terminal {tty})')
+    (repo / '.runner').mkdir()
+    (repo / '.runner' / 'run.log').write_text('x', encoding='utf-8')
+    eq(D.hint(repo), '', 'not once a run was there')
+    (repo / '.runner' / 'run.log').unlink()
+    (repo / 'runner.toml').write_text('', encoding='utf-8')
+    eq(D.hint(repo), '', 'nor in one set up')
+    (repo / 'runner.toml').unlink()
+    (repo / 'plan').mkdir()
+    (repo / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
+    eq(D.hint(repo), '', 'nor in one with a plan')
+
+
 def test_wheel() -> None:
     print('a built wheel holds the example project')
     src, dist = TMP / 'src', TMP / 'dist'
@@ -221,4 +268,4 @@ def test_wheel() -> None:
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_make, test_never_over, test_git_env, test_no_identity, test_remove, test_cli, test_wheel]))
+    sys.exit(report([test_make, test_never_over, test_git_env, test_no_identity, test_remove, test_cli, test_hint, test_wheel]))
