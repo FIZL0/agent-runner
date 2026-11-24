@@ -4,3 +4,4 @@
 .setpath{overflow-wrap:anywhere} .setpath.v-bad{color:var(--bad)}
 .setq{position:relative;display:flex;min-width:0} .setq .fld{padding-right:var(--tap);-webkit-appearance:none;appearance:none} .setq .fld::-webkit-search-cancel-button{display:none}
 .setq .x{position:absolute;right:0;top:50%;width:var(--tap);height:var(--tap);transform:translateY(-50%);display:grid;place-items:center;padding:0;color:var(--muted)} .setq .x svg{width:18px;height:18px}
+.setlogin{flex-wrap:nowrap;align-items:center;gap:var(--s2)} .setlogin .grow{min-width:0;overflow-wrap:anywhere} .setlogin .btn{flex:none;min-height:var(--tap)} .setlogin .v-bad{color:var(--bad)}

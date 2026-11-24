@@ -6,6 +6,7 @@ async function loadSettings(){
     else{S.setOld=oldRun(j);S.setErr=plainOut(j,'The settings could not be read.')}}
   catch(e){S.setOld=false;S.setErr='Could not reach the run page to read the settings.'}
   render(true);
+  loadLogins();
 }
 /* F166: the Settings view: the everyday settings with their control on the row, the rest behind Advanced and Project
    file. A setting has one home: 'device' is runner.local.toml, 'everyone' runner.toml. `side` is where its row saves. F202b: a change
@@ -23,6 +24,24 @@ function settingNow(k,side,field){
   if(f in S.f)return S.f[f];
   const c=setGoing(settingId(k),side);if(c)return settingText(c.unset?resetValue(k,side):c.value);
   return k['has_'+side]?settingText(k[side]):field?settingText(k.value):'';
+}
+/* F406c: the providers' logins as they are now; refused without the key, then Settings shows the commands */
+async function loadLogins(){
+  let j;try{const r=await fetch(tq('logins'));j=await r.json();j=r.ok&&j&&j.ok&&Array.isArray(j.providers)?j.providers:[]}catch(e){return}
+  const was=JSON.stringify(S.logins||[]);S.logins=j;
+  if(JSON.stringify(j)!==was)render(true);
+}
+const loginBtn=p=>p.name==='claude'?p.terminal?'<button class="btn" data-login>Log in again</button>':''
+  :p.terminal&&p.state!=='none'?`<button class="btn" data-plogin="${esc(p.name)}" aria-label="${p.run==='running'?'Show the login of':p.state==='in'?'Log in again to':'Log in to'} ${esc(p.name)}">${p.run==='running'?'Show the login':p.state==='in'?'Log in again':'Log in'}</button>`:'';
+const loginGoing=p=>p.run==='running'?'<div class="small"><span class="livedot"></span> Login under way</div>':p.run==='failed'?`<div class="small v-bad">The login failed: ${esc(p.said)}</div>`:'';
+/* beside a setting that names a provider: its login, and the way to it */
+function loginNote(at,key,names){
+  return loginsNow(S.set,S.logins).filter(p=>names.includes(p.name)&&['in','out'].includes(p.state)).map(p=>`<div class="row setlogin" data-k="slog:${esc(at)}:${esc(p.name)}"><div class="grow"><div class="small">${p.state==='in'?`${esc(p.name)}: Logged in`:`${esc(p.name)} is not logged in. ${loginLater(key)}${p.terminal?'':` Log in with <span class="setkey">${esc(p.cmd)}</span>`}`}</div>${p.state==='in'&&p.run==='failed'?'':loginGoing(p)}</div>${p.state==='in'&&p.run!=='running'?'':loginBtn(p)}</div>`).join('');
+}
+function settingLogins(k,side){
+  if(k.table!=='models')return '';
+  const names=(S.set.providers||[]).map(p=>p.name), vals=[draftValue(k,{text:settingNow(k,side,true)}),...['device','project'].filter(s=>s!==side).map(s=>(S.draft||{})[setField(settingId(k),s)]).filter(Boolean).map(d=>draftValue(k,d))];
+  return loginNote(settingId(k),k.key,vals.filter(r=>!r.err).flatMap(r=>modelProviders(k.key,k.key==='kinds'?{...k.default,...r.v}:r.v,names)));
 }
 const setUnset=f=>!!((S.draft||{})[f]||{}).unset;
 /* F174: its two controls; on its row a change goes to the draft */
@@ -62,7 +81,7 @@ function pickAgent(el){
 function providersHTML(d){
   const ps=d&&d.providers||[];if(!ps.length)return '';
   return `<div class="sec">Providers<span class="ln"></span></div><div class="small">Models of other providers run in the harness loop. A provider is chosen per role in [models], not here.</div>
-    ${ps.map(p=>`<div class="small setpath" data-k="prov:${esc(p.name)}"><b>${esc(p.name)}</b> · ${p.state==='unchecked'?esc(p.says):esc(LOGIN_SAYS[p.state]||p.state)}${p.cmd?`: <span class="setkey">${esc(p.cmd)}</span>`:p.state==='in'?`: ${esc(p.says)}`:''}</div>`).join('')}
+    ${loginsNow(d,S.logins).map(p=>`<div class="row setlogin" data-k="prov:${esc(p.name)}"><div class="grow"><div class="small setpath"><b>${esc(p.name)}</b> · ${p.state==='unchecked'?esc(p.says):esc(LOGIN_SAYS[p.state]||p.state)}${p.state==='out'?p.terminal?'':`: <span class="setkey">${esc(p.cmd)}</span>`:p.state==='in'?`: ${esc(p.says)}`:''}</div>${loginGoing(p)}</div>${loginBtn(p)}</div>`).join('')}
     <div class="btns"><button class="btn" data-setmodels>Show the model settings</button></div>`;
 }
 function setModels(){
@@ -98,7 +117,7 @@ function settingRow(k,o={}){
   const where=k.source==='default'?'the default':k.source==='device'?'this device':'everyone';
   return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side,o.readonly)}</div>
     ${hasParts(k)&&!o.readonly?partsField(k,side,true):hasPicks(k)&&!o.readonly?agentField(k,side,true):''}
-    ${busy}${notSaved(k,side)}
+    ${busy}${notSaved(k,side)}${o.readonly?'':settingLogins(k,side)}
     ${overSays(k)?`<div class="small">${esc(overSays(k))}</div>`:off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
     ${open?foldIn('set:'+id,`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
       ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side,true)}
@@ -128,7 +147,7 @@ function kindsRow(g,k){
   const open=!!S.setOpen['kinds:'+g.id], now=kindsModel(g.kinds,{...k.default,...kindsValue(k)}), ms=[...new Set(['opus','sonnet','haiku',...(now?[now]:[])])];
   return `<div class="srow" data-k="setkinds:${g.id}"><div class="row setline"><button class="fold setname" data-setopen="kinds:${g.id}" aria-expanded="${open}"><span class="grow"><b>${g.name}</b><span class="small">${g.desc}</span></span></button>
     <select class="fld setpick" data-kinds="${g.id}" aria-label="${g.name}">${now?'':'<option value="" selected>Mixed</option>'}${ms.map(m=>`<option ${m===now?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
-    ${settingBusy('models.kinds')}${kindsNote(g,k)}
+    ${settingBusy('models.kinds')}${kindsNote(g,k)}${loginNote('kinds:'+g.id,'kinds',g.kinds.flatMap(x=>modelProviders('kinds',[{...k.default,...kindsValue(k)}[x]],(S.set.providers||[]).map(p=>p.name))))}
     ${k.has_device?`<div class="small">${k.has_project?'This device overrides what everyone has':'Saved on this device only'}</div>`:''}
     ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies now.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`):''}</div>`;
 }

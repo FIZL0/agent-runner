@@ -24,7 +24,7 @@
 /* F126a: the login banner: it stays until a new login, so it has its own row and covers nothing */
 .login{justify-self:stretch;display:flex;justify-content:center;align-items:center;gap:var(--s2);padding:var(--s2) var(--s4);padding-left:max(var(--s4),env(safe-area-inset-left,0px));padding-right:max(var(--s4),env(safe-area-inset-right,0px));font-size:var(--fs-m);color:var(--fg);background:color-mix(in srgb,var(--warn) 14%,var(--bg));border-block:1px solid color-mix(in srgb,var(--warn) 45%,var(--line))}
 .login svg{width:16px;height:16px;flex:none;color:var(--warn)} .login span{min-width:0;overflow-wrap:anywhere} .login .btn{flex:none}
-.loginterm{height:180px;border-radius:var(--r-m);overflow:hidden;background:var(--feed);margin-top:var(--s2)} .loginterm iframe{width:100%;height:100%;border:0;display:block} #logincode{display:grid;gap:var(--s2)} #logincode[hidden],.loginterm[hidden]{display:none}
+.loginghe{display:grid;gap:var(--s2)} .loginterm{height:180px;border-radius:var(--r-m);overflow:hidden;background:var(--feed);margin-top:var(--s2)} .loginterm iframe{width:100%;height:100%;border:0;display:block} #logincode{display:grid;gap:var(--s2)} #logincode[hidden],.loginterm[hidden]{display:none}
 .offline{font-size:var(--fs-s);color:var(--warn);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-full);padding:2px 12px;box-shadow:0 2px 10px var(--lift)}
 /* F149: a new version of the page, or newer code a person must restart the run for */
 .news{display:grid;gap:var(--s2);justify-items:center;margin:var(--s1) var(--s3) 0;max-width:min(420px,calc(100% - 24px));background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l);padding:var(--s2) var(--s3);font-size:var(--fs-m);box-shadow:0 2px 10px var(--lift)}

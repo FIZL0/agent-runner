@@ -139,5 +139,6 @@ document.addEventListener('click',async e=>{
 document.addEventListener('submit',e=>{e.preventDefault();
   if(e.target.matches('[data-padd]'))return addProject();  // F150
   if(e.target.matches('[data-logincode]'))return loginCode();  // F126b
+  if(e.target.matches('[data-loginghe]')){const d=String(S.f.logindomain||'').trim();if(d)loginAt(d);return}  // F406c
   if(e.target.matches('[data-renform]'))return saveRename();  // F129
   send()});
