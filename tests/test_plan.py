@@ -244,6 +244,58 @@ def test_split_parents():
         has(txt, r'- \[ \] \*\*R1\*\*', 'R1 says no "(split into …)", so it is left to its own session')
 
 
+def test_drop_parts():
+    print('plan: dropping the last part ticks a split parent only when a part landed')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        Path(todo).write_text('\n'.join([
+            '# TODO', '', '### Next', '',
+            '- [ ] **P1** the importer (split into P1a, P1b) | files: a.py',
+            '- [ ] **P1a** the header',
+            '- [ ] **P1b** the body',
+            '- [ ] **R1** the parser (split into R1a, R1b)',
+            '- [ ] **R1a** the words',
+            '- [ ] **R1b** the numbers',
+            '- [~] **S1** the writer (split into S1a) BLOCKED: DECIDE: which?',
+            '- [ ] **S1a** a part',
+            '- [ ] **U1** the printer (split into U1a)',
+            '- [ ] **U1a** a part',
+            '- [x] **T1a** by hand — dropped: no',
+            '- [ ] **T1** the reader (split into T1a)', '']), encoding='utf-8')
+        plan.archive(todo, done)
+        eq(plan.drop('P1a', 'one task', **kw), [], 'P1b is still open, so P1 stays split')
+        has(Path(todo).read_text(), r'\(split into P1a, P1b\)', 'and says so')
+        has(Path(todo).read_text(), r'- \[ \] \*\*T1\*\* the reader\n', 'a drop ticked by hand counts as one')
+        eq(plan.drop('P1b', 'one task', **kw), ['P1'], 'the last part: none landed, and the drop says so')
+        has(Path(todo).read_text(), r'- \[ \] \*\*P1\*\* the importer \| files: a\.py\n', 'P1 is one whole task')
+        eq(plan.archive(todo, done), 0, 'and stays so')
+        plan.tick('R1a', plan_dir=d, **kw)
+        eq(plan.drop('R1b', 'overtaken', **kw), [], 'one part of R1 landed')
+        check('**R1**' not in Path(todo).read_text(), 'so R1 is ticked')
+        has(Path(done).read_text(), r'- \[x\] \*\*R1\*\* the parser \(split into R1a, R1b\)', 'and archived')
+        eq(plan.drop('S1a', 'no', **kw), ['S1'], 'a blocked parent is whole again')
+        has(Path(todo).read_text(), r'- \[~\] \*\*S1\*\* the writer BLOCKED: DECIDE: which\?', 'still asking')
+        plan.restore('P1a', **kw)
+        plan.tick('P1a', plan_dir=d, **kw)
+        plan.edit('P1', 'the importer (split into P1a, P1b)', todo=todo)
+        eq(plan.archive(todo, done), 1, 'a part restored and then ticked has landed, so P1 ticks')
+
+        import io
+        from contextlib import redirect_stdout
+        from types import SimpleNamespace
+        out, real = io.StringIO(), plan.drop
+        x = SimpleNamespace(say=lambda s: print(s) or 0)
+        try:
+            plan.drop = lambda *a: real(*a, **kw)
+            with redirect_stdout(out):
+                plan._p_drop(SimpleNamespace(id='U1a', rest=['no']), x)
+        finally:
+            plan.drop = real
+        has(out.getvalue(), r'^dropped U1a\nno part of U1 landed, so U1 is one whole task again', 'plan drop says it')
+
+
 def test_add_bottom():
     print("plan: an agent's follow-up files behind the queued work; a person's goes first")
     with tempfile.TemporaryDirectory() as tmp:
@@ -1579,6 +1631,6 @@ def test_multi_line_text():
 
 if __name__ == '__main__':
     sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
+                     test_split_parents, test_drop_parts, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_own_project, test_needs_config, test_slot_writes_own_plan, test_concept_shown]))
