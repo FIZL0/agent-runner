@@ -5,7 +5,7 @@
 const WALK=WALK_STEPS.map(s=>s.id);
 function walkStep(id,x){
   const w=WALK_STEPS.find(s=>s.id===id);if(!w)return null;
-  const first='[data-pact="start"]', off=x.off?w.pageOff:'';
+  const first='[data-pact="start"]', off=x.off?w.pageOff||w.noRun:'';
   const s={
     queue:{view:'plan',many:3,at:x.off?['[data-k="pq"]','sec:Queue']:['.card[data-k^="task:"]','sec:Queue'],say:[w.text]},
     start:{view:'status',at:x.off?[first,'.pcard']:x.up?['.card:has([data-k="runsaid"])']:['[data-ctl="start"]','.card:has([data-k="runsaid"])'],say:[x.up?w.up:w.off]},

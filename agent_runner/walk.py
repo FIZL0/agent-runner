@@ -22,9 +22,9 @@ def words(s: dict, up: bool = False, working: int = 0, needs: int = 0, landed: i
     """What step `s` says in the terminal UI: whether a run is up, and how many tasks are worked on, need the
     person and landed."""
     say = {'start': [s.get('up' if up else 'off'), s.get('keysUp' if up else 'keysOff')],
-           'session': [s.get('text'), s.get('keysWorking' if working else 'keysIdle'), '' if up else s.get('keysOff')],
+           'session': [s.get('text'), s.get('keysWorking' if working else 'keysIdle'), '' if up else s.get('noRun')],
            'needs': [s.get('text'), s.get('some' if needs else 'none'), s.get('keys')],
-           'land': [s.get('text'), s.get('keys'), '' if landed else s.get('none'), '' if up or landed else s.get('keysOff')],
+           'land': [s.get('text'), s.get('keys'), '' if landed else s.get('none'), '' if up or landed else s.get('noRun')],
            'own': [s.get('text'), s.get('setup')]}.get(s['id'], [s.get('text'), s.get('keys')])
     return ' '.join(w for w in say if w)
 
