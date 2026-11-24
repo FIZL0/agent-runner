@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from agent_runner.config import harness_model, PROVIDERS, RUNNER
 
@@ -74,6 +75,16 @@ def needs_none(provider: str, providers: dict) -> bool:
     return provider in LOCAL_NONE or bool(custom and not custom.get('key_env'))
 
 
+def enterprise_host(text: str) -> str:
+    """F406b: the host of a GitHub Enterprise domain as a person writes it (https://company.ghe.com/ too); text that
+    holds none comes back as it is, for the login package to refuse."""
+    text = text.strip()
+    try:
+        return urlsplit(text if '://' in text else f'https://{text}').hostname or text
+    except ValueError:
+        return text
+
+
 def login_of(provider: str, providers: dict, creds: dict | None = None,
              env: dict | None = None) -> tuple[bool, str]:
     """(has a login, where it is kept) for `provider`; never the secret itself."""
@@ -87,7 +98,8 @@ def login_of(provider: str, providers: dict, creds: dict | None = None,
     pid = provider if custom else PI_IDS.get(provider, provider)
     if isinstance(c := creds.get(pid), dict) and c:
         kind = 'OAuth' if c.get('type') == 'oauth' else 'API key' if c.get('type') == 'api_key' else 'login'
-        domain = f', GitHub Enterprise {c["enterpriseUrl"]}' if provider == 'copilot' and c.get('enterpriseUrl') else ''
+        domain = f', GitHub Enterprise {enterprise_host(str(c["enterpriseUrl"]))}' \
+            if provider == 'copilot' and c.get('enterpriseUrl') else ''
         return True, f'{kind} in {auth_file()} ({pid}{domain})'
     var = custom.get('key_env') if custom else ENV_KEYS.get(provider)
     if var and env.get(var):
@@ -336,6 +348,8 @@ def main(argv: list[str]) -> int:
         print(f'{RUNNER} login: --enterprise is for copilot only', file=sys.stderr)
         return 2
     print(f'{name}: {HOW.get(name, "API key, kept for " + (custom or {}).get("key_env", name))}')
+    if enterprise:
+        enterprise = enterprise_host(enterprise)
     ok, where = harness_login(name, custom, enterprise)
     if not ok:
         told(result, False, where)

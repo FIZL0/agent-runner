@@ -355,6 +355,55 @@ function plainModel(id, provider, api, baseUrl) {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 };
 }
 
+// --- Copilot on a GitHub Enterprise domain (F406b) ---
+// Pi's login package signs in and refreshes on the stored enterpriseUrl, but takes the address of the model list and
+// the model calls from the token (its proxy-ep), which can name githubcopilot.com. With a domain stored, an address
+// off that domain is the domain's own Copilot address instead.
+
+// the host of a domain as a person writes it (https://company.ghe.com/ too), '' when there is none
+function enterpriseHost(text) {
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (!t) return '';
+  try {
+    const host = new URL(t.includes('://') ? t : `https://${t}`).hostname;
+    return host === 'github.com' ? '' : host; // typed for the blank: no Enterprise domain
+  } catch { return ''; }
+}
+
+function onDomain(url, host) {
+  const u = new URL(url);
+  if (u.hostname !== host && !u.hostname.endsWith(`.${host}`)) u.host = `copilot-api.${host}`;
+  return u.href.replace(/\/$/, '');
+}
+
+// run `fn` with each fetch it makes kept on `host()`; '' (github.com) changes none
+async function keptOnDomain(host, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = (url, init) => real(host() ? onDomain(String(url), host()) : url, init);
+  try { return await fn(); } finally { globalThis.fetch = real; }
+}
+
+function enterpriseOAuth(oauth) {
+  return { ...oauth,
+    login(io, options) {
+      let host = '';
+      const prompt = async (p) => {
+        const answer = await io.prompt(p);
+        if (p.type !== 'select' && /enterprise/i.test(p.message || '')) host = enterpriseHost(answer);
+        return answer;
+      };
+      return keptOnDomain(() => host, () => oauth.login({ ...io, prompt }, options));
+    },
+    refresh(credential, signal) {
+      const host = enterpriseHost(credential.enterpriseUrl);
+      return keptOnDomain(() => host, () => oauth.refresh(credential, signal));
+    },
+    async toAuth(credential) {
+      const auth = await oauth.toAuth(credential), host = enterpriseHost(credential.enterpriseUrl);
+      return host ? { ...auth, baseUrl: onDomain(auth.baseUrl, host) } : auth;
+    } };
+}
+
 async function realProvider(name, modelId, custom) {
   const ai = await piAi('index');
   const credentials = piCredentials();
@@ -373,9 +422,18 @@ async function realProvider(name, modelId, custom) {
   } else {
     const id = PROVIDER_IDS[name] || name;
     models = (await piAi('providers/all')).builtinModels({ credentials });
-    model = models.getModel(id, modelId);
+    let list = models.getModels(id);
+    if (id === PROVIDER_IDS.copilot) {
+      const p = models.getProvider(id);
+      models.setProvider({ ...p, auth: { ...p.auth, oauth: enterpriseOAuth(p.auth.oauth) } });
+      if (enterpriseHost((await credentials.read(id))?.enterpriseUrl)) { // the models that domain lists for the account
+        try { await models.getAuth(id); } catch { /* a refresh that fails is said by the model call, which tries again */ }
+        list = await models.getAvailable(id);
+      }
+    }
+    model = list.find((m) => m.id === modelId);
     if (!model) {
-      const known = models.getModels(id).map((m) => m.id);
+      const known = list.map((m) => m.id);
       throw new Error(`harness: ${name} (${id}) has no model ${modelId}; it has: ${known.join(', ') || 'none'}`);
     }
   }
@@ -730,7 +788,7 @@ async function loginAuth(id, custom) {
   if (custom) return { apiKey: ai.envApiKeyAuth(`${id} API key`, custom.key_env ? [custom.key_env] : []) };
   const p = (await piAi('providers/all')).builtinProviders().find((x) => x.id === id);
   if (!p) throw new Error(`harness: Pi's login package has no provider ${id}`);
-  return p.auth;
+  return id === PROVIDER_IDS.copilot ? { ...p.auth, oauth: enterpriseOAuth(p.auth.oauth) } : p.auth;
 }
 
 async function login(argv) {

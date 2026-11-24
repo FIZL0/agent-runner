@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -17,7 +18,7 @@ from unittest import mock
 
 from _check import check, eq, git, has, report
 
-from agent_runner import runner as R
+from agent_runner import login as L, runner as R
 from agent_runner.config import Config, runner_cmd
 from agent_runner.tools import take_end
 
@@ -382,6 +383,106 @@ def test_no_pi(env: Env):
         env.configure('')
 
 
+# F406b: a GitHub Enterprise Server in front of Pi's real login package, loaded before the harness (node --import):
+# every fetch is logged; corp.ghe.com and its subdomains answer, any other host fails. Its token names a proxy
+# off the domain, as the package follows on its own.
+GHE = r"""
+import fs from 'node:fs';
+const json = (o) => new Response(JSON.stringify(o), { headers: { 'content-type': 'application/json' } });
+globalThis.fetch = async (input, init) => {
+  const u = new URL(typeof input === 'string' ? input : input.url || input.href);
+  const bearer = new Headers(init?.headers || input.headers).get('authorization') || '';
+  fs.appendFileSync(process.env.GHE_LOG, JSON.stringify({ host: u.host, path: u.pathname, bearer }) + '\n');
+  if (u.host !== 'corp.ghe.com' && !u.host.endsWith('.corp.ghe.com')) throw new Error(`off the domain: ${u.host}`);
+  if (u.pathname === '/login/device/code') return json({ device_code: 'dev', user_code: 'ABCD-1234',
+    verification_uri: 'https://corp.ghe.com/login/device', interval: 1, expires_in: 60 });
+  if (u.pathname === '/login/oauth/access_token') return json({ access_token: 'gh-REFRESH' });
+  if (u.pathname === '/copilot_internal/v2/token') return json({ expires_at: Math.floor(Date.now() / 1000) + 3600,
+    token: 'tid=1;exp=2' + (process.env.GHE_PROXY ? `;proxy-ep=${process.env.GHE_PROXY}` : '') });
+  if (u.pathname === '/models') return json({ data: [{ id: process.env.GHE_MODEL, model_picker_enabled: true,
+    policy: { state: process.env.GHE_POLICY || 'enabled' }, capabilities: { supports: { tool_calls: true } } }] });
+  if (u.pathname.endsWith('/policy')) return json({});
+  if (u.pathname === '/chat/completions') return new Response('data: ' + JSON.stringify({ id: 'c1', model: process.env.GHE_MODEL,
+    choices: [{ index: 0, delta: { role: 'assistant', content: 'hello from corp' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } }) + '\n\ndata: [DONE]\n\n',
+    { headers: { 'content-type': 'text/event-stream' } });
+  return new Response('not found', { status: 404 });
+};
+"""
+
+
+def test_enterprise(tmp: Path):
+    """F406b: Copilot on a GitHub Enterprise domain: login, refresh, model list and a model call, none off it."""
+    js = Path(R.__file__).with_name('harness.mjs')
+    eq([L.enterprise_host(t) for t in ('corp.ghe.com', ' https://Corp.ghe.com/ ', 'corp.ghe.com/', '', 'http://[')],
+       ['corp.ghe.com', 'corp.ghe.com', 'corp.ghe.com', '', 'http://['], 'a domain is trimmed to its host')
+    has(L.login_of('copilot', {}, {'github-copilot': {'type': 'oauth', 'enterpriseUrl': 'https://corp.ghe.com/'}})[1],
+        r'GitHub Enterprise corp\.ghe\.com\)', 'login_of names the host')
+    version = re.search(r"PI_AI_VERSION = '([^']+)'", js.read_text(encoding='utf-8')).group(1)
+    modules = Path(os.environ.get('AGENT_RUNNER_HARNESS_MODULES') or
+                   Path.home() / '.cache' / 'agent-runner' / f'harness-{version}')
+    catalog = modules / 'node_modules/@earendil-works/pi-ai/dist/providers/data/github-copilot.json'
+    if not catalog.exists():
+        print(f"  skip: the login package is not installed in {modules} (a harness session installs it)")
+        return
+    ids = [k.removeprefix('chat:') for k in json.loads(catalog.read_text(encoding='utf-8'))['openai-completions']]
+    model, other = ids[0], ids[1]
+    ghe, log, pi = tmp / 'ghe.mjs', tmp / 'ghe.jsonl', tmp / 'ghe-pi'
+    ghe.write_text(GHE, encoding='utf-8')
+    auth = pi / 'auth.json'
+    env = {k: v for k, v in os.environ.items()
+           if k not in ('AGENT_RUNNER_HARNESS_PROVIDER', 'AGENT_RUNNER_HARNESS_LOGIN', 'COPILOT_GITHUB_TOKEN')}
+    env.update(PI_CODING_AGENT_DIR=str(pi), AGENT_RUNNER_HARNESS_MODULES=str(modules), GHE_LOG=str(log), GHE_MODEL=model,
+               NODE_OPTIONS=f'--import={ghe.as_uri()}')
+
+    def cred() -> dict:
+        return json.loads(auth.read_text(encoding='utf-8'))['github-copilot']
+
+    def seen() -> list[str]:
+        """The addresses asked since the last look, in order."""
+        out = [json.loads(l) for l in log.read_text(encoding='utf-8').splitlines()] if log.exists() else []
+        log.write_text('', encoding='utf-8')
+        check(all(r['host'] == 'corp.ghe.com' or r['host'].endswith('.corp.ghe.com') for r in out),
+              'nothing goes off the domain', out)
+        return [r['host'] + r['path'] for r in out]
+
+    def login(domain: str, **more) -> None:
+        with mock.patch.dict(os.environ, {**env, **more}):
+            ok, where = L.harness_login('copilot', None, domain, say=lambda s: None)
+        check(ok, f'the login on {domain} is stored', where)
+
+    def session(m: str, **more) -> subprocess.CompletedProcess:
+        prompt = tmp / 'ghe-prompt.txt'
+        prompt.write_text('say hello', encoding='utf-8')
+        argv = ['node', str(js), '--session-id', f'ghe-{time.time_ns()}', '--model', f'copilot:{m}', '--notes',
+                str(tmp / 'ghe-notes'), '--prompt-file', str(prompt), '--once', '--tools', 'read']
+        return subprocess.run(argv, cwd=str(tmp), env={**env, **more}, stdin=subprocess.DEVNULL, capture_output=True,
+                              text=True, timeout=120)
+
+    copilot = 'copilot-api.corp.ghe.com'
+    signin = ['corp.ghe.com/login/device/code', 'corp.ghe.com/login/oauth/access_token',
+              'api.corp.ghe.com/copilot_internal/v2/token']
+    for proxy in ('', 'proxy.enterprise.githubcopilot.com'):
+        what = f'(a token naming {proxy})' if proxy else '(a token naming no proxy)'
+        login('https://corp.ghe.com/', GHE_PROXY=proxy, GHE_POLICY='unconfigured')
+        eq(seen(), [*signin, f'{copilot}/models', f'{copilot}/models/{model}/policy'], f'login asks only the domain {what}')
+        eq(cred().get('enterpriseUrl'), 'corp.ghe.com', 'and stores its host')
+        c = {**cred(), 'expires': 1, 'enterpriseUrl': 'https://corp.ghe.com/'}  # as an older login may hold it
+        auth.write_text(json.dumps({'github-copilot': c}), encoding='utf-8')
+        p = session(model, GHE_PROXY=proxy)
+        check('hello from corp' in p.stdout, f'the session answers {what}', p.stdout + p.stderr)
+        eq(seen(), ['api.corp.ghe.com/copilot_internal/v2/token', f'{copilot}/models', f'{copilot}/chat/completions'],
+           f'the refresh, the model list and the call ask only the domain {what}')
+        check(cred()['expires'] > time.time() * 1000 and cred()['enterpriseUrl'] == 'corp.ghe.com',
+              'the refreshed login keeps the domain', cred())
+    login('corp.ghe.com', GHE_PROXY='proxy.corp.ghe.com')
+    check('api.corp.ghe.com/models' in seen(), "a token's own address on the domain is kept")
+    p = session(other)
+    check(p.returncode == 2, 'a model the domain does not list is refused', p.stdout + p.stderr)
+    has(p.stderr, rf'has no model {re.escape(other)}; it has: {re.escape(model)}$', 'with the ones it lists')
+    seen()
+
+
 def main() -> int:
     node = shutil.which('node')
     if not node:
@@ -394,7 +495,7 @@ def main() -> int:
             return report([lambda: test_routing(env), lambda: test_finish(env),
                            lambda: test_finish_refused(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_context_warn(env), lambda: test_resume(env),
-                           lambda: test_tell(env), lambda: test_brief(env), lambda: test_no_pi(env)])
+                           lambda: test_tell(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 
