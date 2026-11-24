@@ -127,23 +127,44 @@ def _plans(todo: str | Path | None):
     return found
 
 
+def sheet_file(tid: str, c=None) -> Path:
+    """<notes>/sheets/ID.json in the main checkout: task `tid`'s pick sheet."""
+    return (c or S.cfg()).notes('sheets', f'{tid}.json')
+
+
 def clear_ask(tid: str, todo: str | Path | None = None) -> None:
-    """Take task `tid`'s ask file and its pictures away: its item was answered, dropped or blocks again, and an old
-    one must never stand in for a new ask."""
+    """Take task `tid`'s ask file, its pictures and its pick sheet (B204) away: its item was answered, dropped or
+    blocks again, and an old one must never stand in for a new ask."""
     if not re.fullmatch(r'\w[\w.-]*', tid or ''):
         return
     for c in _plans(todo):
+        _clear_file(c, tid)
+        _clear_sheet(c, tid)
+
+
+def _clear_sheet(c, tid: str) -> None:
+    """Take the pick sheet itself away (its page stays where it was published)."""
+    d = c.notes('x').parent / 'sheets'
+    for f in (f'{tid}.json', f'{tid}.taken'):
         try:
-            d = c.notes('x').parent / 'asks'
-            for f in (f'{tid}.json', f'{tid}.taken', f'{tid}.said'):
-                (d / f).unlink(missing_ok=True)
-            pics = d / tid
-            if pics.is_symlink():
-                pics.unlink()
-            elif pics.is_dir():
-                shutil.rmtree(pics, ignore_errors=True)
+            (d / f).unlink(missing_ok=True)
         except OSError:
             continue
+
+
+def _clear_file(c, tid: str) -> None:
+    """Take the ask file and its pictures away."""
+    try:
+        d = c.notes('x').parent / 'asks'
+        for f in (f'{tid}.json', f'{tid}.taken', f'{tid}.said'):
+            (d / f).unlink(missing_ok=True)
+        pics = d / tid
+        if pics.is_symlink():
+            pics.unlink()
+        elif pics.is_dir():
+            shutil.rmtree(pics, ignore_errors=True)
+    except OSError:
+        return
 
 
 def env_file(tid: str, c=None) -> Path:
@@ -222,19 +243,22 @@ def sweep_env(branch: str) -> None:
 
 
 def taken_ask(tid: str, todo: str | Path | None, again: bool) -> None:
-    """A block takes task `tid`'s ask file as its own (its time is kept in <notes>/asks/ID.taken). `again`: the task
-    was blocked already, so the file that block took, not written since, is an old ask's and goes."""
+    """A block takes task `tid`'s ask file and its pick sheet (B204) as its own (each one's time is kept in an ID.taken
+    beside it). `again`: the task was blocked already, so a file that block took, not written since, is an old ask's
+    and goes; the other, written since, stays."""
+    if not re.fullmatch(r'\w[\w.-]*', tid or ''):
+        return
     for c in _plans(todo):
-        try:
-            f = ask_file(tid, c)
-            at = str(f.stat().st_mtime_ns) if f.is_file() else ''
-            mark = f.with_name(f'{tid}.taken')
-            if again and at and mark.is_file() and mark.read_text(encoding='utf-8') == at:
-                clear_ask(tid, todo)
-            elif at:
-                mark.write_text(at, encoding='utf-8')
-        except OSError:
-            continue
+        for f, clear in ((ask_file(tid, c), _clear_file), (sheet_file(tid, c), _clear_sheet)):
+            try:
+                at = str(f.stat().st_mtime_ns) if f.is_file() else ''
+                mark = f.with_name(f'{tid}.taken')
+                if again and at and mark.is_file() and mark.read_text(encoding='utf-8') == at:
+                    clear(c, tid)
+                elif at:
+                    mark.write_text(at, encoding='utf-8')
+            except OSError:
+                continue
 
 
 def long_line(tid: str, why: str, c=None) -> str:

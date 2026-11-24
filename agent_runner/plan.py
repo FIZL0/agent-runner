@@ -634,6 +634,7 @@ def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> 
     off `why`: every task id named there that is still open, other than this task and its own subtasks.
     Pass [] for a block that waits on no task (a human, a tool, a capture).
     `keep_ask`: the agent may have written this block's ask file (F156); any other block takes an old one away.
+    Its pick sheet likewise (B204).
     """
     todo, _ = ensure(todo)
     ls = list(lines(todo))

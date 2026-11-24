@@ -233,5 +233,68 @@ def test_pick_links_f138():
            "the picks line is sheet --picks; 'go' is sheet --go")
 
 
+def test_clear_b204():
+    print('B204: the sheet goes once its item is answered, dropped or blocks again; one written for its own block stays')
+    with tempfile.TemporaryDirectory() as t:
+        root, env = make(Path(t))
+        R.init(root)
+        todo = R.C.todo
+        f = root / '.runner' / 'sheets' / 'F2.json'
+        other = f.with_name('F1.json')
+
+        def put(g: Path = f) -> None:
+            g.parent.mkdir(parents=True, exist_ok=True)
+            g.write_text(json.dumps(SPEC), encoding='utf-8')
+
+        def gone(what: str) -> None:
+            eq(sorted(p.name for p in f.parent.glob('F2.*')), [], f'{what}: gone')
+            check(other.is_file(), f'{what}: another task\'s stays')
+
+        def done(why: str) -> None:
+            r = run(root, 'done', 'F2', 'F2: x', '--no-test', '--blocked', why, env=env)
+            check(r.returncode == 0, f'done --blocked {why}', r.stdout + r.stderr)
+
+        put(other)
+        for what, argv in (('go', ('sheet', 'F2', '--go')), ('picks', ('sheet', 'F2', '--picks', 'F2 picks: silent=b')),
+                           ('confirm', ('plan', 'confirm', 'F2', 'all of it')), ('change', ('plan', 'change', 'F2', 'no'))):
+            put()
+            done(f'DECIDE: {what} {URL}')
+            check(f.is_file(), f'{what}: written just before its block, kept')
+            r = run(root, *argv, env=env)
+            check(r.returncode == 0, f'{what}: answered', r.stdout + r.stderr)
+            gone(what)
+        done('DECIDE: a later ask')
+        r = run(root, 'sheet', 'F2', '--go', env=env)
+        check(r.returncode == 1, 'a later ask with no sheet: go has none to run', r.stdout + r.stderr)
+        run(root, 'plan', 'unblock', 'F2', env=env)
+
+        ask = root / '.runner' / 'asks' / 'F2.json'
+        for new, old in ((f, ask), (ask, f)):
+            put(f), put(ask)
+            done('DECIDE: one')
+            new.unlink()
+            done('DECIDE: two, only the old one left')
+            check(not old.exists(), f'{old.parent.name}: the last block\'s own file, not written since: gone')
+            put(f), put(ask)
+            done('DECIDE: three')
+            check(f.is_file() and ask.is_file(), 'both written since: kept')
+            at = new.stat().st_mtime_ns + 10**9
+            os.utime(new, ns=(at, at))
+            done('DECIDE: four')
+            eq((new.is_file(), old.is_file()), (True, False), f'{new.parent.name} written since stays, the old other one goes')
+            P.unblock('F2', todo=todo)
+            gone('unblock')
+
+        put()
+        P.block('F2', f'DECIDE: pick {URL}', todo=todo, keep_ask=True)
+        P.block('F2', 'fix first', todo=todo, after=['F1'])
+        check(f.is_file(), 'waiting on a task first: the same ask comes back, with its sheet')
+        P.block('F2', 'DECIDE: failed its merge', todo=todo, after=[])
+        gone('the run blocks it')
+        put()
+        P.drop('F2', 'no', todo=todo)
+        gone('drop')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_spec, test_page, test_db, test_needs_you, test_answer, test_go, test_pick_links_f138]))
+    raise SystemExit(report([test_spec, test_page, test_db, test_needs_you, test_answer, test_go, test_clear_b204, test_pick_links_f138]))
