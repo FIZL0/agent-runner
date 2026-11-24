@@ -241,7 +241,8 @@ const $ = k => els[k] = els[k] || new Box(10);
 const ta = {value: 'hello', dataset: {}};
 const document = {activeElement: null, hidden: false, querySelector: s => s === '[data-in]' ? ta : s === '.main' ? main : s === '.notices' ? {offsetHeight: 0} : null};
 const on = {}, main = {classList: {toggle: (c, v) => on[c] = v}, style: {setProperty() {}}};
-const window = {};
+const window = {}, matchMedia = () => ({matches: reduced}), getComputedStyle = () => ({getPropertyValue: k => k.startsWith('--dur') ? '450ms' : 'ease'});
+let reduced = false, frames = []; const requestAnimationFrame = f => frames.push(f);
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: {}, ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
@@ -253,7 +254,7 @@ const DRAFT_KEY = k => k, toast = () => {}, open = n => { S.thread = n; render(t
 const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, keepPlace = () => {};
 const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };
 eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('function keysIn(').split('\nfunction enter')[0]
-  + grab('function enter(') + line('const MO=') + 'const flying=()=>0,glideSpot=()=>null,glide=()=>{},leaving=()=>{},freshWords=()=>{},sentFrom=()=>{},sentMark=()=>{},loopsInStep=()=>{},sendFly=()=>{},viewSlide=()=>{};' + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
+  + grab('function enter(') + page.slice(page.indexOf('const MO='), page.indexOf('\nconst shiftOf=')) + '\nconst flying=()=>0,glideSpot=()=>null,glide=()=>{},leaving=()=>{},freshWords=()=>{},sentFrom=()=>{},sentMark=()=>{},loopsInStep=()=>{},sendFly=()=>{},viewSlide=()=>{};' + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
   + line('let lastPlace=') + line('S.at={};') + line('const chatShown=') + line('function toEnd(') + line('let SEE=') + grab('function seeRoom(') + grab('function seeBar(')
   + grab('function render(') + line("$('body').addEventListener('scroll'") + grab('async function send(') + `
 (async () => {
@@ -341,7 +342,7 @@ const dockEl = {style: {}, animate: anim('dock'), getBoundingClientRect: () => (
 const document = {activeElement: null, documentElement: {clientHeight: 800}, addEventListener: (t, f) => docOn[t] = f, querySelector: s => s === '.dockwrap' ? dockEl : null};
 const S = {view: 'talk', thread: null, pin: true, sheet: ''};
 const seeRoom = () => {}, seeBar = () => {};
-const feedTop = () => null, feedGlide = () => {}, TOUCH = () => false;
+const feedTop = () => null, feedGlide = () => {}, TOUCH = () => false, MO = {scroll: new Map()};
 eval(line('const atEnd=') + line('const chatShown=') + line('function toEnd(') + page.slice(page.indexOf('const VV='), page.indexOf('function grow(')) + `
 const b = $('body'), out = {}, left = () => b.scrollHeight - b.scrollTop - b.clientHeight;
 const app = () => [$('app').style.height || '', $('app').style.top || '', $('app').classList.contains('kb')];

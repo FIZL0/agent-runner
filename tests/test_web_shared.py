@@ -28,6 +28,7 @@ from agent_runner import state as S  # noqa: E402
 from agent_runner import ui_model as U  # noqa: E402
 from agent_runner import web as W  # noqa: E402
 from _web import TODO, fake_repo, get, post, LOGIC_DRIVER, logic_js, in_tmp  # noqa: E402
+from test_web_live import SCROLL_DRIVER  # noqa: E402
 
 
 def test_server(tmp: Path) -> None:
@@ -426,6 +427,89 @@ def test_motion_f147(tmp: Path) -> None:
     check(b[3] > c[3], "with the finger's speed", o['spring'])
 
 
+JUMP_DRIVER = SCROLL_DRIVER.split("eval(logic")[0] + r"""
+const slice = (a, z) => page.slice(page.indexOf(a), page.indexOf(z, page.indexOf(a)));
+const hears = {}; document.addEventListener = (t, f) => { hears[t] = f };
+const TK = {state: '', gen: 0, starting: []}, TM_KEY = 't', talkName = () => '', talkKept = () => '', talkStarts = () => {}, unlockSpeech = () => {}, loadVoices = () => {}, kbFocus = () => {};
+const act = () => new Promise(() => {}), SL = {cmds: [{name: 'a'}, {name: 'ab'}, {name: 'abc'}], items: [], i: 0, at: Date.now(), of: ''};
+let P = 0, made = [];
+Box.prototype.animate = function (kf, o) { const a = {el: this, kf, o, playState: 'running', effect: {getComputedTiming: () => ({progress: P})}, cancel() { this.cancelled = true }}; made.push(a); return a };
+Box.prototype.isConnected = true; Box.prototype.contains = function (e) { return e === this };
+const frame = p => { P = p; if (p === 1) made.forEach(a => { a.playState = 'finished' }); const l = frames; frames = []; l.forEach(f => f()) };
+const js = {reveal: grab('function kbReveal('), slash: grab('function slashShow('), hand: line("for(const t of ['pointerdown','touchstart','wheel'])"), mode: line('function talkMode('), send: grab('async function talkSend(')};
+""" + 'eval(logic' + SCROLL_DRIVER.split('eval(logic')[1].split('(async () => {')[0].rstrip().removesuffix('`') + r"""js.reveal + js.slash.replace('function slashShow', 'function slashDraw') + js.hand + js.mode + js.send + `
+(async () => {
+  const b = $('body'), out = {};
+  S.view = 'talk'; render(true); made = [];
+  const up = () => { scrollStop(b); CHAT = 'm1:400 m2:400'; b._h = ''; render(true); b.scrollTop = 100; b.on.scroll(); frames = []; made = []; P = 0 };
+  const trail = () => { const t = [b.scrollTop]; frame(.5); t.push(b.scrollTop); frame(1); t.push(b.scrollTop); return t };
+  const talk = {send: () => { talkSend('Hi') }, mode: () => talkMode('type')};
+  for (const k in talk) {
+    up(); out.unpinned = S.pin; talk[k](); out[k] = [trail(), S.pin, made.map(a => [a.kf.length, a.o.duration]), MO.scroll.size];
+    reduced = true; up(); talk[k](); out[k + 'Calm'] = [b.scrollTop, made.length]; reduced = false;
+    document.hidden = true; up(); talk[k](); out[k + 'Hidden'] = [b.scrollTop, made.length]; document.hidden = false;
+  }
+  // a redraw, new words and a scroll event half way: the glide goes on, to the new end
+  up(); talkSend('Hi'); frame(.5); CHAT += ' m3:100'; b._h = ''; render(true); b.on.scroll(); const half = b.scrollTop; frame(.5); const on1 = b.scrollTop; frame(1); out.redrawn = [half, on1, b.scrollTop, S.pin];
+  // the person's hand takes it over; another view ends it
+  up(); talkSend('Hi'); frame(.5); hears.wheel({target: b}); frame(1); out.hand = [b.scrollTop, S.pin, MO.scroll.size];
+  up(); talkSend('Hi'); frame(.5); S.view = 'plan'; VIEW = 'a:300'; render(true); frame(1); out.moved = [b.scrollTop, MO.scroll.size]; S.view = 'talk'; render(true);
+  // a field: a press glides to it, typing is at once, unless that glide is under way
+  const field = {closest: () => b, getBoundingClientRect: () => ({top: 500 - b.scrollTop, bottom: 540 - b.scrollTop})};
+  up(); kbReveal(field, true); out.reveal = trail();
+  up(); kbReveal(field); out.typed = [b.scrollTop, made.length];
+  up(); reduced = true; kbReveal(field, true); out.revealCalm = [b.scrollTop, made.length]; reduced = false;
+  up(); kbReveal(field, true); kbReveal(field); out.both = [...trail(), made.length];
+  // the slash menu: an arrow glides, typing is at once
+  const menu = new Box(50); menu.innerHTML = 'x:40 y:40 z:40'; let into = 0;
+  const row = {scrollIntoView() { into++ }, getBoundingClientRect: () => ({top: 80 - menu.scrollTop, bottom: 120 - menu.scrollTop})};
+  Object.defineProperty(menu, 'innerHTML', {set() {}}); menu.querySelector = () => row; document.querySelector = s => s === '[data-slash]' ? menu : null;
+  const tb = {value: '/a'}; made = []; frames = []; slashDraw(tb, true); frame(0); const s0 = menu.scrollTop; frame(.5); const s1 = menu.scrollTop; frame(1); out.slash = [s0, s1, menu.scrollTop, into];
+  made = []; slashDraw(tb); out.slashTyped = [into, made.length];
+  reduced = true; menu.scrollTop = 0; slashDraw(tb, true); out.slashCalm = [menu.scrollTop, made.length]; reduced = false;
+  // at once, with motion on: the first load, a view's own place, a refresh, Talk following a reply, its opening
+  document.querySelector = s => s === '[data-in]' ? ta : s === '.main' ? main : s === '.notices' ? {offsetHeight: 0} : null;
+  scrollStop(b); frames = []; made = []; S.view = 'home'; VIEW = 'a:60 b:60 c:60 d:60'; render(true); b.scrollTop = 70; VIEW = 'n:35 ' + VIEW; render(); out.held = b.scrollTop;
+  S.view = 'plan'; render(true); S.view = 'home'; render(true); out.back = b.scrollTop;
+  S.view = 'talk'; render(true); const open = endOf(b) - b.scrollTop; CHAT += ' m9:90'; render(); out.follow = [open, endOf(b) - b.scrollTop];
+  S.live = false; lastPlace = null; b._top = 0; render(true); out.load = endOf(b) - b.scrollTop; out.ran = [made.length, frames.length];
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_jumps_f189a(tmp: Path) -> None:
+    """F189a: a scroll jump that a press causes glides (Talk's end, a field to look at, the slash menu's row); calm() makes
+    it instant; a refresh, a reply, a view's own place, the first load and typing never glide."""
+    if not shutil.which('node'):
+        print('  (no node here: the scroll jump script test is skipped)')
+        return
+    (tmp / 'page.html').write_text(W.page_html().decode(), encoding='utf-8')
+    (tmp / 'driver.js').write_text(JUMP_DRIVER, encoding='utf-8')
+    p = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'page.html')], capture_output=True, text=True, encoding='utf-8', timeout=30)
+    check(p.returncode == 0, 'the scroll jump script runs', p.stderr[-1500:])
+    if p.returncode:
+        return
+    o = json.loads(p.stdout)
+    eq(o['unpinned'], False, 'Talk is scrolled up')
+    for k in ('send', 'mode'):
+        eq(o[k], [[100, 400, 700], True, [[0, 450]], 0], f'Talk, {k}: the jump to its end glides, on a token, and it is pinned')
+        eq((o[k + 'Calm'], o[k + 'Hidden']), ([700, 0], [700, 0]), f'{k}: at once when calm()')
+    eq(o['redrawn'], [400, 450, 800, True], 'a redraw and new words half way: it goes on, to the new end')
+    eq(o['hand'], [400, False, 0], "the person's hand takes it over")
+    eq(o['moved'], [0, 0], 'another view ends it')
+    eq(o['reveal'], [100, 274, 448], 'a press that moves to a field glides to it')
+    eq((o['typed'], o['revealCalm']), ([448, 0], [448, 0]), 'while typing, and when calm(), at once')
+    eq(o['both'], [100, 274, 448, 1], 'its focus does not cut the glide')
+    eq(o['slash'], [0, 35, 70, 0], "an arrow in the slash menu glides to its row")
+    eq((o['slashTyped'], o['slashCalm']), ([1, 0], [70, 0]), 'typing and calm(): at once')
+    eq((o['held'], o['back'], o['follow'], o['load']), (105, 105, [0, 0], 0), 'a refresh, a view back, Talk following, the first load are in place')
+    eq(o['ran'], [0, 0], 'and none of them glides')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('kbReveal(el,true);el.focus(' in page and 'kbReveal(t,true);kbFocus(t)' in page and 'e.key);slashShow(e.target,true)' in page,
+          'the presses ask for the glide: a refused Done, Rename, an arrow key')
+
+
 def test_style_f83(tmp: Path) -> None:
     """F83: the run app keeps to docs/STYLE.md where a machine can tell: colours, sizes, corners and durations are
     tokens, motion is transform and opacity only, and one rule turns it off under prefers-reduced-motion."""
@@ -493,4 +577,4 @@ def test_page_parts_c41a(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_style_f83), in_tmp(test_page_parts_c41a)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_style_f83), in_tmp(test_page_parts_c41a)]))

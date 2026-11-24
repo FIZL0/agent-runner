@@ -116,7 +116,7 @@ async function playClips(clips,voice,turn,end,fall,held){
   routeFree();end();
 }
 const talkTyping=()=>!!micWhy()||store.get(TM_KEY)==='type';
-function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;render(true);const t=m==='type'&&document.querySelector('[data-in]');if(t)kbFocus(t)}
+function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;if(chatShown())toEnd(true);render(true);const t=m==='type'&&document.querySelector('[data-in]');if(t)kbFocus(t)}
 /* F157: the Talk chats left by New Talk chat, kept over a reload */
 function talkOld(){try{const l=JSON.parse(store.get(TALK_OLD)||'[]');return Array.isArray(l)?l:[]}catch(e){return []}}
 function talkLeave(names){store.set(TALK_OLD,JSON.stringify([...new Set(talkOld().concat(names))]))}
@@ -241,7 +241,7 @@ function talkDraw(){
 /* the person's words to the Talk session; true once sent */
 async function talkSend(msg){
   const to=talkName(), len=to?feedOf(to).length:0, mark=to&&S.feeds[to]?feedMark(feedOf(to)):null;  // B134
-  if(TK.state!=='speaking')TK.state='thinking';TK.said=msg;TK.note=TK.held='';S.pin=true;unlockSpeech();loadVoices();render(true);
+  if(TK.state!=='speaking')TK.state='thinking';TK.said=msg;TK.note=TK.held='';S.pin=true;if(chatShown())toEnd(true);unlockSpeech();loadVoices();render(true);
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
   const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true,gen:TK.gen};TK.wait=w;

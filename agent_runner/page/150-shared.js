@@ -1,7 +1,8 @@
 let lastPlace=null;
 S.at={};S.pin=true;S.last={};S.keys=false;
 const chatShown=()=>!S.thread&&S.view==='talk';
-function toEnd(){const b=$('body');seeRoom();b.scrollTop=b.scrollHeight;S.pin=true;seeBar()}
+/* F189a: press: a press asked for it, so it glides; anything else is at once, but leaves a glide under way to reach the end */
+function toEnd(press){const b=$('body');seeRoom();if(press)scrollGlide(b,endOf);else if(!MO.scroll.has(b))b.scrollTop=b.scrollHeight;S.pin=true;seeBar()}
 /* F171: the room Talk's top bar (with a notice's row) and dock take from the chat behind them; and the top bar away or not */
 let SEE={top:0,size:'',run:0,away:false};
 function seeRoom(){
@@ -41,6 +42,7 @@ function render(force){
   if(HOME_PAGE){S.thread=null;if(!HKEY||S.view!=='projects')S.view=HKEY?'home':'projects'}
   const place=HOME_PAGE?'home page:'+S.view+(H.tab||''):n?'t:'+n:'v:'+S.view+(S.view==='projects'&&H.tab?':'+H.tab:''), moved=place!==lastPlace, chatOn=!!n||S.view==='talk';
   const put=keepScroll(body), had=keysIn(body), hadTop=keysIn($('top')), keep=keepFields(body);
+  if(moved)scrollStop(body);
   if(moved&&lastPlace)S.at[lastPlace]=body.scrollTop;
   obDraw();  // F137
   newsDraw();  // F149
@@ -96,7 +98,7 @@ function render(force){
   lastPlace=place;
 }
 /* F83: Talk follows its newest words until the person scrolls up; it follows a box that grows or a keyboard too */
-$('body').addEventListener('scroll',()=>{if(chatShown()){S.pin=atEnd($('body'));seeBar()}},{passive:true});
+$('body').addEventListener('scroll',()=>{if(chatShown()){S.pin=MO.scroll.has($('body'))||atEnd($('body'));seeBar()}},{passive:true});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
 /* B160, F126a: a notice's row comes or goes: the text stays where it was (a pinned chat by the line above) */
 let noticeH=0, noticeAt=null;
