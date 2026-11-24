@@ -339,7 +339,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   Needs you (each item is one short card: what is wanted and where, in everyday words, its title, at most two lines of
   what to do, and Press for details; its answer buttons sit below it, Later to shelve it, Chat to open a new chat that shows the
   question and its answers, Drop to drop the task after a confirm). Pressing the card's words opens a popup with the whole ask: what to
-  do as numbered steps, what you should see, notes, pictures, a link to its page, Why it waits, the agent's last words (`GET /why/ID`, shown only when the agent left a session with words of its own or they could not be read), and the
+  do as numbered steps, what you should see, notes, pictures, a link to its page, Why it waits, the agent's last words (`GET /why/ID`, shown only when the agent left a session with words of its own), and the
   full task (`GET /task/ID`, always shown for a task item), and at the foot a one-line reply box with the answer buttons. The reply's words go with the answer
   (Yes is `plan confirm ID "Yes: words"`, No is `plan change ID "No: words"`, a concept option likewise; a pick sheet's go or
   picks is `sheet ID … --note "words"`, Not this on a PITCH is `pitch no ID --why "words"`, and the words beside its Approve go

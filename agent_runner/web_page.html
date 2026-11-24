@@ -1730,8 +1730,8 @@ function askFold(key,label,got){
   const on=!!S.askFold[key];
   return `<button class="fold" data-askfold="${key}" aria-expanded="${on}"><span class="grow"><b>${label}</b></span><span class="chev">${I.chev}</span></button>${on?`<div class="asktext">${!got?'<div class="small">Loading…</div>':got.err?`<div class="small v-bad">${esc(got.err)}</div><div class="btns"><button class="btn" data-askload>Retry</button></div>`:taskParas(got.text).map(p=>`<p>${esc(p)}</p>`).join('')||'<div class="small">There are no words of it.</div>'}</div>`:''}`;
 }
-/* F162a2: only when the agent left words of its own, or they could not be read */
-function askWhyFold(id){const got=(S.askWhy||{})[id];return got&&(got.err||got.text)?askFold('why','Why it waits',got):''}
+/* F162a2: only when there are words of the agent */
+function askWhyFold(id){const got=(S.askWhy||{})[id];return got&&got.text?askFold('why','Why it waits',got):''}
 function needSheet(){
   const n=needOf(S.sheetArg);if(!n)return '';
   const i=S.snap.needs.indexOf(n), d=needD(n), big=d.shots[S.askShot], rep=needReplies(n), f=askField(n.id);
