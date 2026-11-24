@@ -1495,8 +1495,9 @@ def start_web() -> WebServer | None:
     if not r.get('web', True) or os.environ.get('AGENT_RUNNER_NO_WEB'):
         page_https.left_over()
         return None
-    from agent_runner.ui_model import settings_start
-    settings_start()  # F166
+    from agent_runner.ui_model import SETTINGS_AT, settings_start
+    if not SETTINGS_AT[0]:  # F202a: a run took it as it read its settings
+        settings_start()  # F166
     port = int(r.get('web_port', 8770))
     srv, why = None, ''
     if home_only():  # B146: Home's port is Home's, even while Home is not up yet

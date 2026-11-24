@@ -809,10 +809,10 @@ def free_gb() -> float:
     return shutil.disk_usage(SLOTS_DIR if SLOTS_DIR.is_dir() else ROOT).free / GB
 
 
-def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None) -> str:
+def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, kept: str = '') -> str:
     """F105: the model `tid`'s own session runs on: the task's `model:` field (`plan add --model`), else the
     model the run was given on its command line (`run --model`), else its kind's (`[models.kinds]`), else
-    `model` (`[models] code`). Read afresh on every start and resume: a changed field or setting applies.
+    `model` (`[models] code`). Read afresh on every start and resume: a changed field or setting applies (F202a: not over `kept`).
     `branch` '' reads the plan file itself, not the branch's copy; `ls`: the plan's lines, when already read."""
     from agent_runner.state import plan_text
     try:
@@ -820,7 +820,7 @@ def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None) -
         own = next((P.fields(rest).get('model', [''])[0] for _, _, t, rest, _ in P.iter_tasks(ls) if t == tid), '')
     except (OSError, IndexError):
         own = ''
-    if not own and (flag := C.run.get('model_flag')):
+    if not own and (flag := kept or C.run.get('model_flag')):
         return flag
     return C.task_model(tid, own) or model
 
@@ -958,7 +958,8 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     on that model goes on with the work in the worktree instead, told to read it and the journal first.
     """
     from agent_runner.fallback import FALLBACK, note_model, session_model
-    model = fallback or task_model(tid, model, branch)  # F105: on its task's model, as at its start
+    from agent_runner import settings_live
+    model = fallback or task_model(tid, model, branch, **({'kept': settings_live.KEPT[sid][0]} if sid in settings_live.KEPT else {}))  # F105: on its task's model, as at its start
     if not fallback and on_harness(model) != bool(HARNESS.find_transcript(sid)):
         model = session_model(sid)  # F142: the chain started it on the other kind of agent: only that can resume it
     d = worktree(n, branch)
@@ -1471,13 +1472,11 @@ def budgets(procs: dict, running: dict, type_into) -> None:
     BUDGET_AT[0] = time.time()
     from agent_runner.brief import BUDGET_STOP
     from agent_runner.cost import over_budget, spend_text
-    caps = C.run.get('task_tokens') or 0, C.run.get('task_usd') or 0
+    from agent_runner import settings_live
     for k in [k for k in SPENT if not k.isdigit() or int(k) not in procs]:
         SPENT.pop(k)
-    for n, (pid, sid, _) in list(procs.items()):
-        if n not in running:
-            continue
-        tid = running[n][0]
+    for n, (pid, sid, _) in [(n, p) for n, p in procs.items() if n in running]:
+        tid, caps = running[n][0], settings_live.caps(sid)
         tokens, usd = task_spend(sid)
         SPENT[str(n)] = [tokens, round(usd, 2)]
         if not (why := over_budget(tokens, usd, *caps)) or ((m := finished_mark(n)) and m.exists()):

@@ -998,8 +998,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     pidf = C.notes(f'control{n}.pid')
     env = control_env()
     env[CONTROL_N_ENV] = str(n)  # F29: `control --title` from its tools knows which session it is
-    if '--remote-control' in argv and silent():  # no push after its start push (that one cannot be stopped)
-        env[PRESENCE_ENV] = str(quiet_file(f'c{n}'))
+    if '--remote-control' in argv:  # while it is there ([run] silent) no push after its start push, which cannot be stopped
+        env[PRESENCE_ENV] = str(quiet_file(f'c{n}', on=silent()))
     if not plat.WINDOWS:  # exec: the pid in the file is the session's own
         pidf.write_text(f'{os.getpid()} {sid}', encoding='utf-8')
         if first := CONTROL_FIRST[0]:  # B147: typed in once Remote Control is up, so the web thread shows it

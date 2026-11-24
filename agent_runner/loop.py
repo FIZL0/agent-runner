@@ -38,7 +38,7 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
 from agent_runner.slots import budget_mark, budgets, SPENT
-from agent_runner import fallback as FB
+from agent_runner import fallback as FB, settings_live
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
@@ -86,7 +86,7 @@ runner keys: type one here and press Enter
     s!       stop now: end the agent sessions (each resumes where it was in the next run),
              finish the merges under way, then exit
     p        pause: no new tasks, and the run stays up
-    u        upgrade agent-runner now (the run restarts on it); restart: only restart, to read the settings again
+    u        upgrade agent-runner now (the run restarts on it); restart: only restart, for the settings that apply on the next run
     f        force: start tasks past the session and weekly usage caps (as --force)
     +        one slot more
     -        one slot fewer (a running task in it finishes first)
@@ -1040,7 +1040,7 @@ def run(argv: list[str], prog: str) -> int:
 
     init()
     no_push.require(C, ROOT)
-    r = C.run
+    r = settings_live.start()  # F202a: what changes from here on is read by the loop
     if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
         a.model = claude_model(a.model, C.providers, C.models_local, 'run --model')
     once = a.slots == 'once'
@@ -1052,7 +1052,7 @@ def run(argv: list[str], prog: str) -> int:
         ap.error(f"slots must be a number or 'once', not {a.slots!r}")
     global SLOTS
     SLOTS = slots
-    if keep := kept_keys():  # restarted on an upgrade: the slot count, pause, power and stop typed before it hold
+    if keep := settings_live.restore(kept_keys()):  # restarted on an upgrade: the slot count, pause, power and stop typed before it hold
         SLOTS = slots = keep['slots']
         POWER, PAUSED[0], FORCED[0] = keep['power'], keep['paused'], keep.get('forced', False)
     share(POWER=POWER, SLOTS=SLOTS)
@@ -1135,10 +1135,9 @@ class Run:
     def go(self) -> int:
         STOP_SAID[0] = False
         self.open()
-        while True:
-            if (code := self.tick()) is not None:
-                return code
+        while (code := self.tick()) is None:
             nap(10)
+        return code
 
     def merge_in(self, tid: str, n: int, sid: str) -> None:
         """Merge a finished task in a thread of its own."""
@@ -1201,6 +1200,7 @@ class Run:
         """The start of a tick: keys typed, the slot count, forced stops, tells and halts, the stop note."""
         procs, running = self.procs, self.running
         sweep_tmp()
+        settings_live.take(self)  # F202a
         prune_wips(self.branch)  # F23: now and then, for tasks ticked or dropped by hand while the run is up
         take_keys()
         IDLE[0] = self.idle_said
