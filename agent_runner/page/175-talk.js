@@ -2,25 +2,26 @@
    is on and hears no words can be told apart from one that takes no sound. It sends nothing; its report has times, letter
    counts and sound levels, never words. MT.runs: the tries so far, MT.run: the one under way */
 const MT={ear:'',runs:[],run:null}, MT_MS=5000, MT_START=8000, MT_END=3000, MT_LOOK=200, MT_MOST=12;
-const MT_TRIES=[['plain','Words, sound setting left to the phone'],['switch','Words, set to play and record'],['sound','Words, right after a silent sound'],['level','Sound level only, no words']];
+const MT_TRIES=[['plain','Words, sound setting left as it is'],['switch','Words, set to play and record'],['sound','Words, right after a silent sound'],['level','Sound level only, no words']];
 const MT_EAR=[['','Not said'],['off','Off'],['on','On']];
 function micTestSheet(){
   const why=micWhy(), r=MT.run;
-  const says=r?r.on?'Say "one two three four five" until it stops.':'Starting the mic…':'Reload the page first. Press each in turn and say "one two three four five" each time. Nothing is sent.';
+  const says=r?r.on?'Say "one two three four five" until it stops.':'Starting the mic…':!MT.ear?'Reload the page first, then pick whether earbuds are on.':'Press each in turn and say "one two three four five" each time. Nothing is sent.';
   return `<h2>Mic test</h2><div class="small" id="mtsays" role="status">${esc(why||says)}</div>
     <label class="it setrow"><span class="grow">Earbuds</span><select class="fld" data-mtear ${r?'disabled':''}>${MT_EAR.map(([v,l])=>`<option value="${v}" ${MT.ear===v?'selected':''}>${l}</option>`).join('')}</select></label>
     ${MT_TRIES.map(([k,l])=>{const last=MT.runs.filter(x=>x.kind===k&&x.done).pop();
-      return `<button class="it" data-mictest="${k}" ${why||r?'disabled':''}><span class="grow">${esc(l)}<span class="small" style="display:block">${esc(r&&r.kind===k?'Under way':last?last.says:'Not tried')}</span></span></button>`}).join('')}
+      return `<button class="it" data-mictest="${k}" ${why||r||!MT.ear?'disabled':''}><span class="grow">${esc(l)}<span class="small" style="display:block">${esc(r&&r.kind===k?'Under way':last?last.says:'Not tried')}</span></span></button>`}).join('')}
     <div class="btns">${MT.runs.length?`<button class="btn" data-mictestcopy ${r?'disabled':''}>Copy mic test</button>`:''}<button class="btn" data-closesheet>Done</button></div>`;
 }
 SHEETS.mictest=micTestSheet;
 function micTest(kind){
-  if(MT.run||micWhy())return;
+  if(MT.run||!MT.ear||micWhy())return;
   /* no hush() here: it calls speechSynthesis, and on iOS a mic started after that hears nothing (B132) */
   if(talkReads())return toast('A reply is being read: try again once it has ended.',true);
   if(TK.ear||MIC.rec||MIC.next)return toast('The mic is in use: stop it, then try again.',true);
-  micLog(`mic test ${kind}`,true);TK.trail.used=true;
-  const r=MT.run={kind,ear:MT.ear,trail:TK.trail,on:false,done:false,says:'',letters:0,err:'',peak:0,loud:0,looks:0,timers:[],end:null};
+  const prev=TK.trail;micLog(`mic test ${kind}`,true);TK.trail.used=true;
+  try{if(navigator.audioSession)micLog(`audio session was ${navigator.audioSession.type}, ${navigator.audioSession.state||''}`)}catch(e){}
+  const r=MT.run={kind,ear:MT.ear,trail:TK.trail,prev,on:false,done:false,says:'',letters:0,err:'',peak:0,loud:0,looks:0,timers:[],end:null};
   MT.runs=[...MT.runs,r].slice(-MT_MOST);
   if(kind==='level')mtLevel(r);
   else if(kind==='sound')mtSound(r,()=>mtWords(r));
@@ -33,8 +34,11 @@ function mtDone(r){
   if(r.done)return;
   r.done=true;r.timers.forEach(clearTimeout);if(MT.run===r)MT.run=null;
   r.says=r.kind!=='level'?r.letters?`Heard ${r.letters} letters`:r.on?`The mic was on, no words (${r.err||'no error'})`:`The mic did not start (${r.err||'no error'})`
-    :r.looks?`Loudest ${r.peak.toFixed(3)}, sound in ${Math.round(100*r.loud/r.looks)}% of the time`:`No sound was read (${r.err||'no error'})`;
-  mtLog(r,`done: ${r.says}`);soundAs('playback');render(true);
+    :r.looks?`Loudest ${r.peak.toFixed(3)}, sound in ${Math.round(100*r.loud/r.looks)}% of the time${r.reader==='running'?'':` (not to trust: the sound reader was ${r.reader})`}`:`No sound was read (${r.err||'no error'})`;
+  mtLog(r,`done: ${r.says}`);if(r.kind!=='level'&&r.on)PAST[r.letters?'words':'none']++;
+  if(r.kind!=='plain')soundAs('playback');
+  if(TK.trail===r.trail)TK.trail=r.prev;  // the last listen's report stays the one to copy
+  render(true);
 }
 /* left or hidden: the try ends, and the mic with it */
 function mtWatch(r){
@@ -65,7 +69,7 @@ function mtWords(r){
   r.end=()=>{mtLog(r,'stop');try{rec.stop()}catch(e){}
     r.timers.push(setTimeout(()=>{if(r.done)return;mtLog(r,'no end came: aborted');try{rec.abort()}catch(e){}
       r.timers.push(setTimeout(()=>{if(!r.done)over()},MIC_WAIT))},MT_END))};
-  soundAs(r.kind==='plain'?'auto':'play-and-record');
+  if(r.kind!=='plain')soundAs('play-and-record');
   try{rec.start()}catch(e){r.err=e.message||String(e);mtLog(r,`start failed: ${r.err}`);return over()}
   r.timers.push(setTimeout(()=>{if(!r.on)mtStop(r)},MT_START));
 }
@@ -92,7 +96,7 @@ function mtLevel(r){
     t.onmute=()=>mtLog(r,'muted');t.onunmute=()=>mtLog(r,'not muted');t.onended=()=>mtLog(r,'mic ended');
     const an=ctx.createAnalyser(), buf=new Float32Array(an.fftSize=2048);ctx.createMediaStreamSource(s).connect(an);mtLive(r);
     const look=()=>{if(r.done)return;an.getFloatTimeDomainData(buf);let p=0;for(const v of buf)p=Math.max(p,Math.abs(v));
-      r.looks++;r.peak=Math.max(r.peak,p);if(p>0.02)r.loud++;if(r.looks%10===0)mtLog(r,`level ${p.toFixed(3)}, reader ${ctx.state}`);
+      r.looks++;r.reader=ctx.state;r.peak=Math.max(r.peak,p);if(p>0.02)r.loud++;if(r.looks%10===0)mtLog(r,`level ${p.toFixed(3)}, reader ${ctx.state}`);
       r.timers.push(setTimeout(look,100))};
     look();
   }).catch(fail);

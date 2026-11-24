@@ -1051,7 +1051,7 @@ const last = () => recs[recs.length - 1];
 let kind = 'playback'; const audioSession = {state: 'active', get type() { return kind }, set type(t) { types.push(kind = t) }};
 const track = {label: 'Secret Name AirPods', muted: false, stop() { stopped++ }}, media = {getUserMedia: async () => { if (refuse) throw Object.assign(new Error('x'), {name: refuse}); return {getTracks: () => [track], getAudioTracks: () => [track]} }};
 const navigator = {language: 'en-US', userAgent: 'UA', audioSession, mediaDevices: media, clipboard: {writeText: async t => { copied = t }}};
-class AudioContext { constructor() { this.state = 'running' } resume() {} close() {} createMediaStreamSource() { return {connect() {}} }
+let asleep = false; class AudioContext { constructor() { this.state = asleep ? 'suspended' : 'running' } resume() {} close() {} createMediaStreamSource() { return {connect() {}} }
   createAnalyser() { return {getFloatTimeDomainData(b) { b[0] = 0.25 }} } }
 const window = {AudioContext, get speechSynthesis() { spoke++; return null }}, document = {hidden: false};
 let plays = 0; const el = {play() { plays++; return Promise.resolve() }};
@@ -1062,6 +1062,7 @@ eval(logic + line('const MIC=') + grab('function micFree(') + grab('async functi
 (async () => {
   const out = {}, ran = () => MT.runs[MT.runs.length - 1], evs = () => ran().trail.ev.join(' | ');
   // 1: the session is left alone, words are counted
+  micTest('plain'); out.noEar = [MT.run, recs.length]; const old = TK.trail = {at: 0, ev: [], more: 0};
   MT.ear = 'on'; micTest('plain'); micTest('switch'); out.one = [MT.runs.length, types.splice(0), /data-mictest="plain" disabled/.test(micTestSheet()), micTestSheet().includes('Starting the mic')];
   now += 60; last().onaudiostart(); out.live = micTestSheet().includes('one two three');
   now += 300; last().onresult({results: [[{transcript: 'secret words'}]]}); await go(5000); out.stops = last().stops; last().onend();
@@ -1079,6 +1080,7 @@ eval(logic + line('const MIC=') + grab('function micFree(') + grab('async functi
   // left, and a listen that takes the mic
   micTest('level'); await settle(); S.sheet = ''; await go(400); out.left = [MT.run, stopped]; S.sheet = 'mictest';
   micTest('plain'); document.hidden = true; await go(400); out.hidden = last().stops; last().onend(); document.hidden = false; out.hid = MT.run;
+  asleep = true; micTest('level'); await settle(); await go(5100); out.asleep = ran().says; out.trail = TK.trail === old;
   MIC.rec = {}; micTest('plain'); out.inUse = [MT.run, notes.length]; MIC.rec = null;
   micTestSheet(); await micCopyText('Mic test', micTestText()); out.copy = copied; out.toast = notes[notes.length - 1]; out.spoke = spoke;
   console.log(JSON.stringify(out));
@@ -1098,9 +1100,11 @@ def test_mic_test_b162b1(tmp: Path) -> None:
     r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node runs the Mic test', r.stderr[-1500:])
     o = json.loads(r.stdout or '{}')
-    eq(o.get('one'), [1, ['auto'], True, True], 'one try at a time, the session left to the phone, and says the mic starts')
+    eq(o.get('one'), [1, [], True, True], 'one try at a time, the session left as it is, and says the mic starts')
     eq((o.get('live'), o.get('stops')), (True, 1), 'speak once the mic is on; 5 s later it stops')
-    eq(o.get('plain'), ['Heard 12 letters', None, None, ['playback'], 0], 'letters, the mic free')
+    eq(o.get('plain'), ['Heard 12 letters', None, None, [], 1], 'letters, the mic free, counted')
+    eq((o.get('noEar'), o.get('trail')), ([None, 0], True), 'earbuds said first; the last listen keeps its report')
+    check('the sound reader was suspended' in o.get('asleep', ''), 'a reader that sleeps is no silence', o.get('asleep'))
     eq((o.get('sw'), o.get('aborted')), (['play-and-record'], True), 'the switch; no end: aborted')
     eq(o.get('noWords'), ['The mic was on, no words (aborted: No speech detected)', None, None], 'and over by force')
     check('50 ms audiostart' in o['evs'] and 'audio session play-and-record' in o['evs'], 'its events with their ms', o['evs'])

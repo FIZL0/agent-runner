@@ -46,7 +46,7 @@ function pauseKeys(f){try{const m=navigator.mediaSession;if(m)for(const k of ['p
 function routeHold(){
   AU.holding=true;pauseKeys(()=>{if(TK.trail)micLog('sound: stopped by the person');hush()});
   try{const h=holdEl(), p=h.play();h.onpause=()=>{if(AU.holding&&TK.trail)micLog('sound: the silence paused, not by the page')};
-    if(p)p.catch(e=>{if(AU.holding&&TK.trail)micLog(`sound: the silence refused: ${e.name}`)})}catch(e){}
+    if(p)p.then(()=>pastSound('silent')).catch(e=>{if(AU.holding&&TK.trail)micLog(`sound: the silence refused: ${e.name}`)})}catch(e){}
 }
 function routeFree(){
   if(!AU.holding)return;
