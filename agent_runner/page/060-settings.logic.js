@@ -74,7 +74,7 @@ const KINDS_ROWS=[{id:'build',name:'Features, fixes, tests',desc:'Also concepts 
 /* F193: with Manage releases off ([run] releases in the settings answer; on when the run does not say), nothing about
    releases is listed, searched or counted: not Release by itself, and not the word in the kinds row */
 const releasesSet=all=>!all.some(k=>k.table==='run'&&k.key==='releases'&&k.value===false);
-const settingsListed=all=>releasesSet(all)?all:all.filter(k=>!(k.table==='run'&&k.key==='auto_release'));
+const settingsListed=all=>releasesSet(all)?all:all.filter(k=>k.parent!=='run.releases');
 const kindsRows=all=>releasesSet(all)?KINDS_ROWS:KINDS_ROWS.map(g=>({...g,desc:g.desc.replace('Also concepts and releases.','Also concepts.')}));
 const kindsModel=(kinds,v)=>{const m=[...new Set(kinds.map(x=>(v||{})[x]||''))];return m.length===1?m[0]:''};
 /* the live Talk session: the remembered one, else a chat titled Talk that is not in `old`, the Talk chats New Talk
