@@ -6,7 +6,7 @@ auto_release = { "every" = 10, "idle" = true }  # queue a release by itself when
 # The gate `done` and every merge run: each tests/test_*.py suite in turn, stopping at the first failure.
 test = "for t in tests/test_*.py; do echo \"== $t\"; python3 \"$t\" || exit 1; done"
 # Every task appends to the changelog and the merge repair joins those appends, so it holds no task back.
-shared_files = ["CHANGELOG.md"]
+shared_files = ["CHANGELOG.md", "docs/STYLE.md"]
 prompt_extra = """
-A task that changes how the run app looks, moves or speaks (agent_runner/web_page.html, Runner Home's page): read
+A task that changes how the run app looks, moves or speaks (agent_runner/page/*, the parts of the run app's page; Runner Home's page): read
 docs/STYLE.md first and follow it; a change that needs a new rule writes the rule there in the same commit."""
