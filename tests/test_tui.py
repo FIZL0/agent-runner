@@ -1834,6 +1834,30 @@ def test_decide_options_f181c() -> None:
     eq([n['id'] for n in p.snap['needs']], [], 'F2 is off Needs you at once')
 
 
+def test_sheet_buttons_f181b() -> None:
+    """F181b: a pick sheet's easy answers are buttons in the answer tab; a key runs sheet ID --go or --picks, with no
+    session."""
+    answer_repo()
+    opts = [{'name': U.SHEET_GO_LABEL, 'rec': False}, {'name': 'SQLite', 'rec': True}, {'name': 'Postgres', 'rec': False}]
+    need = {'label': 'DECIDE', 'id': 'F2', 'concept': '', 'title': 'the store', 'what': 'Which store', 'url': 'https://claude.ai/x',
+            'ask': 'Which store', 'age': '1m', 'options': opts,
+            'picks': {U.SHEET_GO_LABEL: 'go', 'SQLite': 'F2 picks: db=a', 'Postgres': 'F2 picks: db=b'}}
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'open again'))[1]]), \
+            mock.patch.object(U, 'row_of', lambda where, tid: need), mock.patch('agent_runner.brief.has_sheet', lambda tid: True), \
+            mock.patch.object(U, 'SEND', [no_send]):
+        for k in 'ac':
+            p = page(dict(SNAP, needs=[need]))
+            p.key('4')
+            p.key('ENTER')
+            text = ' '.join(drawn(p).text().split())
+            check('[a Go with the recommended picks]' in text and 'b SQLite (recommended)' in text and 'c Postgres' in text,
+                  'its easy answers are buttons', text)
+            p.key(k)
+            eq([n['id'] for n in p.snap['needs']], [], 'F2 is off Needs you at once')
+    eq(ran, [['sheet', 'F2', '--go'], ['sheet', 'F2', '--picks', 'F2 picks: db=b']], 'what each key runs')
+
+
 def test_concept_answer_b149() -> None:
     """B149: a concept's option key (a b c) in the answer tab runs plan approve with that option, never an AI
     session, and the item leaves Needs you at once."""
@@ -2124,7 +2148,7 @@ def test_release_row_f131() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

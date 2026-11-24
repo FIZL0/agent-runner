@@ -388,6 +388,8 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
                       'detail': need_detail.detail(label, tid, ask, title, texts.get(tid, ''), ask_short)})  # F162
         if opts:
             needs[-1]['options'] = opts
+        elif label == 'DECIDE' and url and (easy := sheet_options(tid, texts.get(tid, ''))):  # F181b
+            needs[-1].update(options=easy, picks={o['name']: o.pop('send') for o in easy})
         if label == 'PITCH':  # F98
             from agent_runner import pitch
             xs = [{'id': x['id'], 'title': x['title']} for x in pitch.changes_of(tid, state='waiting')]
@@ -1325,7 +1327,7 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
             said = answer_of(row, key)
             if text != said:
                 return {'ok': False, 'code': 1, 'out': f"{tid}'s answers changed: look again", 'argv': []}
-            return answer(tid, said, button=True, note=note)
+            return answer(tid, (row.get('picks') or {}).get(said, said), button=True, note=note)  # F181b: a pick sheet's
     if c and c.get('fn'):
         return ROW_FNS[c['fn']](tid, wait)
     try:
@@ -1883,7 +1885,7 @@ def need_answers(row: dict) -> list[dict]:
     """C33: the answers that fit a Needs you row, the one rule for the run page, the terminal UI and the chat
     text: [{'label', 'value'}], the first one the main button. Yes / No for a CONFIRM or a yes-or-no ask, a
     concept's options (A, B, C when its copy has none), a pitch's, a DECIDE's (F181c: {name, rec}, the value its bare
-    name), Done for a blocked item; [] when only a reply fits."""
+    name; F181b: its pick sheet's easy answers too), Done for a blocked item; [] when only a reply fits."""
     label, said = row.get('label', ''), f'{row.get("ask", "")} {row.get("what", "")}'
     if label == 'DECIDE' and any(isinstance(o, dict) for o in row.get('options') or []):
         return [{'label': o['name'] + (' (recommended)' if o.get('rec') else ''), 'value': o['name']}
@@ -1902,10 +1904,43 @@ def need_answers(row: dict) -> list[dict]:
     return [{'label': n[:1].upper() + n[1:], 'value': n[:1].upper() + n[1:]} for n in names]
 
 
+SHEET_GO_LABEL = 'Go with the recommended picks'
+
+
+def sheet_options(tid: str, text: str = '') -> list[dict]:
+    """F181b: the easy answers of `tid`'s pick sheet as a DECIDE's options, each {name, rec, send}, `send` the reply
+    that settles the item (`answer_argv`): the recommended picks, and with one question each of its answers. [] with no
+    sheet, one that does not read, one that `text` (the task's) says was answered already, or an item with inputs."""
+    from agent_runner import sheet
+    from agent_runner.brief import has_sheet
+    if not has_sheet(tid) or need_detail.asks_file(tid).get('inputs'):
+        return []
+    try:
+        spec = sheet.load(S.C.notes('sheets', f'{tid}.json'))
+        qs = sheet.questions(spec)
+        # the sheet file outlives its answer, and an old sheet must not answer a new ask
+        if 'picks on the sheet:' in text:
+            seen = ' '.join(text.split())
+            heads = [x.split('): ', 1)[0] for x in (sheet.picks_note({'groups': [{'questions': [q]}]}, {}).split(': ', 1)[1] for q in qs)]
+            if all(' '.join(f'{h}): '.split()) in seen for h in heads):
+                return []
+        out = [{'name': SHEET_GO_LABEL, 'rec': False, 'send': SHEET_GO[0]}]
+        if len(qs) == 1:
+            q = qs[0]
+            names = [' '.join(str(a).replace('`', '').split()) for a in q['answers']]
+            if all(0 < len(n) <= need_detail.OPTION_LEN and n.isprintable() for n in names) and \
+                    len({n.casefold() for n in [SHEET_GO_LABEL, *names]}) == len(names) + 1:
+                out += sorted(({'name': n, 'rec': j == sheet.rec(q), 'send': f'{tid} picks: {q["id"]}={chr(97 + j)}'}
+                               for j, n in enumerate(names)), key=lambda o: not o['rec'])
+        return out
+    except Exception:  # noqa: BLE001 - a sheet that does not read: its page and the reply are still there
+        return []
+
+
 def need_options(row: dict) -> list[str]:
     """F143: the possible answers to a Needs you row for a chat's first message: its answers, else a pick sheet's
     questions with theirs; [] when only a reply fits."""
-    if answers := row.get('answers') or need_answers(row):
+    if not row.get('picks') and (answers := row.get('answers') or need_answers(row)):  # F181b: a sheet's are its questions
         return [a['label'] for a in answers]
     label = row.get('label', '')
     if label == 'DECIDE':

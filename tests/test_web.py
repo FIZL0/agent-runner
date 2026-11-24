@@ -2716,6 +2716,8 @@ const S = env.S, out = {}, ans = (ctl, tid, inSheet) => press('[data-ctl]', {ctl
   press('[data-reply]', {reply: 'D7'}); S.f['askre:D7'] = '8770'; press('[data-reply]', {reply: 'D7'}); out.sent = sent;
   S.f['askre:D8'] = ''; press('[data-needopen]', {needopen: 'D8'}, false); out.opts = el.h; out.optsCard = env.card0(needs[3], 3);
   S.f['askre:D8'] = ' dark too '; ans('need_answer1', 'D8'); out.opt = sent.slice(-1); sent.length -= 1;
+  press('[data-needopen]', {needopen: 'D9'}, false); out.sheet = el.h; out.sheetCard = env.card0(needs[4], 4);
+  ans('need_answer1', 'D9'); out.go = sent.slice(-1); sent.length -= 1;
   const pitch = {id: 'pitch1', label: 'PITCH', ask: 'Approve 1 change', options: ['Approve', 'Not this: drop'], acts: ['need_answer1', 'need_answer2', 'need_chat'], labels: {need_answer1: 'Approve', need_answer2: 'Not this: drop'}, changes: [{id: 'F1', title: 'a'}]};
   const no = {pitchno: '0', how: 'reopen', tid: 'F1'};
   env.mute = true; S.snap.needs = needs; S.askWhy = {}; press('[data-needopen]', {needopen: 'D7'}, false); await wait(); out.mute = el.h;
@@ -2749,6 +2751,9 @@ def test_need_popup_f162(tmp: Path) -> None:
              {'id': 'D7', 'label': 'DECIDE', 'ask': 'Which port?', 'detail': {**none, 'said': 'Choose', 'where': '', 'title': 'Port', 'summary': 'p', 'steps': ['Which port?']}, 'answers': []},
              {'id': 'D8', 'label': 'DECIDE', 'ask': 'Which look?', 'options': (opts := [{'name': 'Full', 'rec': True}, {'name': 'No <change>', 'rec': False}]),
               'answers': U.need_answers({'label': 'DECIDE', 'options': opts})},
+             {'id': 'D9', 'label': 'DECIDE', 'ask': 'Pick a layout', 'url': 'https://claude.ai/y', 'picks': {U.SHEET_GO_LABEL: 'go', 'Tabs': 'D9 picks: lay=a'},
+              'options': (easy := [{'name': U.SHEET_GO_LABEL, 'rec': False}, {'name': 'Tabs', 'rec': True}]),
+              'answers': U.need_answers({'label': 'DECIDE', 'options': easy})},
              {'id': 'tool-x', 'label': 'TOOL', 'ask': 'Connect it', 'answers': []}]
     for n in needs:  # F180: as the snapshot carries them
         n.update(acts=U.row_acts('need', n), labels=U.row_labels('need', n))
@@ -2789,6 +2794,9 @@ def test_need_popup_f162(tmp: Path) -> None:
     want = 'class="btn pri" data-ctl="need_answer1" data-tid="D8">Full (recommended)</button><button class="btn" data-ctl="need_answer2" data-tid="D8">No &lt;change&gt;</button>'
     check(want in o['opts'] and want in o['optsCard'] and 'data-reply="D8"' in o['opts'], "F181c: a DECIDE's options are buttons, the recommended marked, Reply stays", o['opts'])
     eq(o['opt'], [['run_control', {'key': 'need_answer1', 'tid': 'D8', 'text': 'Full', 'note': 'dark too'}]], 'one sends the bare name and the note')
+    want = 'class="btn pri" data-ctl="need_answer1" data-tid="D9">Go with the recommended picks</button><button class="btn" data-ctl="need_answer2" data-tid="D9">Tabs (recommended)</button>'
+    check(want in o['sheet'] and want in o['sheetCard'] and 'data-reply="D9"' in o['sheet'], "F181b: a pick sheet's easy answers are buttons", o['sheet'])
+    eq(o['go'], [['run_control', {'key': 'need_answer1', 'tid': 'D9', 'text': 'Go with the recommended picks'}]], 'a press opens no chat')
     check('>Approve<' in o['pitchHtml'] and 'need_answer2' not in o['pitchHtml'] and '>Chat<' in o['pitchHtml'], 'a pitch draws Approve alone', o['pitchHtml'])
     eq(o['pitch'], [['run_control', {'key': 'need_answer1', 'tid': 'pitch1', 'text': 'Approve', 'note': 'nice'}],
                     ['pitch_no', {'pid': 'pitch1', 'how': 'reopen', 'tid': 'F1', 'confirm': True, 'why': 'nice'}]],

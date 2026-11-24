@@ -272,7 +272,7 @@ where the remaining tokens go, by kind of tool call.
   text steps and is never run.
 - **Choices come as a pick sheet.** When an agent needs you to choose (options, settings to change or keep),
   it publishes a page of plain questions with the recommended answers preselected, and Needs you shows one
-  line with its link. Send stores your picks on the page (its artifact db), where the control session reads
+  line with its link, a button for the recommended picks and, for one question, its answers. Send stores your picks on the page (its artifact db), where the control session reads
   them when you tell it "sent" (where the page cannot store them, Send gives a line to paste instead), or
   reply go for the recommended set; the task reopens with your answers noted (`agent-runner sheet <ID>`). `[run] questionnaires = false`
   turns it off.
