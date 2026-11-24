@@ -200,11 +200,11 @@ layer.addEventListener('touchcancel',()=>{if(G)clearTimeout(G.hold);G=null},{pas
 let tap=null;
 const slim=$('slimbox'), slimPress=e=>{const el=e.target.closest('[data-slimbox]');if(el){cancelAnimationFrame(glide);if(G)clearTimeout(G.hold);G=null}return el};
 slim.addEventListener('click',slimPress);
-slim.addEventListener('touchstart',e=>{const el=slimPress(e), t=e.touches[0];tap=el&&e.touches.length===1?{el,x:t.clientX,y:t.clientY,at:Date.now()}:null},{passive:true});
-slim.addEventListener('touchcancel',()=>{tap=null},{passive:true});
-slim.addEventListener('touchend',e=>{const k=tap, t=e.changedTouches[0];tap=null;
-  if(!k||!e.cancelable||Date.now()-k.at>450||Math.abs(t.clientX-k.x)>9||Math.abs(t.clientY-k.y)>9)return;  // a swipe or a long press
-  e.preventDefault();k.el.click()},{passive:false});
+const slimEnd=e=>{const k=tap, t=e.changedTouches[0], el=slim.querySelector('[data-slimbox]');tap=null;
+  if(!k||!el||e.type!=='touchend'||!e.cancelable||Date.now()-k.at>450||Math.abs(t.clientX-k.x)>9||Math.abs(t.clientY-k.y)>9)return;  // a swipe or a long press
+  e.preventDefault();el.click()};
+slim.addEventListener('touchstart',e=>{const el=slimPress(e), t=e.touches[0];tap=el&&e.touches.length===1?{x:t.clientX,y:t.clientY,at:Date.now()}:null;
+  if(tap)for(const n of ['touchend','touchcancel'])e.target.addEventListener(n,slimEnd,{passive:false})},{passive:true});  // on what was touched: a redraw of the row under the finger may take it out
 layer.addEventListener('wheel',e=>{const f=feedScreen();if(!f||feedTake(e.deltaY))return;const r=layer.getBoundingClientRect();feedWheel(Math.sign(e.deltaY),e.clientX-r.left,e.clientY-r.top)},{passive:true});
 layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r=layer.getBoundingClientRect();feedClick(e.clientX-r.left,e.clientY-r.top)}})}
 /* --- F170: the lines at the bottom of the agent's window as the page's own controls (approved on K10's page, option A) --

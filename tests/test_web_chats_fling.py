@@ -28,8 +28,10 @@ const feedScreen = () => ({cell: 17}), feedScroll = px => { steps++; return px }
 BLOCK
 const layer = $('feedtouch'), slim = $('slimbox');
 const run = n => { for (let i = 0; i < n; i++) { clock += 16; const f = [...frames.values()]; frames.clear(); for (const g of f) g(clock) } };
-const button = {closest: s => s === '[data-slimbox]' ? button : null, click() { opened++; slim.fire('click', {target: button}) }};
-const other = {closest: () => null};
+const Button = () => { const b = Object.assign(El(), {closest: s => s === '[data-slimbox]' ? b : null, click() { opened++; slim.fire('click', {target: b}) }}); b.addEventListener = (t, f) => { b.on[t] = [f] }; return b };
+let button = Button(), here = button;
+const other = Object.assign(El(), {closest: () => null});
+slim.querySelector = () => here;
 const ev = (target, x, y, t) => ({target, touches: [{clientX: x, clientY: y}], changedTouches: [{clientX: x, clientY: y}], timeStamp: t, cancelable: true, prevented: 0, preventDefault() { this.prevented++ }});
 function fling() {
   layer.fire('touchstart', ev(other, 100, 100, 0));
@@ -41,7 +43,7 @@ const going = () => { steps = 0; run(5); return steps > 0 };
 function press(target, o = {}) {
   slim.fire('touchstart', ev(target, 50, 700, 0)); const on = going();
   now += o.hold || 60;
-  const e = ev(target, 50, 700 + (o.move || 0), 60); slim.fire(o.cancel ? 'touchcancel' : 'touchend', e);
+  const e = ev(target, 50, 700 + (o.move || 0), 60); e.type = o.cancel ? 'touchcancel' : 'touchend'; target.fire(e.type, e);
   return [on, opened, e.prevented, going()];
 }
 const out = {};
@@ -50,6 +52,7 @@ fling(); out.tap = press(button);
 fling(); out.other = press(other);
 fling(); out.held = press(button, {hold: 600});
 fling(); out.moved = press(button, {move: 20});
+fling(); here = Button(); out.redrawn = press(button); here = button;
 fling(); out.cancel = press(button, {cancel: true});
 fling(); slim.fire('click', {target: button}); out.click = going();
 opened = 0; out.rest = press(button);
@@ -78,6 +81,7 @@ def test_tap_in_a_fling_b218b1(tmp: Path) -> None:
     eq(o.get('other'), [True, 0, 0, True], 'a press on another control of the row is left alone')
     eq(o.get('held'), [False, 0, 0, False], 'a long press ends the scroll and clicks nothing')
     eq(o.get('moved'), [False, 0, 0, False], 'a swipe too')
+    eq(o.get('redrawn'), [False, 1, 1, False], 'the row drawn again under the finger: the tap still opens the box')
     eq(o.get('cancel'), [False, 0, 0, False], 'a touch the system took too')
     eq(o.get('click'), False, 'a click alone (a mouse, Enter) ends the scroll')
     eq(o.get('rest'), [False, 1, 1, False], 'from rest: one click')
