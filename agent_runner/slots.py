@@ -1285,9 +1285,11 @@ def run_conpty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
         if typed:
             typed.close()
         if viewers:
-            viewers.close()  # before the console it resizes
+            viewers.stop()  # before the console it resizes
         if pty:
             pty.close()
+        if viewers:
+            viewers.close()  # F146: after the last output
         if out:
             out.close()
         marker.unlink(missing_ok=True)

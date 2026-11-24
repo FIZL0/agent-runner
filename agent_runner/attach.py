@@ -263,10 +263,15 @@ class Viewers:
 
     def close(self) -> None:
         with self.lock:
-            self.ended = True
+            self.stop()
             for c in self.clients:
                 c.close()
             self.clients, self.sizes, self.waits = {}, {}, {}
+
+    def stop(self) -> None:
+        """F146: take no one new, no input and no size; who is here still gets what the session prints last."""
+        with self.lock:
+            self.ended = True
             if self.listener:
                 self.listener.close()
                 self.listener = None

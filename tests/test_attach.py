@@ -92,7 +92,11 @@ def test_token(tmp: Path) -> None:
         eq((s.typed, s.sizes), ([], []), 'nothing they sent was acted on')
         good.sendall(A.attach_input_frames(b'yes'))
         check(until(lambda: s.typed == [b'yes']), 'the one with the token stays past the wait')
+        s.v.stop()
+        s.v.out(b'last')
         s.v.close()
+        check(not path.exists(), 'the file goes first')
+        eq(b''.join(iter(lambda: left(good), b''))[-4:], b'last', 'what a session prints as it ends still comes')
 
 
 def test_sizes(tmp: Path) -> None:
