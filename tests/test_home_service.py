@@ -1160,6 +1160,11 @@ def test_trusted_networks(tmp: Path) -> None:
     eq(H.trust.shown(urls, ['tailnet'], look), ['https://box.tail1.ts.net:8771/', *urls[1:3],
                                                 'http://100.101.1.1:8770/p/a/#tools', urls[4]],
        'a link drops its key only when all its addresses are trusted')
+    addr['box.example.org'] = ['100.101.1.1']
+    eq(H.trust.shown(['http://box.example.org:8770/?t=k'], ['tailnet'], look), ['http://box.example.org:8770/?t=k'],
+       'nor one whose name is refused with no key')
+    ok, why = H.peer_change('add', 'https://box.tail1.ts.net:8771/')
+    check(not ok and 'home.token' in why, 'a peer link with no key: where the key is', why)
     eq(H.trust.shown(urls, [], look), urls, 'no trusted networks: every link keeps it')
     token = H.home_token()
     with mock.patch.object(W, 'lan_ip', lambda: '192.168.1.5'), mock.patch.object(H.trust.socket, 'getaddrinfo', look), \

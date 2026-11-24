@@ -1193,7 +1193,8 @@ def peer_change(op: str, link: str) -> tuple[bool, str]:
     from agent_runner.vitals import peer_base
     link = link.strip()
     if op == 'add' and not peer_base(link):
-        return False, f'not a Home link: {link} (want http://HOST:PORT/?t=TOKEN, as `home status` there prints it)'
+        return False, f'not a Home link: {link} (want http://HOST:PORT/?t=TOKEN, as `home status` there prints it; ' \
+            'a link it prints without ?t=TOKEN needs it added: the key is in home.token there)'
     reg = load_registry()
     had = link in reg['peers']
     reg['peers'] = [p for p in reg['peers'] if p != link] + ([link] if op == 'add' else [])

@@ -118,6 +118,8 @@ def shown(urls: list[str], names, look=None) -> list[str]:
         return list(urls)
     out = []
     for u in urls:
-        ips = _addresses(urlsplit(u).hostname or '', look or socket.getaddrinfo)
+        host = urlsplit(u).hostname or ''
+        # a name `from_page` refuses needs its key
+        ips = _addresses(host, look or socket.getaddrinfo) if _own_name(urlsplit(u).netloc) else []
         out.append(re.sub(r'\?t=[^&#]*', '', u, count=1) if ips and all(_in(ip, nets) for ip in ips) else u)
     return out
