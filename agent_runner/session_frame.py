@@ -23,7 +23,7 @@ from agent_runner import box_font, plat, session_theme
 # so are a key and a paste (feedTyped: they go to its message box while the agent CLI's input is hidden).
 # F206: one page for every chat: ttyd gets a socket that never closes (Line), and arLine changes the connection behind it:
 # dial(name, look), hang(), keep() (a copy of the screen, a node of this page), show(node) (over the terminal until its
-# first whole draw, words near its bottom, or null). So ttyd never draws its Reconnect words, and nothing is loaded again. The next chat's first
+# first whole draw, words near its bottom, or null), heard() (when its connection last brought something). So ttyd never draws its Reconnect words, and nothing is loaded again. The next chat's first
 # output starts with ESC c, so what was written before ends there. It says 'up', 'drawn' and 'down'; the app dials again.
 # The login's keeps ttyd's own socket.
 # The box font is loaded before xterm.js measures its glyphs (and, when it was late, they are measured again).
@@ -44,7 +44,7 @@ var LOOKS=__LOOKS__, look=__LOOK__;
 window.arLook=function(to){if(to)look=to;var t=window.term, c=LOOKS[look];if(!c)return;
 document.documentElement.style.setProperty('--ar-bg',c.background);if(t)t.options.theme=c};
 if(look==='page'){try{look='page-'+parent.feedLook()}catch(e){look='page-'+(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}window.arLook()}
-var line=null, url='', sock=null, turn=0, opened=false, set=false, drew=false;
+var line=null, url='', sock=null, turn=0, heard=0, opened=false, set=false, drew=false;
 function Own(u,p){var s=new W(u,p);s.addEventListener('open',function(){tell({state:'up'})});s.addEventListener('close',function(e){tell({state:'down',code:e.code})});return s}
 Own.OPEN=W.OPEN;
 class Line extends EventTarget{constructor(u){super();url=u;line=this;this.binaryType='arraybuffer';var want=name;try{if(parent.feedWant){want=parent.feedWant();look=parent.feedWantLook()||look}}catch(e){}if(want)dial(want)}
@@ -63,7 +63,7 @@ if(!opened){opened=true;line.dispatchEvent(new Event('open'))}
 else{var t=window.term;if(t.fit)t.fit();s.send(new TextEncoder().encode(JSON.stringify({AuthToken:'',columns:t.cols,rows:t.rows})))}
 tell({state:'up'})};
 s.onclose=function(e){if(me!==turn)return;clearTimeout(quiet);sock=null;tell({state:'down',code:e.code})};
-s.onmessage=function(e){if(me!==turn)return;
+s.onmessage=function(e){if(me!==turn)return;heard=Date.now();
 var what=new Uint8Array(e.data)[0];
 if(what===48){if(!out){out=Date.now();if(drew)window.term.write('\\x1bc');drew=true}
 clearTimeout(quiet);if(!done)quiet=setTimeout(look4,out&&Date.now()-out>700?0:Math.max(150,250-(Date.now()-at)))}
@@ -75,7 +75,7 @@ t.write('',function(){if(me!==turn||done)return;var b=t.buffer.active, y=t.rows,
 while(y--){var l=b.getLine(b.baseY+y);if(l&&l.translateToString(true).trim()){text=true;if(y<low)break;done=true;requestAnimationFrame(function(){if(me===turn)tell({state:'drawn'})});return}}
 if(text)quiet=setTimeout(look4,200)})}
 }
-window.arLine={dial:function(to,l){if(l)window.arLook(l);dial(to)},hang:hang,
+window.arLine={dial:function(to,l){if(l)window.arLook(l);dial(to)},hang:hang,heard:function(){return heard},
 keep:function(){var t=window.term, rows=t&&t.element&&t.element.querySelector('.xterm-rows');if(!rows||!rows.textContent.trim())return null;
 var k=document.createElement('div'), s=document.createElement('div');k.id='ar-kept';k.setAttribute('aria-hidden','true');k.className=t.element.className;
 s.className='xterm-screen';s.style.cssText=rows.parentNode.style.cssText;s.appendChild(rows.cloneNode(true));k.appendChild(s);return k},
