@@ -1352,12 +1352,18 @@ def test_decide_question_b223a(tmp: Path) -> None:
                       ('Keep it? (asked with `run ask`: your answer resumes its session)',
                        ('Keep it?', ['(asked with `run ask`: your answer resumes its session)'], None)),
                       ('The log is already kept, drop it?', ('The log is already kept, drop it?', [], None)),
+                      ('Why? - a thing - another', ('Why?', ['- a thing - another'], None)),
+                      ('Keep it? we would say yes', ('Keep it?', ['We would say yes'], None)),
+                      ('Full? or Small?', ('Full? or Small?', [], None)),
+                      ('Two looks. Keep it (or drop it?)', ('Keep it (or drop it?)', ['Two looks.'], None)),
+                      ('Keep the log (why? it is old), then?', ('Keep the log (why? it is old), then?', [], None)),
                       ('Keep e.g. the log?', ('Keep e.g. the log?', [], None)),
                       ('It is old. Which? https://example.com/b', ('Which?', ['It is old.', 'https://example.com/b'], None)),
                       ('One.\n\nTwo. Keep it?', ('Keep it?', ['One.', 'Two.'], None))):
         d = row(ask)['detail']
         eq((d['question'], d['lead'], d['notes']), (*want[:2], [n for n in (want[2], 'Reply with your answer') if n]), ask)
     eq(need('It is old. Keep e.g. the log? Yes is simpler'), 'D9 - Keep e.g. the log?', 'needs: the whole question')
+    eq(need(f'Background. {"Is it so " * 12}or not?'), f'D9 - {"Is it so " * 12}or not?', 'a long one is not cut')
     f = repo / '.runner' / 'asks' / 'D9.json'
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps({'summary': 'Choose a look', 'steps': ['Open both'], 'expect': ['Two'], 'options': [{'name': 'Full'}, {'name': 'Small'}]}), encoding='utf-8')

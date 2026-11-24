@@ -398,7 +398,7 @@ def named_shots(text: str) -> list[dict]:
             ][:SHOTS_MAX]
 
 
-ASKS = re.compile(r'\?[*`"\'”’]*$')  # how a question's sentence ends
+ASKS = re.compile(r'(?!\().*\?[*`"\'”’)]*', re.S)  # how a question's sentence ends
 
 
 def _sentences(ask: str) -> list[list[tuple[str, str]]]:
@@ -410,7 +410,9 @@ def _sentences(ask: str) -> list[list[tuple[str, str]]]:
             out.append([(kind, text)])
             going = False
             continue
-        for part in re.split(r'(?<=\?)(?=\s+https?://)', text):  # a second link after the question
+        m = re.fullmatch(r'([^?]*(?:\?.*)?\?)(\s+[^\s?][^?]*)', text, re.S)  # words that go on in lower case, a link or a list
+        cut = m and m[1].count('(') <= m[1].count(')') and not m[1].count('`') % 2 and not m[1].count('"') % 2
+        for part in [m[1], m[2]] if cut else [text]:
             if going:
                 out[-1].append((kind, part))
             else:
@@ -426,7 +428,7 @@ def _said(sentence: list[tuple[str, str]]) -> str:
 
 def _asked(sentences: list[list[tuple[str, str]]]) -> int:
     """Which of `sentences` is the question: the last that ends in a question mark; -1 for none."""
-    return next((i for i in range(len(sentences) - 1, -1, -1) if ASKS.search(_said(sentences[i]))), -1)
+    return next((i for i in range(len(sentences) - 1, -1, -1) if ASKS.fullmatch(_said(sentences[i]))), -1)
 
 
 def question_of(ask: str) -> str:

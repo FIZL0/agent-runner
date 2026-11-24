@@ -2097,7 +2097,7 @@ def needs_lines(items: list, sheet=lambda tid: False) -> list[str]:
             said.replace('. Pick on the sheet', ', pick on the sheet')  # a pick sheet's ask keeps its how
         hint = own.group(1) if own else ''  # only the agent's own words: the generic one is noise here
         said = said if asked else re.split(r'(?<=[.?!])\s', said, maxsplit=1)[0].rstrip('.')  # its first sentence
-        if len(said) > NEEDS_WIDTH:
+        if len(said) > NEEDS_WIDTH and not asked:  # a question is whole: its end is what is asked
             cut = said[:NEEDS_WIDTH].rsplit(' ', 1)[0]
             if cut.count('`') % 2 and (end := said.find('`', len(cut))) >= 0:  # B150: never cut inside a command
                 cut = said[:end + 1]
