@@ -221,8 +221,9 @@ a{color:var(--accent)}
 .main.sess .top{top:0} .main.sess .notices{top:var(--seebar,0px)} .main.sess .dockwrap{bottom:0;z-index:2}
 .main.sess .dockwrap .dock{background:var(--bg);transition:transform var(--dur-slow) var(--ease),opacity var(--dur-fast) var(--ease)}
 .main.sess .top>*{transition:opacity var(--dur-fast) var(--ease),transform var(--dur-spring) var(--spring)}
-.main.sess.slim .top{background-color:transparent;pointer-events:none} .main.sess.slim .top>:not(.menu,[data-new]){opacity:0;visibility:hidden}
-.main.sess.slim .top>:is(.menu,[data-new]){pointer-events:auto;background:var(--surface);border-radius:50%;box-shadow:0 2px 10px var(--shadow)}
+/* B215: the menu fades with the bar; it alone stays focusable, and keyboard focus on it shows the bar */
+.main.sess.slim .top:not(:has(:focus-visible)){background-color:transparent;pointer-events:none}
+.main.sess.slim .top:not(:has(:focus-visible))>*{opacity:0} .main.sess.slim .top:not(:has(:focus-visible))>:not(.menu){visibility:hidden}
 .main.sess.slim .notices{display:none} .main.sess.slim .dock{transform:translateY(100%);opacity:0;pointer-events:none}
 .main.sess.slim .dockwrap{pointer-events:none}
 .slimbox{position:absolute;left:0;right:0;bottom:0;height:56px;padding:6px 12px;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));background:var(--bg);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:opacity var(--dur-fast) var(--ease)}
