@@ -1271,6 +1271,64 @@ def test_settled_about_chat():
             check(all(f'{what} at ' in t for _, t in w.typed), f'worded: {what}', w.typed)
 
 
+def test_settled_filed():
+    print('F209a: a chat is about the concept or DECIDE it filed itself')
+    from agent_runner import plan as P
+    url = 'https://claude.ai/code/artifact/aaa'
+    for tid, by, told in (('K1', 4, [6]), ('F1', 4, [6]), ('K1', 0, [6]), ('K1', 6, []), ('F1', 6, [])):
+        with settled_world() as w:
+            K.control_give(6, f'{w.R.ROOT.name} · 6')
+            eq(w.plan('concept', 'the menu', '--page', url, by=6), 0, 'c6 files it')
+            eq((P.waiting(w.R.C.todo)[0][:2]), ('F1', 'K1'), 'as K1 with its build F1')
+            w.look()
+            eq(w.typed, [], 'filing it says nothing')
+            eq(w.plan('approve', tid, 'option B', by=by), 0, 'approved')
+            w.look()
+            w.look(w.base + 400)
+            w.look(w.base + 4000)
+            eq([n for n, _ in w.typed], told, f'approve {tid} by c{by}: the filer is told once, not of its own')
+            check(all(f'{tid} was approved at ' in t for _, t in w.typed), 'worded', w.typed)
+    with settled_world() as w:
+        K.control_give(6, f'{w.R.ROOT.name} · 6')
+        w.plan('concept', 'the menu', '--page', url, by=6)
+        w.plan('concept', 'the tabs', '--page', url + 'b', by=6)
+        eq(w.Z.about(6, 's6', {}), {'K1', 'F1', 'K2', 'F2'}, 'all it filed, each with its build')
+        w.rows['new'] = [said('hi', w.base - 900), answer('Hello.', w.base - 890)]
+        w.up(6, 'new', 51)
+        os.utime(w.notes('control6.pid'), (w.base - 800, w.base - 800))
+        w.up(7, 's6', 46)
+        os.utime(w.notes('control7.pid'), (w.base - 800, w.base - 800))
+        K.control_give(7, f'{w.R.ROOT.name} · 7')
+        eq(w.Z.about(6, 'new', {}), set(), 'another session with its number is not about them')
+        w.plan('approve', 'K1', 'A', by=6)
+        w.look()
+        eq([n for n, _ in w.typed], [7], 'the filer is told, also under another number; not who has its number now')
+    with settled_world() as w:
+        w.plan('concept', 'the menu', '--page', url, slot='2', by=6)
+        w.plan('concept', 'the tabs', '--page', url)
+        check(not list(w.Z.folder(w.R.C).glob('*.filed')), 'a slot\'s or a terminal\'s is no chat\'s')
+    with settled_world() as w:
+        K.control_give(6, f'{w.R.ROOT.name} · 6')
+        w.plan('concept', 'the menu', '--page', url, by=6)
+        w.look()
+        P.approve('K1', 'A', todo=w.R.C.todo)  # a pulled plan: no command here
+        for at in (40, 400, 440):
+            w.look(w.base + at)
+        eq([n for n, _ in w.typed], [6], 'left Needs you with no command: one line for the two ids')
+        check('F1 was reopened' in w.typed[0][1], 'worded', w.typed)
+    with settled_world() as w:
+        K.control_give(6, f'{w.R.ROOT.name} · 6')
+        w.plan('block', 'R82', 'CONFIRM: look', by=6)
+        eq(w.Z.about(6, 's6', {}), set(), 'a CONFIRM is not a DECIDE')
+        w.plan('block', 'R90', 'DECIDE: which?', by=6)
+        eq(w.Z.about(6, 's6', {}), {'R90'}, 'a DECIDE it blocked a task with')
+        tid = K.file_control_ask(6, 's6', 'Which look?', '')
+        check(tid and tid in w.Z.about(6, 's6', {}), 'its open question, filed by the run', tid)
+        w.plan('confirm', tid, 'the small one')
+        w.look()
+        eq([n for n, _ in w.typed], [6], 'reopened, it is told of the answer')
+
+
 def test_settled_waits_and_skips():
     print('F160: not typed where it would be lost; ended and closed sessions are left alone; no person\'s message')
     with settled_world() as w:
@@ -1380,5 +1438,5 @@ if __name__ == '__main__':
                              test_first_message_typed_after_remote_control, test_takes_input_b158, test_rename_f129, test_held_delivered_once,
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once,
-                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_waits_and_skips, test_settled_landing,
+                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing,
                              test_settled_rule_in_guide, test_decide_options_f181d]))
