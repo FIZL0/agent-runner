@@ -35,7 +35,7 @@ const MIC_EARLY='The mic was stopped before it was on. Allow it if the browser a
    its start gives an end with no error. Words heard are counted, not kept. B216: a run of growing results is one line,
    the newest; must: the line goes in a full report too */
 function micLog(what,fresh,own,must){
-  if(!own&&(fresh||!TK.trail))TK.trail={at:Date.now(),ev:[],more:0};
+  if(!own&&(fresh||!TK.trail))TK.trail={at:Date.now(),ev:[],more:0,past:micPast()};
   const t=own||TK.trail;
   const ev=`${Date.now()-t.at} ms ${what}`, grows=/ ms result, \d+ letters(, \d+ final)?$/;
   if(grows.test(ev)&&grows.test(t.ev[t.ev.length-1]||''))t.ev[t.ev.length-1]=ev;

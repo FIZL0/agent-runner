@@ -229,6 +229,8 @@ document.addEventListener('click',async e=>{
     if(twice&&!S.drawer){startRename(x.dataset.thread);return}
   }
   if(q('[data-micreport]'))return micCopy();
+  if(x=q('[data-mictest]'))return micTest(x.dataset.mictest);  // B162b1
+  if(q('[data-mictestcopy]'))return micCopyText('Mic test',micTestText());
   if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(TS.mic==='hold'&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
   if(q('[data-spk]')){if(talkReads())return hush();if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);unlockAudio();talkSet('read',!TS.read);return}
   if(x=q('[data-talkmode]'))return talkMode(x.dataset.talkmode);
@@ -299,6 +301,7 @@ document.addEventListener('change',e=>{
   const t=e.target, ts=t.dataset&&t.dataset.ts, f=(t.dataset&&t.dataset.f)||'';
   if(t.dataset&&t.dataset.tooluse){toolPost({op:'use',name:t.dataset.tooluse,on:t.checked},t.dataset.tooluse);return}  // F169
   if(f.startsWith('dev:')){S.f[f]=t.type==='checkbox'?String(t.checked):t.value;render(true);return}
+  if(t.dataset&&t.dataset.mtear!==undefined){MT.ear=t.value;render(true);return}  // B162b1
   if(ts){talkSet(ts,t.type==='checkbox'?t.checked:t.value);return}
   if(t.dataset&&t.dataset.setpart){savePart(t);return}
   if(t.dataset&&t.dataset.kinds){saveKinds(t.dataset.kinds,t.value);return}

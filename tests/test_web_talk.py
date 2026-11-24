@@ -493,7 +493,7 @@ let micEl = null;  // a redraw of the mic's markup makes a new element
 eval(logic + `
 function render() { if (setHTML($('talkmic'), talkMic())) els.mic = micEl = {...el(), setPointerCapture(id) { this.cap = id }}; talkDraw() }
 let TS = talkSetParse('');
-` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'earEnd', 'micStop', 'async function micCopy'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
+` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'earEnd', 'micStop', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
   + page.slice(page.indexOf('/* B162: the mic report\'s pointer'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {}; render();
 // two aborts: one retry by itself, then the words
@@ -706,6 +706,7 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     check('mic hold, version' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
     eq(got.get('cap'), 'and 10 more', 'the report has an end')
     eq(got.get('copied')[:2] + got.get('copied')[3:4], ['Mic report', 'the note', 'UA'], 'the copy names the note and the browser')
+    check('page open ' in got['holdReport'] and 'without' in got['holdReport'], 'B162b1: the report says what the page did before', got['holdReport'][:400])
     eq(got.get('sheet'), ['out', 'Mic report', True], 'no clipboard: shown to copy by hand')
 
 
@@ -1034,5 +1035,87 @@ def test_home_talk_f164(tmp: Path) -> None:
           'and it is 44px to press')
 
 
+MICTEST_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = s => { const i = page.indexOf(s); if (i < 0) throw new Error(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); if (i < 0) throw new Error(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+let now = 1000, timers = [], recs = [], types = [], notes = [], copied = '', refuse = null, stopped = 0, spoke = 0;
+Date.now = () => now;
+const setTimeout = (f, ms) => { timers.push({f, at: now + ms}); return timers.length }, clearTimeout = id => { if (timers[id - 1]) timers[id - 1].f = null };
+const real = globalThis.setTimeout, settle = () => new Promise(r => real(r, 2));
+const go = async ms => { const end = now + ms; for (;;) { const t = timers.filter(t => t.f && t.at <= end).sort((a, b) => a.at - b.at)[0]; if (!t) break;
+  now = Math.max(now, t.at); const f = t.f; t.f = null; f(); await settle() } now = end };
+class SR { constructor() { recs.push(this) } start() {} stop() { this.stops = (this.stops || 0) + 1 } abort() { this.aborted = true } }
+const last = () => recs[recs.length - 1];
+let kind = 'playback'; const audioSession = {state: 'active', get type() { return kind }, set type(t) { types.push(kind = t) }};
+const track = {label: 'Secret Name AirPods', muted: false, stop() { stopped++ }}, media = {getUserMedia: async () => { if (refuse) throw Object.assign(new Error('x'), {name: refuse}); return {getTracks: () => [track], getAudioTracks: () => [track]} }};
+const navigator = {language: 'en-US', userAgent: 'UA', audioSession, mediaDevices: media, clipboard: {writeText: async t => { copied = t }}};
+class AudioContext { constructor() { this.state = 'running' } resume() {} close() {} createMediaStreamSource() { return {connect() {}} }
+  createAnalyser() { return {getFloatTimeDomainData(b) { b[0] = 0.25 }} } }
+const window = {AudioContext, get speechSynthesis() { spoke++; return null }}, document = {hidden: false};
+let plays = 0; const el = {play() { plays++; return Promise.resolve() }};
+const audioSrc = () => el, AU = {ok: false}, RUN_VERSION = '9.9', openSheet = () => {}, SHEETS = {}, esc = String;
+const S = {view: 'talk', sheet: 'mictest'}, TK = {state: '', later: [], ear: null, trail: null};
+const toast = t => notes.push(t), render = () => {}, micWhy = () => '', TS = {read: true};
+eval(logic + line('const MIC=') + grab('function micFree(') + grab('async function micCopyText(') + page.slice(page.indexOf('/* B162b1: the Mic test'), page.indexOf('const micTestText=')) + line('const micTestText=') + `
+(async () => {
+  const out = {}, ran = () => MT.runs[MT.runs.length - 1], evs = () => ran().trail.ev.join(' | ');
+  // 1: the session is left alone, words are counted
+  MT.ear = 'on'; micTest('plain'); micTest('switch'); out.one = [MT.runs.length, types.splice(0), /data-mictest="plain" disabled/.test(micTestSheet()), micTestSheet().includes('Starting the mic')];
+  now += 60; last().onaudiostart(); out.live = micTestSheet().includes('one two three');
+  now += 300; last().onresult({results: [[{transcript: 'secret words'}]]}); await go(5000); out.stops = last().stops; last().onend();
+  out.plain = [ran().says, MIC.rec, MT.run, types.splice(0), PAST.words];
+  // 2: the switch; no words; the end never comes
+  micTest('switch'); out.sw = types.splice(0); now += 50; last().onaudiostart(); await go(5000); last().onerror({error: 'aborted', message: 'No speech detected'}); await go(3000); out.aborted = last().aborted; await go(1500);
+  out.noWords = [ran().says, MIC.rec, MT.run]; out.evs = evs();
+  // 3: after the silent sound, with or without its end; a reply that comes first
+  let n = recs.length; types = []; micTest('sound'); await settle(); out.before = [recs.length - n, plays, types.slice()]; el.onended(); out.after = [recs.length - n, types.slice()]; last().onstart(); await go(8000); out.slow = last().stops; last().onend();
+  out.never = ran().says; n = recs.length; micTest('sound'); await go(1500); out.noEnd = recs.length - n; last().onend();
+  n = recs.length; micTest('sound'); TK.state = 'speaking'; el.onended(); out.first = [recs.length - n, MT.run]; micTest('plain'); out.reading = [recs.length - n, notes.length]; TK.state = '';
+  // 4: the level, and no recognizer; the mic is let go; the device's name is not kept
+  n = recs.length; micTest('level'); await settle(); out.busy = !!MIC.rec; await go(5100); out.level = [recs.length - n, ran().says, stopped, MIC.rec, MT.run]; out.levelEvs = evs();
+  refuse = 'NotAllowedError'; micTest('level'); await settle(); out.refused = [ran().says, MIC.rec]; refuse = null;
+  // left, and a listen that takes the mic
+  micTest('level'); await settle(); S.sheet = ''; await go(400); out.left = [MT.run, stopped]; S.sheet = 'mictest';
+  micTest('plain'); document.hidden = true; await go(400); out.hidden = last().stops; last().onend(); document.hidden = false; out.hid = MT.run;
+  MIC.rec = {}; micTest('plain'); out.inUse = [MT.run, notes.length]; MIC.rec = null;
+  micTestSheet(); await micCopyText('Mic test', micTestText()); out.copy = copied; out.toast = notes[notes.length - 1]; out.spoke = spoke;
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_mic_test_b162b1(tmp: Path) -> None:
+    """B162b1: the Mic test: each try sets what it says, ends, lets the mic go, and its report holds no words and no
+    device name; a mic report says what the page did before the press."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('data-sheet="mictest">Mic test…<' in page, 'Talk settings opens it')
+    if not shutil.which('node'):
+        print('  (no node here: the Mic test script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(MICTEST_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the Mic test', r.stderr[-1500:])
+    o = json.loads(r.stdout or '{}')
+    eq(o.get('one'), [1, ['auto'], True, True], 'one try at a time, the session left to the phone, and says the mic starts')
+    eq((o.get('live'), o.get('stops')), (True, 1), 'speak once the mic is on; 5 s later it stops')
+    eq(o.get('plain'), ['Heard 12 letters', None, None, ['playback'], 0], 'letters, the mic free')
+    eq((o.get('sw'), o.get('aborted')), (['play-and-record'], True), 'the switch; no end: aborted')
+    eq(o.get('noWords'), ['The mic was on, no words (aborted: No speech detected)', None, None], 'and over by force')
+    check('50 ms audiostart' in o['evs'] and 'audio session play-and-record' in o['evs'], 'its events with their ms', o['evs'])
+    eq((o.get('before'), o.get('after')), ([0, 1, []], [1, ['play-and-record']]), 'the silent sound ends first, then the recognizer')
+    eq((o.get('slow'), o.get('never'), o.get('noEnd')), (1, 'The mic did not start (no error)', 1), 'a mic that never starts is stopped; a sound with no end goes on')
+    eq((o.get('first'), o.get('reading')), ([0, None], [0, 1]), 'a reply that reads is not listened over')
+    eq((o.get('busy'), o.get('level')), (True, [0, 'Loudest 0.250, sound in 100% of the time', 1, None, None]), 'the level, with no recognizer')
+    check('another mic' in o['levelEvs'] and 'level 0.250' in o['levelEvs'], 'the input and levels', o['levelEvs'])
+    eq(o.get('refused'), ['No sound was read (NotAllowedError)', None], 'refused says so')
+    eq((o.get('left'), o.get('hidden'), o.get('hid')), ([None, 2], 1, None), 'the sheet closed or the page hidden ends it')
+    eq(o.get('inUse'), [None, 2], 'a mic in use is left alone')
+    check('earbuds on' in o['copy'] and 'page open ' in o['copy'] and 'listens before: 0 with words' in o['copy'], 'the report', o['copy'][:400])
+    check('secret' not in o['copy'].lower(), 'no words, no device name')
+    eq((o.get('toast'), o.get('spoke')), ('Mic test copied: paste it into your reply', 0), 'copied; speechSynthesis not touched')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
+    raise SystemExit(report([in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
