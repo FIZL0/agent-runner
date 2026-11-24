@@ -89,6 +89,14 @@ internet. With Home on that port, a run serves its own page on 127.0.0.1 only, o
 opens; with Home off, the first run up keeps port 8770 and a second run listens on 127.0.0.1 only, its status
 and run log offering `agent-runner home install`. Its projects and token are in `~/.config/agent-runner` (`%APPDATA%\agent-runner`).
 
+#### Trusted networks
+
+The page's key (`?t=`) is always needed by default. To skip it on your tailnet, run `agent-runner home trust add tailnet`
+(`home trust remove tailnet` undoes it; `home status` lists the networks). Devices on a trusted network then open Home and
+a run's page without the key. Anyone on that network can do everything the page does, including type into sessions, so
+run commands on the machine as you; add only networks you trust. Loopback is never trusted, and the key stays on for any
+other network.
+
 > [!TIP]
 > No repo handy? `examples/demo.sh` builds a tiny one with a plan in a temp dir and shows `plan`,
 > `plan brief` and `run --dry-run` without starting an agent. `examples/demo.sh --run` also does one real task.

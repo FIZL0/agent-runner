@@ -63,6 +63,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.min_free_mem_gb': ('machine', 'Minimum free memory', "Below this, the run's biggest process is ended. 0: never."),
     'run.web': ('look', 'Run page', 'The run serves this page on your network. Off: no page, only the terminal.'),
     'run.web_port': ('look', 'Run page port', 'The port this page is on. With Runner Home, setting one keeps it open beside Home.'),
+    'ui.trusted_networks': ('look', 'Networks with no key', 'A device on one of these networks opens this page without its key. Empty: the key is always needed.'),
     'ui.theme': ('look', 'Terminal colors', 'The colors of the terminal page and of a session on this page. Light suits a bright terminal.'),
     'run.auto_upgrade': ('look', 'Update by itself', 'A newer agent-runner is installed, and the run restarts on new code, between merges. Off: only when you press upgrade or restart.'),
     'run.install_skill': ('look', 'Guide for your own sessions', 'Keeps the agent-runner guide where sessions you start find it. Off: they do not know the run.'),

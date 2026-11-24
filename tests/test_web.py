@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest import mock
 
 from _check import check, eq, git, report
+from _trust import asked, trusted_checks
 
 from agent_runner import config as CF  # noqa: E402
 from agent_runner import state as S  # noqa: E402
@@ -96,6 +97,28 @@ def test_no_settings_f178(tmp: Path) -> None:
     (repo / 'runner.toml').write_text('', encoding='utf-8')
     eq(U.no_settings(CF.Config(repo)), '', 'an empty runner.toml is settings')
     eq(U.no_settings(st={'no_settings': True}), said, "the run's own word wins")
+
+
+def test_trusted_networks_f136(tmp: Path) -> None:
+    """F136: the run's own page opens without its key on `[ui] trusted_networks`; the key always by default."""
+    fake_repo(tmp)
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base, ts = f'http://127.0.0.1:{srv.server_address[1]}', '100.101.1.2'
+    try:
+        trusted_checks(srv, base, lambda nets: S.C.raw['ui'].update(trusted_networks=nets), '/snapshot', token)
+        eq(asked(f'{base}/t//s1/', ts, srv), 403, 'a session needs the key too')
+        S.C.raw['ui']['trusted_networks'] = ['tailnet']
+        got = []
+        with mock.patch.object(srv.terms, 'ttyd', lambda n: {'ok': True, 'port': 9}), \
+                mock.patch.object(W.session_frame, 'frame', lambda h, port, path, n, look: (got.append(path), h.send(200, '{}'))):
+            eq(asked(f'{base}/t//s1/?x=1', ts, srv), 200, 'and opens on a trusted network')
+        eq(got, [f'/t/{token}/s1/?x=1'], "at the ttyd's own path")
+        eq(W.shown_links([], [f'http://100.101.1.1:8770/?t={token}', f'http://10.0.0.5:8770/?t={token}'], https=lambda p, t: []),
+           ['http://100.101.1.1:8770/', f'http://10.0.0.5:8770/?t={token}'], 'status drops the key of a trusted link only')
+    finally:
+        S.C.raw['ui']['trusted_networks'] = []
+        srv.stop()
 
 
 def test_server(tmp: Path) -> None:
@@ -2950,9 +2973,9 @@ def test_home_screen_b179(tmp: Path) -> None:
     eq(logic_js([['manifestLink', '/', 'beta two', 'T&1'], ['manifestLink', '/', '', 'T'], ['manifestLink', '', 'x', 'T'],
                  ['appLink', o + '/p/a/?t=T', o, '/'], ['appLink', o + '/p/a/concept/K1?t=T', o, '/'],
                  ['appLink', 'https://claude.ai/x?t=T', o, '/'], ['appLink', 'http://h.ts.net:8770/?t=T', o, '/'],
-                 ['appLink', o + '/other/?t=T', o, '/home/'], ['appLink', o + '/p/a/', o, '/'], ['appLink', '', o, '/']]),
+                 ['appLink', o + '/other/?t=T', o, '/home/'], ['appLink', o + '/p/a/', o, '/'], ['appLink', o + '/p/a/?t=', o, '/'], ['appLink', '', o, '/']]),
        ['/manifest.webmanifest?p=beta%20two&t=T%261', '/manifest.webmanifest?t=T', './manifest.webmanifest?t=T',
-        'go', 'concept', '', '', '', '', ''],
+        'go', 'concept', '', '', '', '', 'go', ''],
        "the manifest at Home's root; the app's own pages stay in it, other sites open outside")
 
 
@@ -5069,7 +5092,7 @@ def test_session_run_side_f170(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_no_settings_f178), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
+    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_trusted_networks_f136), in_tmp(test_no_settings_f178), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),

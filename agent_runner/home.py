@@ -8,6 +8,7 @@
     agent-runner home add PATH    list a project that is not under the scanned folders (remove PATH: unlist it)
     agent-runner home list        the projects Home lists, one per line
     agent-runner home serve       the server itself, in this terminal (what the service runs)
+    agent-runner home trust add NETWORK   let a network in without the key: a CIDR, or `tailnet` (remove NETWORK: stop)
     agent-runner home peer add LINK   show another machine's Home under Devices (remove LINK: stop); `peers` lists
 
 Off until installed: nothing runs and nothing listens until `home install`. The server is the same kind as a
@@ -57,7 +58,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from agent_runner import devices, home_screen
+from agent_runner import devices, home_screen, trust
 from agent_runner.session_frame import tunnel
 
 PORT = 8770
@@ -84,7 +85,8 @@ def registry_file() -> Path:
 
 def load_registry() -> dict:
     """{'projects': [added paths], 'hidden': [scanned paths removed], 'scan': [folders], 'port': int,
-    'installed': bool (`home install` turned Home on), 'peers': [other Homes' links], 'tailscale': bool}."""
+    'installed': bool (`home install` turned Home on), 'peers': [other Homes' links], 'tailscale': bool,
+    'trusted_networks': [networks let in without the key, F136]}."""
     try:
         data = json.loads(registry_file().read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -98,6 +100,8 @@ def load_registry() -> dict:
             'port': port if isinstance(port, int) and not isinstance(port, bool) and 0 <= port < 65536 else PORT,
             'installed': data.get('installed') is True,
             'peers': [str(p) for p in data.get('peers') or [] if isinstance(p, str)],  # F95: other Homes' links
+            'trusted_networks': ([n for n in nets if isinstance(n, str)]
+                                 if isinstance(nets := data.get('trusted_networks'), list) else []),
             'tailscale': data.get('tailscale') is not False}  # F95: look for Homes on the tailnet too
 
 
@@ -406,6 +410,7 @@ HOP = {'connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer', 'upgrad
 class HomeHandler(BaseHTTPRequestHandler):
     server: 'HomeServer'
     protocol_version = 'HTTP/1.1'
+    keyless = False  # F136: this request came in by its network
 
     def log_message(self, *a) -> None:
         pass
@@ -413,7 +418,15 @@ class HomeHandler(BaseHTTPRequestHandler):
     def allowed(self) -> bool:
         q = parse_qs(urlsplit(self.path).query)
         got = (q.get('t') or [''])[0] or self.headers.get('X-Token', '') or self.path_token()
-        return bool(got) and hmac.compare_digest(got.encode(), self.server.token.encode())
+        key = bool(got) and hmac.compare_digest(got.encode(), self.server.token.encode())
+        self.keyless = not key and trust.lets_in(load_registry()['trusted_networks'], self.command,
+                                                 self.client_address[0], self.headers)
+        return key or self.keyless
+
+    def end_headers(self) -> None:
+        if self.keyless:  # F136: with no key, only its own pages may frame it
+            self.send_header('X-Frame-Options', 'SAMEORIGIN')
+        super().end_headers()
 
     def path_token(self) -> str:
         """F107: a run's terminal tab is /p/KEY/t/TOKEN/NAME/...: ttyd's page asks for its token and its socket
@@ -786,6 +799,11 @@ def home_urls(port: int | None = None, https=None) -> list[str]:
     return [u for u in (https or tailscale_https_urls)(port, token) if u not in plain] + plain
 
 
+def shown(urls: list[str]) -> list[str]:
+    """F136: Home's links as they are printed: no key in one that only a trusted network reaches."""
+    return trust.shown(urls, load_registry()['trusted_networks'])
+
+
 def serve_https_argv(port: int) -> list[str]:
     """F134: the Tailscale Serve command that gives Home on `port` an https address (on port+1, 8771)."""
     return ['tailscale', 'serve', '--bg', f'--https={port + 1}', f'http://127.0.0.1:{port}']
@@ -1027,7 +1045,7 @@ def install(kind: str | None = None, call=sh, out=print, check=wait_serving, htt
     if not check(reg['port']):
         out(f'It does not answer on port {reg["port"]} yet: a run may hold that port (one on an older '
             f'version gives it up when it next starts; Home keeps trying meanwhile), or see {log}.')
-    urls = offer_https(reg['port'], urls, call=call, out=out, ask=ask)
+    urls = shown(offer_https(reg['port'], urls, call=call, out=out, ask=ask))
     out('Open it on your phone (same network or Tailscale):\n  ' + '\n  '.join(urls))
     # F134: the QR code holds the https link when there is one (the mic needs it), else the LAN address
     if q := qr_text(urls[0] if urls[0].startswith('https://') else urls[-1]):
@@ -1065,7 +1083,9 @@ def status(kind: str | None = None, out=print, https=None, on=None, up=None) -> 
     out(f'Runner Home: {"installed" if on else "not installed (agent-runner home install)"}, '
         f'{"serving" if up else "not serving"} on port {reg["port"]}')
     if on or up:
-        out('  ' + '\n  '.join(home_urls(reg['port'], https)))  # F134: the https link first
+        out('  ' + '\n  '.join(shown(home_urls(reg['port'], https))))  # F134: the https link first
+    nets = [n + (' (not a network: ignored)' if trust.network_problem(n) else '') for n in reg['trusted_networks']]
+    out(f'Trusted networks, no key needed: {", ".join(nets)}' if nets else 'Trusted networks: none, every link needs its key')
     ps = projects(reg)
     out(f'{len(ps)} project{"" if len(ps) == 1 else "s"}: ' + (', '.join(p.name for p in ps) or 'none'))
     return 0
@@ -1090,7 +1110,7 @@ def serve(port: int | None = None) -> int:
         print(f'agent-runner home: cannot serve on port {port} ({e}): a run may hold it; with Home installed '
               f'it gives the port up', file=sys.stderr)
         return 1
-    print(f'Runner Home: {" or ".join(home_urls(srv.server_address[1]))}', flush=True)
+    print(f'Runner Home: {" or ".join(shown(home_urls(srv.server_address[1])))}', flush=True)
     srv.vitals.start()  # F95: the day of samples builds up while Home runs, page open or not
     try:
         srv.serve_forever()
@@ -1164,7 +1184,7 @@ def restart_home(exec_=None) -> int:
 
 
 USAGE = ('agent-runner home [slots|plan] | home install|uninstall|status|list|serve|peers | home add|remove PATH | '
-         'home peer add|remove LINK')
+         'home peer add|remove LINK | home trust add|remove NETWORK')
 
 
 def peer_change(op: str, link: str) -> tuple[bool, str]:
@@ -1173,7 +1193,8 @@ def peer_change(op: str, link: str) -> tuple[bool, str]:
     from agent_runner.vitals import peer_base
     link = link.strip()
     if op == 'add' and not peer_base(link):
-        return False, f'not a Home link: {link} (want http://HOST:PORT/?t=TOKEN, as `home status` there prints it)'
+        return False, f'not a Home link: {link} (want http://HOST:PORT/?t=TOKEN, as `home status` there prints it; ' \
+            'a link it prints without ?t=TOKEN needs it added: the key is in home.token there)'
     reg = load_registry()
     had = link in reg['peers']
     reg['peers'] = [p for p in reg['peers'] if p != link] + ([link] if op == 'add' else [])
@@ -1181,6 +1202,21 @@ def peer_change(op: str, link: str) -> tuple[bool, str]:
     if op == 'add':
         return True, f'Home shows {urlsplit(link).hostname} under Devices'
     return (True, f'Home no longer shows {urlsplit(link).hostname}') if had else (False, f'not listed: {link}')
+
+
+def trust_change(op: str, name: str) -> tuple[bool, str]:
+    """F136: let a network in without the key (`add`), or stop. Home reads it on each request: no restart."""
+    name = name.strip()
+    reg = load_registry()
+    had = name in reg['trusted_networks']
+    if op == 'add' and (problem := trust.network_problem(name)):
+        return False, problem
+    if op == 'remove' and not had:
+        return False, f'not a trusted network: {name}'
+    reg['trusted_networks'] = [n for n in reg['trusted_networks'] if n != name] + ([name] if op == 'add' else [])
+    save_registry(reg)
+    return True, (f'{name} is trusted: a device on it opens Runner Home, and every run in it, without the key'
+                  if op == 'add' else f'{name} is no longer trusted: a device on it needs the key')
 
 
 def main(argv: list[str]) -> int:
@@ -1197,6 +1233,10 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == 'peer' and len(rest) == 2 and rest[0] in ('add', 'remove'):
         ok, said = peer_change(rest[0], rest[1])
+        print(said, file=sys.stdout if ok else sys.stderr)
+        return 0 if ok else 1
+    if cmd == 'trust' and len(rest) == 2 and rest[0] in ('add', 'remove'):
+        ok, said = trust_change(rest[0], rest[1])
         print(said, file=sys.stdout if ok else sys.stderr)
         return 0 if ok else 1
     if cmd in ('add', 'remove') and len(rest) == 1:

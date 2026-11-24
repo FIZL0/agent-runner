@@ -227,6 +227,25 @@ def test_external_plan(tmp: Path) -> None:
     eq([t for _, _, t, _, _ in P.iter_tasks(P.lines(S.C.todo))] if S.C.todo.exists() else [], [], 'no task there')
 
 
+def test_trusted_networks(tmp: Path) -> None:
+    """F136: no trusted networks by default; a bad CIDR is an error that names it."""
+    repo = project(tmp)
+    eq(CF.Config(repo).raw['ui']['trusted_networks'], [], 'the default: the key is always needed')
+
+    def said(value: str) -> str:
+        (repo / 'runner.toml').write_text(f'[ui]\ntrusted_networks = {value}\n', encoding='utf-8')
+        try:
+            return str(CF.Config(repo).raw['ui']['trusted_networks'])
+        except SystemExit as e:
+            return str(e)
+    eq(said('["tailnet", "192.168.1.0/24", "fd00::/8"]'), "['tailnet', '192.168.1.0/24', 'fd00::/8']", 'CIDRs and tailnet')
+    for bad in ('100.64.0.0/99', '100.64.0.1/10', 'home'):
+        got = said(f'["tailnet", "{bad}"]')
+        check('[ui] trusted_networks' in got and repr(bad) in got, f'{bad} is an error that names it', got)
+    for bad in ('"tailnet"', 'true', '[1]'):
+        check('[ui] trusted_networks must be' in said(bad), f'{bad} is no list of networks', said(bad))
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -237,4 +256,4 @@ def in_tmp(f):
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(f) for f in (test_one_key, test_line_ends, test_waits_for_a_merge, test_refused, test_push_fails,
-                                                 test_device_over_it, test_other_files, test_external_plan)]))
+                                                 test_device_over_it, test_other_files, test_external_plan, test_trusted_networks)]))

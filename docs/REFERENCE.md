@@ -245,6 +245,17 @@ each run at `/p/<project>/`. Without it, the first run up serves its own page on
 second run listens on 127.0.0.1 only, and its status and run log offer `agent-runner home install`. `home status` shows whether it is installed and serving;
 `home add PATH` lists a project outside `~/repos`. See the README's Runner Home section.
 
+Trusted networks (F136): `home trust add NETWORK` (remove NETWORK: stop) lets a client on a CIDR, or on `tailnet`
+(100.64.0.0/10 and fd7a:115c:a1e0::/48), open Home or a run's page without `?t=`. The list is Home's `trusted_networks`
+in `home.json`, and `home status` lists it; it takes effect with no restart. Through Home a run's page uses that list,
+and Home fills the run's own key on `/p/<project>/`. A run's own page (not through Home) reads `[ui] trusted_networks`
+at the run's start. Loopback is never trusted; a bad network is an error that names it. Printed links drop `?t=` only
+when every address their host resolves to is trusted. Anyone on a trusted network can do everything the page does,
+including type into sessions, so with no key a request must come from the page itself (another site's page is refused),
+at an IP address, a `*.ts.net` name or a local one (a bare name, .local, .lan, .home, .home.arpa, .internal,
+.localdomain); at any other name the key is needed. Behind a proxy on this machine (Tailscale Serve) the client is the
+last address in `X-Forwarded-For`, read from a loopback peer only, so another program on this machine can fake it.
+
 Home's links put the https address first. `home status`, `home install` (and its QR code, which holds the https
 link when there is one) and a run's link through Home (`/p/<project>/`) list a Tailscale Serve https address for
 Home's port first, then http by hostname and LAN address; Talk's mic and dictation need https. With no Tailscale
@@ -1514,6 +1525,7 @@ theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red a
                           # light or dark setting
 chat_quiet = "6h"         # a chat that needs no reply, with nothing said in it for this long, is grayed at the bottom
                           # of the run app's Chats (a pinned or a renamed one is left alone); false: off
+trusted_networks = []     # CIDRs, or `tailnet`, whose devices open the run's page without its key (?t=); [] (default): the key is always needed
 
 [models]                  # the model each type of work runs on (see Models per role below)
 code = "opus"             # a task's own session when its kind has no model below
