@@ -1158,8 +1158,28 @@ def test_need_give_f175(tmp: Path) -> None:
     check(not env.exists(), 'gone once dropped')
 
 
+def test_part_of_part_b199(tmp: Path) -> None:
+    """B199: a part of a part (F162a2) is a task id to every call that takes one; what is no id is still refused."""
+    repo = fake_run(tmp)
+    todo, asks = repo / 'plan' / 'TODO.md', repo / '.runner' / 'asks'
+    todo.write_text(TODO.replace('**D3**', '**F162a2**'), encoding='utf-8')
+    asks.mkdir(exist_ok=True)
+    (asks / 'F162a2.json').write_text(json.dumps({'inputs': [{'key': 'note'}]}), encoding='utf-8')
+    with mock.patch.object(U, 'agent_said', lambda tid: f'{tid} said'):
+        eq(U.need_why('F162a2').get('text'), 'F162a2 said', 'Why it waits')
+    check('F162a2' in U.task_text('F162a2').get('text', ''), "the task's text")
+    with mock.patch.object(U, 'new_control', lambda text, wait: {'ok': True, 'text': text}):
+        check('F162a2' in U.need_chat('F162a2').get('text', ''), 'Chat')
+    check('F162a2' in U.control_argv('task_drop', tid='F162a2'), 'a run control')
+    for bad in ('', None, 'f162a2', 'F', '162', 'F162-a', 'F162 a2', 'F162a2\n', '--F162a2'):
+        eq([U.need_why(bad)['ok'], U.need_give(bad, {'note': 'x'}).get('code')], [False, 2], f'no task id: {bad!r}')
+    r = U.need_give('F162a2', {'note': 'the top one'})
+    eq((r['ok'], r.get('gone')), (True, 'F162a2'), 'its inputs are sent')
+    check('- [ ] **F162a2**' in todo.read_text(encoding='utf-8'), 'and it reopens', todo.read_text(encoding='utf-8'))
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_need_give_f175), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),
