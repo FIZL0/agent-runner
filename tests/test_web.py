@@ -3437,6 +3437,12 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => 
   // outside the Outbox (Talk): the same words and control
   S.ob = []; S.obOpen = false; await act('talk', {}); out.act = [said[said.length - 1], S.obOpen, els.obpop.h];
   S.snap.controls = []; obDraw(); out.noctl = els.obpop.h;
+  // F174: a save that settles leaves the newer value the field holds while its own save has yet to go
+  const set = {id: 'run.auto_release'}, f = 'set:project:run.auto_release', one = {cid: 'p1', name: 'setting_project', args: {}, set, say: 's'};
+  reply = good; status = 200; out.newer = [];
+  for (const j of [{ok: true, out: 'x'}, {ok: false, out: 'no'}]) for (const wait of [true, false]) {
+    S.f[f] = 'new'; S.ob = wait ? [{...one, cid: 'p2', state: 'sending'}] : [];
+    obDone(one, j); await settle(); out.newer.push(f in S.f)}
   console.log(JSON.stringify(out));
   process.exit(0);
 })();`);
@@ -3664,6 +3670,7 @@ def test_older_run_b164(tmp: Path) -> None:
     check('data-obretry' not in o['refused'][2], 'no Retry that can never work, on its message either', o['refused'])
     check('2 waiting for a restart' in o['pill'] and 'failed' not in o['pill'].split('>', 1)[1], 'the pill says it waits', o['pill'])
     eq(o['ctl'], [0, True], 'a confirmed action never goes by itself after a restart: Retry')
+    eq(o['newer'], [True, False, True, False], 'F174: a save that settles keeps a newer value waiting to go in its field')
     eq(o['same'], 0, 'the same run: not sent again')
     eq(o['sent'], [[['need_chat', 'k1~b2', ''], ['chat_to', 'k2', 'c7']], 0, 'c7'], 'the run restarted: both go, once')
     eq(o['legacy'], [['z~b3'], ['y']], 'one an earlier page left there goes too; a plain failure waits for Retry')

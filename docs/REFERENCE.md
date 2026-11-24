@@ -636,7 +636,7 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   `plan add V` with no text does. `auto_release = { every = 10 }` queues one once 10 tasks have landed since
   the last release (the later of a release task's landing and the newest version tag); `{ idle = true }`
   queues one when the run goes idle with nothing left it may start (tasks blocked on the person don't count),
-  at most once per idle spell; both may be set, and either fires; with both on they never queue two for the same landed work, and Settings' row sets both. It never queues one while a release task is
+  at most once per idle spell; both may be set, and either fires; with both on they never queue two for the same landed work (a release dropped before it lands may be queued again), and Settings' row sets both. It never queues one while a release task is
   open, nor with nothing landed since the last release: release tasks are not counted, and nothing counts when
   only the plan changed since the version tag. The run log and `status`'s lately say
   `queued V7 (auto_release: 10 landed)` or `(auto_release: idle)`.
