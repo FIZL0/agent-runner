@@ -110,11 +110,9 @@ queue. Go straight to the page; don't search the plan, DONE or the guide for pre
 publish it, file it: `{cmd} plan concept "<what it shows options for>" --page <its URL> --files <the files the
 build would change>`. That lands it as a concept already done, its build waiting for the OK (as a finished K task
 leaves it), so "{needs}", `plan waiting` and the run page's Concepts list it until the person picks; it prints the
-concept's id. File each page once: publishing it again to the same file keeps its link. Then give each option a
-button that answers the run with no AI session: `{cmd} pick-links <the concept's id> A,B,C` prints one link per
-option (a one-use code for this concept, not the run page's token); put each on its option as a plain `<a href>`
-button ("Go with B") and publish again to the same file. When it says there is no https address, leave the
-buttons off: the person replies as before. While the concept is
+concept's id. File each page once: publishing it again to the same file keeps its link. Put no answer buttons
+on the page (they do not work in the Claude app): the person picks in Concepts or Needs you on the run page, or
+in the chat. While the concept is
 shown here, a question or a change in their reply, even after "yes", "good" or "very good" ("yes its good, does it
 still handle X? Y should have Z too"), is not a pick: answer it, update the same page (publish it again to the
 same file, then `open`), and build nothing. Queue the build only on a plain go with no change asked ("build it",
