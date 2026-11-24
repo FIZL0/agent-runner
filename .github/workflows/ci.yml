@@ -30,7 +30,7 @@ jobs:
         # inputs is empty on push and pull_request, so those run both
         os: ${{ fromJSON(inputs.system == 'windows' && '["windows-latest"]' || inputs.system == 'linux' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45  # the Windows gate takes 23 to 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

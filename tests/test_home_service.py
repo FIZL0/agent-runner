@@ -28,6 +28,7 @@ from _trust import asked, trusted_checks
 
 from agent_runner import home as H  # noqa: E402
 from agent_runner import state as S  # noqa: E402
+from agent_runner import ui_model as U  # noqa: E402
 from agent_runner import web as W  # noqa: E402
 
 
@@ -1106,7 +1107,8 @@ def test_one_address(tmp: Path) -> None:
         srv = start(web_port=port)
         eq(srv.server_address[0], '127.0.0.1', 'Home installed and serving: 127.0.0.1 from the start')
         eq(log, [f'run page: http://{socket.gethostname()}:{hp}/p/proj/?t={H.home_token()}' +
-                 ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)')], "one line: Home's link")
+                 ('' if U.find_ttyd() else ' (ttyd is not installed, so a chat cannot show its session)')],
+           "one line: Home's link")
         srv.stop()
         check(not srv.go_private(), 'a stopping run does not move')
     finally:
