@@ -1008,7 +1008,8 @@ def agent_value_problem(v: str) -> str:
 def agent_missing(root: Path, v: str) -> str:
     """B764a: why this machine cannot start `[run] agent` = `v` ('' when it can): it is neither on PATH nor a file (a
     relative path is from the main checkout)."""
-    if shutil.which(v) or (Path(root) / v).is_file():
+    at = main_checkout(root) / v
+    if at.is_file() or shutil.which(str(at)) or (Path(v).name == v and shutil.which(v)):
         return ''
     return f'[run] agent = {v!r}: no such command on PATH on this machine, and no such file'
 
