@@ -245,13 +245,13 @@ function shelvedCard(q){  // F184: a shelved task: what it waits on the person f
   return card(`${taskRow(q,q.title||q.id)}${q.ask?`<span class="askdo">${esc(q.ask)}</span>`:''}
     <div class="btns">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
 }
-function conceptCard(c,i){
-  const os=c.options||[], view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
+function conceptCard(c,i){  // B219a: its one Chat is the new chat view; concept_chat, which starts a session at once, is the TUI's
+  const os=c.options||[], acts=(c.acts||[]).filter(k=>k!=='concept_chat'), view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
   const b=x=>x.pick!=null?`<button class="btn ${x.rec?'pri':''}" data-pick="${i}" data-o="${x.pick}">${esc(x.label)}</button>`
     :x.about?`<button class="btn" data-about="concept:${i}">Chat</button>`
     :`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`;
   return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${esc(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(optionName(os.find(o=>o.rec)))}`:''}`:''}</span>
-    <div class="btns">${conceptButtons(c).map(b).join('')}${actBtns(c.acts,c.id)}</div>${actSure(c.acts,c.id)}`,'',`data-k="concept:${esc(c.id)}"`);
+    <div class="btns">${conceptButtons(c).map(b).join('')}${actBtns(acts,c.id)}</div>${actSure(acts,c.id)}`,'',`data-k="concept:${esc(c.id)}"`);
 }
 function box(ph,foot){
   const a=S.atts[boxKey()]||[], shownNow=shownSession(), real=!!S.thread&&!isNew(S.thread), busyNow=!!shownNow&&(real?sessWorks(shownNow):busy(shownNow));

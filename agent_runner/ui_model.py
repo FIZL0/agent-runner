@@ -19,7 +19,7 @@ copy, and the actions they share.
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age, detail (what
               its card and popup say: said, title, where, summary, lead, steps, expect, notes, shots, step_more and inputs (F175); need_detail)
     concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
-              of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none)
+              of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none), lead (`concept_chat_text`)
     log       the run log's last lines
     manage_releases  F193: `[run] releases`; False: `releases` and `release_acts` are empty, `release` and
               `release_said` '', and an open V task is an ordinary row of `queue`
@@ -435,6 +435,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
         opts, what = need_detail.decide_options(tid, what, texts.get(tid, '')) if label == 'DECIDE' else ([], what)  # F181c
         if label == 'CONCEPT':
             concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
+            concepts[-1]['lead'] = concept_chat_text(concepts[-1])  # B219a: the run page's first message opens with it
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
                       'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
                       'age': P.age(stamps.get(tid, ''), now),

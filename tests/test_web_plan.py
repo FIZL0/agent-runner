@@ -121,7 +121,7 @@ def test_row_actions(tmp: Path) -> None:
     fake_repo(tmp)
     page = W.PAGE.read_text(encoding='utf-8')
     for part in ('actBtns(q.acts,q.id)', 'actSure(q.acts,q.id)', 'S.snap.release_acts', 'if(c.chat){',
-                 'ansBtns(n)', 'restBtns(n)', 'actSure(n.acts,n.id)', 'actBtns(c.acts,c.id)', 'actSure(c.acts,c.id)'):
+                 'ansBtns(n)', 'restBtns(n)', 'actSure(n.acts,n.id)', 'actBtns(acts,c.id)', 'actSure(acts,c.id)'):
         check(part in page, f'the page has {part}')
     for gone in ('data-unpark', "outbox('unpark'", 'data-rel=', "outbox('release'", 'data-later=', 'data-needdrop=',
                  'data-needchat=', 'data-cchat=', "outbox('shelve'", "outbox('need_drop'", 'data-ans=', 'answerArgs'):  # F180
@@ -287,7 +287,7 @@ def test_shelved_f184(tmp: Path) -> None:
 
 def test_concepts_view(tmp: Path) -> None:
     """F87: the sidebar has Concepts (after Plan, with a count); its view lists the snapshot's concepts with their
-    buttons (an option each, Chat, New chat, View), says no concept waits when none does, and its New concept button
+    buttons (an option each, Chat, View), says no concept waits when none does, and its New concept button
     opens a new chat (F183); the Plan view no longer lists concepts."""
     fake_repo(tmp)
     app = W.page_html().decode()
@@ -305,7 +305,11 @@ def test_concepts_view(tmp: Path) -> None:
          'options': [{'name': 'A: tabs', 'rec': False}, {'name': 'B: drawer (recommended)', 'rec': True}]}
     got = logic_js([['conceptButtons', c], ['conceptButtons', {'id': 'K6', 'options': []}],
                     ['newPh', {'kind': 'newconcept'}], ['newPh', {'kind': 'new'}], ['newPh', {'kind': 'plan'}], ['newPh', None],
-                    ['compose', {'kind': 'newconcept'}, ' a dark mode ', ['/up/p.png']]])
+                    ['compose', {'kind': 'newconcept'}, ' a dark mode ', ['/up/p.png']],
+                    ['compose', {'kind': 'concept', 'id': 'K5', 'lead': 'About it.'}, ' wider ', ['/up/p.png']],
+                    ['compose', {'kind': 'concept', 'id': 'K5', 'lead': 'About it.'}, '', ['/up/p.png']]])
+    eq(got[7:], ['About it.\n\nwider\n\nAttached: /up/p.png', 'About it.\n\nAttached: /up/p.png'],
+       "B219a: a concept's first message: what it is about, then the words and attachments")
     eq([b['label'] for b in got[0]], ['A: tabs', 'B: drawer', 'Chat', 'View'],
        "a concept's buttons: its options (no '(recommended)'), Chat, View")
     eq([b.get('rec', False) for b in got[0]], [False, True, False, False], 'the recommended option stands out')
