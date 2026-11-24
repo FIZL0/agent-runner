@@ -47,12 +47,13 @@ function finalDelete(){
     .then(r=>r.json()).then(j=>{if(!j.ok)actFailed(j,'The delete did not work')}).catch(e=>toast(`Could not reach the run page: ${plainErr(e)}`,true));
   render(true);
 }
-/* B213: the file picker just closed: + Task takes no press for a second, so a double press in the picker cannot land on it */
+/* B213, B768: the file picker just closed: the top bar's + Task and + Chat take no press for a second, so a double press in the picker cannot land on one */
+const PLUS_HELD='.plus[data-about="new"],.plus[data-new]';
 let PLUS_HOLD=0;
 function holdPlus(){
   clearTimeout(PLUS_HOLD);PLUS_HOLD=setTimeout(()=>{
-    PLUS_HOLD=0;const b=document.querySelector('.plus[data-about="new"]');if(b)b.disabled=false;render();  // at once: a draw can wait on a finger or a selection
+    PLUS_HOLD=0;const b=document.querySelector(PLUS_HELD);if(b)b.disabled=false;render();  // at once: a draw can wait on a finger or a selection
   },1000);
   render();
 }
-function plusHeld(x){return !!PLUS_HOLD&&x.matches('.plus[data-about="new"]')}
+function plusHeld(x){return !!PLUS_HOLD&&x.matches(PLUS_HELD)}

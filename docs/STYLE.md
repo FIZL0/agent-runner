@@ -86,7 +86,8 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **+ button** (`.btn.plus`, `plusBtn()`): one per view, top right, its word kept on a phone (Project, Task, Concept,
   Slot, New talk, Device; Chat in an open chat and in a slot's session, where it starts a new chat at once). Elsewhere `+ Chat` stands
   only beside Chats in the sidebar. None in Settings, or in a new or starting chat. When the bar is tight the title shortens
-  first (its switcher keeps 32px), then the run pill; the + never shrinks. + Task is disabled for 1 s after the file picker closes (`holdPlus()`), so a double press in it cannot land there.
+  first (its switcher keeps 32px), then the run pill; the + never shrinks. + Task and this + Chat are disabled for 1 s after the file picker
+  closes (`holdPlus()`), so a double press in the picker cannot land there; they come back by themselves, also while a redraw waits.
 - **Project card** (`.pcard`, `projectCard()`): one project on the Overview or in a list: its state dot and name, its
   tasks by title, what landed today. One main button (`mainBtn()`: Start run or Open); the rest is in the
   … sheet (`dotsBtn()`), never beside it.

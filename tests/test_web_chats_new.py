@@ -222,13 +222,14 @@ const setTimeout = (f, ms) => { timers.push({f, at: now + ms, id: timers.length 
 const clearTimeout = id => { timers.forEach(t => { if (t.id === id) t.at = Infinity }) };
 const go = ms => { now += ms; timers.forEach(t => { if (t.at <= now) { t.at = Infinity; t.f() } }) };
 const S = {view: 'home', thread: null, snap: {}}, I = {plus: ''}, HOME_PAGE = false;
-const $ = () => ({addEventListener: (t, f) => { on[t] = f }}), upload = () => { uploads++ }, about = a => { opened.push(a) };
-const document = {querySelector: s => s === '.plus[data-about="new"]' ? btn : null};
+const $ = () => ({addEventListener: (t, f) => { on[t] = f }}), upload = () => { uploads++ }, about = a => { opened.push(a) }, newChat = n => { opened.push(n) };
+const document = {querySelector: s => s.split(',').includes(S.thread ? '.plus[data-new]' : '.plus[data-about="new"]') ? btn : null};
 const render = () => { if (!busy) { btn.disabled = plusBtn().includes(' disabled') } };
-const press = (what, plus) => { const el = {dataset: {about: what}, matches: s => plus && s === `.plus[data-about="${what}"]`}; opened = []; CLICK(el); return opened };
-eval(line('let PLUS_HOLD=') .replace('let', 'var') + grab('function holdPlus(') + line('function plusHeld(') + grab('function plusBtn(')
+const press = (what, plus) => { const el = {sel: '[data-about]', dataset: {about: what}, matches: s => plus && s.split(',').includes(`.plus[data-about="${what}"]`)}; opened = []; CLICK(el); return opened };
+eval(line('const PLUS_HELD=').replace('const', 'var') + line('const isNew=').replace('const', 'var') + line('let PLUS_HOLD=').replace('let', 'var') + grab('function holdPlus(') + line('function plusHeld(') + grab('function plusBtn(')
   + line("$('file').addEventListener('cancel'") + line("$('file').addEventListener('change'")
-  + 'var CLICK=el=>{let x;const q=()=>el;' + line("  if(x=q('[data-about]'))") + '}');
+  + 'var CLICK=el=>{let x;const q=s=>el.sel===s?el:null;' + line("  if(x=q('[data-new]'))") + line("  if(x=q('[data-about]'))") + '}');
+const chat = plus => { const el = {sel: '[data-new]', matches: s => plus && s.split(',').includes('.plus[data-new]')}; opened = []; CLICK(el); return opened.length };
 const pick = t => on[t]({target: {files: [1, 2], value: 'x'}});
 const see = () => { render(); return [btn.disabled, press('new', true).length] };
 const o = {before: see()};
@@ -236,14 +237,21 @@ for (const t of ['change', 'cancel']) { S.view = t === 'change' ? 'home' : 'plan
 o.uploads = uploads;
 pick('change'); go(600); pick('change'); go(600); o.again = [see()]; go(500); o.again.push(see());
 busy = true; btn.disabled = false; pick('change'); o.busy = [press('new', true).length]; btn.disabled = true; go(1010); o.busy.push(btn.disabled, press('new', true).length);
-busy = false; pick('change'); S.view = 'concepts'; o.other = plusBtn().includes(' disabled');
+busy = false; pick('change'); S.view = 'concepts'; o.other = plusBtn().includes(' disabled'); go(1010);
+const seeChat = () => { render(); return [btn.disabled, chat(true)] };
+o.chats = {};
+for (const n of ['c1', 's1']) for (const t of ['change', 'cancel']) {
+  S.thread = n; const a = [seeChat()], was = uploads; pick(t); a.push(seeChat()); go(990); a.push(seeChat(), chat(false)); go(20); a.push([btn.disabled], seeChat(), uploads - was);
+  busy = true; btn.disabled = false; pick(t); a.push(chat(true)); btn.disabled = true; go(1010); a.push([btn.disabled], chat(true)); busy = false;
+  o.chats[n + ' ' + t] = a;
+}
 console.log(JSON.stringify(o));
 """
 
 
 def test_plus_hold_b213(tmp: Path) -> None:
-    """B213: for a second after the file picker closes, + Task (Home, Plan) is disabled and opens nothing, also across
-    a redraw; then it works again by itself. Other buttons and the attachments are not held."""
+    """B213, B768: for a second after the file picker closes, + Task (Home, Plan) and + Chat (a chat, a
+    slot) are disabled and open nothing, also across a redraw; then they work again by themselves. Other buttons and the attachments are not held."""
     if not shutil.which('node'):
         print('  (no node here: the + Task hold test is skipped)')
         return
@@ -262,6 +270,10 @@ def test_plus_hold_b213(tmp: Path) -> None:
     eq(o['again'], [[True, 0], [False, 1]], 'a second pick holds it for a second from then')
     eq(o['busy'], [0, False, 1], 'while draws wait (a finger down, a selection) it is held and let go all the same')
     eq(o['other'], False, 'another view\'s + is not disabled')
+    eq(sorted(o['chats']), ['c1 cancel', 'c1 change', 's1 cancel', 's1 change'], 'B768: a chat and a slot, change and cancel')
+    for k, v in o['chats'].items():
+        eq(v, [[False, 1], [True, 0], [True, 0], 1, [False], [False, 1], 2 if 'change' in k else 0, 0, [False], 1],
+           f'B768: {k}: + Chat is held for a second, redraws and waiting draws too, then works by itself; the sidebar\'s + Chat and the files are not held')
 
 
 PLUS_CHAT_DRIVER = r"""

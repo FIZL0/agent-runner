@@ -114,7 +114,7 @@ document.addEventListener('click',async e=>{
   if(q('[data-setchanged]')){S.setChanged=!S.setChanged;render(true);return}
   if(x=q('[data-thread]')){const n=x.dataset.thread;return viewGo(()=>{S.ctx=null;open(n)},n===S.thread?null:n)}
   if(q('[data-newtalk]')){newTalk();if(S.live)viewIn($('body'));return}  // F157
-  if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
+  if(x=q('[data-new]')){if(plusHeld(x))return;S.drawer=false;newChat('new_control',{},'New chat');return}
   if(x=q('[data-needopen]')){needOpen(x.dataset.needopen);return}  // F162
   if(x=q('[data-askfold]')){S.askFold={...S.askFold,[x.dataset.askfold]:!S.askFold[x.dataset.askfold]};render(true);return}
   if(q('[data-askload]')){S.askWhy={};S.askText={};render(true);askLoad(S.sheetArg);return}

@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page, + Chat at the top right of an open chat or a slot's session is disabled for one second after the file picker closes (a file picked or cancelled), as + Task on Home and Plan already is, so a double press in the picker cannot start a chat. It comes back by itself, also while a redraw waits; attachments, Send and the sidebar's + Chat are not held (B768).
+
 ## 0.64.0 (2026-11-24)
 
 - Changed: at a terminal, bare `agent-runner` (the run picker) no longer starts a run when you pick one that is not up: picking a row always opens its launcher, the second screen. There `s` starts the run in the background (logged as started by picker), and the launcher then shows the run up with its link, or the error. No pick, and none of w, t, c or Enter, starts a run; a bare `agent-runner` without a terminal, `agent-runner run`, `--attach` and every Start control still do. Where there is no TUI (Windows, no tmux) the launcher has no `t`, shows the reason in a dim line, and Enter opens the run page (F402a)
