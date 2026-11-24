@@ -34,7 +34,7 @@ the command again, or you stop, your slot is given up, and this session goes on 
 If you are stuck (a tool hangs, the same fix fails twice, it needs a human, about 20 minutes with no \
 progress), commit what is solid and run `{runner} done <ID> "<msg>" --blocked "<why + what would unblock \
 it>"`, then stop. If all it waits on is another task landing (its code is not on the main branch yet), add \
-`--after <ID>[,<ID>]`, and the run reopens it the moment those merge. If it waits on a person, start WHY with \
+`--after <ID>[,<ID>]`, and the run reopens it the moment those merge; a WHY that waits on a task takes no label. If it waits on a person, start WHY with \
 what you ask of them: `CONFIRM: <what to check by hand>`, `DECIDE: <the question or choice>` or `BLOCKED: \
 <the access, login or fix only a person can make>`, then one short sentence, at most about 100 characters, and the link if there is one; the rest \
 goes in the ask file (under "What you ask of a person"). It lists under Needs you until they answer. `CONFIRM:` is only for a check by hand you cannot do yourself, never \
