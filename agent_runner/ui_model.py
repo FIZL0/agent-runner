@@ -611,8 +611,9 @@ def no_settings(c=None, st: dict | None = None) -> str:
     return NO_SETTINGS
 
 
-def status_rows(up: bool, st: dict, progress: str) -> list[str]:
-    """The status lines: the run's state, progress, the no-settings or no-gate warning, and usage."""
+def status_rows(up: bool, st: dict, progress: str, login: str | None = None) -> list[str]:
+    """The status lines: the run's state, progress, the no-settings or no-gate warning, and usage. `login`: the Claude
+    login warning, when it is read already."""
     from agent_runner.land import no_gate_line
     out = [f'run up: {st.get("state", "starting")}' if up else 'no run is up']
     for k, said in (('paused', 'paused'), ('stopping', 'stopping: finishing the running tasks')):
@@ -624,7 +625,7 @@ def status_rows(up: bool, st: dict, progress: str) -> list[str]:
     except Exception:  # noqa: BLE001
         pass
     from agent_runner.watch import claude_login_line
-    if login := claude_login_line():  # F126
+    if login := claude_login_line() if login is None else login:  # F126
         out.append(login)
     if unpushed := unpushed_line():
         out.append(unpushed)
@@ -773,6 +774,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     up = S.run_up() if up is None else up
     now = time.time() if now is None else now
     st, ls = _state(up), P.lines(S.C.todo)
+    login = claude_login_line()  # F126a
     titles = P.titles(S.C.done, S.C.todo, width=200)
     releases = release_rows(ls, st, now=now)  # F185
     release = release_line(ls, st, releases)
@@ -800,7 +802,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     fix = fixups(st, ls)
     return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
             'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
-            'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release, tools_line(tools)) if x)),
+            'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release, tools_line(tools)) if x), login),
             'tools': tools, 'tool_names': project_tools(),
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': queue, 'releases': releases, 'release_acts': [c['key'] for c in RUN_CONTROLS
@@ -808,7 +810,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'shelved': shelved, 'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
             'no_settings': no_settings(st=st if up else None),  # F178
-            'claude_login': claude_login_line(),  # F126a
+            'claude_login': login,  # F126a
             'unpushed': unpushed_line(),  # F98
             'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)

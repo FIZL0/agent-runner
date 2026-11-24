@@ -209,7 +209,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   before. In Talk the top bar may be away while scrolled up, and the notice's row moves up with it (See-through Talk).
 
 - **The Claude login banner** (`.login`, `loginDraw()`) is the one notice that stays until what it says is fixed, so it
-  has its own row under the header in every view and covers nothing. It has no button and no Later, and goes by itself
+  has its own row under the header in every view and covers nothing; a scrolled-up session (`.slim`) puts it away with
+  the other bars. It has no button and no Later, and goes by itself
   after a new login. The other notices stand under it, in `.over`. A run's page shows the run's own words; Home, and All
   projects on any page, show Home's.
 
