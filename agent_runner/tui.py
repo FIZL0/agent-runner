@@ -9,6 +9,7 @@ bottom line. The focused panel takes the spare height; every other panel shows 3
 Panels and their tabs (F76):
     Status     a status line: log (the quick asks s y w u on its buttons: a new session answers), release,
                controls; the release line: release first; R (only here) opens the release tab
+               (F193: with Manage releases off, no release tab, line or R here, nor a Releases group in the queue)
     Sessions   a control session cN, an idle slot: session; a slot on a task: session, diff. F112: the session
                tab is the real Claude Code session, not a chat view of ours: a tmux pane beside the TUI's pane
                runs `attach NAME` on its socket (F88; `SidePane`: split off when a session row is selected,
@@ -225,6 +226,13 @@ for _w in ('queue', 'shelved', 'need', 'concept', 'task', 'session'):
     HELP = HELP.replace('{%s_actions}' % _w, action_help(_w))
 
 
+def help_text(releases: bool) -> str:
+    """The keys list; F193: with Manage releases off (`releases` False), without its R lines."""
+    if releases:
+        return HELP
+    return re.sub(r'(?m)^  R        release +', '  ', re.sub(r'(?m)^  R        new release.*\n', '', HELP))
+
+
 def help_line(line: str) -> list[tuple[str, str]]:
     """A line of the keys list: a heading in the accent; an indented line's keys yellow, its labels in the text
     colour."""
@@ -395,7 +403,13 @@ class RunPage:
         self.cur[n] = max(0, min(self.cur[n], len(rows) - 1))
         return rows[self.cur[n]]
 
+    def manage_releases(self) -> bool:
+        """F193: the snapshot's `[run] releases`; off, nothing about releases shows."""
+        return self.snap.get('manage_releases', True)
+
     def tab_list(self, n: int, it) -> list[str]:
+        if n == 1 and not self.manage_releases():
+            return ['log', 'controls']
         if it is None:
             return ['log', 'release', 'controls'] if n == 1 else ['info']
         if n == 1:  # F112: no chat tab: a chat is a session row, shown as itself
@@ -1349,7 +1363,7 @@ class RunPage:
             keys.append(('Esc', 'back'))
             return keys
         if self.panel == 1:
-            return [('⏎', 'open'), ('R', 'release'), ('+/-', 'slots'), ('P/G', 'pause, go on'), ('S', 'stop')]
+            return [('⏎', 'open'), *([('R', 'release')] if self.manage_releases() else []), ('+/-', 'slots'), ('P/G', 'pause, go on'), ('S', 'stop')]
         if self.panel == 2:
             keys = [('⏎', 'open'), ('t', 'busy slot')]
             if isinstance(it, dict) and (it.get('task') or is_control(it)):
@@ -1466,7 +1480,7 @@ class RunPage:
         if mw:
             self.draw_main(win, 1, mx, body, mw)
         if self.help:
-            lines = HELP.splitlines()
+            lines = help_text(self.manage_releases()).splitlines()
             bw, bh = min(w - 2, max(len(l) for l in lines) + 4), min(h - 2, len(lines) + 2)
             by, bx = (h - bh) // 2, (w - bw) // 2
             for r in range(bh):
@@ -1984,7 +1998,7 @@ class RunPage:
         elif k == 'i':
             self.main = True
             self.type_in()
-        elif self.panel in (1, 3) and k == 'R':  # F186: the Queue too, where the releases are listed
+        elif self.panel in (1, 3) and k == 'R' and self.manage_releases():  # F186: the Queue too, where the releases are listed
             self.panel = 1
             self.release_tab()
         elif self.panel == 1 and (q := next((q for q, c in QUICK_KEYS.items() if c == k), '')):

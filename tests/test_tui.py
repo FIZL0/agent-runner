@@ -2221,8 +2221,67 @@ def test_new_drop_release_f186() -> None:
         eq(ran, [('release_now', {}), ('release_now', {'confirm': True, 'text': 'V6'})], 'then queued')
 
 
+def test_manage_releases_f193() -> None:
+    """F193: with the snapshot's `manage_releases` off: no release tab, line, group or hint, R does nothing and is not in
+    the keys list; an open V task is an ordinary row of the queue. On, or without the flag: all of it."""
+    r = {'id': 'V5', 'title': 'Release', 'placeholder': False, 'words': 'next', 'all': 'next', 'text': 'V5 Release · next'}
+    v5 = dict(SNAP['queue'][8], id='V5', title='Release: bump the version', acts=['queue_priority', 'queue_take', 'queue_drop'])
+    q = SNAP['queue']
+    off = dict(SNAP, manage_releases=False, releases=[], release='', release_acts=[], release_said='', queue=[q[0], v5] + q[1:],
+               status=[l for l in SNAP['status'] if not l.startswith('release')])
+    on = dict(SNAP, manage_releases=True, releases=[r], queue=q + [dict(v5, release=r)])
+    for snap, has in ((off, False), (on, True), ({k: v for k, v in on.items() if k != 'manage_releases'}, True)):
+        said = f'manage_releases {snap.get("manage_releases")}: '
+        p = page(snap)
+        for i, l in enumerate(p.items(1)):
+            p.cur[1] = i
+            eq('release' in p.tab()[1], has, f'{said}the release tab of {l!r}')
+        eq('release' in p.tab_list(1, None), has, said + 'the release tab with no status line')
+        eq(('R', 'release') in p.hint_keys(), has, said + 'the hint in Status')
+        p.key('?')
+        text = drawn(p, 90, 160).text()
+        eq(('R        release' in text, 'new release' in text), (has, has), said + 'the keys list')
+        check('s y w u  quick asks' in text and 'U        take the stop back' in text, said + 'its other keys stay', text)
+        p.key('ESC')
+        eq('release' in drawn(page(dict(snap, queue=q))).text().lower(), has, said + 'a word of it, with no V task')
+        for panel in ('1', '3'):
+            p = page(snap)
+            p.key(panel)
+            was = (p.panel, p.main, p.tab()[0], dict(p.cur), p.msg)
+            p.key('R')
+            eq((p.panel, p.main, p.tab()[0]) == (1, True, 'release'), has, f'{said}R in panel {panel}')
+            if not has:
+                eq((p.panel, p.main, p.tab()[0], dict(p.cur), p.msg), was, f'{said}R in panel {panel} does nothing')
+        p = page(snap)
+        p.key('3')
+        ids = [t['id'] for t in p.items(3) if t.get('id')]
+        eq((ids.index('V5'), ids.count('V5')), (0 if has else 1, 1), said + 'where V5 is')
+        p.cur[3] = ids.index('V5')
+        text = drawn(p).text()
+        eq('Releases' in text, has, said + 'the group')
+        eq('V5 Release · next' in text, has, said + 'the row in its own words')
+        eq('Release: bump the version' in text, True, said + 'V5 shows')
+        eq(('R', 'new release') in p.hint_keys(), has, said + 'the hint on V5')
+        eq(p.tab()[1], ['direct edit', 'chat edit'], said + 'its tabs')
+        with mock.patch.object(U, 'move', lambda *a: {'ok': True, 'out': 'moved'}):
+            p.key('J')
+        eq(p.msg == 'V5 stays in Releases', has, said + 'J')
+    live = dict(on)  # turned off while its tab is open
+    p = page(live)
+    p.key('R')
+    eq(p.tab()[0], 'release', 'the tab is open')
+    live.clear()
+    live.update(off)
+    eq(p.tab()[0], 'log', 'off: back to the log')
+    ran = []
+    with mock.patch.object(U, 'run_control', lambda key, **kw: (ran.append(key), {'ok': True, 'out': ''})[1]):
+        for k in ('ENTER', 'f', 'D'):
+            p.key(k)
+    eq([k for k in ran if k.startswith('release')], [], 'and no key makes one')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
