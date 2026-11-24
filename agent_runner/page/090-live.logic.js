@@ -105,6 +105,8 @@ function homeBase(path,homePage){
 }
 function homeKey(path){const m=String(path||'').match(/^.*?\/p\/([^/]+)\//);try{return m?decodeURIComponent(m[1]):''}catch(e){return m[1]}}
 const projectLink=(base,key,t)=>base+'p/'+encodeURIComponent(key)+'/?t='+encodeURIComponent(t||'');
+/* F203: the link a switch to a project takes: its Home view, whatever was open there before */
+const projectHome=(base,key,t)=>projectLink(base,key,t)+'#home';
 const homeLink=(base,t)=>base+'?t='+encodeURIComponent(t||'');
 /* B179: the Home Screen app's manifest, at the root every project is under: Home's, or a run's own address ('') */
 const manifestLink=(base,key,t)=>(base||'./')+'manifest.webmanifest?'+(base&&key?'p='+encodeURIComponent(key)+'&':'')+'t='+encodeURIComponent(t||'');
@@ -143,11 +145,11 @@ function projectDid(p,name,arg){
   if(p.state==='off'||!p.state)return p;
   return name==='pause'?{...p,paused:true}:name==='resume'?{...p,paused:false}:name==='stop'?{...p,stopping:true}:name==='slots'&&/^\d+$/.test(arg)?{...p,slots:+arg}:p;
 }
-/* the list's rows: one per Home project in its order, with its link (tab: the view it opens in), its state and how
-   many things need you */
-function switcherRows(projects,key,base,t,tab){
+/* the list's rows: one per Home project in its order, with its link (to its Home view), its state and how many
+   things need you */
+function switcherRows(projects,key,base,t){
   return projectOrder(projects).map(p=>({key:p.key,name:p.name||p.key,state:p.state||'off',group:projectGroup(p),said:projectState(p),needs:p.needs||0,
-    href:projectLink(base,p.key,t)+(tab?'#'+tab:''),on:p.key===key}));
+    href:projectHome(base,p.key,t),on:p.key===key}));
 }
 /* F150: the All projects row is there once Home lists another project; its count is the others' */
 const oneProject=ps=>!!ps&&ps.length<2;

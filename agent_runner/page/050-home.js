@@ -46,11 +46,11 @@ const homeNeeds=()=>needsOf(H.projects);
 const projectsNow=()=>(H.projects||[]).map(p=>projectNow(H.begun[p.key]&&(p.state||'off')==='off'&&Date.now()-H.begun[p.key]<START_MS?{...p,starting:true}:p,S.hob));
 const START_MS=90000;  // how long a run that was started reads as starting
 const atAll=()=>S.view==='projects'&&!S.thread;
-/* the view a project opens in: the one last open in this tab ('' in a chat) */
+/* the view last open in this tab ('' in a chat): what goDown falls back on. A switch to another project opens its Home (F203) */
 const TAB_KEY='ar-tab', LEVEL_KEY='ar-level';
 const lastTab=()=>{const v=tabStore.get(TAB_KEY);return NAV.some(n=>n[0]===v)?v:''};
-const rowsNow=()=>switcherRows(projectsNow(),HKEY,HB,T,lastTab()||'home');
-const projectHref=key=>projectLink(HB,key,T)+'#'+(lastTab()||'home');
+const rowsNow=()=>switcherRows(projectsNow(),HKEY,HB,T);
+const projectHref=key=>projectHome(HB,key,T);
 /* the list's level or the project's, drawn, and slid when it is another one than before */
 let level='';
 function sideShow(h,to){
