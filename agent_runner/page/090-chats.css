@@ -34,3 +34,17 @@
 .main.term .box textarea{font:16px/1.45 var(--mono)}  /* 16px: a phone does not zoom into it */
 .main.term .pr{display:block;font:16px/1.45 var(--mono);color:var(--muted);padding:2px 0}
 .main.term .dock{background:linear-gradient(transparent,var(--bg) 30%)}
+
+/* F206: the frame stays loaded out of sight; until a chat's terminal is drawn its last screen (in the frame) or its latest
+   messages stand there, under a thin moving line */
+.feed[hidden]{display:block!important;position:absolute;inset:0;visibility:hidden;pointer-events:none}
+.feed iframe.blank{opacity:0}
+.feedstand{position:absolute;left:0;right:0;top:var(--seebar,0px);bottom:var(--feeddock,0px);overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;background:var(--bg);pointer-events:none;padding-bottom:var(--s3)}
+.feedstand .col{flex:none;width:100%}
+.feedline{position:absolute;left:0;right:0;top:var(--seebar,0px);height:2px;overflow:hidden;pointer-events:none}
+.feedline::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:feedline var(--pulse) linear infinite}
+@keyframes feedline{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.feedend{max-width:720px;margin:0 auto 8px}
+.top button.title{display:flex;align-items:center;justify-content:center;gap:var(--s1)} .top button.title .tt{min-width:0;overflow:hidden;text-overflow:ellipsis} .top button.title svg{width:14px;height:14px;transform:rotate(90deg);color:var(--muted)}
+@container (min-width:760px){.top button.title{justify-content:flex-start}}
+.swc .grow{min-width:0;display:grid} .swc[aria-current] .ell:first-child{font-weight:500}

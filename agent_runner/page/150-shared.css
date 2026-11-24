@@ -32,5 +32,4 @@ html:not(.vt-drawer)::view-transition-old(side){display:none} html:not(.vt-drawe
 ::view-transition-old(main),::view-transition-new(main){mix-blend-mode:normal}
 html.vt-in::view-transition-old(main){animation:toback var(--dur-spring) var(--spring-soft) both} html.vt-in::view-transition-new(main){animation:fromright var(--dur-spring) var(--spring-soft) both}
 html.vt-out::view-transition-old(main){z-index:1;animation:toright var(--dur-spring) var(--spring-soft) both} html.vt-out::view-transition-new(main){animation:fromback var(--dur-spring) var(--spring-soft) both}
-::view-transition-old(chat-title),::view-transition-new(chat-title){height:100%;object-fit:none;object-position:0 50%;overflow:clip}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

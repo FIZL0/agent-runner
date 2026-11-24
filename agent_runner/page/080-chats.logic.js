@@ -20,6 +20,21 @@ function chatPlaces(g,stand,pins,was,held){
   const fresh=all.filter(s=>![s.name,s.was].some(n=>n&&was.top.concat(was.quiet).includes(n))), low=was.quiet.includes(held);
   return{top:keep(was.top).concat(low?[]:fresh),quiet:keep(was.quiet).concat(low?fresh:[])};
 }
+/* F206: the kept screens, the last KEPT_MAX chats' (a Map, the newest last) */
+const KEPT_MAX=12;
+function keptPut(kept,n,x){kept.delete(n);kept.set(n,x);while(kept.size>KEPT_MAX)kept.delete(kept.keys().next().value);return[...kept.keys()]}
+/* a chat's last line, from its feed: the last line the agent said, your own words, or, while it works, its tool step */
+function chatLast(entries,works){
+  for(const e of (entries||[]).slice().reverse()){
+    const l=String(e.text||'').split('\n').map(x=>x.trim()).filter(Boolean);if(!l.length)continue;
+    if(e.kind==='say')return l[l.length-1];
+    if(e.kind==='you')return'You: '+l[0];
+    if(e.kind==='tool'&&works)return'Working: '+l[0];
+  }
+  return'';
+}
+/* what stands in for a screen not seen yet: the latest messages, oldest first */
+function standMsgs(entries){return(entries||[]).filter(e=>(e.kind==='say'||e.kind==='you')&&String(e.text||'').trim()).slice(-8).map(e=>({w:e.kind==='you'?'u':'a',text:e.text}))}
 /* B119: the message box's slash command menu. SLASH_FALLBACK, the commands it offers when the run page cannot
    give the session's own list (/commands) */
 const SLASH_FALLBACK=[['run',"The run's status"],['since','What the run did since the last look'],['follow','Follow the run live'],

@@ -119,6 +119,54 @@ def test_sizes(tmp: Path) -> None:
         s.v.close()
 
 
+def test_slow_viewer() -> None:
+    print('a viewer that takes nothing neither stalls the session nor is dropped: a redraw once it caught up (F206)')
+    import socket
+    sizes = []
+    v = A.Viewers(Path('/nowhere') / 'x.sock', lambda b: None, lambda r, c: sizes.append((r, c)), (50, 200))
+    ours, slow = socket.socketpair()
+    ours.setblocking(False)
+    v.clients[ours] = b''
+    started = time.monotonic()
+    for _ in range(40):
+        v.out(b'x' * 65536)  # far over any socket buffer
+    check(time.monotonic() - started < 2 and ours in v.clients, 'it does not hold the session up, and it stays')
+    check(ours in v.behind and v.queue == {ours: A.CATCH_UP}, 'what it cannot take is not kept for it')
+    v.redrew = -99.0
+    v.tick()
+    eq(sizes, [], 'no redraw while it takes nothing')
+    slow.setblocking(False)
+
+    def read() -> bytes:
+        got = b''
+        try:
+            while d := slow.recv(1 << 20):
+                got += d
+        except BlockingIOError:
+            pass
+        return got
+    read()
+    v.tick()
+    eq(sizes, [(49, 200)], 'it reads again: the session draws its whole screen')
+    eq(read(), A.CATCH_UP, 'after the end of what was cut off')
+    check(not v.behind and not v.queue, 'and it has caught up')
+    v.out(b'screen')
+    eq(read(), b'screen', 'and it gets what comes next')
+    while ours not in v.queue:  # a short stall: nothing is lost
+        v.out(b'y' * 8192)
+    kept = bytes(v.queue[ours])
+    check(0 < len(kept) <= A.QUEUE and ours not in v.behind and v.wait(9) <= A.FLUSH, 'a short stall waits its turn', len(kept))
+    read()
+    v.tick()
+    eq((read(), v.queue), (kept, {}), 'and goes in order')
+    while ours not in v.queue:
+        v.out(b'z' * 8192)
+    v.took[ours] -= A.GONE + 1
+    v.tick()
+    check(ours not in v.clients and not v.queue, 'one that takes nothing for a minute is gone')
+    v.close()
+
+
 def test_typed() -> None:
     print("Ctrl-b d detaches a terminal; through the run page Ctrl-b is the session's")
     with mock.patch.dict(A.os.environ):
@@ -131,7 +179,7 @@ def test_typed() -> None:
 
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix='agent-runner-attach-'))
-    return report([lambda: test_windows_port(tmp), lambda: test_token(tmp), lambda: test_sizes(tmp), test_typed])
+    return report([lambda: test_windows_port(tmp), lambda: test_token(tmp), lambda: test_sizes(tmp), test_slow_viewer, test_typed])
 
 
 if __name__ == '__main__':

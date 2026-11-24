@@ -111,7 +111,7 @@ function keepScroll(box){
 }
 /* F147: motion (docs/STYLE.md, Motion). born: when a key came in, so a redraw half way goes on from there; fly: what
    glides now; said: how long a reply was; sent: the words on their way out of the message box; vt: a View Transition */
-const MO={born:new Map(),said:new Map(),grown:new Map(),rolls:new Map(),fly:new Map(),sent:null,vt:null,named:[],scroll:new Map(),folded:0}, MO_MS=450;
+const MO={born:new Map(),said:new Map(),grown:new Map(),rolls:new Map(),fly:new Map(),sent:null,vt:null,scroll:new Map(),folded:0}, MO_MS=450;
 const calm=()=>document.hidden||matchMedia('(prefers-reduced-motion:reduce)').matches;
 function moAnim(el,frames,o){
   if(!el.animate||calm())return null;
@@ -282,20 +282,15 @@ function sendFly(){
   if(a)a.onfinish=a.oncancel=()=>g.remove();else g.remove();
 }
 /* a chat opens or closes: a View Transition where the browser has them (it draws the new view a frame later), else
-   go() at once and render() slides it in (viewSlide). n: the chat whose title is carried over */
+   go() at once and render() slides it in (viewSlide). n: the chat */
 function viewGo(go,n){
-  if(!document.startViewTransition||!S.live||kbH||S.sheet||calm()||!n){go();return}
+  if(!document.startViewTransition||!S.live||kbH||S.sheet||calm()||!n||S.thread&&n!==S.thread){go();return}  // F206: from chat to chat at once
   const root=document.documentElement, into=n!==S.thread;
-  const row=()=>{const e=document.querySelector(`#sidein [data-thread="${CSS.escape(n)}"] .tt`), r=e&&e.getBoundingClientRect();return r&&r.width&&r.right>0&&r.bottom>0&&r.top<innerHeight&&(S.drawer||!drawerOn())?e:null};
-  const bar=()=>$('top').querySelector('.tt'), name=e=>{if(e){e.style.viewTransitionName='chat-title';MO.named.push(e)}};
-  const clear=()=>{for(const e of MO.named)e.style.viewTransitionName='';MO.named=[]};
-  clear();
-  const from=into?row():bar();name(from);
   root.classList.remove('vt-in','vt-out','vt-drawer');root.classList.add('vt',into?'vt-in':'vt-out');if(S.drawer)root.classList.add('vt-drawer');
   let done=false;const once=()=>{if(!done){done=true;go()}};
   const me={};MO.vt=me;
-  const end=()=>{if(MO.vt!==me)return;MO.vt=null;clear();root.classList.remove('vt','vt-in','vt-out','vt-drawer');render()};
-  try{const t=document.startViewTransition(()=>{once();if(MO.vt!==me)return;clear();if(from)name(into?bar():row())});me.skip=()=>t.skipTransition();
+  const end=()=>{if(MO.vt!==me)return;MO.vt=null;root.classList.remove('vt','vt-in','vt-out','vt-drawer');render()};
+  try{const t=document.startViewTransition(once);me.skip=()=>t.skipTransition();
     t.ready.catch(()=>{});t.updateCallbackDone.catch(()=>{});t.finished.then(end,end)}
   catch(e){once();end()}
 }

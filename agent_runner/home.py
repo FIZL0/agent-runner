@@ -675,7 +675,7 @@ class HomeHandler(BaseHTTPRequestHandler):
             for k, v in r.getheaders():
                 if k.lower() not in HOP:
                     self.send_header(k, v)
-            if length is None:
+            if length is None and r.status != 304:  # F206: that one has no body
                 self.send_header('Connection', 'close')
                 self.close_connection = True
             self.end_headers()
