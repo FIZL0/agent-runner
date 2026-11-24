@@ -718,3 +718,10 @@ _Said_: example repo, demo
 _On screen_: The example project
 _In code_: demo.py, agent-runner demo, examples/hello, is_demo
 _Avoid_: sample repo, sandbox, playground
+
+**Mic test**:
+A sheet from Talk settings that runs four tries of the mic, one press each, with no message sent: words with the sound setting left as it is, words with it set to play and record, words right after a silent sound, and sound level only with no recognizer; Copy mic test copies a report of the tries so far
+_Said_: mic check
+_On screen_: Mic test…, Copy mic test
+_In code_: micTest, MT, SHEETS.mictest
+_Avoid_: diagnostic

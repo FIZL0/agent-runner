@@ -20,7 +20,7 @@ const SHEETS={
       ${AU.got&&!runVoices().length?'<div class="small">The run\'s machine has no voice installed, so this browser reads. Ask a chat to install one.</div>':''}
       <label class="it setrow"><span class="grow">Mic</span><select class="fld" data-ts="mic"><option value="tap" ${t.mic==='tap'?'selected':''}>Tap to start and stop</option><option value="hold" ${t.mic==='hold'?'selected':''}>Hold to talk</option></select></label>
       <label class="it setrow"><span class="grow">Auto listen<span class="small" style="display:block">Listens again once a reply was read; stops after one silent turn.</span></span><input type="checkbox" role="switch" class="sw" data-ts="auto" ${t.auto?'checked':''}></label>
-      <div class="btns">${TK.trail?'<button class="btn" data-micreport>Copy mic report</button>':''}<button class="btn" data-closesheet>Done</button></div>`;
+      <div class="btns">${TK.trail?'<button class="btn" data-micreport>Copy mic report</button>':''}<button class="btn" data-sheet="mictest">Mic test…</button><button class="btn" data-closesheet>Done</button></div>`;
   },
 };
 let sheetBack=null;

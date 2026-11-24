@@ -34,7 +34,7 @@ function unlockAudio(){
   if(AU.ok||TK.ear||TK.state==='speaking'||TK.playing||!runVoice(AU.got,TS.voice))return;
   soundAs('playback');
   try{const h=holdEl(), q=h.play();if(q)q.then(()=>{if(!AU.holding)h.pause()}).catch(()=>{})}catch(e){}
-  try{const p=audioSrc(new Blob([silentWav()],{type:'audio/wav'})).play();if(p)p.then(()=>{AU.ok=true}).catch(()=>{})}catch(e){}
+  try{const p=audioSrc(new Blob([silentWav()],{type:'audio/wav'})).play();if(p)p.then(()=>{AU.ok=true;pastSound('silent')}).catch(()=>{})}catch(e){}
 }
 /* B178: while a reply is read, a second element plays silence without end, so the Bluetooth route is not closed and
    reopened between clips. The pause of the lock screen or the earbuds is the person's: it stops the reply */
@@ -46,7 +46,7 @@ function pauseKeys(f){try{const m=navigator.mediaSession;if(m)for(const k of ['p
 function routeHold(){
   AU.holding=true;pauseKeys(()=>{if(TK.trail)micLog('sound: stopped by the person');hush()});
   try{const h=holdEl(), p=h.play();h.onpause=()=>{if(AU.holding&&TK.trail)micLog('sound: the silence paused, not by the page')};
-    if(p)p.catch(e=>{if(AU.holding&&TK.trail)micLog(`sound: the silence refused: ${e.name}`)})}catch(e){}
+    if(p)p.then(()=>pastSound('silent')).catch(e=>{if(AU.holding&&TK.trail)micLog(`sound: the silence refused: ${e.name}`)})}catch(e){}
 }
 function routeFree(){
   if(!AU.holding)return;
@@ -106,7 +106,7 @@ async function playClips(clips,voice,turn,end,fall,held){
             if(MIC.rec||MIC.next||TK.ear)return hush(true);  // never into a mic that listens
             log('play again');soundAs('playback');routeHold();
             const q=a.play();if(q)q.catch(e=>{if(!on())return;log(`play again refused: ${e.name}`);if(e.name==='NotAllowedError')no(e);else hush(true)})},PLAY_AGAIN)};
-        const p=a.play();if(p)p.then(()=>{AU.ok=true}).catch(e=>{if(e&&e.name==='AbortError')return;log(`play refused: ${e&&e.name}`,true);no(e)})});  // AbortError: a pause came first, onpause has it
+        const p=a.play();if(p)p.then(()=>{AU.ok=true;pastSound('clips')}).catch(e=>{if(e&&e.name==='AbortError')return;log(`play refused: ${e&&e.name}`,true);no(e)})});  // AbortError: a pause came first, onpause has it
       w.clip=null;log(`clip ${i+1} ended`);
     }catch(e){if(!on())return;routeFree();log(e&&e.name==='NotAllowedError'?'held for a tap':`clip ${i+1} and on: the browser's own voice`,true);
       if(e&&e.name==='NotAllowedError'){AU.ok=false;return held()}
@@ -290,7 +290,7 @@ function speak(text,key){
   const w={turn,own:!rv,clip:null,at:Date.now(),len:0,quiet:0,spot:-1,begun:false,hid:false,us:[],end:ended};  // B174; us: an utterance nobody holds can lose its end
   const own=ps=>{w.own=true;w.clip=null;w.quiet=0;w.begun=false;w.at=Date.now();w.len=ps[0].length;ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;w.us.push(u);
     const log=x=>{if(rv&&TK.turn===turn&&TK.trail)micLog("sound: the browser's own voice "+x)};  // B178
-    u.onstart=()=>{w.begun=true;w.quiet=0;w.at=Date.now();w.len=p.length;if(!i)log('started')};
+    u.onstart=()=>{if(!w.begun)pastSound('voice');w.begun=true;w.quiet=0;w.at=Date.now();w.len=p.length;if(!i)log('started')};
     u.onend=u.onerror=e=>{w.at=Date.now();w.len=(ps[i+1]||'').length;if(i===ps.length-1){log(e&&e.type==='error'?'error '+e.error:'ended');ended(e)}};
     ss.speak(u)})};
   soundAs('playback');soundWatch(w);
@@ -392,6 +392,7 @@ function earEnd(t){
   TK.ear=null;TK.heard='';if(TK.state==='listening')TK.state='';
   soundAs('playback');  // B178
   clearTimeout(t.timer);
+  if(t.words)PAST.words++;else if(t.tries)PAST.none++;  // B162b1
   if(t.words){const sent=micSent(t,t.stopped?t.by:t.err?`error ${t.err}`:'the recognizer');talkNext();return sent}  // B174: what waited is read now
   if(t.tries&&!(t.mode==='auto'&&(!t.err||t.err==='no-speech')))TK.report=t.trail;  // the Copy mic report button
   TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.was,t.msg):'';
@@ -409,8 +410,11 @@ function micStop(by){
 async function micCopy(){
   const rep=TK.report||TK.trail;if(!rep)return;
   let au='';try{au=navigator.audioSession?`${navigator.audioSession.type}, ${navigator.audioSession.state||''}`:'none'}catch(e){}
-  const text=micReport(rep,['Mic report',TK.note,`mic ${TS.mic}, version ${RUN_VERSION}, audio session ${au}, media session ${navigator.mediaSession?navigator.mediaSession.playbackState:''}`,navigator.userAgent]);
-  try{await navigator.clipboard.writeText(text);toast('Mic report copied: paste it into your reply')}
-  catch(e){S.out={title:'Mic report',text};openSheet('out')}
+  const text=micReport(rep,['Mic report',TK.note,`mic ${TS.mic}, version ${RUN_VERSION}, audio session ${au}, media session ${navigator.mediaSession?navigator.mediaSession.playbackState:''}`,navigator.userAgent,...(rep.past?[rep.past]:[])]);
+  return micCopyText('Mic report',text);
+}
+async function micCopyText(title,text){
+  try{await navigator.clipboard.writeText(text);toast(`${title} copied: paste it into your reply`)}
+  catch(e){S.out={title,text};openSheet('out')}
 }
 
