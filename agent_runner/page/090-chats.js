@@ -6,7 +6,7 @@
    it is being opened), drawn (the terminal shows this chat), old (the kept screen over it), since (when it stopped being
    drawn), was (it was drawn, or kept, before) */
 const FD={n:'',turn:0,info:null,frame:null,want:false,up:false,dialing:0,drawn:false,old:null,since:0,was:false,timer:0,sayT:0,upT:0,away:0,downs:0,keptAt:0}, FEED_AWAY=15000, FEED_AGAIN=3000;
-const KEPT=new Map(), FEED_SAY=5000, FEED_DRAWN=4000, FEED_KEEP=2000;
+const KEPT=new Map(), FEED_SAY=5000, FEED_DIAL=10000, FEED_KEEP=2000;
 const FEED_LINES=1;  // lines of a drag to one wheel step
 const TOUCH=()=>!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
 const enterHint=()=>TOUCH()?' enterkeyhint="enter"':'';  // B181
@@ -14,10 +14,12 @@ const feedNow=n=>feedState({stand:String(n||'')[0]==='@',starting:starting(n),in
 const feedSrc=n=>`t/${encodeURIComponent(T)}/${encodeURIComponent(n)}/?fontSize=${TOUCH()?12:13}`;
 /* the chat the frame is to be connected to, '' for none (session_frame.HEAD asks once its page is up) */
 function feedWant(){return FD.want?FD.n:''}
+function feedWantLook(){return feedSkinOf(FD.info)}
 const feedLine=()=>{try{return FD.frame.contentWindow.arLine||null}catch(e){return null}};
 const feedSkinOf=i=>!i||!i.look?'':i.look==='page'?'page-'+feedLook():i.look;
 /* the screen that is there now, kept for its chat (its lines, and what feedPlace needs to put it where it was) */
 function feedKeep(){
+  if(!FD.foot&&KEPT.has(FD.n))return;  // no prompt: it may have drawn its end, or an error, over its last screen
   const l=FD.drawn&&feedLine(), node=l&&l.keep();if(!node)return;
   FD.keptAt=Date.now();keptPut(KEPT,FD.n,{node,info:FD.info,foot:FD.foot,whole:FD.whole,short:FD.short,last:FD.last});
 }
@@ -30,15 +32,17 @@ function feedHang(){FD.turn++;for(const t of [FD.timer,FD.upT])clearTimeout(t);F
 function feedLeave(){feedKeep();feedHang();FD.old=null;feedGone()}
 /* connected to the open chat, after its place and size are known */
 function feedDial(){
-  const turn=FD.turn, busyDial=()=>FD.up||Date.now()-FD.dialing<10000;if(busyDial())return;
+  const turn=FD.turn, busyDial=()=>FD.up||Date.now()-FD.dialing<FEED_DIAL;if(busyDial())return;
   FD.want=true;
   if(!FD.frame)return feedFrame();
-  requestAnimationFrame(()=>{if(turn!==FD.turn||!FD.want||busyDial())return;feedPlace();FD.dialing=Date.now();const l=feedLine();if(l)l.dial(FD.n,feedSkinOf(FD.info))});
+  requestAnimationFrame(()=>{if(turn!==FD.turn||!FD.want||busyDial())return;feedPlace();feedDialing();const l=feedLine();if(l)l.dial(FD.n,feedSkinOf(FD.info))});
 }
+/* one that neither opens nor closes is dialed again */
+function feedDialing(){FD.dialing=Date.now();clearTimeout(FD.upT);FD.upT=setTimeout(()=>{if(!FD.up)feedLoad()},FEED_DIAL+500)}
 function feedFrame(){
   const f=document.createElement('iframe');f.title='The session';f.allow='clipboard-read; clipboard-write';f.src=feedSrc(FD.n);
   f.onload=()=>{if(FD.frame!==f||feedLine())return;f.remove();FD.frame=null;FD.want=false;FD.dialing=0;if(FD.n)FD.timer=setTimeout(feedLoad,FEED_AGAIN)};  // its page did not come
-  FD.frame=f;FD.dialing=Date.now();$('feedframe').appendChild(f);
+  FD.frame=f;feedDialing();$('feedframe').appendChild(f);
 }
 async function feedLoad(){
   const n=FD.n, turn=++FD.turn;clearTimeout(FD.timer);FD.timer=0;
@@ -58,9 +62,9 @@ addEventListener('message',e=>{
   if(d.files){[...d.files].forEach(upload);return}
   if(d.state==='drawn')return feedDrawn();
   clearTimeout(FD.timer);clearTimeout(FD.upT);FD.timer=0;FD.dialing=0;FD.up=d.state==='up';
-  if(FD.up){const turn=FD.turn;FD.upT=setTimeout(()=>{if(turn===FD.turn&&FD.up)feedDrawn()},FEED_DRAWN);feedUp()}
+  if(FD.up)feedUp();
   else{
-    if(FD.drawn){if(FD.foot||!KEPT.has(FD.n))feedKeep();FD.drawn=false;feedBack(FD.n)}  // no prompt: it drew its end over its last screen
+    if(FD.drawn){feedKeep();FD.drawn=false;feedBack(FD.n)}
     FD.want=false;FD.timer=setTimeout(feedLoad,Math.min(250*2**FD.downs++,15000));
   }
   feedSkin();
@@ -102,6 +106,7 @@ document.addEventListener('visibilitychange',()=>{
   if(document.hidden)FD.away=setTimeout(()=>{if(document.hidden&&FD.n){feedLeave();feedBack(FD.n);feedSkin()}},FEED_AWAY);
   else if(FD.n&&!FD.up){FD.since=Date.now();feedLoad()}
 });
+addEventListener('online',()=>{if(FD.n&&FD.want){feedKeep();feedHang();feedBack(FD.n);feedSkin();feedLoad()}});  // the socket may be dead and not know it
 /* an ended chat whose last screen is kept: what to do now, over its message box */
 function feedEnd(n){return feedNow(n)==='ended'&&FD.old?`<div class="feedend">${feedHTML(n,true)}</div>`:''}
 /* what a chat or slot with no session to show says */

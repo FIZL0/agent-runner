@@ -102,9 +102,11 @@ port and a token, readable by this user only and gone when the session ends; `at
 sends the token first. A client that does not send it within 5 s, or sends a wrong one, is dropped with nothing sent to
 it. Either way the shim sends what the session prints to every attached
 terminal and types in what you type. The session takes the smallest size of its viewers (each attached terminal, each
-open session frame of the run app), 200 by 50 when there are none, and a new viewer makes it redraw. Detach with Ctrl-b d
+connected session frame of the run app), 200 by 50 when there are none, and a new viewer makes it redraw. A viewer that
+takes its output slowly gets a queue of 256 KB, then a redraw of the whole screen once it catches up, so it neither stalls
+the session nor is dropped; one that takes nothing for 60 s is dropped. This holds for sessions started after the upgrade. Detach with Ctrl-b d
 (Ctrl-b Ctrl-b types one Ctrl-b); the session keeps running. The run app's session frame has no detach key: with
-`AGENT_RUNNER_WEB` set, Ctrl-b goes to the session, and leaving the chat only ends the view. Before 1809 on Windows,
+`AGENT_RUNNER_WEB` set, Ctrl-b goes to the session, and leaving the chat only hangs up its connection. Before 1809 on Windows,
 `attach s2` shows the hidden console and raises its window; minimize it to hide it again, and closing it ends that
 session, which resumes in the next run. A headless stream slot, or a session with no socket (one started before this),
 has no terminal to attach: `attach s2` says where its log is.
@@ -343,6 +345,9 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   longer lists, or a view that is not there, opens Home. A link may name a view or a chat (`#plan`, `#c3` or `#s1` at
   the end of the address); it wins over what was kept, and the # then leaves the address. When storage is blocked the
   page opens on Home.
+- **Title switcher.** A chat's title in the top bar, with a down chevron, opens the chats in the sidebar's order, each with its
+  last line, a dot when it needs your reply and a check on the open one; Rename this chat is at its foot. A tap on the title
+  opens it and no longer renames.
 - **State.** Every page's top bar has the run's state: Running, Paused, Stopping, Caps forced or Not up. A tap on it
   opens Status.
 - **New version.** The page never reloads by itself. When the run serves another page than the open one (the snapshot's `page` is the page's fingerprint, `PAGE_PRINT`), a popup (`newsDraw()`) says "A new version of this page is ready" with Refresh and Later; Later holds for that page in this tab. Refresh keeps drafts, the outbox, setting fields, attachments and the concept box, and waits, saying why, while the mic listens, an attachment uploads, a device form is open or the browser cannot keep what is written. When a person must restart the run on newer code (`restart_needed`: `[run] auto_upgrade` off, a breaking version, Windows), the popup says "A new version is ready. Restart the run to use it." with Restart the run (asks first) and Later; on Windows there is no control, so stop the run and start it again. A run from a source checkout (a clone with `.git` beside `agent_runner/`) with `[run] auto_upgrade` on restarts itself between merges once main's `agent_runner` code has held still: it looks every 30 s and waits 10 min (at most 1 h after the first change), so one restart covers a batch. It keeps its slots and adopts its sessions. It does not while the checkout is on another branch than main or master, or has uncommitted edits to `agent_runner`; never for a breaking version, never on Windows, and not while stopping.
@@ -380,22 +385,30 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
 - **The session.** A chat or slot shows the real Claude Code session, not a thread the page draws: its own terminal
   through ttyd (`attach NAME` shows the same one), in one frame between the header and the message box. A chat has no
   bubbles, folded steps, history or jump button. The frame is served at `/t/TOKEN/NAME/` on the run's own address, so
-  https and Runner Home both work. ttyd listens on 127.0.0.1 only, on a free port of its own. `/terminal/NAME` says
+  https and Runner Home both work. ttyd listens on 127.0.0.1 only, on a free port of its own. The frame is made the first time a session is opened and kept
+loaded out of sight after that; only the open chat is connected, and its ttyd socket never closes, so ttyd's own Reconnect
+words never show. `/terminal/NAME` says
   whether there is a session to show, and if not, why. On a computer you click and type in the session directly; only a
   mouse press in it gives it the keyboard, and ttyd's focus on connect never does. A file dropped on it is attached. On
   a phone a touch layer over it scrolls it on a drag (a wheel steps it, and it glides), a tap clicks in it without
   opening the keyboard, and a long press (or the key row's Text) opens a sheet with the screen's text to select and
   copy; a horizontal swipe still opens the drawer. The message box's keyboard button folds out the key row (Esc, Tab, ↑,
   Enter, Ctrl-C, Text, ←, ↓, →) for the session's menus; touch only. The session's text is 12px on touch and 13px
-  otherwise, drawn by ttyd's DOM renderer (its canvas is wrong at 2x). Its ground is dark unless the person's agent
+  otherwise, drawn by ttyd's DOM renderer (its canvas is wrong at 2x). The terminal page is gzip-compressed (about 196 KB,
+  from 740 KB) and the browser keeps it (an ETag, `private, no-cache`, a 304 when unchanged), never without the token. Its ground is dark unless the person's agent
   `theme` (in `~/.claude/settings.json` or `~/.claude.json`) starts with light. A session the run starts (control sessions and
   slots) takes the run's own theme, `agent-runner`, whose colours each browser fills from the page's light or dark.
   The states are cards: starting (says so, with the waiting message); loading; ended (the claude.ai/code link, and
   Resume where there is one: `resume_chat`, `control N --reopen`); a slot with no session (Resume when its task
   was cut off); no terminal (a headless stream slot, a slot with no socket, or Windows before 1809); no ttyd (TTYD_INSTALL
   says how to install it). The state is checked every 3 s.
-  The frame goes when the chat is left, or the page has been hidden for 15 s, so the session gets its other viewers'
-  size back. A refresh never moves the page, and never redraws the frame. Stop sends one Ctrl+C while Claude works (`stop_session`) and Force send interrupts and sends (`chat_to` with `force`); Esc only
+  The chat's connection ends when the chat is left, or the page has been hidden for 15 s, so the session gets its other
+  viewers' size back; the frame stays loaded out of sight. Each chat's screen is kept as it was last drawn (the last 12 chats,
+  in the page's memory, gone on reload): a switch to a kept chat shows it at once, slightly dimmed, under a thin moving line,
+  until the terminal has drawn, so there is no blank frame; a chat not seen in this page shows its latest messages from its
+  feed in that place. A dropped connection leaves the text in place and dials again by itself (after 250 ms, doubling to
+  15 s); after 5 s it says Reconnecting… (Connecting to the session… the first time). An ended chat keeps its last screen,
+  with its Resume card above the message box; with nothing kept, the card is in the body. A refresh never moves the page, and never redraws the frame. Stop sends one Ctrl+C while Claude works (`stop_session`) and Force send interrupts and sends (`chat_to` with `force`); Esc only
   leaves the box, then goes back (B116).
   Its bottom lines (the update notice, status line, mode, background shells and agents) are past the frame's edge, so the
   message box has their controls: a chip row above it (Working, mode, N shells, N agents, Update; a chip shows only when

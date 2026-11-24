@@ -340,7 +340,7 @@ _In code_: web_page.html, web.py, [run] web
 _Avoid_: web page, dashboard, web UI
 
 **The session**:
-What a chat or slot shows in the run app: the real Claude Code session through ttyd, in one frame between the header and the message box, which the page never draws or redraws.
+What a chat or slot shows in the run app: the real Claude Code session through ttyd, in one frame between the header and the message box. The page never draws or redraws it, except that a switch may show the chat's Last screen until the session draws.
 _Said_: the session, the real window
 _On screen_: (no wording: the session itself)
 _In code_: session_frame.py, #feed, /t/TOKEN/NAME/
@@ -739,3 +739,17 @@ _Said_: a fold
 _On screen_: a chevron row
 _In code_: foldIn, .foldin, data-askfold
 _Avoid_: accordion, expander
+
+**Last screen**:
+The screen a chat's session was last drawn with, kept in the page for the last 12 chats (in memory, gone on reload). A switch to that chat shows it at once, dimmed, until the session's first whole draw; a chat not seen in this page shows its latest messages in its place.
+_Said_: kept screen
+_On screen_: (no wording: the dimmed screen under a thin moving line)
+_In code_: keptPut, feedKeep, feedBack, feedDrawn, standHTML, .feedline, .feedstand
+_Avoid_: cache, snapshot, preview, thumbnail
+
+**Title switcher**:
+What a chat's title in the top bar opens, with a down chevron: the chats in the sidebar's order, each with its last line, a dot when it needs your reply and a check on the open one. Rename this chat is at its foot.
+_Said_: switcher
+_On screen_: Chats; Rename this chat
+_In code_: SHEETS.chats, chatsSheet, chatLast
+_Avoid_: chat picker, dropdown, tab bar, title menu

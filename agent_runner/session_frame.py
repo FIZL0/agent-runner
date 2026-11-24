@@ -23,7 +23,7 @@ from agent_runner import box_font, plat, session_theme
 # so are a key and a paste (feedTyped: they go to its message box while the agent CLI's input is hidden).
 # F206: one page for every chat: ttyd gets a socket that never closes (Line), and arLine changes the connection behind it:
 # dial(name, look), hang(), keep() (a copy of the screen, a node of this page), show(node) (over the terminal until its
-# first whole draw, or null). So ttyd never draws its Reconnect words, and nothing is loaded again. The next chat's first
+# first whole draw, words near its bottom, or null). So ttyd never draws its Reconnect words, and nothing is loaded again. The next chat's first
 # output starts with ESC c, so what was written before ends there. It says 'up', 'drawn' and 'down'; the app dials again.
 # The login's keeps ttyd's own socket.
 # The box font is loaded before xterm.js measures its glyphs (and, when it was late, they are measured again).
@@ -47,14 +47,15 @@ if(look==='page'){try{look='page-'+parent.feedLook()}catch(e){look='page-'+(matc
 var line=null, url='', sock=null, turn=0, opened=false, set=false, drew=false;
 function Own(u,p){var s=new W(u,p);s.addEventListener('open',function(){tell({state:'up'})});s.addEventListener('close',function(e){tell({state:'down',code:e.code})});return s}
 Own.OPEN=W.OPEN;
-class Line extends EventTarget{constructor(u){super();url=u;line=this;this.binaryType='arraybuffer';var want=name;try{if(parent.feedWant)want=parent.feedWant()}catch(e){}if(want)dial(want)}
+class Line extends EventTarget{constructor(u){super();url=u;line=this;this.binaryType='arraybuffer';var want=name;try{if(parent.feedWant){want=parent.feedWant();look=parent.feedWantLook()||look}}catch(e){}if(want)dial(want)}
 get readyState(){return sock?sock.readyState:W.CLOSED}
 send(d){if(sock&&sock.readyState===W.OPEN)sock.send(d)}
 close(){hang()}}
 Line.OPEN=W.OPEN;
 window.WebSocket=own?Own:Line;
 function hang(){turn++;var s=sock;sock=null;if(s)s.close()}
-function dial(to){hang();name=to;if(!line)return;
+function dial(to){hang();var other=to!==name;name=to;if(!line)return;
+if(other&&drew){window.term.write('\\x1bc');drew=false}
 var me=turn, at=0, out=0, quiet=0, done=false;
 var s=sock=new W(url.replace(/[^/]+[/]ws(?=[?]|$)/,encodeURIComponent(to)+'/ws'),['tty']);s.binaryType='arraybuffer';
 s.onopen=function(){if(me!==turn)return;at=Date.now();
@@ -70,8 +71,9 @@ else if(set)return;
 else if(what===50){set=true;setTimeout(window.arLook,0)}
 line.dispatchEvent(new MessageEvent('message',{data:e.data}))};
 function look4(){var t=window.term;if(me!==turn||!t)return;
-t.write('',function(){if(me!==turn||done)return;var b=t.buffer.active, y=t.rows;
-while(y--){var l=b.getLine(b.baseY+y);if(l&&l.translateToString(true).trim()){done=true;requestAnimationFrame(function(){if(me===turn)tell({state:'drawn'})});return}}})}
+t.write('',function(){if(me!==turn||done)return;var b=t.buffer.active, y=t.rows, low=Date.now()-out>1500?0:y-8, text=false;
+while(y--){var l=b.getLine(b.baseY+y);if(l&&l.translateToString(true).trim()){text=true;if(y<low)break;done=true;requestAnimationFrame(function(){if(me===turn)tell({state:'drawn'})});return}}
+if(text)quiet=setTimeout(look4,200)})}
 }
 window.arLine={dial:function(to,l){if(l)window.arLook(l);dial(to)},hang:hang,
 keep:function(){var t=window.term, rows=t&&t.element&&t.element.querySelector('.xterm-rows');if(!rows||!rows.textContent.trim())return null;
@@ -148,11 +150,11 @@ def send_page(handler, data: bytes, ctype: str) -> None:
     same = handler.headers.get('If-None-Match', '').removeprefix('W/') == tag
     zipped = 'gzip' in handler.headers.get('Accept-Encoding', '')
     if zipped and not same:
-        if tag not in _gz:
+        if not (got := _gz.get(tag)):
             if len(_gz) > 8:
                 _gz.clear()
-            _gz[tag] = gzip.compress(data, 6)
-        data = _gz[tag]
+            got = _gz[tag] = gzip.compress(data, 6)
+        data = got
     handler.send_response(304 if same else 200)
     handler.send_header('ETag', tag)
     handler.send_header('Vary', 'Accept-Encoding')

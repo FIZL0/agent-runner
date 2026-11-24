@@ -324,11 +324,12 @@ class Viewers:
         with self.lock:
             self.ended = True
             for c in self.clients:
-                try:  # its last words
-                    c.settimeout(0.5)
-                    c.sendall(bytes(self.queue.get(c, b'')))
-                except OSError:
-                    pass
+                if c in self.queue:
+                    try:  # its last words
+                        c.settimeout(0.5)
+                        c.sendall(bytes(self.queue[c]))
+                    except OSError:
+                        pass
                 c.close()
             self.clients, self.sizes, self.waits, self.queue, self.took, self.behind = {}, {}, {}, {}, {}, set()
             if self.listener:
@@ -400,6 +401,8 @@ def attach_session(sock: Path, name: str, stdin: int = 0, stdout: int = 1) -> in
     try:
         s = connect(sock)
     except OSError as e:
+        if os.environ.get('AGENT_RUNNER_WEB'):  # F206: the page says it; its last screen stays
+            return 1
         print(f'{name}: could not attach ({e})', file=sys.stderr)
         return 1
     if plat.WINDOWS:
