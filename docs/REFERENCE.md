@@ -505,7 +505,8 @@ The card and popup of a Needs you item say what the ask is in short. Optionally,
 their own words, each field standing in for what the ask's text gives: `summary` (the card's line), `where`, `steps`
 (What to do; each a words string, or `{text, link, cmd, on}`: `link` a web address, `cmd` a command for the machine
 `on` names, this one when none is named), `expect` (What you should see), `shots` (pictures, each with a `caption`) and
-`inputs` (below):
+`inputs` (below). A BLOCKED item's steps, links, commands and inputs all go here, and a secret in `<notes>/asks/ID.env`;
+an old script left in `<notes>/wizards/ID.sh` shows as text steps in the detail and is never run:
 
 ```json
 {"summary": "Open the pay page on the phone", "where": "iPhone, Safari", "steps": ["Open the shop", "Tap Pay"],
@@ -1847,7 +1848,6 @@ Removed earlier:
 
 - 0.60.0: `[run] mux` (and `run --mux`): every run is hidden on every OS, with no tmux; `agent-runner attach`
   shows the run view and `attach sN` a session's own terminal.
-- C37: `[run] wizards` (a task that needs a person writes its steps in `<notes>/asks/ID.json`).
 - 0.52.0: `[needs] map_replies` (sessions map a reply to its item themselves).
 - 0.32.0: `[run] mode` (a run never starts two tasks on the same files), `[run] fix_ahead` (`fix_ahead_max = 0`
   is what `fix_ahead = false` was), `[run] precommit` (chain the check into `[run] test`), `[run] ci_rerun` (a
