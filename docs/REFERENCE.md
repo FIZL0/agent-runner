@@ -398,7 +398,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   with your first message." Nothing is sent until the first message, which starts the session once (`new_control`,
   with the About text, or with "Concept: " for New concept). Leaving it unsent leaves no session; its draft is kept per thing. Back or Esc returns to the
   view. A reload reopens it without focus, and it has no session keys or interrupt.
-- **Plan.** The queue in plain words (a row folds open to `plan ID`'s text, with Chat), and Add a task. Tasks are not
+- **Plan.** The queue in plain words (a row folds open to `plan ID`'s text, with Chat), a Parked group (the parked tasks, then the shelved ones with Bring back and Drop; shown when there is either), and Add a task. Tasks are not
   edited here directly: ask in a chat. A task that waits for a shared tool reads `waits for iPhone 15, held by F389, 12 min` on its row (### Shared tools).
 - **Concepts.** Each concept with a button per option (taken from its page's headings, by `ui_model.concept_options`; `ui_model.concept_page` builds the page), plus Chat, New chat and View. The New concept button (also on Home, beside Add a task) opens an empty New chat view for a new concept.
 
@@ -420,11 +420,11 @@ full-screen between the UI's top and bottom bars, and again for side by side. In
 
 ### Adding a row action
 
-`ui_model.RUN_CONTROLS` is the one list of actions for the TUI and the run page. Besides the run and slot-task controls it holds a Queue row's actions (`where: 'queue'`: `queue_priority`, `queue_unpark`, `queue_take`, `queue_drop`), the release tab's (`where: 'release'`: `release_wait`, `release_now`), a Needs you item's (`where: 'need'`: `need_later`, `need_chat`, `need_drop`, its confirm asked in both TUI and page), a concept's (`where: 'concept'`: `concept_chat`, `concept_drop`) and a control session's (`where: 'session'`: `session_close`, TUI only).
+`ui_model.RUN_CONTROLS` is the one list of actions for the TUI and the run page. Besides the run and slot-task controls it holds a Queue row's actions (`where: 'queue'`: `queue_priority`, `queue_unpark`, `queue_take`, `queue_drop`), the release tab's (`where: 'release'`: `release_wait`, `release_now`), a Needs you item's (`where: 'need'`: `need_later`, `need_chat`, `need_drop`, its confirm asked in both TUI and page), a concept's (`where: 'concept'`: `concept_chat`, `concept_drop`), a shelved task's (`where: 'shelved'`: `shelved_back`, `shelved_drop`), and a control session's (`where: 'session'`: `session_close`, TUI only).
 
 An entry has `key`, `label`, `tui` (the TUI key), `tui_also` (a second key that works while the panel, not the main pane, has focus; `tui_main` False means the key works only then), `where` (the panel), `argv` (the runner command: `{id}` the row's task, `{why}`, `{pri}` the other of critical/normal, `{n}`), `ask` (starts a new control session with that message) or `fn` (a `ui_model.ROW_FNS` function run with the row's id: `need_chat`, `concept_chat`, `session_close`; `chat: true` opens a new chat), `fits` (a function of the row: the rows it is allowed on), `confirm` (the question the page asks first; the TUI asks too unless `tui_sure` is False), `why` (the default reason for a drop) and `help` (the keys-list wording, if not the label).
 
-Each snapshot row of queue, needs, concepts and sessions has `acts`, the keys allowed on it now (`ui_model.row_acts`); the snapshot has `controls` (the list as data) and `release_acts`. `run_control` re-checks the row (`ui_model.row_of`) before it runs.
+Each snapshot row of queue, needs, concepts, shelved and sessions has `acts`, the keys allowed on it now (`ui_model.row_acts`); the snapshot has `shelved` (`ui_model.shelved_rows`, apart from `queue`), `controls` (the list as data) and `release_acts`. `run_control` re-checks the row (`ui_model.row_of`) before it runs.
 
 The TUI takes its hint keys, buttons, panel key branches and the Queue lines of the keys list (`tui.action_help`) from the list. The page draws the needs and concepts buttons from `acts` (`actBtns`, `actSure`) and sends them through the one `data-ctl` click handler (`controlReq`), with the confirm asked in place; the old per-button actions `need_drop`, `shelve` and `take` and the TUI `dropping` state are gone. So a new row action is one entry in RUN_CONTROLS and nothing in `tui.py` or `web_page.html`. Fixed answers (`ui_model.need_answers`), Open (a link), pitch Approve / Not this, the typed boxes, chat edit, direct edit and reorder (J/K) are still hand-written.
 
@@ -503,7 +503,7 @@ cannot tell):
   the answer noted; a concept is approved.
 - `plan change R1 "do X instead"`: noted and reopened (a concept: `revise`).
 - `plan shelve R1`: stays blocked (`BLOCKED: shelved: …`) but leaves the list; `plan waiting --all` still
-  shows it, and `plan unshelve R1` brings it back. Concepts shelve the same way.
+  shows it, and `plan unshelve R1` brings it back. Concepts shelve the same way. The run page's Plan view lists a shelved task under Parked, after the parked ones, with Bring back and Drop (asks first); the TUI's Queue panel shows it last. Display only: the task stays where it is in TODO.md.
 
 Answers stay in their own project: `confirm`, `change` and `shelve` read and change only this project's plan,
 never another's. An id only another project has gets `nothing needs you here about 'R43' in <project>`, and is

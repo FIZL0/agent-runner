@@ -1266,6 +1266,36 @@ def test_parked() -> None:
         eq(len(ran), 1, 'U on a task that is not parked runs nothing')
 
 
+def test_shelved_f184() -> None:
+    """F184: the shelved tasks are the queue panel's last rows, not in its count; U is Bring back, d asks first,
+    and e, p, J/K do nothing on one."""
+    row = {'id': 'D8', 'title': 'Look at it on the laptop', 'state': 'shelved', 'ask': 'Run it there - reply yes/no'}
+    snap, ran = dict(SNAP, shelved=[row]), []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+            mock.patch.object(U, 'row_of', lambda where, tid: row if (where, tid) == ('shelved', 'D8') else None):
+        p = T.RunPage(snap, get_snap=lambda: dict(snap), attrs=ATTRS)
+        p.key('3')
+        check(f'1 of {len(SNAP["queue"]) + 1}' in drawn(p, 40, 100).text(), 'the queue count leaves it out')
+        p.key('n')
+        check(p.sel().get('new'), 'n is still the new task row')
+        p.key('ESC')
+        p.key('ESC')
+        p.cur[3] = len(p.items(3)) - 1
+        eq(p.sel()['id'], 'D8', 'the last row')
+        eq(p.queue_tag(row), ('shelved', 'dim'), 'its tag')
+        text = drawn(p, 40, 120).text()
+        check('1 of 1 shelved' in text and 'Run it there' in text, 'its place and what it waits for', text)
+        check(('U', 'bring back') in p.hint_keys() and not any(k in ('J/K', 'e') for k, _ in p.hint_keys()), 'the hints', p.hint_keys())
+        for k in ('e', 'p', 'H', 'J', 'K'):
+            p.key(k)
+        eq((ran, p.tab()[0]), ([], 'info'), 'e, p, H, J and K do nothing')
+        p.key('d')
+        eq((ran, 'again: yes' in p.msg), ([], True), 'd asks first')
+        p.key('d')
+        p.key('U')
+        eq(ran, [['plan', 'drop', 'D8', 'dropped from Parked'], ['plan', 'unshelve', 'D8']], 'drop, then bring back')
+
+
 OMARCHY_SAMPLE = '''mode = "dark"
 accent = "#89b4fa"
 selection = "#45475a"
@@ -1934,7 +1964,7 @@ if __name__ == '__main__':
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
                                test_concept_chat, test_new_concept, test_enter_on_concept,
-                               test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,
+                               test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked, test_shelved_f184,
                                test_themes,
                                test_idle_run_of_another_project, test_run_key_binds, test_run_controls,
                                test_follow_upgrade_f90, test_cli]))

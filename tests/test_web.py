@@ -277,8 +277,8 @@ def test_row_actions(tmp: Path) -> None:
     for gone in ('data-unpark', "outbox('unpark'", 'data-rel=', "outbox('release'", 'data-later=', 'data-needdrop=',
                  'data-needchat=', 'data-cchat=', "outbox('shelve'", "outbox('need_drop'"):
         check(gone not in page, f'the page has no {gone}: one handler')
-    cs = [c for c in U.controls() if c['where'] in ('queue', 'release', 'need', 'concept')]
-    eq(len(cs), 11, 'the row actions the page draws (C35: Needs you and Concepts too)')
+    cs = [c for c in U.controls() if c['where'] in ('queue', 'shelved', 'release', 'need', 'concept')]
+    eq(len(cs), 13, 'the row actions the page draws (C35: Needs you and Concepts too)')
     if shutil.which('node'):
         reqs = logic_js([['controlReq', c, {'tid': 'F83', 'sure': True}] for c in cs])
     else:
@@ -294,7 +294,7 @@ def test_row_actions(tmp: Path) -> None:
         with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
                 mock.patch.dict(U.ROW_FNS, {'need_chat': chat, 'concept_chat': chat}), \
                 mock.patch.object(U, 'row_of', lambda where, tid: {'id': tid, 'pri': 'normal', 'state': 'parked',
-                                                                    'label': 'CONFIRM', 'concept': tid}):
+                                                                    'ask': 'Look', 'label': 'CONFIRM', 'concept': tid}):
             for c, rq in zip(cs, reqs):
                 ran.clear()
                 code, out = post(url, rq)
@@ -783,6 +783,23 @@ def test_parked(tmp: Path) -> None:
     eq(got[0], "Parked: a run won't start it", 'a parked row says so on the run app')
     check('Ready' not in got[0], 'and never Ready')
     eq([[r['id'] for r in g] for g in got[1]], [['F1', 'B2'], ['F83']], 'the Queue, then the Parked group')
+
+
+def test_shelved_f184(tmp: Path) -> None:
+    """F184: the Plan view's Parked group lists the shelved tasks after the parked ones, also when there are only
+    shelved ones; a press keeps its card off and shows the stand-in there."""
+    fake_repo(tmp)
+    app = W.page_html().decode()
+    for part in ('pk.length||sh.length||shOb', "${pk.map(parkedCard).join('')}${shOb}${sh.map(shelvedCard).join('')}",
+                 '${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>'
+                 '${actSure(q.acts,q.id)}', 'S.snap.queue.concat(S.snap.shelved||[])', "obHidden(S.ob,'shelved')",
+                 'if(S.gone)delete S.gone[it.shelved]', "c.confirm.split('{id}').join(tid||'')"):
+        check(part in app, f'the run app has {part}')
+    if not shutil.which('node'):
+        print('  (no node here: the shelved script test is skipped)')
+        return
+    got = logic_js([['planWords', {'id': 'D3', 'state': 'shelved'}, []]])
+    eq(got, ['Shelved until you bring it back'], 'a shelved row says so')
 
 
 def test_concepts_view(tmp: Path) -> None:
@@ -4513,7 +4530,7 @@ if __name__ == '__main__':
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
-                           in_tmp(test_new_chat), in_tmp(test_page_copy_publish), in_tmp(test_parked),
+                           in_tmp(test_new_chat), in_tmp(test_page_copy_publish), in_tmp(test_parked), in_tmp(test_shelved_f184),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_news_f149),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),

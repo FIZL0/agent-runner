@@ -14,6 +14,8 @@ copy, and the actions they share.
               state ('running s2 6m', 'critical', 'after', 'tool', 'parked', 'ready'); with shared tools set, needs
               and tool_wait ('waits for iPhone 15, held by F389, 12 min')
     tools     the shared tools ([run.tools]; F168): name, label, state, words, waits; [] without them
+    shelved   F184: the shelved tasks (`shelved_rows`), which queue, needs and concepts leave out: id, kind, title,
+              ask in plain words, state 'shelved'
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age, detail (what
               its card and popup say: said, title, where, summary, lead, steps, expect, notes, shots; need_detail)
     concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
@@ -317,6 +319,22 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
                 for how in ('reopen', 'drop')])
         needs[-1]['answers'] = need_answers(needs[-1])  # C33: both pages draw these
     return needs, concepts
+
+
+def shelved_rows(ls: list[str], waiting) -> list[dict]:
+    """F184: every shelved task (`plan shelve`) of TODO.md's lines `ls`, in plan order, a list of its own: the Plan
+    view shows them in the Parked group, and the queue, Needs you and Concepts leave them out. `ask`: what it waits on
+    the person for, from `status.waiting_ok()`'s list ('' for one that list does not have, which `plan unshelve`
+    refuses)."""
+    names, by = _kind_names(), {w[1]: w for w in waiting if w[6]}
+    out = []
+    for section, _, tid, rest, i in P.iter_tasks(ls):
+        if not P._shelved(ls, i):
+            continue
+        w = by.get(tid)
+        out.append({'id': tid, 'kind': task_kind(tid, names), 'title': P.short_title(w[5] if w else rest, 200),
+                    'section': section, 'ask': P.plain_ask(w[0], w[3], w[5]) if w else '', 'state': 'shelved'})
+    return out
 
 
 ASK_SHORT = 120  # B152: the most a short ask runs to, in characters
@@ -632,7 +650,9 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
         progress = progress_line(now=dt.datetime.fromtimestamp(now))
     except Exception:  # noqa: BLE001 - a git hiccup costs the progress line, not the snapshot
         progress = ''
-    needs, concepts = needs_rows(waiting_ok(), dt.datetime.fromtimestamp(now))
+    waiting = waiting_ok()
+    needs, concepts = needs_rows(waiting, dt.datetime.fromtimestamp(now))
+    shelved = shelved_rows(ls, waiting)  # F184
     slots = slot_count(up, st)
     sessions = session_rows(st, ls, titles, now, links, terminal_base, slots, windows)
     for r in sessions:
@@ -642,7 +662,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
            'state': run_state(up, st)}  # F124
     queue = pin_release(queue_rows(ls, st, now), row)
     tools = tool_rows(bool(up), ls, st, now)  # F168
-    for where, rows in (('queue', queue), ('need', needs), ('concept', concepts), ('session', sessions)):
+    for where, rows in (('queue', queue), ('shelved', shelved), ('need', needs), ('concept', concepts), ('session', sessions)):
         for r in rows:
             r['acts'] = row_acts(where, r)  # C34, C35
     fix = fixups(st, ls)
@@ -653,7 +673,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': queue, 'release_row': row, 'release_acts': [c['key'] for c in RUN_CONTROLS
                                                                  if c['where'] == 'release'],
-            'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
+            'shelved': shelved, 'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
             'no_settings': no_settings(st=st if up else None),  # F178
             'unpushed': unpushed_line(),  # F98
@@ -891,6 +911,13 @@ RUN_CONTROLS = (
     {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
      'confirm': 'It leaves the plan, and a slot running it is stopped. Drop it?'},
+    # F184: a shelved task's, in the Parked group; never Unpark, which would not reopen it
+    {'key': 'shelved_back', 'label': 'Bring back', 'argv': ('plan', 'unshelve', '{id}'), 'tui': 'U', 'where': 'shelved',
+     'help': 'bring back (a shelved task)', 'said': '{id} is under Needs you again',
+     'fits': lambda r: bool(r.get('ask'))},
+    {'key': 'shelved_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
+     'where': 'shelved', 'why': 'dropped from Parked', 'said': '{id} dropped', 'help': 'drop (a shelved task)',
+     'confirm': 'Drop {id}? It leaves the plan, and its work is not done.'},
     # C35: the other panels' row actions, the same shape: 'need' (a Needs you item), 'concept', 'session' (a control
     # session cN). 'fn' one of ROW_FNS run with the row's id (a new chat, a close); 'chat' it opens a chat; 'said' its
     # toast, and a Needs you item it is done with leaves the list. '{id}' in a confirm is the row's id.
@@ -966,7 +993,7 @@ def queue_row(tid: str) -> dict | None:
     return next((q for q in queue_rows(P.lines(S.C.todo), _state(S.run_up())) if q['id'] == tid), None)
 
 
-ROW_WORDS = {'queue': 'a queued task', 'need': 'something that needs you', 'concept': 'a concept waiting',
+ROW_WORDS = {'queue': 'a queued task', 'shelved': 'a shelved task', 'need': 'something that needs you', 'concept': 'a concept waiting',
              'session': 'a control session'}
 
 
@@ -977,6 +1004,8 @@ def row_of(where: str, tid: str) -> dict | None:
     if where == 'session':
         return {'name': tid} if re.fullmatch(r'c\d+', tid or '') else None
     from agent_runner.status import waiting_ok
+    if where == 'shelved':
+        return next((r for r in shelved_rows(P.lines(S.C.todo), waiting_ok()) if r['id'] == tid), None)
     needs, concepts = needs_rows(waiting_ok(), dt.datetime.now())
     return next((r for r in (needs if where == 'need' else concepts)
                  if tid == r['id'] or (where == 'concept' and tid == r['concept'])), None)

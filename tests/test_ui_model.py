@@ -193,7 +193,7 @@ def test_run_controls(tmp: Path) -> None:
                                                                              'argv': []})[1]]):
         for windows in (False, True):  # B163: no re-exec on Windows, so no restart there
             want = {*RUN_CONTROL_ARGV, 'task_take', 'queue_take', 'queue_drop', 'queue_priority', 'queue_unpark',
-                    'release_wait', 'release_now', 'need_later', 'need_chat', 'need_drop', 'concept_chat',
+                    'shelved_back', 'shelved_drop', 'release_wait', 'release_now', 'need_later', 'need_chat', 'need_drop', 'concept_chat',
                     'concept_drop', 'session_close'} - ({'restart'} if windows else set())
             on = ' (Windows)' if windows else ''
             with mock.patch('agent_runner.plat.WINDOWS', windows):
@@ -285,6 +285,41 @@ def test_real_command(tmp: Path) -> None:
           'D3 is shelved in TODO.md', (repo / 'plan' / 'TODO.md').read_text(encoding='utf-8'))
     eq([n['id'] for n in U.snapshot(up=False, now=time.time(), links={})['needs']], ['F4'],
        'a shelved item leaves Needs you')
+
+
+def test_shelved_f184(tmp: Path) -> None:
+    """F184: a shelved task, a concept build too, is in the snapshot's own `shelved` list and in none of queue, needs
+    and concepts; Bring back is the real plan unshelve, Drop asks first; never Unpark."""
+    repo = fake_run(tmp)
+    todo = repo / 'plan' / 'TODO.md'
+    snap = U.snapshot(up=False, now=time.time(), links={})
+    eq(snap['shelved'], [], 'nothing shelved: an empty list')
+    had = [q['id'] for q in snap['queue']]
+    todo.write_text(TODO.split('### Parked')[0], encoding='utf-8')  # no parked task
+    for tid in ('D3', 'F4'):
+        check(U.run_control('need_later', tid=tid)['ok'], f'{tid} is shelved')
+    place = todo.read_text(encoding='utf-8')
+    snap = U.snapshot(up=False, now=time.time(), links={})
+    eq([(r['id'], r['state'], r['acts']) for r in snap['shelved']],
+       [(t, 'shelved', ['shelved_back', 'shelved_drop']) for t in ('D3', 'F4')], 'both, in plan order, with their actions')
+    d3, f4 = snap['shelved']
+    eq((d3['title'], d3['ask']), ('Write the guide', U.P.plain_ask('DECIDE', 'which layout', 'Write the guide')),
+       'its short title and what it waits for in plain words')
+    check('lazy layout' in f4['title'] and f4['ask'].startswith('Pick an option'), 'a concept build says so too', f4)
+    eq([q['id'] for q in snap['queue']], [t for t in had if t not in ('D3', 'F4', 'R8')], 'the queue has neither')
+    eq((snap['needs'], snap['concepts']), ([], []), 'nor Needs you, nor Concepts')
+    for key, tid in (('queue_unpark', 'D3'), ('shelved_back', 'F1'), ('shelved_drop', 'ZZ9')):
+        eq(U.run_control(key, tid=tid, confirm=True)['code'], 1, f'{key} on {tid} is refused')
+    r = U.run_control('shelved_drop', tid='D3')
+    check(not r['ok'] and r['confirm'].startswith('Drop D3?'), 'drop asks first', r)
+    eq(todo.read_text(encoding='utf-8'), place, 'and nothing has changed yet')
+    r = U.run_control('shelved_back', tid='D3')
+    eq((r['ok'], r['argv'], r['said']), (True, ['plan', 'unshelve', 'D3'], 'D3 is under Needs you again'), 'plan unshelve')
+    snap = U.snapshot(up=False, now=time.time(), links={})
+    eq(([r['id'] for r in snap['shelved']], [n['id'] for n in snap['needs']]), (['F4'], ['D3']), 'under Needs you again')
+    r = U.run_control('shelved_drop', tid='F4', confirm=True)
+    check(r['ok'] and '**F4**' not in todo.read_text(encoding='utf-8'), 'a confirmed drop takes it out of the plan', r)
+    eq(U.snapshot(up=False, now=time.time(), links={})['shelved'], [], 'and off the list')
 
 
 def test_to_new(tmp: Path) -> None:
@@ -964,7 +999,7 @@ def test_need_detail_f162(tmp: Path) -> None:
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
-                         in_tmp(test_real_command),
+                         in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154),
                          in_tmp(test_chat_and_terminal),

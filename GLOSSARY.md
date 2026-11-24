@@ -89,7 +89,9 @@ The list of what waits on the person: concepts waiting for a pick, and tasks blo
 _Avoid_: inbox, waiting list, blocked
 
 **Shelve**:
-Setting a Needs you item aside: the task stays blocked but leaves the list until unshelved.
+Setting a Needs you item aside: the task stays blocked but leaves the list, and shows under the Plan view's Parked group until brought back.
+_On screen_: Shelved until you bring it back; Bring back
+_In code_: shelved_rows, shelved_back
 _Avoid_: park, snooze, defer, drop
 
 **Voice file**:
@@ -346,7 +348,7 @@ _In code_: concept_chat, concept_chat_text
 _Avoid_: concept session
 
 **Parked task**:
-A queued task at level later, in the plan's Parked section: a run never starts it until a person unparks it, which moves it to Follow-ups.
+A queued task at level later, in the plan's Parked section: a run never starts it until a person unparks it, which moves it to Follow-ups. The Plan view's Parked group also lists shelved tasks (see Shelve), after the parked ones; they stay distinct from these.
 _Said_: parked
 _On screen_: Parked: a run won't start it
 _In code_: state 'parked', unpark, parkedLast, queueGroups

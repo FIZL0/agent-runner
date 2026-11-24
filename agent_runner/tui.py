@@ -23,7 +23,8 @@ Panels and their tabs (F76):
                wl-copy/xclip/pbcopy when local); over ssh o opens nothing here: it copies the link and shows it
                as a hyperlink (OSC 8) to Cmd-click
     Queue      a task: direct edit, chat edit; the '+ new task' row: chat edit, direct edit; e edit, E chat edit,
-               n new, J/K reorder, p priority on/off, H do it here, d (or D) drop; a parked task: U unpark (no J/K, p)
+               n new, J/K reorder, p priority on/off, H do it here, d (or D) drop; a parked task: U unpark (no J/K, p);
+               F184: the shelved tasks are its last rows: info, chat edit; U brings one back, d (or D) drops it
     Needs you  answer (a button per possible answer: y yes, n no, or a b c … for options; L later; a reply box),
                info
     Concepts   preview: the K copy inline, its options (the copy's headings) moved through with j/k, Enter goes
@@ -188,6 +189,7 @@ Queue [3]
   e        direct edit            E        chat edit
   n        new task               J/K      move down / up
 {queue_actions}
+{shelved_actions}
   ^S       save the direct edit
   t k K   what, kind (cycles, back)        p f a    priority, files, after
 Needs you [4]
@@ -218,7 +220,7 @@ def action_help(where: str) -> str:
                      (cells[i:i + 2] for i in range(0, len(cells), 2)))
 
 
-for _w in ('queue', 'need', 'concept', 'task', 'session'):
+for _w in ('queue', 'shelved', 'need', 'concept', 'task', 'session'):
     HELP = HELP.replace('{%s_actions}' % _w, action_help(_w))
 
 
@@ -362,7 +364,8 @@ class RunPage:
         rows = list(self.snap.get(key) or [])
         if key == 'concepts':
             return rows + [NEW_CONCEPT]
-        return rows + release_tail(self.snap) + [NEW_TASK] if key == 'queue' else rows
+        return rows + release_tail(self.snap) + [NEW_TASK] + list(self.snap.get('shelved') or []) \
+            if key == 'queue' else rows  # F184: the shelved tasks after the queue, which they are not in
 
     def empty_line(self, n: int) -> str:
         """What panel `n` says with no rows: 'none', or in Sessions the snapshot's `sessions_note` (C23)."""
@@ -389,6 +392,8 @@ class RunPage:
         if n == 3:
             if it.get('placeholder'):  # F131: the next release, not a task yet: the release tab
                 return ['release']
+            if it.get('state') == 'shelved':  # F184
+                return ['info', 'chat edit']
             return ['chat edit', 'direct edit'] if it.get('new') else ['direct edit', 'chat edit']
         if n == 5 and it.get('new'):
             return ['new concept']
@@ -517,10 +522,10 @@ class RunPage:
     def queue_tag(self, it) -> tuple[str, str]:
         """A queue row's right tag: 'sN Nm' (yellow) while a slot runs it, 'critical' (red), 'blocked' (red),
         '⧗ after <id title>' (dim) while it waits, '⧗ waits for iPhone 15, …' (dim) while a shared tool keeps it, 'parked' (dim) at level later (B123: a run never starts it),
-        'ready' (green)."""
+        'shelved' (dim: F184),         'ready' (green)."""
         state = str(it.get('state') or '')
-        if state == 'parked':
-            return 'parked', 'dim'
+        if state in ('parked', 'shelved'):  # F184
+            return state, 'dim'
         if state.startswith('running'):
             return state[len('running'):].strip() or 'running', 'yellow'
         if state == 'blocked' or (not state and it.get('blocked')):
@@ -648,6 +653,11 @@ class RunPage:
                             'Your reply goes to a new chat, which settles the item.', 'dim'))]
             row = buttons(*[button(k, v) for k, v in self.answers(it)], button('L', 'later'))
             return out, [row] + self.input_lines(f'answer:{it["id"]}', width, 'or your own reply'), 0
+        if tab == 'info' and self.panel == 3:  # F184: a shelved task
+            out = [L((f'{it["id"]} ', KIND_COLOUR.get(it['id'][:1], 'cyan')), (it.get('title', ''), 'fg')), L(),
+                   L(('shelved: off Needs you until you bring it back', 'dim')), L()]
+            out += text_lines(it.get('ask', ''), 'fg', width)
+            return out, [buttons(*[button(c['tui'], c['label'].lower()) for c in self.row_controls(it, 'shelved')])], 0
         if tab == 'info' and self.panel == 4:
             out = [L((f'{it["id"]} ', 'yellow'), (it.get('title', ''), 'fg')), L(),
                    L(('kind of ask ', 'dim'), (it.get('label', ''), 'fg'))]
@@ -756,6 +766,10 @@ class RunPage:
         acts = it['acts'] if 'acts' in it else U.row_acts(where, it)
         return [c for c in self.snap.get('controls') or U.controls() if c['key'] in acts and c['where'] == where]
 
+    def row_where(self, it) -> str:
+        """The `where` of the selected row's actions: its panel's, or 'shelved' for a shelved task in the queue (F184)."""
+        return 'shelved' if self.panel == 3 and (it or {}).get('state') == 'shelved' else ROW_PANELS.get(self.panel, '')
+
     def row_id(self, it, where: str) -> str:
         """The id the actions of panel `where` take: a concept's, a control session's name, else the row's id."""
         return (it.get('concept') if where == 'concept' else it.get('name') if where == 'session' else '') \
@@ -799,7 +813,7 @@ class RunPage:
             self.msg = f'new control session about {args["tid"]}: {r["link"]}'
         elif c.get('chat'):
             self.say_new_session(r)
-        if c['where'] == 'need':  # B138: the item is off Needs you; the pane closes
+        if c['where'] in ('need', 'shelved'):  # B138: the item is off Needs you; the pane closes
             self.main = False
         if c['where'] == 'queue':  # C34: the selection follows its task, or leaves the pane when the task is gone
             ids = [t.get('id') for t in self.items(3)]
@@ -987,8 +1001,11 @@ class RunPage:
         rows, focused = self.items(n), n == self.panel
         on = focused and not self.main
         cur = min(self.cur[n], max(len(rows) - 1, 0))
-        count = f'{cur + 1 if rows else 0} of {len(rows)}' + (f' · {n} to expand' if not focused and
-                                                              len(rows) > SHORT else '')
+        n_sh = len(self.snap.get('shelved') or []) if n == 3 else 0  # F184: no part of the queue's count
+        queued = len(rows) - n_sh
+        count = f'{cur - queued + 1} of {n_sh} shelved' if n_sh and cur >= queued else \
+            f'{cur + 1 if rows else 0} of {queued}'
+        count += f' · {n} to expand' if not focused and len(rows) > SHORT else ''
         self.edge(win, y, x, h, w, [(f' [{n}] {name} ', 'accent' if on else 'dim')], on, count)
         inner = h - 2
         if not rows:
@@ -1087,6 +1104,9 @@ class RunPage:
                 return [('⏎', 'open')]
             if isinstance(it, dict) and it.get('new'):
                 return [('⏎', 'open'), ('E', 'chat edit')]
+            if (it or {}).get('state') == 'shelved':  # F184
+                return [('⏎', 'open'), ('E', 'chat edit')] + [(c['tui_also'] or c['tui'], c['label'].lower())
+                                                              for c in self.row_controls(it, 'shelved')]
             return [('e', 'edit'), ('E', 'chat edit')] + ([('J/K', 'reorder')] if (it or {}).get('state') != 'parked' else []) \
                 + [(c['tui_also'] or c['tui'], c['label'].lower()) for c in self.row_controls(it)]
         if self.panel == 4:
@@ -1702,19 +1722,19 @@ class RunPage:
         elif self.panel == 2 and k == 'y' and isinstance(it, dict) and not it.get('new'):
             self.copy_session(it)
         elif self.panel == 3 and k == 'n':
-            self.cur[3] = len(rows) - 1
+            self.cur[3] = rows.index(NEW_TASK)
             self.set_tab('chat edit')
             self.type_in()
-        elif self.panel == 3 and k == 'e' and it is not None and not it.get('placeholder'):
+        elif self.panel == 3 and k == 'e' and it is not None and not it.get('placeholder') and it.get('state') != 'shelved':
             self.set_tab('direct edit')
             self.field('t')
         elif self.panel == 3 and k == 'E' and it is not None and not it.get('placeholder'):
             self.set_tab('chat edit')
             self.type_in()
-        elif (w := ROW_PANELS.get(self.panel)) and self.row_id(it, w) and (c := self.control_by_tui(k, w)) \
+        elif (w := self.row_where(it)) and self.row_id(it, w) and (c := self.control_by_tui(k, w)) \
                 and c in self.row_controls(it, w):
             self.run_control(c['key'], tid=self.row_id(it, w))  # C34, C35: a row's actions, from ui_model's one list
-        elif self.panel == 3 and k in ('J', 'K') and tid and it.get('state') != 'parked':
+        elif self.panel == 3 and k in ('J', 'K') and tid and it.get('state') not in ('parked', 'shelved'):
             self.reorder(1 if k == 'J' else -1)
         elif self.panel == 4 and k == 'a' and it is not None:
             self.set_tab('answer')
@@ -1771,7 +1791,7 @@ class RunPage:
         if self.sel(3).get('release'):  # F131: pinned; and no task moves past it, or the release would not wait for it
             self.msg, self.msg_ok = f'{self.sel(3)["id"]} stays at the end of the queue', True
             return
-        tasks = [t for t in self.items(3) if not t.get('new') and not t.get('release')]
+        tasks = [t for t in self.items(3) if not t.get('new') and not t.get('release') and t.get('state') != 'shelved']
         i = self.cur[3]
         if not 0 <= i + step < len(tasks):
             self.msg, self.msg_ok = f'{tasks[i]["id"]} is already {"last" if step > 0 else "first"}', True

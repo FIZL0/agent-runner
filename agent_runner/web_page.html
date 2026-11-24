@@ -619,6 +619,7 @@ function planWords(q,sessions){
   if(q.state==='critical')return 'Goes first, as soon as a slot is free';
   if(q.state==='after')return q.after_title?`Waits for ${q.after_title}`:'Waits for another task';
   if(q.state==='tool'&&q.tool_wait)return q.tool_wait.charAt(0).toUpperCase()+q.tool_wait.slice(1);  // F168
+  if(q.state==='shelved')return 'Shelved until you bring it back';  // F184
   if(q.state==='parked')return "Parked: a run won't start it";  // B118: never 'Ready'
   return 'Ready to start when a slot is free';
 }
@@ -1402,11 +1403,12 @@ function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
   const later=it.set&&S.ob.some(x=>x.cid!==it.cid&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending');  // F174: the field holds a newer value that goes next
   if(it.set&&!later&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
-  if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
+  if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
   else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&j.gone))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&it.name==='answer')delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.shelved){if(S.gone)delete S.gone[it.shelved];toast(j.said||`${it.say}: done`);snapNow()}  // F184: Needs you may show it at once
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
   else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
@@ -1417,8 +1419,9 @@ function obDone(it,j){
 }
 /* the cards an item still sending stands in for stay off the lists */
 function obHide(){
-  const ns=obHidden(S.ob,'need'), cs=obHidden(S.ob,'concept'), now=Date.now();
+  const ns=obHidden(S.ob,'need'), cs=obHidden(S.ob,'concept'), sh=obHidden(S.ob,'shelved'), now=Date.now();
   S.snap.needs=(S.snap.needs||[]).filter(n=>!ns.includes(n.id));
+  S.snap.shelved=(S.snap.shelved||[]).filter(x=>!sh.includes(x.id));  // F184
   S.snap.concepts=needsShown(S.snap.concepts,S.gone,now).filter(c=>!cs.includes(c.id));
 }
 /* B164: the run is older than the page: what to do, with the restart control when the run has one */
@@ -1670,11 +1673,11 @@ function cutsOff(c){
   if(!['stop_now','suspend','shutdown'].includes(c.key)||c.key===(S.snap.run||{}).power)return '';
   const ws=working_();return ws.length?`Cuts off ${ws.map(w=>`${w.task} in ${w.name}${w.minutes!=null?` (${w.minutes} min in)`:''}`).join(', ')}. `:'';
 }
-const ctlSure=(c,tid)=>sureHTML(cutsOff(c)+c.confirm,c.label.charAt(0).toLowerCase()+c.label.slice(1),`data-ctl="${esc(c.key)}" data-tid="${esc(tid||'')}"`);
+const ctlSure=(c,tid)=>sureHTML(cutsOff(c)+c.confirm.split('{id}').join(tid||''),c.label.charAt(0).toLowerCase()+c.label.slice(1),`data-ctl="${esc(c.key)}" data-tid="${esc(tid||'')}"`);
 /* C34: a panel's row actions ('queue', 'release': ui_model.RUN_CONTROLS' `where`): the buttons for a row's `acts` (the
    keys ui_model allowed on it), each through the one data-ctl handler, and the confirm one asks in place */
 const obActs=(x,where)=>!!x.ctl&&(controlOf(x.ctl.split(':')[0])||{}).where===where;
-const obRun=x=>!!x.ctl&&!['queue','release','need','concept'].includes((controlOf(x.ctl.split(':')[0])||{}).where);
+const obRun=x=>!!x.ctl&&!['queue','shelved','release','need','concept'].includes((controlOf(x.ctl.split(':')[0])||{}).where);
 const actBtns=(acts,tid)=>(acts||[]).map(controlOf).filter(Boolean).map(c=>`<button class="btn${ctlBusy(c.key,tid)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(tid)}">${esc(c.label)}</button>`).join('');
 const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+':'+tid).map(c=>ctlSure(c,tid)).join('');
 function slotRow(s){
@@ -1764,6 +1767,10 @@ function nextReleaseCard(r){  // F131: no release queued yet: the auto release's
 }
 function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
   return card(`${taskRow(q,q.title||q.id)}
+    <div class="btns">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
+}
+function shelvedCard(q){  // F184: a shelved task: what it waits on the person for, Bring back (plan unshelve), Drop and the usual chat
+  return card(`${taskRow(q,q.title||q.id)}${q.ask?`<span class="askdo">${esc(q.ask)}</span>`:''}
     <div class="btns">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
 }
 function conceptCard(c,i){
@@ -2443,10 +2450,10 @@ async function toolClick(x){
   toolPost({op:tool,name,...(what?{what}:{}),...(fp?{fp}:{})},name);
 }
 function planHTML(){
-  const pk=queueGroups(S.snap.queue)[1], qs=planQueue(S.snap);
+  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=planQueue(S.snap);
   return `<div class="col"><div><button class="btn acc" data-about="new">${I.plus}Add a task</button></div>
     <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join(''):emptyCard('The queue is empty.')}
-    ${obCards(x=>obActs(x,'queue'))}${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}</div>`;
+    ${obCards(x=>obActs(x,'queue'))}${pk.length||sh.length||shOb?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}${shOb}${sh.map(shelvedCard).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
 function conceptsHTML(){
@@ -3202,7 +3209,7 @@ function about(a){
   else if(a==='newconcept')S.ctx={kind:'newconcept',label:'New concept'};
   else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept}}
   else if(k==='setting'){const x=settingOf(v);if(!x)return;S.ctx={kind:'setting',id:`[${x.table}] ${x.key}`,title:x.name,label:x.name}}
-  else if(k==='plan'){const q=S.snap.queue.find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
+  else if(k==='plan'){const q=S.snap.queue.concat(S.snap.shelved||[]).find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
   else return;
   open(ctxKey(S.ctx));const ta=document.querySelector('[data-in]');if(ta)kbFocus(ta);  // in the tap itself, so a phone's keyboard comes
 }
@@ -3292,7 +3299,7 @@ document.addEventListener('click',async e=>{
     if(c.chat){const n=c.where==='need'&&(S.snap.needs||[]).find(x=>x.id===tid);  // B139, C35: it asks a new chat
       newChat(rq.name,rq.args,`${c.label} ${tid}`,n?needChatAsk(n):c.where==='concept'?'':`do ${tid} here`);return}
     if(S.sheet)closeSheet();
-    outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:c.label+(tid?` ${tid}`:''),...(c.where==='need'?{need:tid}:c.where==='concept'?{concept:tid}:{})});return}  // F124: through the outbox
+    outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:c.label+(tid?` ${tid}`:''),...(c.where==='need'?{need:tid}:c.where==='concept'?{concept:tid}:c.where==='shelved'?{shelved:tid}:{})});return}  // F124: through the outbox
   if(x=q('[data-pitchopen]')){const n=S.snap.needs[+x.dataset.pitchopen];if(!n)return;  // F98
     S.pitchOpen={...(S.pitchOpen||{}),[n.id]:!(S.pitchOpen||{})[n.id]};S.sure=null;render(true);return}
   if(x=q('[data-pitchno]')){const n=S.snap.needs[+x.dataset.pitchno];if(!n)return;
