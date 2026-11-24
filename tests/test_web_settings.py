@@ -328,6 +328,57 @@ console.log(JSON.stringify(out));`);
 """
 
 
+RELEASES_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const set = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b));
+const S = {f: {}, ob: [], setOpen: {}, set, snap: {}}, esc = t => String(t).replace(/"/g, '&quot;'), I = {chev: ''};
+const card = t => `<div>${t}</div>`, emptyCard = card, obCards = () => '', controlOf = () => null, foldIn = (k, t) => t, SHEETS = {};
+eval(logic + slice('const settingId=', 'function saveSetting(') + `
+const at = k => set.tables.find(t => t.table === 'run').keys.find(x => x.key === k);
+const draw = (q, changed) => { S.f = {setq: q}; S.setChanged = changed; return settingsHTML() };
+const out = [];
+for (const on of [true, false, true]) {
+  at('releases').value = on; at('releases').source = on ? 'default' : 'project';
+  out.push({page: draw('', false), named: draw('release by itself', false), key: draw('auto_release', false), word: draw('releases', false), kinds: draw('features, fixes', false), changed: draw('', true), kept: at('auto_release').value});
+}
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_manage_releases_f193(tmp: Path) -> None:
+    """F193: with Manage releases off, Settings lists, finds and counts nothing about releases but its own switch."""
+    repo = fake_repo(tmp)
+    (repo / 'runner.toml').write_text('[run]\nslots = 4\nauto_release = { every = 10 }\n', encoding='utf-8')
+    if not shutil.which('node'):
+        return
+    snap = CF.settings_snapshot(repo)
+    (tmp / 'set.json').write_text(json.dumps(snap), encoding='utf-8')
+    (tmp / 'releases.js').write_text(RELEASES_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'releases.js'), str(W.PAGE), str(tmp / 'set.json')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws Settings', r.stderr[-900:])
+    if r.returncode:
+        return
+    draws = json.loads(r.stdout)
+    auto, switch, words = 'data-k="set:run.auto_release"', 'data-k="set:run.releases"', 'Also concepts and releases.'
+    for d, on in zip(draws, (True, False, True)):
+        say = f'Manage releases {"on" if on else "off"}: '
+        check(switch in d['page'], say + 'its switch shows')
+        for view in ('page', 'named', 'key', 'changed'):
+            eq(auto in d[view], on, say + f'Release by itself, in {view}')
+        check(switch in d['word'], say + 'a search finds the switch')
+        for view in ('page', 'word', 'kinds'):
+            eq(words in d[view], on, say + f'the kinds row names releases, in {view}')
+        check('Features, fixes, tests' in d['kinds'] and 'Also concepts' in d['kinds'], say + 'that row stays')
+        eq('data-k="setkinds:build"' in d['word'], on, say + 'a search for releases finds that row')
+        eq(d['kept'], {'every': 10}, say + 'the value is kept')
+        eq(re.search(r'Changed (\d+)', d['page'])[1], '2', say + 'the count')  # slots, and Release by itself or the switch
+        eq(switch in d['changed'], not on, say + 'the switch is in Changed once it is off')
+        check(not on or re.search(r'<option value="10" selected', d['page']), say + 'Release by itself has its value')
+    eq(draws[2], draws[0], 'turned back on, everything is as it was')
+
+
 def test_settings_f97(tmp: Path) -> None:
     """F97: the Settings view: every key with its value, source and default; a device value saved and reset in place in
     runner.local.toml, its comments kept; a project value committed in runner.toml (F173); bad values refused."""
@@ -491,4 +542,4 @@ def test_settings_f97(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_settings_f97)]))
+    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_settings_f97)]))
