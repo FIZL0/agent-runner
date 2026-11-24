@@ -788,3 +788,10 @@ _Said_: a search in plan
 _On screen_: Find a task
 _In code_: plan_search, planFound, planq
 _Avoid_: task filter, lookup
+
+**Device page**:
+The web page a device can have, opened from the Tools page; a start command saved with it makes the runner able to start and stop what serves it, and to say whether it is running, stopped or failed.
+_Said_: web page of a device
+_On screen_: Web page to open
+_In code_: device_page.py, page_state, run device start|stop
+_Avoid_: app, service, server

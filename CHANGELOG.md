@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: an other device can have a web page (an http or https address, no sign-in in it), set in the Tools page's Add/Edit sheet with an optional start command and its working directory. `run device start NAME` and `run device stop NAME` (also `POST /tools` ops `start` and `stop`) run that command detached, outside the run and session, so it outlives them; `run device list` and `show` say whether it is running, stopped or failed, and a failed one shows its last 20 output lines with stored secrets hidden (F407)
+
 ## 0.64.0 (2026-11-24)
 
 - Changed: at a terminal, bare `agent-runner` (the run picker) no longer starts a run when you pick one that is not up: picking a row always opens its launcher, the second screen. There `s` starts the run in the background (logged as started by picker), and the launcher then shows the run up with its link, or the error. No pick, and none of w, t, c or Enter, starts a run; a bare `agent-runner` without a terminal, `agent-runner run`, `--attach` and every Start control still do. Where there is no TUI (Windows, no tmux) the launcher has no `t`, shows the reason in a dim line, and Enter opens the run page (F402a)

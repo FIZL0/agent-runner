@@ -330,6 +330,38 @@ def aliases() -> list[str]:
     return sorted(set(out))
 
 
+def _page_fields(a: dict) -> dict:
+    """F407: {page, start, folder} of an other device, those that are set: its web page, the command that starts it
+    and that command's working directory."""
+    url, cmd, folder = (str(a.get(k) or '').strip(' ') for k in ('page', 'start', 'folder'))
+    if not url:
+        if cmd:
+            raise Refused('a start command needs the web page it starts')
+        return {}
+    try:
+        u = urlsplit(url)
+        ok = u.scheme in ('http', 'https') and u.hostname and (u.port is None or u.port > 0)
+    except ValueError:
+        ok = False
+    if not ok or len(url) > 2000 or not re.fullmatch(r'[hH][^\x00-\x20\x7f"\'<>\\`]+', url):
+        raise Refused('the web page is an address that starts with http:// or https://')
+    if '@' in u.netloc:
+        raise Refused('leave the sign-in out of the web page address: agents see it')
+    if not cmd:
+        return {'page': url}
+    if len(cmd) > 1000 or len(folder) > 1000 or re.search(r'[\x00-\x1f\x7f]', cmd + folder):
+        raise Refused('the start command and its working directory are one line each, 1000 characters at most')
+    if folder:
+        try:
+            d = Path(folder).expanduser()
+            ok = d.is_absolute() and d.is_dir()
+        except (OSError, RuntimeError, ValueError):
+            ok = False
+        if not ok:
+            raise Refused('the working directory is the whole path of a folder on this machine')
+    return {'page': url, 'start': cmd, **({'folder': folder} if folder else {})}
+
+
 def checked(a: dict) -> dict:
     """The fields of a device as they may be saved. A refusal names the field, never what was typed in it."""
     kind = a.get('kind')
@@ -340,7 +372,7 @@ def checked(a: dict) -> dict:
         dev['reach'] = _text(a.get('reach'), 500).replace('\n', ' ')
         if not dev['reach']:
             raise Refused('say the command or address agents use to reach it')
-        return dev
+        return {**dev, **_page_fields(a)}
     if alias := str(a.get('alias') or ''):
         if alias not in aliases():
             raise Refused('that host is not in ~/.ssh/config')
@@ -671,6 +703,103 @@ def reach(dev: dict) -> tuple[str, str]:
     return 'missing', f'{first[:60]} is not on this machine'
 
 
+# --- a device's web page (F407, device_page.py) ----------------------------------------------------------------------
+
+PAGE_LINES, PAGE_WIDTH = 20, 300  # what is shown of a failed command's output
+
+
+def _page_dir(dev: dict) -> Path:
+    """The folder of its start command: named by an id, so it stays with a renamed device."""
+    return state_dir() / 'pages' / dev['page_id']
+
+
+def page_state(dev: dict) -> dict | None:
+    """{'state': running, stopped or failed, 'lines': what a failed one printed last}; None with no start command."""
+    from agent_runner import device_page
+    if not dev.get('start'):
+        return None
+    s = device_page.state(d := _page_dir(dev))
+    return {'state': s, 'lines': _page_lines(d) if s == 'failed' else []}
+
+
+_LINES: dict[str, tuple[tuple, list[str]]] = {}  # by log: a Tools page that is open asks every 10 s, and the keyring is slow
+
+
+def _page_lines(d: Path) -> list[str]:
+    """The last lines, every device's stored secrets hidden in them. None are shown when one cannot be read."""
+    from agent_runner import device_page
+    try:
+        stamp = tuple((s.st_mtime_ns, s.st_size) for s in (d.joinpath('log').stat(), (state_dir() / 'devices.json').stat()))
+        if (hit := _LINES.get(str(d))) and hit[0] == stamp:
+            return hit[1]
+        hide = [v for n, dev in load()['devices'].items() for w in dev.get('secrets') or {} if w in SECRETS
+                and (v := _secret(n, w, dev))]
+    except OSError:
+        return []
+    except Refused:
+        return ['(the output is not shown: a stored secret that may be in it cannot be read now)']
+    text = Redactor(hide).all(device_page.tail(d))
+    text = re.sub(rb'\x1b\[[0-9;?]*[A-Za-z]|[\x00-\x08\x0b-\x1f\x7f]', b'', text)
+    text = Redactor(hide).all(text).decode('utf-8', 'replace')  # again: colours may have stood inside one
+    got = [l[:PAGE_WIDTH] for l in text.split('\n') if l.strip()]
+    _LINES[str(d)] = stamp, got[-PAGE_LINES:]
+    return got[-PAGE_LINES:]
+
+
+def _page_end(dev: dict) -> bool:
+    """Stop a device's command for good and forget its output; whether it was running. Refused when it does not stop."""
+    from agent_runner import device_page
+    if not dev.get('page_id'):
+        return False
+    d = _page_dir(dev)
+    was = device_page.state(d) == 'running'
+    if not device_page.stop(d):
+        raise Refused('its web page is still running and did not stop; try again')
+    shutil.rmtree(d, ignore_errors=True)
+    return was
+
+
+def _page_command(d: dict, name) -> dict:
+    dev = _get(d, name)
+    if not dev.get('start'):
+        raise Refused(f'{name} has no start command')
+    return dev
+
+
+def page_start(name: str) -> dict:
+    """Start the command a person saved for `name`, once: {ok, out, state, lines}."""
+    from agent_runner import device_page
+    with _locked():
+        dev = _page_command(load(), name)
+        try:
+            cwd = Path(dev.get('folder') or '~').expanduser()
+            fresh = device_page.start(_folder('pages', dev['page_id']), dev['start'], cwd)
+        except OSError:
+            raise Refused(f'the web page of {name} did not start') from None
+    if not fresh:
+        return {'ok': True, 'out': f'{name} is running already', 'state': 'running', 'lines': []}
+    device_page.settled(_page_dir(dev))
+    r = page_state(dev)
+    return {'ok': r['state'] == 'running', **r,
+            'out': f'{name} is running' if r['state'] == 'running' else f'{name} ended at once ({r["state"]})'}
+
+
+def page_stop(name: str) -> dict:
+    """Stop what `page_start` started."""
+    from agent_runner import device_page
+    with _locked():
+        dev = _page_command(load(), name)
+        was = device_page.state(_page_dir(dev)) == 'running'
+        if not device_page.stop(_page_dir(dev)):
+            raise Refused(f'{name} did not stop; try again')
+    return {'ok': True, 'out': f'{name} is stopped' if was else f'{name} is not running', **page_state(dev)}
+
+
+def _page_words(dev: dict) -> str:
+    r = page_state(dev)
+    return dev['page'] + (f' ({r["state"]})' if r else '')
+
+
 # --- who has it ----------------------------------------------------------------------------------------------------------
 
 def _running(root: str) -> dict[str, str]:
@@ -815,9 +944,10 @@ def refusal(why: str) -> dict:
 
 def _shown(name: str, dev: dict, uses: list[str]) -> dict:
     """A device as the page has it: what is set, never a secret."""
-    out = {k: dev[k] for k in ('kind', 'description', 'exclusive', 'alias', 'host', 'user', 'port', 'reach') if k in dev}
+    out = {k: dev[k] for k in ('kind', 'description', 'exclusive', 'alias', 'host', 'user', 'port', 'reach', 'page', 'start',
+                               'folder') if k in dev}
     hk = dev.get('hostkey')
-    return {**out, 'name': name, 'label': name, 'source': 'device', 'used': name in uses,
+    return {**out, 'run': page_state(dev), 'name': name, 'label': name, 'source': 'device', 'used': name in uses,
             'hostkey': {'fp': hk['fp'], 'type': hk['type'], 'changed': hk.get('changed', '')} if hk else None,
             'secrets': {w: {k: m[k] for k in ('changed', 'fp', 'pub') if k in m} for w, m in (dev.get('secrets') or {}).items()
                         if w in SECRETS}}
@@ -907,6 +1037,10 @@ def _rename(old: str, new: str, d: dict, c) -> None:
     (state_dir() / 'held' / old).unlink(missing_ok=True)
 
 
+def _page_id(dev: dict) -> dict:
+    return {**dev, 'page_id': os.urandom(8).hex()} if dev.get('start') else dev
+
+
 def op_save(a: dict, c) -> dict:
     """Add a device, or edit one (`edit`: its name). A new place to connect to forgets the accepted host key."""
     name, edit = a.get('name'), a.get('edit')
@@ -918,16 +1052,24 @@ def op_save(a: dict, c) -> dict:
             kept = {k: old[k] for k in ('secrets', 'hostkey') if k in old}
             if moved:
                 kept.pop('hostkey', None)
+            ended = False
+            if all(old.get(k) == new.get(k) for k in ('start', 'folder')):
+                kept.update({k: old[k] for k in ('page_id',) if k in old})
+            else:  # F407: another command, or none: the old one is stopped first
+                if name not in (None, '', edit):  # what would refuse the save comes before that
+                    _free_name(name, d, c, edit)
+                    _not_in_use(edit)
+                ended = _page_end(old)
             if new['kind'] == 'other' or new.get('alias'):
                 for w, m in (kept.pop('secrets', None) or {}).items():
                     _drop(edit, w, m)
-            d['devices'][edit] = {**new, **kept}
+            d['devices'][edit] = {**_page_id(new), **kept}
             if name not in (None, '', edit):
                 _rename(edit, name, d, c)
                 edit = name
-            return {'out': f'{edit} is saved' + ('; test it to accept its host key' if moved and new['kind'] == 'ssh' else '')}
+            return {'out': f'{edit} is saved' + ('; its old command was stopped' if ended else '') + ('; test it to accept its host key' if moved and new['kind'] == 'ssh' else '')}
         _free_name(name, d, c)
-        d['devices'][name] = new
+        d['devices'][name] = _page_id(new)
         d['uses'].setdefault(project(c), []).append(name)
     return {'out': f'{name} is added, and this project uses it'}
 
@@ -936,6 +1078,7 @@ def op_remove(a: dict, c) -> dict:
     with _edit() as d:
         dev, name = _get(d, a.get('name')), a['name']
         _not_in_use(name)
+        _page_end(dev)
         for w in SECRETS:
             _drop(name, w, (dev.get('secrets') or {}).get(w))
         (state_dir() / 'held' / name).unlink(missing_ok=True)
@@ -1048,8 +1191,16 @@ def op_keypair(a: dict, c) -> dict:
     return {'out': 'A key pair is made. Add its public key to ~/.ssh/authorized_keys on the device.'}
 
 
+def op_start(a: dict, c) -> dict:
+    return page_start(a.get('name'))
+
+
+def op_stop(a: dict, c) -> dict:
+    return page_stop(a.get('name'))
+
+
 OPS = {'save': op_save, 'remove': op_remove, 'use': op_use, 'test': op_test, 'accept': op_accept,
-       'secret': op_secret, 'unsecret': op_unsecret, 'keypair': op_keypair}
+       'start': op_start, 'stop': op_stop, 'secret': op_secret, 'unsecret': op_unsecret, 'keypair': op_keypair}
 
 
 def post(body: bytes, c) -> tuple[int, dict]:
@@ -1134,7 +1285,9 @@ def cmd_device(argv: list[str]) -> int:
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('list', help='every device this project uses')
     sub.add_parser('link', help="the Tools page's address, where a person adds devices and secrets")
-    for n, h in (('show', 'one device'), ('take', 'have a one-task device until your task ends'), ('release', 'a one-task device is free for other tasks again')):
+    for n, h in (('show', 'one device'), ('start', "run the start command of a device's web page"),
+                 ('stop', 'stop what start started'),
+('take', 'have a one-task device until your task ends'), ('release', 'a one-task device is free for other tasks again')):
         sub.add_parser(n, help=h).add_argument('name')
     s = sub.add_parser('ssh', help='run a command on a device')
     s.add_argument('name')
@@ -1165,7 +1318,8 @@ def cmd_device(argv: list[str]) -> int:
         return 0
     if a.cmd == 'list':
         for n, d in devs.items():
-            print(f'{n}: {d.get("description") or "no description"} ({how(n, d, RUNNER)})')
+            print(f'{n}: {d.get("description") or "no description"} ({how(n, d, RUNNER)})'
+                  + (f'; web page {_page_words(d)}' if d.get('page') else ''))
         if not devs:
             print('This project uses no device. A person adds one on the Tools page.')
         return 0
@@ -1181,6 +1335,17 @@ def cmd_device(argv: list[str]) -> int:
     dev = devs[name]
     if a.cmd == 'show':
         print(f'{name}: {dev.get("description") or "no description"}\nReach it with: {how(name, dev, RUNNER)}')
+        if dev.get('page'):
+            print('\n'.join([f'Web page: {_page_words(dev)}', *((page_state(dev) or {}).get('lines') or [])]))
+        return 0
+    if a.cmd in ('start', 'stop'):
+        try:
+            r = page_start(name) if a.cmd == 'start' else page_stop(name)
+        except Refused as e:
+            return fail(str(e), 1)
+        if not r['ok']:
+            return fail('\n'.join([r['out'], *r['lines']]), 1)
+        print(r['out'] + (f': {dev["page"]}' if a.cmd == 'start' else ''))
         return 0
     if a.cmd == 'release':
         from agent_runner.tools import task_here

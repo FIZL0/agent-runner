@@ -1130,6 +1130,20 @@ command on this machine. A person adds it on the run app's Tools page. Each proj
   (22 by default); an alias behind a ProxyJump or ProxyCommand is probed with ssh, as TCP cannot see through it. An
   other device with an address is a TCP connection to its port (vnc, rdp, http and https have their own); with a
   command, it is free when that command is on this machine.
+- **A web page.** An other device can have a web page: an http or https address, with no sign-in in it, and, with it, an
+  optional start command (one line of shell text) and its working directory (an absolute or `~` path of an existing
+  folder; the home folder by default), all set in the Add/Edit sheet. A page with no start command has no start, stop
+  or state. Only the saved command runs, and saving follows the Tools page's rule (https or the machine itself, with the
+  token and a same-origin request). `run device start NAME` runs the command detached, outside the run and any session
+  and, on Linux, out of Runner Home's systemd service, so it outlives them; a second start says it is running already,
+  and a command that ends within a second is reported at once with exit 1. `run device stop NAME` ends the whole process
+  group it started (SIGTERM, then killed after 4 s) and nothing else. A small keeper process holds a lock, so running is
+  never guessed from a reused pid; a process that leaves the group itself is not followed. The state is running, stopped
+  (never started, stopped, ended with exit 0, or the machine restarted) or failed (ended with another exit code: the
+  last 20 output lines are shown with every device's stored secrets hidden; if a stored secret cannot be read, no output
+  is shown). The output is kept raw in `pages/` in the state folder, bounded at 1 MB. Removing the device, or changing
+  its command, working directory or kind, stops it first, and the change is refused if it does not stop; a rename or a
+  new address does not.
 - **One task at a time.** A device marked so is held by one task. An agent's first `run device ssh` or `run device copy`
   (or `run device take NAME`, for a device reached another way) takes it, until that task's session ends or `run device release NAME`. The hold covers every project on this
   machine: another project's running task that names the device in `needs:` holds it too. An agent that finds it held
@@ -1148,13 +1162,14 @@ command on this machine. A person adds it on the run app's Tools page. Each proj
 - **Saving.** The page saves only over https, or on the machine itself, with the run app's token and a same-origin
   request. That holds for any change on the Tools page, not only secrets. Over plain http the page is read only and
   gives the https link to open (Tailscale Serve gives one).
-- **The commands.** `run device list` shows the devices this project uses and how each is reached; `show NAME` one of
-  them; `link` prints the Tools page's address.
+- **The commands.** `run device list` shows the devices this project uses, how each is reached and, for one with a web
+  page, its state; `show NAME` one of them, with its page and state; `link` prints the Tools page's address.
   - `run device ssh NAME -- CMD`: one word is shell text for the device; several words go each as they are. The runner
     signs in itself: with a key from an ssh-agent of its own (the key held one minute), or a password through an
     SSH_ASKPASS helper. Neither is on the command line or in the environment.
   - `run device copy FROM TO`: one side is `NAME:path`, the other a local path; `-r` for a folder.
   - `run device take NAME`: has a one-task device until the task's session ends; `run device release NAME`: frees a one-task device before its task ends.
+  - `run device start NAME` and `run device stop NAME`: start or stop an other device's web page command (see A web page); by agents of a project that uses the device.
 - **Output.** What the command prints has each stored secret replaced by `[secret hidden]`, so a chat, a log or a
   transcript does not carry it. Only the exact bytes are caught: an encoded or transformed copy of a secret is not.
 - **Host key.** The first host key an SSH device shows is accepted only by a person, on the page, from its fingerprint.
@@ -1532,12 +1547,14 @@ agent-runner resume ID...              continue each task's last session in its 
 run wait-for TOOL                      a slot's agent, when a shared tool is busy or missing, or a command was stopped
                                        for low memory (`memory`): its session ends and its work is kept; the same
                                        session goes on once it is free (### Shared tools, ### Waiting for memory)
-run device list                        the devices this project uses, with how each is reached
-run device show NAME                   one device: its description and how it is reached
+run device list                        the devices this project uses, with how each is reached and a page's state
+run device show NAME                   one device: its description, how it is reached, its page and state
 run device ssh NAME -- CMD             run CMD on a device (SSH; the runner signs in); exit 75 while it is held
 run device copy FROM TO                copy to or from a device (one side NAME:path; -r for a folder)
 run device take NAME                   have a one-task device until this task's session ends
 run device release NAME                a one-task device is free for other tasks again, before its task ends
+run device start NAME                  start a device's web page command, detached; a second start says it is running
+run device stop NAME                   stop what `run device start` began (its whole process group)
 run device link                        the Tools page's address (a run app must be up)
 agent-runner cost [--days N] [--files] where the workers' tokens went, by kind of tool call (--files: by
                                        file read, and exact-repeat commands)
