@@ -714,6 +714,9 @@ class RunPage:
         L = lambda *segs: list(segs)  # noqa: E731
         d = it.get('detail')
         if not d:
+            if it.get('label') == 'DECIDE':  # B223b: what it asks is the heading here too
+                return text_lines(it.get('ask', ''), 'fg', width, f'{it["id"]} ', ' ' * (len(it['id']) + 1), 'yellow') + \
+                    text_lines(it.get('title', ''), 'dim', width)
             return [L((f'{it["id"]} ', 'yellow'), (it.get('title', ''), 'fg')), L()] + \
                 text_lines(it.get('ask', ''), 'fg', width)
         lab = d['said'] + (f' · {d["where"]}' if d.get('where') else '')

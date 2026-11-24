@@ -55,10 +55,13 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Needs you item** (`.asktap`, `needTap()`): one button, not a card of buttons. What is wanted and where in everyday
   words (`.asklab`), the title on one line, at most two lines of what to do (`.askdo`), then Press for details, the
   steps count, the id and the age. A DECIDE's heading is its question, whole (`needHead()`, `.q`), with its task's title
-  small on one line under it and at most two lines of its background in place of what to do. Its answer buttons sit below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way.
-- **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: title (a DECIDE's question, its task's title
-  small under it), label, age, id; where and when, or a DECIDE's background as paragraphs;
-  What to do (a DECIDE's only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or Esc goes back); the
+  small on one line under it and at most two lines of its background in place of what to do. Its answer buttons sit
+  below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
+  sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way.
+- **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: title (a DECIDE's question, its task's
+  title small under it), label, age, id; where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
+  only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or
+  Esc goes back); the
   task text folded. An item with inputs draws its steps with Open (a step's link) and the command as code, with
   "Run on <machine>" and Copy; then What you should see; then What to enter, one field per input (its label above it;
   a secret is a password field, and over plain http words stand in its place and say why), a refusal in `--bad` under

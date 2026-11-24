@@ -5,7 +5,7 @@ function answerOpts(it){return((it&&it.answers)||[]).map(a=>a.value)}  // C33: t
 const E_=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const askWords=s=>E_(s).replace(/`([^`]+)`/g,'<code>$1</code>');  // `code` as code
 function needD(n){const ask=n.ask||n.title||n.what||'';
-  if(!n.detail&&n.label==='DECIDE'){const q=n.ask_short||ask;return{said:'Choose',title:n.title||n.id,where:'',summary:q,question:q,lead:q===ask?[]:[ask],steps:[],expect:[],notes:[],shots:[]}}
+  if(!n.detail&&n.label==='DECIDE')return{said:'Choose',title:n.title||n.id,where:'',summary:ask,question:ask,lead:[],steps:[],expect:[],notes:[],shots:[]};
   return n.detail||{said:'Needs you',title:n.title||n.id,where:'',summary:n.ask_short||ask,lead:[],steps:[ask],expect:[],notes:[],shots:[]}}
 const needLab=n=>{const d=needD(n);return d.said+(d.where?` · ${d.where}`:'')};
 /* B223b: a DECIDE's heading is its question, with the task's title small under it ('' when it has none to add); the rest have their title */
