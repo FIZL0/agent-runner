@@ -14,7 +14,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-resume]')){const n=x.dataset.resume;outbox('resume_chat',{chat:n},{res:n,say:`Resume ${threadTitle(n)}`});return}
   if(q('#sheetscrim')||q('[data-closesheet]')){closeSheet();return}
   if(q('.rowacts'))S.rowOpen='';  // F187: its own handler goes on
-  if(q('[data-slimbox]')){feedSlim(false);const t=document.querySelector('[data-in]');if(t&&(!TOUCH()||!e.detail))t.focus({preventScroll:true});return}  // B192: no keyboard on a phone yet: it would resize the session
+  if(q('[data-slimbox]')){feedSlim(false);const t=document.querySelector('[data-in]');if(t)kbFocus(t);return}  // B218b: in this very tap, as iOS opens a keyboard for no other focus
   if(x=q('[data-halt]')){const n=x.dataset.halt;act('stop_session',{session:n}).then(()=>liveLoad());return}
   if(q('[data-slashopen]')){const t=document.querySelector('[data-in]');if(t){if(!t.value.trim()){t.value='/';store.set(DRAFT_KEY(boxKey()),'/');grow(t)}kbFocus(t);t.setSelectionRange(t.value.length,t.value.length);slashShow(t)}return}
   if(x=q('[data-mode]')){closeSheet();setMode(x.dataset.mode);return}
