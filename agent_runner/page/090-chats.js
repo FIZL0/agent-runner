@@ -310,6 +310,7 @@ function feedGlide(was){
   const d=was-el.getBoundingClientRect().top;if(Math.abs(d)<1||!el.animate||calm())return;
   const css=getComputedStyle(document.documentElement), at=`0 ${d}px`, room=$('feed').style;
   const a=feedFly=el.animate([{translate:at},{translate:'0 0'}],{duration:parseFloat(css.getPropertyValue('--dur-slow')),easing:css.getPropertyValue('--ease').trim()});
+  pastGlide(d);
   el.style.translate=at;room.bottom=d>0?-d+'px':'';  // it starts below its new room, so that is not cut off yet
   const still=()=>{if(feedFly===a)el.style.translate=''};
   requestAnimationFrame(()=>requestAnimationFrame(still));  // iOS draws one frame before the animation

@@ -7,14 +7,14 @@
    (the marks), hist (their lines), L (the lines drawn), at (the screen's first line in L), pad, cell, y0 (where the
    screen's first line stands in the session), high (the content's height), y (the scroll last seen), touch, news (there are new words) */
 const HX={n:'',st:'',none:false,pages:[],before:'',since:'',cols:0,hist:[],L:[],at:0,pad:0,cell:17,y0:0,high:0,y:0,touch:false,news:false,busy:false,asked:0,late:[],lateT:0,warmT:0,newT:0,above:0,gap:false,chunks:new Map(),look:''};
-const PAST_CHUNK=40, PAST_OVER=2000, PAST_IDLE=160, PAST_WARM=300, PAST_NEW=2500, PAST_BAND=56;
+const PAST_CHUNK=40, PAST_OVER=2000, PAST_IDLE=160, PAST_WARM=700, PAST_NEW=2500, PAST_BAND=56;
 const pastUp=()=>HX.st==='up';
 /* may the history stand in for the session? Not over a menu or a question, nor one scrolled by someone else */
 const pastMay=()=>FD.shown&&FD.up&&FD.drawn&&!FD.whole&&!!FD.foot&&!FD.foot.text&&!FD.foot.bash&&!FD.jump&&!(FD.off>0)&&!(HX.n===FD.n&&HX.none);
 function pastReset(){
   for(const t of [HX.lateT,HX.warmT,HX.newT])clearTimeout(t);
   const el=$('feedpast');if(el){scrollStop(el);$('pastrows').textContent=''}
-  HX.chunks.clear();Object.assign(HX,{n:'',st:'',none:false,pages:[],before:'',since:'',cols:0,hist:[],L:[],at:0,high:0,y:0,touch:false,news:false,busy:false,asked:HX.asked+1,late:[],newT:0,above:0,gap:false});
+  HX.chunks.clear();Object.assign(HX,{n:'',st:'',none:false,pages:[],before:'',since:'',cols:0,hist:[],L:[],at:0,high:0,y:0,touch:false,news:false,busy:false,asked:HX.asked+1,late:[],lateT:0,warmT:0,newT:0,above:0,gap:false});
   pastClass();
 }
 function pastClass(){
@@ -71,7 +71,7 @@ function pastIdle(){clearTimeout(HX.lateT);HX.lateT=setTimeout(pastPut,PAST_IDLE
 function pastPut(){
   if(!HX.late.length||HX.touch||MO.scroll.has($('feedpast'))||pastPicked()){if(HX.late.length)pastIdle();return}
   const k=HX.late.length, el=$('feedpast');HX.L=[...HX.late,...HX.L];HX.at+=k;HX.late=[];
-  pastClear();pastSize();el.scrollTop=HX.y=el.scrollTop+k*HX.cell;HX.y=el.scrollTop;pastDraw();
+  const was=pastEnd();pastClear();pastSize(true);el.scrollTop+=pastEnd()-was;HX.y=el.scrollTop;pastDraw();
   if(el.scrollTop<el.clientHeight*3)pastOlder();
 }
 /* the screen's own lines, over its prompt, as the terminal draws them */
@@ -112,11 +112,15 @@ function pastDraw(){
   }
 }
 /* the content's size: scrolled to its end, the screen's first line stands where the session has it */
-function pastSize(){
+function pastSize(again){
   const el=$('feedpast'), n=HX.at, room=el.clientHeight, f=feedScreen();
-  if(f&&!FD.whole){HX.cell=f.cell;HX.y0=Math.round(FD.t)+f.el.getBoundingClientRect().top}
+  if(f&&!FD.whole){  // as its rows are laid out: a browser keeps 64ths of a pixel
+    const r=f.t.element.querySelector('.xterm-rows').children, a=r[0]&&r[0].getBoundingClientRect();
+    if(a&&r[1])HX.cell=r[1].getBoundingClientRect().top-a.top;
+    HX.y0=Math.round(FD.t)+(a||f.el.getBoundingClientRect()).top;
+  }
   const over=HX.y0-n*HX.cell, bar=FD.bar||0;
-  HX.pad=over>bar?over:bar+(((over-bar)%1)+1)%1;
+  if(!pastUp()||again)HX.pad=over>bar?over:bar+(((over-bar)%1)+1)%1;  // up, it holds what is read where it is
   HX.high=room+Math.max(0,Math.round(HX.pad-over));
   const st=$('pastrows').style, set=(k,v)=>{if(st[k]!==v)st[k]=v};
   set('paddingTop','');set('height',HX.high+'px');
@@ -161,7 +165,7 @@ function pastReady(){
   pastSize();pastToEnd();pastDraw();HX.above=FD.above;return true;
 }
 /* a little after the screen changed, so a touch finds nothing to do */
-function pastWarm(){clearTimeout(HX.warmT);HX.warmT=setTimeout(()=>{if(!HX.st&&!$('feedpast').hidden&&pastMay())pastReady()},PAST_WARM)}
+function pastWarm(){if(!HX.warmT)HX.warmT=setTimeout(()=>{HX.warmT=0;if(!HX.st&&!$('feedpast').hidden&&pastMay())pastReady()},PAST_WARM)}
 /* drawn over the session, in the state it is in */
 function pastArm(touch){
   HX.touch=!!touch;
@@ -205,9 +209,9 @@ function pastSee(){
   pastTail(HX.L.slice(0,j),s);
 }
 function pastTail(before,s){
-  const had=HX.L.length, end=!pastUp();
+  const last=l=>{const i=l.findLastIndex(x=>x.t.trim());return i<0?'':pastKey(l[i].t)}, had=last(HX.L), end=!pastUp();
   pastSet([...before,...s],before.length,true);pastSize();
-  if(end)pastToEnd();else{if(HX.L.length>had&&!HX.news)HX.news=true}
+  if(end)pastToEnd();else{if(last(HX.L)!==had)HX.news=true}
   pastDraw();pastJumpDraw();
 }
 /* more was written than one screen holds between two draws: the transcript has it */
@@ -227,12 +231,14 @@ function pastPlace(){
   else if(!FD.whole){pastSize();if(!pastUp())pastToEnd();else if(d){el.scrollTop-=d;HX.y=el.scrollTop}}
   pastJumpDraw();
 }
+/* and its lines glide with the frame (feedGlide) */
+function pastGlide(d){if(HX.st)moAnim($('pastterm'),[{translate:`0 ${d}px`},{translate:'0 0'}],{ease:'--ease',dur:'--dur-slow'})}
 /* the button back to the live session: it floats over a strip of its own just above the box, so it covers no line */
 function pastJumpDraw(){
   const j=$('pastjump');if(!j)return;
   const on=pastUp()&&pastEnd()-$('feedpast').scrollTop>PAST_BAND, dock=document.querySelector('.dockwrap'), say=HX.news?'Jump to bottom: there is something new':'Jump to bottom';
   if(on&&dock){const row=slimRow();j.style.bottom=row+'px';j.style.setProperty('--up',Math.max(0,dock.offsetHeight-row)+'px')}
-  j.classList.toggle('on',on);j.classList.toggle('news',HX.news);j.inert=!on;
+  j.classList.toggle('on',on);j.classList.toggle('fresh',HX.news);j.inert=!on;
   const b=j.firstElementChild;if(b.getAttribute('aria-label')!==say){b.setAttribute('aria-label',say);b.title=say}
 }
 /* a fling under way ends */
@@ -257,6 +263,7 @@ const at=t=>{const r=el.getBoundingClientRect();return[t.clientX-r.left,t.client
 const drop=()=>{if(T1)clearTimeout(T1.hold);T1=null};
 el.addEventListener('touchstart',e=>{
   drop();HX.touch=true;
+  if(e.target!==el)for(const n of ['touchend','touchcancel'])e.target.addEventListener(n,end,{passive:false,once:true});  // a row drawn again under the finger
   if(pastUp()||e.touches.length!==1){pastArm(true);return}
   if(!pastArm(true))return;
   const t=e.touches[0], [x,y]=at(t), g=T1={x,y,x0:t.clientX,y0:t.clientY};
@@ -266,11 +273,16 @@ const end=e=>{
   const g=T1;drop();if(e.touches.length)return;
   HX.touch=false;
   if(HX.st==='armed'){if($('feedpast').scrollTop>=pastEnd()-1){HX.st='';pastClass();pastWarm()}}
-  if(g&&e.type==='touchend'){if(e.cancelable)e.preventDefault();feedClick(g.x,g.y)}
+  if(g&&!pastUp()&&e.type==='touchend'){if(e.cancelable)e.preventDefault();feedClick(g.x,g.y)}
   if(HX.late.length)pastIdle();
 };
 el.addEventListener('touchend',end,{passive:false});el.addEventListener('touchcancel',end,{passive:true});
 el.addEventListener('click',e=>{if(!HX.st&&e.detail&&e.pointerType==='mouse')feedClick(...at(e))});
 el.addEventListener('wheel',e=>{if(!HX.st&&e.deltaY<0)pastArm()},{passive:true});
-el.addEventListener('scroll',pastScrolled,{passive:true});
-$('pastjump').addEventListener('click',e=>{if(e.target.closest('button'))pastDown(true)})}
+el.addEventListener('scroll',()=>{pastScrolled();if(pastUp())drop()},{passive:true});
+/* a browser gives no click for a tap that ends a fling: the touch's end makes it, as on the slim message box (B218b1) */
+const jump=$('pastjump').firstElementChild;let J=null;
+jump.addEventListener('click',()=>pastDown(true));
+jump.addEventListener('touchstart',e=>{const t=e.touches[0];pastStop();J=e.touches.length===1?{x:t.clientX,y:t.clientY}:null},{passive:true});
+jump.addEventListener('touchend',e=>{const j=J, t=e.changedTouches[0];J=null;if(!j||!e.cancelable||Math.abs(t.clientX-j.x)>9||Math.abs(t.clientY-j.y)>9)return;e.preventDefault();pastDown(true)},{passive:false});
+jump.addEventListener('touchcancel',()=>{J=null},{passive:true})}

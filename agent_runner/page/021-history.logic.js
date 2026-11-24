@@ -1,4 +1,4 @@
-/* --- F191b: the session history as lines of text, as Claude Code's terminal draws it ------------------------------
+/* --- F191b: the session history as lines of text, as the agent CLI's terminal draws it ------------------------------
    A line is {t: its text, h: its markup}. A span is [text, class]; the classes are .hist's (page/092-history.css). */
 const PAST_BLANK={t:'',h:''};
 const pastEsc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
@@ -6,7 +6,8 @@ const pastPlain=/^[\x20-\x7e]*$/;
 /* how many cells a text takes: 2 for a wide letter */
 const pastWide=s=>pastPlain.test(s)?s.length:feedCells(s);
 /* a letter the font may lack has a box of its own cells, so the ones after it stand in their columns */
-const pastCellsHTML=s=>pastPlain.test(s)?pastEsc(s):[...feedSeg.segment(s)].map(({segment:c})=>pastPlain.test(c)?pastEsc(c):`<b style="--w:${feedCells(c)}">${pastEsc(c)}</b>`).join('');
+const pastOwn=/^[\x20-\x7e\u2500-\u257f]*$/;  // and the box lines, which the session's own font has
+const pastCellsHTML=s=>pastOwn.test(s)?pastEsc(s):[...feedSeg.segment(s)].map(({segment:c})=>pastOwn.test(c)?pastEsc(c):`<b style="--w:${feedCells(c)}">${pastEsc(c)}</b>`).join('');
 function pastLine(spans){
   const l=spans.filter(s=>s[0]);
   return{t:l.map(s=>s[0]).join('').trimEnd(),h:l.map(([t,c])=>c?`<span class="${c}">${pastCellsHTML(t)}</span>`:pastCellsHTML(t)).join('')};
@@ -195,7 +196,7 @@ function pastNote(e,cols){
   if(e.what==='event')return[false,pastFlow([[t,'']],cols,[['● ','hk']],'  ')];
   if(e.what==='hook'){const m=/^(\S+) hook error: ([\s\S]*)$/.exec(t), out=[];out.push(...pastFlow([[`Ran 1 ${(m?m[1]:'stop').toLowerCase()} hook`,'']],cols,[['● ','']],'  '));
     pastUnder([[`${m?m[1]:'Stop'} hook reported a problem`,'hw']],cols,out);out.push(...pastFlow([[m?m[2]:t,'hm']],cols,'     ','     '));return[false,out]}
-  if(e.what==='interrupted'){const s='  ⎿  Interrupted · What should Claude do instead?';return[true,[pastLine([[s.length>cols?s.slice(0,cols-1)+'…':s,'hm']])]]}
+  if(e.what==='interrupted')return[true,[pastLine([['  ⎿  Interrupted','hm']])]];
   const out=[];pastUnder([[t,e.what==='error'?'hr':'']],cols,out);
   return[true,out];
 }

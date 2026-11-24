@@ -5,7 +5,7 @@
 .feedpast.up{pointer-events:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 .feedpast.up:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 @media (pointer:coarse){.feedpast{pointer-events:auto}}
-#pastterm{position:static;padding:0;cursor:text} #pastrows{position:relative;overflow:hidden}
+#pastterm{position:static;padding:0;cursor:text} .feedpast:not(.up) #pastterm{pointer-events:none} #pastrows{position:relative;overflow:hidden}
 .hchunk{position:absolute;left:var(--hleft,14px);right:0;margin-top:var(--hpad,0)} .hchunk>div{height:var(--hcell);line-height:var(--hcell);white-space:pre;overflow:hidden}
 .feedpast.up .hchunk *{-webkit-user-select:text;user-select:text}
 .hchunk b{display:inline-block;width:calc(var(--w)*var(--hw));font-weight:inherit;letter-spacing:0;overflow:visible}
@@ -17,4 +17,4 @@
 .pastjump{position:absolute;left:0;right:0;bottom:56px;height:56px;display:grid;place-items:center;background:var(--feed);opacity:0;visibility:hidden;pointer-events:none;translate:0 calc(-1*var(--up,0px));transition:opacity var(--dur-fast) var(--ease),visibility var(--dur-fast),translate var(--dur-bars) var(--ease)}
 .pastjump.on{opacity:1;visibility:visible} .main.slim .pastjump{translate:0 0} .main.still .pastjump{transition:none}
 .pastjump button{pointer-events:auto;position:relative;width:var(--tap);height:var(--tap);border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--fg);display:grid;place-items:center;cursor:pointer}
-.pastjump svg{width:18px;height:18px} .pastjump .bdot{display:none} .pastjump.news .bdot{display:block;position:absolute;top:2px;right:2px}
+.pastjump svg{width:18px;height:18px} .pastjump .bdot{display:none} .pastjump.fresh .bdot{display:block;position:absolute;top:2px;right:2px}
