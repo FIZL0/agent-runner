@@ -6,6 +6,7 @@ document.addEventListener('change',e=>{
   if(t.dataset&&t.dataset.mtear!==undefined){MT.ear=t.value;render(true);return}  // B162b1
   if(ts){talkSet(ts,t.type==='checkbox'?t.checked:t.value);return}
   if(t.dataset&&t.dataset.setpart){savePart(t);return}
+  if(t.dataset&&t.dataset.setagent){pickAgent(t);return}  // F405
   if(t.dataset&&t.dataset.kinds){saveKinds(t.dataset.kinds,t.value);return}
   if(!f.startsWith('set:'))return;
   S.f[f]=t.type==='checkbox'?String(t.checked):t.value;

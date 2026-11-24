@@ -31,8 +31,43 @@ function savePart(el){
   S.f[setField(id,side)]=partSet(settingNow(k,side,true),setpart,setpart==='idle'?el.checked:Number(el.value));
   if(el.dataset.now!==undefined)saveSetting(id,side);
 }
+/* F405: the program a session runs: a pick of those found here, saved at once on its row; Other path… brings a field, kept in S.f (so a
+   refused path stays) until it is what is saved */
+const otherField=(id,side)=>`setother:${side}:${id}`;
+function agentOther(k,side){
+  const f=otherField(settingId(k),side);
+  if(f in S.f&&k['has_'+side]&&S.f[f].trim()===settingText(k[side]))delete S.f[f];
+  return f in S.f;
+}
+function agentField(k,side,onRow){
+  const id=settingId(k), now=settingNow(k,side,true), other=agentOther(k,side), p=agentPick(k,now), d=`data-id="${esc(id)}"`;
+  return `<select class="fld" data-setagent="${side}" ${d}${onRow?' data-now':''} aria-label="${esc(k.name)}, ${PLACE[side]}">${agentOptions(k,now).map(([v,l])=>`<option value="${esc(v)}" ${v===(other?AGENT_OTHER:now)?'selected':''}>${esc(l)}</option>`).join('')}</select>
+    ${other?`<input class="fld" data-f="${esc(otherField(id,side))}" value="${esc(S.f[otherField(id,side)])}" aria-label="Path of the program, ${PLACE[side]}" placeholder="Path of the program" autocomplete="off" autocapitalize="off" spellcheck="false">${onRow?`<div class="btns"><button class="btn pri" data-setsave="${side}" ${d}>${side==='device'?'Save on this device':'Save for everyone'}</button></div>`:''}`
+      :agentSays(p)?`<div class="small setpath${p.bad?' v-bad':''}">${esc(agentSays(p))}</div>`:''}`;
+}
+function pickAgent(el){
+  const {id,setagent:side}=el.dataset, k=settingOf(id), f=otherField(id,side);if(!k)return;
+  if(el.value===AGENT_OTHER){S.f[f]='';delete S.f[setField(id,side)];render(true);
+    const at=[...document.querySelectorAll('[data-f]')].find(x=>x.dataset.f===f);if(at)kbFocus(at);return}
+  delete S.f[f];S.f[setField(id,side)]=el.value;
+  if(el.dataset.now!==undefined)saveSetting(id,side);
+  render(true);
+}
+/* the providers stand beside the program, and their models are picked elsewhere */
+function providersHTML(d){
+  const ps=d&&d.providers||[];if(!ps.length)return '';
+  return `<div class="sec">Providers<span class="ln"></span></div><div class="small">Models of other providers run in the harness loop. A provider is chosen per role in [models], not here.</div>
+    ${ps.map(p=>`<div class="small setpath" data-k="prov:${esc(p.name)}"><b>${esc(p.name)}</b> · ${p.state==='unchecked'?esc(p.says):esc(LOGIN_SAYS[p.state]||p.state)}${p.cmd?`: <span class="setkey">${esc(p.cmd)}</span>`:p.state==='in'?`: ${esc(p.says)}`:''}</div>`).join('')}
+    <div class="btns"><button class="btn" data-setmodels>Show the model settings</button></div>`;
+}
+function setModels(){
+  const was=document.querySelector('[data-f="setq"]');S.f.setq='[models]';S.setChanged=false;if(was)was.value='[models]';
+  render(true);
+  const el=document.querySelector('[data-f="setq"]');if(el)el.scrollIntoView({block:'nearest'});
+}
 function settingField(k,side,onRow){
   if(hasParts(k))return partsField(k,side,onRow);
+  if(hasPicks(k))return agentField(k,side,onRow);
   const id=settingId(k), now=settingNow(k,side,true), d=`data-f="${esc(setField(id,side))}"${onRow?' data-now':''} aria-label="${esc(k.name)}, ${PLACE[side]}"`;
   if(k.type==='switch')return `<input type="checkbox" role="switch" class="sw" ${d} data-sw ${now==='true'?'checked':''}>`;
   const opts=pickOptions(k,now);
@@ -40,13 +75,13 @@ function settingField(k,side,onRow){
   if(k.type==='list'||k.type==='table'||now.length>40)return `<textarea class="fld" rows="3" ${d} placeholder="${k.type==='list'?'one per line':k.type==='table'?'{ key = value }':'not set'}">${esc(now)}</textarea>`;
   return `<input class="fld" ${k.type==='number'?'inputmode="decimal"':''} ${d} value="${esc(now)}" placeholder="not set" autocomplete="off" autocapitalize="off" spellcheck="false">`;
 }
-const onRow=k=>k.type==='switch'||hasParts(k)||!!pickOptions(k,'');
+const onRow=k=>k.type==='switch'||hasParts(k)||hasPicks(k)||!!pickOptions(k,'');
 /* what stands at the right of a folded row: its control, or its value when it is typed in the open row */
 function settingControl(k,side,readonly){
   if(readonly)return `<span class="setval">${esc(settingSays(k,settingText(k.value)))}</span>`;
   if(settingId(k)==='run.slots'){const n=settingNow(k,side,true), id=esc(settingId(k));
     return `<span class="step" role="group" aria-label="${esc(k.name)}"><button class="btn" data-setstep="-1" data-id="${id}" aria-label="Fewer" ${Number(n)<2?'disabled':''}>−</button><b>${esc(n)}</b><button class="btn" data-setstep="1" data-id="${id}" aria-label="More">+</button></span>`}
-  if(hasParts(k))return '';  // two controls stand under its words
+  if(hasParts(k)||hasPicks(k))return '';  // its controls stand under its words
   if(onRow(k))return settingField(k,side,true);
   return `<span class="setval">${esc(settingSays(k,settingNow(k,side,true)))}</span>`;
 }
@@ -57,12 +92,13 @@ function settingRow(k,o={}){
   const place=side==='device'?'device':'everyone', off=o.home&&place!==o.home, e=esc(id);
   const where=k.source==='default'?'the default':k.source==='device'?'this device':'everyone';
   return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side,o.readonly)}</div>
-    ${hasParts(k)&&!o.readonly?partsField(k,side,true):''}
+    ${hasParts(k)&&!o.readonly?partsField(k,side,true):hasPicks(k)&&!o.readonly?agentField(k,side,true):''}
     ${busy.map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
     ${overSays(k)?`<div class="small">${esc(overSays(k))}</div>`:off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
     ${open?foldIn('set:'+id,`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
       ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side)}
       <div class="btns">${onRow(k)||id==='run.slots'?'':`<button class="btn pri" data-setsave="${side}" data-id="${e}">${side==='device'?'Save on this device':'Save for everyone'}</button>`}<button class="btn" data-setmore="${e}">More…</button></div>`}`):''}
+    ${hasPicks(k)?providersHTML(S.set):''}
     ${o.reset?`<div class="btns" data-k="reset:${e}">${resetBtn(k)}</div>`:''}</div>`;
 }
 const resetBtn=k=>(k.has_device?`<button class="btn" data-setreset="device" data-id="${esc(settingId(k))}">Reset on this device</button>`:'')+(k.has_project?`<button class="btn" data-setreset="project" data-id="${esc(settingId(k))}">Reset for everyone</button>`:'');
@@ -141,7 +177,7 @@ SHEETS.setting=settingSheet;
 function saveSetting(id,side){
   const k=settingOf(id);if(!k)return;
   const f=setField(id,side), el=[...document.querySelectorAll('[data-f]')].find(e=>e.dataset.f===f);
-  const text=f in S.f&&!(el&&el.type!=='checkbox'&&el.tagName!=='SELECT')?S.f[f]:el?(el.type==='checkbox'?String(el.checked):el.value):settingNow(k,side,true);
+  const text=hasPicks(k)&&agentOther(k,side)?S.f[otherField(id,side)].trim():f in S.f&&!(el&&el.type!=='checkbox'&&el.tagName!=='SELECT')?S.f[f]:el?(el.type==='checkbox'?String(el.checked):el.value):settingNow(k,side,true);
   const r=pickOptions(k,text)?{v:pickValue(k,text)}:settingValue(k,text);if(r.err)return toast(r.err,true);
   outbox(side==='device'?'setting_device':'setting_project',{table:k.table,key:k.key,value:r.v},{set:{id,applies:k.applies},say:`Save ${k.name}: ${settingSays(k,text)}`});
 }

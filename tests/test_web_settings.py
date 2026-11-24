@@ -601,5 +601,129 @@ def test_settings_f97(tmp: Path) -> None:
              'device', 'project', 'device', False, True, False, True, True, True, True, 'opus', ''], "a row's control, its home and when it shows")
 
 
+AGENT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const set = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b));
+const S = {f: {}, ob: [], setOpen: {}, set, snap: {}}, esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const I = {chev: '', x: ''}, card = t => `<div>${t}</div>`, emptyCard = card, obCards = () => '', controlOf = () => null, foldIn = (k, t) => t, SHEETS = {};
+const document = {querySelector: () => null, querySelectorAll: () => []}, render = () => {}, toast = t => { throw new Error(t) };
+let saved = [];
+const outbox = (n, a) => saved.push([n, a.key, a.value]);
+eval(logic + slice('const settingId=', 'function resetSetting(') + `
+const k = set.tables.find(t => t.table === 'run').keys.find(x => x.key === 'agent'), row = () => settingRow(settingOf('run.agent'), {}), out = {row: row()};
+const pick = (value, side, now) => pickAgent({value, dataset: {id: 'run.agent', setagent: side, ...(now ? {now: ''} : {})}});
+pick(AGENT_OTHER, 'device', true); out.other = row(); out.asked = saved.length;
+S.f['setother:device:run.agent'] = ' /opt/wrap '; saveSetting('run.agent', 'device'); out.wrap = saved; saved = [];
+out.kept = row();
+const was = [k.has_device, k.device]; k.has_device = true; k.device = '/opt/wrap'; row(); out.left = !('setother:device:run.agent' in S.f);
+[k.has_device, k.device] = was;
+pick('claude', 'device', true); out.picked = saved; saved = []; S.f = {};
+pick('claude', 'project', false); out.sheet = saved.length; saveSetting('run.agent', 'project'); out.sheetSaved = saved; S.f = {};
+setModels(); out.models = [...settingsHTML().matchAll(/data-k="set:([a-z.]+)/g)].map(m => m[1]);
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_agent_picker_f405(tmp: Path) -> None:
+    """F405: [run] agent is picked from the Claude Code programs found here, a kept value that is wrong stays in the
+    list; the providers stand beside it with their logins, and no secret."""
+    if os.name == 'nt':
+        return  # the fakes are scripts on PATH
+    from agent_runner import agents_here as A
+    repo = fake_repo(tmp)
+    local = repo / 'runner.local.toml'
+
+    def program(d: str, name: str, body: str) -> Path:
+        p = tmp / d / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(f'#!/bin/sh\n{body}\n', encoding='utf-8')
+        p.chmod(0o755)
+        return p
+    one = program('a', 'claude', 'echo "2.1.330 (Claude Code)"')
+    two = program('b', 'claude', 'echo "2.0.1 (Claude Code)"')
+    link = tmp / 'c' / 'claude'
+    link.parent.mkdir()
+    link.symlink_to(one)
+    wrap = program('w', 'my-claude', f'echo ran >> {tmp}/ran')
+    pi = tmp / 'pi'
+    pi.mkdir()
+    (pi / 'auth.json').write_text(json.dumps({'github-copilot': {'type': 'oauth', 'refresh': 'SECRET-R', 'access': 'SECRET-A'}}), encoding='utf-8')
+    path = os.pathsep.join([str(one.parent), str(link.parent), str(two.parent), os.environ['PATH']])
+    real = shutil.which
+    only = lambda cmd, mode=os.F_OK | os.X_OK, path=None: (lambda p: p if not p or cmd != 'claude' or p.startswith(str(tmp)) else None)(real(cmd, mode, path))  # noqa: E731
+    env = {'PATH': path, 'PI_CODING_AGENT_DIR': str(pi), 'GEMINI_API_KEY': 'SECRET-G'}
+    env = mock.patch.dict(os.environ, env)
+    which, places = mock.patch.object(shutil, 'which', only), mock.patch.object(A, 'PLACES', (str(one.parent),))
+
+    def settings() -> tuple[dict, dict]:
+        d = U.settings()
+        return next(k for t in d['tables'] if t['table'] == 'run' for k in t['keys'] if k['key'] == 'agent'), d
+
+    def draw(d: dict) -> dict:
+        (tmp / 'set.json').write_text(json.dumps(d), encoding='utf-8')
+        (tmp / 'agent.js').write_text(AGENT_DRIVER, encoding='utf-8')
+        r = subprocess.run(['node', str(tmp / 'agent.js'), str(W.PAGE), str(tmp / 'set.json')], capture_output=True, text=True, timeout=60)
+        check(r.returncode == 0, 'node draws the row and picks', r.stderr[-1500:])
+        return json.loads(r.stdout) if r.returncode == 0 else {}
+    node = bool(shutil.which('node'))
+    with env, which, places:
+        k, d = settings()
+        eq([(p['value'], p['path'], p['version'], p['found']) for p in k['picks']],
+           [('claude', str(one), '2.1.330', True), (str(two), str(two), '2.0.1', True)],
+           'found: the one a bare claude starts, then each other once, with path and version')
+        by = {p['name']: p for p in d['providers']}
+        eq({n: p['state'] for n, p in by.items()},
+           {'claude': 'unchecked', 'copilot': 'in', 'codex': 'out', 'gemini': 'in', 'ollama': 'none'}, 'each provider and its login')
+        eq((by['codex']['cmd'], by['copilot']['cmd']), (f'{CF.RUNNER} login codex', ''), 'with no login, the command')
+        check('GEMINI_API_KEY' in by['gemini']['says'] and 'OAuth' in by['copilot']['says'], 'where a login is kept', by)
+        check('SECRET' not in json.dumps(d), 'never a secret')
+        if node:
+            o = draw(d)
+            check(f'<option value="claude" selected>claude 2.1.330 · {one}</option>' in o['row'], 'the picker, on its row', o['row'])
+            check('Other path…' in o['row'] and 'not found' not in o['row'] and 'setother' not in o['row'], 'found: not marked, no field')
+            for part in (f'At {one}, version 2.1.330', 'Logged in: OAuth', f'Not logged in: <span class="setkey">{CF.RUNNER} login codex</span>',
+                         'No login needed', 'chosen per role in [models], not here', 'data-setmodels'):
+                check(part in o['row'], f'the row says {part!r}', o['row'])
+            check('data-f="setother:device:run.agent"' in o['other'] and 'data-setsave="device"' in o['other'], 'Other path: a field and Save')
+            eq((o['asked'], o['wrap']), (0, [['setting_device', 'agent', '/opt/wrap']]), 'saved by Save only, as typed')
+            check('value=" /opt/wrap "' in o['kept'], 'what is typed stays until it is what is kept')
+            eq(o['left'], True, 'then the field goes')
+            eq(o['picked'], [['setting_device', 'agent', 'claude']], 'a pick saves at once')
+            eq((o['sheet'], o['sheetSaved']), (0, [['setting_project', 'agent', 'claude']]), "in More… it waits for Save")
+            check({'models.control', 'models.code', 'models.kinds', 'models.providers'} <= set(o['models'])
+                  and all(m.startswith('models.') for m in o['models']), 'the link shows the [models] settings', o['models'])
+        for kept, bad in (('nosuchagent', 'is not on this machine'), ('pi', 'was removed')):
+            local.write_text(f'[run]\nagent = "{kept}"\n', encoding='utf-8')
+            k, d = settings()
+            p = k['picks'][-1]
+            check(p['value'] == kept and not p['found'] and bad in p['bad'], f'not found: {kept} stays in the list, marked', p)
+            eq(len(k['picks']), 3, 'beside those found')
+            if node:
+                o = draw(d)
+                check(f'<option value="{kept}" selected>{kept} (not found)</option>' in o['row'] and 'v-bad' in o['row'], 'and on the page', o['row'])
+        local.write_text('[run]\nagent = 5\n', encoding='utf-8')
+        if node:
+            check('<option value="5" selected>5 (not found)' in draw(settings()[1])['row'], 'a value that is no text is marked too')
+        r = U.setting_device('run', 'agent', str(wrap))
+        check(r['ok'], 'another path: a wrapper that is there is saved', r)
+        k, d = settings()
+        eq([(p['value'], p['found'], p['bad']) for p in k['picks'][2:]], [(str(wrap), True, '')], 'and is in the list, not marked')
+        check(not (tmp / 'ran').exists(), 'a wrapper is not started to ask its version')
+        r = U.setting_device('run', 'agent', str(tmp / 'nothing'))
+        check(not r['ok'] and 'no such file' in r['out'], 'a path that is not there is refused', r)
+        eq(settings()[0]['device'], str(wrap), 'and nothing is written')
+        local.write_text('[models.providers.mine]\nkind = "openai"\nurl = "https://x.example"\nkey_env = "MINE_KEY"\n', encoding='utf-8')
+        mine = lambda: next(p for p in settings()[1]['providers'] if p['name'] == 'mine')  # noqa: E731
+        eq((mine()['state'], mine()['cmd']), ('out', f'{CF.RUNNER} login mine'), 'a provider of its own, with no login')
+        with mock.patch.dict(os.environ, {'MINE_KEY': 'SECRET-M'}):
+            eq((mine()['state'], mine()['says'], mine()['cmd']), ('in', 'env MINE_KEY', ''), 'and with one')
+        local.unlink()
+        with mock.patch.object(shutil, 'which', lambda cmd, mode=1, path=None: None if cmd == 'claude' else real(cmd, mode, path)):
+            k, d = settings()
+            eq([(p['value'], p['found']) for p in k['picks']], [('claude', False)], 'none found: the default is marked')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97)]))
+    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405)]))
