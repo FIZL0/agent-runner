@@ -22,5 +22,11 @@ function silentWav(n=800){
   v.setUint32(24,8000,true);v.setUint32(28,8000,true);v.setUint16(32,1,true);v.setUint16(34,8,true);s(36,'data');v.setUint32(40,n,true);
   return b;
 }
+/* B162b1: what the page did before a press, for the mic report: the time since its load, the sounds it played (clips of run
+   speech, the browser's own voice, silent ones that unlock or test), and the listens that ended with words and with none */
+const PAST={at:Date.now(),last:0,clips:0,voice:0,silent:0,words:0,none:0};
+function pastSound(kind){PAST[kind]++;PAST.last=Date.now()}
+const micPast=()=>{const s=t=>Math.round((Date.now()-t)/1000)+' s';
+  return `page open ${s(PAST.at)}; sounds started before: ${PAST.clips} clips, ${PAST.voice} of the browser's own voice, ${PAST.silent} silent${PAST.last?`, the last ${s(PAST.last)} ago`:''}; listens before: ${PAST.words} with words, ${PAST.none} without`};
 /* B134: where a feed ends at a send, so what comes after it is found in a later feed even once the feed is capped and
    its indexes move: the last entry's own id, else (a transcript without ids) all its entries */
