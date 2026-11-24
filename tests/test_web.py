@@ -1439,7 +1439,7 @@ const S = {view: 'talk', thread: null}, document = {hidden: false};
 const el = {}, $ = k => el[k] = el[k] || {classList: {toggle() {}}, setAttribute() {}, removeAttribute() {}, textContent: '', className: ''};
 const setHTML = () => true, talkTyping = () => false, talkDock = () => (talkDraw(), $('talkline').textContent);
 let TS = {read: true, voice: '', mic: 'tap', auto: false};
-eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpeech(') + grab('function talkDraw(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function earEnd(') + grab('function micStop(') + `
+eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpeech(') + grab('function talkDraw(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function micSent(') + grab('function earEnd(') + grab('function micStop(') + `
   Date.now = () => 1000;
   listen();
   const before = rec.started;
@@ -1447,7 +1447,7 @@ eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpee
   const said = talkDock();
   listen();
   const cleared = talkDock();
-  rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hello'}], {isFinal: true})]}); rec.onend();
+  rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hello'}], {isFinal: true})]}); listen(); rec.onend();
   TK.state = 'speaking'; rec = null; spoke = 0;
   listen();
   const stopped = {state: TK.state, before: rec.started, cancelled: spoke};
@@ -3569,7 +3569,7 @@ const feedOf = n => S.feeds[n].entries, talkName = () => 'c5', micWhy = () => ''
 const talkDraw = () => {}, talkSend = t => sent.push(t), talkTyping = () => false, voices = () => speechSynthesis.getVoices();
 eval(logic + `
 let TS = talkSetParse('');
-` + grab('function speak(') + line('function hush(') + grab('function playReply(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function earEnd(') + grab('function micStop(')
+` + grab('function speak(') + line('function hush(') + grab('function playReply(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function micSent(') + grab('function earEnd(') + grab('function micStop(')
   + page.slice(page.indexOf('/* F124: hold to talk'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {defaults: TS, parsed: talkSetParse('{"read":false,"voice":"Ava","mic":"hold","auto":true}'), junk: talkSetParse('nope')};
 const mic = {target: {closest: s => s === '[data-mic]' ? {} : null}, button: 0};
@@ -3831,7 +3831,7 @@ let micEl = null;  // a redraw of the mic's markup makes a new element
 eval(logic + `
 function render() { if (setHTML($('talkmic'), talkMic())) els.mic = micEl = {...el(), setPointerCapture(id) { this.cap = id }}; talkDraw() }
 let TS = talkSetParse('');
-` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'earEnd', 'micStop', 'async function micCopy'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
+` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'earEnd', 'micStop', 'async function micCopy'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
   + page.slice(page.indexOf('/* B162: the mic report\'s pointer'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {}; render();
 // two aborts: one retry by itself, then the words
@@ -3839,7 +3839,7 @@ listen(); now += 300; last().fail('aborted'); out.retryWaits = [starts, TK.state
 tick(250); out.retried = [starts, TK.state]; now += 400; last().fail('aborted'); tick(250);
 out.twice = [starts, TK.state, TK.note];
 // an abort, then words
-listen(); last().fail('aborted'); tick(250); last().say('hello'); last().end(); out.sent = sent.splice(0);
+listen(); last().fail('aborted'); tick(250); last().say('hello'); listen(); last().end(); out.sent = sent.splice(0);
 // words, then an abort: they go out, no retry; no retry for a stop by hand, or away from Talk
 starts = 0; listen(); last().say('kept'); last().fail('aborted'); tick(250); out.kept = [starts, sent.splice(0)];
 starts = 0; listen(); listen(); last().fail('aborted'); tick(250); out.byHand = [starts, TK.note];
@@ -3870,7 +3870,7 @@ h.say('still here'); fire('touchend', at); out.lifted = [TK.hold, h.stopped]; h.
 fire('pointerdown', at); last().say('first'); const p1 = last(); fire('pointerup', at); fire('pointerdown', at);
 p1.end(); out.more = [TK.state, sent.length, last() !== p1]; last().say('second'); fire('pointerup', at); last().end(); out.joined = sent.splice(0);
 // a touch the system took: the mic goes on by itself
-fire('pointerdown', at); fire('pointercancel', {...at, pointerType: 'touch'}); fire('touchcancel', at); out.taken =[TK.hold, !!last().stopped]; last().say('done'); last().end(); out.takenSent = sent.splice(0);
+fire('pointerdown', at); fire('pointercancel', {...at, pointerType: 'touch'}); fire('touchcancel', at); out.taken =[TK.hold, !!last().stopped]; last().say('done'); last().end(); tick(2000); last().end(); out.takenSent = sent.splice(0);
 fire('pointerdown', at); fire('pointercancel', {...at, pointerType: 'pen'}); out.pen = [TK.hold, !!last().stopped]; last().end();
 // an abort while held is retried, one once let go is not
 starts = 0; fire('pointerdown', at); last().fail('aborted'); tick(250); out.holdRetry = starts; now += 100; last().fail('aborted'); out.holdNote = TK.note; fire('pointerup', at);
@@ -3888,7 +3888,7 @@ fire('pointerdown', when); fire('touchend', {...at, targetTouches: [1]}); out.tw
 // a stop whose end never comes still ends the listen
 TS.mic = 'tap'; TK.hold = false; listen(); last().onaudiostart(); const z = last(); listen(); tick(5000); tick(1500); tick(1500); out.noEnd = [TK.state, !!z.aborted, TK.report && TK.report.ev.some(x => / no end came/.test(x))]; live--;
 // words heard: counted, never in the trail
-listen(); last().say('secret'); out.noWords = [TK.trail.ev.join(' '), TK.trail === TK.report]; last().end(); out.afterWords = [TK.report, els.micrep.hidden];
+listen(); last().say('secret'); out.noWords = [TK.trail.ev.join(' '), TK.trail === TK.report]; listen(); last().end(); out.afterWords = [TK.report, els.micrep.hidden];
 // a hold is a hold on every device, iOS too: a press listens, the release sends, the click after it does nothing
 const q = s => s === '[data-mic]', e = {detail: 1}, click = new Function('q', 'e', 'TS', 'TK', 'micLog', 'listen', line("  if(q('[data-mic]'))"));
 for (const [k, ua, touch] of [['iphone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)', 5], ['ipad', 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', 5], ['mac', 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', 0], ['android', 'Mozilla/5.0 (Linux; Android 16)', 5]]) {
@@ -3913,6 +3913,44 @@ for (const err of ['not-allowed', 'service-not-allowed', 'audio-capture']) { sta
 starts = 0; fire('pointerdown', when); last().say('kept'); now += 2000; last().end(); last().fail('audio-capture'); tick(250); out.realWords = [starts, TK.state, sent.splice(0)]; fire('pointerup', when);
 // a listen that is not held still ends at a silence
 starts = 0; listen(); now += 5000; last().fail('no-speech'); tick(250); out.notHeld = [starts, TK.state];
+// B216: the end of what was said. hears(): a whole results list, each [words, final]
+const hears = (...l) => last().onresult({resultIndex: l.length - 1, results: l.map(([transcript, isFinal]) => Object.assign([{transcript}], {isFinal}))});
+const ended = () => TK.trail.ev[TK.trail.ev.length - 1].replace(/^\\d+ ms /, '');
+const cut = out.b216 = {}; sent.length = 0; most = live = 0; TK.hold = false;
+// final, then interim, then the end: by a stop in Tap, by a release; two interims, an empty final
+TS.mic = 'tap'; listen(); hears(['so do a', true], [' full one', false]); cut.line = says(); listen(); last().end(); cut.interim = [sent.splice(0), ended()];
+TS.mic = 'hold'; fire('pointerdown', when); hears(['so do a', true], ['full one', false]); fire('pointerup', when); last().fail('aborted'); cut.release = [sent.splice(0), TK.trail.ev.some(x => x.endsWith('sent 16 letters, ended by pointerup'))];
+fire('pointerdown', when); hears(['so do', false], [' a full', false]); hears(['', true], [' a full', false]); fire('pointerup', when); last().end(); cut.blank = sent.splice(0);
+// words after the release, before its end
+fire('pointerdown', when); hears(['so do', false]); fire('pointerup', when); hears(['so do a full', true]); last().end(); cut.late = sent.splice(0);
+// held: after words the next one starts at once, however short, with nothing lost between
+starts = 0; fire('pointerdown', when); hears(['so', true], [' do', false]); now += 300; last().end(); cut.gap = [starts, sent.length]; hears(['a full', false]); fire('pointerup', when); last().end(); cut.gapSent = sent.splice(0);
+// a recognizer that cannot be made again: the words so far go out
+fire('pointerdown', when); hears(['kept', false]); { const S0 = SR; SR = class { constructor() { throw new Error('none') } }; last().end(); SR = S0 } cut.none = [sent.splice(0), TK.state, ended()]; fire('pointerup', when);
+// Tap: a pause does not send; more words, then a silence, and it does
+TS.mic = 'tap'; starts = 0; listen(); hears(['so do a', true]); now += 3000; last().end(); cut.pause = [starts, sent.length, TK.state, says()];
+now += 1500; hears(['full one', false]); tick(2000); cut.goesOn = [sent.length, !!last().stopped]; hears(['full one', true]); last().end(); cut.again = [starts, sent.length];
+now += 2000; tick(2000); cut.silence = !!last().stopped; last().end(); cut.pauseSent = [sent.splice(0), TK.state, ended(), starts];
+// speech begun in the wait makes it longer, once
+starts = 0; listen(); hears(['so', true]); last().end(); now += 1500; last().onspeechstart(); now += 1000; last().fail('no-speech'); cut.speech = [starts, sent.length];
+last().onspeechstart(); now += 1100; last().fail('no-speech'); cut.speechEnd = [starts, sent.splice(0), ended()];
+// results that come back empty unsay nothing
+listen(); hears(['so do', false]); hears(['', false]); last().onresult({resultIndex: 0, results: []}); listen(); last().end(); cut.empty = sent.splice(0);
+// the wait's recognizer ends early, as iOS does: on again until the wait is over, and no longer
+starts = 0; listen(); hears(['so', true]); now += 3000; last().end(); now += 300; last().fail('aborted', 'No speech detected'); tick(250); cut.early = [starts, sent.length];
+now += 400; last().fail('aborted'); tick(250); cut.failed = [starts, sent.length]; now += 1300; last().end(); cut.over = [starts, sent.splice(0)];
+// the wait is over while no recognizer runs
+listen(); hears(['so', true]); last().end(); now += 900; last().fail('aborted'); tick(2000); cut.between = [sent.splice(0), TK.state];
+// a tap sends at once: in the first listen, and in the wait
+listen(); hears(['so', true]); starts = 0; listen(); last().end(); cut.tap = [starts, sent.splice(0)];
+listen(); hears(['so', true]); last().end(); listen(); last().end(); cut.tapWait = [sent.splice(0), ended()]; tick(2000); cut.once = sent.length;
+// auto listen sends at a silence; a real failure in the wait sends too; left Talk: no wait
+starts = 0; TK.again = true; listen(); hears(['yes', true]); last().end(); cut.auto = [starts, sent.splice(0), ended()];
+listen(); hears(['so', true]); last().end(); last().fail('network'); cut.network = [sent.splice(0), ended()];
+starts = 0; listen(); hears(['so', true]); S.view = 'home'; last().end(); S.view = 'talk'; cut.left = [starts, sent.splice(0)];
+// the report: growing results are one line, the line that says what ended it is in a full one too, and no words are
+listen(); for (const w of ['s', 'se', 'sec', 'secret']) hears([w, false]); cut.grow = TK.trail.ev.filter(x => /result/.test(x)).length;
+for (let i = 0; i < 130; i++) micLog('x'); listen(); last().end(); cut.full = [ended(), TK.trail.ev.join().includes('sec')]; sent.length = 0; cut.most = most; TS.mic = 'hold';
 navigator.userAgent = 'UA iPhone'; TK.hold = false; TK.report = TK.trail; let holdReport = '';
 navigator.clipboard = {writeText: async t => { holdReport = t }}; micCopy().then(() => { out.holdReport = holdReport });
 TS.mic = 'tap'; TK.state = ''; render();
@@ -3986,6 +4024,23 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(got.get('real'), [[1, '', 0]] * 3, 'permission refused or no mic ends it')
     eq(got.get('realWords'), [2, '', ['kept']], 'and the words so far go out')
     eq(got.get('notHeld'), [1, ''], 'a listen not held ends at a silence')
+    b = got.get('b216') or {}
+    eq(b.get('line'), 'so do a full one', 'B216: shown as heard')
+    eq(b.get('interim'), [['so do a full one'], 'sent 16 letters, ended by a tap'], 'is sent, final or not')
+    eq(b.get('release'), [['so do a full one'], True], 'let go, with an abort, the same')
+    eq((b.get('blank'), b.get('late')), (['so do a full'], ['so do a full']), 'an empty final unsays nothing; words after the release count')
+    eq((b.get('gap'), b.get('gapSent')), ([2, 0], ['so do a full']), 'held: on again at once after words')
+    eq(b.get('none'), [['kept'], '', 'sent 4 letters, ended by no recognizer'], 'no recognizer: the words so far go out')
+    eq((b.get('pause'), b.get('goesOn'), b.get('again')), ([2, 0, 'listening', 'so do a'], [0, False], [3, 0]), 'Tap: a pause listens on')
+    eq((b.get('silence'), b.get('pauseSent')), (True, [['so do a full one'], '', 'sent 16 letters, ended by a pause', 3]), 'and a silence of 2 s sends one message')
+    eq((b.get('speech'), b.get('speechEnd')), ([3, 0], [3, ['so'], 'sent 2 letters, ended by error no-speech']), 'speech begun in the wait makes it longer, once')
+    eq(b.get('empty'), ['so do'], 'empty results unsay nothing')
+    eq((b.get('early'), b.get('failed'), b.get('over')), ([3, 0], [4, 0], [4, ['so']]), 'a recognizer that ends early does not end the wait, nor outlast it')
+    eq(b.get('between'), [['so'], ''], 'nor does one that is about to start')
+    eq((b.get('tap'), b.get('tapWait'), b.get('once')), ([0, ['so']], [['so'], 'sent 2 letters, ended by a tap'], 0), 'a tap sends at once, and once')
+    eq(b.get('auto'), [1, ['yes'], 'sent 3 letters, ended by the recognizer'], 'auto listen ends at a silence')
+    eq((b.get('network'), b.get('left')), ([['so'], 'sent 2 letters, ended by error network'], [1, ['so']]), 'a failure, and Talk left, send')
+    eq((b.get('grow'), b.get('full'), b.get('most')), (1, ['sent 6 letters, ended by a tap', False], 1), 'the report has its end, and no words')
     check('mic hold, version' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
     eq(got.get('cap'), 'and 10 more', 'the report has an end')
     eq(got.get('copied')[:2] + got.get('copied')[3:4], ['Mic report', 'the note', 'UA'], 'the copy names the note and the browser')
@@ -4125,7 +4180,7 @@ const lands = t => { if (!TK.wait) awaitReply(); S.feeds.c5.entries = [{kind: 'y
 const press = k => { const b = {}, e = {target: {closest: s => s === k ? b : null}, button: 0, pointerId: 1, pointerType: 'touch', detail: 1}; return e };
 eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run speech:'), page.indexOf('const talkTyping='))
  + line('const talkTyping=') + line('function setHTML(') + line('const MIC=')
- + ['micWhenFree', 'micFree', 'talkDraw', 'talkHear', 'speak', 'listen', 'hear', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('') + line('function hush(')
+ + ['micWhenFree', 'micFree', 'talkDraw', 'talkHear', 'speak', 'listen', 'hear', 'micSent', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('') + line('function hush(')
  + page.slice(page.indexOf("document.addEventListener('visibilitychange',()=>{if(TK.ear)"), page.indexOf('/* F124: a swipe right anywhere'))
  + `const click = k => { const e = press(k), q = s => e.target.closest(s); ` + ['data-mic', 'data-spk'].map(k => line("  if(q('[" + k + "]'))").trim()).map(x => '(() => {' + x.replace(/\/\/ F93.*/, '') + '})();').join('') + ` };
 const shows = () => { talkDraw(); return [els.mic.innerHTML, els.mic['aria-label'], els.spk.innerHTML, els.spk['aria-label'], els.talkline.textContent, els.spkbox.hidden] };
@@ -4143,7 +4198,7 @@ const over = () => { if (TK.ear) { mic().end() } hush(); TK.wait = null; TK.stat
     click('[data-spk]'); o.off = TS.read; click('[data-spk]');
     // a press on the mic cuts it and listens, the voice's cancel only after the start
     over(); lands('One here. Two.'); await begin(); order.length = 0; click('[data-mic]'); o.tap = [TK.state, quiet(), kind === 'run' || order.join()]; ss.speaking = false;
-    mic().say('wait'); mic().end(); await settle(); await look(3); o.cut = [sent.slice(), TK.state, plays.length + us.length];
+    mic().say('wait'); click('[data-mic]'); mic().end(); await settle(); await look(3); o.cut = [sent.slice(), TK.state, plays.length + us.length];
     // held: the same; a reply that lands meanwhile waits for the end, and two play in order
     over(); TS.mic = 'hold'; lands('One here. Two.'); await begin(); order.length = 0; fire('pointerdown', press('[data-mic]')); o.hold = [TK.state, quiet(), order[0]]; ss.speaking = false;
     const base = plays.length + us.length; lands('Second reply.'); lands('Third reply.'); await settle(); await look(2); o.during = [plays.length + us.length - base, TK.state, TK.later.length];
