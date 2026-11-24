@@ -26,6 +26,11 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
 3. **Finish.** The session ends with `agent-runner done <ID> "msg"`. That runs the test gate, ticks the task
    (`[x]`, and the line moves to DONE.md), commits, and pushes `task/<ID>`. If the gate fails, nothing is
    ticked or committed. A session that's stuck runs `done --blocked "why"` instead.
+   Failed gates are counted per task (a pass or a block resets the count), each with a hash of
+   the worktree's content (uncommitted and untracked files too, not ignored ones). After three, `done` runs one more gate only if
+   that changed since the last failure; unchanged, it refuses without running, and a changed one that fails
+   refuses until the task is blocked. Until that gate has run, `--blocked "CONFIRM: …"` is refused, since a
+   person cannot confirm a gate, and the refusals ask for the failing test's or check's name in the block.
 4. **End the session.** The session goes quiet at its prompt. The Stop hook's detached timer sees no new
    transcript entries for 5 s once `done` has succeeded, or 30 seconds when it stopped without it, and ends it. If a human typed in it (`attach sN`), or a usage
    limit is being waited out, the timer leaves the session alone. A session still running a background

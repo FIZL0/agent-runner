@@ -37,7 +37,8 @@ it>"`, then stop. If all it waits on is another task landing (its code is not on
 `--after <ID>[,<ID>]`, and the run reopens it the moment those merge. If it waits on a person, start WHY with \
 what you ask of them: `CONFIRM: <what to check by hand>`, `DECIDE: <the question or choice>` or `BLOCKED: \
 <the access, login or fix only a person can make>`, then one short line, and the link if there is one; it \
-lists under Needs you until they answer. Before a `BLOCKED:` on access, check what this machine already has \
+lists under Needs you until they answer. `CONFIRM:` is only for a check by hand you cannot do yourself, never \
+to have a finished task marked done: run `done` without `--blocked` for that. Before a `BLOCKED:` on access, check what this machine already has \
 and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `ssh -T`, and \
 ~/.claude/ACCESS.md if it exists; the `BLOCKED:` line then names the exact command that failed and its error \
 (e.g. `wrangler OAuth login cannot change Workers Builds settings: Authentication error`).

@@ -503,11 +503,12 @@ def test_done(repo: Path, tmp: Path):
         r = run(d, 'done', 'Z9', 'Z9: loops')
     check(r.returncode == 1 and 'refuses a fourth' in r.stderr, 'the third failed gate says a fourth is refused',
           r.stdout + r.stderr)
-    (d / 'BROKEN').unlink()
     r = run(d, 'done', 'Z9', 'Z9: loops')
-    check(r.returncode == 1 and 'a fourth is not run' in r.stderr and 'gate passed' not in r.stdout,
-          'and the fourth refuses without running the gate (which would pass now)', r.stdout + r.stderr)
+    check(r.returncode == 1 and 'a fourth is not run' in r.stderr and 'nothing ticked, nothing committed' not in r.stderr,
+          'and the fourth on unchanged files refuses without running the gate', r.stdout + r.stderr)
+    has(r.stderr, r'name of the failing test', "asking for the failure's name in the block")
     eq(git(d, 'rev-list', '--count', 'main..HEAD'), '0', 'committing nothing')
+    (d / 'BROKEN').unlink()
     with open(d / 'CHANGELOG.md', 'a') as f:
         f.write('- T5: the logger\n')
     output_env = {**os.environ, 'PYTHONIOENCODING': 'cp1252'}
@@ -532,6 +533,85 @@ def test_done(repo: Path, tmp: Path):
     git(repo, 'commit', '-qam', 'T4: blocked')
     has((repo / 'plan/TODO.md').read_text(), r'\*\*T4\*\*.*BLOCKED: \(after T5\)',
         'block records only the id still open: T1 was ticked first')
+
+
+def test_gate_limit_b186(tmp: Path):
+    print("B186: at done's gate limit, changed content gets one more gate and a CONFIRM block waits for it")
+    (tmp / 'b186').mkdir()
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_HOME': str(tmp / 'b186' / 'home')}):
+        gate_limit_b186(tmp)
+
+
+def gate_limit_b186(tmp: Path):
+    from agent_runner import done as D
+    repo = make_repo(tmp / 'b186')
+    ran = tmp / 'b186-ran'
+    (repo / 'check.py').write_text(f'import os, sys; open({str(ran)!r}, "a").write("ran\\n"); '
+                                   'sys.exit(os.path.exists("BROKEN"))\n', encoding='utf-8')
+    git(repo, 'commit', '-qam', 'a gate that counts its runs')
+    git(repo, 'push', '-q', 'origin', 'main')
+    R.init(repo)
+    times = lambda: ran.read_text().count('ran') if ran.exists() else 0  # noqa: E731
+
+    def at_limit(tid: str) -> Path:
+        d = task_branch(repo, 1, tid)
+        (d / 'BROKEN').write_text('', encoding='utf-8')
+        (d / 'work.py').write_text(f'# {tid}\n', encoding='utf-8')
+        for _ in range(3):
+            run(d, 'done', tid, f'{tid}: work')
+        eq(D.fails(d, tid), 3, f'{tid} is at the limit')
+        return d
+
+    d = at_limit('T2')
+    n = times()
+    log = D.fails_file(d, 'T2').read_text().splitlines()
+    check(len(log) == 3 and all(re.fullmatch(r'\d [0-9a-f]{40,}', l) for l in log), 'a hash with each failure', log)
+    before = D.content_hash(d)
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'T2 (wip)')
+    eq(D.content_hash(d), before, 'a commit of the same files is not a change')
+    r = run(d, 'done', 'T2', 'T2: work')
+    check(r.returncode == 1 and times() == n, 'so it is refused without a gate', r.stdout + r.stderr)
+    r = run(d, 'done', 'T2', 'T2: work', '--blocked', 'CONFIRM: mark it done')
+    check(r.returncode == 1 and 'without --blocked' in r.stderr and times() == n,
+          'a CONFIRM block is refused before that gate', r.stdout + r.stderr)
+    (d / 'BROKEN').unlink()
+    (d / 'new.py').write_text('# 1\n', encoding='utf-8')
+    untracked = D.content_hash(d)
+    (d / 'new.py').write_text('# 2\n', encoding='utf-8')
+    check(untracked not in (before, D.content_hash(d)), 'an untracked file counts as content')
+    r = run(d, 'done', 'T2', 'T2: work', '--blocked', 'CONFIRM: mark it done')
+    check(r.returncode == 1 and 'without --blocked' in r.stderr, 'and on changed content too', r.stdout + r.stderr)
+    check('- [ ] **T2**' in (d / 'plan/TODO.md').read_text(), 'T2 is still open')
+    r = run(d, 'done', 'T2', 'T2: work')
+    check(r.returncode == 0 and times() == n + 1, 'changed content gets one more gate, and a pass ticks',
+          r.stdout + r.stderr)
+    eq(D.fails(d, 'T2'), 0, 'and resets the count')
+
+    git(d, 'checkout', '-q', '--detach')
+    d = at_limit('T5')
+    n = times()
+    (d / 'work.py').write_text('# T5, again\n', encoding='utf-8')
+    r = run(d, 'done', 'T5', 'T5: work')
+    check(r.returncode == 1 and times() == n + 1 and 'until it is blocked' in r.stderr
+          and 'name of the failing test' in r.stderr, 'a failing extra gate says it was the last', r.stdout + r.stderr)
+    (d / 'BROKEN').unlink()
+    r = run(d, 'done', 'T5', 'T5: work')
+    check(r.returncode == 1 and times() == n + 1 and 'name of the failing test' in r.stderr,
+          'then done refuses for good, changed or not', r.stdout + r.stderr)
+    r = run(d, 'done', 'T5', 'T5: work', '--blocked', 'CONFIRM: the light on the box is green')
+    check(r.returncode == 0 and 'blocked T5' in r.stdout, 'once it ran, a CONFIRM block goes through',
+          r.stdout + r.stderr)
+    eq(D.fails(d, 'T5'), 0, 'and a block resets the count')
+
+    git(d, 'checkout', '-q', '--detach')
+    d = at_limit('T3')
+    (d / 'BROKEN').unlink()
+    r = run(d, 'done', 'T3', 'T3: work', '--blocked', 'test_x fails: needs a fixture')
+    check(r.returncode == 0 and 'blocked T3' in r.stdout, 'any other why still blocks at the limit', r.stdout + r.stderr)
+    R.init(repo)
+    has(R.prompt_for('T2', 1, 1, d, 'main'), r'never to have a finished task marked done',
+        'the brief says what CONFIRM is not for')
 
 
 def again_after_done(repo: Path, d: Path):
@@ -8455,7 +8535,7 @@ def main() -> int:
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
-                       lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp), lambda: test_done_test_f178(tmp),
+                       lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp), lambda: test_done_test_f178(tmp), lambda: test_gate_limit_b186(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
                        lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), lambda: test_stream_spend_keeps_terminal_turns_b151(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])

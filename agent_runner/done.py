@@ -10,7 +10,9 @@ which only the runner pushes, after a merge.
 One command rather than five because each of the five is a step a session forgets: a tick without the
 commit, a commit without the tests, a branch never pushed. A failing gate commits nothing and ticks
 nothing, so a "done" task is always one whose tests passed. Failed gates are counted per task in the
-worktree's git dir: after three, `done` refuses to run a fourth until the task is blocked (a pass resets it).
+worktree's git dir (a pass or a block resets it): after three, `done` runs one more only if the worktree's content
+changed since the last failure, and refuses `--blocked "CONFIRM: …"` until then (any other why blocks). If that one
+fails too, it refuses until the task is blocked.
 
 `[run] done_test` (F178) is what `done` runs in place of the test gate, on a docs-only diff too; the merge still
 runs the gate, so a pass of it alone never lets a merge skip it.
@@ -36,7 +38,9 @@ import datetime as dt
 import fnmatch
 import os
 import re
+import shutil
 import sys
+import tempfile
 from functools import partial
 from pathlib import Path
 
@@ -48,7 +52,7 @@ from agent_runner.gitops import git, missing_remote, push, shared_branch, shared
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
 TESTED = 'refs/agent-runner/tested/'  # + <ID>: the commit whose tree `done`'s gate passed on
 PARTIAL = 'refs/agent-runner/done-test/'  # + <ID>: the tested commit, when only `[run] done_test` passed on it
-MAX_FAILS = 3  # failed gates a task gets in one worktree; the next `done` refuses to run a fourth
+MAX_FAILS = 3  # failed gates a task gets in one worktree; a fourth runs only on changed content (B186)
 __all__ = ['gate', 'main', 'PROG']
 
 
@@ -125,10 +129,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f'{PROG}: {why} before {a.id} is done: what a person reads before they approve the push (your brief '
                   f'says how). Nothing ticked.', file=sys.stderr)
             return 2
-    if not a.blocked and not a.no_test and fails(cwd, a.id) >= MAX_FAILS:
-        print(f'{PROG}: the test gate failed {MAX_FAILS} times on {a.id}: a fourth is not run. Commit what is '
-              f'solid and\n    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"\nNothing ticked.',
-              file=sys.stderr)
+    if why := gate_limit(a, cwd):
+        print(why, file=sys.stderr)
         return 1
     a.docs = docs = bool(not a.no_test and c.run['test'] and docs_only(changed(cwd), c.run['docs_files']))
     own = c.run['done_test']  # F178: in place of `test`, whatever the diff is
@@ -137,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     if not a.no_test:
         if own or not docs:
             shared_tools.gate_wait(c)  # B184
+        content = '' if a.blocked else content_hash(cwd)  # before the gate: what it ran on, not what it wrote
         key = 'done_test' if own else 'docs_check' if docs else 'test'
         rc, tail = gate(cwd, key)
         if own and docs and not rc and c.run['docs_check']:
@@ -146,14 +149,19 @@ def main(argv: list[str] | None = None) -> int:
             print(tail)
             if a.blocked:
                 last = 'Commit only what is solid, and'
-            elif (n := fails(cwd, a.id, add=True)) >= MAX_FAILS:
-                last = f'That is {n} failed gates on {a.id}: {PROG} refuses a fourth. Commit what is solid and'
+            elif (n := fails(cwd, a.id, add=True, content=content)) > MAX_FAILS:
+                last = (f'That is {n} failed gates on {a.id}: {PROG} refuses any more until it is blocked. Commit what '
+                        f'is solid and')
+            elif n == MAX_FAILS:
+                last = (f'That is {n} failed gates on {a.id}: {PROG} refuses a fourth unless you change something. Fix '
+                        f'it and run {PROG} again (one last gate), or commit what is solid and')
             else:
                 last = f'Failed gate {n} of {MAX_FAILS}. Fix it, or commit what is solid and'
+            block_why = '<why + what unblocks it>' if a.blocked or n < MAX_FAILS else BLOCK_WHY
             what = {'docs_check': f'The docs check (`{c.run["docs_check"]}`)',
                     'done_test': f'[run] done_test (`{own}`)'}.get(key, 'The test gate')
             print(f'\n{what} failed: nothing ticked, nothing committed. {last}\n'
-                  f'    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"', file=sys.stderr)
+                  f'    {PROG} {a.id} "<msg>" --blocked "{block_why}"', file=sys.stderr)
             return 1
         if own:
             print(f'done_test passed: {own}')
@@ -281,28 +289,84 @@ def tested_tick(tid: str, c=None) -> bool:
     return bool(ref) and ref == git('rev-parse', 'HEAD', cwd=c.root).stdout.strip() and ticked(tid, c)
 
 
-def fails(cwd: Path, tid: str, add: bool = False, reset: bool = False) -> int:
-    """The failed `done` gates counted for `tid` in this worktree (its own git dir, so slots never share a
-    count): `add` one, or `reset` to none (a pass, or a block). The count after."""
+def fails_file(cwd: Path, tid: str) -> Path | None:
+    """Where `tid`'s failed gates are counted: in this worktree's own git dir, so slots never share a count. A line
+    `<count> <content hash>` per failure. None outside a repository."""
     r = git('rev-parse', '--absolute-git-dir', cwd=cwd)
-    if r.returncode:
+    return None if r.returncode else Path(r.stdout.strip()) / 'agent-runner' / 'failed-gates' / tid
+
+
+def last_fail(f: Path | None) -> tuple[int, str]:
+    """The count and content hash of the last failure in `f`; (0, '') when none."""
+    try:
+        n, _, content = f.read_text().strip().splitlines()[-1].partition(' ') if f else ('0', '', '')
+        return int(n), content
+    except (OSError, ValueError, IndexError):
+        return 0, ''
+
+
+def fails(cwd: Path, tid: str, add: bool = False, reset: bool = False, content: str = '') -> int:
+    """The failed `done` gates counted for `tid` in this worktree: `add` one that ran on `content`, or `reset` to
+    none (a pass, or a block). The count after."""
+    f = fails_file(cwd, tid)
+    if f is None:
         return 0
-    f = Path(r.stdout.strip()) / 'agent-runner' / 'failed-gates' / tid
     if reset:
         f.unlink(missing_ok=True)
         return 0
-    try:
-        n = int(f.read_text().strip() or 0)
-    except (OSError, ValueError):
-        n = 0
+    n = last_fail(f)[0]
     if add:
         n += 1
         try:
             f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(f'{n}\n')
+            with f.open('a') as fh:
+                fh.write(f'{n} {content}\n')
         except OSError:
             pass
     return n
+
+
+def content_hash(cwd: Path) -> str:
+    """The tree of this worktree's files as they are (uncommitted and untracked too, ignored ones not), so a commit
+    of the same files does not change it. Made in a copy of the index; the real one is not touched. '' on failure."""
+    r = git('rev-parse', '--absolute-git-dir', cwd=cwd)
+    if r.returncode:
+        return ''
+    real = Path(r.stdout.strip()) / 'index'
+    with tempfile.TemporaryDirectory() as tmp:
+        index = Path(tmp) / 'index'
+        env = {**os.environ, 'GIT_INDEX_FILE': str(index)}
+        try:
+            if real.exists():
+                shutil.copy2(real, index)  # with its mtime, by which git knows an entry it must read again
+        except OSError:
+            return ''
+        if git('add', '-A', cwd=cwd, env=env).returncode:
+            return ''
+        return git('write-tree', cwd=cwd, env=env).stdout.strip()
+
+
+BLOCK_WHY = '<the name of the failing test or check: why + what unblocks it>'
+
+
+def gate_limit(a, cwd: Path) -> str | None:
+    """B186: why `done` refuses at MAX_FAILS failed gates, or None. Content changed since the last failure gets one
+    more gate, and until that ran a CONFIRM block is refused: it asks a person to mark done what a gate decides."""
+    n, content = last_fail(fails_file(cwd, a.id))
+    if n < MAX_FAILS:
+        return None
+    if a.blocked:
+        if n > MAX_FAILS or not re.match(r'\s*CONFIRM:', a.blocked):
+            return None
+        return (f'{PROG}: the test gate failed {n} times on {a.id}, and a person cannot confirm a gate. Once it is '
+                f'fixed, run {PROG} without --blocked: changed files get one more gate\n    {PROG} {a.id} "<msg>"\n'
+                f'If it is not fixed, block with --blocked "{BLOCK_WHY}". Nothing blocked.')
+    if a.no_test or n == MAX_FAILS and not (content and content == content_hash(cwd)):
+        return None
+    again = ('a fourth is not run on unchanged files. Fix it and run it again (one last gate), or commit'
+             if n == MAX_FAILS else 'no more are run until it is blocked. Commit')
+    return (f'{PROG}: the test gate failed {n} times on {a.id}: {again} what is solid and\n'
+            f'    {PROG} {a.id} "<msg>" --blocked "{BLOCK_WHY}"\nNothing ticked.')
 
 
 def artifact_refusal(a) -> str | None:
