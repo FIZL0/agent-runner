@@ -546,7 +546,7 @@ def test_done_own_output_b224(tmp: Path):
         (d / 'other.log').write_text('', encoding='utf-8')
         log = d / 'done [1].log'
         with log.open('w') as out:
-            rc = subprocess.run([sys.executable, str(ROOT / 'run'), 'done', 'T5', 'T5: work'], cwd=d, stdout=out,
+            rc = subprocess.run([sys.executable, str(RUN), 'done', 'T5', 'T5: work'], cwd=d, stdout=out,
                                 stderr=subprocess.STDOUT).returncode
         eq(rc, 0, 'done passes: ' + log.read_text())
         files = git(d, 'show', '--name-only', '--format=', 'HEAD').splitlines()
