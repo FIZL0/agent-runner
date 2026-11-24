@@ -466,14 +466,47 @@ class ActsOnce:
     """F137: the page's outbox sends each action with a client id (`cid`) and sends it again after a drop or a
     reload, so an action whose id the server has run already answers with its first result instead of running
     twice (a `new_control` sent twice would start two chats). A copy that comes while the first still runs waits
-    for it (None, a 503, when it waited WAIT s in vain). The last KEEP finished ids are kept, in memory: a restarted
-    run page forgets them."""
+    for it (None, a 503, when it waited WAIT s in vain). The last KEEP finished ids are kept, and B161: in `kept`
+    (<notes>/acts-once.jsonl) too, so a run page that restarted still knows them."""
     KEEP = 500
     WAIT = 300.0  # s a copy waits for the first to finish
 
-    def __init__(self):
+    def __init__(self, kept: Path | None = None):
         self.lock = threading.Lock()
         self.seen: dict[str, list] = {}  # cid -> [done Event, result]
+        self.kept, self.lines = kept, 0  # the file, and how many lines it has
+        try:
+            text = kept.read_text(encoding='utf-8') if kept else ''
+        except (OSError, ValueError):
+            text = ''
+        rows = text.splitlines()
+        for row in rows:
+            try:
+                cid, result = json.loads(row)
+                if isinstance(cid, str) and isinstance(result, dict):
+                    self.seen[cid] = [threading.Event(), result]
+                    self.seen[cid][0].set()
+            except (ValueError, TypeError):  # a line cut off
+                pass
+        self.lines = len(rows) if not text or text.endswith('\n') else 2 * self.KEEP  # cut off: written anew first
+
+    def keep(self, cid: str, result: dict) -> None:
+        if not self.kept:
+            return
+        try:
+            with self.lock:
+                if self.lines >= 2 * self.KEEP:
+                    done = [json.dumps([k, v[1]]) + '\n' for k, v in self.seen.items() if v[0].is_set() and v[1]]
+                    part = self.kept.with_suffix('.part')
+                    part.write_text(''.join(done[-self.KEEP:]), encoding='utf-8')
+                    os.chmod(part, 0o600)
+                    part.replace(self.kept)
+                    self.lines = min(len(done), self.KEEP)
+                with open(os.open(self.kept, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'a', encoding='utf-8') as f:
+                    f.write(json.dumps([cid, result]) + '\n')
+                self.lines += 1
+        except (OSError, TypeError, ValueError):  # it is only not kept over a restart
+            pass
 
     def run(self, cid: str, fn) -> dict | None:
         if not cid:
@@ -494,6 +527,7 @@ class ActsOnce:
             return {**got[1], 'again': True}
         try:
             got[1] = fn()
+            self.keep(cid, got[1])
         except BaseException:
             with self.lock:  # it did not finish: a later copy runs it
                 self.seen.pop(cid, None)
@@ -1223,7 +1257,7 @@ class WebServer(ThreadingHTTPServer):
 
     def __init__(self, token: str, port: int, bind: str = '0.0.0.0', snap=run_snapshot):
         self.token, self.snaps, self.stopped = token, Snapshots(snap), threading.Event()
-        self.once = ActsOnce()  # F137
+        self.once = ActsOnce(S.C.notes('acts-once.jsonl') if S.C else None)  # F137
         self.speaker = speech.Speaker()  # F158
         super().__init__((bind, port), Handler)
         self.terms = Terminals(token, self.server_address[1], bind)

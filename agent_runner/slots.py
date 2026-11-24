@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import plan as P, plat, session_theme, shared_tools
+from agent_runner import inbox_lock, plan as P, plat, session_theme, shared_tools
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -1116,6 +1116,7 @@ def logged(marker: Path) -> bool:
         return False
 
 
+@inbox_lock.one_sender
 def send_fifo(inbox: Path, text: str) -> bool:
     """F40: type `text` into a hidden session through the FIFO its shim reads (`run_pty`): a bracketed paste
     (so a newline in it does not send early), then Enter. False when no shim reads it (the session ended)."""
@@ -1143,6 +1144,7 @@ def send_fifo(inbox: Path, text: str) -> bool:
         os.close(fd)
 
 
+@inbox_lock.one_sender
 def send_fifo_raw(inbox: Path, data: bytes) -> bool:
     """F89: `data` written to a hidden session's FIFO as is, with no bracketed paste and no Enter: a key such
     as Escape (b'\\x1b') reaches the agent the way a key press would. False when no shim reads it."""

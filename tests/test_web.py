@@ -1984,7 +1984,7 @@ const fetch = async (p, o) => {
 };
 const S = {snap: {sessions: [{name: 'c3', state: 'live'}], needs: [], concepts: []}, feeds: {}, sent: {}, ob: [], openSteps: {}, thread: null, waitNew: null};
 const feedOf = n => (S.feeds[n] || {}).entries || [], sessionOf = n => S.snap.sessions.find(s => s.name === n);
-const OB = {busy: false, offline: false, timer: 0, wait: 2000}, OB_KEY = 'ob', SENT_KEY = 'sent';
+const OB = {busy: false, offline: false, timer: 0, wait: 2000}, obLoad = () => {}, obBeat = () => {}, obLive = () => [], obTake = async () => true, OB_KEY = 'ob', SENT_KEY = 'sent';
 let cids = 0;
 const newCid = () => 'k' + (++cids), realNow = Date.now;
 let skew = 0;
@@ -2079,6 +2079,115 @@ def test_sent_b154(tmp: Path) -> None:
     eq((o.get('failed'), o.get('failedShown')), ([['yes', 'failed']], [True] * 3), 'never landed: Not delivered, Retry, Discard')
     eq(o.get('lost'), [['c3', 'yes']], 'F114: and the outbox lists it')
     eq(o.get('late'), 0, 'one that lands after all leaves')
+
+
+TABS_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+let kept = {}, skew = 0, posts = [], gate = null;
+const tabs = [], realNow = Date.now;
+Date.now = () => realNow() + skew;
+// a browser tab: its own page over the one storage; a change it makes tells the others, unless they are frozen
+function tab(key) {
+  const on = {}, t = {on, frozen: false};
+  const store = {get: k => kept[k] || '', set(k, v) {
+    if ((kept[k] || '') === v) return;
+    if (v) kept[k] = v; else delete kept[k];
+    for (const o of tabs) if (o !== t) setImmediate(() => !o.frozen && (o.on.storage || (() => {}))({key: k, newValue: v || null}))}};
+  const fetch = async (p, o) => { const b = JSON.parse(o.body); posts.push(b.cid); if (gate) await gate; return {status: 200, json: async () => ({ok: true})} };
+  const document = {hidden: false, addEventListener: (n, f) => { on[n] = f }};
+  Object.assign(t, new Function('store', 'fetch', 'document', 'addEventListener', 'HKEY', logic
+    + "const S={snap:{},ob:[]},render=()=>{},obDraw=()=>{},tq=p=>p,obDone=()=>{};"
+    + slice("const OB_KEY=", '/* B154: the sent messages') + grab('function outbox(') + grab('async function drain(')
+    + slice("addEventListener('storage'", '/* --- what the snapshot') + 'return {S,OB,outbox,drain,OB_KEY,obChange}')(store, fetch, document, (n, f) => { on[n] = f }, key));
+  tabs.push(t); return t;
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  const out = {};
+  // a double drain, and another tab that hears of it, while the post is slow: one post
+  let open; gate = new Promise(r => { open = r });
+  const a = tab('p'), b = tab('p');
+  a.outbox('chat_to', {text: 'x', to: 'c1'}); a.drain(); a.drain(); b.drain();
+  await wait(150); b.drain(); await wait(50); out.slow = posts.length;
+  open(); gate = null; await wait(50); out.done = [posts.length, a.S.ob.length, b.S.ob.length, Object.keys(kept)];
+  // a tab that was frozen meanwhile comes back: its old copy neither goes nor is put back
+  posts = []; b.frozen = true; gate = new Promise(r => { open = r });
+  a.outbox('chat_to', {text: 'y', to: 'c1'}); b.S.ob = a.S.ob.slice(); await wait(20); open(); gate = null; await wait(50);
+  b.frozen = false; skew += 60000; b.on.visibilitychange(); await wait(150);
+  out.back = [posts.length, b.S.ob.length];
+  // the frozen one's old copy is not written over what another tab keeps
+  b.S.ob = []; b.frozen = true; gate = new Promise(r => { open = r });
+  a.outbox('chat_to', {text: 'z', to: 'c1'}); b.obChange(l => l); out.kept = JSON.parse(kept[a.OB_KEY]).length;
+  open(); gate = null; await wait(50); b.frozen = false;
+  // a tab that is gone mid-post leaves its item: of two others, one sends it again, with the same id
+  posts = []; gate = new Promise(() => {});
+  const c = tab('p'), it = c.outbox('chat_to', {text: 'w', to: 'c1'}); await wait(20); c.frozen = true; gate = null;
+  a.drain(); b.drain(); await wait(150); out.early = posts.length;
+  c.on.pagehide(); await wait(250);
+  out.left = [posts.length, posts.every(p => p === it.cid), a.S.ob.length];
+  // two messages from two tabs: each once; another project behind the same address has its own outbox
+  posts = []; const o1 = a.outbox('chat_to', {text: '1', to: 'c1'}), o2 = b.outbox('chat_to', {text: '2', to: 'c1'}); await wait(150);
+  out.two = posts.slice().sort().join() === [o1.cid, o2.cid].sort().join();
+  const q = tab('q'); out.project = [q.OB_KEY !== a.OB_KEY, tab('').OB_KEY];
+  console.log(JSON.stringify(out));
+  process.exit(0);
+})();
+"""
+
+
+def test_once_b161(tmp: Path) -> None:
+    """B161: a message goes once: one tab sends an item, and the run page acts on an id once, over a restart too."""
+    import threading
+    fake_repo(tmp)
+    token, ran, gate = W.web_token(), [], threading.Event()
+
+    def typed(name, **a):
+        ran.append(a['text'])
+        gate.wait(10)
+        return {'ok': True, 'out': 'sent to c1'}
+    got = []
+    body = {'name': 'chat_to', 'args': {'text': 'hi', 'to': 'c1'}, 'cid': 'two'}
+    for again in (False, True):
+        srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+        url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+        try:
+            with mock.patch.object(U, 'act', typed):
+                ts = [threading.Thread(target=lambda: got.append(post(url, body)[1])) for _ in range(1 if again else 2)]
+                for t in ts:
+                    t.start()
+                while not ran:
+                    __import__('time').sleep(0.02)
+                gate.set()
+                for t in ts:
+                    t.join(20)
+        finally:
+            srv.stop()
+    eq(ran, ['hi'], 'two posts of one id at once, and one after a restart, type once')
+    eq([(r['ok'], r['out']) for r in got], [(True, 'sent to c1')] * 3, 'each gets the first result')
+    f = tmp / 'once.jsonl'
+    with mock.patch.object(W.ActsOnce, 'KEEP', 3):
+        once = W.ActsOnce(f)
+        for i in range(20):
+            once.run(f'i{i}', lambda i=i: {'ok': True, 'n': i})
+        f.write_text(f.read_text() + '["cut', encoding='utf-8')
+        check(len(f.read_text().splitlines()) <= 7, 'the file is kept short', f.read_text())
+        eq(W.ActsOnce(f).run('i19', lambda: {})['n'], 19, 'a line cut off does not lose the rest')
+        W.ActsOnce(f).run('next', lambda: {'ok': True, 'n': 1})
+        eq(W.ActsOnce(f).run('next', lambda: {}).get('n'), 1, 'nor the next one kept after it')
+    if not shutil.which('node'):
+        print('  (no node here: the outbox tabs test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(TABS_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page', r.stderr[-1500:])
+    o = json.loads(r.stdout or '{}')
+    eq((o.get('slow'), o.get('done')), (1, [1, 0, 0, []]), 'a double drain and two tabs post once, and leave nothing')
+    eq((o.get('back'), o.get('kept')), ([1, 0], 1), "a tab that was away neither sends nor puts back its old copy")
+    eq((o.get('early'), o.get('left')), (1, [2, True, 0]), 'one tab takes over the item of a tab that went, with its id')
+    eq((o.get('two'), o.get('project')), (True, [True, 'ar-outbox']), 'two messages go once each; a project has its own outbox')
 
 
 def test_card_chat_b139(tmp: Path) -> None:
@@ -4058,7 +4167,7 @@ const fetch = async (p, o) => {
 };
 const rc = {key: 'restart', label: 'Restart the run', confirm: 'Restart?'};
 const S = {snap: {needs: [], concepts: [], controls: [rc], boot: 'b1'}, f: {}, ob: [], thread: null, view: 'settings', waitNew: null, obOpen: false, gone: {}, setOpen: {}};
-const OB = {busy: false, offline: false, timer: 0, wait: 2000}, OB_KEY = 'ob';
+const OB = {busy: false, offline: false, timer: 0, wait: 2000}, obLoad = () => {}, obBeat = () => {}, obLive = () => [], obTake = async () => true, OB_KEY = 'ob';
 const threadTitle = n => n, cutsOff = () => '', sureHTML = q => q;
 let cids = 0;
 const newCid = () => 'k' + (++cids);
@@ -4753,7 +4862,7 @@ if __name__ == '__main__':
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
-                           in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
+                           in_tmp(test_outbox_f137), in_tmp(test_once_b161), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
