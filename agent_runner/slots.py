@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import inbox_lock, plan as P, plat, session_theme, shared_tools, stack
+from agent_runner import inbox_lock, no_push, plan as P, plat, session_theme, shared_tools, stack
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -590,9 +590,10 @@ def slot_env(n: int | None) -> list[str]:
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
-    return env + (shared_env() if n is None else [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]) + \
-        ([f'{PRESENCE_ENV}={quiet_file("slots")}'] if n is not None and remote_slots_on() and silent() is not False
-         else [])
+    env += shared_env() if n is None else [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]
+    env += [f'{k}={v}' for k, v in no_push.env({**os.environ, **env_vars(env)}).items()] if C.no_push else []  # F400
+    return env + ([f'{PRESENCE_ENV}={quiet_file("slots")}'] if n is not None and remote_slots_on() and silent() is not False
+                  else [])
 
 
 # While the file it names exists, Claude Code pulses "client present" just before each push-triggering state

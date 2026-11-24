@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_held, plan as P, plansync, plat, shared_tools, stack
+from agent_runner import control_held, no_push, plan as P, plansync, plat, shared_tools, stack
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -986,6 +986,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         return control_new(a.n, ask=a.ask, images=a.file, **({'wait': -1} if a.no_wait else {}))
     if a.ask_file:
         a.ask = read_ask_file(a.ask_file) or a.ask
+    no_push.require(C, ROOT)
     n = a.n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {shown_cmd()} control starts another', file=sys.stderr)
