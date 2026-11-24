@@ -107,7 +107,7 @@ def release_line(ls: list[str], st: dict | None = None, rows=None) -> str:
         kind = 'release' if RELEASE_TASK.match(rest) or P.release(tid) else 'last'
         if P._waits_all(ls, i):  # `after: all` (F35): a count of what is still before it, not an id list
             held = [t for t in P.before_all(ls, i) if t in live and t != tid]
-            person = [t for t in P.on_person_before(ls, i) if t != tid]  # B101: said, not waited on
+            skipped = P.not_waiting_on(ls, i)  # B101, B207: said, not waited on
             hand = []
             if P.release(tid) and P.ALL in P.fields(ls[i]).get('after', []):  # B107: a taken task lands after
                 if away is None:
@@ -115,8 +115,8 @@ def release_line(ls: list[str], st: dict | None = None, rows=None) -> str:
                     away = set(taken())
                 hand = [t for t in held if t in away]
                 held = [t for t in held if t not in away]
-            said = P.not_waiting(person) + taken_note(hand)
-            out.append(f'{kind}: {P.all_line(tid, len(held), person)}{taken_note(hand)}' if held
+            said = P.not_waiting(skipped) + taken_note(hand)
+            out.append(f'{kind}: {P.all_line(tid, len(held), skipped)}{taken_note(hand)}' if held
                        else f'{kind}: ready, nothing left to wait on ({tid}){said}')
             continue
         w = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' else []
@@ -124,8 +124,9 @@ def release_line(ls: list[str], st: dict | None = None, rows=None) -> str:
         ids = [t for t in dict.fromkeys(ids) if t != tid]
         held = [t for t in ids if t in live]
         named = f': {", ".join(held[:6])}{" …" if len(held) > 6 else ""}' if last and not w else ''
-        out.append(f'{kind}: waits on {len(held)} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({tid}){named}'
-                   if held else f'{kind}: ready, nothing left to wait on ({tid})')
+        said = P.not_waiting(P.not_waiting_on(ls, i)) if last and not w else ''  # B207
+        out.append((f'{kind}: waits on {len(held)} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({tid}){named}'
+                    if held else f'{kind}: ready, nothing left to wait on ({tid})') + said)
     return '\n'.join(out)
 
 

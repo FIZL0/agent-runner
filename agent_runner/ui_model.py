@@ -276,7 +276,7 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
         else:
             if P._waits_all(ls, i):
                 held = [t for t in P.before_all(ls, i) if t in live and t != tid]
-                note = P.not_waiting([t for t in P.on_person_before(ls, i) if t != tid])  # B101
+                note = P.not_waiting(P.not_waiting_on(ls, i))  # B101, B207
                 if P.ALL in P.fields(ls[i]).get('after', []):  # B107: a task taken by hand lands after it
                     from agent_runner.sched import taken
                     from agent_runner.status import taken_note
@@ -286,6 +286,7 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
             else:
                 ids = [t.strip() for t in waits[-1].split(',')] if waits else P.waits_on(ls, i)
                 held = [t for t in dict.fromkeys(ids) if t in live and t != tid]
+                note = '' if waits else P.not_waiting(P.not_waiting_on(ls, i))  # B207: `after: all above`
             state = 'waits' if held else 'next'
         names = [f'{t} {titles.get(t, "")}'.rstrip() for t in held]
         more = len(names) - RELEASE_SHOWN

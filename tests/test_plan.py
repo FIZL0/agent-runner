@@ -1104,6 +1104,74 @@ def test_after_all():
         has(plan.section(todo, 'T1')[0], r'^- \[ \] ', 'open again')
 
 
+def test_after_all_skips_stuck():
+    print('plan: `after: all` and `all above` skip a task that waits on one blocked for the person or shelved (B207)')
+    ask = '- [~] **B415** check it | files: a.py BLOCKED: DECIDE: which one?'
+    r89 = '- [ ] **R89** read it | files: r.md | after: B415'
+    run1 = '- [ ] **F1** can run | files: f.py'
+
+    def said(*above, after='all'):
+        """(what V17 waits on, what it says it does not) below the tasks `above`, in one section"""
+        ls = ['# TODO', '', '### Next', '', *above, f'- [ ] **V17** Release | after: {after}']
+        i = len(ls) - 1
+        return plan.waits_on(ls, i), plan.not_waiting(plan.not_waiting_on(ls, i))
+    for after in ('all', 'all above'):
+        eq(said(ask, r89, run1, after=after),
+           (['F1'], '; not waiting on: B415 (needs you), R89 (after B415)'), f'{after}: the V17 shape, F1 still holds')
+        eq(said('- [ ] **R90** next | after: R89', r89, ask, after=after),
+           ([], '; not waiting on: B415 (needs you), R90 (after B415), R89 (after B415)'), f'{after}: a two-step chain')
+        eq(said(ask, run1, '- [ ] **R89** both | after: F1, B415', after=after),
+           (['F1'], '; not waiting on: B415 (needs you), R89 (after B415)'), f'{after}: one runnable, one blocked')
+        eq(said(ask, '- [~] **R89** read it BLOCKED: (after B415) its data', after=after),
+           ([], '; not waiting on: B415 (needs you), R89 (after B415)'), f'{after}: a block that waits on it')
+        eq(said(ask, '- [~] **R89** read it BLOCKED: (after B415) its data', '  - a sub-item', after=after),
+           ([], '; not waiting on: B415 (needs you), R89 (after B415)'), f'{after}: that block before a sub-item')
+        eq(said('- [~] **B7** later BLOCKED: shelved: DECIDE: maybe?', '- [ ] **R8** then | after: B7', after=after),
+           ([], '; not waiting on: R8 (after B7)'), f'{after}: after a shelved one, which is not said itself')
+        eq(said('- [~] **B7** later BLOCKED: shelved: some words', '- [ ] **R8** then | after: B7', after=after),
+           ([], '; not waiting on: R8 (after B7)'), f'{after}: shelved without an ask')
+        eq(said('- [ ] **C1** a | after: C2', '- [ ] **C2** b | after: C1', after=after), (['C1', 'C2'], ''),
+           f'{after}: a cycle ends, and holds as before')
+        eq(said(ask, '- [ ] **C1** a | after: C2', '- [ ] **C2** b | after: C1, B415', after=after),
+           ([], '; not waiting on: B415 (needs you), C1 (after B415), C2 (after B415)'), f'{after}: a stuck cycle')
+        eq(said(run1, '- [ ] **F2** next | after: F1', after=after), (['F1', 'F2'], ''), f'{after}: a chain that can run')
+        eq(said(ask.replace('[~]', '[x]'), r89, after=after), (['R89'], ''), f'{after}: the blocked one done')
+        eq(said(ask.split(' BLOCKED')[0].replace('[~]', '[ ]'), r89, after=after), (['B415', 'R89'], ''),
+           f'{after}: answered, both hold it again')
+        eq(said('- [~] **B9** no tool BLOCKED: needs a tool first', '- [ ] **R8** then | after: B9', after=after),
+           (['B9', 'R8'], ''), f'{after}: blocked on something other than a person still holds it')
+    eq(said(ask, r89, after='all, R89'), (['R89'], '; not waiting on: B415 (needs you)'),
+       'a task its own after: names is waited on, and not said as skipped')
+    below = ['### Next', r89, '- [ ] **V17** Release | after: all', '### Follow-ups', ask]
+    eq(plan.waits_on(below, 2), [], 'the blocked one may be below it, in another section')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        d = root / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        head = Path(todo).read_text(encoding='utf-8')
+
+        def write(v17):
+            Path(todo).write_text(head + '\n'.join(['### Waits', ask, r89, v17, '']), encoding='utf-8')
+        write('- [ ] **V17** Release | after: all')
+        words = 'not waiting on: B415 (needs you), R89 (after B415)'
+        line = f'V17 waits for everything before it: nothing left; {words}'
+        eq(plan.last_lines(todo), [line], 'last_lines says it')
+        eq(run(root, 'plan', 'V17').stdout.splitlines()[-1], line, '`plan ID` says it')
+        eq(run(root, 'plan', 'waiting').stdout.splitlines()[-1], line, '`plan waiting` says it')
+        from agent_runner import status as S
+        check(words in S.release_line(list(plan.lines(todo))), "status's release line says it")
+        write('- [~] **T1** last BLOCKED: (after all) cut it')
+        eq(plan.reopen(todo), [('T1', ['everything before it'])], 'a blocked (after all) task reopens past it')
+        write('- [ ] **T1** last | after: all above')
+        line = f'T1 waits on all above: nothing left above it; {words}'
+        eq(run(root, 'plan', 'T1').stdout.splitlines()[-1], line, '`plan ID` says it for all above too')
+        check(words in S.release_line(list(plan.lines(todo))), "and status's last line")
+        write('- [ ] **V17** Release | after: all')
+        plan.unblock('B415', 'the first', todo=todo)
+        eq(plan.last_waits(todo), [('V17', ['B415', 'R89'])], 'the person answered: both hold the release again')
+
+
 def test_release_kind():
     print('plan: add V files a release: `after: all` at the end of Next, the default brief, no duplicate refusal (F38)')
     eq(plan.kinds()[0].get(plan.RELEASE, '')[:8], 'release:', 'V is a kind of task, the release')
@@ -1630,7 +1698,7 @@ def test_multi_line_text():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_after_all_skips_stuck, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_drop_parts, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_own_project, test_needs_config, test_slot_writes_own_plan, test_concept_shown]))
