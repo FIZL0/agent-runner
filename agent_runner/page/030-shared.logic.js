@@ -32,6 +32,8 @@ function controlClick(c,o){return c.confirm&&!(o&&o.sure===true)?{ask:true}:cont
 const taskControlsOn=s=>!!(s&&s.task_controls);  // C33: ui_model.task_controls_on, on the row
 /* B118: the Queue's two groups: [the queue a run works through, the Parked tasks it never starts] */
 const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.state==='parked')];
+/* F193: [run] releases; on from a run that does not say */
+const releasesOn=snap=>!(snap&&snap.manage_releases===false);
 /* F185: the Plan view's Releases group: each open release (its queue task, which carries its row as `release`), then the
    rows that are no task (the auto release's count, the last one released); and the Queue under it, without them */
 const planReleases=snap=>{const q=(snap&&snap.queue)||[];
