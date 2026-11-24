@@ -5,10 +5,15 @@ test that sets `ui_model.X` reaches the code here. Not imported on its own."""
 
 def settings() -> dict:
     """F97: every setting, its value, source and default (`config.settings_snapshot`), read from the files now."""
+    from agent_runner import agents_here
     from agent_runner import config as CF
     snap, was = CF.settings_snapshot(S.ROOT), SETTINGS_AT[0]
     now = _setting_values(snap)
     snap['waits'] = [f'{t}.{k}' for (t, k), v in now.items() if was and (t, k) in CF.SETTING_NEXT and was.get((t, k)) != v]
+    row = lambda t, key: next(k for x in snap['tables'] if x['table'] == t for k in x['keys'] if k['key'] == key)  # noqa: E731
+    agent = row('run', 'agent')  # F405: its picker, and the providers beside it
+    agent['picks'] = agents_here.picks(S.ROOT, agent)
+    snap['providers'] = agents_here.providers(row('models', 'providers')['value'])
     return snap
 
 
@@ -46,7 +51,8 @@ def _setting_said(table: str, key: str, value, unset: bool) -> str:
 
 
 def _setting_row(table: str, key: str) -> dict:
-    return next(k for t in settings()['tables'] if t['table'] == table for k in t['keys'] if k['key'] == key)
+    from agent_runner import config as CF
+    return next(k for t in CF.settings_snapshot(S.ROOT)['tables'] if t['table'] == table for k in t['keys'] if k['key'] == key)
 
 
 def _setting_now(table: str, key: str, name: str) -> dict | None:

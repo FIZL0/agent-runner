@@ -69,7 +69,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'ui.theme': ('look', 'Terminal colors', 'The colors of the terminal page and of a session on this page. Light suits a bright terminal.'),
     'run.auto_upgrade': ('look', 'Update by itself', 'A newer agent-runner is installed, and the run restarts on new code, between merges. Off: only when you press upgrade or restart.'),
     'run.install_skill': ('look', 'Guide for your own sessions', 'Keeps the agent-runner guide where sessions you start find it. Off: they do not know the run.'),
-    'run.agent': ('look', 'Claude Code program', 'The program that runs a session. Change it only for a wrapper around Claude Code.'),
+    'run.agent': ('look', 'Claude Code program', 'The program that runs a session: one found on this machine, or another path for a wrapper around Claude Code.'),
     'run.engine': ('look', 'How a slot runs', 'Terminal: a session you can attach to. Stream: no terminal and no Claude apps.'),
     'run.batch_max': ('merge', 'Merge together at most', 'Finished tasks tested as one group, at most this many. 1: one at a time. 0: no limit.'),
     'run.max_unmerged': ('merge', 'Slow down past', 'With more finished tasks than this waiting to merge, slots are left free. 0: never.'),

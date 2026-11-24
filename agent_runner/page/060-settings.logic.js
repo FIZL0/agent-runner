@@ -47,6 +47,19 @@ function partSet(t,part,x){
   if(v.idle)o.idle=true;
   return settingText(v.every||v.idle?o:false);
 }
+/* F405: [run] agent is picked from the programs found on this machine (`picks`, agents_here.py): its options as [value, words], the kept
+   one among them, then Other path; and what the one picked is */
+const AGENT_OTHER='other path', hasPicks=k=>Array.isArray(k.picks);
+const agentSaved=(k,v)=>['value','device','project'].some(x=>k[x]!==undefined&&settingText(k[x])===v);
+const agentWords=p=>`${p.value}${p.version?` ${p.version}`:''}${p.found?p.path&&p.path!==p.value?` · ${p.path}`:'':' (not found)'}`;
+const agentPick=(k,v)=>k.picks.find(p=>p.value===v)||{value:v,path:'',version:'',found:!agentSaved(k,v),bad:agentSaved(k,v)?'It is not the name of a program.':''};
+function agentOptions(k,now){
+  const o=k.picks.map(p=>[p.value,agentWords(p)]);
+  if(!o.some(x=>x[0]===now))o.push([now,agentWords(agentPick(k,now))]);
+  return [...o,[AGENT_OTHER,'Other path…']];
+}
+const agentSays=p=>p.bad?p.bad:p.path?`At ${p.path}${p.version?`, version ${p.version}`:''}`:'';
+const LOGIN_SAYS={in:'Logged in',out:'Not logged in',none:'No login needed'};  // claude's own is not checked here, and `says` so
 /* a value as a person reads it */
 function settingSays(k,t){
   if(k.words&&k.words[t])return k.words[t];
