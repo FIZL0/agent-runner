@@ -4243,6 +4243,55 @@ def test_session_controls_f170(tmp: Path) -> None:
     check('LOOKS={}, look="light"' in W.session_frame.with_head(b'<head>', 'c6', 'light').decode(), 'one from before: its one ground')
 
 
+def test_frame_typing_b190(tmp: Path) -> None:
+    """B190: with the keyboard in the session's frame, what is typed or pasted goes to the message box while the agent
+    CLI's input is hidden, Shift+Enter a new line there; with words in its prompt Shift+Enter is a new line in it; a
+    menu, a question and every other key are the session's."""
+    head = W.session_frame.with_head(b'<head>', 'c6', 'page').decode()
+    check("addEventListener('keydown'" in head and "addEventListener('paste'" in head and 'parent.feedTyped(e,paste)' in head,
+          "the frame asks the page before ttyd's own script", head[-900:])
+    if not shutil.which('node'):
+        print('  (no node here: the frame typing test is skipped)')
+        return
+    page = W.PAGE.read_text(encoding='utf-8')
+    typed = page[page.index('function feedTyped('):]
+    typed = typed[:typed.index('\n}\n') + 3]
+    js = page.split('<script id="logic">', 1)[1].split('</script>', 1)[0]
+    driver = js + '\n' + typed + r"""
+let sent = [], inputs = 0, focused = 0;
+const S = {sheet: ''}, FD = {foot: {text: '', bash: false}, whole: false, slim: true};
+const ta = {value: 'ab', selectionStart: 1, selectionEnd: 1, focus() { focused++ }, dispatchEvent() { inputs++ },
+  setRangeText(t, a, b) { this.value = this.value.slice(0, a) + t + this.value.slice(b); this.selectionStart = this.selectionEnd = a + t.length }};
+const document = {querySelector: () => ta}, feedSlim = on => { FD.slim = on }, sessType = x => { sent.push(x); return true };
+const key = (key, o) => feedTyped(Object.assign({key}, o)), SE = ['Enter', {shiftKey: true}], out = {};
+out.many = [key('x'), key(...SE), key(...SE), key('/'), feedTyped({}, 'p1\np2'), ta.value, sent.length, inputs, focused, FD.slim];
+out.own = [key('Enter'), key('Escape'), key('c', {ctrlKey: true}), key('v', {metaKey: true}), key('Tab', {shiftKey: true}),
+  key('x', {isComposing: true}), key('Process', {keyCode: 229}), key('Enter', {shiftKey: true, ctrlKey: true})];
+out.altgr = key('@', {ctrlKey: true, altKey: true, getModifierState: k => k === 'AltGraph'});
+S.sheet = 'run'; out.sheet = key('x'); S.sheet = '';
+FD.foot = feedFoot(['● ok', '● How is Claude doing this session? (optional)', '  1: Bad    2: Fine   3: Good   0: Dismiss', '', '─'.repeat(40), '❯ ', '─'.repeat(40)], null);
+out.rate = [key('2'), key(...SE)];
+const had = ta.value;
+FD.whole = true; FD.foot = {text: 'own words', bash: false};
+out.words = [key('x'), key(...SE), feedTyped({}, 'p'), sent];
+FD.foot = null; out.menu = [key('x'), key(...SE), key('1'), feedTyped({}, 'p'), sent.length];
+FD.whole = false; out.menuNew = [key('x'), key(...SE)];
+out.same = ta.value === had;
+console.log(JSON.stringify(out));
+"""
+    f = tmp / 'b190.js'
+    f.write_text(driver, encoding='utf-8')
+    r = subprocess.run(['node', str(f)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
+    out = json.loads(r.stdout or '{}')
+    eq(out.get('many'), [True] * 5 + ['ax\n\n/p1\np2b', 0, 5, 5, False], 'hidden: all of it in the message box, the session gets none')
+    eq(out.get('own'), [False] * 8, "every other key is the session's")
+    eq((out.get('altgr'), out.get('sheet')), (True, False), 'AltGr types; a sheet open: not ours')
+    eq(out.get('rate'), [False, True], "a survey's digit is the session's")
+    eq(out.get('words'), [False, True, False, ['\n']], 'words in its prompt: Shift+Enter is a new line there')
+    eq((out.get('menu'), out.get('menuNew'), out.get('same')), ([False, False, False, False, 1], [False, False], True), 'a menu or a question is untouched')
+
+
 def test_session_run_side_f170(tmp: Path) -> None:
     """F170: /live, /commands?s=, and which colours a session's frame gets."""
     fake_repo(tmp)
@@ -4282,4 +4331,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_frame_typing_b190)]))

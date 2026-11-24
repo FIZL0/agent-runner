@@ -509,7 +509,7 @@ function feedWords(lines){return lines.map(l=>l.replace(/\s+$/,'')).join('\n').r
    is that cell dim (a hint, not typed)? null when the prompt is not there as the agent CLI draws it (a menu, a question, a new
    look): then nothing is hidden. {top, end: rows, the first hidden and the last of the box; text: unsent words in the
    prompt; bash; mode: FEED_MODES' key; shells, agents: how many; update: its command, '…' when cut off; status: the status
-   line; work: does it work; jump: is it scrolled up} */
+   line; rate: a 1: 2: 3: survey stands above it, answered by a digit; work: does it work; jump: is it scrolled up} */
 const FEED_MODES=[['default','Ask first','manual mode|default mode'],['acceptEdits','Accept edits','accept edits'],['plan','Plan','plan mode'],['auto','Auto','auto mode'],['bypassPermissions','Bypass permissions','bypass permissions']];
 const feedRule=l=>/^[─━]{6}/.test(l)&&(l.match(/[─━]/g)||[]).length>=l.length/2;
 function feedFoot(lines,dim){
@@ -535,7 +535,7 @@ function feedFoot(lines,dim){
   const near=lines.slice(Math.max(0,top-5),top);
   return{top,end,bash,text:hint?'':own,mode:mode?mode[0]:'',shells:num(/(\d+) shells?\b/),tasks:num(/(\d+) background tasks?\b/),agents:num(/← (\d+) agents?\b/),
     update:m?m[1].replace(/^`|`$/g,''):/Update available/.test(all)?'…':'',status:below.slice(0,modeAt<0?below.length:modeAt).map(l=>l.trim()).filter(l=>l&&!/Update available/.test(l)),
-    work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.concat(lines.slice(0,top)).some(l=>/Jump to bottom/.test(l))};
+    rate:lines.slice(Math.max(0,top-8),top).some(l=>/\b1: \S.*\s2: \S/.test(l)),work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.concat(lines.slice(0,top)).some(l=>/Jump to bottom/.test(l))};
 }
 /* where the session's frame goes. o: main its room, bar and dock what stands over it, strip the thin strip's, high the
    frame's own height, pad its terminal's, cell a line, rows, foot (feedFoot's; null: show all), short (its words end at
@@ -559,6 +559,17 @@ function sessionChips(o){
   if(ag)out.push({key:'agents',label:`${ag} agent${ag===1?'':'s'}`});
   if(f.update)out.push({key:'update',label:'Update'});
   return out;
+}
+/* B190: a key pressed in the session's frame, or words pasted there (e.paste). 'box': it goes to the message box, as the
+   prompt is hidden and typing in it would bring the agent CLI's input up; 'line': a new line in the prompt that shows (a
+   terminal sends Shift+Enter as Enter, so it would send the words); '': the session's own (a menu, a question, Esc, Enter…) */
+function feedHand(e,foot,whole){
+  if(!foot||e.isComposing||e.keyCode===229)return'';
+  const mod=e.metaKey||(e.ctrlKey||e.altKey)&&!(e.getModifierState&&e.getModifierState('AltGraph'));
+  const line=e.key==='Enter'&&e.shiftKey&&!mod, shown=whole||!!foot.text||foot.bash;
+  if(shown)return line?'line':'';
+  if(foot.rate&&/^\d$/.test(e.key||''))return'';
+  return line||e.paste||!mod&&!!e.key&&[...e.key].length===1?'box':'';
 }
 const forWords=s=>s<60?`${Math.max(0,Math.floor(s))}s`:s<3600?`${Math.floor(s/60)}m ${Math.floor(s%60)}s`:`${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
 /* the agent CLI's own list of background work, off its screen: [{y, name, on, running}], in order */
@@ -1178,7 +1189,7 @@ function pageNews(s,mine,later){
 function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploading?'Wait for the attachments to finish uploading.'
   :o.form?'Save or close the device form first. It is not kept over a refresh.'
   :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
-if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,answerArgs,pageNews,refreshHold,boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,answerArgs,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1963,6 +1974,17 @@ function feedSettle(){if(FD.pulling)feedSlim(FD.slim)}
 function feedTake(px){
   const left=feedPull(px);if(left===px)return false;
   clearTimeout(FD.settle);FD.settle=setTimeout(feedSettle,160);
+  return true;
+}
+/* B190: a key or a paste in the frame (session_frame.HEAD asks): was it the page's? Its words go in the message box */
+function feedTyped(e,paste){
+  const ta=document.querySelector('[data-in]'), how=S.sheet?'':feedHand(paste?{paste}:e,FD.foot,FD.whole);
+  if(how==='line')return sessType('\n');
+  if(how!=='box'||!ta)return false;
+  if(FD.slim)feedSlim(false);  // the box was away and inert
+  ta.focus({preventScroll:true});
+  ta.setRangeText(paste||(e.key==='Enter'?'\n':e.key),ta.selectionStart,ta.selectionEnd,'end');
+  ta.dispatchEvent(new Event('input',{bubbles:true}));
   return true;
 }
 /* a point on the touch layer, in the frame */
