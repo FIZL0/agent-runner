@@ -119,6 +119,7 @@ def test_main():
             with mock.patch.object(U, 'find_ttyd', lambda: ''), mock.patch.object(W, 'ttyd_install_cmd', lambda: CMD), \
                     mock.patch.object(S, 'at_terminal', lambda: True), mock.patch.object(S.subprocess, 'run', run), \
                     mock.patch.object(S, 'ask', lambda q: asked.append(q) or True), \
+                    mock.patch.object(S, 'offer_models', lambda root: []), \
                     mock.patch.object(S, 'launch', lambda r, text: launched.append(text) or 0), \
                     contextlib.redirect_stdout(out):
                 eq(S.main(argv, cwd=root), 0, f'setup {argv} ends well')
