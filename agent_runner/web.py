@@ -29,6 +29,7 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
     POST /give?t=TOKEN           F175a: {"tid", "values", "confirm"}: Done on a Needs you item with inputs
                                  (`ui_model.need_give`); whether it may hold a secret is the connection's to say
     GET  /task/ID?t=TOKEN        F85: task ID's whole text (`plan ID`), for its row folded open
+    GET  /plan-search?q=WORDS&t=TOKEN   F212: the tasks of TODO.md and DONE.md that match (`plan_search.search`)
     GET  /why/ID?t=TOKEN         F162: why a Needs you item waits: its agent's last words (`ui_model.need_why`)
     GET  /shot/DIR/FILE?t=TOKEN  F162: a Needs you item's picture, an image under <notes>/uploads or <notes>/asks
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
@@ -62,7 +63,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plat, session_frame, session_history, session_now, session_theme, speech, trust, watch
+from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plan_search, plat, session_frame, session_history, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -1139,6 +1140,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(speech.voices()))
         if path.startswith('/task/'):  # F85
             return self.send(200, json.dumps(U.task_text(path.split('/')[2]), ensure_ascii=False))
+        if path == '/plan-search':  # F212
+            words = (parse_qs(urlsplit(self.path).query).get('q') or [''])[0]
+            return self.send(200, json.dumps(plan_search.search(words), ensure_ascii=False))
         if path.startswith('/why/'):  # F162
             return self.send(200, json.dumps(U.need_why(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/shot/'):  # F162

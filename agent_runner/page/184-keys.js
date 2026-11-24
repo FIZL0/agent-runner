@@ -62,7 +62,7 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('beforeinput',e=>{
   if((e.inputType==='insertLineBreak'||e.inputType==='insertParagraph')&&!e.isComposing&&TOUCH()&&e.target.matches&&e.target.matches('[data-in]')&&slashOpen()&&slashPicks(e.target)){e.preventDefault();slashTake(SL.i)}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(['setq','planq'].includes(e.target.dataset.f))render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('cancel',holdPlus);
