@@ -621,6 +621,40 @@ The run app and `agent-runner ui` offer the same choices per change.
 (V) do not start while anything waits. If the remote moved, the next merge takes it in, and the approved work goes out
 with that merge once it is approved.
 
+### No-push policy
+
+Off by default. `[git] no_push = true` is for a project that must not publish: the runner pushes nothing, and git
+refuses a push in every session the runner starts, in any repository. Settings > Merging shows it as "Never push". It
+applies from the next run; sessions already up and the control server keep what they started with.
+
+The runner pushes nothing: not main, not the task/ or wip/ branches, not plan edits, not claims (so two machines do
+not see each other's claims), not remote branch deletes. Plan repo commits are made in the clone and not pushed.
+Approve to push has nothing to push.
+
+Each session the runner starts (task, repair/fix, control, one-shot; on Linux, macOS and Windows, with any provider)
+gets git config in its environment through `GIT_CONFIG_COUNT`: a `push.recurseSubmodules` value that git refuses.
+Other config there is kept. So `git push` fails in any repository with git's message, which quotes "blocked by the
+no-push policy ([git] no_push)". `--no-verify`, `-c`, aliases, push URLs, repository config and child processes do
+not get around it. fetch, pull, clone and commit work. Runner commands run in such a session (`done`, `plan add`)
+push nothing in any project either. The session sets `AGENT_RUNNER_NO_PUSH=1`.
+
+This differs from `[git] push = false`: that stops the runner's pushes, and the git fence refuses `git push` in Bash
+calls of slots only. `no_push` also covers control sessions and child processes.
+
+A run or control session refuses to start when this machine's git does not hold the policy (git 2.31 or newer).
+
+It is a guard, not a sandbox. Not stopped: a process that clears or changes its environment (`env -i`, sudo, WSL, ssh
+to another machine, a container); a git older than 2.31 at another path; `git send-pack`; git-svn, p4 and git-lfs
+uploads; tools with their own git code (libgit2, jj, JGit); gh and API calls; package uploads; release commands. A
+session opened by hand (not started by the runner) is not covered. The test gate that `done` runs in a session
+inherits the policy, so tests that push, even to a local remote, fail there (the merge gate does not have it; a test
+may unset `GIT_CONFIG_COUNT` for its own temp repos). For a guarantee, remove the credentials or use branch protection
+or read-only deploy keys on the remote.
+
+A run started from a session in another project follows that project's own setting. The setting is a file, so an
+agent could edit `runner.toml` for a later run; `runner.local.toml` can override it. Claude.ai page publishing and
+GitHub issue comments are not git pushes and are unchanged. The person's own terminal is unaffected.
+
 ### Concept tasks
 
 A task of kind `K` (concept; one of the default kinds) builds nothing. Its session researches the repo and
@@ -1002,7 +1036,8 @@ one-shot did not publish (the copy is still on the run page); exit 2 for a missi
 that denies `git push` in this project (anywhere while `[git] push = false`), `git reset --hard`, `git clean`
 (not `-n`) and `git checkout -- .`, and an Edit or Write in the main checkout (but its notes folder) or
 another slot; an edit outside the project, in a sibling repository the task needs, is let through. It
-holds every session, and replaces the no-push git config that `[git] push = false` used to set.
+holds every session, and replaces the no-push git config that `[git] push = false` used to set. With `[git] no_push = true`
+the refusal covers every repository and every session the runner starts (### No-push policy).
 
 **Idle stop.** The Stop hook starts a detached timer; a session quiet for 30 seconds is ended.
 The timer does not fire on a session a human has typed into, or one waiting out a usage limit. Nor on
@@ -1560,6 +1595,7 @@ push_merge = true         # push the shared branch after each tested merge
 # with `[run] test` empty (no gate) only when set here: the default never pushes untested merges
 land_edited = "wait"      # a tested merge held by uncommitted edits in the main checkout: "wait" for them, or
                           # "wip": move them to a wip/main-checkout-<time> branch and land (see Stopping a run)
+no_push = false           # true: the runner pushes nothing and git refuses a push in every session (### No-push policy)
 
 [ui]
 theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red accent), omarchy

@@ -746,3 +746,10 @@ _Said_: split the big file
 _On screen_: Split busy files
 _In code_: file_split.py, queue_file_split, [run] split_files, EV_FILE_SPLIT
 _Avoid_: split (for a task), refactor task
+
+**No-push policy**:
+A project setting under which the runner pushes nothing and git refuses a push in every session it starts, in any repository.
+_Said_: no-push policy
+_On screen_: Never push
+_In code_: no_push, [git] no_push, AGENT_RUNNER_NO_PUSH
+_Avoid_: push lock, offline mode
