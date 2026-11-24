@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: on the run page, a chat's or slot's session scrolls back through its history: a drag (touch) or a wheel up (desktop) over the session draws the transcript above the screen, as Claude Code draws it, and back at its end the live session shows again in the same frame, with no line moved. A jump button (Jump to bottom, with a dot when there is something new) glides back to the live session. Scrolling of the page's other views is as before, and a session's history names files in the session's own folder relative, as Claude Code does (F191b).
 - Fixed: two harness loop sessions refreshing one provider's login at once no longer remove it from Pi's `auth.json`: the second finds the fresh token, keeps the login and uses the token without refreshing again (B771).
 - Changed: this repo's merge joins a conflict in CHANGELOG.md itself, with no fix session: `[run] joinable` holds it and `[run.join]` runs `tools/changelog_join.py`, which keeps both branches' new entries once and puts an entry written before a release under Unreleased, not the released version (C47).
 - Fixed: on the run page, on a touch device, a tap on the slim message box while the session still scrolls with momentum stops the scroll and opens the message box with the keyboard, and it stays open; before, the scroll went on and the box did not open (B218b1).

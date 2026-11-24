@@ -198,7 +198,7 @@ layer.addEventListener('touchcancel',()=>{if(G)clearTimeout(G.hold);G=null},{pas
 /* B218b1: a press on the slim message box ends the drag and its glide, at the touch, so the box it opens stays. A browser
    may give no click for a tap after a fling, so the touch's end makes it, as kbTapEnd does (a click alone: Enter, a mouse) */
 let tap=null;
-const slim=$('slimbox'), slimPress=e=>{const el=e.target.closest('[data-slimbox]');if(el){cancelAnimationFrame(glide);if(G)clearTimeout(G.hold);G=null}return el};
+const slim=$('slimbox'), slimPress=e=>{const el=e.target.closest('[data-slimbox]');if(el){cancelAnimationFrame(glide);if(G)clearTimeout(G.hold);G=null;pastStop()}return el};
 slim.addEventListener('click',slimPress);
 const slimEnd=e=>{const k=tap, t=e.changedTouches[0], el=slim.querySelector('[data-slimbox]');tap=null;
   if(!k||!el||e.type!=='touchend'||!e.cancelable||Date.now()-k.at>450||Math.abs(t.clientX-k.x)>9||Math.abs(t.clientY-k.y)>9)return;  // a swipe or a long press
@@ -222,7 +222,7 @@ matchMedia('(prefers-color-scheme:dark)').addEventListener('change',lookAgain);
 if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 /* does the session of a chat or slot work? The agent CLI's own status; until it is read, or with none, the feed's */
 const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
-function feedGone(){clearTimeout(FD.wait);feedStill();Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,top:false,still:'',live:null,liveAt:0});feedClass()}
+function feedGone(){pastReset();clearTimeout(FD.wait);feedStill();Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,top:false,still:'',live:null,liveAt:0});feedClass()}
 function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');if(!m||!row)return;
   m.classList.toggle('still',calm());m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);row.hidden=!FD.shown;
   const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;row.inert=!FD.slim;
@@ -258,6 +258,7 @@ function feedSee(){
   if(ended&&FD.slim)feedSlim(false);
   feedPlace();
   if(left&&FD.run<=-8)feedSlim(true);
+  pastSee();
   const key=f=>f?[f.mode,f.shells,f.tasks,f.agents,f.update,f.status.join('|'),f.work].join():String(f);
   if(foot&&Date.now()-FD.keptAt>FEED_KEEP)feedKeep();
   if(key(was)!==key(foot)){if(!was||!foot||was.work!==foot.work||was.shells!==foot.shells)liveLoad();render()}
@@ -281,7 +282,7 @@ function feedStillLook(left,cell){
   },STILL_MS);
 }
 /* a sent message: the session is at its end, the frame with it */
-function feedRest(){if(FD.off&&!FD.jump){FD.off=0;feedPlace()}}
+function feedRest(){pastDown(true);if(FD.off&&!FD.jump){FD.off=0;feedPlace()}}
 function feedWhole(on){FD.whole=on;if(on){FD.slim=false;FD.off=0}feedClass();feedPlace();render()}
 /* B214: the view's height with the keyboard closed: the session's size comes from it, so a keyboard never resizes it.
    A width that changed (rotation) counts again, with the keyboard open too; the bottom inset is off .app then */
@@ -309,6 +310,7 @@ function feedGlide(was){
   const d=was-el.getBoundingClientRect().top;if(Math.abs(d)<1||!el.animate||calm())return;
   const css=getComputedStyle(document.documentElement), at=`0 ${d}px`, room=$('feed').style;
   const a=feedFly=el.animate([{translate:at},{translate:'0 0'}],{duration:parseFloat(css.getPropertyValue('--dur-slow')),easing:css.getPropertyValue('--ease').trim()});
+  pastGlide(d);
   el.style.translate=at;room.bottom=d>0?-d+'px':'';  // it starts below its new room, so that is not cut off yet
   const still=()=>{if(feedFly===a)el.style.translate=''};
   requestAnimationFrame(()=>requestAnimationFrame(still));  // iOS draws one frame before the animation
@@ -355,9 +357,10 @@ function feedPlace(){
   set('inset','0 0 auto 0');set('height',high+'px');set('transform',`translateY(${Math.round(at.t)}px)`);
   const b=FD.drawn&&f&&f.t.buffer.active, away=b&&b.type==='normal'?(b.baseY-b.viewportY)*cell:0;
   set('clipPath',at.cut>away?`inset(0 0 ${Math.round(at.cut-away)}px 0)`:'none');
+  pastPlace();
 }
 /* the bars and the box away, or back. Never while the person types, or while a menu, a question or a sheet is open */
-const slimMay=()=>!FD.whole&&!!FD.foot&&FD.jump&&FD.far>8&&!S.sheet&&!slashOpen()&&!kbH&&Date.now()-FD.typed>2500&&!(document.activeElement&&document.activeElement.matches('[data-in]')&&document.activeElement.value.trim());
+const slimMay=()=>!FD.whole&&!!FD.foot&&(pastUp()||FD.jump&&FD.far>8)&&!S.sheet&&!slashOpen()&&!kbH&&Date.now()-FD.typed>2500&&!(document.activeElement&&document.activeElement.matches('[data-in]')&&document.activeElement.value.trim());
 function feedSlim(on){if(on&&!slimMay())return;FD.run=0;if(FD.slim!==on){slimSize();FD.slim=on;feedClass();slimDraw()}}
 /* a drag or a wheel of px (down is more): the bars go or come, and what is left of it for the session to scroll */
 function feedScroll(px){
@@ -372,6 +375,7 @@ function feedScroll(px){
 }
 /* a wheel step in the frame (session_frame.HEAD asks): was it the page's? What the frame leaves goes on to the session */
 function feedTake(px){
+  if(pastWheel(px))return true;
   const left=feedScroll(px), f=feedScreen();if(left===px||!f)return false;
   const [n,rest]=feedSteps(FD.rest+left,f.cell*FEED_LINES), r=$('feedtouch').getBoundingClientRect();
   FD.rest=rest;feedWheel(n,r.width/2||FD.frame.clientWidth/2,r.height/2||FD.frame.clientHeight/2);
@@ -379,6 +383,7 @@ function feedTake(px){
 }
 /* B190: a key or a paste in the frame (session_frame.HEAD asks): was it the page's? Its words go in the message box */
 function feedTyped(e,paste){
+  if(!paste&&!S.sheet&&pastPress(e))return true;
   const ta=document.querySelector('[data-in]'), how=S.sheet?'':feedHand(paste?{paste}:e,FD.foot,FD.whole);
   if(how==='line')return sessType('\n');
   if(how!=='box'||!ta)return false;

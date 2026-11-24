@@ -391,13 +391,15 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go` and its answer buttons run `sheet ID --picks "ID picks: q=b"`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply open a new control session with them (`control --new --ask`, named for the ask), except a DECIDE's, which are its answer as above. `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
 - **The session.** A chat or slot shows the real Claude Code session, not a thread the page draws: its own terminal
   through ttyd (`attach NAME` shows the same one), in one frame between the header and the message box. A chat has no
-  bubbles, folded steps, history or jump button. The frame is served at `/t/TOKEN/NAME/` on the run's own address, so
+  bubbles or folded steps. A drag or a wheel up over it scrolls its history (`GET /history/NAME`, drawn over the live
+  screen), and its jump button (Jump to bottom) glides back to the live session. The frame is served at `/t/TOKEN/NAME/` on the run's own address, so
   https and Runner Home both work. ttyd listens on 127.0.0.1 only, on a free port of its own. The frame is made the first time a session is opened and kept
 loaded out of sight after that; only the open chat is connected, and its ttyd socket never closes, so ttyd's own Reconnect
 words never show. `/terminal/NAME` says
   whether there is a session to show, and if not, why. On a computer you click and type in the session directly; only a
   mouse press in it gives it the keyboard, and ttyd's focus on connect never does. A file dropped on it is attached. On
-  a phone a touch layer over it scrolls it on a drag (a wheel steps it, and it glides), a tap clicks in it without
+  a phone a touch layer over it scrolls it on a drag (a wheel steps it, and it glides; a drag scrolls the history first,
+  while it stands in), a tap clicks in it without
   opening the keyboard, and a long press (or the key row's Text) opens a sheet with the screen's text to select and
   copy; a horizontal swipe still opens the drawer. The message box's keyboard button folds out the key row (Esc, Tab, ↑,
   Enter, Ctrl-C, Text, ←, ↓, →) for the session's menus; touch only. The session's text is 12px on touch and 13px

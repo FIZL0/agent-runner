@@ -769,10 +769,10 @@ _In code_: no_push, [git] no_push, AGENT_RUNNER_NO_PUSH
 _Avoid_: push lock, offline mode
 
 **Session history**:
-A chat's or slot's whole transcript as data for the run page, in pages: the person's messages, the agent's words, each tool call folded with its result, and notes. Unlike the Session feed, it reaches back to the transcript's start.
+A chat's or slot's whole transcript as data for the run page, in pages: the person's messages, the agent's words, each tool call folded with its result, and notes. Unlike the Session feed, it reaches back to the transcript's start. A chat's session scrolls back through it, over the live screen (The session).
 _Said_: history
-_On screen_: nothing yet
-_In code_: session_history.py, history, /history/NAME
+_On screen_: the history a chat's or slot's session scrolls back to, over the live screen
+_In code_: session_history.py, history, /history/NAME, 021-history.logic.js, 092-history.js, HX, #feedpast
 _Avoid_: scrollback, log
 
 **Pull to refresh**:
@@ -802,3 +802,10 @@ _Said_: save and undo button
 _On screen_: N changes not saved, Save, Undo
 _In code_: #setbar, setBarDraw, settings_save
 _Avoid_: save bar, footer
+
+**Jump button**:
+The round button on its own strip just above a chat's message box that glides a scrolled-back session to its live end. It shows once the reader is well above the end, with a dot when there is something new.
+_Said_: jump to bottom
+_On screen_: Jump to bottom
+_In code_: .pastjump, pastDown
+_Avoid_: scroll button, pill
