@@ -132,7 +132,7 @@ def load() -> dict:
 @contextlib.contextmanager
 def _locked():
     """One writer at a time: each run and each `run device` is a process of its own."""
-    d, end = _folder(), time.monotonic() + 10
+    d, end = _folder(), time.monotonic() + 25  # stopping a page command takes some seconds of it
     while not (held := plat.lock(d / 'lock')):
         if time.monotonic() > end:
             raise Refused('another device is being saved; try again')
@@ -354,11 +354,11 @@ def _page_fields(a: dict) -> dict:
     if folder:
         try:
             d = Path(folder).expanduser()
-            ok = d.is_absolute() and d.is_dir()
+            ok = d.is_absolute()  # one that is gone is said at the start, and blocks no other edit
         except (OSError, RuntimeError, ValueError):
             ok = False
         if not ok:
-            raise Refused('the working directory is the whole path of a folder on this machine')
+            raise Refused('the working directory is a whole path, from / or ~')
     return {'page': url, 'start': cmd, **({'folder': folder} if folder else {})}
 
 

@@ -69,8 +69,25 @@ def _held(d: Path) -> bool:
 def _orphan(rec: dict) -> int:
     """The pid of a command whose keeper was killed, when it is surely that command; else 0."""
     pid, start = rec.get('pid'), rec.get('start')
-    return pid if 'end' not in rec and pid and start and rec.get('boot') == _boot() and plat.alive(pid) \
-        and plat.started(pid) == start else 0
+    if 'end' in rec or not pid or not start or rec.get('boot') != _boot():
+        return 0
+    if plat.alive(pid):
+        return pid if plat.started(pid) == start else 0
+    return pid if _marked(pid, rec.get('mark') or '') else 0
+
+
+MARK = 'AGENT_RUNNER_PAGE_MARK'  # in the command's environment: one start's own random word
+
+
+def _marked(pgid: int, mark: str) -> bool:
+    """Some process left in group `pgid`, whose leader is gone, has the mark: the group is that start's (a group id is
+    not used again while the group has a process)."""
+    for p in Path('/proc').iterdir() if mark else ():
+        with contextlib.suppress(OSError, ValueError, IndexError):
+            if p.name.isdigit() and int((p / 'stat').read_text().rsplit(')', 1)[1].split()[2]) == pgid \
+                    and f'{MARK}={mark}'.encode() in (p / 'environ').read_bytes().split(b'\0'):
+                return True
+    return False
 
 
 def state(d: Path) -> str:
@@ -118,7 +135,7 @@ def start(d: Path, cmd: str, cwd: Path) -> bool:
         return False
     (d / 'stop').unlink(missing_ok=True)
     (d / 'log').unlink(missing_ok=True)
-    _write(d, {'cmd': cmd, 'cwd': str(cwd), 'boot': _boot()})
+    _write(d, {'cmd': cmd, 'cwd': str(cwd), 'boot': _boot(), 'mark': os.urandom(8).hex()})
     p = plat.spawn_detached([*_scope(), sys.executable, '-c', KEEPER, str(Path(__file__).resolve().parents[1]), str(d)],
                             cwd=Path.home())
     end = time.monotonic() + UP
@@ -195,7 +212,7 @@ def _trim(log: Path) -> None:
         if log.stat().st_size > LOG_MAX:
             with open(log, 'r+b') as f:  # the command appends, so it goes on at the new end
                 f.seek(-LOG_KEEP, os.SEEK_END)
-                data = f.read()
+                data = f.read().partition(b'\n')[2]  # whole lines, or half a secret would not be hidden
                 f.seek(0)
                 f.truncate()
                 f.write(data)
@@ -221,7 +238,7 @@ def keep(d: Path) -> None:
     kw = {'creationflags': plat.CREATE_NO_WINDOW | plat.CREATE_NEW_PROCESS_GROUP, 'shell': True} if plat.WINDOWS \
         else {'start_new_session': True, 'preexec_fn': _plain_signals}
     try:
-        p = sp.Popen(argv, cwd=rec['cwd'], stdin=sp.DEVNULL, stdout=out, stderr=out, env=_env(), **kw)
+        p = sp.Popen(argv, cwd=rec['cwd'], stdin=sp.DEVNULL, stdout=out, stderr=out, env={**_env(), MARK: rec['mark']}, **kw)
     except OSError as e:
         out.write(f'{e.strerror or type(e).__name__}\n'.encode())
         _write(d, {**rec, 'end': 127})

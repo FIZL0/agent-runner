@@ -1131,8 +1131,8 @@ command on this machine. A person adds it on the run app's Tools page. Each proj
   other device with an address is a TCP connection to its port (vnc, rdp, http and https have their own); with a
   command, it is free when that command is on this machine.
 - **A web page.** An other device can have a web page: an http or https address, with no sign-in in it, and, with it, an
-  optional start command (one line of shell text) and its working directory (an absolute or `~` path of an existing
-  folder; the home folder by default), all set in the Add/Edit sheet. A page with no start command has no start, stop
+  optional start command (one line of shell text) and its working directory (an absolute or `~` path;
+  the home folder by default), all set in the Add/Edit sheet. A page with no start command has no start, stop
   or state. Only the saved command runs, and saving follows the Tools page's rule (https or the machine itself, with the
   token and a same-origin request). `run device start NAME` runs the command detached, outside the run and any session
   and, on Linux, out of Runner Home's systemd service, so it outlives them; a second start says it is running already,

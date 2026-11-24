@@ -75,7 +75,7 @@ def test_address() -> None:
         r = op('save', name='rig', **BASE, page=bad)
         check(not r['ok'] and (bad in ('http:', 'http://') or bad not in r['out']), f'refused: {bad[:40]!r}', r)
     check(not op('save', name='rig', **BASE, start='true')['ok'], 'a command with no page')
-    for k, bad in (('start', 'a\nb'), ('start', 'x' * 1001), ('folder', 'relative'), ('folder', '/no/such/f407'), ('folder', '/x\0')):
+    for k, bad in (('start', 'a\nb'), ('start', 'x' * 1001), ('folder', 'relative'), ('folder', '/x\0')):
         check(not op('save', name='rig', **BASE, page=URL, **{'start': 'true', k: bad})['ok'], f'refused: {k} {bad[:20]!r}')
     eq(D.load()['devices'], {}, 'nothing was saved')
     for good in ('http://x', 'HTTPS://box.ts.net:8443/a?b=c#d', 'http://[::1]:80/'):
@@ -124,7 +124,7 @@ def test_run(tmp: Path) -> None:
             check(r['ok'] and 'running' in r['out'], 'a second start says so', r)
         eq((pid_of(), (work / 'log').read_text()), (pid, 'started\n'), 'and starts nothing, in its own folder')
         env = (work / 'env').read_text()
-        check('AGENT_RUNNER' not in env and 'CLAUDECODE' not in env, "no session's markers in its environment")
+        check('AGENT_RUNNER_SLOT' not in env and 'CLAUDECODE' not in env, "no session's markers in its environment")
         check(f'web page {URL} (running)' in cmd('list')[1] and f'Web page: {URL} (running)' in cmd('show', 'rig')[1], 'list, show')
         eq(next(t for t in D.page(T.S.C)['tools'] if t['name'] == 'rig')['run'], {'state': 'running', 'lines': []}, 'GET /tools')
         check(op('save', edit='rig', name='rig2', **BASE, page=URL + '2', start=start, folder=str(work))['ok'], 'renamed, another address')
@@ -234,15 +234,28 @@ def test_killed() -> None:
         check(state() != 'running' and op('stop', name='rig')['ok'] and plat.alive(pid), f'not the same process: left alone ({wrong})')
     DP._write(folder(), rec)
     check(op('stop', name='rig')['ok'] and wait(lambda: not DP._group(pid)) and state() == 'stopped', 'stopped by its proven pid')
+    op('save', edit='rig', **BASE, page=URL, start='sleep 600 & wait')
+    op('start', name='rig')
+    pid = pid_of()
+    keeper = int(Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[1])
+    for p in (keeper, pid):
+        os.kill(p, signal.SIGKILL)
+        wait(lambda: not plat.alive(p))
+    check(state() == 'running' and 'already' in op('start', name='rig')['out'], 'the shell killed too: what it started is known')
+    rec = json.loads((folder() / 'run.json').read_text())
+    DP._write(folder(), {**rec, 'mark': 'another'})
+    check(state() != 'running' and op('stop', name='rig')['ok'] and DP._group(pid), 'another group with that id is left alone')
+    DP._write(folder(), rec)
+    check(op('stop', name='rig')['ok'] and wait(lambda: not DP._group(pid)), 'and ended')
     op('remove', name='rig')
 
 
 def test_log(tmp: Path) -> None:
     print('the output kept is bounded')
     f = tmp / 'biglog'
-    f.write_bytes(b'x' * (DP.LOG_MAX + 1) + b'\nlast\n')
+    f.write_bytes(b'a line\n' * (DP.LOG_MAX // 7 + 1) + b'last\n')
     DP._trim(f)
-    check(f.stat().st_size == DP.LOG_KEEP and f.read_bytes().endswith(b'last\n'), 'trimmed')
+    check(0 < f.stat().st_size <= DP.LOG_KEEP and f.read_bytes().startswith(b'a line\n') and f.read_bytes().endswith(b'line\nlast\n'), 'trimmed, whole lines')
 
 
 def test_rules() -> None:
