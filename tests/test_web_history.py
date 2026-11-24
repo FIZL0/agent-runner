@@ -133,7 +133,7 @@ const rowEl = t => ({textContent: t, innerHTML: '<span>' + t + '</span>', getBou
 let screen = [];
 const term = {cols: 48, rows: ROWS, options: {}, element: {className: 'xterm', querySelector: () => ({style: {}, children: screen.map((t, y) => ({textContent: t, innerHTML: '<span>' + t + '</span>', getBoundingClientRect: () => ({top: 12 + y * CELL})}))})}};
 const feedTerm = () => term, feedScreen = () => ({t: term, cell: CELL, el: {getBoundingClientRect: () => ({left: 14, top: 12, width: 346}), querySelectorAll: () => []}, win: {document: {styleSheets: []}, getComputedStyle: () => ({})}});
-const fetch = async q => { asked.push(q); const j = pages[q.replace('history/c6', '')]; return {ok: true, status: 200, json: async () => j || {ok: false}} };
+const fetch = async q => { asked.push(q); const j = pages[q.replace(/history\/c\d/, "")]; return {ok: true, status: 200, json: async () => j || {ok: false}} };
 const settle = async () => { for (let i = 0; i < 30; i++) await null };
 const msgs = (a, b) => Array.from({length: b - a}, (x, i) => ({kind: 'say', text: `message ${a + i}`}));
 const show = (last, extra = []) => { const l = []; for (let i = last - 30; i < last; i++) l.push('', `● message ${i}`); screen = [...l, ...extra].slice(-36).concat(['rule', '❯', 'rule', 'foot']) };
@@ -151,7 +151,7 @@ pages['?before=f%3A9&n=200'] = {ok: true, entries: msgs(0, 100), before: '', sin
 pages['?since=f%3A99'] = {ok: true, entries: [], since: 'f:99'};
 show(200); pastSee(); out.loading = [HX.n, histMay0()]; await settle();
 out.loaded = [HX.none, HX.pages.length, past.hidden, past.classList.contains('armed')];
-run(); await settle(); out.rest = [HX.st, past.scrollTop === pastEnd(), jump.attrs['aria-label'], $('pastjump').inert];
+run(); await settle(); out.key = [pastPress({key: 'PageUp'}), HX.st, pastPress({key: 'End', ctrlKey: true}), HX.st, pastPress({key: 'x'}), pastPress({key: 'Home'})]; out.rest = [HX.st, past.scrollTop === pastEnd(), jump.attrs['aria-label'], $('pastjump').inert];
 // the swap: every line where it was, at each step
 const w0 = where('● message 199'), m0 = where('● message 190');
 past.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}); out.armed = [HX.st, where('● message 199') - w0, where('● message 190') - m0, past.classList.contains('armed'), past.classList.contains('up')];
@@ -185,7 +185,7 @@ timers = []; past.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}); run
 const may = o => { const was = {...FD}; Object.assign(FD, o); pastClass(); const r = [past.hidden, pastWheel(-60), HX.st]; Object.assign(FD, was); pastClass(); return r };
 out.whole = may({whole: true}); out.words = may({foot: {top: 36, text: 'draft', bash: false}}); out.jumped = may({jump: true}); out.down = may({drawn: false});
 HX.none = true; out.none = may({}); HX.none = false;
-FD.n = 'c7'; pastReset(); pages[''] = null; pastSee(); await settle(); pastClass(); out.notranscript = [HX.none, past.hidden];
+FD.n = 'c7'; pastReset(); pages[''] = null; pastSee(); pastClass(); await settle(); pages[''] = {ok: true, entries: msgs(0, 5), before: '', since: 'g:1'}; pastSee(); out.soon = HX.none; now += 6000; pastSee(); await settle(); out.late = [HX.none, HX.pages.length]; FD.n = 'c8'; pages[''] = null; pastSee(); await settle(); pastClass(); out.notranscript = [HX.none, past.hidden];
 console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1) });
 function histMay0() { return pastMay() }
@@ -226,6 +226,8 @@ def test_swap(tmp: Path) -> None:
     eq((o['tap'], o['press']), ([1, ''], [1, 1, '']), "at rest a tap clicks in the session, a long press gives its text")
     for k in ('whole', 'words', 'jumped', 'down', 'none'):
         eq(o[k], [True, False, ''], f'{k}: the session scrolls as before')
+    eq(o['key'], [True, 'up', True, '', False, False], 'PageUp and Ctrl+End scroll it, other keys are the session\'s')
+    eq((o['soon'], o['late']), (True, [False, 1]), 'a transcript that comes later is found')
     eq(o['notranscript'], [True, True], 'a session with no transcript: as before')
 
 

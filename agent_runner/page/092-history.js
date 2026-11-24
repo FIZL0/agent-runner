@@ -7,10 +7,10 @@
    (the marks), hist (their lines), L (the lines drawn), at (the screen's first line in L), pad, cell, y0 (where the
    screen's first line stands in the session), high (the content's height), y (the scroll last seen), touch, news (there are new words) */
 const HX={n:'',st:'',none:false,pages:[],before:'',since:'',cols:0,hist:[],L:[],at:0,pad:0,cell:17,y0:0,high:0,y:0,touch:false,news:false,busy:false,asked:0,late:[],lateT:0,warmT:0,newT:0,above:0,gap:false,chunks:new Map(),look:''};
-const PAST_CHUNK=40, PAST_OVER=2000, PAST_IDLE=160, PAST_WARM=700, PAST_NEW=2500, PAST_BAND=56;
+const PAST_CHUNK=40, PAST_OVER=2000, PAST_IDLE=160, PAST_WARM=700, PAST_NEW=2500, PAST_BAND=56, PAST_AGAIN=5000;
 const pastUp=()=>HX.st==='up';
 /* may the history stand in for the session? Not over a menu or a question, nor one scrolled by someone else */
-const pastMay=()=>FD.shown&&FD.up&&FD.drawn&&!FD.whole&&!!FD.foot&&!FD.foot.text&&!FD.foot.bash&&!FD.jump&&!(FD.off>0)&&!(HX.n===FD.n&&HX.none);
+const pastMay=()=>FD.shown&&FD.up&&FD.drawn&&!FD.whole&&!!FD.foot&&!FD.foot.text&&!FD.foot.bash&&!FD.jump&&!(FD.off>0)&&HX.n===FD.n&&!HX.none;
 function pastReset(){
   for(const t of [HX.lateT,HX.warmT,HX.newT])clearTimeout(t);
   const el=$('feedpast');if(el){scrollStop(el);$('pastrows').textContent=''}
@@ -31,13 +31,14 @@ async function pastGet(q){
   return HX.n===n&&HX.asked===asked?j:undefined;
 }
 async function pastLoad(){
-  if(HX.n===FD.n||!FD.n||!/^[cs]\d+$/.test(FD.n))return;
-  pastReset();HX.n=FD.n;HX.busy=true;
+  if(!FD.n||!/^[cs]\d+$/.test(FD.n)||HX.tried===FD.n&&Date.now()-HX.triedAt<PAST_AGAIN)return;
+  const none=HX.none&&HX.n===FD.n;
+  pastReset();HX.n=HX.tried=FD.n;HX.triedAt=Date.now();HX.none=none;HX.busy=true;
   const j=await pastGet('');if(j===undefined)return;
   HX.busy=false;
-  if(!j){HX.n='';return}  // the run cannot be asked now: at the next draw again
+  if(!j){HX.n='';pastClass();return}  // the run cannot be asked now: a later draw asks again
   HX.none=!j.ok;
-  if(j.ok){HX.pages=[j.entries];HX.before=j.before;HX.since=j.since;pastRows();pastWarm()}
+  if(j.ok){HX.pages=[j.entries];HX.before=j.before;HX.since=j.since;pastRows();if(HX.st==='armed')pastReady();else pastWarm()}
   pastClass();
 }
 function pastRows(){HX.cols=(feedTerm()||{}).cols||HX.cols||80;HX.hist=HX.pages.flatMap(p=>pastLines(p,HX.cols))}
@@ -197,11 +198,11 @@ function pastScrolled(){
 }
 /* each draw of the session: while the history is drawn its end is the screen as it is now; what stands on screen stays */
 function pastSee(){
-  if(HX.n!==FD.n){pastLoad();return}
+  if(HX.n!==FD.n||HX.none){pastLoad();if(HX.n!==FD.n||HX.none)return}  // a new chat's transcript comes a little later
   if(!HX.st){pastClass();if(!$('feedpast').hidden){pastWarm();pastNewSoon()}return}
   if(FD.whole||!FD.foot){if(pastUp()&&!HX.news){HX.news=true;pastJumpDraw()}return}
   if(FD.foot.text||FD.foot.bash||FD.jump||HX.gap)return;
-  if((feedTerm()||{}).cols!==HX.cols){pastDown();return}  // another width: its lines are broken anew
+  if((feedTerm()||{}).cols!==HX.cols){pastWidth();return}
   const s=pastScreen();if(!s)return;
   const was=HX.L.slice(HX.at), j=s.length===was.length&&s.every((l,i)=>l.h===was[i].h)?HX.at:pastJoin(HX.L,s,s.length*2+200);
   if(j===HX.at&&s.length===was.length&&s.every((l,i)=>l.h===was[i].h))return;
@@ -214,9 +215,19 @@ function pastTail(before,s){
   if(end)pastToEnd();else{if(last(HX.L)!==had)HX.news=true}
   pastDraw();pastJumpDraw();
 }
+/* another width (a rotation): its lines are broken anew, what was at the top stays there as near as can be */
+function pastWidth(){
+  const el=$('feedpast'), up=pastUp(), i=Math.max(0,Math.floor((el.scrollTop+(FD.slim?0:FD.bar||0)-HX.pad)/HX.cell)), y=HX.pad+i*HX.cell-el.scrollTop, had=HX.L;
+  const k=had.findIndex((l,n)=>n>=i&&l.t.trim().length>6), word=k<0?'':had[k].t.trim().slice(0,16), far=had.length?i/had.length:1;
+  if(!pastReady()||!up)return;
+  let best=-1;HX.L.forEach((l,n)=>{if(word&&l.t.trim().startsWith(word)&&(best<0||Math.abs(n-far*HX.L.length)<Math.abs(best-far*HX.L.length)))best=n});
+  pastSize(true);el.scrollTop=HX.pad+(best<0?Math.round(far*HX.L.length):best-(k-i))*HX.cell-y;HX.y=el.scrollTop;pastDraw();pastJumpDraw();
+}
 /* more was written than one screen holds between two draws: the transcript has it */
 async function pastGap(){
-  HX.gap=true;const n=HX.n;await pastNew();if(HX.n!==n||!HX.gap)return;
+  HX.gap=true;const n=HX.n;
+  for(let i=0;HX.busy&&i<50;i++)await new Promise(r=>setTimeout(r,100));  // an older page is on its way
+  await pastNew();if(HX.n!==n||!HX.gap)return;
   HX.gap=false;const s=pastScreen();if(!HX.st||!s||FD.whole)return;
   const last=HX.L.slice(-60), k=pastJoin(HX.hist,last,600), add=k<0?[]:HX.hist.slice(k+last.length), all=[...HX.L,...add], j=pastJoin(all,s,s.length*2+200);
   pastTail(j<0||j<HX.at?all:all.slice(0,j),s);
@@ -256,6 +267,12 @@ function pastWheel(px){
   if(!pastMay()||HX.n!==FD.n)return false;
   if(px<0&&pastArm()){el.scrollTop+=px;if(el.scrollTop>=pastEnd()-1){HX.st='';pastClass()}else pastScrolled()}
   return true;
+}
+/* the keys that scroll, pressed in the session: the history's, so the session itself never scrolls */
+function pastPress(e){
+  const page=$('feedpast').clientHeight*.85, by={PageUp:-page,PageDown:page,Home:-1e9,End:1e9}[e.key];
+  if(!by||e.shiftKey||e.altKey||e.metaKey||/Home|End/.test(e.key)&&!e.ctrlKey||!HX.st&&!pastMay())return false;
+  return pastWheel(by);
 }
 /* a touch: at rest a tap clicks in the session and a long press gives its text, as on #feedtouch */
 {const el=$('feedpast');let T1=null;

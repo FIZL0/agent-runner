@@ -1290,6 +1290,7 @@ const S = {sheet: ''}, FD = {foot: {text: '', bash: false}, whole: false, slim: 
 const ta = {value: 'ab', selectionStart: 1, selectionEnd: 1, focus() { focused++ }, dispatchEvent() { inputs++ },
   setRangeText(t, a, b) { this.value = this.value.slice(0, a) + t + this.value.slice(b); this.selectionStart = this.selectionEnd = a + t.length }};
 const document = {querySelector: () => ta}, feedSlim = on => { FD.slim = on }, sessType = x => { sent.push(x); return true };
+const pastPress = () => false;  // F191b
 const key = (key, o) => feedTyped(Object.assign({key}, o)), SE = ['Enter', {shiftKey: true}], out = {};
 out.many = [key('x'), key(...SE), key(...SE), key('/'), feedTyped({}, 'p1\np2'), ta.value, sent.length, inputs, focused, FD.slim];
 out.own = [key('Enter'), key('Escape'), key('c', {ctrlKey: true}), key('v', {metaKey: true}), key('Tab', {shiftKey: true}),

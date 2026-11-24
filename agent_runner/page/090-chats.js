@@ -383,6 +383,7 @@ function feedTake(px){
 }
 /* B190: a key or a paste in the frame (session_frame.HEAD asks): was it the page's? Its words go in the message box */
 function feedTyped(e,paste){
+  if(!paste&&!S.sheet&&pastPress(e))return true;
   const ta=document.querySelector('[data-in]'), how=S.sheet?'':feedHand(paste?{paste}:e,FD.foot,FD.whole);
   if(how==='line')return sessType('\n');
   if(how!=='box'||!ta)return false;
