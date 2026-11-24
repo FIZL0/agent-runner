@@ -1050,7 +1050,7 @@ shows it at `/concept/<ID>`), then starts a one-shot headless `claude -p` with o
 that copy to claude.ai: a new artifact with icon "options", or the URL already recorded for ID, so a second
 publish updates the same page. The URL is printed and kept in `<notes>/concepts/<ID>.url`. Exit 1 when the
 one-shot did not publish (the copy is still on the run page); exit 2 for a missing file or no task id.
-With no Claude Code program on this machine, or `[models] feed` on another provider, no claude.ai one-shot runs: the
+With no Claude Code program on this machine, or `[models] feed` on another provider (its one-shot cannot publish), the
 command exits 0, says there is no claude.ai page, and records `/concept/<ID>` in `<notes>/concepts/<ID>.url`, which
 `done` takes as the concept's page. In the TUI, O on such a concept opens the local copy. A one-shot that ran and
 failed still exits 1.
