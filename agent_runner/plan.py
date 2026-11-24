@@ -1968,13 +1968,17 @@ def _answer(tid: str, text: str, todo) -> None:
     settle_ask(tid, todo)
 
 
-def _not_told(tid: str, text: str, todo) -> str:
+def _not_told(tid: str, text: str, c) -> str:
     """B767: what to run with a `tell` that reached no session: when `tid` asks the person, its question and the
     commands that answer it (never run from here); else the note for its next attempt."""
     said = shlex.quote(text)
     try:
-        label, _, _, what, url, _, _ = _ask_or_parked(tid, todo)
+        label, _, _, what, url, _, _ = _ask_or_parked(tid, c.todo)
     except SystemExit:
+        if (where := run_on(c, tid)) and (q := ending_ask(c, tid, where)):  # B770: not parked in time
+            return (f'. {tid} asks the person: {q}\nOnly if your text answers that, once the session in {where} has ended '
+                    f'(`{PROG} {tid}` then shows the question): `{PROG} confirm {tid} {said}`, or, to have something '
+                    f'else done: `{PROG} change {tid} {said}`')
         return f' (`{PROG} note {tid} TEXT` notes it for the next attempt)'
     return (f'. {tid} {"is stuck and waits on" if label == STUCK else "asks"} the person: {what}{f" {url}" if url else ""}\n'
             f'Only if your text answers that: `{PROG} confirm {tid} {said}`, or, to have something else done: '
@@ -2293,7 +2297,9 @@ def halt(c, tid: str, how: str, wait: float | None = None) -> str:
 # <notes>/tell/<ID>.json ({"how": "tell" | "change", "text": …}); the run (`runner.tells`, every pass of its
 # loop) finds the slot's session, pastes the message into it and presses Enter, and answers in
 # <notes>/tell/<ID>.done ({"told": true|false, "msg": …}). With no live session (Windows, a cut-off session
-# waiting to resume, the task merging) it answers told false and `change` falls back to the B19 halt.
+# waiting to resume, the task merging) it answers told false and `change` falls back to the B19 halt. B770: a slot
+# whose agent has just run `run ask` is typed nothing: the answer waits for the ask to be parked, then is told false;
+# `tell` prints the question, and `change` (noted in the plan) does too and halts nothing.
 
 TELL_WAIT = 30.0  # s `tell`/`change` wait for the run to pass the message on
 
@@ -2305,6 +2311,29 @@ def tell_dir(c) -> Path:
 def tell_text(how: str, text: str) -> str:
     """What the agent reads in its pane."""
     return f'Your task changed: {text}' if how == 'change' else f'A note on your task, from the person running this run: {text}'
+
+
+def ending_ask(c, tid: str, slot: str) -> str:
+    """B770: the question of task `tid` while `slot` ('s2') holds the end mark of its `run ask`: its session is ending
+    and the ask is not parked yet. '' for none."""
+    import json
+    try:
+        end = json.loads(c.notes(f'slot{slot[1:]}.end').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return ''
+    if not isinstance(end, dict) or end.get('how') != 'ask' or end.get('tid') != tid:
+        return ''
+    return str(end.get('text') or 'a question with no text')
+
+
+def _asks_now(c, tid: str, where: str) -> bool:
+    """B770: does `tid` ask the person: its session in slot `where` is ending on a `run ask`, or it is parked or blocked."""
+    if ending_ask(c, tid, where):
+        return True
+    try:
+        return bool(_ask_or_parked(tid, c.todo))
+    except SystemExit:
+        return False
 
 
 def tell(c, tid: str, text: str, how: str = 'tell', wait: float | None = None) -> tuple[bool | None, str]:
@@ -2320,6 +2349,8 @@ def tell(c, tid: str, text: str, how: str = 'tell', wait: float | None = None) -
         got = json.loads(said) if said is not None else None
     except ValueError:
         got = None
+    if not isinstance(got, dict) and _asks_now(c, tid, where):  # B770
+        return False, f'{where} ({tid}) was not told: its session asked the person'
     if not isinstance(got, dict) or got.get('told'):
         with open(told_file(c, tid), 'a', encoding='utf-8') as f:  # B221
             f.write(' '.join(text.split()) + '\n')
@@ -3022,6 +3053,9 @@ def main(argv: list[str] | None = None) -> int:
             if told is not False:
                 print(said)
                 return rc
+            if said and _asks_now(c, argv[1], run_on(c, argv[1])):
+                print(said + _not_told(argv[1], ' '.join(argv[2:]), c))  # B770: never halt it, its work waits too
+                return rc
             if said:
                 print(f'{said}; stopping it and starting it again from the new text instead (as --restart)')
         if said := halt(c, argv[1], argv[0]):
@@ -3044,7 +3078,7 @@ def _tell(c, argv: list[str]) -> int:
             pass
     if told is False:
         print(f'{PROG}: {said or f"{tid} is not running: no slot of a run here is on it"}'
-              + _not_told(tid, text, c.todo), file=sys.stderr)
+              + _not_told(tid, text, c), file=sys.stderr)
         return 1
     print(said)
     return 0

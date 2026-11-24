@@ -378,7 +378,9 @@ def tell_answer(tid: str, told: bool, msg: str) -> None:
 def tells(procs: dict, running: dict) -> None:
     """F16: pass each `plan tell` / `plan change` message on to the slot running its task, by typing it into
     the slot's session through its shim's FIFO (F40). No live session (a hidden console, the
-    session ended, a cut-off one waiting to resume): told false, and `plan change` falls back to the B19 halt."""
+    session ended, a cut-off one waiting to resume): told false, and `plan change` falls back to the B19 halt.
+    B770: while the slot's end mark says its agent ran `run ask`, the request waits: its session is ending and would
+    never read the text. Once `reap` has parked the ask no slot runs the task, and the command says what it asks."""
     reqs = tell_requests()
     if not reqs:
         return
@@ -387,6 +389,8 @@ def tells(procs: dict, running: dict) -> None:
         n = next((m for m, t in running.items() if t[0] == tid), None)
         if n is None:
             tell_answer(tid, False, no_slot(tid, req))
+            continue
+        if P.ending_ask(C, tid, f's{n}'):
             continue
         hit = tagged.get(f's{n}')
         if not MUX.typed:
