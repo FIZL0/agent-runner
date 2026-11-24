@@ -153,6 +153,23 @@ def test_chat_hold_b158(tmp: Path) -> None:
         U.RUN[0] = real
 
 
+def test_chat_force_queued(tmp: Path) -> None:
+    """F190b: chat_to with force and no text types nothing: it forces what is queued; only to a named session."""
+    from agent_runner import session_now
+    fake_run(tmp)
+    done = {'ok': True, 'code': 0, 'out': 'x', 'argv': []}
+    with mock.patch.object(session_now, 'force_queued', return_value=done) as fq, \
+            mock.patch.object(session_now, 'force_send', return_value=done) as fs, \
+            mock.patch.object(U, 'send', return_value=done) as sent:
+        before = time.time()
+        r = U.act('chat_to', text='', to='c3', force=True, unsent=True)
+        eq((r['ok'], before <= r['at'], fq.call_args[0], fs.called, sent.called), (True, True, ('c3',), False, False),
+           'no text: the queue is forced, nothing typed')
+        eq((U.act('chat_to', text='', force=True)['ok'], fq.call_count, sent.called), (False, 1, False), 'no session, no new chat')
+        U.act('chat_to', text='hi', to='c3', force=True)
+        eq((fs.call_args[0][:2], fq.call_count), (('c3', 'hi'), 1), 'with text: as before')
+
+
 def test_chat_and_terminal(tmp: Path) -> None:
     """F74: chat to any control session (none named: SEND; cN typed in through its shim's FIFO), interrupt
     (Escape typed in), a new control session's link, the quick asks to c1, and the terminal view: ttyd,
@@ -392,4 +409,4 @@ def test_feed_ids_b134(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154), in_tmp(test_chat_hold_b158), in_tmp(test_chat_and_terminal), in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send), in_tmp(test_delete_chats), in_tmp(test_need_chat_f143), in_tmp(test_feed_ids_b134)]))
+    raise SystemExit(report([in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154), in_tmp(test_chat_hold_b158), in_tmp(test_chat_force_queued), in_tmp(test_chat_and_terminal), in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send), in_tmp(test_delete_chats), in_tmp(test_need_chat_f143), in_tmp(test_feed_ids_b134)]))

@@ -49,6 +49,52 @@ def transcript(name: str, rec: dict) -> str:
     return (slots.transcript(sid) if sid else '') or U.transcript_of(name)
 
 
+# --- what is queued in it ---------------------------------------------------------------------------------------
+
+# F190b: what Claude Code 2.1.331 queues and that no person sent
+NOT_SENT = ('<task-notification>', '<agent-message', '<system-reminder>')
+TAG = re.compile(r'</?pasted_content[^>]*>\n?')  # Claude Code wraps a paste (each message typed in is one) in it
+
+
+def queued_in(rows, since: float = 0) -> int:
+    """F190b: how many sent messages transcript entries `rows` leave queued. Claude Code writes a queue-operation entry for
+    each step: enqueue (its content; none for a message with images), dequeue (the oldest goes in as the next turn),
+    remove (one went into the turn under way) and popAll (what can be edited is back in the input). An entry before
+    `since` (epoch s) is of an earlier process, whose queue ended with it."""
+    from agent_runner.control import LEAD, _stamp
+    line: list = []
+
+    def sent(c) -> bool:
+        return not (isinstance(c, str) and TAG.sub('', c).lstrip().startswith((*NOT_SENT, LEAD)))
+    for d in rows:
+        if d.get('type') != 'queue-operation' or (since and (_stamp(d) or since) < since):
+            continue
+        op, c = d.get('operation'), d.get('content')
+        if op == 'enqueue':
+            line.append(c)
+        elif op == 'dequeue':
+            del line[:1]
+        elif op == 'remove' and c in line:
+            line.remove(c)
+        elif op == 'popAll':
+            line = [x for x in line if not sent(x)]
+    return sum(map(sent, line))
+
+
+def queued(rec: dict, ops) -> int:
+    """`queued_in` for the process of `rec` (`record`); 0 while it rests: what was queued has gone in."""
+    if rec.get('status') in (None, '', 'idle', 'shell'):
+        return 0
+    return queued_in(ops, (rec.get('startedAt') or 0) / 1000)
+
+
+def queued_now(name: str) -> int:
+    """`queued` of session `name`, read now."""
+    rec = record(name)
+    path = transcript(name, rec) if rec else ''
+    return queued(rec, U.tail_rows(path, TASK_BYTES)) if path else 0
+
+
 # --- its background work ---------------------------------------------------------------------------------------
 
 TASK_BYTES = 4_000_000  # the tail of a transcript its background work is read from
@@ -111,11 +157,11 @@ _TASKS: dict[str, tuple[int, list[dict]]] = {}  # transcript -> (its size, its t
 
 def live(name: str) -> dict:
     """The page's word on session `name`: {'ok', 'status', 'since' (when it began, epoch s), 'mode' (its permission mode
-    as the transcript has it), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
+    as the transcript has it), 'queued' (F190b: how many sent messages are queued in it), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
     'tail')}."""
     rec = record(name)
     if not rec:
-        return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'tasks': []}
+        return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'queued': 0, 'tasks': []}
     path = transcript(name, rec)
     rows: list[dict] = []
     if path:
@@ -124,12 +170,14 @@ def live(name: str) -> dict:
         except OSError:
             size = 0
         if _TASKS.get(path, (None,))[0] != size:
-            mode, kept = '', []
+            mode, kept, ops = '', [], []
             for d in U.tail_rows(path, TASK_BYTES):
                 if d.get('type') == 'permission-mode':
                     mode = str(d.get('permissionMode') or '')
+                elif d.get('type') == 'queue-operation':
+                    ops.append(d)
                 kept.append(d)
-            _TASKS[path] = (size, [{'mode': mode}, *tasks(kept)])
+            _TASKS[path] = (size, [{'mode': mode, 'ops': ops}, *tasks(kept)])
             while len(_TASKS) > 20:
                 _TASKS.pop(next(iter(_TASKS)))
         rows = _TASKS[path][1]
@@ -139,7 +187,7 @@ def live(name: str) -> dict:
     if rec.get('status') == 'idle':  # nothing of it runs any more, whatever the transcript missed
         run = [t for t in run if t['kind'] == 'agent']
     return {'ok': True, 'status': str(rec.get('status') or ''), 'since': (rec.get('statusUpdatedAt') or 0) / 1000,
-            'mode': mode, 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
+            'mode': mode, 'queued': queued(rec, rows[0]['ops'] if rows else ()), 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
                                      **({'tail': output_tail(t['out'])} if t.get('out') else {})} for t in run + done]}
 
 
@@ -209,6 +257,54 @@ def force_send(session: str, text: str, send, unsent: bool = False) -> dict:
     U.keys(session, text='\x13' if text[:1] in '!/' else '\n')
     time.sleep(0.2)
     return send(session, text)
+
+
+_FORCE_LOCKS: dict[str, threading.Lock] = {}  # session -> one force at a time, so a second press never interrupts twice
+
+
+def put_back(name: str, since: float) -> bool:
+    """F190b: whether an interrupt at `since` (epoch s) left words in session `name`'s input: the last thing said is a
+    prompt with no answer and no word that it was interrupted, or the queue was popped there."""
+    from agent_runner.control import _stamp
+    path = transcript(name, record(name))
+    rows = list(U.tail_rows(path)) if path else []
+    ops = [d for d in rows if d.get('type') == 'queue-operation' and (_stamp(d) or 0) >= since]
+    said = U.feed_entries(rows)
+    return bool(ops) and ops[-1].get('operation') == 'popAll' or bool(said) and said[-1]['kind'] == 'you'
+
+
+def force_queued(session: str) -> dict:
+    """F190b: Force send of what is queued in `session`: one Escape, at which Claude Code takes the queued messages in
+    as its next turn; no text is typed. Nothing queued, or not working: nothing is done.
+    With messages queued, an interrupted prompt that had no answer yet stays in the conversation. Only when the last
+    of the queue went in just before the Escape is that prompt back in the input (or, queue and all, popped there):
+    Enter sends it from there, once."""
+    with _FORCE_LOCKS.setdefault(session, threading.Lock()):
+        n = queued_now(session) if status(session) == BUSY else 0
+        if not n:
+            return {'ok': True, 'code': 0, 'out': f'nothing is queued in {session}', 'argv': []}
+        at = int(time.time() * 1000) / 1000  # ms, as the transcript's stamps are
+        r = U.keys(session, key='Escape')
+        if not r['ok']:
+            return r
+        end = time.monotonic() + STOP_WAIT
+        while time.monotonic() < end:
+            time.sleep(0.2)
+            if status(session) != BUSY:
+                time.sleep(0.4)  # a queued message would have started by now
+                if status(session) != BUSY:
+                    if put_back(session, at):
+                        r = U.keys(session, key='Enter')
+                        if not r['ok']:
+                            return r
+                    break
+            elif queued_now(session) < n:
+                time.sleep(0.4)
+                if status(session) == BUSY:
+                    break
+        else:
+            return _fail(f'{session} did not stop, so its queued messages are still queued')
+        return {'ok': True, 'code': 0, 'out': f'sent the queued messages to {session}', 'argv': []}
 
 
 # --- its commands ----------------------------------------------------------------------------------------------
