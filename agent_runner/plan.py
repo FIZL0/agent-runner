@@ -423,6 +423,8 @@ def drop(tid: str, why: str, todo=None, done=None) -> list[str]:
     was = _split_ids(todo)
     note(tid, f'dropped: {why}', todo=todo)
     tick(tid, todo, done)
+    from agent_runner.asks import clear_env  # here: asks imports this module
+    clear_env(tid, todo)  # F175
     return sorted(was & open_ids(lines(todo)) - _split_ids(todo))
 
 

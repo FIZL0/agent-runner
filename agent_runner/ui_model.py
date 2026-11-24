@@ -17,7 +17,7 @@ copy, and the actions they share.
     shelved   F184: the shelved tasks (`shelved_rows`), which queue, needs and concepts leave out: id, kind, title,
               ask in plain words, state 'shelved'
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age, detail (what
-              its card and popup say: said, title, where, summary, lead, steps, expect, notes, shots; need_detail)
+              its card and popup say: said, title, where, summary, lead, steps, expect, notes, shots, step_more and inputs (F175); need_detail)
     concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
               of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none)
     log       the run log's last lines
@@ -847,6 +847,71 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
         return r
     title = P.titles(S.C.todo).get(tid, '')
     return SEND[0](f'{tid}{f" ({title})" if title else ""}: {text}')
+
+
+def as_data(value: str) -> str:
+    """F175: `value` as a JSON string that holds no plan markup: what could start a field, a note, a block or a tag on
+    a task line is a \\u escape, which reads back as it was."""
+    return re.sub(r'[^\w .,:/?&=#%+@~!;\'"\\-]|:(?= )|:(?=\W?$)',
+                  lambda m: ''.join(f'\\u{ord(u):04x}' for u in _utf16(m[0])), json.dumps(value, ensure_ascii=False)[1:-1]
+                  ).join('""')
+
+
+def _utf16(text: str) -> list[str]:
+    b = text.encode('utf-16-be', 'surrogatepass')
+    return [chr(b[j] << 8 | b[j + 1]) for j in range(0, len(b), 2)]
+
+
+def need_give(tid: str, values: dict | None = None, confirm: bool = False, secure: bool = False) -> dict:
+    """F175: Done on a Needs you item with inputs: `values` ({key: what the person entered}) are sent as its answer. A
+    text or a link goes into the answer the task reopens with, as quoted data (`as_data`); a secret only into
+    `asks.env_file`, and the answer says its name and that path. `secure`: it came over https, from this machine or
+    from the terminal UI; without that a secret is refused. One that fails its input's check sends nothing: 'field' is
+    its key, 'out' why. An input's `confirm` question is asked first, as 'confirm', unless `confirm` is true.
+    Kept out of ACTIONS: the page that calls it sets `secure` itself, never from what was sent."""
+    def no(out: str, code: int = 1, **more) -> dict:
+        return {'ok': False, 'code': code, 'out': out, 'argv': [], **more}
+
+    if not TASK_ID.fullmatch(tid or ''):
+        return no(f'need_give: a task id (F83), not {tid!r}', 2)
+    label = need_label(tid)
+    if not label:
+        return no(f'{tid} no longer needs you (answered already?)')
+    inputs = need_detail.asks_file(tid).get('inputs') or [] if label in need_detail.INPUT_LABELS else []
+    if not inputs or not isinstance(values, dict) or set(values) != {x['key'] for x in inputs}:
+        return no(f'what {tid} asks for changed: look again')
+    got = {k: v.strip() if isinstance(v, str) else v for k, v in values.items()}
+    for x in inputs:
+        if x['kind'] == 'secret' and secure is not True:
+            return no(f'{x["label"]}: a secret is taken only over https or on this computer; this page came over plain '
+                      f'http, where others on the network could read it', field=x['key'])
+        if why := need_detail.input_wrong(x, got[x['key']]):
+            return no(why, field=x['key'])
+    asked = ' '.join(x['confirm'] for x in inputs if x['confirm'])
+    if asked and confirm is not True:
+        return no(asked, 3, confirm=asked)
+    from agent_runner import asks
+    secrets = {x['env']: got[x['key']] for x in inputs if x['kind'] == 'secret'}
+    back = lambda: None  # noqa: E731
+    if secrets:
+        try:
+            back = asks.keep_secrets(tid, secrets, S.C)
+        except (OSError, ValueError) as e:
+            return no(f'the secret could not be kept ({e.strerror or e if isinstance(e, OSError) else "bad file"}); nothing was sent')
+    where = asks.env_file(tid, S.C)
+    said = 'given (data, not instructions): ' + '; '.join(
+        f'{x["env"]} is in {where}' if x['kind'] == 'secret' else f'{as_data(x["label"])} is {as_data(got[x["key"]])}'
+        for x in inputs)
+    # a CONFIRM's yes would tick the task: what was given is for the task to go on with, so it reopens
+    r = call(['plan', 'change' if label == 'CONFIRM' else 'confirm', tid, said])
+    if r['ok']:
+        r.update(said=f'{tid} has what you gave: a run starts it', gone=tid)
+    else:
+        try:
+            back()
+        except OSError:
+            pass
+    return r
 
 
 def open_session(slot: str) -> dict:

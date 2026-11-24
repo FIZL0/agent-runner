@@ -9,14 +9,16 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
+import subprocess as sp
 from contextlib import ExitStack
 from pathlib import Path
 
 from agent_runner import plan as P, plansync
 from agent_runner import state as S
 from agent_runner.state import commit_plan, git, log, MERGE, plan_rel
-from agent_runner.sched import open_tasks
+from agent_runner.sched import open_tasks, plan_text
 
 # C, ROOT and SLOTS_DIR are read off `state` each call: `init` sets them there, and `share` reaches only the
 # modules in state.FAMILY
@@ -57,7 +59,8 @@ def park_asked(n: int, tid: str, sid: str, question: str, branch: str) -> bool:
 
 def block_asks(branch: str) -> None:
     """Block each asked task not blocked yet with `DECIDE: <its question>`, committed as `block_parked` commits
-    (MERGE free, TODO.md clean); one that cannot be now is tried again next tick."""
+    (MERGE free, TODO.md clean); one that cannot be now is tried again next tick. F175: also `sweep_env`, each tick."""
+    sweep_env(branch)
     for f in C.notes().glob('*.ask'):
         try:
             ask = json.loads(f.read_text(encoding='utf-8'))
@@ -141,6 +144,81 @@ def clear_ask(tid: str, todo: str | Path | None = None) -> None:
                 shutil.rmtree(pics, ignore_errors=True)
         except OSError:
             continue
+
+
+def env_file(tid: str, c=None) -> Path:
+    """F175: <notes>/asks/ID.env in the main checkout: the secrets the person gave for task `tid`, NAME='value' each."""
+    return (c or S.cfg()).notes('asks', f'{tid}.env')
+
+
+def _ignored(f: Path) -> bool:
+    """Whether git leaves `f` alone; one it would not is added to the clone's `info/exclude` first."""
+    at = {'cwd': f.parent, 'capture_output': True, 'text': True}
+    if sp.run(['git', 'rev-parse', '--git-dir'], **at).returncode:
+        return True  # no repo, so nothing to commit it to
+    ask = ['git', 'check-ignore', '-q', f.name]
+    if not sp.run(ask, **at).returncode:
+        return True
+    ex = Path(f.parent, sp.run(['git', 'rev-parse', '--git-path', 'info/exclude'], **at).stdout.strip())
+    ex.parent.mkdir(parents=True, exist_ok=True)
+    old = ex.read_text(encoding='utf-8') if ex.exists() else ''
+    ex.write_text(old + ('' if not old or old.endswith('\n') else '\n') + '/**/asks/*.env\n', encoding='utf-8')
+    return not sp.run(ask, **at).returncode
+
+
+def _write_env(f: Path, text: str) -> None:
+    """Replace `f` whole with `text`, readable by its owner alone from the start."""
+    tmp = f.with_name(f'.{f.stem}.tmp.env')
+    tmp.unlink(missing_ok=True)
+    try:
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w', encoding='utf-8', newline='\n') as h:
+            h.write(text)
+        os.replace(tmp, f)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def keep_secrets(tid: str, values: dict[str, str], c=None):
+    """F175: write the secrets `values` ({NAME: value}) to task `tid`'s env file beside those it has, and return what
+    puts the file back as it was (the answer they go with failed). Raises OSError when they cannot be kept."""
+    f = env_file(tid, c)
+    if not _ignored(f):
+        raise OSError(f'git would track {f}')
+    old = f.read_text(encoding='utf-8') if f.is_file() else None
+    kept = [x for x in (old or '').splitlines() if x.partition('=')[0] not in values]
+    _write_env(f, ''.join(f'{x}\n' for x in kept + [f'{k}={shlex.quote(v)}' for k, v in values.items()]))
+    return lambda: f.unlink(missing_ok=True) if old is None else _write_env(f, old)
+
+
+def clear_env(tid: str, todo: str | Path | None = None) -> None:
+    """F175: take task `tid`'s secrets away: it was dropped (one that lands: `sweep_env`)."""
+    for c in _plans(todo) if re.fullmatch(r'\w[\w.-]*', tid or '') else []:
+        try:
+            env_file(tid, c).unlink(missing_ok=True)
+        except OSError:
+            continue
+
+
+def sweep_env(branch: str) -> None:
+    """F175: take away the secrets of each task that is no longer open or blocked, neither on `branch` nor in the main
+    checkout: it landed or was dropped. A task its session only ticked on its own branch keeps them."""
+    files = list(C.notes('asks', 'x').parent.glob('*.env'))
+    if not files:
+        return
+    live: set[str] = set()
+    try:
+        for ls in (plan_text(branch), P.lines(C.todo)):
+            if not ls:
+                return  # a plan that does not read ends nothing
+            live |= {tid.rstrip('.') for _, box, tid, _, _ in P.iter_tasks(ls) if box != 'x'}
+    except (OSError, SystemExit):
+        return
+    for f in files:
+        if f.stem.removeprefix('.').removesuffix('.tmp') not in live:
+            try:
+                f.unlink(missing_ok=True)
+            except OSError:
+                continue
 
 
 def taken_ask(tid: str, todo: str | Path | None, again: bool) -> None:

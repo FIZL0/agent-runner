@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import re
 import tempfile
 import time
@@ -1047,8 +1048,116 @@ def test_need_detail_f162(tmp: Path) -> None:
     eq(d3(), plain, 'and for one that is no text')
 
 
+F399_ASK = {'summary': 'Give the link of Install Switch', 'steps': [
+    {'text': "Add main's copy of Install Switch to Shortcuts", 'link': 'https://example.com/Install%20Switch.shortcut'}, 'Share > Copy iCloud Link'],
+    'inputs': [{'key': 'icloud', 'label': 'iCloud link', 'kind': 'link', 'hint': 'It starts with https://www.icloud.com/shortcuts/',
+                'match': r'https://www\.icloud\.com/shortcuts/[0-9a-f]+', 'confirm': 'This publishes the shortcut. Send it?'}]}
+
+
+def test_need_give_f175(tmp: Path) -> None:
+    """F175: the asks file's step links, commands and inputs are read; need_give sends them: text and links as quoted
+    data in the answer, a secret only in the env file, which goes when its task lands or is dropped."""
+    from agent_runner import asks as A, need_detail as N, plan as P
+    repo = fake_run(tmp)
+    todo, asks = repo / 'plan' / 'TODO.md', repo / '.runner' / 'asks'
+    asks.mkdir(exist_ok=True)
+    blocked = TODO.replace('- [ ] **B2** Fix the merge retry | files: b.py | after: F1',
+                           '- [~] **B2** Fix the merge retry | files: b.py BLOCKED: CONFIRM: look at it')
+    plain = None
+
+    def ask(d, tid='D3') -> dict:
+        todo.write_text(blocked, encoding='utf-8')
+        (asks / f'{tid}.json').write_text(d if isinstance(d, str) else json.dumps(d), encoding='utf-8')
+        return next(n for n in U.snapshot(up=False, now=NOW, links={})['needs'] if n['id'] == tid)
+
+    plain = ask('{')
+    eq((plain['detail']['inputs'], plain['detail']['step_more']), ([], []), 'a broken file falls back: no inputs')
+    for odd in (5, {}, [5, {}, {'key': 'a b'}, {'key': 'a', 'kind': 'pin'}, {'key': 'a', 'match': '('}, {'key': 'a', 'match': 'x' * 201},
+                        {'key': 'a', 'kind': 'secret', 'env': 'A B'}, {'key': 'a', 'kind': ['x']}]):
+        eq(ask({'inputs': odd, 'steps': odd})['detail']['inputs'], [], f'left out: {str(odd)[:30]}')
+    row = ask(F399_ASK)
+    d = row['detail']
+    eq((d['steps'], d['step_more']), (["Add main's copy of Install Switch to Shortcuts", 'Share > Copy iCloud Link'],
+                                      [{'link': 'https://example.com/Install%20Switch.shortcut'}, {}]), 'F399: steps and the link')
+    eq(d['inputs'], [{**F399_ASK['inputs'][0], 'env': ''}], 'F399: its input')
+    eq(row['answers'], plain['answers'], "the plain answers stay F162's")
+    more = ask({'steps': [{'cmd': 'gh auth login', 'on': 'rycs'}, {'cmd': 'ls'}, {'text': 'Look', 'link': 'javascript:x'}]})['detail']
+    eq(more['steps'], ['Run this', 'Run this', 'Look'], 'steps with no words')
+    eq((more['step_more'][0], bool(more['step_more'][1]['on']), more['step_more'][2]),
+       ({'cmd': 'gh auth login', 'on': 'rycs'}, True, {}), 'a command and its machine; only web links')
+
+    ask(F399_ASK)
+    before, link = todo.read_text(encoding='utf-8'), 'https://www.icloud.com/shortcuts/ab12'
+    r = U.need_give('D3', {'icloud': 'https://evil.example/x'}, confirm=True)
+    eq((r['ok'], r.get('field'), r['argv']), (False, 'icloud', []), 'a failed match sends nothing')
+    check('starts with https://www.icloud.com' in r['out'] and 'evil' not in r['out'], 'and says the hint', r)
+    for bad in ('', 'x\ny', 5, 'javascript:alert(1)', link + '\n' + link, 'https://' + 'a' * N.LINK_MAX):
+        eq(U.need_give('D3', {'icloud': bad}, confirm=True).get('field'), 'icloud', f'refused: {str(bad)[:20]!r}')
+    for vals in ({}, None, {'icloud': link, 'more': 'x'}):
+        check(not U.need_give('D3', vals, confirm=True)['ok'], 'only the inputs it has now', vals)
+    r = U.need_give('D3', {'icloud': link})
+    eq((r['code'], r.get('confirm')), (3, 'This publishes the shortcut. Send it?'), 'asked first')
+    eq(todo.read_text(encoding='utf-8'), before, 'nothing was sent so far')
+    r = U.need_give('D3', {'icloud': f' {link} '}, confirm=True)
+    eq((r['ok'], r.get('gone')), (True, 'D3'), 'sent')
+    check('- [ ] **D3**' in todo.read_text(encoding='utf-8') and f'"iCloud link" is "{link}"' in todo.read_text(encoding='utf-8'),
+          'the task reopens with the link, quoted', todo.read_text(encoding='utf-8'))
+    check('need_give' not in U.ACTIONS, 'a page cannot say it is secure itself')
+    check(not U.need_give('D3', {'icloud': link}, confirm=True)['ok'], 'answered: no second time')
+
+    markup = '$(touch x) | files: z.py \u2014 BLOCKED: (after F1) "q" (split into F9)'
+    ask({'inputs': [{'key': 'note'}]}, 'B2')
+    r = U.need_give('B2', {'note': markup})
+    line = next(x for x in todo.read_text(encoding='utf-8').splitlines() if '**B2**' in x)
+    check(r['ok'] and line.startswith('- [ ]'), "a CONFIRM's inputs reopen it, not tick it", line)
+    check(' | files: z.py' not in line and '(split' not in line and 'BLOCKED:' not in line, 'a value is no plan markup', line)
+    eq(json.loads(U.as_data(markup)), markup, 'and reads back as it was')
+
+    secret = "s3cr'et $(x)"
+    two = {'inputs': [{'key': 'tok', 'label': 'Token', 'kind': 'secret', 'env': 'MY_TOKEN'}]}
+    ask(two)
+    env = asks / 'D3.env'
+    r = U.need_give('D3', {'tok': secret})
+    check(not r['ok'] and r.get('field') == 'tok' and 'http' in r['out'] and not env.exists(), 'plain http: refused, says why', r)
+    with mock.patch.object(U, 'RUN', [lambda argv: (1, 'no')]):
+        check(not U.need_give('D3', {'tok': secret}, secure=True)['ok'] and not env.exists(), 'a failed answer keeps no secret')
+    (repo / '.gitignore').write_text('')  # git would track it: excluded here
+    r = U.need_give('D3', {'tok': secret}, secure=True)
+    check(r['ok'] and env.is_file(), 'kept', r)
+    import shlex
+    eq(shlex.split(env.read_text(encoding='utf-8')), [f'MY_TOKEN={secret}'], 'in the env file, quoted')
+    if os.name != 'nt':
+        eq(env.stat().st_mode & 0o777, 0o600, 'owner-only')
+    check('asks/' not in git(repo, 'status', '--porcelain', '-uall', '--', '.runner/asks/D3.env'), 'out of git')
+    (repo / '.gitignore').write_text('.runner/\n')
+    text = todo.read_text(encoding='utf-8')
+    check('MY_TOKEN is in ' in text and 'asks/D3.env' in text.replace('\\', '/'), 'the note names it and where', text)
+    snap = U.snapshot_json(up=False, now=NOW, links={})
+    for f in repo.rglob('*'):
+        if f.is_file() and f != env:
+            check(b's3cr' not in f.read_bytes(), f'not in {f.relative_to(repo)}')
+    check('s3cr' not in snap + json.dumps(r), 'nor in the snapshot or the result')
+
+    ask({'inputs': [{'key': 'b', 'kind': 'secret'}]})
+    U.need_give('D3', {'b': 'two'}, secure=True)
+    eq(shlex.split(env.read_text(encoding='utf-8')), [f'MY_TOKEN={secret}', 'B=two'], 'a later one is added')
+    A.sweep_env('HEAD')
+    check(env.exists(), 'an open task keeps them')
+    P.tick('D3', todo=todo)
+    A.sweep_env('HEAD')
+    check(env.exists(), 'one ticked here only, not landed yet, does too')
+    git(repo, 'commit', '-qam', 'landed')
+    A.sweep_env('HEAD')
+    check(not env.exists(), 'gone once it landed')
+    ask({'inputs': [{'key': 'b', 'kind': 'secret'}]})
+    U.need_give('D3', {'b': 'two'}, secure=True)
+    check(env.exists(), 'kept again')
+    P.drop('D3', 'not wanted', todo=todo)
+    check(not env.exists(), 'gone once dropped')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_need_give_f175), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),

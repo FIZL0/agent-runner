@@ -503,7 +503,9 @@ answered in that project's control session; a project that needs another's state
 
 The card and popup of a Needs you item say what the ask is in short. Optionally, `<notes>/asks/ID.json` gives them
 their own words, each field standing in for what the ask's text gives: `summary` (the card's line), `where`, `steps`
-(What to do), `expect` (What you should see) and `shots` (pictures, each with a `caption`):
+(What to do; each a words string, or `{text, link, cmd, on}`: `link` a web address, `cmd` a command for the machine
+`on` names, this one when none is named), `expect` (What you should see), `shots` (pictures, each with a `caption`) and
+`inputs` (below):
 
 ```json
 {"summary": "Open the pay page on the phone", "where": "iPhone, Safari", "steps": ["Open the shop", "Tap Pay"],
@@ -515,6 +517,24 @@ A missing, broken or over 64 KB file is ignored. Without one, the ask is split b
 absolute path inside one of those two folders. A picture is png, jpg, gif or webp, served by a token-checked
 `GET /shot/uploads/…` or `/shot/asks/…` and never from anywhere else; a picture under `<notes>/uploads` that the task's
 line names shows too. The TUI's Needs you pane shows the same steps, expected list and picture paths.
+
+`inputs` asks the person to enter something. Each is `{key, label, kind, hint, match, confirm, env}`: `kind` is `text`
+(500 characters at most), `link` (a web address, 1000 at most) or `secret` (4096 at most), and a secret's `env` is its
+NAME, the key in capitals by default. `match` is a regex the whole value must match (200 characters at most), `hint`
+says what is wrong when it does not, and `confirm` is a question asked before anything is sent. A value is one line,
+every input must be filled, at most 12 are read, and a malformed one is left out. Only CONFIRM, DECIDE, BLOCKED and
+stuck items take inputs. `ui_model.need_give` checks each value and sends nothing when one fails, naming that input.
+Text and links go quoted as data in the answer the task reopens with; a CONFIRM with inputs reopens rather than ticks.
+A secret goes only to `<notes>/asks/ID.env` as `NAME='value'`, owner-only and kept out of git, and the answer names its
+NAME and that path. It is kept while the task is open and removed when it lands or is dropped, and is taken only over
+https or from this computer or the terminal UI:
+
+```json
+{"steps": [{"text": "Add the Install Switch shortcut", "link": "https://www.icloud.com/shortcuts/example"},
+ "Share > Copy iCloud Link"],
+ "inputs": [{"key": "link", "label": "iCloud link", "kind": "link", "match": "https://www\\.icloud\\.com/shortcuts/\\S+",
+ "hint": "paste the link that Share > Copy iCloud Link gives", "confirm": "Is this the link you copied?"}]}
+```
 
 The file is optional, and the brief asks for it only for length: a CONFIRM, DECIDE or BLOCKED line, and a `run ask`
 question, stays one short sentence (about 100 characters at most), and the rest goes in `<notes>/asks/ID.json` with

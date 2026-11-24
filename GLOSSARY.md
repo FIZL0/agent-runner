@@ -663,3 +663,10 @@ _Said_: picked up as you were making it
 _On screen_: waits to be split, starts in 4 min if it is not
 _In code_: SPLIT_HOLD, split-by, split_left, split_waits, splitting
 _Avoid_: grace period, cooldown
+
+**Input**:
+a text, link or secret a Needs you item asks the person to enter, sent with Done as its answer; a secret is kept only in the task's own secrets file
+_Said_: what the person has to give
+_On screen_: one field on a Needs you item
+_In code_: inputs, need_give, input_wrong, asks/ID.env
+_Avoid_: form field, parameter

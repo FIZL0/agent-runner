@@ -2,13 +2,14 @@
 pictures.
 
 They come from the optional file <notes>/asks/ID.json, {summary, where, steps: [...], expect: [...], shots: [{file,
-caption}]}, each field standing in for what the ask's own words give. Those are split by rule (`split_ask`), with no AI
+caption}], inputs: [...]}, each field standing in for what the ask's own words give. Those are split by rule (`split_ask`), with no AI
 and nothing lost: the pieces joined are the ask. A missing, broken or oversized file is never an error.
 """
 from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 from pathlib import Path
 
@@ -18,7 +19,10 @@ from agent_runner import state as S
 SAID = {'CONFIRM': 'Check this', 'DECIDE': 'Choose', 'CONCEPT': 'Choose', 'PITCH': 'Choose', 'BLOCKED': 'Do this',
         'TOOL': 'Do this', P.STUCK: 'Stuck'}  # what is wanted, in everyday words
 FILE_MAX = 64 * 1024        # an asks file larger than this is not read
-SHOT_MAX = 50 * 1024 * 1024
+LINK_MAX, CMD_MAX, MATCH_MAX, INPUTS_MAX = 1000, 2000, 200, 12  # F175
+KINDS = {'text': 500, 'link': LINK_MAX, 'secret': 4096}  # an input's kinds, and the most characters of each
+INPUT_LABELS = ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK)  # the items inputs can answer
+SHOT_MAX = 50* 1024 * 1024
 SHOTS_MAX = 20
 SHOT_DIRS = ('uploads', 'asks')  # under the notes dir, the only folders pictures are shown from
 SHOT_TYPES = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -204,8 +208,81 @@ def _strings(v) -> list[str]:
     return [' '.join(x.split()) for x in v if isinstance(x, str) and x.strip()] if isinstance(v, list) else []
 
 
+def is_link(v) -> bool:
+    """Whether `v` is a web link a page may open: http or https, one word, no control characters."""
+    return isinstance(v, str) and len(v) <= LINK_MAX and v.isprintable() and \
+        bool(re.fullmatch(r'https?://[^\s/]\S*', v, re.I))
+
+
+def _steps(v) -> tuple[list[str], list[dict]]:
+    """F175: an asks file's steps, each words or {text, link, cmd, on}: (their words, one {link, cmd, on} each);
+    the second is [] when no step has a link or a command. `on`, the machine a command is for, is this one when the
+    file names none."""
+    words, more = [], []
+    for s in v if isinstance(v, list) else []:
+        s = {'text': s} if isinstance(s, str) else s
+        if not isinstance(s, dict):
+            continue
+        text = ' '.join(s['text'].split()) if isinstance(s.get('text'), str) else ''
+        x = {}
+        if is_link(s.get('link')):
+            x['link'] = s['link']
+        cmd = s['cmd'].strip() if isinstance(s.get('cmd'), str) else ''
+        if cmd and len(cmd) <= CMD_MAX and cmd.replace('\n', '').isprintable():
+            on = s.get('on')
+            x.update(cmd=cmd, on=' '.join(on.split()) if isinstance(on, str) and on.strip() else platform.node())
+        text = text or ('Run this' if 'cmd' in x else 'Open this' if x else '')
+        if text:
+            words.append(text)
+            more.append(x)
+    return words, more if any(more) else []
+
+
+def _inputs(v) -> list[dict]:
+    """F175: what an asks file wants the person to give, [{key, label, kind, hint, match, confirm, env}], only what is
+    well formed; `env` is a secret's name in <notes>/asks/ID.env ('' for the others)."""
+    out: list[dict] = []
+    for x in v[:INPUTS_MAX] if isinstance(v, list) else []:
+        if not isinstance(x, dict) or not isinstance(x.get('key'), str) or not re.fullmatch(r'[A-Za-z][\w-]{0,39}', x['key'], re.A):
+            continue
+        say = {k: ' '.join(x[k].split())[:300] if isinstance(x.get(k), str) else '' for k in ('label', 'hint', 'confirm')}
+        kind, match, env = x.get('kind', 'text'), x.get('match', ''), ''
+        if not isinstance(kind, str) or kind not in KINDS:
+            continue
+        if kind == 'secret':
+            env = x.get('env') or x['key'].replace('-', '_').upper()
+            if not isinstance(env, str) or not re.fullmatch(r'[A-Za-z_]\w{0,79}', env, re.A):
+                continue
+        try:
+            if not isinstance(match, str) or len(match) > MATCH_MAX:
+                raise ValueError('match')
+            re.compile(match)
+        except (re.error, ValueError, OverflowError, RecursionError):
+            continue  # its check cannot be made, so no value may pass it
+        if x['key'] in {o['key'] for o in out} or env and env in {o['env'] for o in out}:
+            continue
+        out.append({'key': x['key'], **say, 'label': say['label'] or x['key'], 'kind': kind, 'match': match, 'env': env})
+    return out
+
+
+def input_wrong(x: dict, value) -> str:
+    """F175: why `value` is not taken for the input `x` ('' when it is); never says the value itself."""
+    if not isinstance(value, str) or not value:
+        return f'{x["label"]}: nothing is entered'
+    if len(value) > KINDS[x['kind']]:
+        return f'{x["label"]}: at most {KINDS[x["kind"]]} characters'
+    if not value.isprintable():
+        return f'{x["label"]}: one line, with no control characters'
+    if x['kind'] == 'link' and not is_link(value):
+        return f'{x["label"]}: {x["hint"] or "a link that starts with https://"}'
+    if x['match'] and not re.fullmatch(x['match'], value):
+        return f'{x["label"]}: {x["hint"] or "this is not what is asked for"}'
+    return ''
+
+
 def asks_file(tid: str) -> dict:
-    """<notes>/asks/ID.json as {summary, where, steps, expect, shots}, only what is well formed; {} without one."""
+    """<notes>/asks/ID.json as {summary, where, steps, step_more, expect, inputs, shots}, only what is well formed; {}
+    without one."""
     if not re.fullmatch(r'[\w.-]+', tid or ''):
         return {}
     try:
@@ -218,7 +295,8 @@ def asks_file(tid: str) -> dict:
     if not isinstance(d, dict):
         return {}
     out: dict = {k: ' '.join(d[k].split()) for k in ('summary', 'where') if isinstance(d.get(k), str)}
-    out.update(steps=_strings(d.get('steps')), expect=_strings(d.get('expect')))
+    steps, more = _steps(d.get('steps'))
+    out.update(steps=steps, step_more=more, expect=_strings(d.get('expect')), inputs=_inputs(d.get('inputs')))
     shots = d.get('shots') if isinstance(d.get('shots'), list) else []
     out['shots'] = [r for s in shots[:SHOTS_MAX] if isinstance(s, dict) and isinstance(s.get('file'), str) and
                     (r := _shot(s['file'], s['caption'] if isinstance(s.get('caption'), str) else ''))]
@@ -241,8 +319,8 @@ def named_shots(text: str) -> list[dict]:
 
 
 def detail(label: str, tid: str, ask: str, title: str, text: str, short) -> dict:
-    """What the card and the popup of one item say: said, title, where, summary, lead, steps, expect, notes and shots.
-    `text` is its task's text, `short` ui_model's ask_short."""
+    """What the card and the popup of one item say: said, title, where, summary, lead, steps, expect, notes and shots;
+    F175: `step_more` (each step's link, cmd and on) and `inputs` (what the person gives, `ui_model.need_give`). `text` is its task's text, `short` ui_model's ask_short."""
     d = asks_file(tid)
     pieces = split_ask(ask, label in ('CONFIRM', 'BLOCKED'))
     of = lambda kind: [s for k, p in pieces if k == kind and (s := shown(p))]  # noqa: E731
@@ -252,4 +330,5 @@ def detail(label: str, tid: str, ask: str, title: str, text: str, short) -> dict
     return {'said': SAID.get(label, label), 'title': P.short_title(title) if title else tid,
             'where': d.get('where') or place(ask), 'summary': d.get('summary') or short((steps or expect or [ask])[0]),
             'lead': [] if d.get('steps') else of('lead'), 'steps': steps, 'expect': expect, 'notes': of('note'),
-            'shots': shots}
+            'shots': shots, 'step_more': d.get('step_more') or [],
+            'inputs': (d.get('inputs') or []) if label in INPUT_LABELS else []}
