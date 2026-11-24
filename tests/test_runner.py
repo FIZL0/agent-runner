@@ -6776,6 +6776,7 @@ def test_setup(tmp: Path):
             return S.main(argv, cwd=root)
 
     with mock.patch.object(S, 'launch', lambda r, text: launched.append((r, text)) or 0), \
+            mock.patch.object(S, 'no_claude', lambda r: ''), \
             mock.patch.object(S, 'ask', lambda q: launched.append(('asked', q)) or False):
         eq(setup([]), 0, 'setup on a dirty repo')
         name = f'runner-setup-backup-{datetime.date.today().isoformat()}'

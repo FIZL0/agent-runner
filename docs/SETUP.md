@@ -77,7 +77,7 @@ code = "copilot:<model>"  # a model your account lists; a bare name or claude:<m
 The session runs on the [harness loop](REFERENCE.md#the-harness-loop), a Node program that needs Node.js 22 or later
 on PATH. Log in once with `agent-runner login copilot` (for enterprise Copilot, `--enterprise company.ghe.com`; see
 [Provider logins](#provider-logins-run-login)). `agent-runner login` with no argument lists the providers the repo
-names and whether each has a login.
+names and whether each has a login. `agent-runner setup` asks for this too, and writes the model for the provider you pick (see [A new repo from scratch](#a-new-repo-from-scratch)).
 
 `NODE_USE_SYSTEM_CA=1` uses the OS certificate trust store for corporate TLS interception; it requires Node.js
 22.19+ and does not disable certificate verification. Set it in the environment before starting the run if Node
@@ -138,11 +138,22 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    Claude session. The run page needs ttyd to show sessions. Yes runs the command in
    this terminal. On no, with no terminal or no package manager, or when the install fails, it says the command
    or what failed and goes on. It asks also on a repo already set up, and `--yes` does not answer it.
-4. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
+4. At a terminal it asks which providers to use. It lists Claude Code, GitHub Copilot, Codex, Gemini and
+   Ollama, each with whether it is found (Claude Code, Ollama) and whether it is logged in. Pick by number or name, several at
+   once if you like; Enter changes nothing. Each pick that is not logged in is logged in there:
+   `claude auth login` for Claude Code, `agent-runner login PROVIDER` for the others. Copilot first asks for
+   a GitHub Enterprise domain (blank for github.com); one already logged in can log in again, on another domain.
+   The first pick runs the tasks. Its model goes to
+   `[models] code` and `fix` in `runner.local.toml`. Claude Code needs no model id; another provider asks for
+   one, and Ollama also sets `local = true`. A kind in `[models.kinds]` on another provider moves to the
+   pick too, because a kind wins over `code`. A failed login is said, and the models are still written: the pick's tasks wait for the login. With no terminal it
+   asks nothing and prints the login commands. `--yes` does not answer it.
+5. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
    lean brief) that reads the repo, checks the gate, writes the goal and a first task list with
    `agent-runner plan goal` and `plan add`, adds a short `## Agent notes` section to CLAUDE.md or AGENTS.md,
-   and commits it all.
-5. It prints what it set up; `agent-runner` then opens the run picker, where `s` starts the run.
+   and commits it all. With no Claude Code here, setup does not fail. It says in one line what cannot run
+   yet (the setup session, chats, spec reviews, tasks on a claude model) and starts no session.
+6. It prints what it set up; `agent-runner` then opens the run picker, where `s` starts the run.
 
 Run again on a repo that has a plan, it asks before the session touches it (`--yes`: go on without asking).
 

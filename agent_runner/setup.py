@@ -3,7 +3,8 @@
 1. Save what is there: uncommitted work (tracked edits and untracked files) is committed to a backup branch,
    runner-setup-backup-<date>, through a scratch index, so the checkout, its index and HEAD stay as they were.
 2. Write runner.toml when there is none, with a guessed gate, and add an empty `## Tools` section to CLAUDE.md
-   when it has none (B80). Without ttyd, offer at a terminal to install it (F403).
+   when it has none (B80). Without ttyd, offer at a terminal to install it (F403). Ask there which providers to
+   use, and log in to them (F406d, setup_models).
 3. Start one full Claude session (normal tools, CLAUDE.md, not the lean slot brief) whose first message asks it to
    read the repo and write the plan through `plan goal` / `plan add`, set the gate and a short notes section.
 4. Print what it set up, and `agent-runner` to start the run (s in its launcher).
@@ -187,17 +188,13 @@ End with a few lines: the gate, the goal, how many tasks, and what a person shou
 """
 
 
-def launch(root: Path, text: str) -> int:
+def launch(root: Path, text: str) -> int | None:
     """One full interactive Claude session in the repo with `text` as its first message (normal tools and
-    settings, not a slot's lean ones); waits for it to end."""
-    agent = 'claude'
-    try:
-        from agent_runner.config import cfg
-        run = cfg(root).run
-        if run.get('backend', 'claude') == 'claude':
-            agent = run['agent']
-    except (Exception, SystemExit):
-        pass
+    settings, not a slot's lean ones); waits for it to end. None: this machine has no Claude Code (F406d)."""
+    from agent_runner.setup_models import claude_program
+    agent = claude_program(root)
+    if not agent:
+        return None
     try:
         return subprocess.run([agent, text], cwd=str(root)).returncode
     except OSError as e:
@@ -250,6 +247,23 @@ def offer_ttyd() -> str | None:
     return f'`{cmd}` ended, but ttyd is not found yet: open a new terminal, and run the command again if it is missing there'
 
 
+def offer_models(root: Path) -> list[str]:
+    """F406d: ask at a terminal which providers to use; the lines to say about it."""
+    from agent_runner.setup_models import offer
+    return offer(root, at_terminal())
+
+
+def no_claude(root: Path) -> str:
+    """F406d: what cannot run while this machine has no Claude Code, in one line; '' when it has one."""
+    from agent_runner import setup_models as M
+    if M.claude_program(root):
+        return ''
+    c = M.config(root)
+    why = c.agent_problem if c and c.run['agent'] != 'claude' else 'no Claude Code here'
+    return (f'{why}, so these cannot run yet: the setup session that writes the plan, chats, spec reviews and tasks on '
+            f'a claude model (`{RUNNER} plan add` files tasks by hand)')
+
+
 def count_tasks(todo: Path) -> int:
     try:
         return sum(1 for l in todo.read_text(encoding='utf-8').splitlines() if l.lstrip().startswith('- [ ] **'))
@@ -280,14 +294,17 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     if ttyd := offer_ttyd():
         said.append(ttyd)
         print(f'agent-runner setup: {said[-1]}')
+    for line in offer_models(root):
+        said.append(line)
+        print(f'agent-runner setup: {line}')
     todo = todo_path(root)
     existing = todo.is_file()
     text = prompt(root, gate, existing)
-    if existing and not a.yes and not ask(f'{todo} exists: start a session that reads it and adds to it?'):
+    if existing and not a.yes and not no_claude(root) and not ask(f'{todo} exists: start a session that reads it and adds to it?'):
         said.append('plan left alone (re-run with --yes to let the session add to it)')
     else:
         code = launch(root, text)
-        said.append(f'setup session ended (exit {code})')
+        said.append(no_claude(root) if code is None else f'setup session ended (exit {code})')
         if todo.is_file():
             said.append(f'{todo.relative_to(root) if todo.is_relative_to(root) else todo}: '
                         f'{count_tasks(todo)} open tasks')
