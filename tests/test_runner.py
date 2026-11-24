@@ -5759,6 +5759,31 @@ def test_auto_release(repo: Path):
         land(f'{tid2}')
         eq(R.auto_release('main', idle=True), '', 'nothing landed since the release landed: none')
 
+        print('run: auto_release with both on: a count release and an idle one never two for the same work (F174)')
+        R.C.run['auto_release'] = {'every': 2, 'idle': True}
+        for first in ('count', 'idle'):
+            evf.write_text('', encoding='utf-8')
+            R.AUTO_RELEASE_SEEN[0] = None
+            land('F911')
+            eq(R.auto_release('main'), '', 'one landed: the count waits')
+            if first == 'count':
+                land('F912')
+            tid3 = R.auto_release('main', idle=first == 'idle')
+            check(tid3.startswith('V'), f'{first} queues one', tid3)
+            has(git(repo, 'log', '-1', '--format=%s'), r'\(2 landed\)$' if first == 'count' else r'\(idle\)$', 'saying why')
+            land('F912', 'F913', 'F914')
+            eq((R.auto_release('main'), R.auto_release('main', idle=True), releases() and len(releases())), ('', '', 1),
+               f'{first} first: neither queues a second while it is open')
+            P.block(tid3, 'BLOCKED: a login', todo=todo)
+            git(repo, 'commit', '-qam', 'release blocked')
+            R.AUTO_RELEASE_SEEN[0] = None
+            eq((R.auto_release('main'), R.auto_release('main', idle=True)), ('', ''), 'nor while it waits on a person')
+            drop(tid3)
+            land(tid3)
+            R.AUTO_RELEASE_SEEN[0] = None
+            eq((R.auto_release('main'), R.auto_release('main', idle=True), releases()), ('', '', []),
+               f'{first} first: nor once it landed, for the work it released')
+
         print('run: auto_release counts nothing when only the plan changed since the version tag (F63)')
         R.C.run['auto_release'] = {'idle': True, 'every': 1}
         evf.write_text('', encoding='utf-8')

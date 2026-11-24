@@ -38,7 +38,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.approve_wait': ('landing', 'Wait before asking', 'Minutes with no new related change before you are asked. Longer groups more work into one question.'),
     'run.approve_batch': ('landing', 'Ask at once at', 'This many related changes are put to you at once, without the wait. Lower asks sooner.'),
     'run.review': ('landing', 'Review each task', 'A second agent checks the work against what you asked. Off: faster, but nothing catches what was missed.'),
-    'run.auto_release': ('landing', 'Release by itself', 'A release is queued every so many tasks, or when the run goes idle. Off: you ask for each one.'),
+    'run.auto_release': ('landing', 'Release by itself', 'A release is queued every so many tasks, when the run goes idle, or both. Both off: you ask for each one.'),
     'git.land_edited': ('landing', 'My unsaved edits are in the way', 'Wait: finished work waits for you. Set aside: your edits move to a branch so it can land.'),
     'run.ci_watch': ('landing', 'Fix failed GitHub checks', 'A check that fails on GitHub is filed as an urgent bug. Off: nobody looks.'),
     'run.issues_watch': ('landing', 'Take GitHub issues', 'Each new open issue becomes a task. Off: issues stay on GitHub.'),
@@ -160,8 +160,6 @@ _CHOICES: dict[str, dict[str, str]] = {
     'run.engine': {'terminal': 'Terminal', 'stream': 'Stream'},
     'run.ci_watch': {'auto': 'On', 'false': 'Off'},
     'run.issues_watch': {'true': 'On', 'false': 'Off'},
-    'run.auto_release': {'false': 'Off', '{"every":5}': 'Every 5 tasks', '{"every":10}': 'Every 10 tasks',
-                         '{"every":20}': 'Every 20 tasks', '{"idle":true}': 'When idle'},
     'run.weekly_max': {'50': '50%', '60': '60%', '70': '70%', '80': '80%', '90': '90%', '95': '95%', '100': '100%'},
     'run.session_max': {'50': '50%', '60': '60%', '70': '70%', '80': '80%', '90': '90%', '95': '95%', '100': '100%'},
     'run.control_idle': {'1h': '1 hour', '3h': '3 hours', '6h': '6 hours', '12h': '12 hours', 'false': 'Never'},
@@ -169,6 +167,10 @@ _CHOICES: dict[str, dict[str, str]] = {
     'ui.chat_quiet': {'1h': '1 hour', '3h': '3 hours', '6h': '6 hours', '12h': '12 hours', '1d': '1 day', 'false': 'Off'},
     'models.control': {'opus': 'opus', 'sonnet': 'sonnet', 'haiku': 'haiku'},
     'models.review': {'opus': 'opus', 'sonnet': 'sonnet', 'haiku': 'haiku'},
+}
+# F174: a table value set by two controls on its row: each one's label, and a count's choices
+_PARTS: dict[str, dict] = {
+    'run.auto_release': {'every': {'label': 'Every', 'counts': [5, 10, 20], 'unit': 'tasks'}, 'idle': {'label': 'When idle'}},
 }
 _UNITS: dict[str, str] = {
     'run.weekly_max': '%', 'run.session_max': '%', 'run.approve_wait': 'min', 'run.slot_max_gb': 'GB',
@@ -206,6 +208,11 @@ def parent(table: str, key: str) -> str:
 def words(table: str, key: str) -> dict[str, str]:
     """A pick's values (as JSON reads them, a string bare) and what the control says for each; {} when typed."""
     return _CHOICES.get(f'{table}.{key}', {})
+
+
+def parts(table: str, key: str) -> dict:
+    """The controls that set a table value together (`_PARTS`); {} when one control sets it."""
+    return _PARTS.get(f'{table}.{key}', {})
 
 
 def unit(table: str, key: str) -> str:

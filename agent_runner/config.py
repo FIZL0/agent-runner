@@ -1227,7 +1227,7 @@ def settings_snapshot(root: Path) -> dict:
             row = {'key': k, 'type': setting_type(t, k), 'choices': list(setting_choices(t, k)), 'default': d,
                    'off': 'off' in SETTING_ALSO.get((t, k), ()), 'also': list(SETTING_ALSO.get((t, k), ())),
                    'name': W.name(t, k), 'desc': W.desc(t, k), 'group': W.group(t, k), 'home': W.home(t, k),
-                   'parent': W.parent(t, k), 'words': W.words(t, k), 'unit': W.unit(t, k), 'order': W.order(t, k),
+                   'parent': W.parent(t, k), 'words': W.words(t, k), 'parts': W.parts(t, k), 'unit': W.unit(t, k), 'order': W.order(t, k),
                    'applies': 'now' if (t, k) in SETTING_NOW else 'next run', 'value': d, 'source': 'default'}
             for side in ('project', 'device'):
                 have = raws[side].get(t)

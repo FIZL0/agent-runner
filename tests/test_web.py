@@ -3152,6 +3152,30 @@ def test_task_text_f85(tmp: Path) -> None:
         srv.stop()
 
 
+PARTS_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const k = {...JSON.parse(process.argv[3]), name: 'Release by itself', desc: 'd', home: 'everyone', value: false, source: 'default'};
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b));
+const S = {f: {}, ob: [], setOpen: {}, set: {tables: [{table: 'run', keys: [k]}]}}, esc = t => String(t).replace(/"/g, '&quot;');
+const document = {querySelectorAll: () => []}, render = () => {}, toast = t => { throw new Error(t) };
+let saved = [];
+const outbox = (n, a) => saved.push([n, a.value]);
+eval(logic + slice('const settingId=', 'const resetBtn=') + slice('function saveSetting(', 'function resetSetting(') + `
+const row = text => { S.f = {}; k.value = JSON.parse(text); k.has_project = k.value !== false; k.project = k.value; return settingRow(k, {}) };
+const out = {rows: {}};
+for (const t of ['false', '{"every":10}', '{"idle":true}', '{"every":10,"idle":true}']) out.rows[t] = row(t);
+row('false');
+const move = (part, x, side, now) => savePart({value: String(x), checked: x, dataset: {id: 'run.auto_release', side, setpart: part, ...(now ? {now: ''} : {})}});
+move('every', 10, 'project', true); move('idle', true, 'project', true); move('every', 0, 'project', true); move('idle', false, 'project', true);
+out.saved = saved; saved = [];
+row('{"idle":true}'); move('idle', false, 'project', false); const before = saved.length; saveSetting('run.auto_release', 'project');
+out.sheet = before ? ['saved early'] : saved;
+out.readonly = settingRow(k, {readonly: true});
+console.log(JSON.stringify(out));`);
+"""
+
+
 def test_settings_f97(tmp: Path) -> None:
     """F97: the Settings view: every key with its value, source and default; a device value saved and reset in place in
     runner.local.toml, its comments kept; a project value committed in runner.toml (F173); bad values refused."""
@@ -3238,6 +3262,7 @@ def test_settings_f97(tmp: Path) -> None:
         eq((raw.get('agent-runner') or raw)['run']['slots'], v, f'set in {text!r}')
     eq(CF.setting_problem('ui', 'chat_quiet', False), '', 'chat_quiet = false is off')
     check(CF.setting_problem('ui', 'chat_quiet', 5), 'a bare number is refused')
+    key_parts = next(x['parts'] for t in CF.settings_snapshot(repo)['tables'] if t['table'] == 'run' for x in t['keys'] if x['key'] == 'auto_release')
     page = W.page_html().decode()
     for part in ('settingsHTML', 'data-setsave="${side}"', 'data-setreset=', 'data-setmore=', 'data-setstep=', 'Find a setting',
                  "'Advanced'", "'Project file'", 'Ask a chat to change it', 'Restart the run', "'setting_device':'setting_project'"):
@@ -3262,8 +3287,39 @@ def test_settings_f97(tmp: Path) -> None:
     for gone in ('Queue for everyone', 'lands through', 'queuedTask', 'k.queued'):
         check(gone not in page, f'F173: no {gone!r} left in the page')
     check('overSays' in page, 'a row says when this device overrides everyone')
+    # F174: Release by itself is two controls, and both can be on
+    from agent_runner import setting_words as SW
+    rel = k(table='run', key='auto_release', type='table', default=False, also=['table'], parts=SW.parts('run', 'auto_release'))
+    eq(key_parts, rel['parts'], 'the Settings route carries the two controls')
+    both = '{"every":10,"idle":true}'
+    cases = [('false', 'Off', False), ('{"every":10}', 'Every 10 tasks', {'every': 10}), ('{"idle":true}', 'When idle', {'idle': True}),
+             (both, 'Every 10 tasks and when idle', {'every': 10, 'idle': True})]
+    for text, says, value in cases:
+        now, said, val = logic_js([['partsNow', text], ['settingSays', rel, text], ['settingValue', rel, text]])
+        eq((now, said, val['v']), ({'every': (value or {}).get('every', 0), 'idle': bool((value or {}).get('idle'))}, says, value), f'the row: {says}')
+    eq(logic_js([['partSet', 'false', 'every', 10], ['partSet', 'false', 'idle', True], ['partSet', '{"every":10}', 'idle', True],
+                 ['partSet', '{"idle":true}', 'every', 10], ['partSet', both, 'every', 0], ['partSet', both, 'idle', False],
+                 ['partSet', '{"every":10}', 'every', 0], ['partSet', '{"idle":true}', 'idle', False], ['partSet', '{"every":7}', 'idle', True],
+                 ['partSet', both, 'every', 20]]),
+       ['{"every":10}', '{"idle":true}', both, both, '{"idle":true}', '{"every":10}', 'false', 'false', '{"every":7,"idle":true}',
+        '{"every":20,"idle":true}'], 'changing one keeps the other; both off is false')
+    eq(logic_js([['partOptions', rel, '{"every":7}'], ['partOptions', rel, 'false'], ['partsNow', '{"every":true,"idle":"yes"}']]),
+       [[[0, 'Off'], [5, '5 tasks'], [7, '7 tasks'], [10, '10 tasks'], [20, '20 tasks']],
+        [[0, 'Off'], [5, '5 tasks'], [10, '10 tasks'], [20, '20 tasks']], {'every': 0, 'idle': False}], 'a count of their own is kept and shown')
+    (tmp / 'parts.js').write_text(PARTS_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'parts.js'), str(W.PAGE), json.dumps(rel)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the row and moves its controls', r.stderr[-900:])
+    if r.returncode == 0:
+        o = json.loads(r.stdout)
+        for text, says, value in cases:
+            html, v = o['rows'][text], value or {}
+            eq(re.findall(r'<option value="(\d+)" selected', html), [str(v.get('every', 0))], f'{says}: the Every list')
+            eq(bool(re.search(r'data-setpart="idle"[^>]* checked>', html)), bool(v.get('idle')), f'{says}: the When idle switch')
+        eq(o['saved'], [['setting_project', {'every': 10}], ['setting_project', {'every': 10, 'idle': True}],
+                        ['setting_project', {'idle': True}], ['setting_project', False]], 'each change saves the whole value, at once')
+        eq(o['sheet'], [['setting_project', False]], "More…'s own two controls save only on Save")
+        check('setpart' not in o['readonly'], 'a read-only row has no control')
     # F166: a row's control, and which rows show
-    rel = k(table='run', key='auto_release', type='table', default=False, also=['table'], words={'false': 'Off', '{"every":10}': 'Every 10 tasks'})
     rem = k(type='choice', choices=['auto', True, False], words={'auto': 'Auto', 'true': 'On', 'false': 'Off'})
     pct = k(type='number', default=90, unit='%', words={'90': '90%'})
     par = k(table='run', key='approve', value=False)

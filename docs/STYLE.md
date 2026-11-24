@@ -62,7 +62,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   Stopping, Caps forced, Not up.
 - **Confirm**: asked in place (`sureHTML`), naming what is cut off, Yes then No. No browser dialog, ever. In the TUI
   the key is pressed twice.
-- **Setting or form control**: a label, the control that fits the type (`.sw` switch, `.fld` select, number or text, or a `.step` stepper for a number changed a step at a time), then help in `.small`. A typed value is edited in the open row; a switch or select on a row saves at once; a closed row shows no code name. Each group's heading says its home (this device or everyone). A field that must survive a refresh has `data-f="key"`. A new setting needs its words in `agent_runner/setting_words.py` (`tests/test_settings.py` checks).
+- **Setting or form control**: a label, the control that fits the type (`.sw` switch, `.fld` select, number or text, or a `.step` stepper for a number changed a step at a time), then help in `.small`. A typed value is edited in the open row; a switch or select on a row saves at once; a closed row shows no code name. A setting of two controls (`.setparts`) has them on a line of their own under its description, each with its label. Each group's heading says its home (this device or everyone). A field that must survive a refresh has `data-f="key"`. A new setting needs its words in `agent_runner/setting_words.py` (`tests/test_settings.py` checks).
 
 ## States
 

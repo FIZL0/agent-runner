@@ -381,6 +381,7 @@ a{color:var(--accent)}
 /* F97: Settings */
 .setline{justify-content:space-between;flex-wrap:nowrap} .setname{flex:1;min-width:0;display:flex;overflow-wrap:anywhere} .setname b{display:block;font-weight:600} .setname .small{display:block} .fold.setname{min-height:var(--tap)}
 .setpick{width:auto;max-width:50%;flex:none} .setkey{font:var(--fs-s) var(--mono);overflow-wrap:anywhere} .setval{font-size:var(--fs-m);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%;flex:none}
+.setparts{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s5)} .setparts label{display:flex;align-items:center;gap:var(--s2);min-height:var(--tap);color:var(--muted)} .setparts .fld{width:auto}
 .step{display:flex;align-items:center;gap:var(--s2);flex:none} .step .btn{min-width:var(--tap);min-height:var(--tap);justify-content:center;padding-inline:0} .step b{min-width:1.5em;text-align:center}
 .dockwrap{position:relative;will-change:transform}
 /* F171: Talk's chat runs behind the top bar, the buttons and the message box. seeRoom() measures the room they take, so at
@@ -777,10 +778,30 @@ function pickOptions(k,now){
   if(now!==''&&now!=null&&!o.some(x=>x[0]===now))o.push([now,settingSays(k,now)]);
   return o;
 }
+/* F174: a setting set by two controls, a count and a switch ([run] auto_release): what its words `t` hold, as
+   autorelease.auto_release_of reads them; the count's options; and its words once one control changed */
+const hasParts=k=>!!(k.parts&&k.parts.every);
+function partsNow(t){
+  let v=null;try{v=JSON.parse(t)}catch(e){}
+  v=v||{};
+  return{every:Number.isInteger(v.every)&&v.every>0?v.every:0,idle:v.idle===true};
+}
+const partCount=(k,n)=>`${n} ${n===1?k.parts.every.unit.replace(/s$/,''):k.parts.every.unit}`;
+function partOptions(k,t){
+  const n=partsNow(t).every, c=k.parts.every.counts;
+  return [[0,'Off'],...(n&&!c.includes(n)?[...c,n].sort((a,b)=>a-b):c).map(x=>[x,partCount(k,x)])];
+}
+function partSet(t,part,x){
+  const v={...partsNow(t),[part]:x}, o={};
+  if(v.every)o.every=v.every;
+  if(v.idle)o.idle=true;
+  return settingText(v.every||v.idle?o:false);
+}
 /* a value as a person reads it */
 function settingSays(k,t){
   if(k.words&&k.words[t])return k.words[t];
-  if(k.key==='auto_release'){let v={};try{v=JSON.parse(t)||{}}catch(e){}return[v.every?`Every ${v.every} tasks`:'',v.idle?'When idle':''].filter(Boolean).join(', ')||'Off'}
+  if(hasParts(k)){const v=partsNow(t), p=k.parts, e=v.every?`${p.every.label} ${partCount(k,v.every)}`:'';
+    return e&&v.idle?`${e} and ${p.idle.label.toLowerCase()}`:e||(v.idle?p.idle.label:'Off')}
   if(k.type==='switch')return t==='true'?'On':'Off';
   if(t==='')return 'not set';
   if(t==='false')return 'Off';
@@ -1068,7 +1089,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1260,7 +1281,8 @@ async function drain(){
 /* what the page does once the run answered an item */
 function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
-  if(it.set&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
+  const later=it.set&&S.ob.some(x=>x.cid!==it.cid&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending');  // F174: the field holds a newer value that goes next
+  if(it.set&&!later&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
   if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
@@ -1269,7 +1291,7 @@ function obDone(it,j){
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
-  else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
+  else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
     else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
   if(it.res&&FD.n===it.res)feedLoad();  // F114
@@ -2002,7 +2024,19 @@ function settingNow(k,side,field){
   if(f in S.f)return S.f[f];
   return k['has_'+side]?settingText(k[side]):field?settingText(k.value):'';
 }
+/* F174: its two controls; on its row a change saves at once */
+function partsField(k,side,onRow){
+  const t=settingNow(k,side,true), v=partsNow(t), p=k.parts, d=`data-id="${esc(settingId(k))}" data-side="${side}"${onRow?' data-now':''}`, at=esc(`, ${k.name}, ${PLACE[side]}`);
+  return `<div class="setparts"><label>${esc(p.every.label)} <select class="fld" data-setpart="every" ${d} aria-label="${esc(p.every.label)}${at}">${partOptions(k,t).map(([n,l])=>`<option value="${n}" ${n===v.every?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+    <label>${esc(p.idle.label)} <input type="checkbox" role="switch" class="sw" data-setpart="idle" ${d} aria-label="${esc(p.idle.label)}${at}" ${v.idle?'checked':''}></label></div>`;
+}
+function savePart(el){
+  const {id,side,setpart}=el.dataset, k=settingOf(id);if(!k)return;
+  S.f[setField(id,side)]=partSet(settingNow(k,side,true),setpart,setpart==='idle'?el.checked:Number(el.value));
+  if(el.dataset.now!==undefined)saveSetting(id,side);
+}
 function settingField(k,side,onRow){
+  if(hasParts(k))return partsField(k,side,onRow);
   const id=settingId(k), now=settingNow(k,side,true), d=`data-f="${esc(setField(id,side))}"${onRow?' data-now':''} aria-label="${esc(k.name)}, ${PLACE[side]}"`;
   if(k.type==='switch')return `<input type="checkbox" role="switch" class="sw" ${d} data-sw ${now==='true'?'checked':''}>`;
   const opts=pickOptions(k,now);
@@ -2010,12 +2044,13 @@ function settingField(k,side,onRow){
   if(k.type==='list'||k.type==='table'||now.length>40)return `<textarea class="fld" rows="3" ${d} placeholder="${k.type==='list'?'one per line':k.type==='table'?'{ key = value }':'not set'}">${esc(now)}</textarea>`;
   return `<input class="fld" ${k.type==='number'?'inputmode="decimal"':''} ${d} value="${esc(now)}" placeholder="not set" autocomplete="off" autocapitalize="off" spellcheck="false">`;
 }
-const onRow=k=>k.type==='switch'||!!pickOptions(k,'');
+const onRow=k=>k.type==='switch'||hasParts(k)||!!pickOptions(k,'');
 /* what stands at the right of a folded row: its control, or its value when it is typed in the open row */
 function settingControl(k,side,readonly){
   if(readonly)return `<span class="setval">${esc(settingSays(k,settingText(k.value)))}</span>`;
   if(settingId(k)==='run.slots'){const n=settingNow(k,side,true), id=esc(settingId(k));
     return `<span class="step" role="group" aria-label="${esc(k.name)}"><button class="btn" data-setstep="-1" data-id="${id}" aria-label="Fewer" ${Number(n)<2?'disabled':''}>−</button><b>${esc(n)}</b><button class="btn" data-setstep="1" data-id="${id}" aria-label="More">+</button></span>`}
+  if(hasParts(k))return '';  // two controls stand under its words
   if(onRow(k))return settingField(k,side,true);
   return `<span class="setval">${esc(settingSays(k,settingNow(k,side,true)))}</span>`;
 }
@@ -2026,6 +2061,7 @@ function settingRow(k,o={}){
   const place=side==='device'?'device':'everyone', off=o.home&&place!==o.home, e=esc(id);
   const where=k.source==='default'?'the default':k.source==='device'?'this device':'everyone';
   return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side,o.readonly)}</div>
+    ${hasParts(k)&&!o.readonly?partsField(k,side,true):''}
     ${busy.map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
     ${overSays(k)?`<div class="small">${esc(overSays(k))}</div>`:off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
     ${open?`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
@@ -2963,6 +2999,7 @@ document.addEventListener('submit',e=>{e.preventDefault();
 document.addEventListener('change',e=>{
   const t=e.target, ts=t.dataset&&t.dataset.ts, f=(t.dataset&&t.dataset.f)||'';
   if(ts){talkSet(ts,t.type==='checkbox'?t.checked:t.value);return}
+  if(t.dataset&&t.dataset.setpart){savePart(t);return}
   if(t.dataset&&t.dataset.kinds){saveKinds(t.dataset.kinds,t.value);return}
   if(!f.startsWith('set:'))return;
   S.f[f]=t.type==='checkbox'?String(t.checked):t.value;
