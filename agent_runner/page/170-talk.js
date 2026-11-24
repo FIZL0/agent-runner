@@ -323,7 +323,7 @@ function listen(){
      and recognition hears nothing (talkSend unlocks speech). B174: a press during a reply cuts it and listens: clips
      stop here, the browser's voice right after rec.start(), or here when this listen must wait for a recognizer. */
   const cut=talkReads();TK.playing='';TK.turn=(TK.turn||0)+1;
-  if(cut)shush(!MIC.rec);
+  if(cut)shush(!MIC.rec);else unlockEnd();
   TK.note=TK.held='';if(!(TK.report&&TK.report.sound))TK.report='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   /* B162: the listen: its tries, the words so far, and whether the person ended it (stopped) or held the mic again */
   const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:'',err:'',ms:null,stopped:false,more:false,on:false,was:false,fails:0,msg:'',by:'',until:0,timer:0,longer:false,cut:cut&&!MIC.rec};
@@ -331,6 +331,7 @@ function listen(){
   TK.trail.used=true;t.trail=TK.trail;micLog(`listen ${t.mode}${MIC.rec?', waits for the last one to end':''}`);
   TK.state='listening';TK.heard='';render(true);
   micWhenFree(()=>hear(t));
+  if(!again)audioReady();  // B166
 }
 /* B162: one recognizer for the listen t. Aborted before any words, it is tried once more by itself */
 function hear(t){
@@ -381,7 +382,7 @@ function hear(t){
     else earEnd(t);
   };
   soundAs('play-and-record');
-  try{rec.start();cut();audioReady()}catch(e){cut();log(`start failed: ${e.message||e}`);TK.report=t.trail;TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback');if(t.words)micSent(t,'a start that failed')}
+  try{rec.start();cut()}catch(e){cut();log(`start failed: ${e.message||e}`);TK.report=t.trail;TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback');if(t.words)micSent(t,'a start that failed')}
 }
 /* B216: a listen's words go out; its mic report says what ended it */
 function micSent(t,why){
