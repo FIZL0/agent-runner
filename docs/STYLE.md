@@ -57,7 +57,8 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   steps count, the id and the age. A DECIDE's heading is its question, whole (`needHead()`, `.q`), with its task's title
   small on one line under it and at most two lines of its background in place of what to do. Its answer buttons sit
   below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
-  sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way.
+  sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way. A
+  device's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: title (a DECIDE's question, its task's
   title small under it), label, age, id; where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
   only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or
@@ -95,6 +96,9 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   … sheet (`dotsBtn()`), never beside it.
 - **Release card** (New release, `release_wait`, `release_now`): one line of what is open, then its buttons; the question takes their place; a press with a release open asks in place, Yes then No, and a Drop on a release that has not started asks its own question first. With Manage releases off (`releasesOn()`) it goes, and its heading with it; an open release is a task in the Queue.
 - **Run card** (`controlsCard()`, `.btns.tight`, `CTL_ICON`): order top to bottom: state line, notices, the run's controls, then the slot rows, each under a line, so a run control never reads as a slot's own button. Each run control has an icon beside its word, never an icon alone: 15px, decorative (`aria-hidden`). A new control on the card gets an entry in `CTL_ICON`.
+- **Device card** (`toolCard()`, `toolPage()`): a web page's state in a word with its colour on the address line, a
+  failed one's last output lines in `.tasktext`, Start or Use is the `.pri` with Stop beside it; Test connection, Edit… and Remove in a
+  row of their own below.
 - **Walkthrough** (`.walk`, `walkDraw()`, `walkStep()`): one card at a time (`.walkcard`), only on the example project's
   page (`walkNow()` says when), never in a chat or Talk. Its row of its own under the view covers nothing, and goes while
   the keyboard is open. A 2px `--accent` ring (`[data-walkat]`) is on the real thing it points at. Back, Next and Skip

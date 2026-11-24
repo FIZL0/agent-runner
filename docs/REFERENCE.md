@@ -1159,7 +1159,11 @@ command on this machine. A person adds it on the run app's Tools page. Each proj
   last 20 output lines are shown with every device's stored secrets hidden; if a stored secret cannot be read, no output
   is shown). The output is kept raw in `pages/` in the state folder, bounded at 1 MB. Removing the device, or changing
   its command, working directory or kind, stops it first, and the change is refused if it does not stop; a rename or a
-  new address does not.
+  new address does not. On the Tools page a device with a web page shows its address and state (running, stopped or failed):
+  stopped has Start; running has Use (the page opens in a new tab) and Stop; failed has Start and the last output lines. With no
+  start command it has Use only. Over plain http Start and Stop are disabled, Use works. A Needs you item whose task names such a
+  device in `needs:` (one this project uses) shows Use NAME on its card and sheet or, while it is stopped or failed, Open NAME in
+  Tools, which goes to the device's Tools card.
 - **One task at a time.** A device marked so is held by one task. An agent's first `run device ssh` or `run device copy`
   (or `run device take NAME`, for a device reached another way) takes it, until that task's session ends or `run device release NAME`. The hold covers every project on this
   machine: another project's running task that names the device in `needs:` holds it too. An agent that finds it held

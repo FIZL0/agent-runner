@@ -5,6 +5,7 @@ async function loadTools(){
     else{S.toolOld=oldRun(j);S.toolErr=plainOut(j,'The tools could not be read.')}}
   catch(e){S.toolErr='Could not reach the run page to read the tools.'}
   if(S.view==='tools')render();
+  toolSpot();
 }
 setInterval(()=>{if(S.view==='tools'&&!S.thread&&!document.hidden&&!HOME_PAGE)loadTools()},10000);
 /* a change to a device: straight to the run, never through the outbox, which a browser keeps. A secret's field is
@@ -35,9 +36,32 @@ function toolCard(t){
     <div data-k="toolstate:${n}" data-v="${esc(t.state)}"><span class="${cls?'v-'+cls:'small'}">${esc(toolWords(t))}</span></div>
     ${t.description?`<div class="tooltext">${esc(t.description)}</div>`:''}
     <div class="small tooltext">${esc(toolWhere(t))}${dev&&t.exclusive?' · one task at a time':''}</div>
-    ${dev?`${t.kind==='ssh'?toolHostKey(t):''}${toolSaid(t.name)}
+    ${dev?`${t.kind==='ssh'?toolHostKey(t):''}${toolPage(t)}${toolSaid(t.name)}
     ${S.sure==='tool:'+t.name?`<div class="small">Remove ${n} for every project, its keys and password too?</div><div class="btns"><button class="btn bad" data-tool="remove" data-name="${n}">Yes, remove</button><button class="btn" data-unsure>No</button></div>`
     :`<div class="btns"><button class="btn${toolBusy('test',t.name)}" data-tool="test" data-name="${n}" ${S.tools.secure?'':'disabled'}>Test connection</button><button class="btn" data-tool="edit" data-name="${n}">Edit…</button>${t.kind==='ssh'&&!t.alias?`<button class="btn" data-tool="secrets" data-name="${n}">Keys and password…</button>`:''}<button class="btn" data-tool="ask" data-name="${n}" ${S.tools.secure?'':'disabled'}>Remove</button></div>`}`:''}`,'',`data-k="tool:${esc(t.source)}:${n}"`);
+}
+/* F408: a device's web page: its state in words, what a failed start command printed last, and its buttons */
+const useLink=(page,label,cls='')=>/^https?:\/\//i.test(page||'')?`<a class="btn${cls}" href="${esc(page)}" target="_blank" rel="noopener noreferrer">${esc(label)} ${I.ext}</a>`:'';
+function toolPage(t){
+  if(!t.page)return '';
+  const s=t.run&&t.run.state, n=esc(t.name), off=S.tools.secure?'':'disabled', lines=s==='failed'?t.run.lines||[]:[];
+  const b=(op,label,cls)=>`<button class="btn${cls}${toolBusy(op,t.name)}" data-tool="${op}" data-name="${n}" ${off}>${label}</button>`;
+  return `<div class="small tooltext" data-k="pagestate:${n}" data-v="${esc(s||'')}">Web page ${esc(t.page)}${s?` · <span class="${{running:'v-ok',failed:'v-bad'}[s]||''}">${esc(s)}</span>`:''}</div>
+    ${lines.length?`<pre class="tasktext">${esc(lines.join('\n'))}</pre>`:''}
+    <div class="btns">${s&&s!=='running'?b('start','Start',' pri'):useLink(t.page,'Use',' pri')+(s?b('stop','Stop',''):'')}</div>`;
+}
+/* the web pages of the devices a Needs you item's task needs: Use, or the way to the device's card while it is not running */
+function needDevices(n){
+  return (n.devices||[]).map(d=>d.state&&d.state!=='running'?`<button class="btn" data-tool="show" data-name="${esc(d.name)}">Open ${esc(d.name)} in Tools</button>`:useLink(d.page,`Use ${d.name}`)).join('');
+}
+/* S.toolGo: the device whose card a press asked for, brought on screen once it is drawn (a press or a motion may hold a draw) */
+function toolSpot(tries=20){
+  if(!S.toolGo)return;
+  if(S.view!=='tools'||S.thread){S.toolGo='';return}
+  const body=$('body'), el=S.tools&&[...body.querySelectorAll('[data-k]')].find(x=>x.dataset.k==='tool:device:'+S.toolGo);
+  if(el){body.scrollTop+=el.getBoundingClientRect().top-body.getBoundingClientRect().top-12;S.toolGo=''}
+  else if(tries)setTimeout(()=>toolSpot(tries-1),100);
+  else S.toolGo='';
 }
 /* the fingerprint that waits for the person, else the accepted one */
 function toolHostKey(t){
@@ -91,6 +115,7 @@ function toolEdit(t){
 async function toolClick(x){
   const {tool,name,what,fp}=x.dataset;
   if(tool==='load')return loadTools();
+  if(tool==='show'){if(S.sheet)closeSheet();viewGo(()=>{S.toolGo=name;goView('tools')},S.thread);return}
   if(tool==='add')return toolEdit(null);
   if(tool==='edit'){const t=toolOf(name);if(t)toolEdit(t);return}
   if(tool==='secrets'){toolForget();S.toolSaid={};openSheet('devsecrets',name);return}
@@ -110,5 +135,7 @@ async function toolClick(x){
     for(const f of SECRET_FIELDS)delete S.f[f];for(const el of document.querySelectorAll('#sheet [data-f^="dev:"]'))el.value='';
     const j=await toolPost(a,name);if(j&&j.ok){S.secretOpen='';render(true)}return}
   S.sure=null;
+  if(tool==='start'||tool==='stop'){const j=await toolPost({op:tool,name},name);
+    if(j&&j.state&&(j.ok||j.state==='failed')){S.toolSaid={};render(true)}return}  // the card's state says it, and stays true
   toolPost({op:tool,name,...(what?{what}:{}),...(fp?{fp}:{})},name);
 }

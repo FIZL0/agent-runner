@@ -357,6 +357,15 @@ def pin_releases(queue: list[dict], rows: list[dict]) -> list[dict]:
     return [q for q in queue if q['id'] not in by] + [dict(at[t], release=r) for t, r in by.items() if t in at]
 
 
+def _need_devices(text: str) -> list[dict]:
+    """F408: the devices with a web page that a task's `needs:` names (`devices.need_pages`)."""
+    from agent_runner import devices
+    try:
+        return devices.need_pages(text.partition('\n')[0], S.C)
+    except Exception:  # noqa: BLE001 - costs the links, not the list
+        return []
+
+
 def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
     """(needs-you items, concepts) from `status.waiting_ok()`'s list; shelved items are left out of both."""
     needs, concepts = [], []
@@ -374,6 +383,8 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
                       'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
                       'age': P.age(stamps.get(tid, ''), now),
                       'detail': need_detail.detail(label, tid, ask, title, texts.get(tid, ''), ask_short)})  # F162
+        if devs := _need_devices(texts.get(tid, '')):  # F408
+            needs[-1]['devices'] = devs
         if opts:
             needs[-1]['options'] = opts
         elif label == 'DECIDE' and url and (easy := sheet_options(tid, texts.get(tid, ''))):  # F181b
