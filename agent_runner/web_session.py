@@ -85,6 +85,9 @@ def resume_chat(chat: str) -> dict:
         return {'ok': True, 'code': 0, 'out': f'{chat} is up already', 'argv': [], 'name': chat}
     if not (sid := resumable(chat)):
         return {**bad, 'out': f'{chat} has no conversation left to resume'}
+    from agent_runner.sched import agent_held
+    if held := agent_held():  # B764c
+        return {**bad, 'code': 1, 'out': f'{chat} was not resumed: {held}'}
     from agent_runner.control_reopen import reopen_control
     where = reopen_control(int(chat[1:]), sid)
     return {'ok': bool(where), 'code': 0 if where else 1, 'argv': [], 'name': chat,

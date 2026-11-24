@@ -30,7 +30,7 @@ from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED, EV_CONTEXT)
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
 from agent_runner.brief import no_remote_line
-from agent_runner.sched import blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
+from agent_runner.sched import agent_held, AgentHeld, blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
 from agent_runner.tools import take_end
 from agent_runner.login import retry_held, unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, no_slot, park_asked, unblocked_asks
@@ -47,7 +47,7 @@ from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_
 from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main, no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, merge)
-from agent_runner.control import hand_hook, rc_sweep_start, start_control, start_control_server
+from agent_runner.control import hand_hook, rc_sweep_start, reopen_when_right, start_control, start_control_server
 from agent_runner.feed import rc_sweep_stop
 
 
@@ -355,7 +355,7 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         else:
             tried.discard(tid)  # the new text is a new attempt
             task = next((t for t in tasks(branch) if t[0] == tid), None)
-            if n is not None and task and n <= slots and (p := start(n, task, branch, model, idle, slots)):
+            if n is not None and task and n <= slots and not agent_held() and (p := start(n, task, branch, model, idle, slots)):
                 procs[n], running[n] = p, task
                 tried.add(tid)
                 msg += f'; restarted it in s{n} with the new text'
@@ -764,14 +764,43 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         note(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
         log(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}', EV_LEFT, tid, why=f'the merge crashed: {e!r}')
 
+
+AGENT_POLL = 5  # s: how often a merge that needs a fix session looks whether [run] agent is right again
+
+
+def once_agent_right(tid: str, step):
+    """B764c: `step()`, again each time [run] agent is right after it raised AgentHeld. False when the run stops, or the
+    person drops or changes `tid`, while it waits."""
+    while True:
+        try:
+            return step()
+        except AgentHeld as e:
+            note(f'{tid}: waits to merge: {e}')
+            log(f'{tid}: not merged yet: it needs a fix session, and {e}. task/{tid} stays, and merges once it is fixed')
+        while agent_held():
+            if tid in halt_requests():
+                return False
+            if stopping():
+                log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it', EV_DEFERRED, tid)
+                return False
+            time.sleep(AGENT_POLL)
+
+
+def drop_finished(tid: str) -> bool:
+    """B19: finished `tid` was dropped or changed before its merge: its branch never lands."""
+    did = discard_task(tid, None)
+    DISCARDED[tid] = 'its finished branch never merged' + (f' ({", ".join(did)})' if did else '')
+    return True
+
+
 def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     """False when task/<tid> waits for the next run to merge it."""
-    if (unsettled := stack.settle(tid, branch, lambda: tid in halt_requests())) is False:  # F198
+    halted = lambda: tid in halt_requests()  # noqa: E731
+    unsettled = once_agent_right(tid, lambda: stack.settle(tid, branch, halted))  # F198
+    if halted():
+        return drop_finished(tid)
+    if unsettled is False:
         return False
-    if tid in halt_requests():  # B19: dropped or changed before its merge: never lands
-        did = discard_task(tid, None)
-        DISCARDED[tid] = 'its finished branch never merged' + (f' ({", ".join(did)})' if did else '')
-        return True
     landed_for = ''
     if rs := restyle_mark(tid):  # F19: a restyle held it while it ran
         passed = (not git('rev-parse', '--verify', '-q', TESTED + tid).returncode
@@ -794,7 +823,8 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         C.notes(f'{tid}.budget').unlink(missing_ok=True)
         if git('rev-parse', '--verify', '-q', TESTED + tid).returncode and not (plansync.ticks(C) / tid).exists():
             over = f'stopped over its budget: {bm}'
-    while (why := over or unsettled or merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
+    while (why := over or unsettled or once_agent_right(tid, lambda: merge(tid, branch))) and \
+            why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
         alarm(f'{tid} is not merging: ' + ('uncommitted edits in the main checkout' if why.startswith(EDITED)
@@ -813,6 +843,8 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
                       f'{dt.datetime.fromtimestamp(since - REMIND_EVERY):%H:%M} or earlier.')
             time.sleep(EDITS_POLL)
         log(f'{tid}: the main checkout is clear again; merging task/{tid} now')
+    if why is False:  # B764c: it needed a fix session, and the wait for one ended
+        return drop_finished(tid) if halted() else False
     if late := restyle_mark(tid):  # F19: a restyle that asked while this merge ran
         landed_for = landed_for or late['rid']
         C.notes(f'{tid}.restyle').unlink(missing_ok=True)
@@ -1127,6 +1159,7 @@ class Run:
         self.failed_starts: dict[str, int] = {}  # task -> sessions that did not start
         self.cap_said = False
         self.cap_fell = False  # F142: said that new tasks start down the chain, this time past a cap
+        self.agent_said = ''  # B764c: the wrong [run] agent, as logged
         self.held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
         self.foreign: dict[int, int] = {}  # slot -> pid of a session no run knew (see queue_cut_off)
         self.waiting: dict[int, tuple] = {}  # slot -> (task, session id, why) queued to resume there
@@ -1201,6 +1234,8 @@ class Run:
         procs, running = self.procs, self.running
         sweep_tmp()
         settings_live.take(self)  # F202a
+        self.say_agent(agent_held())
+        reopen_when_right()
         prune_wips(self.branch)  # F23: now and then, for tasks ticked or dropped by hand while the run is up
         take_keys()
         IDLE[0] = self.idle_said
@@ -1333,7 +1368,7 @@ class Run:
 
     def resume_queued(self, n: int) -> None:
         """Resume the session queued for this slot (cut off, or ended on a usage limit) once the API answers."""
-        if api_down(self.stall_said):
+        if agent_held() or api_down(self.stall_said):
             return
         tid, sid, why = self.waiting.pop(n)
         fb = FB.queued_model(tid)  # F106g: a new session on the chain's next model, not this one resumed
@@ -1344,6 +1379,14 @@ class Run:
             self.tried.add(tid)
             self.idle_said = False
 
+    def say_agent(self, bad: str) -> None:
+        """B764c: log once that a wrong [run] agent holds every start, and once that it is right again."""
+        if bad and bad != self.agent_said:
+            log(f'{bad}. No agent session starts until then; running ones go on')
+        elif self.agent_said and not bad:
+            log('[run] agent is right again: sessions start again')
+        self.agent_said = bad
+
     def say_cap(self, w: str) -> None:
         """The usage-cap alarm, once each time a cap is reached."""
         if not self.cap_said:
@@ -1351,12 +1394,12 @@ class Run:
             self.cap_said = True
 
     def fill(self, n: int) -> None:
-        """Start the next task in the free slot, unless a stop, pause, usage cap, backlog, API outage, low disk
+        """Start the next task in the free slot, unless a stop, pause, wrong [run] agent, usage cap, backlog, API outage, low disk
         or failing before_start holds it."""
         procs, running, slots, r = self.procs, self.running, self.slots, self.r
         if stopping():  # said once, with how many are left, by stop_note at the top of the tick
             return
-        if PAUSED[0]:
+        if PAUSED[0] or agent_held():  # B764c: never another agent instead
             return
         w, held = capped(self.a.force or FORCED[0]), frozenset()
         if w is None:

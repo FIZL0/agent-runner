@@ -476,6 +476,122 @@ def test_split_side_by_side(tmp: Path):
     eq((why['P5b'], why['P5c'], why['P5d']), (('free', ''), sib, sib), 'the same while it waits to merge')
 
 
+def test_agent_held(tmp: Path):
+    print('B764c: while [run] agent is wrong the run stays up and starts nothing; fixed, it starts with no restart')
+    import argparse
+    import datetime as dt
+    from agent_runner import loop, merge, settings_live
+    (tmp / 'held').mkdir()
+    repo = make_repo(tmp / 'held')
+    good, late, local = repo / 'my-claude', repo / 'late-claude', repo / 'runner.local.toml'
+    good.write_text('#!/bin/sh\n', encoding='utf-8')
+    good.chmod(0o755)
+
+    def agent(v: str) -> None:
+        local.write_text(f"[run]\nagent = '{v}'\n", encoding='utf-8')
+
+    def run_of(v: str):
+        agent(v)
+        CF._LIVE.clear()
+        CF._cfg.cache_clear()
+        R.init(repo)
+        settings_live.start()
+        return loop.Run(argparse.Namespace(force=False, model=None), 1, True, 'main', 'm', 30, 600, 5)
+
+    started, resumed, said, fixes = [], [], [], []
+
+    def start(n, task, *a, **kw):
+        started.append((task[0], S.C.run['agent']))
+        return 1, 'sid', 0
+
+    def resume(n, tid, *a, **kw):
+        resumed.append(tid)
+
+    def tick(run):
+        settings_live.take(run)
+        run.say_agent(S.agent_held())
+        run.slot(1)
+        return run.end()
+
+    with mock.patch.object(settings_live, 'SETTINGS_STILL', 0), mock.patch.object(loop, 'start', start), \
+            mock.patch.object(loop, 'resume', resume), mock.patch.object(loop, 'log', lambda m, *a, **k: said.append(m)), \
+            mock.patch.object(loop, 'MUX', mock.Mock(panes=lambda: {})), mock.patch.object(loop, 'capped', lambda f: None), \
+            mock.patch.object(loop, 'api_down', lambda s: False), mock.patch.object(loop, 'unlogged', lambda *a: False), \
+            mock.patch.object(loop, 'ask_stop', lambda w: None), mock.patch.object(loop, 'stopping', lambda: False), \
+            mock.patch.object(loop, 'queue_cut_off', lambda *a: {}), mock.patch.object(merge, 'fix_session', lambda *a: fixes.append(a) or 0):
+        run = run_of('pi')
+        eq([tick(run) for _ in range(3)], [None] * 3, 'a run up on a removed agent stays up, `once` too')
+        eq((started, len([m for m in said if 'No agent session starts' in m])), ([], 1), 'starts nothing, and says why once')
+        check('set it to "claude"' in said[0], 'with the fix', said)
+        agent('my-claude')
+        tick(run)
+        eq(started, [('T1', 'my-claude')], 'fixed in the file: the next tick starts the task on it')
+
+        for bad in ('pi', 'nosuchagent'):
+            started.clear()
+            run = run_of('my-claude')
+            agent(bad)
+            tick(run)
+            eq((started, S.C.run['agent'], run.tried), ([], 'my-claude', set()),
+               f'{bad} saved under a run that keeps its own: nothing starts on that one either')
+            agent('my-claude')
+            tick(run)
+            eq(started, [('T1', 'my-claude')], 'and it starts once fixed')
+
+        started.clear()
+        run = run_of('my-claude')
+        agent('late-claude')
+        tick(run)
+        tick(run)
+        eq(started, [], 'a program that is not there')
+        late.write_text('#!/bin/sh\n', encoding='utf-8')
+        late.chmod(0o755)
+        tick(run)
+        eq(started, [('T1', 'late-claude')], 'installed: the task starts on it, not on the one the run kept')
+
+        run = run_of('pi')
+        run.waiting = {1: ('T3', 'sid', 'cut off')}
+        tick(run)
+        eq((resumed, 1 in run.waiting), ([], True), 'a cut-off session waits to resume')
+        agent('my-claude')
+        tick(run)
+        eq((resumed, run.waiting), (['T3'], {}), 'and resumes')
+
+        run = run_of('pi')
+        gone = {'T1': 'change'}
+        with mock.patch.object(loop, 'halt_requests', lambda: gone), mock.patch.object(loop, 'halt_answer', lambda *a: None), \
+                mock.patch.object(loop, 'queued', lambda: {}), mock.patch.object(loop, 'discard_task', lambda *a: []), \
+                mock.patch.object(loop, 'end_orphans', lambda: None), mock.patch.object(loop.plat, 'terminate', lambda p: None), \
+                mock.patch.object(loop.plat, 'alive', lambda p: False):
+            started.clear()
+            procs, running = {1: (1, 'sid', 0)}, {1: ('T1', 'Next', {'a.py'}, set())}
+            loop.halts(procs, running, {1: dt.datetime.min}, {'T1'}, 'main', 'm', 30, 1)
+            eq((started, procs), ([], {}), 'a changed task is stopped, and does not start again yet')
+
+        seen = []
+
+        def step():
+            seen.append(merge.fixer('T3', 'p', repo, 'fix', 'fix the conflicts'))
+            return None
+
+        def nap(s):
+            eq((fixes, seen), ([], []), 'a fix session: none starts, and its merge waits')
+            agent('my-claude')
+            settings_live.take(run)
+
+        with mock.patch.object(loop, 'time', mock.Mock(sleep=nap)):
+            eq(loop.once_agent_right('T3', step), None, 'the merge goes on')
+        eq((len(fixes), seen), (1, [(0, '')]), 'with its fix session, once fixed')
+        run = run_of('pi')
+        with mock.patch.object(loop, 'stopping', lambda: True):
+            eq(loop.once_agent_right('T3', step), False, 'a stop leaves the branch for the next run')
+        with mock.patch.object(loop, 'halt_requests', lambda: {'T3': 'drop'}):
+            eq(loop.once_agent_right('T3', step), False, 'and a drop ends the wait')
+        eq(len(fixes), 1, 'no session in either')
+    CF._LIVE.clear()
+    CF._cfg.cache_clear()
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
@@ -485,7 +601,8 @@ def main() -> int:
                        lambda: test_alone(Path(tmp)), lambda: test_critical_first(Path(tmp)),
                        lambda: test_alone_turn(Path(tmp)),
                        lambda: test_split_parent_first(Path(tmp)),
-                       lambda: test_split_hold(Path(tmp)), lambda: test_split_side_by_side(Path(tmp))])
+                       lambda: test_split_hold(Path(tmp)), lambda: test_split_side_by_side(Path(tmp)),
+                       lambda: test_agent_held(Path(tmp))])
 
 
 if __name__ == '__main__':

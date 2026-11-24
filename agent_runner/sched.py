@@ -17,6 +17,19 @@ from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log
 from agent_runner.state import EV_LEFT
 
 
+# --- a wrong [run] agent (B764c) -------------------------------------------------
+
+def agent_held() -> str:
+    """B764c: why no agent session may start: `[run] agent` is wrong in the settings files now (a run that is up may
+    still keep another one, which is never used instead), or in what this process runs on; '' when one may."""
+    from agent_runner.ui_model import agent_problem
+    return agent_problem(C) or (C.agent_problem if C else '')
+
+
+class AgentHeld(Exception):
+    """B764c: a fix or repair session was due while `agent_held`. The merge that needed it waits; it has not failed."""
+
+
 # --- picking the next task -----------------------------------------------------
 
 def open_tasks(branch: str) -> set[str]:

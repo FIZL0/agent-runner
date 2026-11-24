@@ -25,6 +25,7 @@ from agent_runner.brief import has_sheet
 from agent_runner.slots import (backend, entries, marker_pid, PRESENCE_ENV, quiet_file, remote_on,
     REMOTE_URL, silent, transcript)
 from agent_runner.merge import gate_alive
+from agent_runner.sched import agent_held
 
 
 # --- control sessions: a person runs the run from an interactive session in the main checkout -------------
@@ -609,12 +610,24 @@ def start_control() -> None:
         drop_kept_chat()
     except OSError as e:  # never stops the run from starting
         log(f'control: could not forget the sessions an earlier run kept: {e}')
-    if C.run['control']:
-        try:
-            from agent_runner.control_reopen import reopen_controls
-            reopen_controls()
-        except Exception as e:  # never stops the run from starting
-            log(f'control: could not reopen the control sessions a shutdown ended: {e}')
+    REOPEN_DUE[0] = bool(C.run['control'])
+    reopen_when_right()
+
+
+REOPEN_DUE = [False]  # B764c: the control sessions a shutdown cut off are still to reopen
+
+
+def reopen_when_right() -> None:
+    """Reopen the control sessions a shutdown cut off (B121), once per run. B764c: not while [run] agent is wrong; the
+    run loop asks again on each tick."""
+    if not REOPEN_DUE[0] or agent_held():
+        return
+    REOPEN_DUE[0] = False
+    try:
+        from agent_runner.control_reopen import reopen_controls
+        reopen_controls()
+    except Exception as e:  # never stops the run
+        log(f'control: could not reopen the control sessions a shutdown ended: {e}')
 
 
 def hidden_control_log(n: int) -> Path:
@@ -1257,16 +1270,21 @@ def keep_control_server(off: threading.Event | None = None, before: threading.Th
     pidf, out, err = C.notes('control-server.pid'), C.notes('control-server.log'), C.notes('control-server.err')
     atexit.register(lambda: (pid := control_server_live()) and plat.terminate(pid))
     backend().trust(ROOT)  # it asks to trust a new folder, and has no terminal to ask on
-    if '--settings' not in control_server_argv():
+    if not control_server_live() and not agent_right(off, nap):
+        return
+    held = agent_held()  # B764c: a server that is up goes on; its flags are not judged by a wrong agent's help
+    if not held and '--settings' not in control_server_argv():
         log('control: this Claude Code\'s `remote-control` has no --settings, so the control server starts without '
             'it: sessions started from claude.ai/code will not get the control brief. Update Claude Code '
             '(`claude update`) to give them it')
     wait = CONTROL_SERVER_WAIT[0] // 2  # doubled at the first exit
-    if (pid := control_server_live()) and server_stale(plat.cmdline(pid)):
+    if not held and (pid := control_server_live()) and server_stale(plat.cmdline(pid)):
         log(f'control: the control server an earlier run left (pid {pid}) has other flags; restarting it')
         plat.terminate(pid)
     while not (off and off.is_set()):
         proc = None
+        if not control_server_live() and not agent_right(off, nap):
+            return
         if not (pid := control_server_live()):
             err_since = err.stat().st_size if err.exists() else 0
             env = control_env()
@@ -1304,6 +1322,15 @@ def keep_control_server(off: threading.Event | None = None, before: threading.Th
                 said = ''
         log(f'control: the control server exited{f" ({said})" if said else ""}; restarting it in {wait} s')
         nap(wait)
+
+
+def agent_right(off: threading.Event | None, nap) -> bool:
+    """B764c: wait until [run] agent is right; False when `off` is set first."""
+    while agent_held():
+        if off and off.is_set():
+            return False
+        nap(5)
+    return True
 
 
 def server_stale(args: list[str] | None) -> bool:

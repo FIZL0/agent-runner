@@ -10,6 +10,7 @@ from pathlib import Path
 from agent_runner import merge as M, pitch, plan as P, plansync
 from agent_runner import state as S
 from agent_runner.land import REOPENED
+from agent_runner.sched import agent_held, AgentHeld
 
 UNDO_FIXER = """This checkout is half way through undoing what task {tid} changed (a `git revert`), and git could not \
 finish it: {files}
@@ -72,6 +73,9 @@ def _undo_plan(x: dict, todo: Path, done: Path) -> None:
         P.unblock(tid, said, todo=todo)
 
 
+WAITS = [False]  # B764c: an undo needs a fix session, and [run] agent is wrong
+
+
 def undo_changes(branch: str) -> None:
     """F98: undo the changes a person said Not this to (`pitch.undoing`): one commit each on the shared branch,
     newest first, tested and landed like a merge. One that cannot be goes back under Needs you with why."""
@@ -81,6 +85,10 @@ def undo_changes(branch: str) -> None:
         with S.MERGE.turn(lambda: 1):
             try:
                 why = _undo(x, branch)
+            except AgentHeld as e:  # B764c: it conflicts, and its fix session waits until [run] agent is right
+                S.log(f'{x["id"]}: not undone yet: {e}')
+                WAITS[0] = True
+                return
             except Exception as e:  # noqa: BLE001 - said under Needs you, not lost in a thread
                 why = f'{type(e).__name__}: {e}'
         if why:
@@ -147,6 +155,9 @@ def tick(branch: str, merging: list) -> None:
     if not pitch.on():
         return
     pitch.tick()
+    if WAITS[0] and agent_held():
+        return
+    WAITS[0] = False
     if pitch.undoing() and not S.stopping() and not any(t.name == 'undo' for t in merging):
         t = threading.Thread(target=undo_changes, args=(branch,), name='undo')
         t.start()
