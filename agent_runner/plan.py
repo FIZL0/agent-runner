@@ -614,8 +614,9 @@ def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> 
         live = open_ids(ls)
         after = [t for t in dict.fromkeys(TASK_ID.findall(why))
                  if t in live and t != tid and not t.startswith(tid)]
+    same = False
     if after and not asking(why) and (kept := _last_ask(ls, i)):  # B60: it waits on X, then on the person again
-        keep_ask = True  # the same ask comes back, its ask file with it
+        keep_ask = same = True  # the same ask comes back, its ask file with it
         why = f'{kept} — {why}'
     if not after and not ASKED.search(why):  # B35: it waits on no task, so it lists under Needs you, with an age
         why = f'{why} (asked {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")})'
@@ -625,7 +626,7 @@ def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> 
     _write(todo, ls)
     if not keep_ask:
         _clear_ask(tid, todo)
-    elif not after or asking(why):
+    elif not same:
         from agent_runner.asks import taken_ask
         taken_ask(tid, todo, again)
 
