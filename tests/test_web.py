@@ -1318,7 +1318,7 @@ def test_tailnet_https_f96(tmp: Path) -> None:
         check(W.url_file().read_text(encoding='utf-8').startswith('http://'), 'web.url stays http')
         srv.stop()
         eq((changes()[1:], web_rules()), ([off], other['Web']), 'the stop turns it off, and no other rule')
-        check(not W.page_https.rule_file().exists(), 'nothing is left recorded')
+        eq(W.page_https.made_rule(), None, 'nothing is left recorded')
 
         fake()
         srv = start()
@@ -1344,6 +1344,16 @@ def test_tailnet_https_f96(tmp: Path) -> None:
         srv.stop()
         start(home=port).stop()
         eq((web_rules(), W.page_https.made_rule()), (made, None), "Runner Home has that port by now: the rule is Home's")
+
+        fake()
+        srv = start()
+        srv.https = False
+        srv.stop()
+        W.page_https.keep_rule({**W.page_https.made_rule(), 'run': 'another project'})
+        start(web=False)
+        eq(web_rules(), made, "another project's rule is not turned off")
+        start().stop()
+        eq(web_rules(), {}, 'but the run that has its port by now takes it over')
 
         fake()
         srv = start()
@@ -1376,7 +1386,7 @@ def test_tailnet_https_f96(tmp: Path) -> None:
             said = [x for x in log if 'http only' in x]
             check(len(said) == 1 and why in said[0], f'http only: {why}', log)
             check('https://' not in log[-1] and 'run page: http://' in log[-1], 'the page is served over http', log)
-            check(not W.page_https.rule_file().exists() and off not in changes(), 'nothing to turn off', changes())
+            check(W.page_https.made_rule() is None and off not in changes(), 'nothing to turn off', changes())
         empty = tmp / 'empty'
         empty.mkdir()
         (empty / 'git').symlink_to(shutil.which('git'))

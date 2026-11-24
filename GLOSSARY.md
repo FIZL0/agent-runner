@@ -702,5 +702,5 @@ _Avoid_: whitelist, allowlist
 The https address of a run's page on Tailscale, so a browser there gets the microphone for Talk
 _Said_: https on Tailscale
 _On screen_: run page link in status and the run log, Run page over https setting
-_In code_: page_https.py, [run] web_https, web.serve
+_In code_: page_https.py, [run] web_https, serve/<port>.json
 _Avoid_: serve URL, public link
