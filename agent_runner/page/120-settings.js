@@ -78,7 +78,7 @@ function kindsRow(g,k){
     <select class="fld setpick" data-kinds="${g.id}" aria-label="${g.name}">${now?'':'<option value="" selected>Mixed</option>'}${ms.map(m=>`<option ${m===now?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
     ${S.ob.filter(x=>x.set&&x.set.part===g.id).map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
     ${k.has_device?`<div class="small">${k.has_project?'This device overrides what everyone has':'Saved on this device only'}</div>`:''}
-    ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies when the run restarts.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`):''}</div>`;
+    ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies now.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`):''}</div>`;
 }
 function saveKinds(gid,model){
   const k=settingOf('models.kinds'), g=KINDS_ROWS.find(x=>x.id===gid);if(!k||!g||!model)return;
