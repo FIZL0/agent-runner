@@ -10,14 +10,14 @@ function chatSort(rows,pins){
   return(rows||[]).slice().sort((a,b)=>pin(a)-pin(b)||(at(a)===at(b)?no(b)-no(a):at(b)>at(a)?1:-1));
 }
 /* F201: the sidebar's two lists of rows with the chats still starting (stand, the newest last) first under the pins.
-   was: {top, quiet}, the names as last drawn; held: the name of a row that must not move: the rows keep their places,
+   was: {top, quiet}, the names as last drawn; held: the name of a row that must not move: the rows keep their places (one that got its name, was '@cid', too),
    and what is new goes last in that row's list */
 function chatPlaces(g,stand,pins,was,held){
   const pinned=g.top.filter(s=>(pins||[]).includes(s.name)), up=(stand||[]).slice().reverse();
   const now={top:pinned.concat(up,g.top.filter(s=>!pinned.includes(s))),quiet:g.quiet};
   if(!held||!was||!was.top.concat(was.quiet).includes(held))return now;
-  const all=now.top.concat(now.quiet), keep=l=>l.map(n=>all.find(s=>s.name===n)).filter(Boolean);
-  const fresh=all.filter(s=>!was.top.includes(s.name)&&!was.quiet.includes(s.name)), low=was.quiet.includes(held);
+  const all=now.top.concat(now.quiet), keep=l=>l.map(n=>all.find(s=>s.name===n||s.was===n)).filter(Boolean);
+  const fresh=all.filter(s=>![s.name,s.was].some(n=>n&&was.top.concat(was.quiet).includes(n))), low=was.quiet.includes(held);
   return{top:keep(was.top).concat(low?[]:fresh),quiet:keep(was.quiet).concat(low?fresh:[])};
 }
 /* B119: the message box's slash command menu. SLASH_FALLBACK, the commands it offers when the run page cannot

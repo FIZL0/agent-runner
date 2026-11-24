@@ -588,9 +588,9 @@ const {S} = p, out = {}, at = (n, t) => { S.snap.sessions.find(s => s.name === n
 S.snap.sessions = [row('c1', 90), row('c2', 50000), row('c3', 10), row('c4', 60000), row('c5', 30), row('c6', 40000), row('c10', 30)];
 out.order = p.draw();
 S.snap.chat_pins = ['c4', 'c1']; S.snap.chat_order = ['c6', 'c5', 'c1', 'c4']; out.pins = p.draw(); out.next = p.chatNames();
-S.ob = [{newchat: true, cid: 'a', say: 'A', state: 'sending'}, {newchat: true, cid: 'b', say: 'B', state: 'sending'}, {name: 'chat_to', cid: 'x'}];
+S.ob = [{newchat: true, cid: 'a', say: 'A', state: 'failed', at: 1}, {newchat: true, cid: 'b', say: 'B', state: 'sending', at: 2}, {name: 'chat_to', cid: 'x'}];
 out.starting = p.draw(); out.startNext = p.chatNames();
-S.ob = S.ob.slice(0, 1); S.came = [{name: 'c11', say: 'B', state: 'sending', at: now * 1000}]; out.named = p.draw();
+S.ob = S.ob.slice(0, 1); S.came = [{name: 'c11', was: '@b', start: 2, say: 'B', state: 'sending', at: now * 1000}]; S.ren = 'c5'; out.namedEdit = p.draw(); S.ren = null; out.named = p.draw();
 S.snap.sessions.push(row('c11', 0)); S.ob = []; out.up = p.draw(); at('c11', 1); out.active = p.draw();
 S.snap.sessions.pop(); out.gone = p.draw();
 at('c5', 1); out.moved = p.draw();
@@ -620,7 +620,8 @@ def test_chats_newest_f201(tmp: Path) -> None:
     eq(o['next'], ['c4', 'c1', 'c3', 'c10', 'c5', 'c6', 'c2'], 'the order next, previous and a range follow')
     eq(o['starting'], 'c4 c1 @b @a c3 c10 c5 c6 q c2 q', 'starting chats first under the pins, the last started on top')
     eq(o['startNext'], o['next'], 'a starting chat is no chat to pick yet')
-    eq(o['named'], 'c4 c1 @a c11 c3 c10 c5 c6 q c2 q', 'one with its name, not in the snapshot yet, still shows')
+    eq(o['named'], 'c4 c1 c11 @a c3 c10 c5 c6 q c2 q', 'one with its name, not in the snapshot yet, keeps its place')
+    eq(o['namedEdit'], o['named'], 'and during a name edit')
     eq(o['up'], 'c4 c1 c11 c3 c10 c5 c6 q c2 q', 'a chat with no activity time keeps that place')
     eq(o['active'], o['up'], 'and so once it is active')
     eq(o['gone'], o['pins'], 'one that ended does not come back as starting')
