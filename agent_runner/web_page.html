@@ -1473,7 +1473,7 @@ function enter(box,had){
     if(fresh)MO.born.set(k,now);
     else if(had.has(k)&&el.dataset.v&&had.get(k)!==el.dataset.v){if(el.dataset.roll!==undefined&&had.get(k))roll(el,had.get(k));else el.classList.add('changed')}
     const age=MO.born.has(k)?now-MO.born.get(k):-1;
-    if(age<0||age&&!el.style)continue;
+    if(age<0||!fresh&&!el.style)continue;
     if(el.matches&&el.matches('.a')){[...el.querySelectorAll('.lead,.say>*,.speakb')].forEach((x,i)=>{x.classList.add('fresh');x.style.animationDelay=Math.min(i,10)*60-age+'ms'});continue}
     if(el.matches&&el.matches('.say'))continue;  // with its .a
     el.classList.add('enter');if(age)el.style.animationDelay=-age+'ms';

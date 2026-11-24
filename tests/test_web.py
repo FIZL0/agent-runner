@@ -2309,7 +2309,7 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     sent; the first message starts the session once, with its About text; Back returns, and a draft is kept."""
     page = W.PAGE.read_text(encoding='utf-8')
     check('data-unctx' not in page and 'class="ctx"' not in page, 'the box has no About line')
-    check("if(q('[data-home]')){S.thread=null;S.ctx=null;render(true);return}" in page, "Back leaves to the view under it")
+    check("if(q('[data-home]')){viewGo(()=>{S.thread=null;S.ctx=null;render(true)},S.thread);return}" in page, "Back leaves to the view under it")
     if not shutil.which('node'):
         print('  (no node here: the new chat view test is skipped)')
         return
@@ -4243,7 +4243,7 @@ const out = {};
 out.reorder = redraw(box(...cards('a', 'b', 'c')), box(...cards('c', 'a', 'b')));
 const after = box(...cards('a', 'c'));
 out.leave = redraw(box(...cards('a', 'b', 'c')), after);
-const again = box(...cards('a', 'c')); redraw(after, again); out.goesOn = again.gone.map(g => g.of);
+after.gone.forEach(g => { g.isConnected = false }); const again = box(...cards('a', 'c')); redraw(after, again); out.goesOn = again.gone.map(g => g.of);
 ran = []; now += 1000;
 const came = box(...cards('n', 'a')); out.enter = redraw(box(...cards('a')), came);
 now += 100; const half = box(...cards('n', 'a')); redraw(came, half); out.half = [half.kids[0].cls.has('enter'), half.kids[0].style.animationDelay];
