@@ -1245,6 +1245,32 @@ def test_settled_concept_chat():
             check(all(f'{what} at ' in t for _, t in w.typed), f'worded: {what}', w.typed)
 
 
+def test_settled_about_chat():
+    print('B226: a chat that starts with the About line of a task or a need is told when that item is settled')
+    title = "the run page's (new) menu: it's [wide]"
+    first = {4: f"About R90 ({title}): why?\n\nR82: isn't it\nthe 'same' (really)?\n\nAttached: /x/a.png",
+             5: f"About R81 ({title}), which needs me: I can't\nsign in (yet)\n\nR90: and this?",
+             6: 'About R90: why?', 7: 'About R81, which needs me: why?', 8: 'what About R90: is it?',
+             9: 'About R90 and R81: which?', 10: 'About the R81 (login): is it?'}
+    for argv, what, told in ((('drop', 'R90', 'no need'), 'R90 was dropped', [4, 6]),
+                             (('change', 'R90', 'use the laptop'), 'R90 was changed', [4, 6]),
+                             (('drop', 'R81', 'no need'), 'R81 was dropped', [5, 7]),
+                             (('confirm', 'R81', 'it works'), 'R81 was answered', [5, 7])):
+        with settled_world() as w:
+            for n, text in first.items():  # as 020-chats.logic.js compose() words them
+                w.rows[f's{n}'] = [said(text, w.base - 900), answer('Reading it.', w.base - 890)]
+                if n > 6:
+                    w.up(n, f's{n}', 40 + n)
+                os.utime(w.notes(f'control{n}.pid'), (w.base - 800, w.base - 800))
+                K.control_give(n, f'{w.R.ROOT.name} · {n}')
+            w.look()
+            eq(w.typed, [], f'{argv[0]}: nothing settled, nothing typed')
+            eq(w.plan(*argv), 0, f'{argv[0]} {argv[1]}')
+            w.look()
+            eq(sorted(n for n, _ in w.typed), told, f'{argv[0]} {argv[1]}: each chat opened from it, not a mention')
+            check(all(f'{what} at ' in t for _, t in w.typed), f'worded: {what}', w.typed)
+
+
 def test_settled_waits_and_skips():
     print('F160: not typed where it would be lost; ended and closed sessions are left alone; no person\'s message')
     with settled_world() as w:
@@ -1354,5 +1380,5 @@ if __name__ == '__main__':
                              test_first_message_typed_after_remote_control, test_takes_input_b158, test_rename_f129, test_held_delivered_once,
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once,
-                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_waits_and_skips, test_settled_landing,
+                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_waits_and_skips, test_settled_landing,
                              test_settled_rule_in_guide, test_decide_options_f181d]))
