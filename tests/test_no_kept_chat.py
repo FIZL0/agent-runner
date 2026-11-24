@@ -61,12 +61,11 @@ def test_second_run_starts_fresh() -> None:
                   'the kept id is gone')
             sids = {K.control_open(n)[0] for n in (1, 2, 2)}
             eq((len(sids), old in sids), (3, False), 'every control session is a new id')
-            sid, resume = F.feed_session(K.control_cmd())
-            check(sid != feed and not resume, 'the feed is a new session')
+            eq(F.feed_sid_file(), '', "B195: an older version's feed session is forgotten")
 
 
 def test_restart_keeps_what_runs() -> None:
-    print("a restart mid-task: the feed and the running slots go on, and a chat a shutdown cut off is reopened")
+    print("a restart mid-task: the running slots go on, and a chat a shutdown cut off is reopened")
     fake_repo()
     R.C.notes('remote').mkdir()
     feed, cut = str(uuid.uuid4()), str(uuid.uuid4())
@@ -81,7 +80,7 @@ def test_restart_keeps_what_runs() -> None:
             mock.patch.object(CR, 'reopen_control', lambda n, sid: opened.append((n, sid)) or 'here'):
         K.start_control()
     eq(opened, [(3, cut)], 'the cut-off chat is reopened')
-    eq(F.feed_session(K.control_cmd()), (feed, True), 'the feed carries on')
+    eq(F.feed_sid_file(), '', "B195: an older version's feed session is forgotten over a restart too")
 
     class Mux:
         def panes(self):

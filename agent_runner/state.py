@@ -82,7 +82,7 @@ def paint(stamp: str, msg: str, kind: str | None = None) -> str:
 
 # F41: the kinds of run event a log() line can carry. Each one with a kind is also a record in
 # <notes>/events.jsonl, {time, kind, id, text} (plus the kind's fields: why, left, slots), which since, follow,
-# status, the runner feed and the background launch read instead of the prose in run.log.
+# status and the background launch read instead of the prose in run.log.
 EV_RUN_UP = 'run up'            # the run is up (slots: its slot count, 0 for the sequential run)
 EV_STARTED = 'started'          # a slot started task `id`
 EV_STALLED = 'stalled'          # task `id`'s session looks stalled

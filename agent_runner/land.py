@@ -548,7 +548,7 @@ def release_line_for(base: str, merged: str) -> str | None:
 
 
 def announce_release(base: str, merged: str) -> None:
-    """Log `release_line_for`'s line once per version, for `since --follow` (and so the runner feed's push)."""
+    """Log `release_line_for`'s line once per version, for `since --follow`."""
     try:
         line = release_line_for(base, merged)
     except Exception:

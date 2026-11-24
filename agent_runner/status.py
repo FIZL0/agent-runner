@@ -505,7 +505,7 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
             out.append(line + ('' if kind == EV_STOP_ASKED else left))
             if waiting and e[1] and kind in (EV_LANDED, EV_PART) \
                     and (nl := needs_you_line(l, titles, now, waiting)):
-                out.append(nl + left)  # the full feed carries the asks too: the runner feed is the one watch
+                out.append(nl + left)  # the full feed carries the asks too
     return out, last
 
 
@@ -514,10 +514,9 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
     """`since --follow`: print one plain line per new event as run.log gets it, moving the since mark as it
     prints; from the log's end, until killed (or `until`, a monotonic deadline, for tests). `needs_you`: only
     what needs the person (`needs_you_line`), and the mark stays put: the landed and started lines it skips
-    are still news for the next `since`. `mark=False` (the board): the mark stays put too.
-    `hold` (the runner feed, `board_held`): while it says so, nothing is read or printed, so the feed's
-    session gets no turn; what was logged meanwhile prints when it lets go. `end`: stop once it says so
-    (the board, once its run has ended)."""
+    are still news for the next `since`. `mark=False` (`--keep-mark`): the mark stays put too.
+    `hold` (`--keep-mark`, `board_held`): while it says so, nothing is read or printed; what was logged
+    meanwhile prints when it lets go. `end`: stop once it says so."""
     logf = events_file() if events_file().exists() else C.notes('run.log')  # F41: run.log only before events.jsonl
     try:
         pos = logf.stat().st_size

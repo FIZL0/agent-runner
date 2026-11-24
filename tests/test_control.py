@@ -68,20 +68,20 @@ def test_brief_fits_session_start():
              'say landed, not merged', 'lead with what needs me']
     (d / '.runner' / 'voice.md').write_text(''.join(f'- {r}\n' for r in rules), encoding='utf-8')
     cmd = '/home/someone/projects/agent-runner-checkout/run'  # a long [run] command, named in every line
-    with mock.patch.dict(R.C.run, {'command': cmd}), mock.patch.object(K, 'feed_on', lambda: False):
+    with mock.patch.dict(R.C.run, {'command': cmd}):
         brief = K.control_brief()
-        check(len(brief) < K.BRIEF_MAX == 9500, f'with a voice file and the needs-you watch: {len(brief)} chars')
+        check(len(brief) < K.BRIEF_MAX == 9500, f'with a voice file: {len(brief)} chars')
         check(all(r in brief for r in rules), 'the wording itself is carried inline')
         for core in ('**Never edit code or plan files here**', '**Never commit, merge or push in this checkout**',
                      '**Open the session.**', '**Push what the person asked to hear', 'never push the main branch'):
             check(core in brief, f'core rule inline: {core}')
         # B150: the voice file's path is in the brief, so a longer temp folder takes it past BRIEF_MAX and its
         # commands go bare (B104): either form carries the rule, each is tested below whatever this machine's paths
-        for core in ('plan add <KIND>', 'guide take', 'control --title', 'since --follow --needs-you'):
+        for core in ('plan add <KIND>', 'guide take', 'control --title'):
             check(f'{cmd} {core}' in brief or f'`{core}' in brief, f'core rule inline: {core}')
             with mock.patch.object(K, 'BRIEF_MAX', 10 ** 6):
                 check(f'{cmd} {core}' in K.control_brief(), f'with room, its full command: {core}')
-            with mock.patch.object(voice, '_shown', lambda p: '/deep' * 30 + '/voice.md'):
+            with mock.patch.object(voice, '_shown', lambda p: '/deep' * 150 + '/voice.md'):
                 deep = K.control_brief()
             check(f'`{core}' in deep and len(deep) < K.BRIEF_MAX, f'under a deep path, bare: {core}')
         for t in G.CONTROL_TOPIC_NAMES:
@@ -98,7 +98,7 @@ def test_brief_fits_session_start():
     # B104: Windows names python.exe and the run path, about 85 chars, in every line of the brief
     (d / '.runner' / 'voice.md').write_text(''.join(f'- {r}\n' for r in rules), encoding='utf-8')
     win = 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe D:/a/agent-runner/agent-runner/run'
-    with mock.patch.dict(R.C.run, {'command': win}), mock.patch.object(K, 'feed_on', lambda: False):
+    with mock.patch.dict(R.C.run, {'command': win}):
         brief = K.control_brief()
         check(len(brief) < K.BRIEF_MAX, f'a Windows-long [run] command still fits: {len(brief)} chars')
         check(all(r in brief for r in rules), 'and the wording is still carried inline')
@@ -360,7 +360,7 @@ def test_reopen_after_shutdown():
         calls = []  # the run restarted: start_control reopens them first, unless [run] control is off
         with mock.patch.object(CR, 'reopen_controls', lambda: calls.append(1) or []), \
                 mock.patch.object(K, 'hidden_control', lambda n, cmd: (4243, '')), \
-                mock.patch.object(K.plat, 'WINDOWS', False), mock.patch.object(K, 'mark_board', lambda: None):
+                mock.patch.object(K.plat, 'WINDOWS', False):
             with mock.patch.dict(R.C.run, {'control': True}):
                 K.start_control()
             eq(len(calls), 1, 'a run start reopens the control sessions')

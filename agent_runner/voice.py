@@ -1,7 +1,7 @@
 """`agent-runner voice`: the person's wording, kept in a voice file they shape by talking (F21).
 
-One list line (`- …`) per rule (`say agent, not slot`, `shorter`, `no task ids`). Every control session's brief and the runner
-feed's system prompt carry it, so what they write (answers, the summary, said-back status and since, task text)
+One list line (`- …`) per rule (`say agent, not slot`, `shorter`, `no task ids`). Every control session's brief
+carries it, so what they write (answers, the summary, said-back status and since, task text)
 follows it; task agents get it too, for what status and since show of their work (commit messages, done and
 blocked lines).
 
@@ -31,7 +31,7 @@ HEAD = """\
 # Voice
 
 How I want agent-runner sessions to word things: one rule per list line. Kept by `agent-runner voice` (add, show,
-forget) and read by every control session and the runner feed.
+forget) and read by every control session.
 
 """
 LEARN = ('ask', 'off')
@@ -170,14 +170,6 @@ def slot(prompt: str, c=None) -> str:
     from agent_runner.guide import VOICE_SLOT
     got = text(c)
     return f'{prompt.rstrip()}\n\n{VOICE_SLOT}\n{got}\n' if got else prompt
-
-
-def feed(prompt: str, c=None) -> str:
-    """The runner feed's system prompt with the wording at its end, when there is any (read at the feed's start:
-    it has no file tools)."""
-    from agent_runner.guide import VOICE_FEED
-    got = text(c)
-    return f'{prompt.rstrip()}\n\n{VOICE_FEED}\n{got}\n' if got else prompt
 
 
 # --- the file ------------------------------------------------------------------------------------------------

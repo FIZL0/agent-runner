@@ -559,7 +559,7 @@ def test_alerts():
 
 
 def test_push():
-    print('an alert goes to each running project\'s runner feed as a needs-you line')
+    print('an alert goes to each running project\'s events as a needs-you line')
     t = tmpdir()
     up, off = t / 'up', t / 'off'
     for r in (up, off):

@@ -216,7 +216,7 @@ GRILL_BIG = ('- **Grilling** ("grill me", "poke holes", "stress-test it", and be
              'queue.')
 GRILL_MODES = ('ask', 'big', 'off')
 
-# F21: the person's wording (agent_runner/voice.py fits these into the control brief and the feed's prompt).
+# F21: the person's wording (agent_runner/voice.py fits these into the control brief).
 VOICE = """\
 **The person's wording.** How this person wants things said, in voice files: {file} (all projects) and {project}
 (this project: when it has lines, it is read instead of the global file). Follow every line below in all you write to them: answers,
@@ -235,8 +235,6 @@ VOICE_LEARN = """\
 """
 VOICE_SLOT = ("The person's wording: word what they read from you this way (the commit message, which status "
               "and since show; the done and blocked lines; tasks you file), not code or code comments:")
-VOICE_FEED = ("The person's wording: follow these lines in your own replies and push notifications (lines from "
-              "the Monitor are still repeated exactly):")
 
 
 def grill_mode(c=None) -> str:
@@ -375,14 +373,12 @@ to another task or topic (not for a follow-up on the same one), and after /new o
 gave is never overwritten: --title leaves it.
 **Leave blocked and "{needs}" items alone**: never mention, list, count or ask about them, in an answer,
 a summary or a status, unless they bear on what the person is discussing or the person asks ("what needs
-me?", "what is blocked?"). The run page and the TUI show them.
+me?", "what is blocked?"). The run page, the TUI and `status` show them: start no watch on them unasked.
 **Every status you write** (the summary, an update, a needs-you bullet, a push notification) comes from
 `{cmd} status`, never `since` (it moves the last-look mark past what the person has not seen).
 Never a bare task ID: each carries its short title as status prints it, a running one its minutes (`B192 Fix
 merge retry, 14 min`). A summary or update starts with its headline. Name usage only at or past 80%,
 or within 10 points of a configured cap (`weekly_max`, `session_max`).
-
-{watch}
 
 What the person asks, and what you run:
 - "status?", "/run": `status` (`-n 20`). To watch slots, queue or log: the `run page:` link status prints,
@@ -477,15 +473,14 @@ you, to act on a task or when the person asks which one.
 
 - "/follow", "live": start the Monitor tool on `{cmd} since --follow` (a line per landed, started or stuck task,
   and when the run goes idle or stops) and post each line as one short bullet without its id, until "stop
-  following" (then stop it). Start it only when asked. It carries the needs-you lines too: while it runs, stop
-  your needs-you watch and push its needs-you lines yourself; start that watch again afterwards.
+  following" (then stop it). Start it only when asked. It carries the needs-you lines too: push those.
 - "notify me when X" ("ping me when B56 merges", "tell me when the run is idle"): say back in one line what you
   will watch for (`I'll ping you when B56 Fix the flicker lands.`), then start the Monitor tool (persistent,
   timeout_ms 1800000) on `{cmd} since --follow` when the run log shows X (a task landed, started or stuck, the
-  run idle or stopped, a release), or else on a loop that polls `{cmd} status` every minute or so and prints a
+  run idle or stopped, a release) or, for "notify me when something needs me", `{cmd} since --follow
+  --needs-you` (push each line it prints, until they say stop), or else on a loop that polls `{cmd} status` every minute or so and prints a
   line once X shows. When X happened, send one PushNotification saying it in a plain sentence, post it here,
-  and stop that Monitor: one push per ask. On a timeout, start it again silently. It is a watch of its own,
-  beside the needs-you watch. When neither can ever show X, say so instead.
+  and stop that Monitor: one push per ask. On a timeout, start it again silently. When none of these can ever show X, say so instead.
 """,
     'queue': """\
 # Shaping the queue
@@ -582,7 +577,7 @@ HINT_SKILLS = {
     'follow': ('Follow the agent-runner run live (the person typed /follow).',
                'Start the Monitor tool on `{cmd} since --follow` and post each line it brings as one short bullet, '
                'without its id, until the person says to stop following. It carries the needs-you lines too, so '
-               'if you run a `since --follow --needs-you` watch, stop it while this runs and start it again '
+               'if they asked for a `since --follow --needs-you` watch, stop it while this runs and start it again '
                'afterwards.'),
     'pause': ('Pause the agent-runner run, or go on (the person typed /pause).',
               'Run `{cmd} pause $ARGUMENTS` (`--off` goes on) and say in one line what it printed.'),
@@ -611,87 +606,11 @@ def control_skills(cmd: str, control: str = 'control') -> dict[str, str]:
     return out
 
 
-RUNNER_BRIEF = """\
-You are the runner feed for {repo}, shown in the Claude apps as "{repo} · runner". You are kept lean: you never \
-do work yourself, you have no file tools, and the only shell command you may run is `{cmd}`. Be terse: report \
-only.
-
-- Feed: when the Monitor tool reports lines from `{cmd} since --follow --keep-mark`, repeat them exactly, one per \
-line, and nothing else.
-- Re-arm silently: when that Monitor times out, expires or stops with no lines, start it again the same way \
-and output nothing at all (no "expired", no "re-armed", no task id, no "nothing to repost"). Write text only for a line it printed, a command the person gave, or the idle line \
-below.
-- Idle line: the Claude apps show your last reply as this session's status. After posting lines, answering \
-the person, or re-arming the Monitor, run `{cmd} needs`; when it lists items (`R7 - pick which config changes \
-to build`), make its first item line, word for word, the last line of your reply (on a re-arm, post it alone, \
-but only when your last reply did not already end with that same line), so the status reads what waits on the \
-person. Leave its `Nothing needs you` line unposted.
-- You are the only one watching for what needs the person: for each line that says "needs you", "looks \
-stuck", "run held" or "waits for you", first send it with the PushNotification tool (no text before it) as one \
-plain sentence: what is held and the one thing to do, any task ID with its short title (never a bare ID), \
-with the link when there is one; then post the line, once.
-- Releases: for a line that says "<name> <version> released" (e.g. "agent-runner 0.53.0 released: <first \
-changelog line>"), first send that one line with the PushNotification tool, word for word (no text before it), \
-then post it, once.
-- Commands the person may give you, run as said and answer with their output, shortened to what matters: \
-status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cmd} force`), slots N \
-(`{cmd} slots N`), what happened (`{cmd} since`), and a new control session (`{cmd} control --new`: \
-answer only "Opened control N: <the link>", N and the link from what it prints).
-- Updating this run ("update runner", "upgrade", "restart on the new version"): `{cmd} upgrade` (the run \
-restarts on the installed version by itself); answer with what it prints.
-- About agent-runner itself, the tool that runs this feed, not {repo} (its updates or new versions, when it \
-releases, its changelog, a bug or odd behaviour of the runner, this feed or control sessions, a feature for it): \
-run `{cmd} control --new --forward --runner`, exactly that (it opens a control session in agent-runner's own \
-checkout, labelled as from {repo}), and answer only: "Sent to agent-runner control N: <the link>" (no link: \
-"Sent to agent-runner control N."). An ask that both updates this run and asks about agent-runner ("update \
-runner, when is release?") takes both: the upgrade, then this.
-- A photo, screenshot or file (BUG1), with or without words: always hand it on with `{cmd} control --new \
---forward`, exactly that, as below (with `--runner` when its words are about agent-runner itself); never ask whether to send it, describe it or answer it yourself.
-{answer}- Anything else (a task, a question, a fix, an idea, a plan change) goes to a control session, which does \
-the work: run `{cmd} control --new --forward`, exactly that, with nothing added (it reads their message and \
-attachments from this conversation itself), and answer only: "Sent to control N: <the link>", N and the link \
-from what it prints (no link: "Sent to control N."). Do not answer it or start it yourself, and never retype \
-their message in a command.
-- Every reply is a plain report of what was done, never an ask: no question, no "open", "tap", "go to" or \
-"check". The Claude apps show this session's last reply as its status and read an ask there as waiting on the \
-person, and only a "needs you" line should.
-"""
-
-RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cmd} since --follow --keep-mark`, "
-                "then say only: \"{repo} runner feed: what lands shows here. Status, pause, stop or slots N work "
-                "here; anything else opens a control session.\" When that Monitor times out with no lines, start "
-                "it again the same way and say nothing at all; speak only for a line it printed.")
-
-
 # B27: a reply that answers an item under Needs you without naming it ({needs} is its heading)
 CONTROL_ANSWER = ('work out which item it answers, run `{cmd} plan confirm|change|shelve ID` as the needs guide '
                   'says, and say in a line what it did. When you cannot tell which, ask the person, '
                   'naming the items in plain words; never guess. Only this project\'s items (F33): another\'s is settled in '
                   'its own control session.')
-FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite", "do X instead" '
-               'right after that item was shown): work out which item it answers (its [ID] is on the line) and run '
-               '`{cmd} plan confirm ID "<their words>"` for a yes, done, a letter or an answer, `{cmd} plan change '
-               'ID "<their words>"` for a no or a "do X instead", `{cmd} plan shelve ID` for a later; answer with '
-               'what it prints. When you cannot tell which item, ask which one they mean, naming the items; never '
-               'guess. Only this project\'s items (F33): another project\'s is answered in its own control session. '
-               'An item that says "Pick on the sheet or reply go" takes `{cmd} sheet ID --go` for a go and '
-               '`{cmd} sheet ID --picks "<the line>"` for the `ID picks: …` line its sheet\'s Send gave; for a '
-               '"sent" (or "done", "picked"), read the picks Send wrote with the ArtifactData tool (`get`, the '
-               'sheet\'s url, collection `picks`, doc_id the ID) and pass its `picks` field the same way.\n')
-
-CONTROL_WATCH = """\
-**Tell the person, unasked, when the run needs them.** Every control session, on its first turn (with the
-summary, or before answering the first message of a blank one), starts the Monitor tool on
-`{cmd} since --follow --needs-you`, once, with timeout_ms 1800000 (the cap). It prints a line only when the run
-is held (uncommitted edits or a mid-merge in the main checkout, a usage cap), a task is left for a human or
-looks stalled, or one waits on the person's answer. Its new lines are the one exception to leaving those items alone: on each, post
-one plain bullet: what is held and the one thing to do (`F5 Push on phone asks you to check the push
-arrived`), with the link when there is one, and send it with the PushNotification tool. When it times out
-with no lines, re-arm it silently: start it again with no text at all; speak only for a line it printed. One watch per session; it never moves the last-look mark."""
-
-CONTROL_FEED_WATCH = """\
-**The runner feed tells the person when the run needs them.** The session "{repo} · runner" watches the run
-and pushes what needs the person to their phone, so start no needs-you watch of your own."""
 
 SKILL = """\
 ---

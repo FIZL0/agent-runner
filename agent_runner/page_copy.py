@@ -8,8 +8,7 @@ shows the run as the page does, read-only, with the terminal and the chat as ses
 claude.ai/code link (once opened) and each chat's.
 
 B122: the publish is a one-shot headless `claude -p` with only Artifact and Read (`page_copy_argv`), never a
-control session: typing the ask into a chat cost a turn (~8k tokens) there on every run event. Not
-the runner feed either: it has no Artifact tool, and adding one would grow every one of its turns. At most one
+control session: typing the ask into a chat cost a turn (~8k tokens) there on every run event. At most one
 publish every PAGE_COPY_EVERY s, and only when the page changed apart from its clock (`page_copy_key`). When
 the one-shot cannot publish, the copy stops for the run (`PAGE_COPY_OFF`): it never falls back to a chat.
 """

@@ -4,7 +4,7 @@ remote until a person approves it.
 Each task that lands is a change in <notes>/pitches.json (`landed`). Changes that touch the same component wait in
 one pitch (`groups`); a group opens as a pitch once it has been quiet for `[run] approve_wait` minutes or holds
 `[run] approve_batch` tasks (`open_due`). A pitch is a page for the person (`page_html`), an item under Needs you
-(`rows`) and an event the runner feed pushes to the phone. Approve pushes the shared branch up to the pitch's last
+(`rows`) and an event `since` shows. Approve pushes the shared branch up to the pitch's last
 merge, in merge order (`approve`, `target`); Not this marks changes to be undone (`refuse`), which the run does
 under the merge lock (`undo.undo_changes`).
 

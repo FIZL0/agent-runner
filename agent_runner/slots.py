@@ -380,8 +380,8 @@ def remote_off_why(dialog: bool = True) -> str:
 #
 # Where agent-runner reads Claude Code internals rather than a documented interface (its transcripts, the session
 # link in a pane, remoteDialogSeen in ~/.claude.json), a reader that finds the shape it expects gone says so once
-# per Claude Code version: a run.log line and event (EV_DRIFT) that since --follow, the runner feed and control
-# sessions' watch show as needs-you, instead of failing silently. A local warning only: nothing is filed.
+# per Claude Code version: a run.log line and event (EV_DRIFT) that since --follow and a watch asked for in a
+# control session show as needs-you, instead of failing silently. A local warning only: nothing is filed.
 
 DRIFT_FILE = 'claude-drift.json'  # <notes>/claude-drift.json: {spot: the Claude Code version last warned about}
 CLAUDE_VERSION: list[str] = []  # `claude --version`, asked once per process (`claude_code_version`)
@@ -505,7 +505,7 @@ def slot_session_name(name: str, cwd: Path | None) -> str:
 
 
 def one_session() -> bool:
-    """F68 `[run] remote_slots = 'open'` (the default): the Claude apps list the chats and the runner feed. A slot starts off Remote Control and goes on it only when a person opens it from the run page
+    """F68 `[run] remote_slots = 'open'` (the default): the Claude apps list the chats. A slot starts off Remote Control and goes on it only when a person opens it from the run page
     (`slot_open`); the run keeps a claude.ai copy of the run page (page_copy.py). 'always': as before."""
     return C.run['remote_slots'] != 'always'
 

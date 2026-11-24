@@ -60,7 +60,7 @@ def wait_last_run(limit: float = LAST_RUN_WAIT) -> object:
 
 
 def end_own(sweep: Callable[[], None], say: Callable[[str], None] = log) -> None:
-    """The stop's teardown, before it says `run stopped`: the feed and control server end and archive their
+    """The stop's teardown, before it says `run stopped`: the control server (and an older version's feed) end and archive their
     entries (`sweep`, the loop's `rc_sweep_stop`), the board ends, and the run page stops serving, so a run
     started right after finds none of them. Control sessions are the person's and stay up (one outlives a
     stopped run)."""

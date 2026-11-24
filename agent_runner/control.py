@@ -34,8 +34,7 @@ CONTROL_SERVER_WAIT = (30, 600)  # s before the control server restarts after it
 
 def control_cmd() -> str:
     """B93: the command a control session's brief, opening, skills and hints name: `[run] command` (e.g. openmx's
-    `./kit`, which forwards every runner command once it has loaded the kit's settings), else the runner, as the
-    feed does (B92 feed_cmd). The bare runner in a wrapped repo would skip the kit's config."""
+    `./kit`, which forwards every runner command once it has loaded the kit's settings), else the runner. The bare runner in a wrapped repo would skip the kit's config."""
     return C.command
 
 
@@ -44,17 +43,16 @@ def control_brief() -> str:
     B98: kept under BRIEF_MAX chars: Claude Code shows a model only a 2KB preview of SessionStart output over
     ~10KB, so the core rules are inline and the long ones behind `guide <topic>` (guide.CONTROL_TOPICS); the
     glossary's and the wording's paragraphs are pointers too (glossary.brief_fit, voice.brief_fit)."""
-    from agent_runner.guide import CONTROL, CONTROL_ANSWER, CONTROL_FEED_WATCH, CONTROL_WATCH
+    from agent_runner.guide import CONTROL, CONTROL_ANSWER
     notes = Path(C.run['notes']).expanduser()
     logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
     cmd = control_cmd()  # B93: [run] command, not the bare runner (B71's partial ./kit is outdated)
-    watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=cmd)
     cf = P.needs_cfg()  # B27: the heading's words
     answer = CONTROL_ANSWER.format(cmd=cmd)
     from agent_runner import glossary  # F22: the glossary paragraph (and the seed ask), or none when it is off
     from agent_runner.guide import grill_fit  # F20: the grilling line fitted to [run] grill
     from agent_runner import voice  # F21: the person's wording, read fresh by every session's brief
-    core = grill_fit(glossary.brief_fit(CONTROL.format(repo=ROOT.name, cmd=cmd, log=logf, watch=watch,
+    core = grill_fit(glossary.brief_fit(CONTROL.format(repo=ROOT.name, cmd=cmd, log=logf,
                                                        needs=cf['heading'], answer=answer), cmd, C), cmd, C)
     out = voice.brief_fit(core, cmd, C)
     if len(out) >= BRIEF_MAX:  # B104: a long [run] command (Windows: python.exe and the run path) first
@@ -466,49 +464,6 @@ def control_number() -> int:
     return n
 
 
-RESTART_GAP = 300  # s: a run started this soon after the last one ended is a restart
-RECOVER_GAP = 6 * 3600  # s: a run that never logged its stop, and was last alive this recently, is recovered
-
-
-def run_restart(now: float | None = None) -> bool:
-    """F27: whether the run starting now is a restart of the last one rather than a new run a person started:
-    it stopped under RESTART_GAP ago, or it never logged its stop (the self-restart on upgrade or
-    auto_upgrade, a crash, a kill, Ctrl-C) and was last alive under RECOVER_GAP ago. Its end is its last event
-    or its last STATE, whichever is later. Called before this run logs its own 'run up'; no earlier run at all
-    is a new run."""
-    from agent_runner.state import EV_RUN_UP, EV_STOPPED
-    now = time.time() if now is None else now
-    last, latest = None, ''
-    try:
-        with open(C.notes('events.jsonl'), encoding='utf-8') as fh:
-            for line in fh:
-                try:
-                    d = json.loads(line)
-                except ValueError:
-                    continue
-                if isinstance(d, dict) and d.get('kind') in (EV_RUN_UP, EV_STOPPED):
-                    last = d
-                if isinstance(d, dict) and d.get('time'):
-                    latest = str(d['time'])
-    except OSError:
-        pass
-    if not last:
-        return False
-    gap = RECOVER_GAP if last['kind'] == EV_RUN_UP else RESTART_GAP
-    ends = [latest]
-    try:
-        ends.append(str(json.loads(C.notes('STATE').read_text(encoding='utf-8')).get('at', '')))
-    except (OSError, ValueError, AttributeError):
-        pass
-    stamps = []
-    for s in ends:
-        try:
-            stamps.append(dt.datetime.fromisoformat(s).timestamp())
-        except ValueError:
-            pass
-    return bool(stamps) and now - max(stamps) < gap
-
-
 def control_sid(n: int, reopen: bool = False) -> tuple[str, bool]:
     """(session id, resume?) control session `n` starts with. F176: always a new session, never one an earlier run
     left: its id is kept in `<notes>/control<N>.sid` (`control_sid_file`) only so that `reopen` (`control N
@@ -524,12 +479,10 @@ def control_sid(n: int, reopen: bool = False) -> tuple[str, bool]:
 
 def drop_kept_chat() -> None:
     """F176: what a run start leaves behind of earlier runs' sessions, before anything opens: the id of the kept c1
-    an older runner resumed in every run (control.sid) and, on a new run (not a restart, `run_restart`), the
-    runner feed's: a run that was killed never forgot it."""
+    an older runner resumed in every run (control.sid) and the runner feed's (B195: no run starts one)."""
     C.notes('control.sid').unlink(missing_ok=True)
-    if not run_restart():
-        from agent_runner.feed import feed_forget_session
-        feed_forget_session()
+    from agent_runner.feed import feed_forget_session
+    feed_forget_session()
 
 
 def control_sid_file(n: int) -> Path:
@@ -650,7 +603,6 @@ def hand_hook_exclude(root: Path) -> None:
 def start_control() -> None:
     """The run's start. F176: it opens no control session and resumes none (`drop_kept_chat`): each prompt opens one
     of its own. B121: the ones a shutdown cut off are reopened (`reopen_controls`), unless `[run] control = false`."""
-    mark_board()
     try:
         drop_kept_chat()
     except OSError as e:  # never stops the run from starting
@@ -661,20 +613,6 @@ def start_control() -> None:
             reopen_controls()
         except Exception as e:  # never stops the run from starting
             log(f'control: could not reopen the control sessions a shutdown ended: {e}')
-
-
-NO_BOARD = 'no-board'  # F59: <notes>/no-board while the run that is up has no runner feed (Windows)
-
-
-def mark_board() -> None:
-    """F59: say whether this run keeps the runner feed, for `feed_on` in the control sessions' own processes:
-    C26, every run on Linux and macOS does (a hidden session, `start_board`), none on Windows. Called once as
-    the run starts."""
-    f = C.notes(NO_BOARD)
-    if not plat.WINDOWS:
-        f.unlink(missing_ok=True)
-    else:
-        f.write_text('this run has no runner feed\n', encoding='utf-8')
 
 
 def hidden_control_log(n: int) -> Path:
@@ -695,7 +633,7 @@ SHIM_ALREADY = 'it was already up'  # B131: hidden_shim's why beside the pid of 
 
 
 def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[int, str]:
-    """`hidden_control` for any hidden session named `stem` (control3, board): its job, marker, log, FIFO and
+    """`hidden_control` for any hidden session named `stem` (control3): its job, marker, log, FIFO and
     attach socket are `<notes>/<stem>.job|.live|.log|.in|.sock`. (pid, '') once it is up, else (0, why).
     B131: when `<stem>.live` already names a live pid (two `control --new` that picked the same number), that
     session is left as it is, its job, marker and log untouched, and the answer is (its pid, SHIM_ALREADY)."""
@@ -721,13 +659,6 @@ def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[i
             return 0, ended.read_text(encoding='utf-8').strip()[:300] or 'it ended at once'
         time.sleep(0.2)
     return 0, f'it did not start in {SHIM_WAIT if wait is None else wait:g} s (see {C.notes(f"{stem}.shim")})'
-
-
-def feed_on() -> bool:
-    """Does a run here keep the runner feed (a hidden session, on Remote Control), the one watch that pushes what
-    needs the person? Control sessions then start no needs-you watch of their own. Not while the run that is up
-    has no runner feed (Windows)."""
-    return remote_on() and not plat.WINDOWS and not C.notes(NO_BOARD).exists()
 
 
 CONTROL_LINK_WAIT = 90  # s `control --new` watches the new pane for its claude.ai/code link
@@ -784,7 +715,7 @@ def person_turn(d: dict) -> bool:
 CONTROL_CLOSE_EVERY = 300  # s between looks
 CONTROL_CLOSE_AT = [0.0]
 CONTROL_ASK_KIND = 'F'  # C14: the id prefix an open question's task gets (was [run] control_ask_kind)
-CONTROL_WATCH_CMD = 'since --follow --needs-you'  # a control session's standing watch: not work in progress
+CONTROL_WATCH_CMD = 'since --follow --needs-you'  # an older version's standing watch (B195), or one asked for: not work in progress
 TASK_STARTED = re.compile(r'Monitor started \(task (\w+)|running in background with ID: (\w+)')
 TASK_ENDED = re.compile(r'<task-id>(\w+)</task-id>|\(task (\w+)\)')
 EXPIRES = re.compile(r'expires in (\d+)\s*([smh])')
@@ -1353,8 +1284,7 @@ def start_control_server() -> None:
 
 REMOTE_DIR = 'remote'  # <notes>/remote/<kind>-<pid>.json: a Remote Control process a run started
 RC_TEARDOWN = 20  # s a Remote Control process gets after SIGTERM to archive its entry and exit
-RC_RUN_KINDS = ('feed', 'server')  # what a run starts for itself; control sessions are the person's, left up
-RC_ENDING = [False]  # set by the stop's sweep: keep_board opens no new feed while the run ends
+RC_RUN_KINDS = ('feed', 'server')  # what a run ends (a feed: an older version's); control sessions are the person's
 
 
 def run_key(pid: int) -> str:
@@ -1404,8 +1334,9 @@ def rc_forget(rec: dict | Path | None, killed: bool = False) -> None:
 def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
              keep_server: bool = False) -> tuple[list[str], list[str]]:
     """End the Remote Control processes the run owns, so the apps list only live sessions: on a run's start,
-    those an earlier run left (its feed, its control server unless `keep_server`: this run adopts it, so no new
-    entry); with `stopping`, this run's own as well. Each gets SIGTERM and up to `wait` s for its teardown,
+    those an earlier run left (its control server unless `keep_server`: this run adopts it, so no new entry) and any
+    runner feed (B195: an older version started it, under this run's own key when the run restarted in place);
+    with `stopping`, this run's own as well. Each gets SIGTERM and up to `wait` s for its teardown,
     which archives its entry; one still up then is left (the next start tries again), never SIGKILLed.
     Control sessions are the person's and stay up, and nothing the run did not record (a session the person
     started) is touched. A record whose process is gone is dropped, named in run.log when it died killed
@@ -1418,8 +1349,8 @@ def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
                 log(f'remote: "{s.get("name")}" was killed before it could archive itself; if it is still listed '
                     f'at {REMOTE_URL}, archive it there')
             rc_forget(s)
-        elif s.get('kind') not in RC_RUN_KINDS or s.get('run') == mine and not stopping:
-            continue  # a control session, or this run's own while it runs
+        elif s.get('kind') not in RC_RUN_KINDS or s.get('run') == mine and not stopping and s.get('kind') != 'feed':
+            continue  # a control session, or this run's own while it runs (a feed is never: B195)
         elif s.get('kind') == 'server' and keep_server and s.get('run') != mine:
             continue  # keep_control_server adopts it (or restarts it when its flags differ)
         else:
@@ -1443,7 +1374,12 @@ def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
 
 
 def rc_sweep_start() -> None:
-    """The run's start: end what an earlier run left on Remote Control, in the background (it can wait)."""
+    """The run's start: end what an earlier run left on Remote Control, and an older version's board (B195), in the
+    background (it can wait)."""
     keep = remote_on() and bool(C.run['control'])
-    threading.Thread(target=rc_sweep, args=(os.getpid(),), kwargs={'keep_server': keep},
-                     name='remote-sweep', daemon=True).start()
+
+    def sweep() -> None:
+        from agent_runner.feed import end_board
+        rc_sweep(os.getpid(), keep_server=keep)
+        end_board()
+    threading.Thread(target=sweep, name='remote-sweep', daemon=True).start()
