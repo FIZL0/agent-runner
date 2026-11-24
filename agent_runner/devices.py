@@ -795,6 +795,17 @@ def page_stop(name: str) -> dict:
     return {'ok': True, 'out': f'{name} is stopped' if was else f'{name} is not running', **page_state(dev)}
 
 
+def need_pages(line: str, c) -> list[dict]:
+    """F408: the devices with a web page that a task's first line needs: [{name, page, state}], '' for a page with no
+    start command. No output is read: a snapshot asks this every few seconds."""
+    from agent_runner import device_page, shared_tools
+    if ' | needs: ' not in line:
+        return []
+    specs, devs = shared_tools.specs(c), used(c)
+    return [{'name': n, 'page': dev['page'], 'state': device_page.state(_page_dir(dev)) if dev.get('start') else ''}
+            for n in shared_tools.needs_of(line, c) if specs[n].get('device') and (dev := devs.get(n)) and dev.get('page')]
+
+
 def _page_words(dev: dict) -> str:
     r = page_state(dev)
     return dev['page'] + (f' ({r["state"]})' if r else '')

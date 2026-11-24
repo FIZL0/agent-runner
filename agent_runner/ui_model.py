@@ -17,7 +17,8 @@ copy, and the actions they share.
     shelved   F184: the shelved tasks (`shelved_rows`), which queue, needs and concepts leave out: id, kind, title,
               ask in plain words, state 'shelved'
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age, detail (what
-              its card and popup say: said, title, where, summary, lead, steps, expect, notes, shots, step_more and inputs (F175); need_detail)
+              its card and popup say: said, title, where, summary, lead, steps, expect, notes, shots, step_more and inputs (F175); need_detail), and
+              devices where its task needs any with a web page (F408: name, page, state; `devices.need_pages`)
     concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
               of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none), lead (`concept_chat_text`)
     log       the run log's last lines

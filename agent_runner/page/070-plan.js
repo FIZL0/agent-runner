@@ -64,7 +64,7 @@ function needBtns(n,i,more=''){
   if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id];
     return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?foldIn('pitch:'+n.id,pitchNo(n,i)):''}`}
   if(n.label==='TOOL')return '';  // F168: nothing to answer, it clears once the tool is back
-  return `<div class="btns">${needInputs(n).length?'':ansBtns(n)}${more}${restBtns(n)}${open(n.url)}</div>${actSure(n.acts,n.id)}`;
+  return `<div class="btns">${needInputs(n).length?'':ansBtns(n)}${more}${restBtns(n)}${open(n.url)}${n.devices?needDevices(n):''}</div>${actSure(n.acts,n.id)}`;
 }
 const needCard=(n,i)=>card(needTap(n)+needBtns(n,i),'need',`data-k="need:${esc(n.id)}"`);
 /* F162: the popup of one Needs you item: everything about it, its answers always on screen at the foot */
