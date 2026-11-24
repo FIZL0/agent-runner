@@ -57,6 +57,17 @@ sys.exit(int(env.get('FAKE_RC', '0')))
 '''
 
 
+MADE: list[Path] = []  # every temp folder devices made in this process
+REAL_TMP = D._tmp
+
+
+@contextlib.contextmanager
+def recorded_tmp():
+    with REAL_TMP() as d:
+        MADE.append(d)
+        yield d
+
+
 def make_repo(tmp: Path, name: str) -> Path:
     repo = tmp / name
     (repo / 'plan').mkdir(parents=True)
@@ -329,8 +340,13 @@ def test_connect(tmp: Path) -> str:
     check(op('save', name='lan', kind='ssh', alias='box')['ok'], 'picked by alias')
     check(not op('secret', name='lan', what='password', password='x')['ok'], 'it takes no secret')
     op('remove', name='lan')
-    left = list(Path('/tmp').glob('ar-dev-*'))
-    check(not [p for p in left if p.stat().st_uid == os.getuid() and p.stat().st_mtime > time.time() - 60], 'nothing left in /tmp', left)
+    # only the folders this test made, as other runs on the machine have theirs in /tmp too: MADE has this process's,
+    # and the fake ssh's arguments name its subprocesses'
+    argvs = [json.loads(line)[0] for line in log.read_text().splitlines()]
+    made = {*MADE, *(Path(a.split('=', 1)[1]).parent for argv in argvs for a in argv if a.startswith('UserKnownHostsFile='))}
+    check(MADE and made - set(MADE) and all(p.name.startswith('ar-dev-') for p in made), 'the folders of both are known', made)
+    left = [p for p in made if p.exists()]
+    check(not left, 'nothing left in /tmp', left)
     return '\n'.join([*said, log.read_text(), json.dumps(op('test', name='mini'))])
 
 
@@ -500,6 +516,7 @@ def main() -> int:
         return 0
     with tempfile.TemporaryDirectory() as tmp_:
         tmp = Path(tmp_).resolve()
+        D._tmp = recorded_tmp
         os.environ['AGENT_RUNNER_DEVICES'] = str(tmp / 'state')
         os.environ['AGENT_RUNNER_HOME_CONFIG'] = str(tmp / 'homecfg')
         os.environ['AGENT_RUNNER_SSH_CONFIG'] = str(tmp / 'none')
