@@ -2,7 +2,7 @@
 
 The shim (`slots.run_pty`, `slots.run_conpty`) listens on <notes>/slotN.sock (controlN.sock), removed when the
 session ends: a Unix socket, mode 0600; on Windows a small file that holds a port on 127.0.0.1 and a token, which a
-client sends first (a frame of kind b'k'). It sends what the session prints to every attached client as is; a client
+client sends first (a frame of kind b'k'), or is dropped after TOKEN_WAIT s. It sends what the session prints to every attached client as is; a client
 sends frames: one kind byte, a 2-byte big-endian length, the payload. Kind b'd' is input for the session, b'w' that
 client's terminal size (2-byte rows, 2-byte columns): the session gets the smallest of its clients' (`Viewers`, F114).
 `attach_session` is the client `attach sN|cN` runs: Ctrl-b d detaches.
@@ -67,6 +67,8 @@ def attach_listen(path: Path):
 
 
 TOKENS: dict[int, str] = {}  # F114: a TCP listener's port -> the token its clients send first (in its own shim)
+
+TOKEN_WAIT = 5.0  # F146: s a client has to send it
 
 
 def listen_tcp(path: Path):
@@ -147,6 +149,7 @@ class Viewers:
         self.sizes: dict = {}  # socket -> (rows, columns)
         self.due = 0.0  # when the size comes back after a redraw
         self.lock, self.ended = threading.RLock(), False
+        self.waits: dict = {}  # F146: socket -> when it is dropped, its token not come
         self.asked: set = set()  # sockets whose token came (no token: every one)
 
     def watched(self) -> list:
@@ -156,6 +159,8 @@ class Viewers:
         return min(most, max(0.0, self.due - time.monotonic())) if self.due else most
 
     def tick(self) -> None:
+        for c in [c for c, end in self.waits.items() if time.monotonic() >= end]:
+            self.drop(c)
         if self.due and time.monotonic() >= self.due:
             self.due = 0.0
             self._set(self.now)
@@ -178,6 +183,8 @@ class Viewers:
                     c, _ = self.listener.accept()
                     c.settimeout(0.5)  # a client that takes no output for this long is dropped, once
                     self.clients[c] = b''
+                    if self.token:
+                        self.waits[c] = time.monotonic() + TOKEN_WAIT
                 except OSError:
                     pass
             for c in [c for c in ready if c in self.clients]:
@@ -203,6 +210,7 @@ class Viewers:
                 self.drop(c)
                 return False
             self.asked.add(c)
+            self.waits.pop(c, None)
             return True
         if kind == b'd':
             self.write(payload)
@@ -236,6 +244,7 @@ class Viewers:
         if c in self.clients:
             self.clients.pop(c)
             self.asked.discard(c)
+            self.waits.pop(c, None)
             c.close()
             if self.sizes.pop(c, None):
                 self.fit()
@@ -257,7 +266,7 @@ class Viewers:
             self.ended = True
             for c in self.clients:
                 c.close()
-            self.clients, self.sizes = {}, {}
+            self.clients, self.sizes, self.waits = {}, {}, {}
             if self.listener:
                 self.listener.close()
                 self.listener = None

@@ -62,6 +62,39 @@ def test_windows_port(tmp: Path) -> None:
             eq([cmds.cmd_attach([n]) for n in ('s9', 'c3')], [7, 7], 'attach attaches')
 
 
+def test_token(tmp: Path) -> None:
+    print('Windows: a client that sends no token in time, or a wrong one, is dropped with nothing printed or typed (F146)')
+    import socket
+    with mock.patch.object(plat, 'WINDOWS', True), mock.patch.object(A, 'TOKEN_WAIT', 1.0):
+        path = tmp / 'slot7.sock'
+        s = Session(path)
+        port, token = s.v.listener.getsockname()[1], s.v.token
+
+        def client(first: bytes = b'') -> socket.socket:
+            c = socket.create_connection(('127.0.0.1', port), timeout=10)
+            c.sendall(first)
+            return c
+
+        def left(c) -> bytes:  # b'' once the shim closed it
+            try:
+                return c.recv(99)
+            except ConnectionError:
+                return b''
+
+        good = A.connect(path)
+        check(until(lambda: len(s.v.asked) == 1), 'one with the token is in')
+        frames = A.attach_size_frame(30, 100) + A.attach_input_frames(b'no')
+        bad = [client(A.attach_frame(b'k', t.encode()) + frames) for t in ('', token[:-1], token + 'x', 'x' * len(token))]
+        late = [client(), client(A.attach_frame(b'k', token.encode())[:-1])]  # nothing, and all but its last byte
+        s.v.out(b'printed')
+        eq([left(c) for c in bad + late], [b''] * 6, 'a wrong, a missing and a cut-off token: closed, nothing sent')
+        check(until(lambda: len(s.v.clients) == 1) and not s.v.waits, 'none of them is kept')
+        eq((s.typed, s.sizes), ([], []), 'nothing they sent was acted on')
+        good.sendall(A.attach_input_frames(b'yes'))
+        check(until(lambda: s.typed == [b'yes']), 'the one with the token stays past the wait')
+        s.v.close()
+
+
 def test_sizes(tmp: Path) -> None:
     print("several viewers: the session has the smallest of their sizes, and its own when they have gone")
     with mock.patch.object(plat, 'WINDOWS', True):
@@ -98,7 +131,7 @@ def test_typed() -> None:
 
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix='agent-runner-attach-'))
-    return report([lambda: test_windows_port(tmp), lambda: test_sizes(tmp), test_typed])
+    return report([lambda: test_windows_port(tmp), lambda: test_token(tmp), lambda: test_sizes(tmp), test_typed])
 
 
 if __name__ == '__main__':

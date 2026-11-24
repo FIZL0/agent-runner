@@ -296,6 +296,109 @@ def test_conpty(tmp: Path):
         check(not (d / 'none.live').exists(), 'an agent that cannot start is an OSError, with no marker')
 
 
+def test_conpty_attach(tmp: Path):
+    print('windows: attach to a ConPTY session: its output comes, typing reaches it, its token guards it (F146)')
+    if not plat.has_conpty():
+        return
+    import socket
+    from agent_runner import attach as A
+    d = tmp / 'conpty-attach'
+    d.mkdir()
+    child = d / 'child.py'
+    child.write_text(CONPTY_CHILD, encoding='utf-8')
+    marker, log, got = d / 'slot1.live', d / 'slot1.log', []
+    t = threading.Thread(target=lambda: got.append(R.slots.run_conpty(
+        [sys.executable, str(child), 'line'], str(d), {'F145': 'x'}, marker, log)), daemon=True)
+    t.start()
+    check(until(lambda: 'READY' in plain(log)), 'the session is up', plain(log))
+    sock = marker.with_suffix('.sock')
+    sddl = subprocess.run(['powershell', '-NoProfile', '-Command', f"(Get-Acl -LiteralPath '{sock}').Sddl"],
+                          capture_output=True, text=True).stdout.strip()
+    sid = re.search(r'S-1-[\d-]+', subprocess.run(['whoami', '/user', '/fo', 'csv', '/nh'], capture_output=True,
+                                                  text=True).stdout)[0]
+    has(sddl, r'D:PA?I?\(A;;FA;;;(LA|' + sid + r')\)$', 'the file with its port and token is this user\'s alone')
+    port = json.loads(sock.read_text(encoding='utf-8'))['port']
+    for what, first in (('a wrong token', A.attach_frame(b'k', b'wrong')), ('no token', b'')):
+        bad = socket.create_connection(('127.0.0.1', port), timeout=20)
+        bad.sendall(first + (A.attach_input_frames(b'bad\r') if first else b''))
+        try:
+            seen = bad.recv(99)
+        except ConnectionError:
+            seen = b''
+        eq(seen, b'', f'{what}: closed, with nothing sent')
+        bad.close()
+    c = A.connect(sock)
+    c.settimeout(20)
+    c.sendall(A.attach_size_frame(30, 100) + A.attach_input_frames(b'by attach\r'))
+    seen = b''
+    try:
+        while b'END' not in seen and (data := c.recv(65536)):
+            seen += data
+    except OSError:
+        pass
+    c.close()
+    out = d / 'seen'
+    out.write_bytes(seen)
+    has(plain(out), r'GOT by attach END', 'what is typed reaches the session, and what it prints comes back')
+    t.join(60)
+    eq([g[0] for g in got], [7], 'it ends')
+    check('bad' not in plain(log), 'nothing typed without the token reached it', plain(log))
+    check(not sock.exists(), 'the file goes with the session')
+
+
+ATTACH_CLIENT = """
+import ctypes, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from agent_runner.attach import attach_session
+k = ctypes.windll.kernel32
+k.GetStdHandle.restype = ctypes.c_void_p
+def modes():
+    got = []
+    for h in (-10, -11):
+        m = ctypes.c_uint32()
+        k.GetConsoleMode(ctypes.c_void_p(k.GetStdHandle(h)), ctypes.byref(m))
+        got.append(m.value)
+    return got + [k.GetConsoleOutputCP()]
+was = modes()
+rc = attach_session(Path(sys.argv[2]), 's9')
+Path(sys.argv[3]).write_text(f'{rc} {was == modes()}')
+"""
+
+
+def test_attach_console(tmp: Path):
+    print('windows: the attach client in a console: output, keys, resize, Ctrl-b d, and its modes put back (F146)')
+    if not plat.has_conpty():
+        return
+    from agent_runner import attach as A
+    d = tmp / 'attach-console'
+    d.mkdir()
+    script, ended = d / 'client.py', d / 'ended'
+    script.write_text(ATTACH_CLIENT, encoding='utf-8')
+    typed, sizes, shown = [], [], []
+    v = A.Viewers(d / 'slot9.sock', typed.append, lambda r, c: sizes.append((r, c)), (50, 200))
+    threading.Thread(target=v.serve, daemon=True).start()
+    env = {x: y for x, y in os.environ.items() if x != 'AGENT_RUNNER_WEB'}
+    con = conpty.ConPty([sys.executable, str(script), str(ROOT), str(d / 'slot9.sock'), str(ended)], str(d), env,
+                        (30, 100), shown.append)
+    try:
+        check(until(lambda: (30, 100) in sizes), 'it sends its size', sizes)
+        v.out('printed naïve\r\n'.encode('utf-8'))
+        check(until(lambda: 'printed naïve' in b''.join(shown).decode('utf-8', 'replace')), 'what the session prints is shown')
+        con.write('hé 😀\x03\x1b[A'.encode('utf-8'))
+        check(until(lambda: 'hé 😀\x03\x1b[A'.encode('utf-8') in b''.join(typed)), 'keys go on, Ctrl-C and an arrow too', typed)
+        con.resize(40, 120)
+        check(until(lambda: sizes[-1:] == [(40, 120)]), 'a resize is passed on', sizes)
+        con.write(b'\x02d')
+        check(until(ended.exists), 'Ctrl-b d leaves')
+        check(until(lambda: ended.read_text() != ''), 'and it ends')
+        eq(ended.read_text(), '0 True', 'with exit 0 and the console as it was')
+        check(b'\x02' not in b''.join(typed), 'Ctrl-b d is not typed')
+    finally:
+        con.close()
+        v.close()
+
+
 def test_conpty_slot(repo: Path, tmp: Path):
     print('windows: HiddenMux and hidden_control run through the detached shim, in a pseudo-console (F145)')
     if not plat.has_conpty():
@@ -389,7 +492,8 @@ def main() -> int:
     return report([lambda: test_shim_once(repo, tmp), lambda: test_utf8_merge(tmp), lambda: test_run_log_utf8(repo),
                    lambda: test_ci_workflow(tmp), lambda: test_bash_beside_git(tmp),
                    lambda: test_attach_logged(repo),
-                   lambda: test_no_conpty(repo, tmp), lambda: test_conpty(tmp), lambda: test_conpty_slot(repo, tmp)])
+                   lambda: test_no_conpty(repo, tmp), lambda: test_conpty(tmp), lambda: test_conpty_attach(tmp),
+                   lambda: test_attach_console(tmp), lambda: test_conpty_slot(repo, tmp)])
 
 
 if __name__ == '__main__':

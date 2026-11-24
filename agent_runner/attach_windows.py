@@ -3,6 +3,7 @@ Standard library only (`ctypes`). What is typed is read as UTF-16 (ReadConsoleW)
 VT sequences, and sent as UTF-8; its size is looked at every POLL s, as a console sends no signal for it."""
 from __future__ import annotations
 
+import codecs
 import os
 import threading
 
@@ -46,13 +47,16 @@ def attach_console(s, name: str) -> int:
         except OSError:
             return None
 
+    utf16 = codecs.getincrementaldecoder('utf-16-le')('replace')  # keeps half of a pair (an emoji) for the next read
+
     def read_keys() -> bytes:
         if not console:
             return os.read(0, 4096)
         buf, n = ctypes.create_unicode_buffer(1024), w.DWORD()
-        if not k.ReadConsoleW(hin, buf, 1023, ctypes.byref(n), None):
-            return b''
-        return buf[:n.value].encode('utf-16-le', 'surrogatepass').decode('utf-16-le', 'replace').encode('utf-8')
+        while k.ReadConsoleW(hin, buf, 1023, ctypes.byref(n), None):
+            if got := utf16.decode(ctypes.string_at(buf, n.value * 2)):
+                return got.encode('utf-8')
+        return b''
 
     def keys() -> None:
         typed = Typed()
@@ -95,9 +99,12 @@ def attach_console(s, name: str) -> int:
         end(f'{name}: the connection to its terminal broke')
     finally:
         s.close()
-        if shown:
-            os.write(1, TERM_RESET)
-        os.write(1, f'\r\n[{why[0]}]\r\n'.encode())
+        try:
+            if shown:
+                os.write(1, TERM_RESET)
+            os.write(1, f'\r\n[{why[0]}]\r\n'.encode())
+        except OSError:  # its output is gone: its modes are put back all the same
+            pass
         if shown:
             k.SetConsoleMode(hout, was_out.value)
             k.SetConsoleOutputCP(was_cp)
