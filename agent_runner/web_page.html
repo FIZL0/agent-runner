@@ -723,11 +723,11 @@ function controlGroups(snap){
    (seen: epoch s) */
 const needsReply=(s,seen)=>!!s.needs_reply||(s.last==='claude'&&(s.at||0)>(seen||0));
 /* F128: the Chats list in two: the chats, then the quiet ones (no reply needed, nothing said for `quiet` s). A
-   pinned chat and one the person named stay up. */
+   pinned chat and one the person named stay up, and so does `up`, the open chat that was not quiet (B193). */
 function chatGroups(rows,o){
   const top=[],quiet=[];
   for(const s of rows||[]){
-    const q=o.quiet>0&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.open&&s.at>0
+    const q=o.quiet>0&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.up&&s.at>0
       &&o.now-s.at>o.quiet&&!needsReply(s,(o.seen||{})[s.name]);
     (q?quiet:top).push(s);
   }
@@ -1483,10 +1483,21 @@ const sessionOf=n=>S.snap.sessions.find(s=>s.name===n);
 const isAgent=n=>!/^(c\d+|[@+].+)$/.test(n||'');  // F137: '@cid', a chat still starting, is a chat
 /* F129: a chat's name, with a rename still on its way */
 const chatTitle=s=>{const x=S.ob.filter(y=>y.ren===s.name&&y.state==='sending').pop();return x?x.args.title:chatName(s)};
+/* B193: S.up, the open chat while it is in the top list, kept per tab: marking it seen does not drop it to Quiet.
+   Looked at before each markSeen; an open quiet chat is in it only once it came up by itself */
+const UP_KEY='ar-up:'+(HKEY||document.title);
+S.up=tabStore.get(UP_KEY)||'';
+function holdUp(){
+  const n=S.thread||'', s=chats().find(x=>x.name===n);
+  if(!S.seen||n&&!s&&S.up===n)return;  // a first visit takes all as read; a reload has no chats yet
+  const up=s&&groupChats([s]).top.length?n:'';
+  if(up!==S.up)tabStore.set(UP_KEY,S.up=up);
+}
 /* F128: when the person last opened each chat (its last activity then, per browser); the first visit takes all as read */
 const SEEN_KEY='ar-seen';
 S.seen=(()=>{try{const o=JSON.parse(store.get(SEEN_KEY)||'null');return o&&typeof o==='object'?o:null}catch(e){return null}})();
 function markSeen(){
+  holdUp();  // B193
   const rows=(S.snap.sessions||[]).filter(x=>/^c\d+$/.test(x.name)), first=!S.seen;
   if(!rows.length||document.hidden)return;
   const open=S.thread||(S.view==='talk'?talkName():'');let moved=first;
@@ -1495,7 +1506,8 @@ function markSeen(){
   if(moved)store.set(SEEN_KEY,JSON.stringify(S.seen));
 }
 const replyDue=s=>needsReply(s,(S.seen||{})[s.name])&&!(S.thread===s.name&&!s.needs_reply);
-const shownChats=()=>chatGroups(chats(),{pins:chatPins(),quiet:+S.snap.chat_quiet||0,now:Date.now()/1000,seen:S.seen||{},open:S.thread});
+const groupChats=rows=>chatGroups(rows,{pins:chatPins(),quiet:+S.snap.chat_quiet||0,now:Date.now()/1000,seen:S.seen||{},up:S.thread&&S.up});
+const shownChats=()=>groupChats(chats());
 const threadTitle=n=>{if(isNew(n))return S.ctx?S.ctx.label:'New chat';if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
 const upNext=()=>S.snap.queue.filter(q=>q.state!=='running'&&q.state!=='parked');
 const feedOf=n=>(S.feeds[n]||{}).entries||[];

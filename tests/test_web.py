@@ -3455,8 +3455,8 @@ def test_chats_f128(tmp: Path) -> None:
     row = lambda n, **k: {'name': n, 'title': n, 'last': 'claude', 'at': now - 50000, 'needs_reply': False, **k}  # noqa: E731
     rows = [row('c1'), row('c2'), row('c3', needs_reply=True), row('c4', renamed=True), row('c5', at=now - 60), row('c6'), row('c7'),
             row('c8', at=0), row('c9')]
-    o = {'pins': ['c6'], 'quiet': 21600, 'now': now, 'seen': {f'c{i}': now for i in range(1, 9)}, 'open': None}
-    got = logic_js([['chatGroups', rows, o], ['chatGroups', rows, {**o, 'quiet': 0}], ['chatGroups', rows, {**o, 'open': 'c2'}],
+    o = {'pins': ['c6'], 'quiet': 21600, 'now': now, 'seen': {f'c{i}': now for i in range(1, 9)}, 'up': None}
+    got = logic_js([['chatGroups', rows, o], ['chatGroups', rows, {**o, 'quiet': 0}], ['chatGroups', rows, {**o, 'up': 'c2'}],
                     ['needsReply', row('c2'), now], ['needsReply', row('c2'), now - 60000], ['needsReply', row('c2', last='tool'), 0],
                     ['needsReply', row('c2', needs_reply=True), now],
                     ['chatName', {'name': 'c1', 'title': 'Base', 'renamed': True}], ['chatName', {'name': 'c1', 'title': 'Base'}]])
@@ -3464,9 +3464,67 @@ def test_chats_f128(tmp: Path) -> None:
     eq(names(got[0]), (['c3', 'c4', 'c5', 'c6', 'c8', 'c9'], ['c1', 'c2', 'c7']),
        'quiet last: not one that needs a reply (c3, c9 unread), a renamed, a fresh, a pinned or a new one')
     eq(names(got[1])[1], [], 'chat_quiet off: none')
-    check('c2' in names(got[2])[0], 'the open chat stays up')
+    check('c2' in names(got[2])[0] and 'c1' in names(got[2])[1], 'the open chat that was up stays up, no other')
     eq(got[3:7], [False, True, False, True], 'a badge: unread since it spoke, or an open question; not while it works')
     eq(got[7:], ['Base', 'Base'], 'c1 shows its title as any other')
+
+
+QUIET_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const now = Date.now() / 1000, old = now - 50000;
+const map = (m = {}) => ({m, get: k => m[k] || '', set: (k, v) => { m[k] = v }});
+/* one load of the page: its Chats code over the tab's and the browser's storage; look() is a draw's part of it */
+function load(tab, store, thread = null) {
+  return new Function('tabStore', 'store', 'now', 'thread', `
+const HKEY = 'a', document = {hidden: false, title: ''}, talkName = () => '';
+const S = {snap: {sessions: [], chat_quiet: 21600}, thread, view: 'home'};
+` + logic + slice('const chatPins=', 'const chatNames=') + slice('/* B193: S.up', 'const replyDue=') + line('const groupChats=') + line('const shownChats=') + `
+const names = g => [g.top.map(x => x.name).join(' '), g.quiet.map(x => x.name).join(' ')];
+return {S, look(n) { if (n !== undefined) S.thread = n; markSeen(); return names(shownChats()) }};`)(tab, store, now, thread);
+}
+const c = (name, o) => ({name, last: 'claude', at: old, needs_reply: false, ...o});
+const seen = o => map({'ar-seen': JSON.stringify(o)});
+const rows = () => [c('c1'), c('c2'), c('c3'), c('c4', {at: now - 60})];
+const out = {}, tab = map(), store = seen({c1: old, c2: old, c4: now - 60});
+let p = load(tab, store); p.S.snap.sessions = rows();
+out.before = p.look();
+out.quiet = [p.look('c2'), p.look()];                    // a quiet chat opened: no move, draw after draw
+p = load(tab, store, 'c2'); out.reload = [p.look()]; p.S.snap.sessions = rows(); out.reload.push(p.look(), p.look());
+p.S.snap.sessions[1].at = now; out.said = p.look();       // something new is said in it
+p.S.snap.sessions[1].at = old; p.S.seen.c2 = old; out.held = p.look();     // then it gets old while open
+p.S.snap.sessions[1].at = old; out.unread = [p.look('c3'), p.look()];      // an old unread one, marked seen as it opens
+p = load(tab, store, 'c3'); p.look(); p.S.snap.sessions = rows(); out.unreadReload = [p.look(), p.look()];
+out.closed = p.look(null);
+p = load(tab, store, 'c1'); p.S.snap.sessions = rows(); p.S.snap.chat_pins = ['c1']; out.pinned = p.look();
+const t2 = map(); p = load(t2, map(), 'c1'); p.S.snap.sessions = rows(); p.look(); out.first = p.look();   // a first visit
+console.log(JSON.stringify(out));
+"""
+
+
+def test_quiet_stays_b193(tmp: Path) -> None:
+    """B193: opening a chat never moves it between the chats and Quiet, draw after draw and over a reload."""
+    if not shutil.which('node'):
+        print('  (no node here: the Quiet script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(QUIET_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the Chats code', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o, still = json.loads(r.stdout), ['c3 c4', 'c1 c2']
+    eq(o['before'], still, 'c1 and c2 are quiet; c3 is old but unread')
+    eq(o['quiet'], [still, still], 'a quiet chat opened stays in Quiet')
+    eq(o['reload'], [['', ''], still, still], 'and over a reload')
+    eq(o['said'], ['c2 c3 c4', 'c1'], 'something new said in it brings it up')
+    eq(o['held'], ['c2 c3 c4', 'c1'], 'and it stays up while it is open')
+    eq(o['unread'], [still, still], 'an old unread chat marked seen as it opens stays up')
+    eq(o['unreadReload'], [still, still], 'and over a reload')
+    eq(o['closed'], ['c4', 'c1 c2 c3'], 'it goes Quiet once closed')
+    eq(o['pinned'], ['c1 c4', 'c2 c3'], 'an open quiet chat comes up when pinned')
+    eq(o['first'], ['c4', 'c1 c2 c3'], 'a first visit takes all as read')
 
 
 def test_needs_drop_chat_f110(tmp: Path) -> None:

@@ -297,10 +297,10 @@ _In code_: SHEETS, openSheet
 _Avoid_: modal, popup, dialog (a pick sheet is another thing: a DECIDE's page of options)
 
 **Quiet chat**:
-A chat that needs no reply and has had nothing said in it for `[ui] chat_quiet`: grayed, at the bottom of Chats, until something is said
+A chat that needs no reply and has had nothing said in it for `[ui] chat_quiet`: grayed, at the bottom of Chats. Opening it does not move it; the quiet ends when something is said in it, or it is pinned or renamed
 _Said_: quiet chats
 _On screen_: Quiet
-_In code_: chat_quiet, chatGroups
+_In code_: chat_quiet, chatGroups, holdUp
 _Avoid_: archived chat, old chat, stale chat
 
 **Device override**:
