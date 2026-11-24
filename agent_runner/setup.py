@@ -229,7 +229,10 @@ def offer_ttyd() -> str | None:
     if not cmd:
         return f'ttyd is not installed, so the run page cannot show sessions: {W.TTYD_INSTALL}'
     later = f'ttyd is not installed, so the run page cannot show sessions: install it with `{cmd}`'
-    if not at_terminal() or not ask(f'ttyd is not installed, so the run page cannot show sessions: run `{cmd}` now?'):
+    try:
+        if not at_terminal() or not ask(f'ttyd is not installed, so the run page cannot show sessions: run `{cmd}` now?'):
+            return later
+    except KeyboardInterrupt:  # Ctrl-C is a no, too
         return later
     argv = cmd.split()
     argv[0] = shutil.which(argv[0]) or argv[0]  # Windows: scoop is a .cmd, which starts only by its full name

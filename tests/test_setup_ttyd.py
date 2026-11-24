@@ -18,11 +18,17 @@ from agent_runner import web as W
 CMD = 'winget install tsl0922.ttyd'
 
 
-def offer(answer: bool = True, terminal: bool = True, cmd: str = CMD, found: tuple = ('', ''), ran=0):
+def offer(answer: bool | BaseException = True, terminal: bool = True, cmd: str = CMD, found: tuple = ('', ''), ran=0):
     """offer_ttyd with all of it faked: (the line it says, the questions asked, the commands run). `found` is what
     find_ttyd gives before and after the command; `ran` its exit code, or what it raises."""
     asked: list = []
     runs: list = []
+
+    def answering(q):
+        asked.append(q)
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
 
     def run(argv, **kw):
         runs.append((argv, kw))
@@ -33,7 +39,7 @@ def offer(answer: bool = True, terminal: bool = True, cmd: str = CMD, found: tup
     with mock.patch.object(U, 'find_ttyd', side_effect=list(found)), \
             mock.patch.object(W, 'ttyd_install_cmd', lambda: cmd), \
             mock.patch.object(S, 'at_terminal', lambda: terminal), \
-            mock.patch.object(S, 'ask', lambda q: asked.append(q) or answer), \
+            mock.patch.object(S, 'ask', answering), \
             mock.patch.object(S.shutil, 'which', lambda t: f'/bin/{t}.exe'), \
             mock.patch.object(S.subprocess, 'run', run):
         line = S.offer_ttyd()
@@ -59,6 +65,9 @@ def test_not_run():
     print('no, no terminal, no package manager, already there: nothing runs')
     line, asked, runs = offer(answer=False)
     eq((len(asked), runs), (1, []), 'no: asked, not run')
+    has(line, f'`{CMD}`', 'the command is said')
+    line, asked, runs = offer(answer=KeyboardInterrupt())
+    eq(runs, [], 'Ctrl-C at the question: not run, and setup goes on')
     has(line, f'`{CMD}`', 'the command is said')
     line, asked, runs = offer(terminal=False)
     eq((asked, runs), ([], []), 'no terminal: not asked, not run')

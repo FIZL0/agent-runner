@@ -37,7 +37,8 @@ later), or before that in a console whose window starts hidden. Run `agent-runne
 pseudo-terminal with no window, their output in `.runner/slotN.log`. `agent-runner attach` is the run view
 (its log, live, and its keys), `agent-runner attach s2` puts this terminal on slot 2's own terminal (Ctrl-b d
 leaves it running), and `status`, `ui`, control sessions and `plan tell` watch and steer them.
-`[run] links` need no Developer Mode: without it they become junctions and hard links. The run page needs ttyd to show sessions, and `agent-runner setup` offers to install it. See the reference's
+`[run] links` need no Developer Mode: without it they become junctions and hard links. The run page needs ttyd to show
+sessions, and `agent-runner setup` offers to install it. See the reference's
 [Terminals, and Windows](REFERENCE.md#terminals-and-windows).
 
 **Latest, or a tag.** Without `@…` it installs `main`, which is always the latest release (every commit
@@ -134,8 +135,9 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
 2. It writes `runner.toml` when there is none, with the gate guessed from `package.json`, `Cargo.toml`,
    `go.mod`, a Makefile `test`/`check` target or a `tests/` folder. An existing one is left as it is.
 3. When ttyd is not found, it asks in one line to install it, naming this machine's command, before the
-   Claude session. The run page needs ttyd to show sessions. Yes runs the command here; no, or no way to
-   run it, goes on without it. It asks also on a repo already set up, and `--yes` does not answer it.
+   Claude session. The run page needs ttyd to show sessions. Yes runs the command in
+   this terminal. On no, with no terminal or no package manager, or when the install fails, it says the command
+   or what failed and goes on. It asks also on a repo already set up, and `--yes` does not answer it.
 4. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
    lean brief) that reads the repo, checks the gate, writes the goal and a first task list with
    `agent-runner plan goal` and `plan add`, adds a short `## Agent notes` section to CLAUDE.md or AGENTS.md,
