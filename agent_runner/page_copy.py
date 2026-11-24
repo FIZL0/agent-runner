@@ -109,11 +109,13 @@ def page_copy_html(snap: dict) -> str:
         rows.append(f'<div class="row"><span class="y">{_h(s.get("name"))}</span><span class="id">{_h(s.get("task"))}'
                     f'</span><span>{_h(s.get("title"))}</span><span class="d">{mins}{_h(s.get("state"))}</span>'
                     f'{term}</div>')
+    rels = [f'<div class="row"><span class="m">{_h(r.get("id") or "V")}</span><span>{_h(r.get("title"))}</span>'
+            f'<span class="d">{_h(r.get("words"))}</span></div>' for r in snap.get('releases') or []]  # F185
     queue = [f'<div class="row"><span class="id">{_h(q.get("id"))}</span><span>{_h(q.get("title"))}</span>'
              + (f'<span class="d">after {_h(", ".join(q["after"]) if isinstance(q.get("after"), list) else q["after"])}'
                 f'</span>' if q.get('after') else '')
              + (f'<span class="r">{_h(q.get("pri"))}</span>' if q.get('pri') not in (None, '', 'normal') else '')
-             + '</div>' for q in snap.get('queue') or []]
+             + '</div>' for q in snap.get('queue') or [] if not q.get('release')]
     needs = [f'<div class="row"><span class="y">{_h(n.get("id"))}</span><span>{_h(n.get("ask") or n.get("title"))}'
              f'</span><span class="d">{_h(n.get("age"))}</span>{_a(n.get("url") or "", "page")}</div>'
              for n in snap.get('needs') or []]
@@ -133,7 +135,7 @@ def page_copy_html(snap: dict) -> str:
             f'<span>as of {_h(snap.get("at"))}</span>'
             '<span>read-only: the live page is served by the run on its machine</span></div>'
             '<div class="grid">' + box(1, 'Status', status, 'no run is up') + box(2, 'Sessions', rows, 'none')
-            + box(3, 'Queue', queue, 'nothing queued') + box(4, 'Needs you', needs, 'Nothing needs you.')
+            + box(3, 'Queue', rels + queue, 'nothing queued') + box(4, 'Needs you', needs, 'Nothing needs you.')
             + box(5, 'Concepts', concepts, 'none') + box(6, 'Log', [log_], '') + '</div>\n')
 
 

@@ -71,7 +71,7 @@ def test_snapshot(tmp: Path) -> None:
     eq(snap['up'], True, 'up as given')
     eq(snap['status'][0], 'run up: 3 slots', 'status opens with the run state')
     check(any('tasks left' in l for l in snap['status']), 'status has the progress line', snap['status'])
-    check(any(l.startswith('release: V6 Release the next version · waits for 2 open ahead') for l in snap['status']), 'status has the release line',
+    check(any(l.startswith('release: V6 Release the next version · waits for 2: F1 Board page for the run, B2 ') for l in snap['status']), 'status has the release line',
           snap['status'])
     eq(snap['status'][-1], 'usage: session 42%, week 85%', 'status ends with usage')
 
@@ -104,7 +104,12 @@ def test_snapshot(tmp: Path) -> None:
                            'url': 'https://claude.ai/artifact/k5', 'copy': '',
                            'acts': ['concept_chat', 'concept_drop']}], 'concept with its page link')
     eq(snap['log'], [f'=== 2026-11-21T10:{i:02d}:00 line {i}' for i in range(25, 30)], 'run log tail')
-    eq(snap['release'], 'release: V6 Release the next version · waits for 2 open ahead', 'release line')
+    rel, = snap['releases']
+    eq(snap['release'], 'release: ' + rel['text'] + rel['note'], 'release line: the one row (F185)')
+    eq((rel['id'], rel['state'], [w['id'] for w in rel['waits']]), ('V6', 'waits', ['F1', 'B2']), 'one open release')
+    eq(q['V6']['release'], rel, 'its queue row carries it')
+    with mock.patch.object(U, '_state', lambda up: {'running': {'1': 'V6'}}):
+        eq(U.snapshot(up=True, now=NOW, links={}, windows={})['releases'][0]['words'], 'releasing now', 'one running')
 
     down = U.snapshot(up=False, now=NOW, links={})
     eq(down['status'][0], 'no run is up', 'no run: said so')

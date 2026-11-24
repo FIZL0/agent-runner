@@ -109,7 +109,7 @@ def test_release_taken(tmp: Path):
     R.init(repo)
     ls = (repo / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
     eq('V1' in S.explain({}, set(), 'main'), False, 'untaken, T3 holds the after: all release')
-    eq(R.release_line(ls), 'release: V1 Release · waits for 1 open ahead', 'status says it waits (F131: the row)')
+    eq(R.release_line(ls), 'release: V1 Release · waits for 1: T3 three', 'status says it waits (F131: the row)')
     S.SLOTS_DIR.mkdir(parents=True, exist_ok=True)
     git(repo, 'worktree', 'add', '-q', '-b', 'task/T3', str(S.SLOTS_DIR / 'take-T3'))  # `take T3`, no changes
     eq(set(S.taken()), {'T3'}, 'T3 is taken by hand')
@@ -117,7 +117,7 @@ def test_release_taken(tmp: Path):
     eq(why.get('T3'), ('running', 'taken by hand (`take`)'), 'the taken task')
     eq(why.get('V1'), ('free', 'not waiting on T3 (taken by hand)'), 'the release is free to start, and says why')
     eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'V1', 'choose starts it')
-    eq(R.release_line(ls), 'release: V1 Release · ready; not waiting on: T3 (taken by hand)',
+    eq(R.release_line(ls), 'release: V1 Release · next; not waiting on: T3 (taken by hand)',
        "status's release line says so")
     running = {1: ('T1', 'Next', {'a.py'}, set())}
     eq(S.explain(running, set(), 'main').get('V1'),

@@ -83,23 +83,24 @@ RELEASE_TASK = re.compile(r'\W*(?:\(alone\)\s*)?(?:release\b|cut (?:a|the next) 
                           re.I)  # F130: after its `(alone)` tag
 
 
-def release_line(ls: list[str], st: dict | None = None, row=None) -> str:
-    """F131: first 'release: ' and the release row's words (`ui_model.release_row`, built from STATE `st`, read
-    when None; `row` given: that row), as the run page and the TUI say it: 'release: V5 Release · waits for 24
-    open ahead', 'release: Next release · auto at 10 landed: 6/10'. Then 'release: waits on 7 of 25 tasks (T5)'
+def release_line(ls: list[str], st: dict | None = None, rows=None) -> str:
+    """F185: 'release: ' and its words for each release (`ui_model.release_rows`, built from STATE `st`, read
+    when None; `rows` given: those), as the run page and the TUI say it: 'release: V5 Release · waits for 2: F1
+    one, F2 two', 'release: Next release · auto at 10 landed: 6/10'. Then 'release: waits on 7 of 25 tasks (T5)'
     for each other queued release task in TODO.md's lines `ls` (not kind V; one whose title starts "Release"
     or "Cut the next version"): of the tasks it waits on (its last block's `(after …)`, else its `after:`
-    field), how many are still open. '' when none is queued. A task whose `after:` says `all above` (`plan add
+    field), how many are still open. '' when there is none. A task whose `after:` says `all above` (`plan add
     --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
     from agent_runner import ui_model as U
     if st is None:
         st = U._state(U.S.run_up()) if U.S.C else {}  # before `state.init`: the plan's lines alone
-    if row is None:
-        row = U.release_row(ls, st)
-    live, out, away = P.open_ids(ls), [f'release: {row["text"]}{row.get("note", "")}'] if row else [], None
+    if rows is None:
+        rows = U.release_rows(ls, st)
+    live, out, away = P.open_ids(ls), [f'release: {r["text"]}{r.get("note", "")}' for r in rows], None
+    shown = {r['id'] for r in rows}
     for section, box, tid, rest, i in P.iter_tasks(ls):
         last = P.LAST in P.fields(ls[i]).get('after', []) or (box in ' ~' and P._waits_all(ls, i))
-        if row and tid == row['id']:  # F131: said by the row
+        if tid in shown:  # said by its row
             continue
         if box not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(rest) or last):
             continue
@@ -654,6 +655,17 @@ def spend_shown(st: dict, n: str) -> str:
     return spend_text(int(got[0]), float(got[1]))
 
 
+def release_version(evs: list[dict], j: int) -> str:
+    """The version the release task landing at evs[j] released (the next 'released' event), '' when none is logged:
+    a release is logged right after its own landing (`announce_release`), so not past the next one."""
+    for x in evs[j + 1:]:
+        if x['kind'] in (EV_LANDED, EV_PART):
+            return ''
+        if x['kind'] == EV_RELEASED:
+            return (str(x.get('text', '')).split() + ['', ''])[1]
+    return ''
+
+
 def lately_events(log_lines: list, titles: dict[str, str]) -> list[tuple[str, str, str]]:
     """`status`'s lately: the LATELY events of `log_lines` as `since_event` says them. F131: a release task's
     landing names the version the merge released (the next 'released' event): 'landed: Release 1.2.0 [V5]'."""
@@ -664,16 +676,9 @@ def lately_events(log_lines: list, titles: dict[str, str]) -> list[tuple[str, st
             continue
         tid = e.get('id') or ''
         if e['kind'] == EV_LANDED and P.release(tid):
-            rel = []
-            for x in evs[j + 1:]:
-                if x['kind'] in (EV_LANDED, EV_PART):
-                    break  # the next landing: a release is logged right after its own (`announce_release`)
-                if x['kind'] == EV_RELEASED:
-                    rel = str(x.get('text', '')).split()
-                    break
-            if len(rel) > 1:
+            if v := release_version(evs, j):
                 name = (titles.get(tid) or 'Release').replace('(alone) ', '').split(': ', 1)[0].strip()
-                m = (m[0], m[1], f'{SAID[EV_LANDED]}: {name} {rel[1]} [{tid}]')
+                m = (m[0], m[1], f'{SAID[EV_LANDED]}: {name} {v} [{tid}]')
         out.append(m)
     return out
 

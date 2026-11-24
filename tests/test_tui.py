@@ -2058,33 +2058,47 @@ def test_project_name_b153() -> None:
 
 
 def test_release_row_f131() -> None:
-    """F131: the release is the queue panel's last row before + new task: dimmed while auto release counts (its
-    tab is release), in the row's own words once queued; J and K move no task past it."""
+    """F131, F185: the releases are the queue panel's first rows, a group with a heading: dimmed while auto release
+    counts (its tab is release), in the row's own words once queued; J and K move no task past one."""
     words = 'Next release · auto at 10 landed: 6/10'
-    p = page(dict(SNAP, release_row={'id': '', 'placeholder': True, 'text': words}))
-    eq([t.get('text') or t['id'] for t in p.items(3)][-2:], [words, '+'], 'the placeholder last')
-    eq(p.row_lines(3, p.items(3)[-2], 60, False), [[(words, 'dim')]], 'dimmed')
+    p = page(dict(SNAP, releases=[{'id': '', 'placeholder': True, 'text': words}]))
+    eq(p.items(3)[0].get('text'), words, 'the placeholder first')
+    eq(p.row_lines(3, p.items(3)[0], 60, False), [[(words, 'dim')]], 'dimmed')
     p.key('3')
-    p.cur[3] = len(p.items(3)) - 2
-    drawn(p)
+    p.cur[3] = 0
+    text = '\n'.join(drawn(p).lines())
+    check('Releases' in text and 'Queue' in text, 'under its heading', text)
     eq(p.tab()[1], ['release'], 'its tab is release')
     with mock.patch.object(U, 'RUN', [lambda argv: check(False, 'no task action on the placeholder', str(argv))]):
         for k in 'eEdDHpJKU':
             p.key(k)
     eq((p.typing, p.main), ('', False), 'no edit box opens for it')
-    row = {'id': 'V5', 'placeholder': False, 'text': 'V5 Release · waits for 9 open ahead'}
-    v = dict(SNAP['queue'][8], id='V5', title='Release: bump the version', release=row)
-    p = page(dict(SNAP, queue=SNAP['queue'] + [v], release_row=row))
-    eq([t['id'] for t in p.items(3)][-2:], ['V5', '+'], 'the queued release last')
-    eq(''.join(s for s, _ in p.row_lines(3, p.items(3)[-2], 60, False)[0]), row['text'], 'in the row\'s words')
+
+    def row(tid: str, said: str) -> dict:
+        return {'id': tid, 'title': 'Release', 'placeholder': False, 'words': said, 'all': said + ', F9 nine',
+                'text': f'{tid} Release · {said}'}
+    rows = [row('V5', 'releasing now'), row('V6', 'waits for 1: V5 Release')]
+    vs = [dict(SNAP['queue'][8], id=r['id'], title='Release: bump the version', release=r) for r in rows]
+    done = {'id': 'V4', 'title': 'Release 1.2.0', 'placeholder': True, 'text': 'V4 Release 1.2.0 · released 10:00'}
+    p = page(dict(SNAP, queue=SNAP['queue'] + vs, releases=rows + [done]))
+    items = p.items(3)
+    eq([t['id'] for t in items][:4], ['V5', 'V6', 'released', SNAP['queue'][0]['id']], 'the releases first, once each')
+    eq([''.join(s for s, _ in p.row_lines(3, t, 60, False)[0]) for t in items[:3]],
+       [r['text'] for r in rows + [done]], "in the rows' words")
+    check('F9 nine' in ''.join(s for l in p.row_lines(3, items[1], 200, True) for s, _ in l), 'selected: every task')
+    eq([T.group_head(items, i) for i in range(5)], ['Releases', '', '', 'Queue', ''], 'the headings')
+    eq([T.group_head(page(SNAP).items(3), i) for i in range(2)], ['', ''], 'none with no release')
     p.key('3')
     with mock.patch.object(U, 'RUN', [lambda argv: check(False, 'nothing moves', str(argv))]):
-        p.cur[3] = 8
+        p.cur[3] = 11
         p.key('J')
-        eq(p.msg, 'Q9 is already last', 'J moves no task past the release')
-        p.cur[3] = 9
+        eq(p.msg, 'Q9 is already last', 'J moves no task past a release')
+        p.cur[3] = 3
         p.key('K')
-        eq(p.msg, 'V5 stays at the end of the queue', 'the release stays last')
+        eq(p.msg, f'{SNAP["queue"][0]["id"]} is already first', 'nor K')
+        p.cur[3] = 0
+        p.key('K')
+        eq(p.msg, 'V5 stays in Releases', 'the release stays there')
 
 
 if __name__ == '__main__':

@@ -2992,21 +2992,27 @@ def test_project_name_b153(tmp: Path) -> None:
 
 
 def test_release_row_f131(tmp: Path) -> None:
-    """F131: the page queue shows the release last, as a queued task or a dimmed placeholder, in the row's words."""
+    """F131, F185: the Plan view's Releases group, above the Queue: each open release once, in its row's words, then the
+    dimmed rows that are no task."""
     page = W.PAGE.read_text(encoding='utf-8')
-    check('qs=planQueue(S.snap)' in page and 'q.placeholder?nextReleaseCard(q):planCard(q)' in page
-          and '.card.relph{opacity' in page, 'the Queue view draws planQueue, the placeholder dimmed')
+    check('rs=planReleases(S.snap)' in page and 'rs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q))' in page
+          and '.card.relph{opacity' in page, 'the Plan view draws planReleases, a placeholder dimmed')
     if not shutil.which('node'):
         print('  (no node here: the release row script test is skipped)')
         return
     task, parked = {'id': 'F1', 'state': 'ready'}, {'id': 'F9', 'state': 'parked'}
     ph = {'id': '', 'title': 'Next release', 'words': 'auto at 10 landed: 6/10', 'placeholder': True}
-    row = {'id': 'V5', 'title': 'Release', 'words': 'building', 'placeholder': False}
-    v = {'id': 'V5', 'state': 'running s2 6m', 'release': row}
-    got = logic_js([['planQueue', {'queue': [task, parked], 'release_row': ph}],
-                    ['planQueue', {'queue': [task, parked, v], 'release_row': row}],
-                    ['planQueue', {'queue': [task]}], ['planWords', v, []]])
-    eq(got, [[task, ph], [task, v], [task], 'building'], 'the release last (Parked is its own group)')
+    done = {'id': 'V4', 'title': 'Release 1.2.0', 'words': 'released 10:00', 'placeholder': True}
+    row = lambda t, w: {'id': t, 'title': 'Release', 'words': w, 'placeholder': False}  # noqa: E731
+    r5, r6 = row('V5', 'releasing now'), row('V6', 'waits for 1: V5 Release')
+    v5, v6 = {'id': 'V5', 'state': 'running s2 6m', 'release': r5}, {'id': 'V6', 'state': 'after', 'release': r6}
+    two = {'queue': [task, parked, v6, v5], 'releases': [r5, r6, done]}
+    got = logic_js([['planReleases', {'queue': [task], 'releases': []}], ['planReleases', {'queue': [task]}],
+                    ['planReleases', {'queue': [task], 'releases': [ph]}],
+                    ['planReleases', {'queue': [task, v5], 'releases': [r5]}],
+                    ['planReleases', two], ['planQueue', two], ['planWords', v5, []]])
+    eq(got, [[], [], [ph], [v5], [v5, v6, done], [task], 'releasing now'],
+       'none, none from an older run, auto, one running, two; the Queue without them (Parked is its own group)')
 
 
 SCROLL_DRIVER = r"""
