@@ -84,7 +84,6 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.lean': ('work', 'Lean sessions', 'Tasks get only the tools they need, without your plugins and settings. Off: they load everything and use more.'),
     'run.include_task_id_in_commit': ('work', 'Task id in commits', "Each commit's title starts with its task's id. Off: it does not."),
     'run.rules_pointer': ('work', 'Guide line in the rules file', 'A run adds one line to the rules file that points at its guide. Off: the file is left alone.'),
-    'run.wizards': ('work', 'Setup wizards', 'A task that needs a login or key from you writes a script that walks you through it. Off: it only asks.'),
     'plan.need_files': ('work', 'Tasks must name files', 'A new task without files or a test is refused. Off: it is taken, but may clash with others.'),
     'plan.context_kb': ('work', 'Warn about long rules', 'Kilobytes of rules every session loads before the run warns you. 0: never.'),
     'models.kinds': ('roles', 'Model for each kind', 'The model a task runs on, by the letter of its id. It wins over Other tasks.'),

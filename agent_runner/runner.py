@@ -50,7 +50,7 @@ What depends on the OS is in `plat.py`; the terminals are `HiddenMux` in `slots.
 
 C3 split this file by responsibility; each module imports only the ones before it in this list:
     state    shared state and small helpers: init, log, git, the plan file, the stop request
-    brief    what a session is told: PROMPT, OTHERS, prompt_for, review/wizard/sheet paragraphs
+    brief    what a session is told: PROMPT, OTHERS, prompt_for, review/sheet paragraphs
     sched    picking the next task: tasks, pick, clashes, claims, parked tasks
     slots    worktrees, backends, a slot's environment, start/resume, disk, HiddenMux
     watch    transcripts, stalls, cut-offs, temp folders, memory, API and usage, upgrades, the Stop hook
@@ -61,7 +61,7 @@ C3 split this file by responsibility; each module imports only the ones before i
     status   status, since, follow, Needs you lines
     feed     ending an older version's runner feed, handing a feed message on, opening a control session
     loop     the run: keys, halts and tells, CI, finish, the loop (cmd_run)
-    cmds     the other commands: take, resume, key, upgrade, status, since, needs, wizard, sheet, stop,
+    cmds     the other commands: take, resume, key, upgrade, status, since, needs, sheet, stop,
              control, background and attach
 This module re-exports every name of theirs, so `runner.X` reads as before; `runner.X = v` reaches every
 module that uses X (`state.share`).

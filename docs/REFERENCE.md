@@ -1552,7 +1552,6 @@ control_ask = "2h"        # a last message ending on a line `DECIDE: <question>`
 auto_upgrade = true       # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it, and a source checkout restarts on changed agent_runner code (false: nothing restarts by itself, not even on an installed version; `u`, `agent-runner upgrade` and Restart the run still do)
 install_skill = true      # keep the `agent-runner guide` skill in ~/.claude/skills and the user-level SessionStart hook (the control brief in a runner repo's main checkout) in Claude Code's user settings, from every agent-runner command, for sessions a person starts; false: neither is written
 rules_pointer = true      # a run adds one line to the rules file (`rules`, else AGENTS.md or CLAUDE.md, never created) pointing every session at the agent-runner skill, committed on its own; never into a file with uncommitted edits or mid-merge; false: never
-wizards = true            # an agent blocking with BLOCKED: (a login, a certificate, a secret) also writes a bash wizard to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it; false: no wizards
 questionnaires = true     # a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a page made with `agent-runner sheet <ID>`); Needs you shows one line and its link; false: a plain DECIDE
 grill = "ask"             # control sessions ask rounds of numbered questions before queueing: "ask" = when the person says grill me / poke holes; "big" = also on big vague asks; "off"
 voice = ""                # the person's wording file (`agent-runner voice`), read by control sessions and task agents; "" = ~/.config/agent-runner/voice.md (a .runner/voice.md with lines overrides it for this project)
@@ -1850,6 +1849,7 @@ Removed earlier:
 
 - 0.60.0: `[run] mux` (and `run --mux`): every run is hidden on every OS, with no tmux; `agent-runner attach`
   shows the run view and `attach sN` a session's own terminal.
+- C37: `[run] wizards` (a task that needs a person writes its steps in `<notes>/asks/ID.json`).
 - 0.52.0: `[needs] map_replies` (sessions map a reply to its item themselves).
 - 0.32.0: `[run] mode` (a run never starts two tasks on the same files), `[run] fix_ahead` (`fix_ahead_max = 0`
   is what `fix_ahead = false` was), `[run] precommit` (chain the check into `[run] test`), `[run] ci_rerun` (a

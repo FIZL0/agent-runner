@@ -17,7 +17,7 @@ from agent_runner.state import EV_DRIFT
 from agent_runner.state import EV_DEVICE
 from agent_runner.state import EV_CONTEXT
 from agent_runner.state import EV_AUTO_RELEASE
-from agent_runner.brief import has_sheet, wizard_cmd, wizard_file
+from agent_runner.brief import has_sheet
 from agent_runner.land import wip_lines
 from agent_runner.land import no_gate_line
 
@@ -603,8 +603,6 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=
                    f'{P.plain_ask(label, what, title, label == "DECIDE" and has_sheet(tid))} [{k or tid}]')
         if url:
             out.append(f'    {url}')
-        if label != 'CONCEPT' and wizard_file(tid):  # F17: the one command that walks them through it
-            out.append(f'    run: {wizard_cmd(tid)}')
     out += wip_lines(wips or [], now)  # F23: a person's edits moved aside, never deleted by the run
     if not out:
         return []  # only shelved ones: they asked to leave this list

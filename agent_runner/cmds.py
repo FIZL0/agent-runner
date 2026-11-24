@@ -1,4 +1,4 @@
-"""The other `agent-runner` commands: take, resume, key, upgrade, status, since, needs, wizard, sheet, stop,
+"""The other `agent-runner` commands: take, resume, key, upgrade, status, since, needs, sheet, stop,
 control, and the run in the background (`attach`)."""
 
 from __future__ import annotations
@@ -17,11 +17,10 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from agent_runner import control_held, plan as P, plansync, plat, shared_tools
-from agent_runner.plat import bash_exe
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
-from agent_runner.brief import has_sheet, prompt_for, wizard_cmd, wizard_file
+from agent_runner.brief import has_sheet, prompt_for
 from agent_runner.sched import ahead, open_tasks
 from agent_runner.slots import (backend, claude_json, entries, logged, marker_pid, MUX, PRESENCE_ENV, quiet_file,
     remote_off_why, remote_on, remote_slots_on, REMOTE_URL, silent, transcript, worktree)
@@ -387,69 +386,6 @@ def cmd_needs(argv: list[str], prog: str = f'{RUNNER} needs') -> int:
     if run_up():  # F168: they wait for a shared tool, not for the person
         print(*(f'{t} {said}\n' for t, said in shared_tools.wait_words().items()), sep='', end='')
     return 0
-
-
-def waiting_wizards() -> list[tuple[str, str]]:
-    """F48: (id, title) of each item under Needs you (not the shelved ones) that has a wizard, in TODO order."""
-    out = []
-    for label, tid, _k, _what, _url, title, sh, *_ in waiting_ok():
-        if label != 'CONCEPT' and not sh and wizard_file(tid) and tid not in [t for t, _ in out]:
-            out.append((tid, title))
-    return out
-
-
-def cmd_wizard(argv: list[str], prog: str = f'{RUNNER} wizard') -> int:
-    """`agent-runner wizard [ID]`: run the wizard an agent left for a BLOCKED item, then confirm the item."""
-    ap = argparse.ArgumentParser(prog=prog, description='Walk through the hand steps a blocked task needs '
-                                 '(a login, a cert, a secret), then confirm it.')
-    ap.add_argument('id', nargs='?', help='the task id, as Needs you shows it (none: the one that waits)')
-    ap.add_argument('--check', action='store_true', help='only check the script (bash -n), run nothing')
-    ap.add_argument('--path', action='store_true', help='print where the script is, run nothing')
-    a = ap.parse_args(argv)
-    init()
-    if not a.id:  # F48: bare `wizard` runs the one waiting, or lists them to pick
-        ids = waiting_wizards()
-        if not ids:
-            print('No wizard waits for you.')
-            return 0
-        if len(ids) > 1:
-            print(f'{len(ids)} wizards wait for you:')
-            for i, (tid, title) in enumerate(ids, 1):
-                print(f'  {i}. {tid}  {title}')
-            pick = ''
-            if sys.stdin.isatty():
-                try:
-                    pick = input('Which one (number or id, Enter: none)? ').strip()
-                except EOFError:
-                    pick = ''
-            chosen = [t for i, (t, _) in enumerate(ids, 1) if pick in (str(i), t)] if pick else []
-            if not chosen:
-                print(f'Run one with `{wizard_cmd("ID")}`.')
-                return 0 if not pick else 2
-            ids = [(chosen[0], '')]
-        a.id = ids[0][0]
-    f = C.notes('wizards', f'{a.id}.sh')
-    if a.path:
-        print(f)
-        return 0
-    if not f.is_file():
-        print(f'{prog}: {a.id} has no wizard ({f})', file=sys.stderr)
-        return 1
-    bash = bash_exe()
-    chk = sp.run([bash, '-n', str(f)], capture_output=True, text=True)
-    if chk.returncode:
-        print(f'{prog}: {f} does not parse, so it was not run:\n{chk.stderr.strip()}', file=sys.stderr)
-        return 1
-    if a.check:
-        print(f'{f}: ok')
-        return 0
-    r = sp.run([bash, str(f)], cwd=str(C.root))
-    if r.returncode:
-        print(f'{prog}: the wizard stopped (exit {r.returncode}); {a.id} still needs you. '
-              f'Run `{wizard_cmd(a.id)}` again to carry on.', file=sys.stderr)
-        return r.returncode
-    from agent_runner import plan
-    return plan.main(['confirm', a.id, 'the wizard ran to the end'])
 
 
 def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:

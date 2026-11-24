@@ -127,7 +127,7 @@ def test_ci_workflow(tmp: Path):
     script = 'python() { echo "RAN $1"; }\n' + re.sub(r'^ {10}', '', script, flags=re.M)
 
     def gate(tests: str):
-        r = subprocess.run([cmds.bash_exe(), '--noprofile', '--norc', '-eo', 'pipefail', '-c', script], cwd=d,
+        r = subprocess.run([plat.bash_exe(), '--noprofile', '--norc', '-eo', 'pipefail', '-c', script], cwd=d,
                            env={**os.environ, 'TESTS': tests}, capture_output=True, encoding='utf-8')
         return r.returncode, re.findall(r'^RAN (\S+)$', r.stdout, re.M)
 
@@ -142,7 +142,7 @@ def test_ci_workflow(tmp: Path):
 
 
 def test_bash_beside_git(tmp: Path):
-    print('windows: the wizards\' bash is found with only Git\\cmd on PATH, the installer\'s default (B159)')
+    print('windows: the hooks\' bash is found with only Git\\cmd on PATH, the installer\'s default (B159)')
     ext = '.exe' if os.name == 'nt' else ''
 
     def fake(f: Path) -> Path:
@@ -160,7 +160,7 @@ def test_bash_beside_git(tmp: Path):
     def found(*dirs: Path) -> str:
         os.environ['PATH'] = os.pathsep.join(map(str, dirs))
         try:
-            return os.path.normcase(cmds.bash_exe())
+            return os.path.normcase(plat.bash_exe())
         except SystemExit as e:
             return str(e.code)
 
@@ -180,20 +180,6 @@ def test_bash_beside_git(tmp: Path):
         os.chdir(here)
         os.environ.clear()
         os.environ.update(env)
-
-
-def test_wizard_without_bash(repo: Path, tmp: Path):
-    print('windows: a wizard with no Git Bash says so in one line, no traceback (B159)')
-    wizard = repo / '.runner/wizards/F1.sh'
-    wizard.parent.mkdir(parents=True, exist_ok=True)
-    wizard.write_text('echo hi\n', encoding='utf-8')
-    code = ('import os, pathlib, sys, types; from agent_runner import cmds, plat; plat.WINDOWS = True; '
-            'cmds.init = lambda: None; cmds.C = types.SimpleNamespace(notes=lambda *a: pathlib.Path(sys.argv[1])); '
-            'os.environ["PATH"] = ""; sys.exit(cmds.cmd_wizard(["F1"]))')
-    r = subprocess.run([sys.executable, '-c', code, str(wizard)], cwd=tmp,
-                       env={**os.environ, 'PYTHONPATH': str(ROOT)}, capture_output=True, encoding='utf-8')
-    eq((r.returncode, len(r.stderr.splitlines())), (1, 1), 'exit 1 and one line')
-    has(r.stderr, r'^Git Bash is missing', 'which says Git Bash is missing')
 
 
 CONPTY_CHILD = """
@@ -402,7 +388,7 @@ def main() -> int:
     repo = make_repo(tmp)
     return report([lambda: test_shim_once(repo, tmp), lambda: test_utf8_merge(tmp), lambda: test_run_log_utf8(repo),
                    lambda: test_ci_workflow(tmp), lambda: test_bash_beside_git(tmp),
-                   lambda: test_wizard_without_bash(repo, tmp), lambda: test_attach_logged(repo),
+                   lambda: test_attach_logged(repo),
                    lambda: test_no_conpty(repo, tmp), lambda: test_conpty(tmp), lambda: test_conpty_slot(repo, tmp)])
 
 

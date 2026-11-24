@@ -1308,7 +1308,8 @@ def test_user_hook(tmp: Path):
     env = {k: v for k, v in os.environ.items() if k not in CF.SESSION_ENVS}
     (repo / 'sub').mkdir()
     # Claude Code runs hooks in bash (Git Bash on Windows), not cmd.exe, which shell=True would give there
-    hook = [R.bash_exe(), '-c', CF.user_hook_command()]
+    from agent_runner import plat
+    hook = [plat.bash_exe(), '-c', CF.user_hook_command()]
     for where, want in ((repo, True), (repo / 'sub', True), (wt, False), (plain, False), (tmp, False)):
         r = subprocess.run(hook, cwd=where, env=env, capture_output=True, text=True, timeout=60)
         eq((r.returncode, bool(r.stdout.strip()), r.stderr), (0, want, ''),
@@ -3662,7 +3663,7 @@ def test_git_fence(repo: Path, tmp: Path):
     eq(f('Edit', file_path='a.py'), None, 'a relative one too')
     check(f('Write', file_path=str(root / 'a.py')), 'a write in the main checkout is denied')
     check(f('Edit', file_path=str(other / 'a.py')), 'and one in another slot')
-    eq(f('Write', file_path=str(notes / 'wizards' / 'T1.sh')), None, 'the notes folder takes wizards and sheets')
+    eq(f('Write', file_path=str(notes / 'asks' / 'T1.json')), None, 'the notes folder takes asks and sheets')
     eq(f('Write', file_path=str(tmp / 'scratch' / 'x.html')), None, 'a scratch file outside the project runs')
     eq(f('Read', file_path=str(root / 'a.py')), None, 'reading is never fenced')
 
@@ -6613,52 +6614,14 @@ def test_release_push(repo: Path):
           'the control brief covers "notify me when": watch, push once, stop, and say what it watches for', text)
 
 
-def test_help_order_and_bare_wizard(tmp: Path):
-    """F48: --help lists what a person types before the agents' section; bare `wizard` runs the one that
-    waits, lists them when several, says when there are none."""
+def test_help_order(tmp: Path):
+    """F48: --help lists what a person types before the agents' section."""
     from agent_runner import cli
     cut = cli.USAGE.index('Mostly for agents')
-    for c in ('attach', 'control', 'status', 'wizard', 'guide', 'plan add'):
+    for c in ('attach', 'control', 'status', 'guide', 'plan add'):
         check(0 <= cli.USAGE.find(f'agent-runner {c}') < cut, f'`{c}` is in the person section')
     for c in ('take B646', 'done B646', 'resume', 'plan block', 'run once', 'force'):
         check(cli.USAGE.find(f'agent-runner {c}') > cut, f'`{c}` is in the agents section')
-    check('agent-runner wizard B646' not in cli.USAGE, 'the wizard line has no id')
-    if not shutil.which('bash'):
-        print('  skip: no bash here')
-        return
-    root = tmp / 'f48'
-    root.mkdir()
-    git(root, 'init', '-q')
-    (root / 'runner.toml').write_text('[run]\nremote = false\n', encoding='utf-8')
-    (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
-    git(root, 'add', '-A')
-    git(root, 'commit', '-qm', 'start')
-    env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
-    env.pop('AGENT_RUNNER', None)
-    for text in ('signing setup | files: a.py', 'store login | files: b.py', 'push cert | files: c.py'):
-        check(run(root, 'plan', 'add', 'F', text, env=env).returncode == 0, f'added {text}')
-    r = run(root, 'wizard', env=env)
-    check(r.returncode == 0 and 'No wizard waits' in r.stdout, 'none waiting: says so', r.stdout + r.stderr)
-    wiz = root / '.runner' / 'wizards'
-    wiz.mkdir(parents=True)
-    for tid in ('F1', 'F2'):
-        r = run(root, 'done', tid, f'{tid}: hand step', '--no-test', '--blocked', 'BLOCKED: a login', env=env)
-        check(r.returncode == 0, f'{tid} blocked with BLOCKED:', r.stdout + r.stderr)
-        (wiz / f'{tid}.sh').write_text(f'#!/usr/bin/env bash\necho ran > {tid}.out\n', encoding='utf-8')
-    (wiz / 'F2.sh').rename(wiz / 'F2.later')
-    r = run(root, 'wizard', env=env, stdin=subprocess.DEVNULL)
-    check(r.returncode == 0 and (root / 'F1.out').is_file(), 'one waiting: runs it', r.stdout + r.stderr)
-    has((root / 'plan' / 'TODO.md').read_text(encoding='utf-8'), r'^- \[ \] \*\*F1\*\* .*the wizard ran',
-        'and confirms it')
-    (wiz / 'F1.sh').write_text('#!/usr/bin/env bash\necho again > F1.again\n', encoding='utf-8')
-    (wiz / 'F2.later').rename(wiz / 'F2.sh')
-    r = run(root, 'done', 'F3', 'F3: hand step', '--no-test', '--blocked', 'BLOCKED: a cert', env=env)
-    check(r.returncode == 0, 'F3 blocked with BLOCKED:', r.stdout + r.stderr)
-    (wiz / 'F3.sh').write_text('#!/usr/bin/env bash\necho ran > F3.out\n', encoding='utf-8')
-    r = run(root, 'wizard', env=env, stdin=subprocess.DEVNULL)
-    check(r.returncode == 0 and '2 wizards' in r.stdout and 'F2' in r.stdout and 'F3' in r.stdout
-          and 'F1' not in r.stdout, 'several waiting: lists them (not F1, confirmed)', r.stdout + r.stderr)
-    check(not any((root / n).exists() for n in ('F1.again', 'F2.out', 'F3.out')), 'and runs none')
 
 
 def test_setup(tmp: Path):
@@ -8005,7 +7968,7 @@ def main() -> int:
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), test_control_leaves_needs_alone, lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
-                       lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
+                       lambda: test_help_order(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
                        lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp), lambda: test_done_test_f178(tmp), lambda: test_gate_limit_b186(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),

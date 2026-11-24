@@ -24,7 +24,6 @@ What you type
     agent-runner pause                start no new tasks, stay up (--off: go on)
     agent-runner stop                 let running tasks finish, start no new ones (--force: now)
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
-    agent-runner wizard               walk through the hand steps a blocked task waits on, then confirm it
     agent-runner guide                how an agent you start in this repo should work with the runner (take|concepts|needs: one case)
     agent-runner login [copilot]      each provider [models] names and its login; with one: add its login
     agent-runner settings             every runner.toml key, its default and what it does; how to change one
@@ -198,7 +197,6 @@ COMMANDS = {
     'context': ('context', 'main'),
     'cost': ('cost', 'main'),
     'resume': ('runner', 'cmd_resume'),
-    'wizard': ('runner', 'cmd_wizard'),  # F17
     'sheet': ('runner', 'cmd_sheet'),  # F18
     'pick-links': ('cmds', 'cmd_pick_links'),  # F138
     'pitch': ('pitch', 'cmd_pitch'),  # F98

@@ -340,7 +340,7 @@ def exe(name: str) -> str:
 
 
 def bash_exe() -> str:
-    """The bash to run wizards with. A bare 'bash' on Windows makes CreateProcess search System32 before PATH and get
+    """The bash to run the hooks and the CI gate script with. A bare 'bash' on Windows makes CreateProcess search System32 before PATH and get
     the WSL launcher (System32\\bash.exe), not Git Bash (B75): there it is the first bash on PATH outside System32,
     else the one beside git, as Git for Windows' installer puts only Git\\cmd on PATH (B159). With neither it
     exits with one line that says Git Bash is missing."""

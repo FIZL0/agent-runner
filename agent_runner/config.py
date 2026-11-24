@@ -134,8 +134,6 @@ DEFAULTS: dict = {
                                 # checkout's agent_runner code changed on main; false: only `u` or a restart does
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
-        'wizards': True,        # an agent blocking with BLOCKED: (a login, cert, secret) writes a bash wizard
-                                # to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it
         'questionnaires': True, # a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a
                                 # page with `agent-runner sheet <ID>`); Needs you shows one line and its link
         'grill': 'ask',         # control sessions ask rounds of numbered questions before queueing:
@@ -543,6 +541,7 @@ def ensure_local(root: Path) -> Path:
 # A key a release removed: (table, key) -> what to do instead. Ignored, and the run log says so.
 REMOVED: dict[tuple[str, str], str] = {
     ('run', 'mode'): 'a run never starts two tasks on the same files (0.32.0); delete it',
+    ('run', 'wizards'): 'removed (C37): a task that needs a person writes its steps in an ask file; delete it',
     ('run', 'fix_ahead'): '`fix_ahead_max = 0` is what `fix_ahead = false` was (0.32.0)',
     ('run', 'precommit'): 'chain the check into `[run] test` (0.32.0)',
     ('run', 'ci_rerun'): "a red CI run's failed jobs are always run once more (0.32.0); delete it",

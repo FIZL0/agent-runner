@@ -163,9 +163,6 @@ the items in plain words, when you cannot tell which. Map the answer to one of t
 An item `pitch3` ([run] approve): landed work waits for their yes to be pushed. Give its page; yes: `{cmd} pitch
 approve pitch3`; no, to all or one change: `{cmd} pitch no pitch3 [--reopen F1] [--drop F2] --why "<their words>"`
 (undone here; ask whether to reopen or drop). Say what it prints: it may wait for an earlier pitch.
-A BLOCKED item with a wizard (F17, `[run] wizards`) shows `run: {cmd} wizard ID` under it: a step-by-step
-script for the hand steps (a login, a cert, a secret). Pass that line on as it is; the person runs it in a
-terminal, and finishing it confirms the item, so they need not reply.
 A DECIDE with options (F18, `[run] questionnaires`) has a pick sheet: its line reads "<what is ready>. Pick
 on the sheet or reply go" with the sheet's link; give the link (call the Artifact tool's `open` on it). The
 sheet's Send writes their picks to the sheet's artifact db (F54): when they say they sent it ("sent",
@@ -406,7 +403,7 @@ What the person asks, and what you run:
   "{needs}": read `{cmd} guide concepts` first: you write the options page here, open it inline and file it
   (`plan concept`); queue a K task only when they say queue it.
 """ + GRILL + """
-- **Needs you items**: before you show one with a pick sheet or a `run: … wizard ID` line, or act on a reply to
+- **Needs you items**: before you show one with a pick sheet, or act on a reply to
   one ("yes", "B", "later", "sent"), read `{cmd} guide needs`. Re-read an item right before asking for it. A
   clear reply needs no id: {answer}
 

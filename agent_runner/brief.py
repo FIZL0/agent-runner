@@ -1,5 +1,5 @@
 """What an agent session is told: the slot prompt (`PROMPT`, `OTHERS`, …, `prompt_for`) and the paragraphs
-for reviews, wizards and pick sheets it may carry."""
+for reviews, asks and pick sheets it may carry."""
 
 from __future__ import annotations
 
@@ -217,11 +217,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
     elif research_task(tid):  # F36
         prompt = f'{prompt.rstrip()}\n\n' + RESEARCH_PROMPT.format(runner=C.command, tid=tid,
                                                                    findings=findings_where())
-    elif wizards_on():
-        prompt = f'{prompt.rstrip()}\n\n' + WIZARD_PROMPT.format(
-            runner=C.command, tid=tid, template=WIZARD_TEMPLATE, path=C.notes('wizards', f'{tid}.sh'))
-    prompt = f'{prompt.rstrip()}\n\n' + ASKS_PROMPT.format(path=C.notes('asks', f'{tid}.json'),
-                                                        shots=C.notes('asks', tid))  # F156
+    prompt = f'{prompt.rstrip()}\n\n' + ASKS_PROMPT.format(path=C.notes('asks', f'{tid}.json'), shots=C.notes('asks', tid),
+                                                        env=C.notes('asks', f'{tid}.env'))  # F156, F175
     if questionnaires_on() and not P.concept(tid):  # F18
         prompt = f'{prompt.rstrip()}\n\n' + SHEET_PROMPT.format(
             runner=C.command, tid=tid, path=C.notes('sheets', f'{tid}.json'))
@@ -313,16 +310,6 @@ class _Keep(dict):
         return '{' + k + '}'
 
 
-# --- F17: wizards for BLOCKED items a person must do by hand --------------------------------------------------
-#
-# A slot agent that blocks with `BLOCKED:` on steps only a person can take (a login, a cert, a secret, a
-# dashboard click) also writes a bash wizard to `<notes>/wizards/<ID>.sh`, from `wizard_template.sh` (vendored
-# from mattpocock/skills, MIT). Needs you then shows `run: agent-runner wizard <ID>` under the item, and that
-# command checks it with `bash -n`, runs it in the main checkout, and on exit 0 confirms the item
-# (`plan confirm`). `[run] wizards = false` turns it off: no brief paragraph, no run line.
-
-WIZARD_TEMPLATE = Path(__file__).with_name('wizard_template.sh')
-
 # F156: what an agent asks of a person, in short steps: <notes>/asks/<ID>.json, read by need_detail (F162)
 ASKS_PROMPT = """\
 What you ask of a person (a CONFIRM, DECIDE or BLOCKED, or `ask`) is read in Needs you, often on a phone. The line is \
@@ -332,18 +319,14 @@ JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place
 what you do not need. One action per step, in words the person sees on screen, no file names or code (the command that failed and its error, \
 when too long for the line, go in the commit message). When the \
 check or choice is about how something looks, take screenshots: small ones, put under {shots}/, with no secrets or \
-tokens in them. The file is optional, and it is gone once they answer, so write a new one for each ask."""
+tokens in them. The file is optional, and it is gone once they answer, so write a new one for each ask.
 
-
-WIZARD_PROMPT = """\
 When you block with `BLOCKED:` because of steps only a person can take (a login, a certificate or signing key, \
-a secret, a click in a third-party dashboard), also write a wizard that walks them through those steps: copy \
-{template} to {path} and replace its example with one `stage` per step, in order (`open_url` before asking \
-for what that page shows, `ask_secret` for anything secret, `write_env` / `set_secret` where each value \
-belongs, `confirm` before anything irreversible); leave the library above its STAGES marker as it is. Check \
-it with `bash -n {path}`; do not run it. Say only what you know of each page or command, not guesses. Write \
-one only for steps you cannot do yourself, never for a CONFIRM or a DECIDE, and never put a secret in it. \
-Needs you shows the person `{runner} wizard {tid}`, and finishing the wizard confirms the item."""
+a secret, a click in a third-party dashboard), write the steps, links, commands and inputs they have to do in that \
+file: a step is words or {{"text", "link", "cmd", "on"}}, and "inputs" lists what they give back (a secret goes in \
+under its own key). Write only steps you cannot do yourself, say only what you know of each page or command, checked \
+and not guessed, and put no secret in the file. Never tell the person to run a script. When they answer, the \
+reopening note gives you their values, and a secret is in {env} as NAME='value'."""
 
 
 REVIEW_PROMPT = """\
@@ -442,29 +425,6 @@ def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
         who='the Agent tool, subagent_type "review"' if 'review' in subagents() else 'the Agent tool',
         base=base, runner=C.command, tid=tid, min_lines=int(C.run.get('review_min_lines', 50)),
         long='this task has one, so review it whatever its size' if has_long else 'this task has none')
-
-
-def wizards_on() -> bool:
-    try:
-        return C.run.get('wizards', True) is not False
-    except AttributeError:  # no config loaded
-        return False
-
-
-def wizard_file(tid: str) -> Path | None:
-    """`<notes>/wizards/<tid>.sh` when wizards are on and one is there, else None."""
-    if not wizards_on():
-        return None
-    try:
-        f = C.notes('wizards', f'{tid}.sh')
-    except (OSError, SystemExit):
-        return None
-    return f if f.is_file() else None
-
-
-def wizard_cmd(tid: str) -> str:
-    """The one command Needs you gives for `tid`'s wizard."""
-    return f'{C.command} wizard {tid}'
 
 
 # --- F18: pick sheets for a DECIDE with options (agent_runner/sheet.py) ---------------------------------------

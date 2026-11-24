@@ -197,7 +197,7 @@ def fence(tool: str, tool_input: dict, cwd: str | Path, worktree: str | Path | N
 
     Denied: `git push` in this project (its main checkout or any slot; elsewhere too while `[git] push` is off),
     `git reset --hard`, `git clean` (but `-n`), `git checkout -- .`/`git checkout .`; an Edit or Write in another
-    slot or in the main checkout (but its notes folder, where wizards and pick sheets go). An edit outside the
+    slot or in the main checkout (but its notes folder, where asks and pick sheets go). An edit outside the
     project (a sibling repository the task needs, the scratchpad) is let through: the brief allows that work."""
     cwd = _real(cwd or '.', Path('/'))
     root, slots, notes_dir = _real(root, cwd), _real(slots_dir, cwd), _real(notes, cwd)

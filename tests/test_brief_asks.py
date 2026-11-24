@@ -59,6 +59,11 @@ def test_brief(root: Path) -> None:
         for k in ('"where"', '"steps"', '"expect"', '"shots"', '"caption"', 'One action per step', 'no file names or code',
                   f'put under {root / ".runner" / "asks" / tid}/', 'no secrets or tokens'):
             check(k in p, f'{tid}: {k}', p)
+        for k in ('the steps, links, commands and inputs they have to do in that file', '"text", "link", "cmd", "on"',
+                  'Never tell the person to run a script', 'put no secret in the file',
+                  f'{root / ".runner" / "asks" / f"{tid}.env"}'):
+            check(k in p, f'{tid}: BLOCKED steps: {k}', p)
+        check('wizard' not in p, f'{tid}: no wizard', p)
     eq(p.count('{path}') + p.count('{{'), 0, 'nothing left unfilled')
 
 
