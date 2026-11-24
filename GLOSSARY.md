@@ -774,3 +774,10 @@ _Said_: history
 _On screen_: nothing yet
 _In code_: session_history.py, history, /history/NAME
 _Avoid_: scrollback, log
+
+**Pull to refresh**:
+On touch, pulling the main view or the sidebar down past its top: a small spinner follows the finger, and letting go far enough does what Refresh does.
+_Said_: pull down past the top to refresh
+_On screen_: Let go to refresh; Refreshing
+_In code_: pullPane, pullStart, pullMove, pullEnd, PULL_AT
+_Avoid_: swipe to refresh, hot reload
