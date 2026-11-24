@@ -21,7 +21,7 @@ const devTyped=()=>Object.keys(S.f).some(k=>k.startsWith('dev:'));
 function keepTyped(){
   const f=Object.fromEntries(Object.entries(S.f).filter(([k])=>!k.startsWith('dev:')&&!k.startsWith('givesec:')));
   const atts=Object.fromEntries(Object.entries(S.atts).map(([k,l])=>[k,l.filter(a=>a.path).map(a=>({name:a.name,path:a.path}))]).filter(([,l])=>l.length));
-  const some=Object.keys(f).length||Object.keys(atts).length||S.ren, text=some?JSON.stringify({f,atts,ren:S.ren,setOpen:S.setOpen}):'';
+  const some=Object.keys(f).length||Object.keys(atts).length||S.ren, text=some?JSON.stringify({f,atts,ren:S.ren,setOpen:S.setOpen,setAway:S.setAway||Date.now()}):'';
   tabStore.set(TYPED_KEY,text);
   const ta=document.querySelector('[data-in]');
   return tabStore.get(TYPED_KEY)===text&&(!ta||!ta.value||HI.i!==null||store.get(DRAFT_KEY(boxKey()))===ta.value)
@@ -31,7 +31,7 @@ function takeTyped(){
   let k=null;try{k=JSON.parse(tabStore.get(TYPED_KEY)||'null')}catch(e){}
   tabStore.set(TYPED_KEY,'');
   if(!k||typeof k!=='object')return;
-  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?{[boxKey()]:k.atts}:k.atts||{};S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};
+  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?{[boxKey()]:k.atts}:k.atts||{};S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};S.setAway=Number(k.setAway)||0;
 }
 function newsRefresh(){
   const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});

@@ -35,6 +35,7 @@ function topHTML(){
 }
 function render(force){
   keepPlace();  // B177
+  settingsTrip();  // F204b
   if(!force&&(PD.down||selecting()||MO.vt)){const now=Date.now();PD.since=PD.late?PD.since:now;PD.late=true;if(now-PD.since<HOLD_MS)return}  // but never for long
   PD.late=false;
   markSeen();  // F128
