@@ -1389,14 +1389,16 @@ const store={get(k){try{return localStorage.getItem(k)||''}catch(e){return''}},
 /* B177: this browser tab's own, kept over a reload */
 const tabStore={get(k){try{return sessionStorage.getItem(k)||''}catch(e){return''}},
   set(k,v){try{v?sessionStorage.setItem(k,v):sessionStorage.removeItem(k)}catch(e){}}};
-const DRAFT_KEY=k=>'ar-draft:'+k;  /* a box's draft, kept per thread (and Home) across refreshes */
+/* B200: what is kept by chat is kept by project too, as each has a c1 (Runner Home serves every project from one address) */
+const CHATS_OF=HKEY?HKEY+':':'';
+const DRAFT_KEY=k=>'ar-draft:'+CHATS_OF+k;  /* a box's draft, kept per thread (and Home) across refreshes */
 const boxKey=()=>S.thread||(S.view==='talk'?'talk':'home');
 /* B141: the session the page shows, which Ctrl+C and Stop interrupt: the open chat, else the Talk session in
    the Talk view ('' before it has one); F176: none on Home and the other views, whose message starts a new chat */
 const shownSession=()=>isNew(S.thread)?'':S.thread||(S.view==='talk'?talkName():'');
 /* B120: each chat's sent messages (localStorage, so a reload keeps them; store's try/catch when it is blocked), and
    HI where Up / Down stands in them: the chat, the place (null: not looking back) and the draft it left */
-const HIST_KEY=k=>'ar-hist:'+k;
+const HIST_KEY=k=>'ar-hist:'+CHATS_OF+k;
 function histGet(k){try{const l=JSON.parse(store.get(HIST_KEY(k))||'[]');return Array.isArray(l)?l.filter(x=>typeof x==='string'):[]}catch(e){return[]}}
 function histAdd(k,text){store.set(HIST_KEY(k),JSON.stringify(histPush(histGet(k),text)))}
 let HI={key:'',i:null,draft:''};
@@ -1628,7 +1630,7 @@ async function obTake(it){
   return S.ob.some(x=>x.cid===it.cid&&x.by===OB.tab&&x.state==='sending');
 }
 /* B154: the sent messages (sentStep), kept over a reload */
-const SENT_KEY='ar-sent';
+const SENT_KEY='ar-sent'+(HKEY?':'+HKEY:'');
 S.sent=sentParse(store.get(SENT_KEY));
 const keepSent=()=>{const o={};for(const [n,s] of Object.entries(S.sent))if((s.pending||[]).length)o[n]=s.pending;store.set(SENT_KEY,Object.keys(o).length?JSON.stringify(o):'')};
 function addSent(n,text,at,more,len){

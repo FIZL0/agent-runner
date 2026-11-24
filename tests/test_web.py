@@ -1734,13 +1734,47 @@ def test_slash_menu_b119(tmp: Path) -> None:
     eq(got.get('full'), {'sent': 1, 'hidden': True}, 'Enter on a command typed in full sends it')
 
 
+def test_chat_keys_b200(tmp: Path) -> None:
+    """B200: Runner Home's projects share one localStorage, so a chat's draft, history and sent messages are kept by
+    project: c1 of one project never shows another's. A page with no project in its address keeps the plain names."""
+    if not shutil.which('node'):
+        return
+    driver = tmp / 'keys.js'
+    driver.write_text(r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = s => { const i = page.indexOf(s); if (i < 0) throw new Error(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const slice = (a, b) => { const i = page.indexOf(a); return page.slice(i, page.indexOf(b, i)) };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const kept = {}, store = {get: k => kept[k] || '', set(k, v) { if (v) kept[k] = v; else delete kept[k] }};
+const load = path => new Function('store', 'location', logic + 'const HOME_PAGE=false,S={};' + line('const HB=')
+  + line('const CHATS_OF=') + line('const DRAFT_KEY=') + line('const HIST_KEY=') + line('function histGet(') + line('function histAdd(')
+  + line('const newCid=') + slice('const SENT_KEY=', 'function addSent(')
+  + 'return {S,DRAFT_KEY,histGet,histAdd,keepSent}')(store, {pathname: path});
+const a = load('/p/a/');
+store.set(a.DRAFT_KEY('c1'), 'draft a'); a.histAdd('c1', 'hist a');
+a.S.sent = {c1: {pending: [{id: 'i', text: 'sent a', at: 0, since: Date.now(), state: 'sent'}]}}; a.keepSent();
+const see = path => { const p = load(path); return [store.get(p.DRAFT_KEY('c1')), p.histGet('c1'), Object.keys(p.S.sent)] };
+const out = {a: see('/p/a/'), b: see('/p/b/'), own: see('/')};
+const own = load('/'); store.set(own.DRAFT_KEY('c1'), 'd'); own.histAdd('c1', 'h'); own.S.sent = a.S.sent; own.keepSent();
+out.keys = Object.keys(kept).sort();
+console.log(JSON.stringify(out));
+""", encoding='utf-8')
+    r = subprocess.run(['node', str(driver), str(W.PAGE)], capture_output=True, text=True, encoding='utf-8', timeout=60)
+    check(r.returncode == 0, 'node runs the chat keys', r.stderr[-800:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('a'), ['draft a', ['hist a'], ['c1']], "a project's chat keeps its draft, history and sent messages over a load")
+    eq((got.get('b'), got.get('own')), (['', [], []], ['', [], []]), "another project's c1 shows none of them")
+    eq(got.get('keys'), ['ar-draft:a:c1', 'ar-draft:c1', 'ar-hist:a:c1', 'ar-hist:c1', 'ar-sent', 'ar-sent:a'],
+       'the keys hold the project, where the address does')
+
+
 COMPOSER_DRIVER = r"""
 const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');  // a Windows checkout is CRLF
 const slice = (a, b) => { const i = page.indexOf(a); return page.slice(i, page.indexOf(b, i) + b.length); };
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const handlers = {}, acts = [];
 const store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { if (v) this.v[k] = v; else delete this.v[k] }};
-const DRAFT_KEY = k => 'ar-draft:' + k, grow = () => {}, esc = s => String(s), tq = p => p;
+const CHATS_OF = '', DRAFT_KEY = k => 'ar-draft:' + k, grow = () => {}, esc = s => String(s), tq = p => p;
 const S = {thread: 'c1', sel: [], drawer: false, view: 'home'};
 const boxKey = () => S.thread || 'home';
 let BUSY = false, sent = 0, prevented = 0, TALK = '';
@@ -1820,7 +1854,7 @@ def test_composer_keys_b120(tmp: Path) -> None:
     page = W.page_html().decode()
     check('const BOX_KEYS=[' in page and page.count('keysLine()') >= 2, 'the keys are listed once, in BOX_KEYS, and '
           'shown under the box')
-    check("'ar-hist:'+k" in page and 'localStorage' in page, 'the history is kept per chat in localStorage')
+    check("'ar-hist:'+CHATS_OF+k" in page and 'localStorage' in page, 'the history is kept per chat in localStorage')
     check("S.snap.terminal_mode==='install'" in page and 'A chat shows the real session with ttyd' in page,
           'without ttyd the page says a chat needs it')
     eq(W.ttyd_install_cmd(lambda t: t == 'pacman'), 'sudo pacman -S ttyd', 'Arch: pacman')
@@ -2559,7 +2593,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace
 const log = {acts: [], fetched: [], focus: 0, draws: 0}, kept = {}, ta = {value: ''}, tab = {};
 const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [{id: 'F1', title: 'Board page'}], concepts: [{id: 'K5', concept: 'K5', title: 'Lazy layout'}]},
     view: 'home', thread: null, ctx: null, atts: {}, ob: [], sel: [], feeds: {}, sent: {}},
-  HI: {i: null}, DK: {}, I: {}, HOME_PAGE: false, HB: '', location: {hash: ''}, PLACE_KEY: 'p', placeWas: '', FD: {}, TOUCH: () => false,
+  HI: {i: null}, DK: {}, I: {}, HOME_PAGE: false, HB: '', location: {hash: ''}, PLACE_KEY: 'p', placeWas: '', CHATS_OF: '', FD: {}, TOUCH: () => false,
   store: {get: k => kept[k] || '', set: (k, v) => { if (v) kept[k] = v; else delete kept[k] }},
   tabStore: {get: k => tab[k] || '', set: (k, v) => { tab[k] = v }},
   document: {querySelector: () => ta, addEventListener: (t, f) => { env.on = env.on || {}; (env.on[t] = env.on[t] || []).push(f) }},
@@ -5481,7 +5515,7 @@ if __name__ == '__main__':
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_news_f149), in_tmp(test_login_banner_f126a),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
-                           in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),
+                           in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_chat_keys_b200), in_tmp(test_enter_b181),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_once_b161), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150),
