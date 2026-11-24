@@ -476,7 +476,8 @@ class HomeHandler(BaseHTTPRequestHandler):
         if method == 'GET' and path == '/projects':
             from agent_runner.web import PAGE_PRINT
             return self.send(200, {'ok': True, 'machine': socket.gethostname(), 'projects': self.server.rows(),
-                                   'page': PAGE_PRINT, 'restart_needed': self.server.restart_needed()})  # F149
+                                   'page': PAGE_PRINT, 'restart_needed': self.server.restart_needed(),  # F149
+                                   'claude_login': self.server.claude_login()})  # F126a
         if method == 'POST' and path in ('/act', '/add', '/remove'):
             try:
                 req = json.loads(self.body() or b'{}')
@@ -697,6 +698,11 @@ class HomeServer(ThreadingHTTPServer):
 
     def rows(self) -> list[dict]:
         return self._rows()
+
+    def claude_login(self) -> str:
+        """F126a: the banner about this machine's Claude login, '' for none."""
+        from agent_runner.vitals import login_banner
+        return login_banner(self._roots())
 
     def project(self, key: str) -> Path | None:
         return keys(self._roots()).get(key)

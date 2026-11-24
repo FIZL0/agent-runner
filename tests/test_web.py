@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -999,6 +1000,76 @@ def test_news_f149(tmp: Path) -> None:
         check(o[k][0] == 0 and word in o[k][1], f'{k}: Refresh waits and says why', o[k])
     check(o['form'][0][0] == 0 and 'device form' in o['form'][0][1] and not o['form'][1], 'a device form holds it, and its secret is never kept', o['form'])
     check('data-newsrefresh' in o['home'][0] and 'Restart Runner Home' in o['home'][1] and 'data-ctl' not in o['home'][1], 'the same on Home', o['home'])
+
+
+LOGIN_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = s => page.slice(page.indexOf(s), page.indexOf('\n', page.indexOf(s)));
+let HOME_PAGE = false, all = false, H, S;
+const el = {}, $ = () => el, atAll = () => all, I = {alert: '!'}, esc = s => s, setHTML = (e, h) => { e.h = h };
+eval(line('function loginDraw('));
+const draw = (run, home) => { S = {snap: {claude_login: run}}; H = {login: home}; loginDraw(); return [el.hidden, el.h] };
+const out = {run: draw('R', 'H'), fine: draw('', 'H'), old: draw(undefined, '')};
+all = true; out.all = draw('R', 'H'); out.allFine = draw('R', '');
+all = false; HOME_PAGE = true; out.home = draw(undefined, 'H'); out.homeFine = draw(undefined, '');
+console.log(JSON.stringify(out));
+"""
+
+
+def test_login_banner_f126a(tmp: Path) -> None:
+    """F126a: a Claude login that is ending, has ended or is missing is one banner on the run page and on Home, from a
+    fake credentials file; none when it is far away, so a new login clears it."""
+    from agent_runner import home as H
+    repo, day, cfg = fake_repo(tmp), 86400, tmp / 'cfg'
+    other = tmp / 'other'
+    for d in (cfg, other):
+        d.mkdir()
+    (other / 'runner.toml').write_text('[run]\nagent = "otheragent"\n', encoding='utf-8')
+    cred, roots = cfg / '.credentials.json', [other, repo]
+
+    def login(left: float) -> None:
+        cred.write_text(json.dumps({'claudeAiOauth': {'refreshToken': 'r', 'refreshTokenExpiresAt':
+                                                      int((time.time() + left) * 1000)}}), encoding='utf-8')
+    again = 'log in again (claude auth login)'
+    off = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN',
+           'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
+    srv = H.serve_home('HT', 0, '127.0.0.1', rows=lambda: [], roots=lambda: roots, vitals=mock.Mock())
+    try:
+        with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(cfg)}), mock.patch('sys.platform', 'linux'):
+            for k in off:
+                os.environ.pop(k, None)
+
+            def said() -> tuple[str, str]:
+                got = json.loads(get(f'http://127.0.0.1:{srv.server_address[1]}/projects?t=HT')[1])
+                return U.snapshot(up=False, links={}, windows={})['claude_login'], got['claude_login']
+            none = 'No Claude login: log in (claude auth login)'
+            eq(said(), (none, none), 'missing: on both pages')
+            login(2.5 * day)
+            eq(said(), (f'Claude login expires in 2 days: {again}',) * 2, 'under 3 days')
+            login(-day)
+            eq(said(), (f'Claude login has expired: {again}',) * 2, 'past')
+            roots.remove(repo)
+            eq(said()[1], '', 'no project on this machine runs claude: none on Home')
+            roots.append(repo)
+            login(9 * day)
+            eq(said(), ('', ''), 'far away, so after a new login: none')
+    finally:
+        srv.stop()
+    page = W.PAGE.read_text(encoding='utf-8')
+    eq((page.count('id="login"'), page.split('function render(')[1].split('\nfunction ')[0].count('loginDraw()')), (1, 1),
+       'one banner, drawn with every view')
+    if not shutil.which('node'):
+        print('  (no node here: the banner script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(LOGIN_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the banner', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o, gone = json.loads(r.stdout), [True, '']
+    eq((o['run'], o['fine'], o['old']), ([False, '!<span>R</span>'], gone, gone), "the run page: the run's words, or none")
+    eq((o['all'], o['allFine'], o['home'], o['homeFine']), ([False, '!<span>H</span>'], gone, [False, '!<span>H</span>'], gone),
+       "All projects and Home: Home's words, or none")
 
 
 def test_talk_f93(tmp: Path) -> None:
@@ -3071,7 +3142,7 @@ const window = {};
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: {}, ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
-const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
+const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
@@ -3276,7 +3347,7 @@ def test_keyboard_b160(tmp: Path) -> None:
     check(re.search(r'\.app\{[^}]*padding-bottom:env\(safe-area-inset-bottom', css), 'closed: .app keeps its bottom inset')
     check(re.search(r'\.app\.kb \.dock\{padding-bottom:8px\}', css), 'and the dock its 14px only when closed')
     check(':root.term{--page:var(--t-bg)}' in css and re.search(r'html,body\{[^}]*background:var\(--page\)', css), "outside .app is the view's own colour")
-    check('.main.term .notices{height:auto' in css, "a chat's notices have a row of their own")
+    check('.main.term .over{height:auto' in css, "a chat's notices have a row of their own")
     check('interactive-widget=resizes-content' in W.PAGE.read_text(encoding='utf-8'), 'a browser that can resizes the page itself')
     check('html,body{height:100%;overscroll-behavior:none;overflow:hidden;' in css and 'body{position:fixed;inset:0' in css, 'the document is locked')
     if not shutil.which('node'):
@@ -5103,7 +5174,7 @@ if __name__ == '__main__':
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_page_copy_publish), in_tmp(test_parked), in_tmp(test_shelved_f184),
-                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_news_f149),
+                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_news_f149), in_tmp(test_login_banner_f126a),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),

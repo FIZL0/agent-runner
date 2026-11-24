@@ -1209,6 +1209,23 @@ def login_now(now: float) -> str:
     return f'{said} ({LOGIN_CMD})' if said else ''
 
 
+def login_banner(roots: list[Path], now: float | None = None) -> str:
+    """F126a: Home's banner about this machine's Claude login: `login_now`, when a project at `roots` has [run] agent
+    claude; '' when it is fine, or when no project runs on it."""
+    from agent_runner.config import Config
+    try:
+        said = login_now(time.time() if now is None else now)
+    except Exception:  # noqa: BLE001 - costs the banner, not All projects
+        return ''
+    for root in roots if said else ():
+        try:
+            if (Config(root).run.get('agent') or 'claude') == 'claude':
+                return said
+        except (Exception, SystemExit):  # noqa: BLE001 - settings that cannot be read
+            pass
+    return ''
+
+
 class Vitals:
     """This machine's vitals for Home: samples every EVERY s in a thread once started, walks the footprint every
     FOOTPRINT_EVERY s and removes the ended sessions' temp folders it finds (`auto_clean`), pushes new alerts,

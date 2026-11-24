@@ -208,6 +208,11 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   row under the header, so it covers no text, and `noticeRoom()` keeps the text in place. Elsewhere it floats as
   before. In Talk the top bar may be away while scrolled up, and the notice's row moves up with it (See-through Talk).
 
+- **The Claude login banner** (`.login`, `loginDraw()`) is the one notice that stays until what it says is fixed, so it
+  has its own row under the header in every view and covers nothing. It has no button and no Later, and goes by itself
+  after a new login. The other notices stand under it, in `.over`. A run's page shows the run's own words; Home, and All
+  projects on any page, show Home's.
+
 ### See-through Talk
 
 - **The chat fills the view.** In Talk (`.see` on `.main`, at every width) the chat runs behind the top bar (`.top`),

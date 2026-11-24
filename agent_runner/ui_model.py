@@ -31,6 +31,7 @@ copy, and the actions they share.
     usage     F124: the account's usage, [{'name': 'session'|'week', 'pct'}]
     lately    F124: what landed lately, newest first, [{'at', 'text'}], the words `status` lists under "lately"
     fixups    F124: what the Fix up controls would work on (`fixups`): {'resume', 'unclaim', 'wip': [{'id', 'label'}]}
+    claude_login  F126a: the Claude login warning (`watch.claude_login_line`), the page's banner, else ''
     no_settings  F178: the warning when no settings file was found (`no_settings`), else ''
     chat_quiet  F128: `[ui] chat_quiet` in seconds (0 off)
     version   the run's agent-runner version, from STATE ('' when no run is up or an older run wrote none);
@@ -768,6 +769,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     `terminal_base` and `windows` as `session_rows` (`windows` given: state is not read for titles).
     Call after `state.init`."""
     from agent_runner.status import progress_line, release_line, waiting_ok
+    from agent_runner.watch import claude_login_line
     up = S.run_up() if up is None else up
     now = time.time() if now is None else now
     st, ls = _state(up), P.lines(S.C.todo)
@@ -806,6 +808,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'shelved': shelved, 'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
             'no_settings': no_settings(st=st if up else None),  # F178
+            'claude_login': claude_login_line(),  # F126a
             'unpushed': unpushed_line(),  # F98
             'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)

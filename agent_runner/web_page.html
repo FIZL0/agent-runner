@@ -261,10 +261,12 @@ a{color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);border-radius:var(--r-m);padding:9px 14px;font-size:var(--fs-m);z-index:20;max-width:min(560px,90vw);box-shadow:0 6px 24px var(--shadow)}
 .toast.bad{background:var(--bad);color:var(--onbad)}
 /* notices float over the view: they never push it down */
-.notices{position:relative;height:0;z-index:4;display:grid;justify-items:center}
-.notices>*{position:relative}
+.notices{position:relative;z-index:4} .over{height:0;display:grid;justify-items:center} .over>*{position:relative}
 /* B160: in a chat they have a row of their own, off the text (noticeRoom keeps the text where it is) */
-.main.term .notices{height:auto;background:var(--bg)} .main.term .notices .obbar{padding-bottom:4px}
+.main.term .over{height:auto} .main.term .notices{background:var(--bg)} .main.term .notices .obbar{padding-bottom:4px}
+/* F126a: the login banner: it stays until a new login, so it has its own row and covers nothing */
+.login{justify-self:stretch;display:flex;justify-content:center;align-items:center;gap:var(--s2);padding:var(--s2) var(--s4);padding-left:max(var(--s4),env(safe-area-inset-left,0px));padding-right:max(var(--s4),env(safe-area-inset-right,0px));font-size:var(--fs-m);color:var(--fg);background:color-mix(in srgb,var(--warn) 14%,var(--bg));border-block:1px solid color-mix(in srgb,var(--warn) 45%,var(--line))}
+.login svg{width:16px;height:16px;flex:none;color:var(--warn)} .login span{min-width:0;overflow-wrap:anywhere}
 .offline{font-size:var(--fs-s);color:var(--warn);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-full);padding:2px 12px;box-shadow:0 2px 10px var(--lift)}
 /* F149: a new version of the page, or newer code a person must restart the run for */
 .news{display:grid;gap:var(--s2);justify-items:center;margin:var(--s1) var(--s3) 0;max-width:min(420px,calc(100% - 24px));background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l);padding:var(--s2) var(--s3);font-size:var(--fs-m);box-shadow:0 2px 10px var(--lift)}
@@ -481,9 +483,9 @@ html.vt-out::view-transition-old(main){z-index:1;animation:toright var(--dur-spr
     <aside class="side" id="side" aria-label="Sidebar"><div class="sidein" id="sidein"></div></aside>
     <section class="main">
       <div class="top" id="top"></div>
-      <div class="notices"><div class="offline" id="offline" role="status" hidden>Lost the run page's connection: trying again…</div>
+      <div class="notices"><div class="login" id="login" role="status" hidden></div><div class="over"><div class="offline" id="offline" role="status" hidden>Lost the run page's connection: trying again…</div>
       <div class="obbar" id="obbar" hidden></div>
-      <div class="news" id="news" role="status" hidden></div></div>
+      <div class="news" id="news" role="status" hidden></div></div></div>
       <div class="body" id="body"></div>
       <div class="feed" id="feed" hidden><div id="feedframe"></div><div class="feedtouch" id="feedtouch"></div><div class="feedsay" id="feedsay" role="status" hidden></div></div>
       <div class="dockwrap"><div class="dock" id="dock"></div><div class="slimbox" id="slimbox" hidden></div></div>
@@ -1317,7 +1319,7 @@ const ROOT=HB||location.pathname.replace(/[^/]*$/,'');
   const m=document.createElement('meta');m.name='apple-mobile-web-app-title';
   m.content=HOME_PAGE&&!HKEY?'Runner Home':HKEY||document.title.replace(/ · runner$/,'');document.head.appendChild(m);
 })();
-const H={projects:null,machine:'',devices:null,alerts:[],err:'',said:'',turn:0,begun:{},more:false,at:0};
+const H={projects:null,login:'',machine:'',devices:null,alerts:[],err:'',said:'',turn:0,begun:{},more:false,at:0};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 const I={
@@ -1997,7 +1999,7 @@ async function loadProjects(){
   if(!HB||H.busy)return;H.busy=true;const turn=H.turn;
   try{const d=await (await fetch(tq(HB+'projects'))).json();
     if(d.ok){if(HOME_PAGE){S.snap.page=d.page;S.snap.restart_needed=d.restart_needed}  // F149
-      H.err='';
+      H.err='';H.login=d.claude_login||'';  // F126a
       if(turn===H.turn){H.projects=d.projects||[];H.machine=d.machine||'';store.set(PCACHE,JSON.stringify({projects:H.projects,machine:H.machine}))
         for(const p of H.projects)if((p.state||'off')!=='off')delete H.begun[p.key]}
       if(HOME_PAGE)document.title=HKEY?pageTitle((projectOf(HKEY)||{}).name||HKEY):(H.machine?H.machine+' · ':'')+'Runner Home'}else H.err=d.out||'The projects could not be read.'}
@@ -2962,6 +2964,7 @@ function render(force){
   if(moved&&lastPlace)S.at[lastPlace]=body.scrollTop;
   obDraw();  // F137
   newsDraw();  // F149
+  loginDraw();
   side();sheetDraw();
   if(HOME_PAGE){  // F134: Home's own page: All projects, and F150 a project with no run up
     setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button><div class="title">${atAll()?H.tab==='devices'?'Devices':'Overview':esc((projectOf(HKEY)||{}).name||HKEY)}</div>${plusBtn()||'<span class="icon"></span>'}`);
@@ -3015,9 +3018,9 @@ function render(force){
 /* F83: Talk follows its newest words until the person scrolls up; it follows a box that grows or a keyboard too */
 $('body').addEventListener('scroll',()=>{if(chatShown()){S.pin=atEnd($('body'));seeBar()}},{passive:true});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
-/* B160: a notice's row comes or goes in a chat: the text stays where it was (a pinned chat by the line above) */
+/* B160, F126a: a notice's row comes or goes: the text stays where it was (a pinned chat by the line above) */
 let noticeH=0, noticeAt=null;
-function noticeRoom(h){const d=h-noticeH, same=noticeAt===lastPlace;noticeH=h;noticeAt=lastPlace;if(d&&same&&chatShown()&&!S.pin&&$('body').scrollTop>0)$('body').scrollTop+=d}
+function noticeRoom(h){const d=h-noticeH, same=noticeAt===lastPlace;noticeH=h;noticeAt=lastPlace;if(d&&same&&!(chatShown()&&S.pin)&&$('body').scrollTop>0)$('body').scrollTop+=d}
 if(window.ResizeObserver)new ResizeObserver(()=>{seeRoom();noticeRoom(document.querySelector('.notices').offsetHeight);seeBar()}).observe(document.querySelector('.notices'));
 if(window.ResizeObserver){const o=new ResizeObserver(()=>{if(!chatShown()){if(FD.shown)feedPlace();return}if(S.pin)toEnd();else{seeRoom();seeBar()}});o.observe($('top'));o.observe($('dock'))}
 /* B160: the page's own background, behind Safari's bar and the keyboard, is the view's */
@@ -3568,6 +3571,8 @@ function newsHTML(x){
   return `<div>A new version is ready. ${rc?'Restart the run to use it.':'Stop the run and start it again to use it.'}</div>${rc&&S.sure==='restart'?ctlSure(rc):`<div class="btns">${rc?`<button class="btn acc${ctlBusy('restart')?' busy':''}" data-ctl="restart">Restart the run</button>`:''}${later}</div>`}`;
 }
 function newsDraw(){const x=newsNow(), el=$('news');el.hidden=!x;setHTML(el,x?newsHTML(x):'')}
+/* F126a: the run's own words on its pages, Home's on Home and All projects */
+function loginDraw(){const t=HOME_PAGE||atAll()?H.login:S.snap.claude_login, el=$('login');el.hidden=!t;setHTML(el,t?`${I.alert}<span>${esc(t)}</span>`:'')}
 function newsLater(key){S.later=[...S.later.filter(k=>k!==key),key].slice(-20);tabStore.set(LATER_KEY,S.later.join(' '));S.sure=null;render(true)}
 const devTyped=()=>Object.keys(S.f).some(k=>k.startsWith('dev:'));
 /* the words no store has yet, for the page that comes next; false when this browser keeps nothing */
