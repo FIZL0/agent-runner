@@ -1615,7 +1615,7 @@ const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
                   querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
 const fetch = () => Promise.resolve({json: () => Promise.resolve([{name: 'clear', desc: ''}])});
 eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
-     + slice('function grow(', '\n')
+     + slice('let boxWas=', '\n}\n') + 'function growGlide(){}\n'
      + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n')
      + slice("document.addEventListener('input',", ')}});\n') + `
 (async () => {
@@ -2249,7 +2249,7 @@ const names = ['about', 'send', 'open', 'goView', 'keepPlace', 'takePlace', 'box
 new Function('known', 'env', 'with (known) {' + logic + line('const DRAFT_KEY=') + line('const boxKey=') + line('const shownSession=') + line('const sessionOf=')
   + line('const isAgent=') + line('const threadTitle=') + grab('function box(') + line('const feedNow=') + grab('async function feedLoad(') + grab('function feedHTML(')
   + grab('async function loadFeed(') + line('function keepPlace(') + grab('function takePlace(') + grab('function keptCheck(')
-  + line('function open(') + line('function goView(') + grab('async function send(') + line('function newChat(') + line("  S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open(")
+  + line('function open(') + line('function goView(') + grab('async function send(') + 'function viewGo(go){go()}' + line('function newChat(') + line("  S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open(")
   + grab('function about(') + grab('async function upload(') + grab('function homeHTML(') + grab('function conceptsHTML(') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
 const type = t => { ta.value = t; env.store.set('ar-draft:' + env.boxKey(), t) };
 const S = env.S, out = {press: []};
@@ -2309,7 +2309,7 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     sent; the first message starts the session once, with its About text; Back returns, and a draft is kept."""
     page = W.PAGE.read_text(encoding='utf-8')
     check('data-unctx' not in page and 'class="ctx"' not in page, 'the box has no About line')
-    check("if(q('[data-home]')){S.thread=null;S.ctx=null;render(true);return}" in page, "Back leaves to the view under it")
+    check("if(q('[data-home]')){viewGo(()=>{S.thread=null;S.ctx=null;render(true)},S.thread);return}" in page, "Back leaves to the view under it")
     if not shutil.which('node'):
         print('  (no node here: the new chat view test is skipped)')
         return
@@ -2450,7 +2450,7 @@ def test_need_popup_f162(tmp: Path) -> None:
     check('Full task' in o['mute'] and 'Why it waits' not in o['mute'], 'F162a2: no words of the agent, no Why it waits', o['mute'])
     eq(o['focused'], ['D7true'], 'F162a2: closing gives focus back to its card, drawn again since')
     page = W.PAGE.read_text(encoding='utf-8')
-    check('.sheet.open:not(.drag){transition:transform var(--dur-slow) var(--ease)}' in page and 'visible at once' in page,
+    check('.sheet.open:not(.drag){transition:transform var(--dur-spring) var(--spring-soft)}' in page and 'visible at once' in page,
           'F162a2: an opening sheet is visible at once, or it cannot take focus')
     check('data-reply="D7"' in o['reply'], 'an ask with no answers has Reply', o['reply'])
     eq(o['sent'], [['run_control', {'key': 'need_answer1', 'tid': 'F2', 'text': 'Done'}],
@@ -3032,7 +3032,7 @@ const DRAFT_KEY = k => k, toast = () => {}, open = n => { S.thread = n; render(t
 const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, keepPlace = () => {};
 const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };
 eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('function keysIn(').split('\nfunction enter')[0]
-  + grab('function enter(') + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
+  + grab('function enter(') + line('const MO=') + 'const flying=()=>0,glideSpot=()=>null,glide=()=>{},leaving=()=>{},freshWords=()=>{},sentFrom=()=>{},sentMark=()=>{},loopsInStep=()=>{},sendFly=()=>{},viewSlide=()=>{};' + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
   + line('let lastPlace=') + line('S.at={};') + line('const chatShown=') + line('function toEnd(') + line('let SEE=') + grab('function seeRoom(') + grab('function seeBar(')
   + grab('function render(') + line("$('body').addEventListener('scroll'") + grab('async function send(') + `
 (async () => {
@@ -4208,6 +4208,96 @@ def test_settings_f97(tmp: Path) -> None:
              'device', 'project', 'device', False, True, False, True, True, True, True, 'opus', ''], "a row's control, its home and when it shows")
 
 
+MOTION_DRIVER = r"""
+const page = require('fs').readFileSync(0, 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const S = {live: true, f: {}, drawer: false, sheet: '', thread: null};
+let reduced = false, now = 1000, ran = [];
+Date.now = () => now;
+const document = {hidden: false, activeElement: null, documentElement: {classList: {cls: new Set(), add(...c) { c.forEach(x => this.cls.add(x)) }, remove(...c) { c.forEach(x => this.cls.delete(x)) }}}, querySelector: () => null, addEventListener() {}, createElement: () => new El('')};
+const matchMedia = () => ({matches: reduced}), getComputedStyle = () => ({getPropertyValue: k => k.startsWith('--dur') ? '450ms' : 'ease'});
+// a laid-out thing: key k, its class, top y; kids nest
+class El {
+  constructor(k, y = 0, cls = '', o = {}) { this.dataset = {}; if (k) this.dataset.k = k; Object.assign(this.dataset, o); this.y = y; this.kids = []; this.style = {}; this.cls = new Set(cls.split(' ').filter(Boolean));
+    this.attributes = [{name: 'data-k'}, {name: 'id'}, {name: 'class'}]; this.gone = []; this.childNodes = []; this.scrollTop = 0; this.isConnected = true; this.attrs = {};
+    this.classList = {add: c => this.cls.add(c), remove: (...c) => c.forEach(x => this.cls.delete(x))} }
+  add(...es) { for (const e of es) { e.parentElement = this; this.kids.push(e) } return this }
+  getBoundingClientRect() { const h = this.h || 40; return {left: 0, top: this.y, right: 300, bottom: this.y + h, width: 300, height: h} }
+  all() { return this.kids.flatMap(k => [k, ...k.all()]) }
+  querySelectorAll(s) { return s === '*' ? this.all() : this.all().filter(e => e.dataset.k) }
+  contains(e) { return this === e || this.all().includes(e) }
+  matches(s) { return s.split(',').some(x => x[0] === '.' && this.cls.has(x.slice(1))) }
+  closest(s) { for (let e = this; e; e = e.parentElement) if (s === '[data-k]' ? e.dataset.k : e.matches(s)) return e; return null }
+  cloneNode() { const c = new El('', this.y, [...this.cls].join(' ')); c.dead = this.attributes.map(a => a.name); c.of = this.dataset.k; return c }
+  removeAttribute(n) { this.dead = this.dead.filter(x => x !== n) } setAttribute(n, v) { this.attrs[n] = v }
+  appendChild(e) { e.isConnected = true; this.gone.push(e) } append(...xs) { this.childNodes.push(...xs) } remove() { this.isConnected = false }
+  animate(kf, o) { const a = {el: this, kf, o, cancel() { this.cancelled = true }}; ran.push(a); return a }
+}
+eval(logic.replace(/if\(typeof module[^\n]*/, '') + page.slice(page.indexOf('/* F147: motion (docs/STYLE.md'), page.indexOf('function viewIn(el)')) + `
+const box = (...es) => { const b = new El('', 0); b.h = 600; return b.add(...es) };
+const cards = (...ks) => ks.map((k, i) => new El(k, i * 50, 'card'));
+// a redraw: what was, what is; the moves, and what left
+function redraw(was, is) { ran = []; const spot = glideSpot(was), had = keysIn(was); is._gone = was._gone; enter(is, had); glide(is, is, spot); leaving(is);
+  return {moved: ran.filter(a => a.el.dataset.k).map(a => [a.el.dataset.k, a.kf[0].transform]), left: is.gone.map(g => [g.of, g.dead, g.attrs['aria-hidden'], g.inert]), came: is.all().filter(e => e.cls.has('enter')).map(e => e.dataset.k)} }
+const out = {};
+out.reorder = redraw(box(...cards('a', 'b', 'c')), box(...cards('c', 'a', 'b')));
+const after = box(...cards('a', 'c'));
+out.leave = redraw(box(...cards('a', 'b', 'c')), after);
+after.gone.forEach(g => { g.isConnected = false }); const again = box(...cards('a', 'c')); redraw(after, again); out.goesOn = again.gone.map(g => g.of);
+ran = []; now += 1000;
+const came = box(...cards('n', 'a')); out.enter = redraw(box(...cards('a')), came);
+now += 100; const half = box(...cards('n', 'a')); redraw(came, half); out.half = [half.kids[0].cls.has('enter'), half.kids[0].style.animationDelay];
+now += 1000; const done = box(...cards('n', 'a')); redraw(half, done); out.done = done.kids[0].cls.has('enter');
+const nest = y => box(new El('run', y, 'card').add(new El('slot', y + 10, 'srow')));
+out.nested = redraw(nest(0), nest(80)).moved;
+const part = (a, b) => box(new El('run', 0, 'card').add(...a, ...b));
+const both = redraw(part([new El('s1', 10, 'srow')], []), part([], [])); out.row = both.left.map(x => x[0]);
+out.whole = redraw(box(...cards(...'abcdefghij')), box(...cards('z'))).left.length;
+out.offscreen = redraw(box(new El('far', 900, 'card')), box(new El('far', 950, 'card'))).moved;
+MO.fly.clear(); const el = new El('x'); glideTo(el, 0, 30); const first = ran[ran.length - 1]; glideTo(el, 0, -5); out.again = [first.cancelled, MO.fly.get(el) !== first];
+const words = (v, roll) => new El('n', 0, '', roll ? {v, roll: ''} : {v});
+ran = []; const r1 = box(words('3', true)); enter(r1, keysIn(box(words('2', true)))); const r2 = box(words('1', true)); enter(r2, keysIn(box(words('2', true))));
+out.roll = ran.map(a => a.kf.map(k => k.transform)).filter((x, i) => i % 2 === 0).map(x => x[0]);
+S.live = false; out.first = redraw(box(...cards('a')), box(...cards('b', 'a'))); S.live = true;
+reduced = true; ran = [];
+out.calm = redraw(box(...cards('a', 'b')), box(...cards('b', 'c'))); enter(box(words('3', true)), keysIn(box(words('2', true)))); out.calmRan = ran.length;
+let went = 0; document.startViewTransition = () => { throw new Error('started') }; var kbH = 0; viewGo(() => { went++ }, 'c2'); out.calmView = [went, document.documentElement.classList.cls.size];
+out.spring = [springFrames(-280, 0, 0), springFrames(0, 600, 2), springFrames(0, 600, 0)].map(f => [f[0], f[f.length - 1], f.length <= 61, f[3]]);
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_motion_f147(tmp: Path) -> None:
+    """F147: what comes in rises, what leaves collapses and the rest glides from where it was; a redraw half way goes on;
+    nothing moves on the first load or under reduced motion."""
+    if not shutil.which('node'):
+        print('  (no node here: the motion script test is skipped)')
+        return
+    p = subprocess.run(['node', '-e', MOTION_DRIVER], input=W.page_html().decode(), capture_output=True, text=True, encoding='utf-8', timeout=30)
+    check(p.returncode == 0, 'the motion script runs', p.stderr[-1500:])
+    if p.returncode:
+        return
+    o = json.loads(p.stdout)
+    eq(o['reorder'], {'moved': [['c', 'translate(0px,100px)'], ['a', 'translate(0px,-50px)'], ['b', 'translate(0px,-50px)']], 'left': [], 'came': []},
+       'a reorder: each glides from where it was, transform only')
+    eq(o['leave']['moved'], [['c', 'translate(0px,50px)']], 'a card that leaves: the rest closes up')
+    eq(o['leave']['left'], [['b', ['class'], 'true', True]], 'its copy has no data or id, and is out of reach')
+    eq(o['goesOn'], ['b'], 'and it goes on over the next redraw')
+    eq((o['enter']['came'], o['enter']['moved']), (['n'], [['a', 'translate(0px,-50px)']]), 'a new card rises in, the one it pushed glides')
+    eq((o['half'], o['done']), ([True, '-100ms'], False), 'a redraw half way goes on from there; later it is at rest')
+    eq(o['nested'], [['run', 'translate(0px,-80px)']], 'a row moves with its card, not twice')
+    eq(o['row'], ['s1'], 'a row that leaves its card')
+    eq((o['whole'], o['offscreen']), (0, []), 'a whole other list, or one out of sight, does not move')
+    eq(o['again'], [True, True], 'a new glide takes over from the one under way')
+    eq(o['roll'], ['translateY(100%)', 'translateY(-100%)'], 'a count rolls up when it grew, down when it fell')
+    eq(o['first'], {'moved': [], 'left': [], 'came': []}, 'nothing moves on the first load')
+    eq((o['calm']['moved'], o['calm']['left'], o['calmRan']), ([], [], 0), 'reduced motion: no glide, no copy, no roll')
+    eq(o['calmView'], [1, 0], 'and a chat opens at once, with no View Transition')
+    (a, b, c) = o['spring']
+    eq((a[:3], b[:3]), ([-280, 0, True], [0, 600, True]), 'a panel springs from where it was let go to its place')
+    check(b[3] > c[3], "with the finger's speed", o['spring'])
+
+
 def test_style_f83(tmp: Path) -> None:
     """F83: the run app keeps to docs/STYLE.md where a machine can tell: colours, sizes, corners and durations are
     tokens, motion is transform and opacity only, and one rule turns it off under prefers-reduced-motion."""
@@ -4232,6 +4322,16 @@ def test_style_f83(tmp: Path) -> None:
         check(props <= {'opacity', 'transform'}, f'@keyframes {name} moves opacity and transform only', props)
     check(re.search(r'prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{animation:none!important;transition:none!important', css)
           and css.count('prefers-reduced-motion') == 1, 'one rule turns every motion off')
+    js = page.split('</style>', 1)[1]  # F147: a script's motion asks calm() itself; kbGlide() asks the browser
+    for at in (m.start() for m in re.finditer(r'\.animate\(', js)):
+        body = js[js.rindex('\nfunction ', 0, at):at]
+        check('calm()' in body or 'prefers-reduced-motion' in body, 'a script that moves things asks for reduced motion first', body[:80])
+    for guard in (r'function viewGo\(.*\n.*calm\(\).*\{go\(\);return\}', r'function leave\([^§]*?const a=moAnim'):
+        check(re.search(guard, js), f'{guard}: none under reduced motion')
+    for one in ('--spring:', '--spring-soft:'):
+        check(css.count(one) == 2 and f'{one}cubic-bezier(' in css and f'{one}linear(0,' in css, f'{one} a spring, and its fallback')
+    check('@supports (transition-timing-function:linear(0,1)){:root{' in css, 'only where the browser has linear()')
+    check('if(MO.vt&&MO.vt.skip)MO.vt.skip()' in js and 'e.target!==document.documentElement' in js, 'a press during a View Transition ends it and lands')
     tokens = set(re.findall(r'(--[a-z0-9-]+):', re.search(r':root\{(.*?)\n\}', css, re.S)[1]))
     for t in re.findall(r'`(--[a-z0-9- ]+)`', doc):
         for one in t.split():
@@ -4461,7 +4561,7 @@ const env = {S: {snap: {sessions: [], needs: []}, view: 'home', thread: null, se
   render: () => { log.draws.push([env.S.view, env.S.thread]) }};
 env.env = env;
 const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
-new Function('known', 'env', 'with (known) {' + grab('function homeHTML(') + line('function goView(') + 'env.goView = goView; env.home = homeHTML;'
+new Function('known', 'env', 'with (known) {' + grab('function homeHTML(') + line('function goView(') + 'function viewGo(go){go()} env.goView = goView; env.home = homeHTML;'
   + page.slice(page.indexOf("document.addEventListener('click',async e=>{"), page.indexOf("  if(q('[data-home]'))")) + '})}')(known, env);
 const html = env.home();
 const b = (html.match(/<button[^>]*data-view="talk"[^>]*>[^<]*<\/button>/) || [''])[0], attrs = (b.match(/data-[a-z]+/g) || []).map(a => '[' + a + ']');
@@ -4965,4 +5065,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_motion_f147), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190)]))

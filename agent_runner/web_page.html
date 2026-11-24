@@ -33,7 +33,11 @@ const PAGE_PRINT='/*PAGE_PRINT*/';
   --r-xs:4px; --r-s:8px; --r-m:10px; --r-l:16px; --r-xl:20px; --r-full:99px;
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --tap:44px;
   --dur-fast:150ms; --dur:200ms; --dur-slow:250ms; --ease:cubic-bezier(.2,.8,.2,1); --pulse:1.6s;
+  --dur-spring:450ms; --spring:cubic-bezier(.3,1.35,.5,1); --spring-soft:cubic-bezier(.2,.9,.25,1);
 }
+@supports (transition-timing-function:linear(0,1)){:root{  /* damping .7 (overshoots 4%) and 1 */
+  --spring:linear(0,.069,.226,.412,.591,.744,.862,.946,1,1.03,1.044,1.046,1.041,1.033,1.025,1.017,1.01,1.005,1.002,.999,.998,.998,.998,.998,1);
+  --spring-soft:linear(0,.057,.179,.319,.453,.571,.669,.748,.811,.859,.895,.923,.944,.959,.97,.979,.985,.989,.992,.994,.996,.997,.998,.999,1)}}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#262624; --side:#1f1e1d; --surface:#30302e; --bubble:#3a3936; --fg:#f3f1ea; --muted:#a3a199; --faint:#7d7b74;
   --line:#3b3a37; --line2:#4a4945; --accent:#d97757; --accent2:#e08868; --onaccent:#ffffff; --ok:#8fb07c;
@@ -63,7 +67,7 @@ a{color:var(--accent)}
 
 /* the sidebar: a drawer on a phone */
 .side{position:absolute;inset:0 auto 0 0;width:280px;max-width:85%;background:var(--side);border-right:1px solid var(--line);z-index:6;
-  transform:translateX(-102%);transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);display:flex;flex-direction:column;overflow:hidden auto;touch-action:pan-y pinch-zoom}
+  transform:translateX(-102%);transition:transform var(--dur-spring) var(--spring-soft),visibility var(--dur-spring);display:flex;flex-direction:column;overflow:hidden auto;touch-action:pan-y pinch-zoom}
 /* F150: the sidebar's two levels: a project's own, and All projects, which slides in over it from the left and back out.
    .sghost: the level that was there, for the length of the slide */
 .sidein{position:relative;flex:1 0 auto;display:flex;flex-direction:column;background:var(--side);padding:12px 10px;padding-left:max(10px,env(safe-area-inset-left,0px))}
@@ -74,7 +78,7 @@ a{color:var(--accent)}
 .side:not(.open):not(.drag){visibility:hidden}
 .scrim{position:absolute;inset:0;background:var(--scrim);z-index:5;opacity:0;visibility:hidden;touch-action:pan-y pinch-zoom;transition:opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
 .scrim.on{opacity:1;visibility:visible}
-.side.drag,.sheet.drag,.scrim.drag{transition:none}
+.side.drag,.sheet.drag,.scrim.drag{transition:none} .sheet.drag,.scrim.drag{visibility:visible}  /* also while it settles (springRun) */
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;color:inherit;text-decoration:none}
 .logo{width:28px;height:28px;border-radius:var(--r-s);background:var(--accent);color:var(--onaccent);display:grid;place-items:center;font:600 13px var(--serif);flex:none}
 .brand b{font:500 17px var(--serif)}
@@ -136,7 +140,7 @@ a{color:var(--accent)}
 .icon{width:36px;height:36px;border-radius:var(--r-m);border:0;background:none;display:grid;place-items:center;cursor:pointer;color:var(--fg);flex:none}
 .icon:hover{background:var(--bubble)}
 .top .title{flex:1;min-width:0;text-align:center;font-weight:500;font-size:var(--fs-b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.body{flex:1;overflow:auto;min-height:0;overflow-anchor:none;overscroll-behavior:contain}
+.body{position:relative;flex:1;overflow:auto;min-height:0;overflow-anchor:none;overscroll-behavior:contain}
 .col{max-width:720px;margin:0 auto;padding:6px 16px 24px;display:grid;gap:12px}
 .greet{font:400 30px/1.2 var(--serif);text-align:center;margin:18px 0 6px;display:flex;align-items:center;justify-content:center;gap:10px}
 .greet .logo{width:30px;height:30px;font-size:var(--fs-b)}
@@ -216,7 +220,7 @@ a{color:var(--accent)}
 .main.sess .top,.main.sess .notices,.main.sess .dockwrap{position:absolute;left:0;right:0}
 .main.sess .top{top:0} .main.sess .notices{top:var(--seebar,0px)} .main.sess .dockwrap{bottom:0;z-index:2}
 .main.sess .dockwrap .dock{background:var(--bg);transition:transform var(--dur-slow) var(--ease),opacity var(--dur-fast) var(--ease)}
-.main.sess .top>*{transition:opacity var(--dur-fast) var(--ease)}
+.main.sess .top>*{transition:opacity var(--dur-fast) var(--ease),transform var(--dur-spring) var(--spring)}
 .main.sess.slim .top{background-color:transparent;pointer-events:none} .main.sess.slim .top>:not(.menu,[data-new]){opacity:0;visibility:hidden}
 .main.sess.slim .top>:is(.menu,[data-new]){pointer-events:auto;background:var(--surface);border-radius:50%;box-shadow:0 2px 10px var(--shadow)}
 .main.sess.slim .notices{display:none} .main.sess.slim .dock{transform:translateY(100%);opacity:0;pointer-events:none}
@@ -301,8 +305,8 @@ a{color:var(--accent)}
 .talkrow{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center;width:100%}
 .mic,.spk{width:64px;height:64px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .mic.hold{touch-action:none} .mic svg{pointer-events:none}
-.mic{background:var(--accent);color:var(--onaccent);transition:transform var(--dur-fast) var(--ease)}
-.mic:active{transform:scale(.95)} .mic svg{width:28px;height:28px;stroke-width:1.8}
+.mic{background:var(--accent);color:var(--onaccent)}
+ .mic svg{width:28px;height:28px;stroke-width:1.8}
 .spk{justify-self:end;background:var(--surface);border:1px solid var(--line2);color:var(--fg)} .spk svg{width:26px;height:26px}
 .spk.off{color:var(--muted)} .spk.on,.tool.spkbox{color:var(--accent)}
 .kbd{justify-self:start;width:var(--tap);height:var(--tap);border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer}
@@ -373,9 +377,9 @@ a{color:var(--accent)}
 .lrow{display:flex;gap:12px;justify-content:space-between;align-items:baseline;min-width:0} .lrow span:first-child{min-width:0;overflow-wrap:anywhere} .lrow .small{white-space:nowrap}
 /* F124: the sheet */
 .sheetscrim{z-index:11}
-.sheet{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;max-height:85%;overflow:auto;overscroll-behavior:contain;z-index:12;background:var(--surface);border:1px solid var(--line2);border-bottom:0;border-radius:var(--r-l) var(--r-l) 0 0;padding:8px 16px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s1);align-content:start;box-shadow:0 -8px 24px var(--shadow);transform:translateY(103%);visibility:hidden;transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);outline:0}
+.sheet{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;max-height:85%;overflow:auto;overscroll-behavior:contain;z-index:12;background:var(--surface);border:1px solid var(--line2);border-bottom:0;border-radius:var(--r-l) var(--r-l) 0 0;padding:8px 16px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s1);align-content:start;box-shadow:0 -8px 24px var(--shadow);transform:translateY(103%);visibility:hidden;transition:transform var(--dur-spring) var(--spring-soft),visibility var(--dur-spring);outline:0}
 .sheet.open{transform:none;visibility:visible}
-.sheet.open:not(.drag){transition:transform var(--dur-slow) var(--ease)}  /* F162a2: visible at once, so it can take focus */
+.sheet.open:not(.drag){transition:transform var(--dur-spring) var(--spring-soft)}  /* F162a2: visible at once, so it can take focus */
 #sheet:focus-visible{outline:none}
 .grab{width:36px;height:4px;border-radius:var(--r-xs);background:var(--line2);justify-self:center;margin-bottom:var(--s1)}
 .sheet h2{font:500 17px/1.3 var(--serif);margin:0 0 var(--s1)}
@@ -431,15 +435,42 @@ a{color:var(--accent)}
 .main.see.away .top:not(:has(:focus-visible)){transform:translateY(calc(-100% - env(safe-area-inset-top,0px)))} .main.see.away .top:not(:has(:focus-visible))+.notices{transform:translateY(calc(-1*var(--seebar,0px)))}
 @media (prefers-reduced-transparency:reduce){.main.see :is(.top,.notices,.dock){background:var(--bg)} .main.see .dock{pointer-events:auto} .main.see :is(.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){background:var(--surface)} .main.see :is(.top,.notices,.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){-webkit-backdrop-filter:none;backdrop-filter:none}}
 /* the composer: the send button fills once there is something to send */
-.send{transition:opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop){opacity:.45}
 @media (pointer:coarse){.keysl{display:none} .btn,.chip,.icon{min-height:var(--tap)} .icon{min-width:var(--tap)}}
 /* motion (docs/STYLE.md, Motion): enter() sets these on what is new or changed, never the markup */
-@keyframes enter{from{opacity:0;transform:translateY(6px)}}
+@keyframes enter{from{opacity:0;transform:translateY(14px) scale(.97)}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
 @keyframes fadein{from{opacity:0}}
 @keyframes listin{from{transform:translateX(-100%)}}
 @keyframes listout{to{transform:translateX(-100%)}}
-.enter{animation:enter var(--dur) var(--ease)} .changed,.viewin{animation:fadein var(--dur) var(--ease)}
-.obpop:not([hidden]),.toast:not([hidden]){animation:fadein var(--dur-fast) var(--ease)}
+@keyframes wave{0%,60%,100%{transform:none;opacity:.45}30%{transform:translateY(-4px);opacity:1}}
+.enter{animation:enter var(--dur-spring) var(--spring) backwards} .changed{animation:fadein var(--dur) var(--ease)} .viewin{animation:rise var(--dur-spring) var(--spring-soft)}
+.fresh{animation:rise var(--dur-spring) var(--spring-soft) backwards} span.fresh{animation-name:fadein}
+.obpop:not([hidden]){animation:fadein var(--dur-fast) var(--ease)} .toast:not([hidden]){animation:fadein var(--dur) var(--ease)}
+.wave{display:inline-flex;gap:3px;align-items:center;flex:none} .wave i{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:wave var(--pulse) infinite} .wave i:nth-child(2){animation-delay:calc(var(--pulse)*.12)} .wave i:nth-child(3){animation-delay:calc(var(--pulse)*.24)}
+/* a press, and the spring back; a wide row gives less */
+.btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.pill,.shadd,.card.tap,.asktap,.ni,.thread,.prow,.it,.fold{transition:transform var(--dur-spring) var(--spring)}
+.send{transition:transform var(--dur-spring) var(--spring),opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop){opacity:.45}
+:is(.btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.send,.pill,.shadd):active:not(:disabled){transform:scale(.94);transition-duration:var(--dur-fast)}
+:is(.card.tap,.asktap,.ni,.thread,.prow,.it:not(.setrow),.fold):active{transform:scale(.98);transition-duration:var(--dur-fast)}
+/* a count that rolls; what left, while it collapses; your words on their way to a session */
+.roll{position:relative;overflow:clip} .rolls{display:inline-block} .rolls.out{position:absolute;inset:0;padding:inherit;white-space:nowrap}
+.gone0{position:absolute!important;margin:0!important;pointer-events:none;transform-origin:50% 0}
+.main .u.flybub{position:absolute;justify-self:auto;width:max-content;max-width:80%;z-index:4;pointer-events:none;max-height:160px;overflow:hidden}
+.tt{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+/* a chat opening and closing (viewGo): the main part slides, the drawer goes, the chat's title is carried over */
+html.vt .main{view-transition-name:main} html.vt .side{view-transition-name:side} html.vt .scrim:not(.sheetscrim){view-transition-name:scrim}
+html.vt :is(.side,.scrim){transition:none}
+::view-transition-group(*){animation-duration:var(--dur-spring);animation-timing-function:var(--spring-soft)}
+::view-transition-group(main){overflow:clip}
+::view-transition-old(*),::view-transition-new(*){animation-duration:var(--dur-spring);animation-timing-function:var(--ease)}
+::view-transition-old(root),::view-transition-new(side){display:none} ::view-transition-new(root),::view-transition-old(side){animation:none;mix-blend-mode:normal}
+html:not(.vt-drawer)::view-transition-old(side){display:none} html:not(.vt-drawer)::view-transition-new(side){display:block;animation:none}
+@keyframes fromright{from{transform:translateX(100%)}} @keyframes toright{to{transform:translateX(100%)}}
+@keyframes fromback{from{transform:translateX(-25%);opacity:.4}} @keyframes toback{to{transform:translateX(-25%);opacity:.4}}
+::view-transition-old(main),::view-transition-new(main){mix-blend-mode:normal}
+html.vt-in::view-transition-old(main){animation:toback var(--dur-spring) var(--spring-soft) both} html.vt-in::view-transition-new(main){animation:fromright var(--dur-spring) var(--spring-soft) both}
+html.vt-out::view-transition-old(main){z-index:1;animation:toright var(--dur-spring) var(--spring-soft) both} html.vt-out::view-transition-new(main){animation:fromback var(--dur-spring) var(--spring-soft) both}
+::view-transition-old(chat-title),::view-transition-new(chat-title){height:100%;object-fit:none;object-position:0 50%;overflow:clip}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -832,6 +863,13 @@ function barAway(was,b){
 function swipeTakes(dx,dy,open){
   if(Math.hypot(dx,dy)<8)return 'wait';  // B167: under the 10px at which iOS begins a scroll, which nothing can cancel then
   return Math.abs(dx)>Math.abs(dy)*1.7&&(open?dx<0:dx>0)?'drag':'';
+}
+const WAVE='<span class="wave" aria-hidden="true"><i></i><i></i><i></i></span>';  // F147: at work
+/* F147: a spring with no overshoot of its own, let go at from with speed v (px/ms): where it is on each frame (16 ms) to to */
+function springFrames(from,to,v){
+  const w=.02, a=from-to, b=(v||0)+w*a, out=[];
+  for(let i=0;i<60;i++){const x=Math.exp(-w*16*i)*(a+b*16*i);out.push(to+x);if(i&&Math.abs(x)<.5)break}
+  out.push(to);return out;
 }
 /* where the drawer settles when the finger lets go: dx moved, v its speed (px/ms), w the drawer's width */
 const swipeOpens=(dx,v,w,open)=>Math.abs(v)>.35?v>0:(open?w+dx:dx)>w/2;
@@ -1356,8 +1394,8 @@ function setHTML(el,h){if(!el||el._h===h)return false;el._h=h;el.innerHTML=h;ret
 /* F83: the reading position over a redraw of box: call before, then call what it returns after. The first keyed thing
    on screen stays where it was (at the very top, new things show); a code block keeps its sideways scroll. */
 function keepScroll(box){
-  const was=box.scrollTop, edge=box.getBoundingClientRect().top;let key='',y=0;
-  if(was>2)for(const el of box.querySelectorAll('[data-k]')){const b=el.getBoundingClientRect();if(b.bottom>edge+1){key=el.dataset.k;y=b.top;break}}
+  const was=box.scrollTop, edge=box.getBoundingClientRect().top;let key='',y=0;  // where things are laid out: not a glide under way
+  if(was>2)for(const el of box.querySelectorAll('[data-k]')){const b=el.getBoundingClientRect(), fly=flying(el);if(b.bottom-fly>edge+1){key=el.dataset.k;y=b.top-fly;break}}
   const pre=[...box.querySelectorAll('pre')].map(p=>p.scrollLeft);
   return()=>{
     [...box.querySelectorAll('pre')].forEach((p,i)=>{if(pre[i])p.scrollLeft=pre[i]});
@@ -1366,15 +1404,164 @@ function keepScroll(box){
     if(el)box.scrollTop+=el.getBoundingClientRect().top-y;
   };
 }
-/* F83: what came in since the last draw rises in, what changed state fades in; nothing else moves. keysIn: the keys
+/* F147: motion (docs/STYLE.md, Motion). born: when a key came in, so a redraw half way goes on from there; fly: what
+   glides now; said: how long a reply was; sent: the words on their way out of the message box; vt: a View Transition */
+const MO={born:new Map(),said:new Map(),grown:new Map(),rolls:new Map(),fly:new Map(),sent:null,vt:null,named:[]}, MO_MS=450;
+const calm=()=>document.hidden||matchMedia('(prefers-reduced-motion:reduce)').matches;
+function moAnim(el,frames,o){
+  if(!el.animate||calm())return null;
+  const css=getComputedStyle(document.documentElement), {ease='--spring',dur='--dur-spring',...more}=o||{};
+  return el.animate(frames,{duration:parseFloat(css.getPropertyValue(dur)),easing:css.getPropertyValue(ease).trim(),...more});
+}
+/* an element moved by (x, y) on its way to its place; flying: how far down a thing (or what holds it) is moved now */
+function glideTo(el,x,y,o){
+  const old=MO.fly.get(el);if(old)old.cancel();
+  const a=moAnim(el,[{transform:`translate(${x}px,${y}px)`},{transform:'none'}],o);if(!a)return;
+  MO.fly.set(el,a);a.onfinish=a.oncancel=()=>{if(MO.fly.get(el)===a)MO.fly.delete(el)};
+}
+const shiftOf=el=>new DOMMatrix(getComputedStyle(el).transform);
+function flying(el){let d=0;for(const x of MO.fly.keys()){if(!x.isConnected)MO.fly.delete(x);else if(x===el||x.contains(el))d+=shiftOf(x).m42}return d}
+/* the lists: where each thing was on screen before a redraw, then each glides from there; what left collapses */
+const GLIDES='[data-k],.col>.sec', LEAVES='.card,.srow,.lrow,.ev,.crow';
+const glideKey=el=>el.dataset.k||'sec:'+el.textContent.replace(/\d+/g,'');
+function glideSpot(box){
+  if(!S.live||!box.animate||calm()||box.contains(document.activeElement)&&document.activeElement.matches('[data-f]'))return null;
+  const e=box.getBoundingClientRect(), m=new Map();
+  for(const el of box.querySelectorAll(GLIDES)){const k=glideKey(el), r=el.getBoundingClientRect();if(!m.has(k))m.set(k,{el,r,on:r.bottom>e.top&&r.top<e.bottom})}
+  return m;
+}
+function glide(scroller,root,was){
+  if(!was||!was.size)return;
+  const e=scroller.getBoundingClientRect(), now=new Map();
+  for(const el of root.querySelectorAll(GLIDES)){const k=glideKey(el);if(!now.has(k))now.set(k,{el,r:el.getBoundingClientRect()})}
+  const by=new Map();
+  for(const [k,n] of now){
+    const w=was.get(k), p=n.el.parentElement.closest('[data-k]'), up=p&&by.get(p)||[0,0];
+    const d=w&&(w.on||n.r.bottom>e.top&&n.r.top<e.bottom)?[w.r.left-n.r.left,w.r.top-n.r.top]:up;
+    if(n.el.matches('.pill')){by.set(n.el,d);if(w&&Math.abs(w.r.width-n.r.width)>1){n.el.style.transformOrigin='0 50%';moAnim(n.el,[{transform:`translateX(${d[0]}px) scaleX(${w.r.width/n.r.width})`},{transform:'none'}])}continue}
+    const x=d[0]-up[0], y=d[1]-up[1], far=Math.abs(y)>e.height||Math.abs(x)>e.width;
+    by.set(n.el,far?up:d);
+    if(!far&&(Math.abs(x)>=1||Math.abs(y)>=1))glideTo(n.el,x,y);
+  }
+  const left=[...was].filter(([k,w])=>w.on&&!now.has(k)&&w.el.matches(LEAVES)&&!w.el.closest('.msgs')).map(x=>x[1]);
+  const tops=left.filter(w=>!left.some(o=>o!==w&&o.el.contains(w.el)));
+  if(tops.length<=8)for(const w of tops)leave(scroller,w,e);
+}
+/* a copy of what left, without its data, ids and typed words: it is gone, only its picture goes on */
+function leave(box,w,e){
+  const g=w.el.cloneNode(true);
+  for(const x of [g,...g.querySelectorAll('*')])for(const a of [...x.attributes])if(/^(data-|id$|name$|for$)/.test(a.name))x.removeAttribute(a.name);
+  g.classList.add('gone0');g.classList.remove('enter','changed');g.setAttribute('aria-hidden','true');g.inert=true;
+  g.style.animation='none';
+  Object.assign(g.style,{left:w.r.left-e.left+'px',top:w.r.top-e.top+box.scrollTop+'px',width:w.r.width+'px',height:w.r.height+'px'});
+  const a=moAnim(g,[{transform:'none',opacity:1},{transform:'scale(.96,.4)',opacity:0}],{ease:'--spring-soft',dur:'--dur-slow',fill:'forwards'});
+  if(!a)return;
+  (box._gone=box._gone||new Set()).add(g);a.onfinish=a.oncancel=()=>{g.remove();box._gone.delete(g)};
+  box.appendChild(g);
+}
+/* a redraw took them out: they go on */
+function leaving(box){if(box._gone)for(const g of box._gone)if(!g.isConnected)box.appendChild(g)}
+/* F83: what came in since the last draw rises in, what changed state fades in. keysIn: the keys
    (and the words of your own messages, which move from sending to sent) on screen now */
 function keysIn(box){const m=new Map();for(const el of box.querySelectorAll('[data-k]')){m.set(el.dataset.k,el.dataset.v||'');if(el.dataset.t)m.set('t:'+el.dataset.t,'')}return m}
 function enter(box,had){
   if(!S.live||!had.size)return;  // the first load, and what it was waiting for, do not move
+  const now=Date.now();
+  for(const [k,t] of MO.born)if(now-t>=MO_MS)MO.born.delete(k);
   for(const el of box.querySelectorAll('[data-k]')){
-    if(!had.has(el.dataset.k)){if(!(el.dataset.t&&had.has('t:'+el.dataset.t)))el.classList.add('enter')}
-    else if(el.dataset.v&&had.get(el.dataset.k)!==el.dataset.v)el.classList.add('changed');
+    const k=el.dataset.k, fresh=!had.has(k)&&!(el.dataset.t&&had.has('t:'+el.dataset.t));
+    if(fresh)MO.born.set(k,now);
+    else if(had.has(k)&&el.dataset.v&&had.get(k)!==el.dataset.v){if(el.dataset.roll!==undefined&&had.get(k))roll(el,had.get(k));else el.classList.add('changed')}
+    const rl=MO.rolls.get(k);if(rl&&rl.v===el.dataset.v&&now>rl.at&&now-rl.at<MO_MS&&had.get(k)===rl.v)roll(el,rl.was,rl.at);  // a redraw half way
+    const age=MO.born.has(k)?now-MO.born.get(k):-1;
+    if(age<0||!fresh&&!el.style)continue;
+    if(el.matches&&el.matches('.a')){[...el.querySelectorAll('.lead,.say>*,.speakb')].forEach((x,i)=>{x.classList.add('fresh');x.style.animationDelay=Math.min(i,10)*60-age+'ms'});continue}
+    if(el.matches&&el.matches('.say'))continue;  // with its .a
+    el.classList.add('enter');if(age)el.style.animationDelay=-age+'ms';
   }
+}
+/* a reply that grew: only its new words fade in */
+function freshWords(box){
+  const now=Date.now();
+  for(const el of box.querySelectorAll('.say[data-k]')){
+    const k=el.dataset.k, n=el.textContent.length, was=MO.said.get(k);MO.said.set(k,n);
+    if(was&&n>was&&S.live&&!calm())MO.grown.set(k,{from:was,at:now});
+    const g=MO.grown.get(k);if(!g)continue;
+    if(now-g.at>=MO_MS){MO.grown.delete(k);continue}
+    const walk=document.createTreeWalker(el,4), ts=[];let at=0;
+    while(walk.nextNode())ts.push(walk.currentNode);
+    for(const t of ts){const end=at+t.length;
+      if(end>g.from&&t.data.trim()){const x=at<g.from?t.splitText(g.from-at):t, s=document.createElement('span');s.className='fresh';s.style.animationDelay=g.at-now+'ms';x.replaceWith(s);s.append(x)}
+      at=end}
+  }
+}
+/* a count or a state word rolls: up when it grew, down when it fell. Its data-v is its words */
+function roll(el,was,at){
+  if(!el.animate||calm())return;
+  const d=parseFloat(el.dataset.v)<parseFloat(was)?-1:1, span=c=>{const s=document.createElement('span');s.className=c;return s};
+  const now=span('rolls'), old=span('rolls out');old.setAttribute('aria-hidden','true');old.textContent=was;
+  const t=at||Date.now();MO.rolls.set(el.dataset.k,{was,v:el.dataset.v,at:t});
+  now.append(...el.childNodes);el.append(now,old);el.classList.add('roll');
+  const b=moAnim(now,[{transform:`translateY(${d*100}%)`,opacity:0},{transform:'none',opacity:1}]);
+  const a=moAnim(old,[{transform:'none',opacity:1},{transform:`translateY(${-d*100}%)`,opacity:0}],{fill:'forwards'});if(a){a.onfinish=()=>old.remove();if(at)a.currentTime=b.currentTime=Date.now()-at}
+}
+/* the loops (a dot, a wave) go on over a redraw, all in step */
+function loopsInStep(box){if(box.getAnimations)for(const a of box.getAnimations({subtree:true}))if(a.effect.getComputedTiming().iterations===Infinity)a.startTime=0}
+/* your words leave the message box: noted as they are sent, then their bubble springs from there to its place */
+function sentMark(text){
+  const b=document.querySelector('.box .inrow');if(!b||!b.getBoundingClientRect||calm())return;
+  MO.sent={at:Date.now(),r:b.getBoundingClientRect(),text,t:'',began:0};
+}
+function sentFrom(box,had){
+  const s=MO.sent, now=Date.now();if(!s)return;
+  if(s.began?now-s.began>=MO_MS:now-s.at>4000){MO.sent=null;return}
+  const u=[...box.querySelectorAll('.u[data-t]')].pop();if(!u)return;
+  if(!s.began){if(had.has('t:'+u.dataset.t))return;s.began=now;s.t=u.dataset.t}
+  else if(u.dataset.t!==s.t)return;
+  u.classList.remove('enter');
+  const r=u.getBoundingClientRect();
+  const a=moAnim(u,[{transform:`translate(${s.r.left-r.left}px,${s.r.top-r.top}px) scale(.94)`,opacity:.5},{transform:'none'}]);
+  if(a)a.currentTime=now-s.began;
+}
+/* to a real session: the bubble leaves the box and fades; the session draws the words itself */
+function sendFly(){
+  const s=MO.sent, main=document.querySelector('.main');MO.sent=null;if(!s||!s.text||!main||!main.animate)return;
+  const m=main.getBoundingClientRect(), g=document.createElement('div');g.className='u flybub';g.setAttribute('aria-hidden','true');g.textContent=s.text.slice(0,400);
+  Object.assign(g.style,{right:m.right-s.r.right+'px',bottom:m.bottom-s.r.bottom+'px'});
+  main.appendChild(g);
+  const a=moAnim(g,[{transform:'scale(.94)',opacity:0},{transform:'translateY(-40px)',opacity:1,offset:.35},{transform:'translateY(-110px) scale(.97)',opacity:0}],{ease:'--spring-soft'});
+  if(a)a.onfinish=a.oncancel=()=>g.remove();else g.remove();
+}
+/* a chat opens or closes: a View Transition where the browser has them (it draws the new view a frame later), else
+   go() at once and render() slides it in (viewSlide). n: the chat whose title is carried over */
+function viewGo(go,n){
+  if(!document.startViewTransition||!S.live||kbH||S.sheet||calm()||!n){go();return}
+  const root=document.documentElement, into=n!==S.thread;
+  const row=()=>{const e=document.querySelector(`#sidein [data-thread="${CSS.escape(n)}"] .tt`), r=e&&e.getBoundingClientRect();return r&&r.width&&r.right>0&&r.bottom>0&&r.top<innerHeight&&(S.drawer||!drawerOn())?e:null};
+  const bar=()=>$('top').querySelector('.tt'), name=e=>{if(e){e.style.viewTransitionName='chat-title';MO.named.push(e)}};
+  const clear=()=>{for(const e of MO.named)e.style.viewTransitionName='';MO.named=[]};
+  clear();
+  const from=into?row():bar();name(from);
+  root.classList.remove('vt-in','vt-out','vt-drawer');root.classList.add('vt',into?'vt-in':'vt-out');if(S.drawer)root.classList.add('vt-drawer');
+  let done=false;const once=()=>{if(!done){done=true;go()}};
+  const me={};MO.vt=me;
+  const end=()=>{if(MO.vt!==me)return;MO.vt=null;clear();root.classList.remove('vt','vt-in','vt-out','vt-drawer');render()};
+  try{const t=document.startViewTransition(()=>{once();if(MO.vt!==me)return;clear();if(from)name(into?bar():row())});me.skip=()=>t.skipTransition();
+    t.ready.catch(()=>{});t.updateCallbackDone.catch(()=>{});t.finished.then(end,end)}
+  catch(e){once();end()}
+}
+/* the browser gives a press during a View Transition to the page's root: the press ends it, and its click goes to what is there */
+document.addEventListener('pointerdown',()=>{if(MO.vt&&MO.vt.skip)MO.vt.skip()},true);
+document.addEventListener('click',e=>{
+  if(e.target!==document.documentElement||!e.isTrusted)return;
+  const el=document.elementFromPoint(e.clientX,e.clientY);if(!el||el===document.documentElement)return;
+  const f=el.closest('textarea,input,select');if(f)kbFocus(f);
+  el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,detail:e.detail,clientX:e.clientX,clientY:e.clientY}));
+});
+function viewSlide(to){
+  if(MO.vt)return;
+  const x=to==='in'?'40%':'-60px';
+  for(const el of [$('feed').hidden?$('body'):$('feed'),$('dock')])moAnim(el,[{transform:`translateX(${x})`,opacity:0},{transform:'none',opacity:1}],{ease:'--spring-soft'});
 }
 function viewIn(el){el.classList.remove('viewin');void el.offsetWidth;el.classList.add('viewin')}
 /* a field with data-f keeps its words (S.f), focus and caret over a redraw */
@@ -1430,7 +1617,7 @@ function addSent(n,text,at,more,len){
 function carrySent(n,j,ask){const text=(j&&j.ask)||ask;if(n&&text)addSent(n,text,j&&j.at,{first:true},0)}
 /* a new chat whose ask went, until its reply starts: the starting line */
 const starting=n=>!!(S.sent[n]&&S.sent[n].start)&&!S.sent[n].pending.some(p=>p.state==='failed')&&!feedOf(n).some(e=>e.kind==='say'||e.kind==='tool');
-const startLine=n=>starting(n)?`<div class="think">${LOGO()}Starting the chat…</div>`:'';
+const startLine=n=>starting(n)?`<div class="think">${LOGO()}${WAVE}Starting the chat…</div>`:'';
 function sentDrop(n,id){const s=S.sent[n], p=s&&s.pending.find(x=>x.id===id);if(p){s.pending=s.pending.filter(x=>x!==p);if(p.first)s.start=false;keepSent()}return p}
 /* a message's words as a key: the same bubble while it is sending, sent and in the feed, so it comes in once */
 const tkey=t=>String(t||'').replace(/\s+/g,' ').trim().slice(0,120);
@@ -1510,7 +1697,7 @@ function obDraw(){
     ${lost.map(({n,p})=>`<div class="obrow failed"><div class="grow"><div class="ell2">${esc(p.text)}</div><div class="small">Not delivered: it is not in ${esc(threadTitle(n))}</div></div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" data-n="${esc(n)}">Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" data-n="${esc(n)}">Discard</button></div></div>`).join('')}</div>`:'');
 }
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
-function obChatRows(){return S.ob.filter(x=>x.newchat).map(x=>`<div class="crow"><button class="thread ${S.thread==='@'+x.cid?'on':''} ob ${x.state}" data-thread="@${esc(x.cid)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`).join('')}
+function obChatRows(){return S.ob.filter(x=>x.newchat).map(x=>`<div class="crow" data-k="chat:@${esc(x.cid)}"><button class="thread ${S.thread==='@'+x.cid?'on':''} ob ${x.state}" data-thread="@${esc(x.cid)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`).join('')}
 function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}">${x.state==='failed'?'':'<span class="livedot"></span>'}<div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`,'',`data-k="ob:${esc(x.cid)}" data-v="${x.state}"`)).join('')}
 /* what waits for a chat that is still starting: its first message, then what was written since */
 function obBubbles(n){
@@ -1627,13 +1814,13 @@ function side(){
   if(HOME_PAGE){S.menuDot=!!due0;sideShow(offSide(),'in');return}  // F134: no run behind it
   const g=shownChats(), due=needs||cn;S.menuDot=!!due;  // F128: the phone's menu button gets a dot
   sideShow(`${allRow()}
-   <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
+   <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n" data-k="n:${k}" data-roll data-v="${count[k]}">${count[k]}</span>`:''}</button>`).join('')}</div>
    <div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button></div>${chatBar()}${cs.length?g.top.map(x=>chatRow(x)).join('')+obChatRows()+(g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>chatRow(x,true)).join(''):''):'<div class="none">No chats yet</div>'+obChatRows()}
-   <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
+   <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}" data-k="ag:${esc(s.name)}"><span class="livedot"></span><span class="t"><span class="tt">${esc(s.title||s.task)}</span></span></button>`).join(''):'<div class="none">None right now</div>'}
    <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>`,'in');
 }
 /* the sidebar drawn again only when it changed, its scroll and a name being typed kept */
-function sideHTML(h){const box=$('side'), el=$('sidein'), put=keepScroll(box), f=keepFields(el);if(setHTML(el,h)){f();put();const t=el.querySelector('[data-f="ren"]');if(t&&S.renFocus){S.renFocus=false;kbFocus(t);kbReveal(t);t.select()}}}
+function sideHTML(h,still){const box=$('side'), el=$('sidein'), new_=el._h!==h&&!still, spot=new_?glideSpot(el):null, had=new_?keysIn(el):null, put=keepScroll(box), f=keepFields(el);if(setHTML(el,h)){f();put();if(had)enter(el,had);glide(box,el,spot);loopsInStep(el);const t=el.querySelector('[data-f="ren"]');if(t&&S.renFocus){S.renFocus=false;kbFocus(t);kbReveal(t);t.select()}}}
 /* --- F150: Home's actions (start, pause, slots, stop): an outbox of their own, shared by every page of this Home, so one
    started before a switch to another project is still followed there. Home runs each cid once, so any tab may send it */
 const HO_KEY='ar-outbox:@home', HO={busy:new Set(),kept:true,timer:0,wait:2000};
@@ -1692,7 +1879,7 @@ let level='';
 function sideShow(h,to){
   const el=$('side'), was=level, calm=matchMedia('(prefers-reduced-motion:reduce)').matches;
   if(was!==to){
-    if(!was&&to==='in'&&tabStore.get(LEVEL_KEY)==='all'&&HB&&H.projects&&!oneProject(H.projects)){sideHTML(allSide());level='all';return sideShow(h,to)}  // it came from another page's list
+    if(!was&&to==='in'&&tabStore.get(LEVEL_KEY)==='all'&&HB&&H.projects&&!oneProject(H.projects)){sideHTML(allSide(),true);level='all';return sideShow(h,to)}  // it came from another page's list
     level=to;tabStore.set(LEVEL_KEY,to);
     for(const g of el.querySelectorAll('.sghost'))g.remove();
     el.classList.remove('up');
@@ -1704,8 +1891,9 @@ function sideShow(h,to){
       setTimeout(()=>{g.remove();if(level===to)el.classList.remove('up')},400);
     }
     if(was==='in')S.sideAt=el.scrollTop;
-    sideHTML(h);el.scrollTop=to==='in'?S.sideAt||0:0;
+    sideHTML(h,true);el.scrollTop=to==='in'?S.sideAt||0:0;
   }else sideHTML(h);
+  if(el._run&&el._to!==S.drawer&&!SW)runStop(el);
   el.classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
 }
 const meRow=(name,sub)=>`<div class="me"><div class="av">${esc((name||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(name||'this machine')}</span><div class="sub">${sub}</div></div></div>`;
@@ -1713,13 +1901,13 @@ const meRow=(name,sub)=>`<div class="me"><div class="av">${esc((name||'?').charA
 function allRow(){
   if(!HB||oneProject(H.projects))return brand();
   const n=needsOf(H.projects,HKEY)+H.alerts.length, cur=(H.projects||[]).find(p=>p.key===HKEY);
-  return `<button class="ni allp" data-up title="All projects">${I.back}All projects${n?`<span class="n" title="need you in other projects">${n}</span>`:''}</button><div class="slevel">${esc(cur&&cur.name||S.snap.project||HKEY)}</div>`;
+  return `<button class="ni allp" data-up title="All projects">${I.back}All projects${n?`<span class="n" data-k="n:all" data-roll data-v="${n}" title="need you in other projects">${n}</span>`:''}</button><div class="slevel">${esc(cur&&cur.name||S.snap.project||HKEY)}</div>`;
 }
 function allSide(){
   const rows=rowsNow(), n=homeNeeds()+H.alerts.length;let i=0;
   const row=r=>{const k=++i, hint=k<10?` title="Alt+${k}"`:'';
-    return `<a class="prow ${r.on?'on ':''}${r.group}" href="${esc(r.href)}" data-pkey="${esc(r.key)}"${hint}><span class="pdot ${esc(r.group)}"></span><span class="t">${esc(r.name)}</span>${['running','idle','off'].includes(r.said)?'':`<span class="st">${esc(r.said)}</span>`}${r.needs?`<span class="n" title="needs you">${r.needs}</span>`:''}</a>`};
-  return `<div class="slevel">All projects</div><div class="nav"><button class="ni ${H.tab!=='devices'?'on':''}" data-alltab="">${I.projects}Overview${n?`<span class="n">${n}</span>`:''}</button></div>
+    return `<a class="prow ${r.on?'on ':''}${r.group}" href="${esc(r.href)}" data-pkey="${esc(r.key)}" data-k="p:${esc(r.key)}"${hint}><span class="pdot ${esc(r.group)}"></span><span class="t">${esc(r.name)}</span>${['running','idle','off'].includes(r.said)?'':`<span class="st">${esc(r.said)}</span>`}${r.needs?`<span class="n" data-k="n:p:${esc(r.key)}" data-roll data-v="${r.needs}" title="needs you">${r.needs}</span>`:''}</a>`};
+  return `<div class="slevel">All projects</div><div class="nav"><button class="ni ${H.tab!=='devices'?'on':''}" data-alltab="">${I.projects}Overview${n?`<span class="n" data-k="n:over" data-roll data-v="${n}">${n}</span>`:''}</button></div>
     <div class="plist">${H.projects===null?'<div class="none">Loading…</div>':PGROUPS.map(([g,label])=>{const rs=rows.filter(r=>r.group===g);return rs.length?`<div class="shead">${label}</div>${rs.map(row).join('')}`:''}).join('')||'<div class="none">No projects</div>'}</div>
     <div class="nav"><button class="ni ${H.tab==='devices'?'on':''}" data-alltab="devices">${I.tools}Devices</button></div>${meRow(H.machine,'Runner Home')}`;
 }
@@ -1781,7 +1969,7 @@ function projectsHTML(){
   const ps=projectsNow(), asks=projectAsks(ps), total=homeNeeds()+H.alerts.length;
   const alerts=H.alerts.map(a=>card(`<div class="row"><div class="who">${I.alert}</div><div class="grow">${esc(a.what)}</div>${a.clean?`<a class="btn acc" href="${esc(tq(HB+'device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`,'need')).join('');
   const more=asks.length-ASKS_SHOWN, all=H.more?PGROUPS.length&&projectOrder(ps).filter(p=>(p.asks||[]).length).map(p=>`<div class="qline">${esc(p.name||p.key)}</div>${projectAsks([p]).map(askRow).join('')}`).join(''):asks.slice(0,ASKS_SHOWN).map(askRow).join('');
-  const needs=`<div class="sec">Needs you${total?` · ${total}`:''}<span class="ln"></span></div>${alerts}${all}${more>0?`<div><button class="btn" data-pmore aria-expanded="${H.more}">${H.more?'Show fewer':`Show ${more} more, by project`}</button></div>`:''}${total?'':card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does, in any project.</div></div></div>`,'','data-k="noneed"')}`;
+  const needs=`<div class="sec">Needs you${total?` · <span data-k="n:sec" data-roll data-v="${total}">${total}</span>`:''}<span class="ln"></span></div>${alerts}${all}${more>0?`<div><button class="btn" data-pmore aria-expanded="${H.more}">${H.more?'Show fewer':`Show ${more} more, by project`}</button></div>`:''}${total?'':card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does, in any project.</div></div></div>`,'','data-k="noneed"')}`;
   const groups=PGROUPS.map(([g,label])=>{const l=projectOrder(ps).filter(p=>projectGroup(p)===g);return l.length?`<div class="sec">${label}<span class="ln"></span></div>${l.map(projectCard).join('')}`:''}).join('');
   return `<div class="col">${homeErr()}${H.projects===null?(H.err?'':emptyCard('Loading…')):needs+(groups||emptyCard('No projects yet: none under the scanned folders. Add one with + Project.'))}</div>`;
 }
@@ -1792,8 +1980,8 @@ function offHTML(){
   const up=p.state&&p.state!=='off', more=(p.left||0)-qs.length;
   const said=up?'Its run is up and its page is on its way.':p.starting?'Starting its run. This page turns into its app once it is up.':'No run is up.';
   return `<div class="col">${homeErr()}${card(`<div class="row"><div class="grow"><b>${esc(p.name||p.key)}</b><div class="small">${p.starting?'<span class="livedot"></span> ':''}${said}</div></div>${up?'':mainBtn(p)}${dotsBtn(p)}</div>${p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:''}${landedLine(p)}${hobOf(p.key)}`,'pcard',`data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`)}
-    <div class="sec">Needs you${p.needs?` · ${p.needs}`:''}<span class="ln"></span></div>${asks.length?asks.map(a=>card(`<b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.id)}${a.id?' · ':''}answer it once the run is up</div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)).join(''):emptyCard('Nothing needs you.')}
-    <div class="sec">Queue${p.left?` · ${p.left}`:''}<span class="ln"></span></div>${qs.length?card(qs.map(q=>`<div class="lrow"><span>${esc(q.title)}</span><span class="small">${esc(q.id)}</span></div>`).join(''),'','data-k="pq"')+(more>0?`<div class="small">and ${more} more</div>`:''):emptyCard(p.left?'Nothing in it can start by itself.':'The queue is empty.')}</div>`;
+    <div class="sec">Needs you${p.needs?` · <span data-k="n:sec" data-roll data-v="${p.needs}">${p.needs}</span>`:''}<span class="ln"></span></div>${asks.length?asks.map(a=>card(`<b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.id)}${a.id?' · ':''}answer it once the run is up</div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)).join(''):emptyCard('Nothing needs you.')}
+    <div class="sec">Queue${p.left?` · <span data-k="n:queue" data-roll data-v="${p.left}">${p.left}</span>`:''}<span class="ln"></span></div>${qs.length?card(qs.map(q=>`<div class="lrow" data-k="pq:${esc(q.id)}"><span>${esc(q.title)}</span><span class="small">${esc(q.id)}</span></div>`).join(''),'','data-k="pq"')+(more>0?`<div class="small">and ${more} more</div>`:''):emptyCard(p.left?'Nothing in it can start by itself.':'The queue is empty.')}</div>`;
 }
 /* its run came up: the page is its app now, at the same address. Not while something is open on it */
 function turnIntoApp(){
@@ -1836,14 +2024,14 @@ async function addProject(){
 /* F118: a chat row: its delete button, dimmed with Undo in that spot once deleted; the Delete N bar */
 function chatRow(s,quiet){
   const n=s.name,u=S.undo,gone=!!(u&&u.names.includes(n)),cls=[S.thread===n&&!gone?'on':'',S.sel.includes(n)?'sel':'',gone?'gone':''].join(' ');
-  if(S.ren&&S.ren===n)return `<form class="renform" data-renform><input data-f="ren" aria-label="The chat's name" maxlength="80" autocomplete="off"></form>`;  // F129
+  if(S.ren&&S.ren===n)return `<form class="renform" data-renform data-k="chat:${esc(n)}"><input data-f="ren" aria-label="The chat's name" maxlength="80" autocomplete="off"></form>`;  // F129
   const due=!gone&&replyDue(s);  // F128
-  const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}" title="Double-click to rename"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatTitle(s))}</span>${due?'<span class="bdot" role="img" aria-label="needs your reply" title="needs your reply"></span>':''}</button>`;
+  const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}" title="Double-click to rename"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t"><span class="tt">${esc(chatTitle(s))}</span></span>${due?'<span class="bdot" role="img" aria-label="needs your reply" title="needs your reply"></span>':''}</button>`;
   const btn=gone?(u.bar?'':`<button class="del undo" data-undo>Undo</button>`):
     `<button class="del" data-del="${esc(n)}" aria-label="Delete this chat" title="Delete this chat">${I.trash}</button>`;
   const pinned=chatPins().includes(n), pin=gone?'':`<button class="pin${pinned?' on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat" title="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button>`;
   const menu=gone?'':`<button class="rowmenu" data-rowmenu="${esc(n)}" aria-label="More for this chat">${I.dots}</button>`;
-  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
+  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}" data-k="chat:${esc(n)}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
 }
 /* F129: Rename, in the row itself: Enter keeps it, Esc does not */
 function startRename(n){const x=sessionOf(n);if(!x)return;S.ren=n;S.f.ren=chatTitle(x);if(drawerOn())S.drawer=true;S.renFocus=true;render(true)}
@@ -1907,7 +2095,7 @@ function controlsCard(){
   const run=S.snap.run||{}, up=S.snap.up!==false, ss=slots();
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
   const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
-  return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-v="${esc(said)}">${esc(said)}</div></div><span class="small">${up?`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`:''}</span></div>
+  return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-roll data-v="${esc(said)}">${esc(said)}</div></div>${up?(w=>`<span class="small" data-k="slotsof" data-roll data-v="${w}">${w}</span>`)(`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`):''}</div>
     ${S.snap.no_settings?`<div class="small" data-k="nosettings"><span class="v-warn">${esc(S.snap.no_settings)}</span></div>`:''}
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
     ${(S.snap.tools||[]).length?`<div class="small" data-k="tools" data-v="${esc(toolsWords(S.snap.tools))}">${esc(toolsWords(S.snap.tools))}</div>`:''}
@@ -2060,7 +2248,7 @@ function talkConvo(n){
   h+=sentBubbles(n,talkShown);  // B154
   if(starting(n))h+=startLine(n);
   else if(ended(n))h+=`<div class="small" style="text-align:center">This chat has ended.</div>`;  // B177
-  else if(busy(n))h+=`<div class="think">${LOGO()}Working on it… · Ctrl+C interrupts</div>`;
+  else if(busy(n))h+=`<div class="think" data-k="think">${LOGO()}${WAVE}Working on it… · Ctrl+C interrupts</div>`;
   return `<div class="msgs">${h}</div>`;
 }
 /* --- F114: a chat or slot: the real session in #feed ------------------------------------------------------------
@@ -2113,7 +2301,7 @@ function feedHTML(n){
   if(isNew(n))return `<div class="col feeds">${card(`<div class="q">${esc(threadTitle(n))}</div><div class="small">The chat starts with your first message.</div>`,'',`data-k="feed:${esc(n)}"`)}</div>`;  // F172
   const st=feedNow(n), i=(FD.n===n&&FD.info)||{}, last=S.last[n]||{}, link=i.link||(sessionOf(n)||{}).link||last.link||'';
   const open=link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open its session ${I.ext}</a>`:'';
-  if(st==='starting')return `<div class="col feeds"><div class="msgs">${sentBubbles(n,t=>t)}${obBubbles(n)}${n[0]==='@'?'':`<div class="think">${LOGO()}Starting the chat…</div>`}</div></div>`;
+  if(st==='starting')return `<div class="col feeds"><div class="msgs">${sentBubbles(n,t=>t)}${obBubbles(n)}${n[0]==='@'?'':`<div class="think">${LOGO()}${WAVE}Starting the chat…</div>`}</div></div>`;
   if(st==='loading')return `<div class="col feeds"><div class="think">${LOGO()}Loading…</div></div>`;
   let title='', words=i.out||'', btns=open;
   if(st==='install'){title='The session cannot be shown here';if(S.snap.ttyd_install)words+=` On this machine: ${S.snap.ttyd_install}`}
@@ -2429,11 +2617,11 @@ Object.assign(SHEETS,{
     return `<h2>Update the agent CLI</h2>${cmd&&cmd!=='…'?`<div class="small">This runs on ${esc(S.snap.machine||'the machine of the run')}:</div><pre class="out">${esc(cmd)}</pre><div class="btns"><button class="btn pri${busyUp?' busy':''}" data-update="${esc(cmd)}">Update</button></div>`:'<div class="small">Its command does not fit the window: turn the phone, or use a wider one.</div>'}<div class="small">Open chats keep their version until they restart.</div>${own?`<div class="btns"><button class="btn" data-restart="${esc(FD.n)}"${sessIdle()?'':' disabled'}>Restart chat</button></div>${sessIdle()?'':'<div class="small">It can restart once it has nothing running.</div>'}`:''}`},
 });
 SHEETS.need=needSheet;  // F162
-function openSheet(name,arg){if(name==='talk')loadVoices();S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
+function openSheet(name,arg){if(name==='talk')loadVoices();runStop($('sheet'));S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
 /* F162a2: where focus goes back to: what opened the sheet, or a Needs you card drawn again since */
 function sheetOpener(){const b=sheetBack, id=b&&b.dataset&&b.dataset.needopen;
   return !b||b.isConnected||!id?b:[...document.querySelectorAll('[data-needopen]')].find(x=>x.dataset.needopen===id)}
-function closeSheet(){if(!S.sheet)return;S.sheet='';S.sure=null;render(true);const b=sheetOpener();if(b&&b.isConnected&&b.focus)b.focus({preventScroll:true});sheetBack=null}
+function closeSheet(){if(!S.sheet)return;runStop($('sheet'));S.sheet='';S.sure=null;render(true);const b=sheetOpener();if(b&&b.isConnected&&b.focus)b.focus({preventScroll:true});sheetBack=null}
 function sheetDraw(){
   const el=$('sheet');
   if(S.sheet==='need'&&!needOf(S.sheetArg)){S.sheet='';S.sure=null;sheetBack=null}  // F162: answered, or it left Needs you
@@ -2758,11 +2946,11 @@ function plusSlot(){
 /* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, and the view's + (F150) */
 function topHTML(){
   const n=S.thread, p=runPill(S.snap), x=n&&sessionOf(n);
-  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}${x&&!isAgent(n)?`<button type="button" class="title" data-ren="${esc(n)}" title="Rename">${esc(threadTitle(n))}</button>`:`<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',tools:'Tools',settings:'Settings',projects:H.tab==='devices'?'Devices':'Overview'}[S.view]}</div>`}${p.text&&!atAll()?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${plusBtn()}`;
+  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}${x&&!isAgent(n)?`<button type="button" class="title" data-ren="${esc(n)}" title="Rename"><span class="tt">${esc(threadTitle(n))}</span></button>`:`<div class="title">${n?`<span class="tt">${esc(threadTitle(n))}</span>`:{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',tools:'Tools',settings:'Settings',projects:H.tab==='devices'?'Devices':'Overview'}[S.view]}</div>`}${p.text&&!atAll()?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-roll data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${plusBtn()}`;
 }
 function render(force){
   keepPlace();  // B177
-  if(!force&&(PD.down||selecting())){const now=Date.now();PD.since=PD.late?PD.since:now;PD.late=true;if(now-PD.since<HOLD_MS)return}  // but never for long
+  if(!force&&(PD.down||selecting()||MO.vt)){const now=Date.now();PD.since=PD.late?PD.since:now;PD.late=true;if(now-PD.since<HOLD_MS)return}  // but never for long
   PD.late=false;
   markSeen();  // F128
   obHide();
@@ -2777,10 +2965,12 @@ function render(force){
   if(HOME_PAGE){  // F134: Home's own page: All projects, and F150 a project with no run up
     setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button><div class="title">${atAll()?H.tab==='devices'?'Devices':'Overview':esc((projectOf(HKEY)||{}).name||HKEY)}</div>${plusBtn()||'<span class="icon"></span>'}`);
     if(moved)body._h=null;
-    if(setHTML(body,projectsHTML())){keep();if(moved){body.scrollTop=S.at[place]||0;if(S.live&&lastPlace)viewIn(body)}else{put();enter(body,had)}}
+    const ph=projectsHTML(), spot=moved||body._h===ph?null:glideSpot(body);
+    if(setHTML(body,ph)){keep();if(moved){body.scrollTop=S.at[place]||0;if(S.live&&lastPlace)viewIn(body)}else{put();enter(body,had);glide(body,body,spot);leaving(body)}loopsInStep(body)}
     pageColor(false);lastPlace=place;dockEl.hidden=true;return;
   }
-  if(setHTML($('top'),topHTML()))enter($('top'),hadTop);
+  const top=$('top'), th=topHTML(), topSpot=moved||top._h===th?null:glideSpot(top);
+  if(setHTML(top,th)){enter(top,moved&&lastPlace?keysIn(top):hadTop);glide(top,top,topSpot);loopsInStep(top)}
   let h='',dock='';
   feedDraw(n);  // F114
   if(n){const agent=isAgent(n);h=$('body').hidden?'':feedHTML(n);
@@ -2792,6 +2982,7 @@ function render(force){
   const main=document.querySelector('.main');  // F115: a chat looks like the terminal
   main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';main.classList.toggle('see',chatShown());pageColor(chatOn);
   if(moved){body._h=null;dockEl._h=null}
+  const spot=moved||body._h===h?null:glideSpot(body);
   const drew=setHTML(body,h);
   let drewDock=false;
   if(!n&&S.view==='talk'){  // F124: the mic and the box cross-fade: both stay in the dock
@@ -2803,17 +2994,20 @@ function render(force){
   if(moved)seeBar();
   if(!force&&!drew&&!drewDock){lastPlace=place;return}
   const nta=document.querySelector('[data-in]');
-  if(nta){const v=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));if(nta.value!==v)nta.value=v;grow(nta);if(focused&&nta!==ta){nta.focus({preventScroll:true});if(sel)nta.setSelectionRange(sel[0],sel[1])}if(focused)slashShow(nta)}  // B119: the menu stays open; B120: so does a recalled message
+  if(nta){const v=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));if(nta.value!==v)nta.value=v;grow(nta,true);if(focused&&nta!==ta){nta.focus({preventScroll:true});if(sel)nta.setSelectionRange(sel[0],sel[1])}if(focused)slashShow(nta)}  // B119: the menu stays open; B120: so does a recalled message
   if(drew)keep();
   if(moved){
     const follow=lastPlace&&(lastPlace.startsWith('t:@')&&n||lastPlace.startsWith('t:+')&&n&&n[0]==='@');  // a starting chat got its name, a new one started: the same chat
     if(chatShown())toEnd();else{body.scrollTop=S.at[place]||0}
-    if(S.live&&!follow)viewIn(body);
+    if(S.live&&lastPlace&&!follow){const was=lastPlace.startsWith('t:');if(n||was)viewSlide(n?'in':'out');else viewIn(body)}
+    if(n)sentFrom(body,had);
+    freshWords(body);
   }else if(drew){
     if(chatShown()&&S.pin)toEnd();
     else put();
-    enter(body,had);
+    enter(body,had);glide(body,body,spot);leaving(body);freshWords(body);sentFrom(body,had);
   }
+  if(drew)loopsInStep(body);
   seeBar();
   lastPlace=place;
 }
@@ -2924,7 +3118,20 @@ if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
   document.addEventListener('focusout',e=>{if(kbH&&!typingIn(e.relatedTarget))queueMicrotask(()=>{if(typingIn(document.activeElement))return;if(IOS)kbWatch();kbFit()})});
   if(IOS){document.addEventListener('touchstart',kbTapStart,{passive:true});document.addEventListener('touchcancel',()=>{KT=null},{passive:true});
     document.addEventListener('touchend',kbTapEnd,{passive:false})}}
-function grow(ta){ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
+let boxWas={k:'',h:0};
+function grow(ta,drawn){
+  const k=boxKey(), was=boxWas.k===k?boxWas.h:0;
+  ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';
+  const h=ta.offsetHeight||0;boxWas={k,h};if(was&&h&&was!==h)growGlide(ta,h-was,drawn);
+}
+/* F147: a box that grew by d: at the foot of the view it slides up into its new height (and the chat with it), on Home what is under its words slides down */
+function growGlide(ta,d,drawn){
+  const dock=ta.closest('.dock'), box=ta.closest('.box'), go=(el,y)=>glideTo(el,0,y+(MO.fly.has(el)?shiftOf(el).m42:0),{ease:'--spring-soft'});
+  if(!box||!box.animate||calm())return;
+  if(dock){for(const el of dock.children)go(el,d);const b=$('body'), c=!drawn&&chatShown()&&S.pin&&b.firstElementChild;if(c){const at=b.scrollTop;toEnd();go(c,b.scrollTop-at)}return}  // in a redraw glide() moves the chat
+  for(let el=ta.closest('.inrow').nextElementSibling;el;el=el.nextElementSibling)go(el,-d);
+  for(let el=box.nextElementSibling;el;el=el.nextElementSibling)if(el.getBoundingClientRect().top<innerHeight)go(el,-d);
+}
 /* B119: the slash command menu. SL.cmds the session's commands from /commands (null until they come, then
    SLASH_FALLBACK's list stands in), SL.items the rows shown, SL.i the highlighted one */
 const SL={cmds:null,items:[],i:0,at:0,of:''};
@@ -3164,7 +3371,7 @@ function talkHTML(){
   const was=!n&&!going&&!TK.wait?talkWas():'';  // B177: the chat this tab had has ended: its words stay until the next message
   if(was){if(!S.feeds[was]&&!TK.loading){TK.loading=true;loadFeed(was).finally(()=>{TK.loading=false})}
     if(!S.feeds[was]||S.feeds[was].ok)return `<div class="col">${talkConvo(was)}${S.feeds[was]?'<div class="small" style="text-align:center">Your next message opens a new Talk chat.</div>':''}</div>`}
-  if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. ${talkKept()==='new'?'Your next message opens a new Talk chat. The old one stays in Chats.':'Talk opens a chat of its own the first time.'}</div></div>`;
+  if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}${WAVE}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. ${talkKept()==='new'?'Your next message opens a new Talk chat. The old one stays in Chats.':'Talk opens a chat of its own the first time.'}</div></div>`;
   if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
   return `<div class="col">${talkConvo(n)}${going}</div>`;
 }
@@ -3463,6 +3670,7 @@ async function send(){
   if(atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
   const paths=atts.filter(a=>a.path).map(a=>a.path);
   if(!text&&!paths.length)return;
+  sentMark(text);
   if(!S.thread&&S.view==='talk'){  // F93; F83: out of the box at once, back in it if it did not go
     histAdd(key,text);HI.i=null;store.set(DRAFT_KEY(key),'');if(ta)ta.value='';delete S.atts[key];
     if(!await talkSend(compose(null,text,paths))){if(!store.get(DRAFT_KEY(key)))store.set(DRAFT_KEY(key),text);if(atts.length)S.atts[key]=[...atts,...(S.atts[key]||[])];render(true)}return}
@@ -3474,6 +3682,7 @@ async function send(){
   const rq=sendReq(ctx,to,msg);
   if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx?ctx.label:text||`${paths.length} attachment(s)`,msg);return}  // B139, F176
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
+  if(FD.shown)sendFly();  // the session draws it itself
   outbox('chat_to',{text:msg,to,...(S.thread===to&&sessWorks(to)?{force:true}:{}),...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
 }
 /* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
@@ -3575,8 +3784,8 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-speak]'))return playReply(x.dataset.speak);
   if(q('[data-menu]')){S.drawer=true;render();return}
   if(q('#scrim')){S.drawer=false;render();return}
-  if(x=q('[data-view]'))return goView(x.dataset.view);
-  if(q('[data-home]')){S.thread=null;S.ctx=null;render(true);return}
+  if(x=q('[data-view]')){const v=x.dataset.view;return viewGo(()=>goView(v),S.thread)}
+  if(q('[data-home]')){viewGo(()=>{S.thread=null;S.ctx=null;render(true)},S.thread);return}
   if(x=q('[data-tool]'))return toolClick(x);  // F169
   if(q('[data-slots-n]')||q('.fld')||q('.sw'))return;
   if(q('[data-unsure]')){S.sure=null;render(true);return}
@@ -3607,7 +3816,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-setstep]')){stepSetting(x.dataset.id,+x.dataset.setstep);return}
   if(x=q('[data-setmore]')){openSheet('setting',x.dataset.setmore);return}
   if(q('[data-setchanged]')){S.setChanged=!S.setChanged;render(true);return}
-  if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
+  if(x=q('[data-thread]')){const n=x.dataset.thread;return viewGo(()=>{S.ctx=null;open(n)},n===S.thread?null:n)}
   if(q('[data-newtalk]'))return newTalk();  // F157
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
   if(x=q('[data-needopen]')){needOpen(x.dataset.needopen);return}  // F162
@@ -3687,7 +3896,7 @@ document.addEventListener('keydown',e=>{
     return}
   if(e.key==='Escape'&&S.sel.length){S.sel=[];render(true);return}  // F118
   if(e.key==='Escape'&&S.drawer){S.drawer=false;render();return}
-  if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
+  if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){viewGo(()=>{S.thread=null;S.ctx=null;render(true)},S.thread);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
 document.addEventListener('input',e=>{if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
@@ -3701,7 +3910,7 @@ for(const t of ['pointerdown','mousedown'])document.addEventListener(t,e=>{if(e.
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)loadFeed(S.thread)});
 /* F133: drag a chat row to set its place, by pointer events so a phone's touch works too: a mouse drags at once,
    a touch after a short hold (a swipe before it still scrolls the list); the drop is kept by the run */
-const dragEnd=()=>{if(!DR)return;clearTimeout(DR.hold);DR.row.classList.remove('lift','drag');DR.row.style.transform='';const on=DR.on;DR=null;if(on)render(true)};
+const dragEnd=()=>{if(!DR)return;const {row,on}=DR, y=on?shiftOf(row).m42:0;clearTimeout(DR.hold);row.classList.remove('lift','drag');row.style.transform='';DR=null;if(y)glideTo(row,0,y);if(on)render(true)};
 document.addEventListener('pointerdown',e=>{
   const row=e.target.closest&&e.target.closest('.crow[data-crow]');
   if(!row||e.button>0||e.target.closest('.pin,.del,.rowmenu')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
@@ -3769,6 +3978,20 @@ document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closes
    swipe, and a drawer swipe keeps the page from scrolling (so touchmove is not passive). Not from a text box, a sideways scroller, a held mic, a row being dragged or
    a mostly vertical move; Safari keeps its own back swipe at the very edge. */
 let SW=null;
+/* F147: a panel goes on from where the finger left it, with its speed; .drag stays on (no transition) until it is there */
+function runStop(el){  // from where it is, the stylesheet's transition takes it on (or a finger)
+  const a=el&&el._run;if(!a)return;
+  const c=getComputedStyle(el), st={transform:c.transform,opacity:c.opacity}, p=el===$('scrim')?'opacity':'transform';
+  el.style[p]=st[p];el._run=null;a.cancel();void el.offsetWidth;el.classList.remove('drag');el.style[p]='';
+  if(el===$('side'))runStop($('scrim'));
+}
+function springRun(el,frames,css){
+  const done=()=>{el._run=null;el.classList.remove('drag')};
+  if(!el.animate||calm())return done();
+  const a=el._run=el.animate(frames.map(css),{duration:(frames.length-1)*16,easing:'linear'});a.onfinish=a.oncancel=()=>{if(el._run===a)done()};
+}
+/* where a panel is now (it may still be on its way), and the finger has it */
+function grab(el,axis,rest){let at=rest;try{at=shiftOf(el)[axis]}catch(e){}runStop(el);return at}
 const sideways=el=>{for(;el&&el!==document.body;el=el.parentElement)if(el.scrollWidth>el.clientWidth+1&&/(auto|scroll)/.test(getComputedStyle(el).overflowX))return true;return false};
 /* B167: what a touch could scroll, and did it: a change of height is the page's own scroll (a chat's new message) */
 const scrollers=el=>{const a=[];for(;el&&el!==document.body;el=el.parentElement)if(el.scrollHeight>el.clientHeight+1)a.push([el,el.scrollTop,el.scrollHeight]);return a};
@@ -3778,7 +4001,7 @@ document.addEventListener('touchstart',e=>{
   if(SW&&SW.on&&!SW.sheet){if(e.touches.length>1)return;swipeEnd(false)}  // B167: a second finger does not end the lock
   SW=null;const t=e.touches[0], el=e.target;
   if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop,.cview,.mic.hold')||DR&&DR.on)return;
-  if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false};return}
+  if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,ly:t.clientY,lt:e.timeStamp,v:0,base:0};return}
   if(!drawerOn()||el.closest('#body,#dock')&&sideways(el))return;
   SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0,id:t.identifier,scr:scrollers(el)};
 },{passive:true});
@@ -3787,26 +4010,33 @@ document.addEventListener('touchmove',e=>{
   const t=SW.on&&[...e.touches].find(f=>f.identifier===SW.id)||e.touches[0], dx=t.clientX-SW.x, dy=t.clientY-SW.y;
   if(DR&&DR.ready&&DR.hold){if(SW.on)swipeEnd(false);SW=null;return}  // the row is held: it is being dragged
   if(SW.sheet){
-    if(!SW.on){if(Math.abs(dy)<10&&Math.abs(dx)<10)return;if(dy<Math.abs(dx)||$('sheet').scrollTop>0){SW=null;return}SW.on=true;$('sheet').classList.add('drag')}
-    SW.d=Math.max(0,dy);$('sheet').style.transform=`translateY(${SW.d}px)`;return;
+    if(!SW.on){if(Math.abs(dy)<10&&Math.abs(dx)<10)return;if(dy<Math.abs(dx)||$('sheet').scrollTop>0){SW=null;return}SW.on=true;SW.base=Math.max(0,grab($('sheet'),'m42',0));$('sheet').classList.add('drag')}
+    if(e.timeStamp>SW.lt){SW.v=(t.clientY-SW.ly)/(e.timeStamp-SW.lt);SW.ly=t.clientY;SW.lt=e.timeStamp}
+    SW.d=Math.max(0,SW.base+dy);$('sheet').style.transform=`translateY(${SW.d}px)`;return;
   }
   if(!SW.on&&!SW.lvl){if(!e.cancelable||scrolled(SW.scr)){SW=null;return}  // B167: it is a scroll
     if(SW.open&&HB&&!atAll()&&!oneProject(H.projects)&&swipeTakes(dx,dy,false)==='drag'){SW.lvl=true;if(DR)dragEnd()}  // F150: up a level
     else{const s=swipeTakes(dx,dy,SW.open);if(s==='wait')return;if(!s){SW=null;return}
-    SW.on=true;if(DR)dragEnd();$('side').classList.add('drag');$('scrim').classList.add('drag','on')}}
+    SW.on=true;if(DR)dragEnd();SW.base=Math.max(-SW.w,grab($('side'),'m41',SW.open?0:-SW.w));$('side').classList.add('drag');$('scrim').classList.add('drag','on')}}
   if(e.cancelable)e.preventDefault();  // B167: no scroll until the finger lifts
   SW.d=dx;if(SW.lvl)return;
   if(e.timeStamp>SW.lt){SW.v=(t.clientX-SW.lx)/(e.timeStamp-SW.lt);SW.lx=t.clientX;SW.lt=e.timeStamp}
-  const at=Math.max(-SW.w,Math.min(0,SW.open?dx:dx-SW.w));
+  const at=SW.px=Math.max(-SW.w,Math.min(0,SW.base+dx));
   $('side').style.transform=`translateX(${at}px)`;$('scrim').style.opacity=String(1+at/SW.w);
 },{passive:false});
 function swipeEnd(done){
   const w=SW;SW=null;if(w&&w.lvl){noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;if(done&&w.d>48)goUp();return}
   if(!w||!w.on)return;
-  if(w.sheet){const el=$('sheet');el.classList.remove('drag');el.style.transform='';if(done&&w.d>80)closeSheet();return}
-  $('side').classList.remove('drag');$('scrim').classList.remove('drag');$('side').style.transform='';$('scrim').style.opacity='';
-  S.drawer=done?swipeOpens(w.d,w.v,w.w,w.open):w.open;
+  const still=performance.now()-w.lt>120, v=still?0:w.v;  // it rested before it was let go
+  if(w.sheet){const el=$('sheet'), go=done&&(w.d>80||v>.5&&w.d>10);el.style.transform='';
+    if(go)closeSheet();
+    if(drawerOn())springRun(el,springFrames(w.d,go?el.offsetHeight*1.03:0,v).map(x=>Math.max(0,x)),x=>({transform:`translateY(${x}px)`}));else el.classList.remove('drag');
+    return}
+  const side=$('side'), scrim=$('scrim');side.style.transform='';scrim.style.opacity='';
+  S.drawer=done?swipeOpens(w.d,v,w.w,w.open):w.open;
   noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;render(true);
+  const fs=springFrames(w.px||0,S.drawer?0:-w.w,v).map(x=>Math.max(-w.w,Math.min(0,x)));side._to=S.drawer;
+  springRun(side,fs,x=>({transform:`translateX(${x}px)`}));springRun(scrim,fs,x=>({opacity:1+x/w.w}));
 }
 document.addEventListener('touchend',e=>{if(SW&&SW.on&&!SW.sheet&&[...e.touches].some(f=>f.identifier===SW.id))return;swipeEnd(true)},{passive:true});
 document.addEventListener('touchcancel',()=>swipeEnd(false),{passive:true});
