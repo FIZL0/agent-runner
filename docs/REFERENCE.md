@@ -1280,7 +1280,7 @@ finished; it lands after S1, on whose merge it was started"), then merges as any
 refused, or built again as another commit, once those tasks' merges are over its own commits are moved onto
 main alone (`git rebase --onto`; when they do not apply, as one commit, joined or given to a fix session) in
 a fix worktree, and its remote task branch replaced. If they cannot be moved it is parked as `wip/<ID>`
-whole. An unlanded task's commit never reaches main. If the run stops first, `task/<ID>` waits for the next run.
+whole, and its next attempt is told which of those commits are its own. No unlanded task's commit reaches main. If the run stops first, `task/<ID>` waits for the next run.
 
 A tested merge that cannot land because of uncommitted edits in the main checkout to files it changes (or
 anything staged there, which git refuses to merge onto) waits 10 minutes, then gives the merge lock back

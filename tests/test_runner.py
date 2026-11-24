@@ -8115,6 +8115,8 @@ def test_start_on_merge_f198(tmp: Path):
         one.join(60), two.join(60)
         eq(git(repo, 'rev-parse', 'main'), start, 'nothing landed')
         eq(git(repo, 'rev-parse', 'wip/S2'), tip, "S2's work is all on wip/S2")
+        eq(stack.begin('S2', 'main'), 'main', 'its next attempt starts from main')
+        has(stack.told('S2', 'main'), r'which did not land, so it holds their commits too', 'and is warned of that')
 
         print('F198: S1 is built again, as main moved: S2 follows it')
         reset()

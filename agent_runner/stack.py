@@ -24,6 +24,12 @@ wherever this brief says `git diff {branch}...HEAD`. Your branch lands after it;
 moves your commits onto {branch} without it, so commit only your own work and never merge or rebase. If the gate fails \
 only on what that merge brought, run `done` with `--blocked "<the failing test>: waits on {tids}" --after {tids}`."""
 
+WARNED = """
+
+Careful with the earlier attempt on {wip}: it was made on the merge of {tids}, which did not land, so it holds their \
+commits too. Its own work is `git log -p {on}..{one}` only. Take from it by hand, or by cherry-picking commits of that \
+range; never merge the branch or pick from before {on}."""
+
 MOVE = """Task {tid}'s branch was started on the merge of {tids}, which did not land on {branch} as it was. The \
 runner is moving {tid}'s own changes onto {branch} without it (a `git cherry-pick` of them as one commit, half-done in \
 this checkout), and git could not finish that by itself. Finish it. Nobody will answer questions: decide, and say what \
@@ -44,6 +50,10 @@ why in one line. That is a real answer, not a failure.
 
 def _file(tid: str) -> Path:
     return S.C.notes(f'{tid}.stacked')
+
+
+def _old(tid: str) -> Path:
+    return S.C.notes(f'{tid}.stacked-before')
 
 
 def _has(rev: str, commit: str) -> bool:
@@ -76,7 +86,8 @@ def has_own(tid: str, branch: str) -> bool:
 def begin(tid: str, branch: str) -> str:
     """The commit a fresh start of `tid` checks out: the merge chosen for it, recorded, else `branch`."""
     c = CHOSEN.pop(tid, None)
-    _file(tid).unlink(missing_ok=True)
+    if _file(tid).exists():  # an earlier attempt's, which may be on wip/<ID>: `told` warns of it
+        os.replace(_file(tid), _old(tid))
     if not c or _has(branch, c['on']):
         return branch
     _file(tid).write_text(json.dumps(c), encoding='utf-8')
@@ -88,7 +99,17 @@ def begin(tid: str, branch: str) -> str:
 def told(tid: str, branch: str) -> str:
     """What a task started on a merge is told beside its brief, or ''."""
     s = stacked(tid, branch)
-    return TOLD.format(tids=','.join(s['tids']), on=s['on'][:12], branch=branch) if s else ''
+    out = TOLD.format(tids=','.join(s['tids']), on=s['on'][:12], branch=branch) if s else ''
+    try:
+        o = json.loads(_old(tid).read_text(encoding='utf-8'))
+        on, tids = o['on'], ','.join(o['tids'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return out
+    wips = S.git('for-each-ref', f'--contains={on}', '--format=%(refname:short)', f'refs/heads/wip/{tid}',
+                 f'refs/heads/wip/{tid}-*').stdout.split()
+    if wips and not _has(branch, on):
+        out += WARNED.format(tids=tids, on=on[:12], wip=', '.join(wips), one=wips[0])
+    return out
 
 
 def pending(tid: str) -> bool:
