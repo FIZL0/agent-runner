@@ -882,9 +882,10 @@ PULL_DRIVER = r"""
 const page = require('fs').readFileSync(0, 'utf8').replace(/\r\n/g, '\n');
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const on = {}, els = {}, S = {}, PD = {}, HB = '', render = () => {}, atAll = () => false, getComputedStyle = () => ({overflowX: 'auto', transform: ''});
-let DR = null, noClick = false, inside = ['#body'], held = false, refreshes = 0, reduced = false, wide = false, ran = [];
+let DR = null, noClick = false, inside = ['#body'], refreshes = 0, reduced = false, wide = false, ran = [];
 const calm = () => reduced, shiftOf = () => ({m41: 0, m42: 0}), dragEnd = () => { DR = null }, closeSheet = () => { S.sheet = '' };
-const newsRefresh = () => { if (held) return false; refreshes++; return true };
+let said = [];
+const TK = {}, DK = {}, devTyped = () => false, keepTyped = () => true, toast = t => said.push(t), location = {reload() { refreshes++ }};
 const elem = () => ({style: {}, offsetWidth: 280, scrollTop: 0, set: new Set(), setAttribute(k, v) { this[k] = v }, append() {},
   classList: {add() {}, remove() {}, toggle() {}}, firstElementChild: {style: {}}, lastElementChild: {textContent: ''},
   animate(f) { ran.push(f); return {cancel() {}} }, getBoundingClientRect: () => ({left: 0, top: 50, width: 400})});
@@ -899,31 +900,32 @@ const fire = (t, x, y, n, o = {}) => { let kept = 0;
   on[t].forEach(f => f({target: el, touches: Array(n).fill().map((_, i) => ({identifier: i, clientX: x, clientY: y})), timeStamp: now += 100,
     cancelable: !o.late, preventDefault() { kept = 1 }}));
   return kept };
-eval(logic + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'", page.indexOf('/* F124: a swipe right anywhere'))) + `
+const at0 = page.indexOf('function newsRefresh(){'), real = page.slice(at0, page.indexOf('\n}', at0) + 3);
+eval(logic + real + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'", page.indexOf('/* F124: a swipe right anywhere'))) + `
 // a touch through these [dx, dy, options]: the moves it kept, the refreshes, whether it sprang back, how far the spinner got
 function touch(moves, o = {}) {
-  S.drawer = !!o.drawer; S.sheet = o.sheet || ''; S.obOpen = !!o.pop; DR = null; inside = o.inside || ['#body']; held = !!o.held; reduced = !!o.calm; wide = !!o.wide;
+  S.drawer = !!o.drawer; S.sheet = o.sheet || ''; S.obOpen = !!o.pop; DR = null; inside = o.inside || ['#body']; TK.rec = o.held && {}; S.f = {}; S.atts = {}; said = []; reduced = !!o.calm; wide = !!o.wide;
   box.scrollTop = o.top || 0; $('cview').hidden = !o.concept; refreshes = 0; ran = []; $('side').style.transform = ''; if (PULL) { PULL.style = {}; PULL.set.clear() }
   fire('touchstart', 100, 300, o.fingers || 1);
   const kept = moves.map(([dx, dy, m = {}]) => { if (m.top) box.scrollTop = m.top; if (m.hold) DR = {ready: true, hold: 1};
+    if (m.open) S.sheet = 'run';
     if (m.second) { fire('touchstart', 9, 9, 2); return 's' } return fire('touchmove', 100 + dx, 300 + dy, 1, m) }).join('');
   const mid = PULL ? [PULL.style.transform || '', PULL.set.has('ready'), PULL.lastElementChild.textContent] : [];
   fire(o.end || 'touchend', 0, 0, 0); if (SW) kept += '!';
-  return {kept, refreshes, back: ran.length, mid, go: !!PULL && PULL.set.has('go'), drawer: S.drawer, sheet: S.sheet, role: PULL && PULL.role, noClick};
+  return {kept, refreshes, back: ran.length, mid, go: !!PULL && PULL.set.has('go'), drawer: S.drawer, sheet: S.sheet, role: PULL && PULL.role, noClick, said};
 }
 const down = [[0, 5], [1, 9], [2, 60], [3, 90]];
 const out = {
   pull: touch(down), side: touch(down, {inside: ['#side'], drawer: true}), wide: touch(down, {wide: true}),
   short: touch([[0, 9], [0, 60]]), undone: touch([[0, 9], [0, 90], [0, 30]]), cancel: touch(down, {end: 'touchcancel'}),
   second: touch([[0, 9], [0, 90], [0, 0, {second: true}], [0, 95]]), twoFingers: touch(down, {fingers: 2}),
-  held: touch(down, {held: true}), calm: touch(down, {held: true, calm: true}),
+  opened: touch([[0, 9], [0, 90, {open: true}]]), held: touch(down, {held: true}), calm: touch(down, {held: true, calm: true}),
   up: touch([[0, -9], [0, 90]]), sidewaysLeft: touch([[-12, 2], [0, 90]]), slant: touch([[9, 10], [9, 90]]), wideSide: touch([[12, 2], [0, 90]], {wide: true}),
   scrolledList: touch(down, {top: 40}), scrolledFirst: touch([[0, 5, {top: 3}], [0, 90]]), begun: touch([[0, 9, {late: true}], [0, 90]]),
   sheet: touch(down, {sheet: 'run'}), popup: touch(down, {pop: true}), concept: touch(down, {concept: true}), row: touch([[0, 5], [0, 9, {hold: true}], [0, 90]]),
   box: touch(down, {inside: ['#body', 'textarea']}), iframe: touch(down, {inside: ['#body', 'iframe']}), dock: touch(down, {inside: ['#dock']}), terminal: touch(down, {inside: ['#feedtouch']}),
-  drawerSwipe: touch([[20, 0], [220, 90]]), sheetSwipe: touch([[0, 20], [0, 120]], {sheet: 'run', inside: ['#sheet']}),
+  drawerSwipe: touch([[20, 0], [220, 90]]), drawerClose: touch([[-20, 0], [-220, 90]], {inside: ['#side'], drawer: true}), sheetSwipe: touch([[0, 20], [0, 120]], {sheet: 'run', inside: ['#sheet']}),
 };
-globalThis.visualViewport = {scale: 2}; out.zoomed = touch(down);
 out.logic = [PULL_AT, pullAt(0), pullAt(-20), pullAt(70) < 70 && pullAt(200) > pullAt(70)];
 console.log(JSON.stringify(out));process.exit(0)`);
 """
@@ -946,12 +948,14 @@ def test_pull_refresh_f401(tmp: Path) -> None:
         eq([got[k][x] for x in ('kept', 'refreshes', 'back', 'go')], ['0111', 1, 0, True], f'{k}: refreshes once, kept from scrolling once it is a pull')
     eq(got['pull']['mid'][1:] + [got['pull']['role']], [True, 'Let go to refresh', 'status'], 'ready past the threshold, and said')
     check(got['pull']['noClick'], 'letting go presses nothing')
-    for k in ('short', 'undone', 'cancel', 'held'):
+    check(got['held']['said'], 'a held reload says why')
+    eq([got['drawerClose'][x] for x in ('kept', 'refreshes', 'drawer')], ['11', 0, False], 'a drawer swipe still closes it')
+    for k in ('short', 'undone', 'cancel', 'held', 'opened'):
         eq([got[k][x] for x in ('refreshes', 'back', 'go')], [0, 1, False], f'{k}: springs back')
     eq([got['second'][x] for x in ('kept', 'refreshes', 'back')], ['11s0', 0, 1], 'a second finger ends it')
     eq([got['calm'][x] for x in ('refreshes', 'back', 'go')], [0, 0, False], 'calm(): back at once')
     for k in ('up', 'sidewaysLeft', 'slant', 'wideSide', 'scrolledList', 'scrolledFirst', 'begun', 'sheet', 'popup', 'concept', 'row',
-              'box', 'iframe', 'dock', 'terminal', 'twoFingers', 'zoomed'):
+              'box', 'iframe', 'dock', 'terminal', 'twoFingers'):
         check('1' not in got[k]['kept'] and not got[k]['refreshes'] and not got[k]['back'], f'{k}: no pull', got[k])
     eq([got['drawerSwipe'][x] for x in ('kept', 'refreshes', 'drawer')], ['11', 0, True], 'a drawer swipe still opens the drawer')
     eq([got['sheetSwipe'][x] for x in ('refreshes', 'sheet')], [0, ''], 'a sheet swipe still closes the sheet')

@@ -515,14 +515,15 @@ document.addEventListener('touchmove',e=>{
 /* F401: pull to refresh: a touch that starts with all under it at the top and moves mostly down. The spinner follows the
    finger; let go past PULL_AT it does what Refresh does, or springs back. Where that may start: the main view and the sidebar */
 const atTop=scr=>scr.every(s=>s[0].scrollTop<=0);
+const pullFree=()=>!S.sheet&&!S.obOpen&&$('cview').hidden!==false;
 function pullPane(el,scr){
-  const zoomed=(globalThis.visualViewport||{}).scale>1.01;  // a finger pans a zoomed page
-  return !S.obOpen&&$('cview').hidden!==false&&!zoomed&&atTop(scr)?el.closest('#body,#side'):null;
+  const p=pullFree()&&atTop(scr)?el.closest('#body,#side'):null;if(!p||PULL)return p;
+  PULL=document.createElement('div');PULL.className='pull';PULL.setAttribute('role','status');PULL.innerHTML='<i></i><span></span>';document.body.append(PULL);  // there before it has words, so they are read out
+  return p;
 }
 const pullCSS=at=>({transform:`translate(-50%,${at}px)`,opacity:Math.min(1,at/30)});
 const pullSay=t=>{const s=PULL.lastElementChild;if(s.textContent!==t)s.textContent=t};
 function pullStart(w){
-  if(!PULL){PULL=document.createElement('div');PULL.className='pull';PULL.setAttribute('role','status');PULL.innerHTML='<i></i><span></span>';document.body.append(PULL)}
   w.on=w.pl=true;if(DR)dragEnd();
   const r=w.pull.getBoundingClientRect();PULL.style.left=r.left+r.width/2+'px';PULL.style.top=r.top+'px';
   w.base=Math.max(0,grab(PULL,'m42',0));PULL.classList.remove('go');
@@ -534,7 +535,7 @@ function pullMove(w,dy){
 }
 function pullEnd(w,done){
   noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;
-  if(done&&w.d>=PULL_AT&&newsRefresh()){PULL.classList.add('go');pullSay('Refreshing');return}
+  if(done&&w.d>=PULL_AT&&pullFree()&&newsRefresh()){PULL.classList.add('go');pullSay('Refreshing');return}
   PULL.classList.remove('ready');pullSay('');PULL.style.transform=PULL.style.opacity='';
   springRun(PULL,springFrames(w.px,0,0).map(x=>Math.max(0,x)),pullCSS);
 }

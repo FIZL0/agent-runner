@@ -336,8 +336,8 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - **Pull to refresh.** On touch, a finger that starts in the main view or the sidebar with everything under it at its top
   and moves mostly down pulls a small spinner (`.pull`) after it, with resistance (`pullAt()`). Past 70px the spinner is
   ready, and letting go does what Refresh does (`newsRefresh()`); if Refresh is held, or the pull was short or
-  cancelled, it springs back, at once under `calm()`. Not over a sheet, popup or concept, nor in a text box, an iframe, a row being
-  dragged or a zoomed page; a second finger ends it. The document stays locked, so the browser's own pull never fires.
+  cancelled, it springs back, at once under `calm()`. Not over a sheet, popup or concept, nor in a text box, an iframe or a row
+  being dragged; a second finger ends it. The document stays locked, so the browser's own pull never fires.
 - A swipe leaves text boxes, sideways scrollers, a row being dragged and mostly vertical moves alone.
 - Every control is a `button`, `a` or form field, reachable by Tab, with a visible `:focus-visible` ring. Esc closes the topmost thing only.
 - Live words (the talk line, the toast) have `role="status"`.
