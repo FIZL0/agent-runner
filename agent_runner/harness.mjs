@@ -388,8 +388,9 @@ function piCredentials() {
         try {
           const data = all();
           const next = await fn(data[id]);
-          if (JSON.stringify(next) === JSON.stringify(data[id])) return next;
-          if (next === undefined) delete data[id]; else data[id] = next;
+          // undefined says no change (B771: another session refreshed the token first); only delete() removes a login
+          if (next === undefined || JSON.stringify(next) === JSON.stringify(data[id])) return data[id];
+          data[id] = next;
           save(data);
           return next;
         } finally { unlock(); }
