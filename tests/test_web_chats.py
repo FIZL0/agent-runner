@@ -1721,5 +1721,33 @@ def test_plus_chat_b762(tmp: Path) -> None:
     eq([re.sub('<[^>]*>', '', o['homeAll']), o['homeOne']], ['Project', ''], "Runner Home's own page is unchanged")
 
 
+def test_first_lines_b766(tmp: Path) -> None:
+    """B766: every line of a session is reachable: with nothing older to scroll to, an upward scroll moves the frame till
+    its first line is clear of the top bar, a gap over the working lines or not; a long chat is as it was."""
+    if not shutil.which('node'):
+        print('  (no node here: the first lines test is skipped)')
+        return
+    spot = {'main': 800, 'bar': 60, 'dock': 180, 'row': 56, 'high': 900, 'pad': 12, 'cell': 20, 'foot': {'top': 38}, 'short': 0, 'off': 0}
+    new = ['❯ my message', '', '● Running a tool', '  ⎿ $ ls'] + [''] * 20 + ['● Churning… (7s)', '  Session renamed to: x', '']
+    full = ['❯ my message'] + ['words'] * 20 + ['', '● Churning… (7s)', '']
+    code = ['❯ my message', '', '', '', '', ''] + ['words'] * 10 + ['']
+    state = {'off': 0, 'far': 212, 'jump': False, 'slim': False}
+    got = logic_js([['feedGap', new, len(new)], ['feedGap', full, len(full)], ['feedGap', code, len(code)],
+                    ['feedGap', [''] * 20 + ['● Churning… (7s)'], 21], ['feedGap', ['hi'] + [''] * 20, 21],
+                    ['feedSpot', {**spot, 'top': True}], ['feedSpot', {**spot, 'top': True, 'off': 9999}], ['feedSpot', spot],
+                    ['feedSpot', {**spot, 'top': True, 'short': 5}], ['feedSpot', {**spot, 'top': True, 'short': 34, 'off': 9999}],
+                    ['feedSpot', {**spot, 'top': True, 'hold': 60, 'dock': 260}],
+                    ['feedShare', -10, {**state, 'top': True}], ['feedShare', -10, {**state, 'top': True, 'off': 208}],
+                    ['feedShare', -10, {**state, 'top': True, 'off': 212}], ['feedShare', 10, {**state, 'top': True, 'off': 212}],
+                    ['feedShare', -10, state]])
+    eq(got[:5], [True, False, False, False, False], 'a gap over the working lines, and nothing else, is seen')
+    eq((got[5]['t'], got[5]['far']), (-152, 212), 'at rest the working lines stand on the box')
+    eq(got[6]['t'], 60, 'pulled down, the first line is clear of the bar')
+    eq(got[7]['far'], 124, 'a long chat goes as far as it did')
+    eq((got[8]['t'], got[8]['far']), (508, 0), 'a screen whose words fit has nothing to pull')
+    eq((got[9]['t'], got[10]['t']), (60, 60), 'a short one too long for its room is reached; pulled, its place is kept')
+    eq(got[11:], [-10, -4, 0, 10, 0], "the frame's share, to its end, and back; with older lines the session's first")
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_swipe_or_scroll_b167), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_swipe_or_scroll_b167), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762), in_tmp(test_first_lines_b766)]))

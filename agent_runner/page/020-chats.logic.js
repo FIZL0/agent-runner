@@ -60,21 +60,30 @@ function feedFoot(lines,dim,lit){
 }
 /* where the session's frame goes. o: main its room, bar and dock what stands over it, row the slim message box's, high the
    frame's own height, pad its terminal's, cell a line, rows, foot (feedFoot's; null: show all), short (its words end at
-   this row, with nothing above to scroll to; 0 when it is full), whole, last (whole: the last row with words), off how far the reader has scrolled it down, hold:
-   the shift to keep (scrolled up: what stands over it may change, its lines stay). t: its shift; off: that, past its rest;
+   this row, with nothing above to scroll to; 0 when it is full), whole, last (whole: the last row with words), off how far the reader has scrolled it down, top: the
+   session has nothing older (its first line may go clear of the bar), hold: the shift to keep (scrolled up: what stands over it may change, its lines stay). t: its shift; off: that, past its rest;
    far: how far it can go; cut: how much of its bottom is hidden */
 const FOOT_ROWS=6;  // rows past the edge for the lines at the bottom, so more or fewer of them never resize the session
 function feedSpot(o){
   if(o.whole||!o.foot)return{t:o.main-o.dock-(o.whole&&o.last?Math.min(o.high,o.pad+o.last*o.cell):o.high),off:0,far:0,cut:0};
   const end=o.pad+o.foot.top*o.cell, words=o.short?o.pad+o.short*o.cell:end;
-  const rest=o.main-o.dock-words, low=o.short?rest:Math.max(rest,Math.min(o.bar,o.main-o.row-end));
+  const rest=o.main-o.dock-words, low=Math.max(rest,o.top?o.bar:o.short?rest:Math.min(o.bar,o.main-o.row-end));
   const t=o.hold!=null?Math.min(o.hold,low):rest+Math.min(Math.max(o.off||0,0),low-rest);
   return{t,off:Math.max(0,t-rest),far:low-rest,cut:Math.max(0,o.high-end)};
 }
+/* B766: has the screen a gap over the agent CLI's working lines, right above its prompt (row top)? Then it is not full, and
+   there is nothing older to scroll to */
+function feedGap(lines,top){
+  for(let y=top-1,blank=0,seen=0;y>=0;y--){
+    if(lines[y].trim()){if(seen&&blank>3)return true;if(top-y>8)return false;seen=1;blank=0}else blank++;
+  }
+  return false;
+}
 /* B192: a scroll of px (down is more): the part the frame takes, its lines going with the finger; the rest is the session's.
    Up only once the session itself is scrolled up (it stops following its new words) and the bars are away, to bring lines
-   into the room they left; down all of it before the session, so at the session's end the frame is at rest again */
-function feedShare(px,o){return px<0?o.jump&&o.slim?-Math.min(Math.max(0,o.far-o.off),-px):0:Math.min(o.off,px)}
+   into the room they left, or once it has nothing older (top, B766), to bring its first lines from under the top bar;
+   down all of it before the session, so at the session's end the frame is at rest again */
+function feedShare(px,o){return px<0?o.top||o.jump&&o.slim?-Math.min(Math.max(0,o.far-o.off),-px):0:Math.min(o.off,px)}
 /* B192: the bars after a scroll of px. o: slim (they are away), run (how far it went one way). Away 8px up, back 8px down */
 function feedBars(px,o){const run=px*o.run<0?px:o.run+px;return{run,slim:run<=-8?true:run>=8?false:o.slim}}
 /* which chips a session has: only what there is to say. o: foot, live (the run's /live), working */
