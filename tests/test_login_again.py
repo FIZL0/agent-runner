@@ -189,7 +189,7 @@ try:
         check(False, 'a huge frame is refused')
     except EOFError:
         check(True, 'a huge frame is refused')
-    eq(re.search(r"code===(\d+)", W.PAGE_TEXT.split("d.session!=='login'")[1])[1], str(L.ENDED), 'the page knows the same end code')
+    eq(re.search(r"code===(\d+)", W.PAGE_TEXT.split("d.session!==LG.name")[1])[1], str(L.ENDED), 'the page knows the same end code')
 finally:
     run.stop()
     home.stop()

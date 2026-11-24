@@ -730,5 +730,105 @@ def test_agent_picker_f405(tmp: Path) -> None:
             eq([(p['value'], p['found']) for p in k['picks']], [('claude', False)], 'none found: the default is marked')
 
 
+LOGIN_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const set = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const S = {f: {}, ob: [], setOpen: {}, set, snap: {}, draft: {}, sheet: ''}, esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const I = {ext: ''}, card = t => t, emptyCard = card, obCards = () => '', controlOf = () => null, foldIn = (k, t) => t, SHEETS = {};
+const els = {}, $ = n => els[n] = els[n] || {hidden: false, h: '', value: '', kids: [], appendChild(x) { this.kids.push(x) }}, setHTML = (el, h) => { el.h = h };
+const win = {}, ears = {}, clicks = [], location = {origin: 'o'}, HOME_PAGE = false, HB = '', T = 'TT', atAll = () => false, tq = u => u;
+const document = {hidden: false, querySelector: () => null, querySelectorAll: () => [], addEventListener: (k, f) => { if (k === 'click') clicks.push(f) }, createElement: () => ({contentWindow: win, remove() {}})};
+const addEventListener = (k, f) => { ears[k] = f }, setInterval = () => 0, render = () => {}, toast = () => {}, openSheet = n => { S.sheet = n }, loadProjects = () => {};
+let logins = {}, term = {ok: true}, asked = [], typed = [];
+const fetch = async u => { asked.push(u); return {ok: true, json: async () => u === 'logins' ? logins : term} };
+const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 2)) };
+const says = text => { win.term = {input: s => typed.push(s), buffer: {active: {length: 1, getLine: () => ({isWrapped: false, translateToString: () => text})}}} };
+const press = sel => clicks.forEach(f => f({target: {closest: s => s === sel[0] ? {dataset: sel[1]} : null}}));
+const provider = (name, ok, login) => ({name, ok, where: ok ? 'OAuth in auth.json' : 'no login', terminal: name === 'claude' ? 'login' : name === 'ollama' ? '' : 'login-' + name, login: {state: '', said: '', reopened: [], ...login}});
+const all = (over = {}) => ({ok: true, providers: ['claude', 'copilot', 'codex', 'gemini', 'ollama'].map(n => over[n] || provider(n, ['claude', 'ollama'].includes(n)))});
+eval(logic + slice('const settingId=', '/* the stepper:') + slice('/* F406c: a model', "/* F150: a project's") + `
+const tell = d => ears.message({origin: 'o', source: win, data: {session: LG.name, ...d}});
+const row = id => settingRow(settingOf(id), {}), draft = (id, text) => { const f = setField(id, 'project'); S.f[f] = text; S.draft[f] = {id, side: 'project', text} };
+const out = {};
+(async () => {
+  draft('models.code', 'copilot:gpt-5');
+  out.nokey = row('models.code');
+  logins = all(); await loadLogins();
+  out.none = row('models.code'); out.other = row('models.fix');
+  draft('models.fallback', 'codex:gpt-5\\nopus'); out.fallback = row('models.fallback');
+  out.kinds = kindsRow({id: 'x', name: 'x', desc: '', kinds: ['F']}, {...settingOf('models.kinds'), has_project: true, project: {F: 'gemini:pro'}});
+  const undo = [{table: 'models', key: 'code', now: {has: true, value: 'copilot:gpt-5'}}, {table: 'models', key: 'fallback', now: {has: true, value: ['codex:x']}}];
+  out.waits = loginWaits(undo, loginsNow(set, S.logins));
+  out.list = providersHTML(set);
+  // Copilot asks where it is; a GitHub Enterprise domain
+  asked = []; press(['[data-plogin]', {plogin: 'copilot'}]); await settle(); out.where = [S.sheet, SHEETS.login(), [...asked]];
+  term = {ok: false, out: 'must be a bare host name'}; loginAt('https://x/'); await settle(); out.refused = [$('loginsay').h, $('loginbtns').h];
+  press(['[data-plogin]', {plogin: 'copilot'}]); term = {ok: true}; asked = [];
+  loginAt('company.ghe.com'); await settle(); out.ghe = [[...asked], LG.frame.src];
+  logins = all({copilot: provider('copilot', false, {state: 'running'})});
+  says('Open https://company.ghe.com/login/device and enter the code ABCD-1234'); tell({state: 'up'}); await settle();
+  out.code = [$('loginsay').h, $('loginbtns').h, $('logincode').hidden]; out.going = row('models.code');
+  $('logininput').value = 'k-SECRET'; loginCode(); out.typed = [[...typed], asked.join(' ').includes('SECRET'), $('logininput').value];
+  logins = all({copilot: provider('copilot', false, {state: 'failed', said: 'no such host'})});
+  tell({state: 'down', code: 4001}); await settle(); out.failed = [$('loginsay').h, $('loginbtns').h, row('models.code')];
+  asked = []; press(['[data-plogin]', {plogin: 'copilot'}]); press(['[data-loginhost]', {}]); await settle(); out.github = [...asked];
+  says(''); logins = all(); tell({state: 'up'}); await settle();
+  logins = all({copilot: provider('copilot', true, {state: 'done', said: 'copilot is logged in', reopened: ['F7']})});
+  tell({state: 'down', code: 4001}); await settle(); out.done = [$('loginsay').h, $('loginbtns').h, row('models.code'), $('loginterm').hidden];
+  out.waited = loginWaits(undo.slice(0, 1), loginsNow(set, S.logins)); out.again = providersHTML(set);
+  press(['[data-plogin]', {plogin: 'gemini'}]); out.gemini = SHEETS.login(); loginOpen(); out.claude = [LG.name, SHEETS.login()];
+  console.log(JSON.stringify(out));
+})()`);
+"""
+
+
+def test_provider_login_f406c(tmp: Path) -> None:
+    """F406c: beside a [models] setting that names a provider with no login: Log in, in the login sheet; the provider
+    list has it too; how it ended is said."""
+    if not shutil.which('node'):
+        return
+    pi = tmp / 'pi'
+    repo = fake_repo(tmp)
+    env = {k: v for k, v in os.environ.items() if k not in ('GEMINI_API_KEY', 'COPILOT_GITHUB_TOKEN')}
+    with mock.patch.dict(os.environ, {**env, 'PI_CODING_AGENT_DIR': str(pi)}, clear=True):
+        S.init(repo)
+        (tmp / 'set.json').write_text(json.dumps(U.settings()), encoding='utf-8')
+    (tmp / 'login.js').write_text(LOGIN_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'login.js'), str(W.PAGE), str(tmp / 'set.json')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the logins', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    check(f'{CF.RUNNER} login copilot' in o['nokey'] and 'data-plogin' not in o['nokey'], 'where /logins is refused: the command', o['nokey'])
+    check('copilot is not logged in. Its tasks wait for the login.' in o['none'] and 'data-plogin="copilot"' in o['none']
+          and '>Log in</button>' in o['none'], 'no login: said, with Log in', o['none'])
+    check('data-plogin' not in o['other'], 'a setting on claude has none')
+    check('codex is not logged in. It is passed over until the login.' in o['fallback'], 'a fallback', o['fallback'])
+    check('data-plogin="gemini"' in o['kinds'], 'a kind', o['kinds'])
+    eq(o['waits'], 'Tasks on copilot wait for the login. codex has no login yet', 'what a Save says')
+    check('data-login>Log in again' in o['list'] and all(f'data-plogin="{p}"' in o['list'] for p in ('copilot', 'codex', 'gemini'))
+          and 'data-plogin="ollama"' not in o['list'], "the provider list's", o['list'])
+    eq((o['where'][0], o['where'][2]), ('login', []), 'Copilot asks first, with no terminal yet')
+    check('data-loginhost>github.com' in o['where'][1] and 'data-f="logindomain"' in o['where'][1], 'github.com or a domain', o['where'])
+    check('bare host name' in o['refused'][0] and 'data-plogin="copilot">Start again' in o['refused'][1], 'a refused domain: why, and again', o['refused'])
+    eq(o['ghe'], [['terminal/login-copilot~company.ghe.com'], 't/TT/login-copilot~company.ghe.com/?fontSize=12'], 'the domain’s terminal')
+    check('enter the code ABCD-1234' in o['code'][0] and 'href="https://company.ghe.com/login/device"' in o['code'][1] and not o['code'][2],
+          'its code and its page', o['code'])
+    check('Login under way' in o['going'] and '>Show the login</button>' in o['going'], 'the row says it goes on', o['going'])
+    eq(o['typed'][1:], [False, ''], 'what is typed goes to the terminal only')
+    eq(o['typed'][0], ['k-SECRET'], 'and gets there')
+    check('The login failed: no such host' in o['failed'][0] and 'Start again' in o['failed'][1], 'failed: why, and again', o['failed'])
+    check('v-bad">The login failed: no such host' in o['failed'][2] and '>Log in</button>' in o['failed'][2], 'on the row too', o['failed'])
+    eq(o['github'][0], 'terminal/login-copilot', 'github.com has no domain')
+    check('copilot is logged in. Starts again: F7' in o['done'][0] and 'Close' in o['done'][1] and o['done'][3], 'done: said', o['done'])
+    check('copilot: Logged in' in o['done'][2] and 'data-plogin' not in o['done'][2], 'the row says logged in', o['done'])
+    eq(o['waited'], '', 'and nothing waits')
+    check('>Log in again</button>' in o['again'].split('data-k="prov:copilot"')[1].split('data-k=')[0], 'the list: Log in again', o['again'])
+    check('type="password"' in o['gemini'] and 'Log in to gemini' in o['gemini'], 'a key is typed hidden')
+    check(o['claude'][0] == 'login' and 'Send code' in o['claude'][1] and 'password' not in o['claude'][1], "claude's is as it was", o['claude'])
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405)]))
+    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c)]))

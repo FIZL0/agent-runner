@@ -60,6 +60,32 @@ function agentOptions(k,now){
 }
 const agentSays=p=>p.bad?p.bad:p.path?`At ${p.path}${p.version?`, version ${p.version}`:''}`:'';
 const LOGIN_SAYS={in:'Logged in',out:'Not logged in',none:'No login needed'};  // claude's own is not checked here, and `says` so
+/* F406c: the providers other than claude that setting `key` of [models] names in value `v`, of those in `names` */
+function modelProviders(key,v,names){
+  if(key==='providers'||key==='local')return [];
+  const ms=typeof v==='string'?[v]:v&&typeof v==='object'?Object.values(v):[];
+  return [...new Set(ms.filter(m=>typeof m==='string'&&m.includes(':')).map(m=>m.slice(0,m.indexOf(':')).trim()))].filter(p=>p!=='claude'&&names.includes(p));
+}
+/* a provider's login: its row in the settings with what /logins (`logins`, none where it is refused) says of it now */
+function loginNow(p,logins){
+  const l=(logins||[]).find(x=>x.name===p.name), state=!l||p.state==='unchecked'||p.state==='none'?p.state:l.ok?'in':'out';
+  return{...p,state,says:state==='in'&&l?l.where:p.says,terminal:l?l.terminal:'',run:l&&l.login&&l.login.state||'',said:l&&l.login&&l.login.said||''};
+}
+const loginsNow=(d,logins)=>(d&&d.providers||[]).map(p=>loginNow(p,logins));
+/* what a setting's model does while its provider has no login */
+const loginLater=key=>key==='fallback'?'It is passed over until the login.':key==='code'||key==='kinds'?'Its tasks wait for the login.':'What runs on it needs the login.';
+/* what the last Save left waiting for a login, in words; '' for nothing (`undo`: what it replaced) */
+function loginWaits(undo,rows){
+  const names=rows.map(p=>p.name), out=rows.filter(p=>p.state==='out').map(p=>p.name);
+  const by=keys=>[...new Set(undo.filter(x=>x.table==='models'&&keys(x.key)&&x.now&&x.now.has).flatMap(x=>modelProviders(x.key,x.now.value,names)))].filter(p=>out.includes(p));
+  const tasks=by(k=>k==='code'||k==='kinds'), rest=by(()=>true).filter(p=>!tasks.includes(p));
+  return [tasks.length?`Tasks on ${tasks.join(', ')} wait for the login`:'',rest.length?`${rest.join(', ')} ${rest.length===1?'has':'have'} no login yet`:''].filter(Boolean).join('. ');
+}
+/* what a login's terminal shows: the link to open (the last one) and the code to enter there */
+function loginAsks(text){
+  const u=String(text).match(/https?:\/\/[^\s]+/g)||[], c=/enter the code ([A-Za-z0-9-]+)/.exec(String(text));
+  return{url:u.length?u[u.length-1]:'',code:c?c[1]:''};
+}
 /* a value as a person reads it */
 function settingSays(k,t){
   if(k.words&&k.words[t])return k.words[t];
