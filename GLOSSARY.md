@@ -337,7 +337,7 @@ _Avoid_: keypad, shortcut bar, toolbar
 The buttons and keys that change the run itself from the run page or agent-runner ui: slots, pause, force, stop, and stopping one slot's task
 _Said_: run controls
 _On screen_: Run controls
-_In code_: RUN_CONTROLS, run_control, controls(), controlReq
+_In code_: RUN_CONTROLS, run_control, controls(), controlReq, answer_of, row_labels
 _Avoid_: run buttons, admin controls
 
 **Concept chat**:

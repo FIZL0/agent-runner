@@ -480,8 +480,6 @@ function needBody(n,url){const d=needD(n), list=(t,h,xs)=>xs.length?`<section><h
 function taskParas(text){return String(text||'').split(/\n+|(?= \| )|(?= — )|(?= BLOCKED: )|(?=\s\(?\d\)\s)/).map(x=>x.trim()).filter(Boolean)}
 /* whose reply box has a button of its own: nothing else answers it, or the answers take no words with them */
 function needReplies(n){return n.label!=='TOOL'&&(!answerOpts(n).length||['DECIDE','STUCK','PITCH'].includes(n.label))}
-/* what an answer button sends; note: the popup's reply box */
-function answerArgs(n,v,note){note=String(note||'').trim();return{tid:n.id,text:v,button:true,...(note?{note}:{})}}
 /* B138: an answered item stays off Needs you for a while (GONE_MS), so a snapshot taken before the answer landed
    does not bring a stale card back; gone maps an id to when it was answered */
 const GONE_MS=30000;
@@ -666,6 +664,7 @@ function controlReq(c,o){
   if(c.needs==='n')args.n=String(o.n==null?'':o.n).trim();
   if(c.needs==='id'||(c.needs==='pick'&&o.tid))args.tid=o.tid||'';
   if(c.confirm&&o.sure===true)args.confirm=true;
+  if(c.answer){args.text=o.text||'';const note=String(o.note||'').trim();if(note)args.note=note}  // F180: the label pressed, the popup's reply box
   return {name:'run_control',args};
 }
 /* a control's button pressed: {ask:true} for one with a confirm question not yet answered in the page (its Yes
@@ -1208,7 +1207,7 @@ function pageNews(s,mine,later){
 function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploading?'Wait for the attachments to finish uploading.'
   :o.form?'Save or close the device form first. It is not kept over a refresh.'
   :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
-if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,answerArgs,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1407,7 +1406,7 @@ function obDone(it,j){
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
-  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&j.gone))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&(j.gone||it.args.text)))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.shelved){if(S.gone)delete S.gone[it.shelved];toast(j.said||`${it.say}: done`);snapNow()}  // F184: Needs you may show it at once
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
@@ -1678,7 +1677,12 @@ const ctlSure=(c,tid)=>sureHTML(cutsOff(c)+c.confirm.split('{id}').join(tid||'')
    keys ui_model allowed on it), each through the one data-ctl handler, and the confirm one asks in place */
 const obActs=(x,where)=>!!x.ctl&&(controlOf(x.ctl.split(':')[0])||{}).where===where;
 const obRun=x=>!!x.ctl&&!['queue','shelved','release','need','concept'].includes((controlOf(x.ctl.split(':')[0])||{}).where);
-const actBtns=(acts,tid)=>(acts||[]).map(controlOf).filter(Boolean).map(c=>`<button class="btn${ctlBusy(c.key,tid)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(tid)}">${esc(c.label)}</button>`).join('');
+const actBtns=(acts,tid,labels={},pri='')=>(acts||[]).map(controlOf).filter(Boolean).map(c=>`<button class="btn${c.key===pri?' pri':''}${ctlBusy(c.key,tid)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(tid)}">${esc(labels[c.key]||c.label)}</button>`).join('');
+/* F180: a Needs you row's fixed answers among its actions (the first is the main button; a pitch draws only that one,
+   Not this… has the rest), and its other actions */
+const isAnswer=k=>!!(controlOf(k)||{}).answer;
+const ansBtns=n=>{const ks=(n.acts||[]).filter(isAnswer);return actBtns(n.label==='PITCH'?ks.slice(0,1):ks,n.id,n.labels,ks[0])};
+const restBtns=n=>actBtns((n.acts||[]).filter(k=>!isAnswer(k)),n.id,n.labels);
 const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+':'+tid).map(c=>ctlSure(c,tid)).join('');
 function slotRow(s){
   if(!s.task)return `<div class="srow" data-k="slot:${esc(s.name)}:"><div class="row"><div class="who">${esc(s.name)}</div><div class="grow small">Idle: nothing it can start right now</div></div></div>`;
@@ -1710,9 +1714,9 @@ function pitchNo(n,i){
 function needBtns(n,i,more=''){
   const open=a=>a?`<a class="btn" href="${esc(a)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:'';
   if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id];
-    return `<div class="btns"><button class="btn pri" data-ans="${i}" data-v="Approve">Approve</button><button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${actBtns(n.acts,n.id)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?pitchNo(n,i):''}`}
+    return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?pitchNo(n,i):''}`}
   if(n.label==='TOOL')return '';  // F168: nothing to answer, it clears once the tool is back
-  return `<div class="btns">${answerOpts(n).map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}${more}${actBtns(n.acts,n.id)}${open(n.url)}</div>${actSure(n.acts,n.id)}`;
+  return `<div class="btns">${ansBtns(n)}${more}${restBtns(n)}${open(n.url)}</div>${actSure(n.acts,n.id)}`;
 }
 const needCard=(n,i)=>card(needTap(n)+needBtns(n,i),'need',`data-k="need:${esc(n.id)}"`);
 /* F162: the popup of one Needs you item: everything about it, its answers always on screen at the foot */
@@ -3292,14 +3296,16 @@ document.addEventListener('click',async e=>{
   if(q('[data-unsure]')){S.sure=null;render(true);return}
   if(x=q('[data-ctl]')){const c=controlOf(x.dataset.ctl);if(!c)return;
     const n=c.needs==='n'?String(S.f.slotsn||'').trim():'', tid=x.dataset.tid||'';
-    const rq=controlClick(c,{n,tid,sure:x.hasAttribute('data-sure')});
+    const need=c.answer?needOf(tid):null;if(c.answer&&!need)return;
+    const text=need?(need.labels||{})[c.key]||c.label:'', note=need&&x.closest('#sheet')?S.f[askField(tid)]:'';  // F180
+    const rq=controlClick(c,{n,tid,sure:x.hasAttribute('data-sure'),text,note});
     if(rq.ask){S.sure=c.key+(tid?':'+tid:'');render(true);return}  // F82: asked in the page, no browser dialog
     if(c.needs==='n'&&!/^\d+$/.test(n))return toast('Type how many slots first',true);
     S.sure=null;S.f.slotsn='';
     if(c.chat){const n=c.where==='need'&&(S.snap.needs||[]).find(x=>x.id===tid);  // B139, C35: it asks a new chat
       newChat(rq.name,rq.args,`${c.label} ${tid}`,n?needChatAsk(n):c.where==='concept'?'':`do ${tid} here`);return}
     if(S.sheet)closeSheet();
-    outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:c.label+(tid?` ${tid}`:''),...(c.where==='need'?{need:tid}:c.where==='concept'?{concept:tid}:c.where==='shelved'?{shelved:tid}:{})});return}  // F124: through the outbox
+    outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:need?`${tid} · answered “${text}”`:c.label+(tid?` ${tid}`:''),...(c.where==='need'?{need:tid}:c.where==='concept'?{concept:tid}:c.where==='shelved'?{shelved:tid}:{})});return}  // F124: through the outbox
   if(x=q('[data-pitchopen]')){const n=S.snap.needs[+x.dataset.pitchopen];if(!n)return;  // F98
     S.pitchOpen={...(S.pitchOpen||{}),[n.id]:!(S.pitchOpen||{})[n.id]};S.sure=null;render(true);return}
   if(x=q('[data-pitchno]')){const n=S.snap.needs[+x.dataset.pitchno];if(!n)return;
@@ -3318,9 +3324,6 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
   if(q('[data-newtalk]'))return newTalk();  // F157
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
-  if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;  // B138: the plan command, no AI session
-    // F137: the card folds away at once (obHide) and stands as 'sending' until answer returns (obDone)
-    outbox('answer',answerArgs(n,x.dataset.v,x.closest('#sheet')?S.f[askField(n.id)]:''),{need:n.id,say:`${n.id} · answered “${x.dataset.v}”`});return}
   if(x=q('[data-needopen]')){needOpen(x.dataset.needopen);return}  // F162
   if(x=q('[data-askfold]')){S.askFold={...S.askFold,[x.dataset.askfold]:!S.askFold[x.dataset.askfold]};render(true);return}
   if(q('[data-askload]')){S.askWhy={};S.askText={};render(true);askLoad(S.sheetArg);return}

@@ -674,6 +674,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     for where, rows in (('queue', queue), ('shelved', shelved), ('need', needs), ('concept', concepts), ('session', sessions)):
         for r in rows:
             r['acts'] = row_acts(where, r)  # C34, C35
+            if labels := row_labels(where, r):  # F180
+                r['labels'] = labels
     fix = fixups(st, ls)
     return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
             'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
@@ -881,6 +883,23 @@ SHUTDOWN_ASK = ('This computer shuts down once the run stops or goes idle, and e
 UPGRADE_ASK = 'The run restarts on the new version between merges. Running tasks keep going. Upgrade?'
 RESTART_ASK = 'The run restarts between merges and reads its settings again. Running tasks keep going. Restart?'
 WIP_DROP_ASK = 'These edits are deleted here and on the remote, and cannot be brought back. Drop them?'
+def answer_of(row: dict, key: str) -> str:
+    """F180: the fixed answer the answer action `key` stands for on a Needs you row ('' none): need_yes and need_no
+    when its answers are Yes and No, else need_answerN its Nth."""
+    if row.get('label') == 'TOOL':
+        return ''
+    xs = [a['value'] for a in (row['answers'] if 'answers' in row else need_answers(row))]
+    keys = ['need_yes', 'need_no'] if xs == ['Yes', 'No'] else [f'need_answer{j}' for j in range(1, len(xs) + 1)]
+    return dict(zip(keys, xs)).get(key, '')
+
+
+def _answer_action(key: str, label: str, tui: str, **more) -> dict:
+    """F180: one fixed answer's entry in RUN_CONTROLS; its TUI key works in the answer tab only."""
+    return {'key': key, 'label': label, 'tui': tui, 'where': 'need', 'answer': True, 'tab': 'answer',
+            'fits': lambda r: bool(answer_of(r, key)), 'label_of': lambda r: answer_of(r, key), **more}
+
+
+ANSWER_MAX, ANSWER_KEYS = 12, 'abcdefg'  # F180: the most fixed answers a row draws, and the TUI keys of the first ones
 RUN_CONTROLS = (
     {'key': 'slot_add', 'label': 'Slot +1', 'argv': ('slots', '+1'), 'tui': '+', 'where': 'run'},
     {'key': 'slot_remove', 'label': 'Slot -1', 'argv': ('slots', '-1'), 'tui': '-', 'where': 'run'},
@@ -939,6 +958,12 @@ RUN_CONTROLS = (
     # C35: the other panels' row actions, the same shape: 'need' (a Needs you item), 'concept', 'session' (a control
     # session cN). 'fn' one of ROW_FNS run with the row's id (a new chat, a close); 'chat' it opens a chat; 'said' its
     # toast, and a Needs you item it is done with leaves the list. '{id}' in a confirm is the row's id.
+    # F180: its fixed answers (`need_answers`), each labelled by its row ('label_of', the snapshot row's `labels`):
+    # 'answer' runs `answer` with that label, 'tab' the TUI tab its key works in, 'help' '' not in the keys list
+    _answer_action('need_yes', 'Yes', 'y', help='yes (answer tab)'),
+    _answer_action('need_no', 'No', 'n', help='no (answer tab)'),
+    *(_answer_action(f'need_answer{j}', f'Answer {j}', ANSWER_KEYS[j - 1:j], help="a pick's options" if j == 1 else '',
+                     help_keys='a b c' if j == 1 else '') for j in range(1, ANSWER_MAX + 1)),
     {'key': 'need_later', 'label': 'Later', 'argv': ('plan', 'shelve', '{id}'), 'tui': 'L', 'where': 'need',
      'said': '{id} is set aside until you bring it back', 'fits': lambda r: r.get('label') not in ('PITCH', 'TOOL')},
     {'key': 'need_chat', 'label': 'Chat', 'fn': 'need_chat', 'chat': True, 'tui': 'N', 'where': 'need',
@@ -1006,6 +1031,12 @@ def row_acts(where: str, row: dict) -> list[str]:
     return [c['key'] for c in RUN_CONTROLS if c['where'] == where and c.get('fits', lambda r: True)(row)]
 
 
+def row_labels(where: str, row: dict) -> dict[str, str]:
+    """F180: {key: label} of the actions allowed on `row` whose label is the row's own."""
+    return {c['key']: c['label_of'](row) for c in RUN_CONTROLS
+            if c['where'] == where and 'label_of' in c and c['fits'](row)}
+
+
 def queue_row(tid: str) -> dict | None:
     """C34: the queue's row of task `tid` as TODO.md has it now (None: not queued)."""
     return next((q for q in queue_rows(P.lines(S.C.todo), _state(S.run_up())) if q['id'] == tid), None)
@@ -1042,14 +1073,15 @@ def controls() -> list[dict]:
         if c.get('fix'):
             return 'pick'
         words = c.get('argv') or (c.get('ask') or '',)
-        if c.get('fn'):
+        if c.get('fn') or c.get('answer'):
             return 'id'
         return 'n' if any('{n}' in w for w in words) else 'id' if any('{id}' in w for w in words) else ''
     return [{'key': c['key'], 'label': c['label'], 'tui': c['tui'], 'where': c['where'], 'needs': needs(c),
              'confirm': c.get('confirm', ''), 'group': c.get('group', ''), 'fix': c.get('fix', ''),
              'each': bool(c.get('each')), 'up': c.get('up', True), 'tui_also': c.get('tui_also', ''),
              'tui_sure': c.get('tui_sure', True), 'chat': bool(c.get('ask') or c.get('chat')), 'fn': bool(c.get('fn')),
-             'tui_main': c.get('tui_main', True)} for c in RUN_CONTROLS
+             'tui_main': c.get('tui_main', True), 'answer': bool(c.get('answer')),
+             'tab': c.get('tab', '')} for c in RUN_CONTROLS
             if not (plat.WINDOWS and c['key'] == 'restart')]  # no re-exec there
 
 
@@ -1071,10 +1103,12 @@ def control_argv(key: str, n='', tid: str = '', why: str = '', pri: str = '') ->
             .replace('{pri}', pri) for w in words]
 
 
-def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True) -> dict:
+def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True,
+                text: str = '', note: str = '') -> dict:
     """F82: run one run control (RUN_CONTROLS) for the web page or agent-runner ui. One with a confirm question
     runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'. B139:
-    one with an 'ask' starts a new control session with it (`new_control`, `wait` as there)."""
+    one with an 'ask' starts a new control session with it (`new_control`, `wait` as there). F180: an answer takes `text`, the label the
+    person pressed (refused when the row's answers have changed since), and `note`, the words beside it."""
     c = run_control_of(key)
     if c and c.get('each') and not tid:  # every one there is: 'Release stale claims (2)'
         ids = [x['id'] for x in fixups(_state(S.run_up()), P.lines(S.C.todo)).get(c['fix']) or []]
@@ -1086,10 +1120,17 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
     pri = ''
     if c and c['where'] in ROW_WORDS:  # C34, C35: allowed on this row now (the snapshot's `acts`, checked again)
         row = row_of(c['where'], tid)
+        if c.get('answer') and row is None:
+            return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
         if row is None or key not in row_acts(c['where'], row):
             return {'ok': False, 'code': 1, 'out': f'{c["label"]}: {tid or "none"} is not {ROW_WORDS[c["where"]]} it '
                                                    f'fits', 'argv': []}
         pri = 'normal' if row.get('pri') == 'critical' else 'critical'
+        if c.get('answer'):
+            said = answer_of(row, key)
+            if text != said:
+                return {'ok': False, 'code': 1, 'out': f"{tid}'s answers changed: look again", 'argv': []}
+            return answer(tid, said, button=True, note=note)
     if c and c.get('fn'):
         return ROW_FNS[c['fn']](tid, wait)
     try:
