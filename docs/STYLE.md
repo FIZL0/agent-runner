@@ -136,7 +136,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 |---|---|---|
 | `--dur-fast` | 150ms | a press, a chevron, a fade out |
 | `--dur` | 200ms | a card, row or message coming in, a cross-fade, a view's fade |
-| `--dur-slow` | 250ms | what leaves collapsing, the scrim, the project list's slide (`.sghost`) |
+| `--dur-slow` | 250ms | what leaves collapsing, the scrim, the project list's slide (`.sghost`), a session's bars (`.slim`) |
 | `--dur-spring` | 450ms | the time of either spring |
 | `--spring` | `linear()` curve, about 4% overshoot | cards, messages, pills, what glides, a press let go |
 | `--spring-soft` | `linear()` curve, no overshoot | the drawer, the sheet and views, whose edge must not show a gap |
@@ -144,8 +144,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 | `--pulse` | 1.6s | the one loop: work going on now, or the mic listening |
 
 - **Springs.** Both are CSS `linear()` curves, with a `cubic-bezier` fallback for browsers without `linear()` (`@supports`).
-- **Only `transform` and `opacity`**, with `visibility` to take a closed thing out of reach, and a switch's
-  `background-color`. Never height, width, top or margin. Every `el.animate()` goes through `moAnim()`, which reads the
+- **Only `transform` (and `translate`), `opacity` and `clip-path`**, with `visibility` to take a closed thing out of reach, and a switch's
+  `background-color`. Never height, width, top or margin. A transition's duration is a token; the one raw duration allowed is `0s`, delayed by a token, to swap a stand-in in or out at the end of a motion. Every `el.animate()` goes through `moAnim()`, which reads the
   tokens and returns nothing when `calm()`; `kbGlide()` and the velocity spring `springRun()` check `calm()` themselves, and `feedGlide()` places the frame at once under it.
   `calm()` is reduced motion or a hidden page.
 - **Views.** A chat opens: its view slides in from the right over the one that was there, and back slides it out,
@@ -172,8 +172,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   with the finger's speed (`springRun()`, frames from `springFrames()`). A finger can catch one mid-way, and a flick
   closes a sheet even when it is short.
 - **Kept.** The scrim fades. The Talk dock's mic and box cross-fade. Talk's top bar slides off when you scroll up
-  (`.away`, transform only). A session's chips, box and top bar fade or slide over its text as the reader scrolls up
-  (`.slim`, and the slim message box `.slimbox` stays), and no line moves when they go or come back (`feedShare()` takes
+  (`.away`, transform only). A session's bars go over its text as the reader scrolls up
+  (`.slim`) in one motion on `--dur-slow` and `--ease`, all CSS transitions, so a reversal goes on from where it is: the top bar and a notice's row slide off the top edge and fade, the chips fade, and the message box shrinks into the slim message box (`.slimbox`) and grows back, its bottom edge still (`.slimskin`, `.slimground`, `.slimfoot`, `.dockclip`); the dock's words ride down onto the slim row's place. No line moves when they go or come back (`feedShare()` takes
   part of an upward scroll only while they are away). A chevron turns. The message box, Talk's words and the sheet glide
   (transform only) to their place when the keyboard opens or closes (`kbGlide()`). The session's frame glides in step with the message box (`feedGlide()`), on `--dur-slow` and `--ease`, from where it is on screen now; under `calm()` it is placed at once. A box growing or shrinking by lines glides too (`growGlide()`, the frame with it by `feedGrow()`; over a session the whole `.dock` glides, on the same duration and ease, not `--spring-soft`). The one exception to first load: the
   project list slides in from the left over the project's own sidebar and back out (`.sghost`, transform only,
@@ -238,7 +238,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 A chat or slot shows the real Claude Code session through ttyd, in place of a thread the page draws. These rules hold:
 
-- **The bars only go over the text.** The chips, the message box and the top bar fade or slide over the session; their going or coming never moves a line or the frame (`#feedframe`). Scrolling up 8px takes them away once the session itself is scrolled up (`feedBars()`, `.slim`); scrolling down 8px, reaching the session's end, or a tap on the slim message box brings them back (`feedSlim()`, `slimMay()`). A tap on the slim box opens the full box; on touch it does not focus the box, since the keyboard would cover what is being read. The whole top bar fades, its menu button too, so no control lies over the text or takes a tap there; the drawer's edge swipe still opens the menu, and the button stays focusable while faded, so keyboard focus on it shows the bar (`:has(:focus-visible)`). The draft is kept, and the bars do not go while the person types or a menu, question or sheet is open. A line moves only by the scroll: the session gets the scroll first (so it stops following new words), and only while it is scrolled up with the bars away does the frame take part of an upward scroll (`feedShare()`), 1:1 with the finger, to bring lines into the room the box left. Scrolling down gives that back first, so at the end the frame rests with the last lines above the full box. While scrolled up the frame keeps its place relative to the box (`feedPlace()`): a keyboard opening or closing and the box growing by lines move it with the box; a notice, a chip or an attachment that comes or goes, and the bars fading, move nothing. A session that reaches its end by itself (a sent message) rests at once, with no animation; it is the one other move. `feedFoot()` reads "scrolled up" from Claude Code's own pill (`FEED_JUMP`: Jump to bottom, N new messages, Waiting for your answer), so new output while reading does not bring the bars back.
+- **The bars only go over the text.** The chips and the top bar fade or slide over the session, and the message box shrinks into the slim one (see Motion); their going or coming never moves a line or the frame (`#feedframe`). Scrolling up 8px takes them away once the session itself is scrolled up (`feedBars()`, `.slim`); scrolling down 8px, reaching the session's end, or a tap on the slim message box brings them back (`feedSlim()`, `slimMay()`). A tap on the slim box opens the full box; on touch it does not focus the box, since the keyboard would cover what is being read. The whole top bar fades, its menu button too, so no control lies over the text or takes a tap there; the drawer's edge swipe still opens the menu, and the button stays focusable while faded, so keyboard focus on it shows the bar (`:has(:focus-visible)`). The draft is kept, and the bars do not go while the person types or a menu, question or sheet is open. A line moves only by the scroll: the session gets the scroll first (so it stops following new words), and only while it is scrolled up with the bars away does the frame take part of an upward scroll (`feedShare()`), 1:1 with the finger, to bring lines into the room the box left. Scrolling down gives that back first, so at the end the frame rests with the last lines above the full box. While scrolled up the frame keeps its place relative to the box (`feedPlace()`): a keyboard opening or closing and the box growing by lines move it with the box; a notice, a chip or an attachment that comes or goes, and the bars fading, move nothing. A session that reaches its end by itself (a sent message) rests at once, with no animation; it is the one other move. `feedFoot()` reads "scrolled up" from Claude Code's own pill (`FEED_JUMP`: Jump to bottom, N new messages, Waiting for your answer), so new output while reading does not bring the bars back.
 - **One frame.** The session is one iframe (`#feed`), filling the view behind the header and the message box (`#feedframe`, placed by `feedPlace()`, which glides it with the box, see Motion). Its
   address is the run's own (`/t/TOKEN/NAME/`), so https and Runner Home both work.
 - **Never redrawn.** A refresh, a snapshot or a state change leaves the frame as it is: it is set once per open, and
@@ -325,6 +325,6 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 2. Empty, loading, working, failed: each seen.
 3. Reduced motion on: everything still works.
 4. Scroll half way down, wait for a refresh: nothing moved.
-5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up fades the chips, box and top bar away over the text, the slim message box stays, and scrolling down brings them back; no line moves when they go or come back.
+5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up takes the chips and top bar away over the text and shrinks the box to the slim message box, and scrolling down brings them back; no line moves when they go or come back.
 6. A changed motion is watched as a recording or frame strip at 390px, not only stills.
 7. `python3 tests/test_web.py`.
