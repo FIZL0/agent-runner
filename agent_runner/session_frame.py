@@ -10,6 +10,7 @@ import hashlib
 import html
 import http.client
 import json
+import re
 import socket
 import threading
 from pathlib import Path
@@ -143,17 +144,33 @@ def with_head(page: bytes, name: str, look: str) -> bytes:
 _gz: dict[str, bytes] = {}  # ETag -> the page compressed
 
 
-def send_page(handler, data: bytes, ctype: str) -> None:
+_gz_app: dict[str, bytes] = {}  # B769a: the same for the run app's page, so ttyd's pages (one per chat) never push it out
+_gz_lock = threading.Lock()
+
+
+def takes_gzip(accept: str) -> bool:
+    """Whether an Accept-Encoding header takes gzip ('gzip;q=0' does not)."""
+    return bool(re.search(r'(?:^|,)\s*gzip\s*(?:;\s*q=(?!0(?:\.0*)?\s*(?:,|$))[0-9.]+\s*)?(?:,|$)', accept, re.I))
+
+
+def send_app(handler, data: bytes) -> None:
+    """B769a: answer with the run app's page (456 KB, 151 KB compressed), compressed once per version of it. The caller
+    has checked the key."""
+    send_page(handler, data, 'text/html; charset=utf-8', _gz_app)
+
+
+def send_page(handler, data: bytes, ctype: str, kept: dict = _gz) -> None:
     """Answer with ttyd's page: compressed for a browser that takes it (740 KB, 194 KB compressed), and not at all for one
     that kept this very page: it asks each time, so only the key opens it."""
     tag = '"' + hashlib.sha256(data).hexdigest()[:24] + '"'
-    same = handler.headers.get('If-None-Match', '').removeprefix('W/') == tag
-    zipped = 'gzip' in handler.headers.get('Accept-Encoding', '')
+    same = tag in [t.strip().removeprefix('W/') for t in handler.headers.get('If-None-Match', '').split(',')]
+    zipped = takes_gzip(handler.headers.get('Accept-Encoding', ''))
     if zipped and not same:
-        if not (got := _gz.get(tag)):
-            if len(_gz) > 8:
-                _gz.clear()
-            got = _gz[tag] = gzip.compress(data, 6)
+        with _gz_lock:
+            if not (got := kept.get(tag)):
+                if len(kept) > 8:
+                    kept.clear()
+                got = kept[tag] = gzip.compress(data, 6)
         data = got
     handler.send_response(304 if same else 200)
     handler.send_header('ETag', tag)

@@ -138,7 +138,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return self.refuse()
         if path in ('/', '/index.html'):
-            return self.send(200, page_html(), 'text/html; charset=utf-8')
+            return session_frame.send_app(self, page_html())  # B769a
         if path == '/' + home_screen.MANIFEST:  # B179
             try:
                 name = S.project()

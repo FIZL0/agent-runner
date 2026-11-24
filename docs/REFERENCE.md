@@ -281,6 +281,11 @@ the sidebar, with a count of what needs you in other projects; tapping it turns 
 (Overview, Running, Idle, Off, Devices), and each project in it moves to `/p/<project>/` on the same Home address. Another project opens at its Home view (also from a card); coming back down to the project you were in restores what was open. An
 off project's page has Start run and turns into its app once the run is up.
 
+The run app's page is sent gzipped when the browser accepts gzip, compressed once per page version and project, with an
+ETag and `private, no-cache`, so a switch back to a project gets a 304 with no body; the key is still checked first.
+This is the same on the run page, through Runner Home's `/p/KEY/`, on Home's own page and on the page Home shows for a
+project with no run up. The run page's other answers stay `no-store`, and `/events` is never compressed.
+
 On a phone's Home Screen: add the app from Home's link. Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
 from, or on the Overview if it was added from Home. An icon added before this change: remove it and add it again once,
 since iOS may keep the old scope. The manifest and icon hold the token the link has, so whoever has the manifest has it
