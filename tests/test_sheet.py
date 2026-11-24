@@ -200,10 +200,10 @@ def test_go():
         f = root / '.runner' / 'sheets' / 'F2.json'
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(json.dumps(SPEC), encoding='utf-8')
-        r = run(root, 'sheet', 'F2', '--go', env=env)
+        r = run(root, 'sheet', 'F2', '--go', '--note=- after  Friday', env=env)
         check(r.returncode == 0, 'go goes through', r.stdout + r.stderr)
-        has(todo.read_text(encoding='utf-8'), r'^- \[ \] \*\*F2\*\* .*Work it out from agent \(recommended\)',
-            'with the recommended answers noted')
+        has(todo.read_text(encoding='utf-8'), r'^- \[ \] \*\*F2\*\* .*Work it out from agent \(recommended\).*; note: - after Friday$',
+            'with the recommended answers and the words beside them noted (F162a)')
 
 
 def test_pick_links_f138():

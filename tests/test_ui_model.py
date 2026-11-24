@@ -891,6 +891,9 @@ def test_typed_decide_f181a(tmp: Path) -> None:
         eq([U.answer_argv('D3', w)[0] for w in ('go', 'D3 picks: a=b', 'neither')],
            [['sheet', 'D3', '--go'], ['sheet', 'D3', '--picks', 'D3 picks: a=b'], ['plan', 'confirm', 'D3', 'neither']],
            "a pick sheet's go and Send line are still the sheet's")
+        eq([U.answer_argv('D3', w, True, ' after  Friday')[0] for w in ('go', 'D3 picks: a=b')],
+           [['sheet', 'D3', '--go', '--note=after Friday'], ['sheet', 'D3', '--picks', 'D3 picks: a=b', '--note=after Friday']],
+           'F162a: the words beside them go with them')
     sent = []
     with mock.patch.object(U, 'SEND', [lambda t: (sent.append(t), {'ok': True, 'code': 0, 'out': 'sent', 'argv': []})[1]]):
         r = U.act('answer', tid='D3', text='the lazy one')  # the real plan confirm
