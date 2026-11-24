@@ -365,11 +365,17 @@ a{color:var(--accent)}
 .qline{display:flex;align-items:center;gap:8px;font-size:var(--fs-xs);color:var(--muted);padding:10px 10px 4px} .qline::after{content:'';flex:1;height:1px;background:var(--line2)}
 .crow.quiet .thread{color:var(--muted)} .crow.quiet .t{opacity:.75}
 .renform{margin:0;padding:2px 4px} .renform input{width:100%;border:1px solid var(--accent);border-radius:var(--r-s);background:var(--bg);color:var(--fg);padding:6px 8px;font:16px/1.3 var(--sans)}
-.rowmenu{display:none}
+.rowmenu,.rowacts{display:none}
 @media (hover:none){
+  .crow .rowmenu,.rowacts button{touch-action:manipulation}
+  .rowacts{position:absolute;right:0;top:0;bottom:0;display:flex;align-items:center}  /* F187: Delete stands where the dots were */
+  .rowacts button{width:var(--tap);height:var(--tap);border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer}
+  .rowacts button:active{background:var(--line2)} .rowacts [data-pin].on{color:var(--accent)} .rowacts [data-del]{color:var(--bad)} .rowacts svg{width:18px;height:18px}
+  .app:has(.crow.open) .main,.app:has(.crow.open) .main *{pointer-events:none!important}  /* a tap there only closes the row: no keyboard, no mic */
   .crow .del:not(.undo),.crow .pin:not(.on){display:none}
   .crow .rowmenu{position:absolute;right:0;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center}
   .crow .pin.on{right:38px} .crow[data-crow] .thread{padding-right:44px} .crow.pinned .thread{padding-right:74px!important}
+  .crow.open .pin.on{display:none} .crow.open .thread{padding-right:calc(3*var(--tap) + 4px)!important}
   .thread,.ni,.prow,.shadd{min-height:var(--tap)}
 }
 /* a row that folds open in place (a slot, a task, a setting) */
@@ -2069,9 +2075,19 @@ function chatRow(s,quiet){
   const btn=gone?(u.bar?'':`<button class="del undo" data-undo>Undo</button>`):
     `<button class="del" data-del="${esc(n)}" aria-label="Delete this chat" title="Delete this chat">${I.trash}</button>`;
   const pinned=chatPins().includes(n), pin=gone?'':`<button class="pin${pinned?' on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat" title="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button>`;
-  const menu=gone?'':`<button class="rowmenu" data-rowmenu="${esc(n)}" aria-label="More for this chat">${I.dots}</button>`;
-  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}" data-k="chat:${esc(n)}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
+  const on=!gone&&S.rowOpen===n, menu=gone?'':on?`<span class="rowacts" role="group" aria-label="This chat"><button data-ren="${esc(n)}" aria-label="Rename this chat">${I.edit}</button><button class="${pinned?'on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button><button data-del="${esc(n)}" aria-label="Delete this chat">${I.trash}</button></span>`:
+    `<button class="rowmenu" data-rowmenu="${esc(n)}" aria-expanded="false" aria-label="More for this chat">${I.dots}</button>`;  // F187
+  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}${on?' open':''}" data-k="chat:${esc(n)}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
 }
+/* F187: on touch, the chat row opened by its three dots: one at a time, its buttons in the row, Delete in the dots' place.
+   A tap anywhere else only closes it, and so do Esc, one of its buttons and the drawer closing */
+function rowExpand(n){S.rowOpen=n;render(true);const b=document.querySelector('.rowacts button');if(b)b.focus({preventScroll:true})}
+function rowShut(){const n=S.rowOpen;S.rowOpen='';render(true);const b=document.querySelector(`[data-rowmenu="${CSS.escape(n)}"]`);if(b)b.focus({preventScroll:true})}
+function rowTap(e){
+  if(!S.rowOpen||e.target.closest('.rowacts button,[data-rowmenu]'))return;
+  e.preventDefault();e.stopPropagation();rowShut();
+}
+function rowSettle(){if(S.rowOpen&&(S.sheet||S.ren||atAll()||!sessionOf(S.rowOpen)||drawerOn()&&!S.drawer))S.rowOpen=''}
 /* F129: Rename, in the row itself: Enter keeps it, Esc does not */
 function startRename(n){const x=sessionOf(n);if(!x)return;S.ren=n;S.f.ren=chatTitle(x);if(drawerOn())S.drawer=true;S.renFocus=true;render(true)}
 function saveRename(){
@@ -2641,11 +2657,6 @@ const SHEETS={
     }).join('')}`).join('')||'<div class="small">Nothing to do here right now.</div>'}`;
   },
   out(){return `<h2>${esc((S.out||{}).title||'')}</h2><pre class="out">${esc((S.out||{}).text||'')}</pre><div class="btns"><button class="btn" data-closesheet>Close</button></div>`},
-  chat(){  // a chat row's menu, on touch
-    const x=sessionOf(S.sheetArg), n=S.sheetArg;if(!x)return '<div class="small">That chat has ended.</div>';
-    const pinned=chatPins().includes(n);
-    return `<h2>${esc(chatTitle(x))}</h2><button class="it" data-ren="${esc(n)}"><span>Rename</span>${I.edit}</button><button class="it" data-pin="${esc(n)}"><span>${pinned?'Unpin':'Pin'}</span>${I.pin}</button><button class="it bad" data-del="${esc(n)}"><span>Delete</span>${I.trash}</button>`;
-  },
   talk(){  // Talk's settings
     const vs=voices(), t=TS;
     return `<h2>Talk settings</h2>
@@ -3066,7 +3077,7 @@ function render(force){
   obDraw();  // F137
   newsDraw();  // F149
   loginDraw();
-  side();sheetDraw();
+  rowSettle();side();sheetDraw();
   if(HOME_PAGE){  // F134: Home's own page: All projects, and F150 a project with no run up
     setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button><div class="title">${atAll()?H.tab==='devices'?'Devices':'Overview':esc((projectOf(HKEY)||{}).name||HKEY)}</div>${plusBtn()||'<span class="icon"></span>'}`);
     if(moved)body._h=null;
@@ -3841,7 +3852,7 @@ document.addEventListener('click',async e=>{
     try{await navigator.clipboard.writeText(S.feedText||'');toast('Copied')}catch(err){pick();toast('Selected: copy it with your own Copy')}return}
   if(x=q('[data-resume]')){const n=x.dataset.resume;outbox('resume_chat',{chat:n},{res:n,say:`Resume ${threadTitle(n)}`});return}
   if(q('#sheetscrim')||q('[data-closesheet]')){closeSheet();return}
-  if(q('#sheet [data-pin]')||q('#sheet [data-del]')||q('#sheet [data-ren]'))S.sheet='';  // its own handler goes on
+  if(q('.rowacts'))S.rowOpen='';  // F187: its own handler goes on
   if(q('[data-slimbox]')){feedSlim(false);const t=document.querySelector('[data-in]');if(t&&(!TOUCH()||!e.detail))t.focus({preventScroll:true});return}  // B192: no keyboard on a phone yet: it would resize the session
   if(x=q('[data-halt]')){const n=x.dataset.halt;act('stop_session',{session:n}).then(()=>liveLoad());return}
   if(q('[data-slashopen]')){const t=document.querySelector('[data-in]');if(t){if(!t.value.trim()){t.value='/';store.set(DRAFT_KEY(boxKey()),'/');grow(t)}kbFocus(t);t.setSelectionRange(t.value.length,t.value.length);slashShow(t)}return}
@@ -3850,7 +3861,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-update]')){outbox('claude_update',{cmd:x.dataset.update},{upd:1,say:'Update the agent CLI',done:'The agent CLI is updated'});return}
   if(x=q('[data-restart]')){const n=x.dataset.restart;closeSheet();outbox('restart_chat',{chat:n},{res:n,say:`Restart ${threadTitle(n)}`});return}
   if(x=q('[data-sheet]')){openSheet(x.dataset.sheet);return}
-  if(x=q('[data-rowmenu]')){openSheet('chat',x.dataset.rowmenu);return}
+  if(x=q('[data-rowmenu]')){rowExpand(x.dataset.rowmenu);return}
   if(x=q('[data-ren]')){startRename(x.dataset.ren);return}
   if(x=q('[data-fix]')){S.fixOpen=S.fixOpen===x.dataset.fix?'':x.dataset.fix;S.sure=null;render(true);return}
   if(x=q('[data-slashpick]')){slashTake(+x.dataset.slashpick);return}  // B119
@@ -3994,6 +4005,7 @@ document.addEventListener('keydown',e=>{
     return}
   if(e.key==='Escape'&&S.sheet==='need'&&S.askShot>=0){e.preventDefault();S.askShot=-1;render(true);return}  // F162
   if(e.key==='Escape'&&S.sheet){e.preventDefault();closeSheet();return}  // the topmost thing only
+  if(e.key==='Escape'&&S.rowOpen){e.preventDefault();rowShut();return}  // F187
   if(e.target.matches&&e.target.matches('[data-f]')&&e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.dataset.f.startsWith('set:')){
     e.preventDefault();const [,side,...id]=e.target.dataset.f.split(':');S.f[e.target.dataset.f]=e.target.value;saveSetting(id.join(':'),side);return}
   if(e.target.matches&&e.target.matches('[data-f^="askre:"]')&&e.key==='Enter'){  // F162: Enter sends a reply; beside answers the note waits for one
@@ -4037,7 +4049,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)
 const dragEnd=()=>{if(!DR)return;const {row,on}=DR, y=on?shiftOf(row).m42:0;clearTimeout(DR.hold);row.classList.remove('lift','drag');row.style.transform='';DR=null;if(y)glideTo(row,0,y);if(on)render(true)};
 document.addEventListener('pointerdown',e=>{
   const row=e.target.closest&&e.target.closest('.crow[data-crow]');
-  if(!row||e.button>0||e.target.closest('.pin,.del,.rowmenu')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
+  if(!row||e.button>0||e.target.closest('.pin,.del,.rowmenu,.rowacts')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
   dragEnd();
   DR={row,name:row.dataset.crow,id:e.pointerId,y0:e.clientY,on:false,ready:e.pointerType==='mouse'};
   if(!DR.ready)DR.hold=setTimeout(()=>{if(DR&&DR.row===row){DR.ready=true;row.classList.add('lift')}},350);
@@ -4066,7 +4078,7 @@ document.addEventListener('pointerup',e=>{
 document.addEventListener('pointercancel',e=>{if(DR&&e.pointerId===DR.id)dragEnd()});
 document.addEventListener('contextmenu',e=>{if(DR&&DR.ready&&e.target.closest&&e.target.closest('.crow'))e.preventDefault()});
 let noClick=false;
-document.addEventListener('click',e=>{if(noClick){noClick=false;e.preventDefault();e.stopPropagation()}},true);
+document.addEventListener('click',e=>{if(noClick){noClick=false;e.preventDefault();e.stopPropagation();return}rowTap(e)},true);
 /* F83: a press under way holds the refreshes back, so what it lands on is still there when it ends */
 document.addEventListener('pointerdown',e=>{PD.down=!(e.button>0)},true);
 for(const t of ['contextmenu','blur','visibilitychange'])addEventListener(t,()=>{PD.down=false},true);
