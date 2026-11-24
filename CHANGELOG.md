@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: Device Vitals' Clean could delete git-ignored work with a merged worktree (`git worktree remove` deletes ignored files) while its list said "nothing uncommitted". Now a worktree comes ticked only when what git ignores in it is build output recognised by its tool's mark (a CACHEDIR.TAG folder, CMake build folder, Cargo profile folders in a target folder, venv, node_modules, egg-info, .pyc) or a link; any other is listed unticked and the line names what it holds. A tick for a worktree whose ignored files changed since the list is refused. A git repository inside a build folder counts as held, except a CMake-fetched one under _deps with no change or commit of its own (B776).
 - Fixed: two harness loop sessions refreshing one provider's login at once no longer remove it from Pi's `auth.json`: the second finds the fresh token, keeps the login and uses the token without refreshing again (B771).
 - Changed: this repo's merge joins a conflict in CHANGELOG.md itself, with no fix session: `[run] joinable` holds it and `[run.join]` runs `tools/changelog_join.py`, which keeps both branches' new entries once and puts an entry written before a release under Unreleased, not the released version (C47).
 - Fixed: on the run page, on a touch device, a tap on the slim message box while the session still scrolls with momentum stops the scroll and opens the message box with the keyboard, and it stays open; before, the scroll went on and the box did not open (B218b1).
