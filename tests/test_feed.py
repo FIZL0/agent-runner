@@ -163,6 +163,101 @@ def test_control_new_ask_opens_session():
         eq(opened[0][1], -1, '--no-wait still holds')
 
 
+ONCE = r"""
+import fs from 'node:fs';
+export default function ({ provider, model }) {
+  return { async call(context) {
+    fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ provider, model, tools: context.tools.map((t) => t.name),
+      system: context.systemPrompt, said: context.messages[0].content }) + '\n');
+    const bad = process.env.FAKE_FAIL, n = context.messages.filter((m) => m.role === 'assistant').length;
+    const content = n ? [{ type: 'text', text: 'published: https://claude.ai/artifact/made-up' }]
+      : [{ type: 'toolCall', id: 'c1', name: 'bash', arguments: { command: 'touch ran-bash' } }];
+    return { role: 'assistant', content: bad ? [] : content, api: 'fake', provider, model, timestamp: Date.now(),
+      stopReason: bad ? 'error' : n ? 'stop' : 'toolUse', errorMessage: bad ? '401 unauthorized' : undefined,
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } };
+  } };
+}
+"""
+
+
+def test_feed_on_a_provider():
+    print("F406e: a feed model of another provider: its one-shot runs on the harness loop, the local copy is the answer, "
+          'also with no claude on PATH')
+    import contextlib
+    import io
+    import json
+    import shutil
+    from unittest import mock
+    from agent_runner import cli, done, feed, page_copy as PC
+    d = repo()
+    toml = '[models]\nfeed = "codex:gpt-test"\n\n[run]\nagent = "/nonexistent/claude-f406e"\n'
+    (d / 'runner.toml').write_text(toml)
+    R.init(d)
+    page = d / 'options.html'
+    page.write_text('<h1>options</h1>')
+    fake, log = d / 'fake.mjs', d / 'calls.jsonl'
+    fake.write_text(ONCE)
+    env = {'AGENT_RUNNER_HARNESS_PROVIDER': str(fake), 'FAKE_LOG': str(log), 'AGENT_RUNNER_SLOT': '1',
+           'AGENT_RUNNER_REPO': str(d)}
+    said: list = []
+    with mock.patch.dict(os.environ, env), mock.patch.object(PC, 'C', R.C), mock.patch.object(PC, 'log', said.append):
+        if shutil.which('node'):
+            eq(PC.page_copy_publish(page, ''), '', 'no claude.ai page, whatever the model answers')
+            call = [json.loads(x) for x in log.read_text().splitlines()]
+            eq((call[0]['provider'], call[0]['model'], call[0]['tools']), ('codex', 'gpt-test', ['read']),
+               'the one-shot runs on the feed model with read only')
+            check(str(page) in call[0]['said'], 'and is handed the page', call[0]['said'])
+            check('finish' not in call[0]['system'], 'its system text names no slot tools')
+            check(len(call) == 2 and not (d / 'ran-bash').exists(), 'a tool it was not given does not run')
+            eq(list(R.C.notes().glob('once-*')), [], 'its prompt file goes')
+            check('made-up' in feed.harness_once('codex:gpt-test', 'hi', d, 60)[0], 'harness_once gives its last words')
+            with mock.patch.dict(os.environ, FAKE_FAIL='1'):
+                got, why = feed.harness_once('codex:gpt-test', 'hi', d, 60)
+                check(not got and '401 unauthorized' in why, 'or why it failed', why)
+        with mock.patch.object(feed.HARNESS, 'argv', lambda *a: ['/nonexistent/node']):
+            eq(PC.page_copy_publish(page, ''), '', 'no node either: still no error')
+            PC.PAGE_COPY_FAILS[0], PC.PAGE_COPY_OFF[0] = 0, ''
+            key = d / 'key'
+            for _ in range(PC.PAGE_COPY_FAIL_MAX + 1):
+                key.write_text('k')
+                PC.PAGE_COPY_BUSY.acquire()
+                PC.page_copy_job(page, '', key, PC.page_copy_publish)
+            eq((PC.PAGE_COPY_FAILS[0], PC.PAGE_COPY_OFF[0], key.read_text()), (0, '', 'k'),
+               'the run page copy counts it as no failure')
+            eq(PC.publish_page('K1', page)[1], '/concept/K1', 'a concept page: the run page has it')
+        # a claude feed model, and no claude on this machine
+        d2 = repo()  # its own: the settings are kept per folder
+        (d2 / 'runner.toml').write_text(toml.replace('codex:gpt-test', 'haiku'))
+        R.init(d2)
+        check(not feed.feed_on_harness(), 'a claude feed model')
+        with mock.patch.object(PC, 'C', R.C):
+            dest, url = PC.publish_page('K2', page)
+            eq((dest.read_text(), url, PC.concept_url('K2')), ('<h1>options</h1>', '/concept/K2', '/concept/K2'),
+               'no claude on PATH: the local copy is the answer, recorded for done')
+            PC.publish_page('K2', page, publish=lambda f, u: check(u == '', 'never handed on as a URL to update') or '')
+            PC.concept_url_file('K3').write_text('https://claude.ai/artifact/old')
+            eq(PC.publish_page('K3', page, publish=lambda f, u: '')[1], '', 'a one-shot that failed is still a failure')
+        with mock.patch.dict(os.environ, AGENT_RUNNER_REPO=str(d2)), contextlib.redirect_stdout(io.StringIO()) as out:
+            was = os.getcwd()
+            os.chdir(d2)
+            try:
+                rc = cli.main(['publish-page', str(page), '--id', 'K4'])
+            finally:
+                os.chdir(was)
+                PC.C = R.C
+        check(rc == 0 and 'no claude.ai page' in out.getvalue(), 'publish-page goes through and says so', out.getvalue())
+    from agent_runner import ui_model as Q
+    row = ('CONCEPT', 'F9', 'K2', 'waiting for your OK on /concept/K2', '/concept/K2', 'a title', False, '')
+    import datetime as dt
+    concepts = Q.needs_rows([row], dt.datetime.now())[1]
+    check(len(concepts) == 1 and concepts[0]['url'] == '' and concepts[0]['copy'].endswith('K2.html'),
+          'the run page and the TUI open the local copy, with no bare link', concepts)
+    args = mock.Mock(id='K2', artifact='/concept/K2', blocked=None)
+    eq(done.artifact_refusal(args), None, 'done takes it as the concept\'s page')
+    args.artifact = '/concept/K9'
+    check(done.artifact_refusal(args), 'but not another task\'s')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_run_ends_old_feed, test_no_feed_starts, test_feed_hand_off_is_gone,
+    raise SystemExit(report([test_feed_on_a_provider, test_run_ends_old_feed, test_no_feed_starts, test_feed_hand_off_is_gone,
                              test_queued_message, test_control_new_ask_opens_session]))

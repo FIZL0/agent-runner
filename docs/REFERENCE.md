@@ -1050,6 +1050,17 @@ shows it at `/concept/<ID>`), then starts a one-shot headless `claude -p` with o
 that copy to claude.ai: a new artifact with icon "options", or the URL already recorded for ID, so a second
 publish updates the same page. The URL is printed and kept in `<notes>/concepts/<ID>.url`. Exit 1 when the
 one-shot did not publish (the copy is still on the run page); exit 2 for a missing file or no task id.
+With no Claude Code program on this machine, or `[models] feed` on another provider (its one-shot cannot publish), the
+command exits 0, says there is no claude.ai page, and records `/concept/<ID>` in `<notes>/concepts/<ID>.url`, which
+`done` takes as the concept's page. In the TUI, O on such a concept opens the local copy. A one-shot that ran and
+failed still exits 1.
+
+**Spec review one-shot (F406e).** `agent-runner review [ID] [--base BRANCH]` runs the spec review before `done` as a
+fresh one-shot on `[models] review`, given only `git diff BASE...HEAD` (BASE: `--base`, default the shared branch)
+and the task's brief, and prints its findings (exit 0). It is Read only and gets 900 s. Exit 1 with
+`run review: no review: <why>` when the one-shot did not run or the diff is empty (commit the work first); exit 2
+with no task. A claude model runs as a headless `claude -p`; another provider's runs in the harness loop with
+`--once --tools read`. A Claude Code task with a claude review model is unchanged: its `review` subagent does it.
 
 **Git fence (F102).** Every Claude Code slot gets a PreToolUse hook through `--settings` (`agent-runner fence`)
 that denies `git push` in this project (anywhere while `[git] push = false`), `git reset --hard`, `git clean`
@@ -1534,6 +1545,9 @@ agent-runner plan [...]                the task list as a tool (agent-runner pla
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--artifact URL] [--no-test]
                                        --artifact: a concept's page (a K task without it takes the URL that
                                        `publish-page` recorded; --page FILE names its copy)
+agent-runner review [ID] [--base BRANCH]
+                                       the spec review before `done`, a fresh one-shot on [models] review
+                                       (**Spec review one-shot** above); its findings print
 agent-runner run [N|once] [--dry-run] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
 agent-runner stop [--force] [--suspend|--shutdown]
                                        finish what's running, start nothing new, exit (or s + Enter in the
@@ -1648,11 +1662,11 @@ trusted_networks = []     # CIDRs, or `tailnet`, whose devices open the run's pa
 
 [models]                  # the model each type of work runs on (see Models per role below)
 code = "opus"             # a task's own session when its kind has no model below
-review = "opus"           # the `review` subagent the spec review before done runs in
+review = "opus"           # the spec review before done: the `review` subagent (Claude Code tasks on claude); else a one-shot (`run review`)
 fix = "opus"              # merge-conflict fix and repair sessions
-docs = "haiku"            # the `docs` subagent: CHANGELOG, docs, README, journal and plan-text edits; false: none
+docs = "haiku"            # the `docs` subagent: CHANGELOG, docs, README, journal and plan-text edits; false or another provider's: none, the task's session writes them
 control = "opus"          # control sessions (c2, c3, …)
-feed = "haiku"            # the run page's claude.ai copy (the one-shot that publishes it)
+feed = "haiku"            # the run page's claude.ai copy (the one-shot that publishes it); another provider's: the local copy only
 kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonnet", C = "sonnet", R = "sonnet" }
                           # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
 local = false             # allow a local provider (ollama, or a provider url on localhost or a private address); see Model providers
@@ -1690,7 +1704,7 @@ questionnaires = true     # a choice with more than one question, or whose answe
 grill = "ask"             # control sessions ask rounds of numbered questions before queueing: "ask" = when the person says grill me / poke holes; "big" = also on big vague asks; "off"
 voice = ""                # the person's wording file (`agent-runner voice`), read by control sessions and task agents; "" = ~/.config/agent-runner/voice.md (a .runner/voice.md with lines overrides it for this project)
 voice_learn = "ask"       # "ask": a session that had to say something again offers one wording line to add; "off": lines are added only when the person says so
-review = true             # before done, a fresh subagent reads the diff against the task's brief (spec only: missing, unasked, wrong); the commit ends "review: …"; false: no review
+review = true             # before done, a fresh subagent (or `run review`, a one-shot, on another provider's model) reads the diff against the task's brief (spec only: missing, unasked, wrong); the commit ends "review: …"; false: no review
 review_min_lines = 50     # a diff smaller than this (changed lines) skips the review, unless the task has a long form (plan/tasks/<ID>.md)
 context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"), and is told once, as a turn ends, to commit what is solid, file the rest as a part and finish; soft only, nothing is stopped; 0 = off.
 split_files = true        # free slots that start nothing while 3 or more ready tasks wait for one file: the run queues one critical (alone) task that splits it; false = off (F200b)
@@ -1767,6 +1781,12 @@ names them: the spec review runs in the `review` subagent, and CHANGELOG, docs, 
 edits go to the `docs` subagent, whose result the task then checks. A lean session gets the Agent tool whenever
 one of them is on (`[run] review = false` drops `review`, `[models] docs = false` drops `docs`).
 
+Another provider changes that. A `review` on another provider, or any `review` on a task on the harness loop, has
+no subagent, so the spec review is a one-shot instead, `agent-runner review` (above): the brief tells the task to run
+it before `done`, and the task reviews itself if it did not run. A `docs` on another provider has no subagent: the
+task's own session writes those edits. A `feed` on another provider runs its one-shot on the harness loop, which
+cannot publish to claude.ai, so the run page keeps the local copy.
+
 `[run] model` and `[run] fix_model` moved to `[models] code` and `fix`: an old file that sets them still works, filling those roles when `[models]` does not (the run log has a note), and `run --model M` still picks the task model for one run. A role
 `[models]` sets wins over them.
 
@@ -1810,10 +1830,9 @@ An unknown provider prefix is refused at start.
 `claude:<model>` runs as the bare model name on Claude Code. A role naming another provider runs its sessions
 in the [harness loop](#the-harness-loop).
 
-Only task sessions (`[models] code`, `[models.kinds]`, a task's own `plan add --model`, `run --model`) and fix
-sessions (`[models] fix`) can name another provider. `review`, `docs`, `control` and `feed` run as Claude Code
-itself (its subagents, Remote Control control sessions, the run page copy's one-shot), so another provider there is refused
-at start, saying why.
+Task sessions (`[models] code`, `[models.kinds]`, a task's own `plan add --model`, `run --model`), fix sessions
+(`[models] fix`), and `review`, `docs` and `feed` can name another provider. Only `control` runs as Claude Code
+itself (Remote Control's control sessions), so another provider there is refused at start, saying why.
 
 ### Fallback chain
 
@@ -1881,8 +1900,12 @@ Tools: bash (each call starts in the worktree; timeout default 120 s, at most 36
 is cut in the middle), read, edit, write, finish (runs `run finish`), ask (runs `run ask`; the task is parked under
 Needs you and the answer resumes the same session), and publish_page (writes the HTML to
 `<notes>/harness-pages/<task>/<name>.html`, then runs `run publish-page` on it, up to 420 s, and returns its
-output, the URL included). A
+output, the URL included; with no Claude Code program here, no URL: the run page keeps the copy). A
 `run finish` or `run ask` typed through bash ends the session the same way (it watches the slot's end mark).
+
+One-shots: `--once` answers one message and ends. `--tools a,b` (a comma between) limits the session to the tools named:
+a tool outside the list is not offered to the model, and a call to it returns an error. Its system text says nothing
+of finish, ask or a worktree change. `run review` on another provider, and the feed one-shot, run this way (read only).
 
 The git fence: before every tool call it runs `run fence`, with the same rules as Claude Code sessions' PreToolUse
 hook: no git push, reset --hard, clean, or checkout -- .; no edit or write outside the worktree in the main checkout

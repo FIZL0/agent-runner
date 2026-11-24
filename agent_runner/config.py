@@ -260,12 +260,14 @@ DEFAULTS: dict = {
     },
     'models': {
         'code': 'opus',         # a task's own session when its kind has no model below
-        'review': 'opus',       # the `review` subagent the spec review before done runs in
+        'review': 'opus',       # the `review` subagent the spec review before done runs in; a one-shot (`run
+                                # review`) when it, or the task's session, is another provider's
         'fix': 'opus',          # a merge-conflict fix or repair session
         'docs': 'haiku',        # the `docs` subagent a task hands CHANGELOG, docs, README, journal and plan-text
-                                # edits to, then checks; false: no docs subagent
+                                # edits to, then checks; false, or another provider's model: no docs subagent
         'control': 'opus',      # control sessions (c2, c3, ...)
-        'feed': 'haiku',        # the one-shot that publishes the run page's claude.ai copy
+        'feed': 'haiku',        # the one-shot that publishes the run page's claude.ai copy; another
+                                # provider's has no claude.ai page: the local copy stands
         'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
                   'R': 'sonnet'},  # a task's session by its kind (the id's letters): a kind set here replaces
                                 # only that kind; one not listed runs on `code`; `plan add --model` wins for a task
@@ -378,10 +380,10 @@ def parse_model(value: str, providers: dict[str, dict] | None = None, local: boo
     return head, rest
 
 
-# F106c: the roles that run as Claude Code itself (its subagents, Remote Control's control sessions, the page
-# copy's one-shot), so only on claude; a task's session (code, [models.kinds], plan add --model, run --model) and a fix
-# session run on any provider, another than claude through the harness loop (agent_runner/harness.mjs)
-CLAUDE_ONLY_ROLES = ('review', 'docs', 'control', 'feed')
+# F106c: the roles that run as Claude Code itself (Remote Control's control sessions), so only on claude; every
+# other role runs on any provider, another than claude through the harness loop (agent_runner/harness.mjs). F406e: a
+# feed or review model there is a one-shot (feed.harness_once); a docs model there leaves docs to the task's session
+CLAUDE_ONLY_ROLES = ('control',)
 
 
 def claude_model(value: str, providers: dict[str, dict] | None = None, local: bool = False,
@@ -393,9 +395,9 @@ def claude_model(value: str, providers: dict[str, dict] | None = None, local: bo
     if provider == 'claude':
         return model
     if claude_only:
-        raise SystemExit(f'agent-runner: {where} = {value!r}: this role runs as Claude Code itself (a subagent, a '
-                         'control session or the page copy), so only a claude model; the harness loop runs the '
-                         f'{provider} provider for task and fix sessions ([models] code, fix, [models.kinds])')
+        raise SystemExit(f'agent-runner: {where} = {value!r}: this role runs as Claude Code itself (a '
+                         'control session), so only a claude model; the harness loop runs the '
+                         f'{provider} provider for the other roles')
     return f'{provider}:{model}'
 
 

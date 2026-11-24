@@ -4,9 +4,10 @@
 //
 //   node harness.mjs --session-id SID --model codex:gpt-6-sol --notes DIR --prompt-file F [options]
 //   node harness.mjs --resume SID ...          continue session SID from its transcript, F its next message
+//   ... --once --tools read                    a one-shot (F406e): one answer, with only the tools named (a comma between)
 //
 // Tools: bash, read, edit, write, finish, ask and publish_page (writes the page file and runs `run publish-page`
-// on it: the run page shows it, and a one-shot publishes it to claude.ai).
+// on it: the run page shows it, and a one-shot publishes it to claude.ai when Claude Code is here).
 // Before every tool call the git fence (`run fence`, tools.fence's rules) is asked; before every model call the
 // session's spend is held against --task-tokens and --task-usd. A line on stdin is a person's tell: queued,
 // it goes in as the next user message. The transcript is <notes>/harness-sessions/<sid>.jsonl, one entry per
@@ -41,7 +42,7 @@ const PROVIDER_IDS = { copilot: 'github-copilot', codex: 'openai-codex', gemini:
 // --- arguments ----------------------------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const a = { idle: 300, once: false, resume: false, taskTokens: 0, taskUsd: 0, contextWarn: 0, contextText: '', fence: null, runner: null,
+  const a = { idle: 300, once: false, resume: false, taskTokens: 0, taskUsd: 0, tools: null, contextWarn: 0, contextText: '', fence: null, runner: null,
     provider: null, systemFile: '', promptFile: '', notes: '', sid: '', model: '', fallback: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i], v = () => argv[++i];
@@ -53,6 +54,7 @@ function parseArgs(argv) {
     else if (k === '--system-file') a.systemFile = v();
     else if (k === '--idle') a.idle = Number(v());
     else if (k === '--once') a.once = true;
+    else if (k === '--tools') a.tools = v().split(',').filter(Boolean);
     else if (k === '--task-tokens') a.taskTokens = Number(v()) || 0;
     else if (k === '--task-usd') a.taskUsd = Number(v()) || 0;
     else if (k === '--context-warn') a.contextWarn = Number(v()) || 0;
@@ -416,8 +418,8 @@ const TOOLS = [
       'parked under Needs you and their answer resumes this session as its next message. The session ends.',
     parameters: { type: 'object', properties: { question: { type: 'string' } }, required: ['question'] } },
   { name: 'publish_page', description: 'Make a page to show the person (a report, a concept\'s options): the HTML is ' +
-      'written to a file under the run\'s notes, the run page shows it, and it is published to claude.ai: its URL ' +
-      'comes back (recorded for `done`, which takes it as a concept\'s page). The same as `run publish-page <file>`.',
+      'written to a file under the run\'s notes, the run page shows it, and it is published to claude.ai when Claude Code is here: its URL ' +
+      'comes back, else the run page has it (recorded for `done`, which takes it as a concept\'s page). The same as `run publish-page <file>`.',
     parameters: { type: 'object', properties: { name: { type: 'string', description: 'a short file name' },
       html: { type: 'string' } }, required: ['name', 'html'] } },
 ];
@@ -492,6 +494,7 @@ class Session {
 
   async call(name, args) {
     args = args || {};
+    if (this.a.tools && !this.a.tools.includes(name)) return [`${name} is not a tool of this session`, true];
     const denied = await this.fence(name, args);
     if (denied) return [denied, true];
     try {
@@ -589,6 +592,10 @@ const SYSTEM = `You are an unattended coding agent that agent-runner started in 
   `to the worktree. A message that arrives while you work is the person telling you something: take it into ` +
   `account. When the task's brief names \`run finish\` or \`run ask\`, the finish and ask tools do the same.`;
 
+// F406e: a one-shot with --tools: no task of its own, so nothing of finish, ask or a worktree to change
+const ONE_SHOT = `You answer one message, unattended: nobody can reply. Use only the tools you are given, change nothing, ` +
+  `and end with your whole answer as text.`;
+
 function overBudget(a, tokens, usd) {
   const tok = tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1)}M` : `${Math.round(tokens / 1e3)}k`;
   const spent = `${tok} tok $${usd.toFixed(2)}`;
@@ -605,7 +612,7 @@ async function main() {
   if (!a.resume && fs.existsSync(file)) throw new Error(`harness: session ${a.sid} exists already (${file}); --resume it`);
   const t = new Transcript(file, a.sid, cwd);
   let { messages, tokens, usd } = t.load();
-  const system = [SYSTEM, a.systemFile && fs.existsSync(a.systemFile) ? fs.readFileSync(a.systemFile, 'utf8') : '']
+  const system = [a.tools ? ONE_SHOT : SYSTEM, a.systemFile && fs.existsSync(a.systemFile) ? fs.readFileSync(a.systemFile, 'utf8') : '']
     .filter(Boolean).join('\n\n');
   const prompt = a.promptFile ? fs.readFileSync(a.promptFile, 'utf8') : '';
   const s = new Session(a, cwd);
@@ -628,7 +635,8 @@ async function main() {
     }
     let m;
     try {
-      m = await provider.call({ systemPrompt: system, messages, tools: TOOLS });
+      m = await provider.call({ systemPrompt: system, messages,
+        tools: a.tools ? TOOLS.filter((x) => a.tools.includes(x.name)) : TOOLS });
     } catch (e) {
       m = { role: 'assistant', content: [], stopReason: 'error', errorMessage: String(e?.message || e), model: a.model,
         timestamp: Date.now() };

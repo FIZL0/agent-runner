@@ -69,6 +69,7 @@ import re
 import subprocess as sp
 import sys
 import time
+from pathlib import Path
 
 from agent_runner import plat
 from agent_runner import theme as TH
@@ -2127,7 +2128,10 @@ class RunPage:
             self.set_tab('new concept')
             self.type_in()
         elif self.panel == 5 and k == 'O' and it is not None and not it.get('new'):
-            self.open_link(it.get('url', ''), it.get('title', 'the concept'))
+            url = it.get('url', '')
+            if not url and it.get('copy'):  # F406e: no claude.ai page, so its local copy
+                url = Path(it['copy']).as_uri()
+            self.open_link(url, it.get('title', 'the concept'))
 
     def quiet(self, fn, *args, **kw):
         """B136: run an in-process action with its stdout and stderr swallowed (its run-log lines still go to

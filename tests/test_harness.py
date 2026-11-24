@@ -332,7 +332,8 @@ def test_brief(env: Env):
               'a harness loop session\'s brief leaves out the docs subagent', loop[-3000:])
         check('Agent tool' not in loop and 'subagent_type' not in loop,
               'and names no Agent tool or subagent for the review', loop[-3000:])
-        has(loop, 'review your own work as a fresh reader would', 'its spec review is a self-review')
+        has(loop, r'review F1 --base main`', 'its spec review is a fresh one-shot (F406e)')
+        has(loop, 'review your own work as a fresh reader would', 'and a self-review when that does not run')
         check('`review: skipped (small)`' in loop, 'that still ends the commit message with its review line')
         eq(R.prompt_for('F1', 1, 2, env.wt, 'main'), claude, 'no model given reads as Claude Code')
     finally:

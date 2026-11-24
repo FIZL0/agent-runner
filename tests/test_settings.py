@@ -132,9 +132,12 @@ from agent_runner.config import harness_model
 check(harness_model('acme:gpt-x', c.providers) and harness_model('gemini:pro') and not harness_model('opus')
       and not harness_model('github-copilot/m1') and not harness_model('acme:gpt-x'),
       'harness_model: another provider\'s, built in or custom (with its providers); not claude\'s nor a Pi model')
-for role in ('review', 'docs', 'control', 'feed'):
-    has(refused(lambda: load(f'[models]\n{role} = "acme:gpt-x"\n\n' + custom)), rf'{role} = .*runs as Claude Code',
-        f'[models] {role} runs as Claude Code itself, so another provider there is refused, saying why')
+has(refused(lambda: load('[models]\ncontrol = "acme:gpt-x"\n\n' + custom)), r'control = .*runs as Claude Code',
+    '[models] control runs as Claude Code itself, so another provider there is refused, saying why')
+for role in ('review', 'docs', 'feed'):
+    eq(load(f'[models]\n{role} = "acme:gpt-x"\n\n' + custom).models[role], 'acme:gpt-x',
+       f'F406e: [models] {role} takes any provider')
+    eq(config.setting_check(repo, 'models', role, 'acme:gpt-x'), '', f'and Settings takes it for {role}')
 has(refused(lambda: load('[models]\ncode = "ollama:llama3"\n')), r'local = true', 'ollama refused, local off')
 eq(load('[models]\nlocal = true\ncode = "ollama:llama3"\n').models['code'], 'ollama:llama3',
    'with local = true it runs (in the harness loop)')

@@ -309,7 +309,8 @@ def test_page_copy_publish(tmp: Path) -> None:
         PC.PAGE_COPY_AT[0], PC.PAGE_COPY_FAILS[0], PC.PAGE_COPY_OFF[0] = 0.0, 0, ''
         with mock.patch.object(PC, 'page_copy_argv', lambda path, url, icon='dashboard': ['/nonexistent/agent-b122']):
             check(tick(30000.0, snap('x', task='Z1')), 'a publish is tried with no agent to start')
-        check('cannot be started' in PC.PAGE_COPY_OFF[0], 'no agent to start: the copy stops', PC.PAGE_COPY_OFF[0])
+        eq((PC.PAGE_COPY_OFF[0], PC.PAGE_COPY_FAILS[0]), ('', 0), 'no agent here (F406e): the local copy is the answer, no failure')
+        check('Z1' in PC.page_copy_file().read_text(encoding='utf-8'), 'and it is written')
     eq(keys, [], 'no run change sends keys to any pane or FIFO')
     check(not hasattr(PC, 'c1_send'), 'the copy has no way to type into c1')
     src = Path(PC.__file__).read_text(encoding='utf-8')

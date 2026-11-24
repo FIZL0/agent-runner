@@ -153,7 +153,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
     cache is reused across slots. A custom template keeps its own order.
 
     F132: `model` is the session's settled model; on another provider's (the harness loop, which has no Agent
-    tool) the brief leaves out the docs subagent and asks for the spec review as a self-review.
+    tool) the brief leaves out the docs subagent; F406e: its spec review is `run review`, a one-shot on [models] review.
     """
     r = C.run
     loop = harness_session(model)
@@ -270,8 +270,8 @@ make it short, concrete and readable at a glance. Put no answer buttons on the p
 Concepts or Needs you on the run page, or in the chat. Change no product code; commit only notes you wrote (the \
 journal). Finish with `{runner} done {tid} "<msg>"`: it takes the page's URL that publish-page recorded, and its \
 copy at .runner/concepts/{tid}.html, which the run page shows inline (a page published some other way: add \
-`done {tid} "<msg>" --artifact <the page's URL> --page <the HTML file you published>`). It is refused without a \
-URL, and it files the build task, blocked until the person approves an option."""
+`done {tid} "<msg>" --artifact <the page's URL> --page <the HTML file you published>`). With no Claude Code here there is no URL: \
+publish-page records the run page's copy, and `done` takes that. It is refused without a published page, and it files the build task, blocked until the person approves an option."""
 
 
 RESEARCH_PROMPT = """\
@@ -352,12 +352,13 @@ The commit message passed to `done` ends with exactly one line: `review: nothing
 skipped (small)`."""
 
 
-SELF_REVIEW = """\
-Spec review, before `done` (after mattpocock/skills code-review, MIT; its Spec axis only): you have no subagent \
-to hand it to, so review your own work as a fresh reader would. Commit your work, then read only the output of \
-`git diff {base}...HEAD` and of `{runner} plan brief {tid}`, setting aside what you meant to do, and list, \
-each finding quoting the task's words: (a) what the task asked for that is missing or partial, (b) what the diff \
-does that was not asked, (c) what looks implemented but wrong. """ + REVIEW_PROMPT[REVIEW_PROMPT.index('Fix (a)'):]
+ONCE_REVIEW = """\
+Spec review, before `done` (after mattpocock/skills code-review, MIT; its Spec axis only): commit your work, then \
+run `{runner} review {tid} --base {base}`, with a command time limit of 1000 seconds (or in the background, waiting \
+for it to end). It gives a fresh one-shot only the diff and the task's brief and prints its findings: (a) what the \
+task asked for that is missing or partial, (b) what the diff does that was not asked, (c) what looks implemented but \
+wrong. When it says the one-shot did not run, review your own work as a fresh reader would: read only `git diff \
+{base}...HEAD` and `{runner} plan brief {tid}`, and list the same. """ + REVIEW_PROMPT[REVIEW_PROMPT.index('Fix (a)'):]
 
 
 DOCS_PROMPT = """\
@@ -382,14 +383,15 @@ SUBAGENTS = {
 
 def subagents() -> dict:
     """F101: the task session's Claude Code subagents (`--agents`), each on its `[models]` role: `review` when
-    the spec review is on, `docs` unless `[models] docs = false`."""
+    the spec review is on, `docs` unless `[models] docs = false`. F406e: none on another provider's model: that
+    review is `run review`, and those docs are the task's own."""
     try:
         models = C.raw.get('models') or {}
     except (AttributeError, KeyError, TypeError):  # no config loaded
         return {}
     on = {'review': review_on(), 'docs': True}
     return {role: {'description': desc, 'prompt': prompt, 'model': models[role]}
-            for role, (desc, prompt) in SUBAGENTS.items() if on[role] and models.get(role)}
+            for role, (desc, prompt) in SUBAGENTS.items() if on[role] and models.get(role) and not harness_session(models[role])}
 
 
 def review_on() -> bool:
@@ -413,8 +415,8 @@ def harness_session(model: str) -> bool:
 
 def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
     """REVIEW_PROMPT filled in: the branch the diff is taken against, the skip threshold, and whether this task
-    has a long form (then it is reviewed whatever its size). F132: with `harness` (a harness loop session, which
-    has no subagents) the review is the session's own, done as a fresh reader would: SELF_REVIEW."""
+    has a long form (then it is reviewed whatever its size). F406e: with `harness` (a harness loop session, which
+    has no subagents), or a [models] review of another provider, it is a one-shot: ONCE_REVIEW."""
     try:
         base = default_branch()
     except SystemExit:
@@ -424,8 +426,8 @@ def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
         has_long = P.long_form(plan_dir, tid).exists()
     except (OSError, ValueError):
         has_long = False
-    if harness:
-        return SELF_REVIEW.format(
+    if harness or harness_session((C.raw.get('models') or {}).get('review') or ''):
+        return ONCE_REVIEW.format(
             base=base, runner=C.command, tid=tid, min_lines=int(C.run.get('review_min_lines', 50)),
             long='this task has one, so review it whatever its size' if has_long else 'this task has none')
     return REVIEW_PROMPT.format(

@@ -11,6 +11,9 @@ B122: the publish is a one-shot headless `claude -p` with only Artifact and Read
 control session: typing the ask into a chat cost a turn (~8k tokens) there on every run event. At most one
 publish every PAGE_COPY_EVERY s, and only when the page changed apart from its clock (`page_copy_key`). When
 the one-shot cannot publish, the copy stops for the run (`PAGE_COPY_OFF`): it never falls back to a chat.
+
+F406e: with `[models] feed` on another provider the one-shot runs on the harness loop, which has no Artifact tool, so
+there is no claude.ai page: the local copy is the answer, and that is no failure.
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ from pathlib import Path
 
 from agent_runner import plat
 from agent_runner.control import control_env
-from agent_runner.feed import feed_model  # F101: [models] feed; the one-shot only publishes a file it is handed
+from agent_runner.feed import feed_model, feed_on_harness, harness_once  # F101: [models] feed; the one-shot only publishes a file it is handed
 from agent_runner.slots import one_session, remote_on
 from agent_runner.state import C, log, ROOT
 
@@ -175,8 +178,13 @@ def page_copy_said(r) -> str:
 
 
 def page_copy_publish(path: Path, url: str, icon: str = 'dashboard') -> str:
-    """Run the one-shot (`page_copy_argv`) and return the URL it published to, '' when it did not. Raises
-    OSError when the agent cannot be started at all."""
+    """Run the one-shot (`page_copy_argv`; `harness_once` for another provider's feed model) and return the URL it
+    published to, '' when it did not. Raises OSError when the agent cannot be started at all."""
+    if feed_on_harness():  # F406e: no claude.ai page from there, whatever it says: the local copy stands
+        said, why = harness_once(feed_model(), page_copy_ask(path, url, icon) + ' With no Artifact tool, publish it '
+                                 'nowhere: answer "local copy".', path.parent, PAGE_COPY_TIMEOUT)
+        log(f'run page copy: no claude.ai page without Claude Code; the local copy is {path}' + (f' ({why})' if why else ''))
+        return ''
     r = sp.run(page_copy_argv(path, url, icon), cwd=str(path.parent), env=control_env(), stdin=sp.DEVNULL,
                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=PAGE_COPY_TIMEOUT)
     got = ARTIFACT_URL.findall(r.stdout or '')
@@ -200,7 +208,8 @@ def page_copy_job(f: Path, url: str, keyf: Path, publish) -> None:
             got = publish(f, url)
         except (OSError, sp.SubprocessError) as e:  # no agent to start, or it hung: as good as a failed publish
             if isinstance(e, FileNotFoundError):
-                page_copy_stop(f'the agent {C.run["agent"]} cannot be started')
+                PAGE_COPY_FAILS[0] = 0  # F406e: no Claude Code here: the local copy is the answer
+                log(f'run page copy: the agent {C.run["agent"]} is not here, so no claude.ai page; the local copy is {f}')
                 return
             log(f'run page copy: {e}')
             got = ''
@@ -208,6 +217,9 @@ def page_copy_job(f: Path, url: str, keyf: Path, publish) -> None:
             PAGE_COPY_FAILS[0] = 0
             if got != url:
                 page_copy_url_file().write_text(got + '\n', encoding='utf-8')
+            return
+        if feed_on_harness():  # F406e: the local copy is the answer
+            PAGE_COPY_FAILS[0] = 0
             return
         PAGE_COPY_FAILS[0] += 1
         keyf.unlink(missing_ok=True)
@@ -272,27 +284,38 @@ def concept_url_file(tid: str, c=None) -> Path:
 
 
 def concept_url(tid: str, c=None) -> str:
-    """The claude.ai URL `run publish-page` recorded for task `tid`'s page, '' for none."""
+    """What `run publish-page` recorded for task `tid`'s page: its claude.ai URL, or where the run page shows it
+    (`local_page`, F406e: published without Claude Code); '' for none."""
     try:
         u = concept_url_file(tid, c).read_text(encoding='utf-8').strip()
     except OSError:
         return ''
-    return u if ARTIFACT_URL.fullmatch(u) else ''
+    return u if ARTIFACT_URL.fullmatch(u) or u == local_page(tid) else ''
+
+
+def local_page(tid: str) -> str:
+    """F406e: the answer for a page with no claude.ai page: where the run page shows its local copy."""
+    return f'/concept/{tid}'
 
 
 def publish_page(tid: str, src: Path, publish=None) -> tuple[Path, str]:
     """F106f: copy the page `src` to <notes>/concepts/<tid>.html (the run page shows it at /concept/<tid>), then
     publish that copy to claude.ai with the one-shot (`publish`, default `page_copy_publish`): to the URL recorded
     for `tid` when there is one, so a second publish updates the same page. The URL is recorded (`concept_url`),
-    and `done` takes it as a concept's --artifact. (the copy, the URL or '' when the one-shot did not publish)."""
+    and `done` takes it as a concept's --artifact. (the copy, the URL or '' when the one-shot did not publish). F406e: with no Claude Code to
+    publish it (none here, or a feed model of another provider) the answer is its `local_page`."""
     dest = C.notes('concepts', f'{tid}.html')
     dest.write_bytes(src.read_bytes())
-    old = concept_url(tid)
+    old = u if (u := concept_url(tid)) != local_page(tid) else ''
+    local = feed_on_harness()
     try:
         got = (publish or (lambda f, u: page_copy_publish(f, u, icon='options')))(dest, old)
     except (OSError, sp.SubprocessError) as e:
         log(f'publish-page {tid}: {e}')
+        local = local or isinstance(e, FileNotFoundError)  # no agent on this machine
         got = ''
+    if not got and local:
+        got = local_page(tid)
     if got:
         concept_url_file(tid).write_text(got + '\n', encoding='utf-8')
     return dest, got
@@ -327,7 +350,8 @@ def cmd_publish_page(argv: list[str]) -> int:
         print(f'run publish-page: the one-shot could not publish it to claude.ai (the run log says why). Run this '
               f'again, or finish with `done {tid} "<msg>" --blocked "<why>"`.', file=sys.stderr)
         return 1
-    print(f'published: {url}')
+    print('no claude.ai page without Claude Code: the copy on the run page is the page' if url == local_page(tid)
+          else f'published: {url}')
     if P.concept(tid):
         print(f'Recorded for {tid}: `done {tid} "<msg>"` takes it as --artifact, and Needs you links it.')
     return 0

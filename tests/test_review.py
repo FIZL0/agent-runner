@@ -9,8 +9,11 @@ sessions get the Agent tool for it. `[run] review = false` drops all of that.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
+import sys
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -91,5 +94,83 @@ def test_prompt_off():
             eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact', 'no subagent at all: no Agent tool')
 
 
+ANSWER = r"""
+import fs from 'node:fs';
+export default function ({ provider, model }) {
+  return { async call(context) {
+    fs.writeFileSync(process.env.FAKE_LOG, JSON.stringify({ provider, model, tools: context.tools.map((t) => t.name),
+      messages: context.messages.map((m) => m.content) }));
+    return { role: 'assistant', content: [{ type: 'text', text: '(a) "add a thing": missing' }], api: 'fake', provider,
+      model, timestamp: Date.now(), stopReason: 'stop', usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } };
+  } };
+}
+"""
+
+CLAUDE = """#!/usr/bin/env python3
+import json, os, sys
+open(os.environ['FAKE_LOG'], 'w').write(json.dumps({'argv': sys.argv[1:], 'said': sys.stdin.read()}))
+print('nothing')
+"""
+
+
+def test_prompt_provider():
+    print("F406e: a review or docs model of another provider is no subagent; the brief runs `run review` instead")
+    with tempfile.TemporaryDirectory() as t:
+        root, _ = make(Path(t), '\n[models]\nreview = "codex:gpt-test"\ndocs = "codex:gpt-test"\n')
+        R.init(root)
+        eq(R.subagents(), {}, 'no subagent on another provider')
+        p = R.prompt_for('F1', 1, 1, root, 'main', 'opus')
+        has(p, re.escape(f'`{R.C.command} review F1 --base main`'), 'a Claude Code session runs the one-shot')
+        check('subagent_type' not in p and 'Hand CHANGELOG' not in p, 'and writes its docs itself', p)
+        for line in ('`review: nothing`', 'Fix (a) and (c)', 'Skip the review'):
+            check(line in p, f'it still says {line!r}')
+
+
+def test_one_shot():
+    print('F406e: run review: a fresh one-shot on [models] review gets only the diff and the brief; findings come back')
+    with tempfile.TemporaryDirectory() as t:
+        tmp = Path(t)
+        root, env = make(tmp, '\n[models]\nreview = "codex:gpt-test"\n')
+        wt = tmp / 'wt'
+        git(root, 'worktree', 'add', '-q', '-b', 'task/F1', str(wt))
+        (tmp / 'fake.mjs').write_text(ANSWER, encoding='utf-8')
+        log = tmp / 'log.json'
+        nopath = tmp / 'bin'  # no claude on PATH
+        nopath.mkdir()
+        for tool in ('git', 'node'):
+            if at := shutil.which(tool):
+                (nopath / tool).symlink_to(at)
+        env = {**env, 'AGENT_RUNNER_HARNESS_PROVIDER': str(tmp / 'fake.mjs'), 'FAKE_LOG': str(log),
+               'AGENT_RUNNER_SLOT': '1', 'PATH': str(nopath)}
+        r = run(wt, 'review', 'F1', '--base', 'main', env=env)
+        check(r.returncode == 1 and 'is empty' in r.stderr, 'nothing committed: it says so', r.stderr)
+        (wt / 'a.py').write_text('print("the new thing")\n', encoding='utf-8')
+        git(wt, 'add', '-A')
+        git(wt, 'commit', '-qm', 'F1 a thing')
+        if shutil.which('node'):
+            r = run(wt, 'review', '--base', 'main', env=env)
+            eq((r.returncode, r.stdout.strip()), (0, '(a) "add a thing": missing'), 'the findings are printed')
+            got = json.loads(log.read_text(encoding='utf-8'))
+            eq((got['provider'], got['model'], got['tools'], len(got['messages'])), ('codex', 'gpt-test', ['read'], 1),
+               'a fresh one-shot on [models] review, read only')
+            check('+print("the new thing")' in got['messages'][0] and 'add a thing' in got['messages'][0],
+                  'handed the diff and the brief', got['messages'][0])
+        toml = root / 'runner.toml'
+        toml.write_text('[run]\nremote = false\nagent = "claude-f406e"\n', encoding='utf-8')
+        (wt / 'runner.toml').write_text(toml.read_text(encoding='utf-8'), encoding='utf-8')
+        r = run(wt, 'review', 'F1', '--base', 'main', env=env)
+        check(r.returncode == 1 and 'no review: the one-shot on opus did not run' in r.stderr,
+              'a claude review model with no claude on PATH: it says it did not run', r.stderr)
+        fake = nopath / 'claude-f406e'
+        fake.write_text(CLAUDE.replace('/usr/bin/env python3', sys.executable), encoding='utf-8')
+        fake.chmod(0o755)
+        r = run(wt, 'review', 'F1', '--base', 'main', env=env)
+        eq((r.returncode, r.stdout.strip()), (0, 'nothing'), 'with it, a headless one-shot answers')
+        got = json.loads(log.read_text(encoding='utf-8'))
+        eq((got['argv'][0], got['argv'][got['argv'].index('--tools') + 1]), ('-p', 'Read'), 'with Read only')
+        check('the new thing' in got['said'], 'and the diff on stdin')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_prompt_on, test_prompt_off]))
+    tests = [test_prompt_provider] + ([] if os.name == 'nt' else [test_one_shot])  # its fake programs are POSIX
+    raise SystemExit(report(tests + [test_prompt_on, test_prompt_off]))
