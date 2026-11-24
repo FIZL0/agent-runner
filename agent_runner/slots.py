@@ -959,7 +959,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     """
     from agent_runner.fallback import FALLBACK, note_model, session_model
     from agent_runner import settings_live
-    model = fallback or task_model(tid, model, branch, kept=settings_live.KEPT.get(sid, ('',))[0])  # F105: on its task's model, as at its start
+    model = fallback or task_model(tid, model, branch, **({'kept': settings_live.KEPT[sid][0]} if sid in settings_live.KEPT else {}))  # F105: on its task's model, as at its start
     if not fallback and on_harness(model) != bool(HARNESS.find_transcript(sid)):
         model = session_model(sid)  # F142: the chain started it on the other kind of agent: only that can resume it
     d = worktree(n, branch)

@@ -158,7 +158,9 @@ def test_running_keep() -> None:
     told: list = []
     run.procs[2], run.running[2] = (os.getpid(), 'sid-live-2', 0.0), ('F2', '', set(), set())
     SL.BUDGET_AT[0] = 0.0
-    with mock.patch.object(SL, 'task_spend', lambda sid: (12, 0.0)):
+    # B172: not the mark of the real run's slot 2, which is there while it finishes a task
+    with mock.patch.object(SL, 'task_spend', lambda sid: (12, 0.0)), \
+            mock.patch.object(SL, 'finished_mark', lambda n=None, c=None: None):
         SL.budgets(run.procs, run.running, lambda n, procs, text: told.append(n))
     eq(told, [2], 'only the new one is past its budget')
     (d / 'runner.toml').write_text('[run]\ntask_tokens = 5\n[models.kinds]\nF = "sonnet"\n')
