@@ -3470,7 +3470,7 @@ const window = {};
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: {}, ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
-const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
+const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, side = () => {}, rowSettle = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
@@ -4339,6 +4339,98 @@ def test_swipe_or_scroll_b167(tmp: Path) -> None:
     eq(got['tap'][0::3], ['0', False], 'a tap stays a tap')
     eq([got['box'], got['mic'], got['sideways']], [False] * 3, 'text boxes, the held mic and sideways scrollers are left alone')
     eq(got['sheet'], [False, 'translateY(120px)', ''], "the sheet's swipe down")
+
+
+ROW_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const on = {true: {}, false: {}}, sent = [], opened = [], add = (t, f, c) => (on[!!c][t] = on[!!c][t] || []).push(f);
+const env = {S: {snap: {sessions: ['c1', 'c2', 'c3'].map(n => ({name: n, title: n, state: 'live'}))}, f: {}, sel: [], thread: null, sheet: '', drawer: true, ob: []},
+  I: new Proxy({}, {get: (t, k) => '<i>' + String(k) + '</i>'}), esc: s => String(s), CSS: {escape: s => s}, isDrawer: true, all: false,
+  document: {addEventListener: add, querySelector: () => null, body: {}}, addEventListener: () => {}, window: {addEventListener: () => {}},
+  chatTitle: s => s.title, chatPins: () => env.pins, pins: ['c3'], chatNames: () => ['c1', 'c2', 'c3'], replyDue: () => false, drawerOn: () => env.isDrawer, atAll: () => env.all,
+  sessionOf: n => env.S.snap.sessions.find(s => s.name === n), saveChatOrder: (o, p) => { env.pins = p; env.render() },
+  outbox: (n, a) => sent.push([n, a]), openSheet: n => opened.push(n), fetch: () => Promise.resolve({json: () => ({ok: true})}), tq: p => p, slashOpen: () => false,
+  open: n => opened.push(n), chatPick: () => ({sel: [], last: ''}), render: () => { env.settle(); env.html = env.S.snap.sessions.map(s => env.row(s)).join('\n') }};
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+env.env = env;
+new Function('known', 'env', 'with (known) {' + logic + slice('/* F118: a chat row:', 'function chatBar(') + slice('/* F118: a delete is final', 'const card=')
+  + 'let tapped={n:"",at:0};' + slice("document.addEventListener('click',async e=>{", "document.addEventListener('submit'")
+  + slice("document.addEventListener('keydown',e=>{\n", "/* B188: a soft keyboard's") + slice('let noClick=false;', '/* F83: a press')
+  + 'env.row=chatRow;env.settle=rowSettle;env.ren=startRename;env.save=saveRename;env.final=finalDelete}')(known, env);
+const S = env.S, out = {}, row = n => env.html.split('\n').find(h => h.includes(`data-k="chat:${n}"`));
+/* a tap on the element that matches these selectors */
+function tap(has, dataset = {}) {
+  let stopped = false;
+  const el = {dataset, closest: s => s.split(',').some(p => has.includes(p.trim())) ? el : null, hasAttribute: () => false}, e = {target: el, preventDefault() {}, stopPropagation() { stopped = true }};
+  on.true.click.forEach(f => f(e)); if (!stopped) on.false.click.forEach(f => f(e)); return stopped;
+}
+const dots = n => tap(['[data-rowmenu]'], {rowmenu: n});
+const btn = (k, n) => tap(['.rowacts', '.rowacts button', `[data-${k}]`], {[k]: n});
+const thread = n => tap(['[data-thread]'], {thread: n});
+/* a tap on the row's right end, where the dots are: on the button that is there */
+const spot = n => { const b = row(n).match(/<button[^>]*(?=><i>|>Undo)/g).filter(x => !x.includes('class="del"')).pop();
+  return b.includes('data-rowmenu') ? dots(n) : b.includes('data-undo') ? tap(['[data-undo]']) : btn(b.match(/data-(ren|pin|del)=/)[1], n) };
+const esc = () => on.false.keydown.forEach(f => f({key: 'Escape', preventDefault() {}, target: {closest: () => null, matches: () => false}}));
+env.render(); out.closed = row('c1');
+dots('c1'); out.opened = [S.rowOpen, row('c1')]; out.pinnedRow = (dots('c3'), row('c3'));
+out.switched = [S.rowOpen, (env.html.match(/class="rowacts"/g) || []).length];
+out.outside = [thread('c2'), S.rowOpen, opened.length, S.drawer];
+dots('c1'); out.scrim = [tap(['#scrim']), S.rowOpen, S.drawer];
+dots('c1'); out.title = [thread('c1'), S.rowOpen, opened.length];
+dots('c1'); esc(); out.esc = [S.rowOpen, S.drawer];
+dots('c1'); S.drawer = false; env.render(); out.drawer = S.rowOpen; S.drawer = true;
+env.isDrawer = false; S.drawer = false; dots('c1'); out.wide = S.rowOpen; esc(); env.isDrawer = true; S.drawer = true;
+dots('c1'); btn('pin', 'c1'); out.pin = [env.pins.join(), S.rowOpen];
+dots('c1'); btn('ren', 'c1'); out.ren = [S.ren, S.rowOpen, env.html.includes('data-renform')];
+S.f.ren = 'New name'; env.save(); out.sent = sent; env.render();
+spot('c2'); out.first = [S.rowOpen, S.undo || null]; spot('c2'); out.second = [S.rowOpen, S.undo.names, row('c2')];
+spot('c2'); out.undone = [S.undo, row('c2').includes('data-rowmenu')];
+spot('c2'); spot('c2'); dots('c1'); out.final = [S.snap.sessions.map(s => s.name).join(), S.rowOpen];
+out.sheets = opened.length; console.log(JSON.stringify(out));
+"""
+
+
+def test_row_buttons_f187(tmp: Path) -> None:
+    """F187: on touch, a chat row's three dots open its buttons in the row: Rename, Pin, and Delete where the dots were, so
+    two taps there delete, with Undo. One row at a time; a tap elsewhere, Esc or the drawer closing only closes it; no sheet."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("openSheet('chat'" not in page and '\n  chat(){' not in page, 'no chat sheet')
+    if not shutil.which('node'):
+        print('  (no node here: the row buttons script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(ROW_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the row buttons', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    check('" data-k="chat:c1" data-crow=' in o['closed'] and 'aria-expanded="false"' in o['closed'] and 'rowacts' not in o['closed'], 'closed: the dots only', o['closed'])
+    n, html = o['opened']
+    acts = html.split('class="rowacts"')[1]
+    eq((n, [acts.count(f'data-{k}="c1"') for k in ('ren', 'pin', 'del')], acts.count('aria-label') - 1, 'data-rowmenu' in html), ('c1', [1, 1, 1], 3, False),
+       'open: three named buttons in place of the dots')
+    check(acts.index('data-ren') < acts.index('data-pin') < acts.index('data-del'), 'Delete is the last, at the right end')
+    check('Unpin this chat' in o['pinnedRow'].split('class="rowacts"')[1], 'a pinned row says Unpin')
+    check('.rowacts button{width:var(--tap);height:var(--tap)' in page, 'each is a full target')
+    eq(o['switched'], ['c3', 1], "another row's dots switch: one row open")
+    eq(o['outside'], [True, '', 0, True], 'a tap on another chat only closes it')
+    eq(o['scrim'], [True, '', True], 'a tap beside the drawer too')
+    eq(o['title'], [True, '', 0], 'and one on its own title')
+    eq(o['esc'], ['', True], 'Esc closes the row, not the drawer')
+    eq(o['drawer'], '', 'the drawer closing closes it')
+    eq(o['wide'], 'c1', 'with no drawer it opens too')
+    eq(o['pin'], ['c3,c1', ''], 'Pin')
+    eq(o['ren'], ['c1', '', True], 'Rename, in the row')
+    eq(o['sent'], [['rename_chat', {'chat': 'c1', 'title': 'New name'}]], 'the new name is sent')
+    eq(o['first'], ['c2', None], 'the first tap on the dots deletes nothing')
+    eq(o['second'][:2], ['', ['c2']], 'a second tap on the same spot deletes')
+    check('data-undo' in o['second'][2] and 'rowacts' not in o['second'][2], 'with Undo shown there', o['second'][2])
+    eq(o['undone'], [None, True], 'Undo brings it back')
+    eq(o['final'], ['c1,c3', 'c1'], 'the next tap makes the delete final, as before')
+    eq(o['sheets'], 0, 'no sheet opened')
 
 
 def test_chats_f128(tmp: Path) -> None:
@@ -5563,5 +5655,5 @@ if __name__ == '__main__':
                            in_tmp(test_outbox_f137), in_tmp(test_once_b161), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
-                           in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_task_text_f85),
+                           in_tmp(test_chats_f128), in_tmp(test_row_buttons_f187), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_task_text_f85),
                            in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_motion_f147), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190)]))
