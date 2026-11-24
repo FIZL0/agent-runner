@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: this repo's merge joins a conflict in CHANGELOG.md itself, with no fix session: `[run] joinable` holds it and `[run.join]` runs `tools/changelog_join.py`, which keeps both branches' new entries once and puts an entry written before a release under Unreleased, not the released version (C47).
 - Fixed: on the run page, on a touch device, a tap on the slim message box while the session still scrolls with momentum stops the scroll and opens the message box with the keyboard, and it stays open; before, the scroll went on and the box did not open (B218b1).
 - Changed: on the run page, one tap on the slim message box of a chat or slot opens the full message box with the keyboard on a touch device too; before, a phone needed a second tap. The draft and the session's size stay (B218b).
 - Fixed: Copilot on a GitHub Enterprise domain works past the login: the harness loop's token refresh, model list and model calls all stay on the stored domain, also when the token names an address off it (githubcopilot.com); a model the domain does not list for the account is refused with the ones it lists (of those the login package knows). `--enterprise` and the asked domain also take `https://company.ghe.com/`, trimmed to the host, and `run login` lists the host (F406b).

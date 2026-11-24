@@ -5,8 +5,14 @@ auto_upgrade = true  # upgrade agent-runner by itself when a newer release is ou
 auto_release = { "every" = 10, "idle" = true }  # queue a release by itself when the run goes idle with landed work
 # The gate `done` and every merge run: each tests/test_*.py suite in turn, stopping at the first failure.
 test = "for t in tests/test_*.py; do echo \"== $t\"; python3 \"$t\" || exit 1; done"
-# Every task appends to the changelog and the merge repair joins those appends, so it holds no task back.
+# Every task appends to the changelog: the merge joins those appends itself (joinable), so no fix session is
+# needed; shared_files only keeps an overlap from holding a task back. A plain line union would put an entry
+# written before a release under the released version, so tools/changelog_join.py (below) joins it.
+joinable = ["CHANGELOG.md"]
 shared_files = ["CHANGELOG.md", "docs/STYLE.md"]
 prompt_extra = """
 A task that changes how the run app looks, moves or speaks (agent_runner/page/*, the parts of the run app's page; Runner Home's page): read
 docs/STYLE.md first and follow it; a change that needs a new rule writes the rule there in the same commit."""
+
+[run.join]
+"CHANGELOG.md" = "python3 tools/changelog_join.py {ours} {base} {theirs} {out}"
