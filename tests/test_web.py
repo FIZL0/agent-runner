@@ -5807,7 +5807,7 @@ def test_page_parts_c41a(tmp: Path) -> None:
         check(p.read_text(encoding='utf-8') in page, f'{p.name} is in the page')
     check({p.suffix for p in parts} == {'.css', '.js'}, 'only styles and scripts', {p.suffix for p in parts})
     areas = {p.name.split('-', 1)[1].split('.')[0] for p in parts}
-    check({'talk', 'chats', 'settings', 'tools', 'home', 'plan', 'live', 'shared'} <= areas, 'one file per area', areas)
+    check({'talk', 'chats', 'settings', 'tools', 'home', 'plan', 'live', 'shared'} <= areas, 'a file for each area', areas)
     eq(W.PAGE_TEXT, page, 'the served page is the joined one')
     toml = (Path(W.__file__).parent.parent / 'pyproject.toml').read_text(encoding='utf-8')
     check('"page/*.css"' in toml and '"page/*.js"' in toml, 'the wheel holds every part')

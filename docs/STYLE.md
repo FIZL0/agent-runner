@@ -1,6 +1,6 @@
 # Style rules
 
-How the run app (`agent_runner/web_page.html` and its parts in `agent_runner/page/`, one CSS or script file per area, joined by the server into one page; Runner Home's page too) looks, moves and speaks. Every change to it
+How the run app (`agent_runner/web_page.html` and its parts in `agent_runner/page/`, CSS and script files named by area, in the order they are joined by the server into one page (an area has several where its code sits among another's: moving it would change the cascade or the order scripts run); Runner Home's page too) looks, moves and speaks. Every change to it
 follows these rules, and a change that needs a new rule writes it here in the same commit. `tests/test_web.py`
 (`test_style_f83`) checks the ones a machine can check. The words for things are in [GLOSSARY.md](../GLOSSARY.md);
 what the app does is in [REFERENCE.md](REFERENCE.md#the-run-app).

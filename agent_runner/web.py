@@ -87,7 +87,9 @@ class PageFile:
         text = self.read_text()
         at = Path(tempfile.gettempdir()) / f"agent-runner-page-{hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]}.html"
         if not at.is_file():
-            at.write_text(text, encoding='utf-8')
+            part = at.with_suffix(f'.{os.getpid()}.tmp')
+            part.write_text(text, encoding='utf-8')
+            part.replace(at)
         return str(at)
 
 
