@@ -220,7 +220,7 @@ a{color:var(--accent)}
 .main.sess .top,.main.sess .notices,.main.sess .dockwrap{position:absolute;left:0;right:0}
 .main.sess .top{top:0} .main.sess .notices{top:var(--seebar,0px)} .main.sess .dockwrap{bottom:0;z-index:2}
 .main.sess .dockwrap .dock{background:var(--bg);transition:transform var(--dur-slow) var(--ease),opacity var(--dur-fast) var(--ease)}
-.main.sess .top>*{transition:opacity var(--dur-fast) var(--ease)}
+.main.sess .top>*{transition:opacity var(--dur-fast) var(--ease),transform var(--dur-spring) var(--spring)}
 .main.sess.slim .top{background-color:transparent;pointer-events:none} .main.sess.slim .top>:not(.menu,[data-new]){opacity:0;visibility:hidden}
 .main.sess.slim .top>:is(.menu,[data-new]){pointer-events:auto;background:var(--surface);border-radius:50%;box-shadow:0 2px 10px var(--shadow)}
 .main.sess.slim .notices{display:none} .main.sess.slim .dock{transform:translateY(100%);opacity:0;pointer-events:none}
@@ -1406,7 +1406,7 @@ function keepScroll(box){
 }
 /* F147: motion (docs/STYLE.md, Motion). born: when a key came in, so a redraw half way goes on from there; fly: what
    glides now; said: how long a reply was; sent: the words on their way out of the message box; vt: a View Transition */
-const MO={born:new Map(),said:new Map(),grown:new Map(),fly:new Map(),sent:null,vt:null,named:[]}, MO_MS=450;
+const MO={born:new Map(),said:new Map(),grown:new Map(),rolls:new Map(),fly:new Map(),sent:null,vt:null,named:[]}, MO_MS=450;
 const calm=()=>document.hidden||matchMedia('(prefers-reduced-motion:reduce)').matches;
 function moAnim(el,frames,o){
   if(!el.animate||calm())return null;
@@ -1423,7 +1423,7 @@ const shiftOf=el=>new DOMMatrix(getComputedStyle(el).transform);
 function flying(el){let d=0;for(const x of MO.fly.keys()){if(!x.isConnected)MO.fly.delete(x);else if(x===el||x.contains(el))d+=shiftOf(x).m42}return d}
 /* the lists: where each thing was on screen before a redraw, then each glides from there; what left collapses */
 const GLIDES='[data-k],.col>.sec', LEAVES='.card,.srow,.lrow,.ev,.crow';
-const glideKey=el=>el.dataset.k||'sec:'+el.textContent;
+const glideKey=el=>el.dataset.k||'sec:'+el.textContent.replace(/\d+/g,'');
 function glideSpot(box){
   if(!S.live||!box.animate||calm()||box.contains(document.activeElement)&&document.activeElement.matches('[data-f]'))return null;
   const e=box.getBoundingClientRect(), m=new Map();
@@ -1472,6 +1472,7 @@ function enter(box,had){
     const k=el.dataset.k, fresh=!had.has(k)&&!(el.dataset.t&&had.has('t:'+el.dataset.t));
     if(fresh)MO.born.set(k,now);
     else if(had.has(k)&&el.dataset.v&&had.get(k)!==el.dataset.v){if(el.dataset.roll!==undefined&&had.get(k))roll(el,had.get(k));else el.classList.add('changed')}
+    const rl=MO.rolls.get(k);if(rl&&rl.v===el.dataset.v&&now>rl.at&&now-rl.at<MO_MS&&had.get(k)===rl.v)roll(el,rl.was,rl.at);  // a redraw half way
     const age=MO.born.has(k)?now-MO.born.get(k):-1;
     if(age<0||!fresh&&!el.style)continue;
     if(el.matches&&el.matches('.a')){[...el.querySelectorAll('.lead,.say>*,.speakb')].forEach((x,i)=>{x.classList.add('fresh');x.style.animationDelay=Math.min(i,10)*60-age+'ms'});continue}
@@ -1495,13 +1496,14 @@ function freshWords(box){
   }
 }
 /* a count or a state word rolls: up when it grew, down when it fell. Its data-v is its words */
-function roll(el,was){
+function roll(el,was,at){
   if(!el.animate||calm())return;
   const d=parseFloat(el.dataset.v)<parseFloat(was)?-1:1, span=c=>{const s=document.createElement('span');s.className=c;return s};
   const now=span('rolls'), old=span('rolls out');old.setAttribute('aria-hidden','true');old.textContent=was;
+  const t=at||Date.now();MO.rolls.set(el.dataset.k,{was,v:el.dataset.v,at:t});
   now.append(...el.childNodes);el.append(now,old);el.classList.add('roll');
-  moAnim(now,[{transform:`translateY(${d*100}%)`,opacity:0},{transform:'none',opacity:1}]);
-  const a=moAnim(old,[{transform:'none',opacity:1},{transform:`translateY(${-d*100}%)`,opacity:0}],{fill:'forwards'});if(a)a.onfinish=()=>old.remove();
+  const b=moAnim(now,[{transform:`translateY(${d*100}%)`,opacity:0},{transform:'none',opacity:1}]);
+  const a=moAnim(old,[{transform:'none',opacity:1},{transform:`translateY(${-d*100}%)`,opacity:0}],{fill:'forwards'});if(a){a.onfinish=()=>old.remove();if(at)a.currentTime=b.currentTime=Date.now()-at}
 }
 /* the loops (a dot, a wave) go on over a redraw, all in step */
 function loopsInStep(box){if(box.getAnimations)for(const a of box.getAnimations({subtree:true}))if(a.effect.getComputedTiming().iterations===Infinity)a.startTime=0}
@@ -1967,7 +1969,7 @@ function projectsHTML(){
   const ps=projectsNow(), asks=projectAsks(ps), total=homeNeeds()+H.alerts.length;
   const alerts=H.alerts.map(a=>card(`<div class="row"><div class="who">${I.alert}</div><div class="grow">${esc(a.what)}</div>${a.clean?`<a class="btn acc" href="${esc(tq(HB+'device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`,'need')).join('');
   const more=asks.length-ASKS_SHOWN, all=H.more?PGROUPS.length&&projectOrder(ps).filter(p=>(p.asks||[]).length).map(p=>`<div class="qline">${esc(p.name||p.key)}</div>${projectAsks([p]).map(askRow).join('')}`).join(''):asks.slice(0,ASKS_SHOWN).map(askRow).join('');
-  const needs=`<div class="sec">Needs you${total?` · ${total}`:''}<span class="ln"></span></div>${alerts}${all}${more>0?`<div><button class="btn" data-pmore aria-expanded="${H.more}">${H.more?'Show fewer':`Show ${more} more, by project`}</button></div>`:''}${total?'':card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does, in any project.</div></div></div>`,'','data-k="noneed"')}`;
+  const needs=`<div class="sec">Needs you${total?` · <span data-k="n:sec" data-roll data-v="${total}">${total}</span>`:''}<span class="ln"></span></div>${alerts}${all}${more>0?`<div><button class="btn" data-pmore aria-expanded="${H.more}">${H.more?'Show fewer':`Show ${more} more, by project`}</button></div>`:''}${total?'':card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does, in any project.</div></div></div>`,'','data-k="noneed"')}`;
   const groups=PGROUPS.map(([g,label])=>{const l=projectOrder(ps).filter(p=>projectGroup(p)===g);return l.length?`<div class="sec">${label}<span class="ln"></span></div>${l.map(projectCard).join('')}`:''}).join('');
   return `<div class="col">${homeErr()}${H.projects===null?(H.err?'':emptyCard('Loading…')):needs+(groups||emptyCard('No projects yet: none under the scanned folders. Add one with + Project.'))}</div>`;
 }
@@ -1978,8 +1980,8 @@ function offHTML(){
   const up=p.state&&p.state!=='off', more=(p.left||0)-qs.length;
   const said=up?'Its run is up and its page is on its way.':p.starting?'Starting its run. This page turns into its app once it is up.':'No run is up.';
   return `<div class="col">${homeErr()}${card(`<div class="row"><div class="grow"><b>${esc(p.name||p.key)}</b><div class="small">${p.starting?'<span class="livedot"></span> ':''}${said}</div></div>${up?'':mainBtn(p)}${dotsBtn(p)}</div>${p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:''}${landedLine(p)}${hobOf(p.key)}`,'pcard',`data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`)}
-    <div class="sec">Needs you${p.needs?` · ${p.needs}`:''}<span class="ln"></span></div>${asks.length?asks.map(a=>card(`<b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.id)}${a.id?' · ':''}answer it once the run is up</div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)).join(''):emptyCard('Nothing needs you.')}
-    <div class="sec">Queue${p.left?` · ${p.left}`:''}<span class="ln"></span></div>${qs.length?card(qs.map(q=>`<div class="lrow"><span>${esc(q.title)}</span><span class="small">${esc(q.id)}</span></div>`).join(''),'','data-k="pq"')+(more>0?`<div class="small">and ${more} more</div>`:''):emptyCard(p.left?'Nothing in it can start by itself.':'The queue is empty.')}</div>`;
+    <div class="sec">Needs you${p.needs?` · <span data-k="n:sec" data-roll data-v="${p.needs}">${p.needs}</span>`:''}<span class="ln"></span></div>${asks.length?asks.map(a=>card(`<b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.id)}${a.id?' · ':''}answer it once the run is up</div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)).join(''):emptyCard('Nothing needs you.')}
+    <div class="sec">Queue${p.left?` · <span data-k="n:queue" data-roll data-v="${p.left}">${p.left}</span>`:''}<span class="ln"></span></div>${qs.length?card(qs.map(q=>`<div class="lrow" data-k="pq:${esc(q.id)}"><span>${esc(q.title)}</span><span class="small">${esc(q.id)}</span></div>`).join(''),'','data-k="pq"')+(more>0?`<div class="small">and ${more} more</div>`:''):emptyCard(p.left?'Nothing in it can start by itself.':'The queue is empty.')}</div>`;
 }
 /* its run came up: the page is its app now, at the same address. Not while something is open on it */
 function turnIntoApp(){
@@ -2093,7 +2095,7 @@ function controlsCard(){
   const run=S.snap.run||{}, up=S.snap.up!==false, ss=slots();
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
   const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
-  return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-v="${esc(said)}">${esc(said)}</div></div>${up?(w=>`<span class="small" data-k="slotsof" data-roll data-v="${w}">${w}</span>`)(`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`):''}</div>
+  return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-roll data-v="${esc(said)}">${esc(said)}</div></div>${up?(w=>`<span class="small" data-k="slotsof" data-roll data-v="${w}">${w}</span>`)(`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`):''}</div>
     ${S.snap.no_settings?`<div class="small" data-k="nosettings"><span class="v-warn">${esc(S.snap.no_settings)}</span></div>`:''}
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
     ${(S.snap.tools||[]).length?`<div class="small" data-k="tools" data-v="${esc(toolsWords(S.snap.tools))}">${esc(toolsWords(S.snap.tools))}</div>`:''}
@@ -2619,7 +2621,7 @@ function openSheet(name,arg){if(name==='talk')loadVoices();runStop($('sheet'));S
 /* F162a2: where focus goes back to: what opened the sheet, or a Needs you card drawn again since */
 function sheetOpener(){const b=sheetBack, id=b&&b.dataset&&b.dataset.needopen;
   return !b||b.isConnected||!id?b:[...document.querySelectorAll('[data-needopen]')].find(x=>x.dataset.needopen===id)}
-function closeSheet(){if(!S.sheet)return;S.sheet='';S.sure=null;render(true);const b=sheetOpener();if(b&&b.isConnected&&b.focus)b.focus({preventScroll:true});sheetBack=null}
+function closeSheet(){if(!S.sheet)return;runStop($('sheet'));S.sheet='';S.sure=null;render(true);const b=sheetOpener();if(b&&b.isConnected&&b.focus)b.focus({preventScroll:true});sheetBack=null}
 function sheetDraw(){
   const el=$('sheet');
   if(S.sheet==='need'&&!needOf(S.sheetArg)){S.sheet='';S.sure=null;sheetBack=null}  // F162: answered, or it left Needs you
@@ -3977,7 +3979,12 @@ document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closes
    a mostly vertical move; Safari keeps its own back swipe at the very edge. */
 let SW=null;
 /* F147: a panel goes on from where the finger left it, with its speed; .drag stays on (no transition) until it is there */
-function runStop(el){const a=el&&el._run;if(!a)return;el._run=null;a.onfinish=a.oncancel=null;a.cancel();el.classList.remove('drag');if(el===$('side')){$('scrim').classList.remove('drag');if($('scrim')._run){$('scrim')._run.cancel();$('scrim')._run=null}}}
+function runStop(el){  // from where it is, the stylesheet's transition takes it on (or a finger)
+  const a=el&&el._run;if(!a)return;
+  const c=getComputedStyle(el), st={transform:c.transform,opacity:c.opacity}, p=el===$('scrim')?'opacity':'transform';
+  el.style[p]=st[p];el._run=null;a.cancel();void el.offsetWidth;el.classList.remove('drag');el.style[p]='';
+  if(el===$('side'))runStop($('scrim'));
+}
 function springRun(el,frames,css){
   const done=()=>{el._run=null;el.classList.remove('drag')};
   if(!el.animate||calm())return done();
