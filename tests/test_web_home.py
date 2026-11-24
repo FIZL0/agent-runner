@@ -167,7 +167,7 @@ const run = (reduced, hidden) => {
   const node = (name, l, t, w, h, more) => ({name, style: {}, complete: true, isConnected: true, offsetWidth: w, offsetHeight: h, setAttribute() {}, remove() { const i = body.indexOf(this); if (i >= 0) body.splice(i, 1) },
     getBoundingClientRect: () => ({left: l, top: t, right: l + w, bottom: t + h, width: w, height: h}), cloneNode: () => node('copy', 0, 0, w, h),
     animate(f, o) { const a = {name, f, o, cancel() { this.gone = true; this.oncancel && this.oncancel() }}; anims.push(a); return a }, ...more});
-  const thumb = node('thumb', 20, 500, 92, 120), img = node('big', 20, 150, 360, 720), words = node('words', 20, 300, 300, 40), sheet = node('sheet', 0, 0, 0, 0);
+  const thumb = node('thumb', 20, 500, 92, 120, {querySelector: () => ({naturalWidth: 720, naturalHeight: 1440})}), img = node('big', 20, 150, 360, 720, {complete: false, addEventListener() {}}), words = node('words', 20, 300, 300, 40), sheet = node('sheet', 0, 0, 0, 0);
   let high = 600, S = {askShot: -1};
   Object.assign(sheet, {scrollTop: 340, getBoundingClientRect: () => ({left: 0, top: 800 - high, right: 400, bottom: 800, width: 400, height: high}),
     querySelector: q => q === '.shotbig img' ? S.askShot >= 0 ? img : null : q === '[data-shot="0"]' ? S.askShot < 0 ? thumb : null : null,
@@ -177,7 +177,7 @@ const run = (reduced, hidden) => {
     () => { high = S.askShot >= 0 ? 700 : 600; sheet.scrollTop = 17 });
   const out = {}, seen = () => anims.splice(0).map(a => [a.name, a.o.duration, a.o.easing, a.f]);
   f.shotGo(0); out.open = [S.askShot, sheet.scrollTop, seen()];
-  f.shotGo(-1); out.close = [S.askShot, sheet.scrollTop, body.length, sheet.style.paddingTop || ''];
+  out.room = img.style.aspectRatio; img.complete = true; f.shotGo(-1); out.close = [S.askShot, sheet.scrollTop, body.length, sheet.style.paddingTop || ''];
   const copy = anims.find(a => a.name === 'copy'); out.back = seen();
   if (copy) { copy.onfinish(); out.landed = body.length; }
   f.shotGo(0); f.shotGo(-1); out.two = body.length; f.shotEnd(); out.end = [body.length, sheet.style.paddingTop || ''];
@@ -201,6 +201,7 @@ def test_need_picture_moves_f189(tmp: Path) -> None:
     o = json.loads(r.stdout)
     m = o['moves']
     eq(m['open'][:2], [0, 0], 'open: the picture, from its top')
+    eq(m['room'], '720/1440', 'a picture not decoded yet takes its room at once')
     by = {x[0]: x for x in m['open'][2]}
     eq(sorted(by), ['big', 'sheet', 'words'], 'open: the picture, the edges of the sheet and the words move')
     name, dur, ease, (first, last) = by['big']

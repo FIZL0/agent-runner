@@ -114,19 +114,24 @@ function shotGo(i){
   const seen=from&&(open&&from===SHOT.ghost?shotSeen(from):shotCut(shotSeen(from)));
   const round=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r-m'))||0;
   const src=big0&&seen?big0.cloneNode():null, size=src&&[big0.offsetWidth,big0.offsetHeight];
+  const pic=open&&from&&(from.naturalWidth?from:from.querySelector('img')), size0=pic&&pic.naturalWidth?[pic.naturalWidth,pic.naturalHeight]:null;
   shotEnd();go();
+  const big=open&&shotBig();
+  if(big&&!big.complete&&size0){  // not decoded yet: it takes its room at once, so the sheet is measured right
+    Object.assign(big.style,{width:size0[0]+'px',aspectRatio:size0.join('/')});
+    big.addEventListener('load',()=>{big.style.width=big.style.aspectRatio=''},{once:true})}
   const now=sh.getBoundingClientRect(), t=now.top-box.top, b=box.bottom-now.bottom;
   shotEdges(sh,t,b);
   parts().forEach(([el,r],j)=>{const w=was[j]&&was[j][1], y=w?w.top-r.top:0;if(w&&Math.abs(y)>=1&&w.bottom>box.top&&w.top<box.bottom)glideTo(el,0,y,SHOT_MO)});
   for(const el of sh.querySelectorAll('.askbody>:not(.shotbig)'))moAnim(el,[{opacity:0},{opacity:1}],{ease:'--ease',dur:'--dur'});
   if(!seen)return;
   if(open){
-    const img=shotBig(), grow=()=>{
-      if(!img.isConnected||!img.offsetHeight)return;
-      const to=img.getBoundingClientRect();
-      moAnim(img,[shotFrame(to,seen,round),{transform:'none',clipPath:`inset(0px round ${round}px)`}],SHOT_MO);
+    const grow=()=>{
+      if(!big.isConnected||!big.offsetHeight)return;
+      const to=big.getBoundingClientRect();
+      moAnim(big,[shotFrame(to,seen,round),{transform:'none',clipPath:`inset(0px round ${round}px)`}],SHOT_MO);
     };
-    if(img)if(img.complete)grow();else img.addEventListener('load',grow,{once:true});
+    if(big)if(big.complete||size0)grow();else big.addEventListener('load',grow,{once:true});
     return;
   }
   const thumb=shotThumb(old), to=thumb&&shotCut(thumb.getBoundingClientRect());if(!to)return;
@@ -203,7 +208,7 @@ async function askLoad(id){
     S[key]={...(S[key]||{}),[id]:got};render(true)};
   await Promise.all([one('why/','askWhy'),one('task/','askText')]);
 }
-function needOpen(id){if(!needOf(id))return;S.askShot=-1;S.askFold={};S.giveSaid={};openSheet('need',id);askLoad(id)}
+function needOpen(id){if(!needOf(id))return;shotEnd();S.askShot=-1;S.askFold={};S.giveSaid={};openSheet('need',id);askLoad(id)}
 function needReply(id){
   const n=needOf(id), text=String(S.f[askField(id)]||'').trim();if(!n)return;
   if(!text)return toast('Write your reply first',true);

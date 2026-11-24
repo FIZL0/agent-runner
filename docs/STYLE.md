@@ -175,6 +175,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Pictures.** A picture in the Needs you sheet opens out of its thumbnail and goes back into it (`shotGo()`:
   `transform` and `clip-path` on `--spring-soft` and `--dur-spring`; a copy, `.shotfly`, goes back over the sheet), and
   the sheet's edges, title and foot move with it. The words beside it fade in. Back returns to the scroll place left.
+  Under `calm()` both are instant.
 - **Kept.** The scrim fades. The Talk dock's mic and box cross-fade. Talk's top bar slides off when you scroll up
   (`.away`, transform only). A session's bars go over its text as the reader scrolls up
   (`.slim`) in one motion on `--dur-slow` and `--ease`, all CSS transitions, so a reversal goes on from where it is: the top bar and a notice's row slide off the top edge and fade, the chips fade, and the message box shrinks into the slim message box (`.slimbox`) and grows back, its bottom edge still (`.slimskin`, `.slimground`, `.slimfoot`, `.dockclip`); the dock's words ride down onto the slim row's place. No line moves when they go or come back (`feedShare()` takes
