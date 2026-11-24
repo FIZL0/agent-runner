@@ -2018,14 +2018,15 @@ python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessi
 
 Windows-only code (ConPTY, attach) cannot run on Linux, and the GitHub ci workflow is disabled since 2026-11-24 (too
 many emails; its file stays), so a run of it by hand with gh fails. Before the merge, and before a plain `run done`,
-run the Windows tests on this machine's Windows VM as a background command and wait for it to end:
-`tools/windows_vm.sh <test files the change touches>`, or `tools/windows_vm.sh --all` for every `tests/test_*.py`. It
-tests the worktree, uncommitted changes included, so there is no push, no gh and no block needed. With `--all`, it
-prints after each file `-- FILE: passed|failed, N.Ns`; the last line is `windows_vm: all N files passed`, or `windows_vm: N of M files
-failed: FILE FILE`, or `windows_vm: did not finish: see the output above` when it was cut off. A failing file: fix it
-and run again. A file that also fails without the change is not yours: file it if no task covers it. Once the files
-pass, plain `done`, then `finish`. Without a VM (exit 2, with one line saying why) the task is blocked and says so:
-`run done <ID> "<msg>" --blocked "BLOCKED: no Windows VM on this machine to run its Windows tests: <the script's line>"`.
+run the Windows tests on this machine's Windows VM as a background command and wait for it to end: `tools/windows_vm.sh
+<test files the change touches>`, or `tools/windows_vm.sh --all` for every `tests/test_*.py`. It tests the worktree,
+uncommitted changes included, so there is no push, no gh and no block needed. With `--all`, it prints after each file
+`-- FILE: passed|failed, N.Ns`; the last line is `windows_vm: all N files passed`, or `windows_vm: N of M files failed:
+FILE FILE`, or `windows_vm: did not finish: see the output above` when the VM or its ssh was cut off. A failing file:
+fix it and run again. A file that also fails without the change is not yours: file it if no task covers it. Once the
+files pass, plain `done`, then `finish`. Without a VM (exit 2 and only a line like `windows_vm: … no Windows VM to
+use`, with no test run) the task is blocked and says so: `run done <ID> "<msg>" --blocked "BLOCKED: no Windows VM on
+this machine to run its Windows tests: <the script's line>"`.
 
 ### Test entries in ~/.claude.json
 

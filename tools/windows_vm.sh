@@ -186,7 +186,7 @@ if [ -n "$all" ]; then  # printed at the very end, by cleanup
   last=$(vm_ssh "$python -X utf8 -" <<PY
 print(open(r'''$dir/last''').read())
 PY
-  ) || last="did not finish: see the output above"
+  ) || { last="did not finish: see the output above"; [ "$code" != 0 ] || code=1; }
   last="windows_vm: ${last//$'\r'/}"
 fi
 exit "$code"
