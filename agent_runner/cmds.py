@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_held, plan as P, plansync, plat, shared_tools
+from agent_runner import control_held, plan as P, plansync, plat, shared_tools, stack
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -102,7 +102,7 @@ def slot_just_started(tid: str, n: int, branch: str) -> bool:
     d = SLOTS_DIR / f's{n}'
     if not d.is_dir() or git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip() != f'task/{tid}':
         return False
-    if git('rev-list', '--count', f'{branch}..task/{tid}').stdout.strip() != '0':
+    if git('rev-list', '--count', f'{stack.fork(tid, branch)}..task/{tid}').stdout.strip() != '0':
         return False
     return not git('for-each-ref', '--format=%(refname)', f'refs/heads/wip/{tid}',
                    f'refs/heads/wip/{tid}-*').stdout.strip()

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from contextlib import ExitStack
 
-from agent_runner import pitch, plan as P, plat, plansync
+from agent_runner import pitch, plan as P, plat, plansync, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -282,6 +282,16 @@ AHEADS: list[dict] = []  # merges built and gated already, for later turns: {'ba
 # (`build_ahead`, or adopted from an earlier run, `adopt_merge`); each turn takes the one on its base
 
 
+UNDER: list[dict] = []  # the merge under test, until it lands or fails: one {'on': its commit, 'tids'}, or none
+
+
+def under_way() -> list[dict]:
+    """F198: the merges a task may start on, as {'on', 'tids': every task they hold that has not landed}: the one
+    under test, then those built ahead on it whose own gate has not failed."""
+    return [m for u in UNDER[:] for m in [u, *({'on': a['merged'], 'tids': [*u['tids'], *a['tids']]}
+                                               for a in AHEADS[:] if a['base'] == u['on'] and not a.get('failed'))]]
+
+
 def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) -> None:
     """While the merge `base` is in its gate: the tasks that finished since, merged on top of it in a second
     worktree (merge2) and tested there beside it. When `base` lands, their turn reuses that merge, and with
@@ -335,6 +345,8 @@ def _build_ahead(branch: str, base: str, cands: list[str]) -> None:
     rc, text = merge_gate(tids[0], d, merge_env(), {'base': base, 'tids': tids})
     log(f'{", ".join(tids)}: the gate on the merge built ahead ' + ('passed' if not rc else
         f'failed (exit {rc}; {C.notes(GATES) / key}.failed)'))
+    if rc:
+        batch['failed'] = True
     if rc and batch in AHEADS:  # its turn has not come yet: it goes from this result, not a gate of its own
         ADOPTED[key] = rc, text
 
@@ -733,6 +745,8 @@ def merge(tid: str, branch: str) -> str | None:
     Returns None when it landed, else why it was left alone. The shared branch is then as it was, and the
     task branch is still there.
     """
+    if s := stack.stacked(tid, branch):  # F198: `stack.settle` comes first; its branch holds what has not landed
+        return f'it was started on the merge of {", ".join(s["tids"])}, which has not landed'
     try:
         return merge_tries(tid, branch)
     finally:
@@ -1181,6 +1195,7 @@ def batch_build(t: BatchTurn):
     t.repairs and archives ticked tasks. Sets t.base, t.riders and t.merged. Returns None when built,
     BATCH_RETRY to build again, or why it cannot merge (AGAIN for a fix ahead of the lock)."""
     tid, branch, d = t.tid, t.branch, t.d
+    UNDER.clear()
     git('merge', '--abort', cwd=d)
     clean(d)
     t.base = base = git('rev-parse', branch).stdout.strip()
@@ -1298,6 +1313,7 @@ def batch_test(t: BatchTurn):
         return None
     if docs_merge(t):
         return docs_checked(t)
+    UNDER[:] = [{'on': t.merged, 'tids': [tid, *riders]}]
     ahead_done = threading.Event()
     if C.run['merge_ahead']:
         threading.Thread(target=build_ahead, args=(branch, t.merged, ahead_done, {tid, *riders}),
@@ -1308,6 +1324,7 @@ def batch_test(t: BatchTurn):
         ahead_done.set()
     if not why:
         return None
+    UNDER.clear()
     drop_ahead()  # built on a merge that does not land as it is
     names = FAILED.pop(tid, [])
     if riders and names and (bad := blame([tid, *riders], d, base, names)):
@@ -1408,6 +1425,7 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
             return why
         return f'{tid}: no merge landed in three tries'
     finally:
+        UNDER.clear()
         git('merge', '--abort', cwd=d)
         git('checkout', '-q', '--detach', cwd=d)
 

@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import inbox_lock, plan as P, plat, session_theme, shared_tools
+from agent_runner import inbox_lock, plan as P, plat, session_theme, shared_tools, stack
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -650,7 +650,7 @@ def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
         os.unlink(idx)
     if not c:
         return None
-    mine = git('rev-list', '--count', f'{branch}..HEAD', cwd=d).stdout.strip()
+    mine = git('rev-list', '--count', f'{stack.fork(tid, branch)}..HEAD', cwd=d).stdout.strip()
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}', cwd=d).returncode
     to = f'wip/{tid}' if mine == '0' and not wip else free_branch(f'leftover/{tid}')
     if git('branch', to, c, cwd=d).returncode:
@@ -841,7 +841,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     end_mark(n, C).unlink(missing_ok=True)  # F102: the last session's finish or ask, read when it ended
     ask = asked(tid)  # F102: it asked the person, and the answer is in: its own session goes on
     wait = {} if ask else shared_tools.waited(tid)  # F168: it gave up its slot for a shared tool, free now
-    base = f'asked/{tid}' if ask else f'waiting/{tid}' if wait else branch
+    base = f'asked/{tid}' if ask else f'waiting/{tid}' if wait else stack.begin(tid, branch)
     if not wait:
         shared_tools.forget(tid)
     co = git('checkout', '-q', '-B', f'task/{tid}', base, cwd=d)
@@ -865,7 +865,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
         log(f'slot {n}: {tid}\'s waiting session cannot be resumed; a new one starts on the work it left')
     P._clear_ask(tid, C.todo)  # F156: open again, so an ask file still there is an old ask's
     sid = str(uuid.uuid4())
-    prompt = prompt_for(tid, n, slots, d, branch, model)  # F132: the harness loop's brief has no subagents
+    prompt = prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch)  # F132: the harness loop's brief has no subagents
     logfile, since = slot_header(n, f'{tid} session {sid}')
     note_model(sid, model)
     if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
@@ -979,7 +979,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     if fallback:  # F106g: a new session on the next provider, the old one's work in the worktree
         sid = str(uuid.uuid4())
         prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + \
-            prompt_for(tid, n, slots, d, branch, model)
+            prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch)
         logfile, since = slot_header(n, f'{tid} session {sid} (fallback: {why})')
         note_model(sid, model)
         if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
