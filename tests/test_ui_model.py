@@ -1004,6 +1004,57 @@ def test_need_answers_c33(tmp: Path) -> None:
           'state': 'merging'}) and not U.task_controls_on({'name': 'c1', 'task': 'F1'}), 'task controls')
 
 
+def test_decide_options_f181c(tmp: Path) -> None:
+    """F181c: a DECIDE's options are its answers, from the ask file or the bracket that ends its question, never from
+    prose; the recommended one is first and marked, and the value sent is the bare name, by plan confirm."""
+    repo = fake_run(tmp)
+    todo, link = repo / 'plan' / 'TODO.md', 'https://claude.ai/artifact/QCMg'
+    plain = todo.read_text(encoding='utf-8')
+
+    def ask(words: str) -> dict:
+        todo.write_text(plain.replace('DECIDE: which layout https://claude.ai/artifact/abc', f'DECIDE: {words}'), encoding='utf-8')
+        return U.row_of('need', 'D3')
+    said = lambda row: [(a['label'], a['value']) for a in row['answers']]  # noqa: E731
+    look = [('Full (recommended)', 'Full'), ('Small', 'Small'), ('No change', 'No change')]
+    f179 = 'Which look for the chat window: Full (recommended), Small, or no change?'
+    eq((said(row := ask(f'{f179} {link}')), row.get('options')), ([], None), "F179's question, options in prose: never guessed")
+    row = ask(f'Which look for the chat window? [Full (recommended) / Small / No change] {link}')
+    eq((said(row), row['url'], row['what']), (look, link, 'Which look for the chat window?'), "F179's as a bracket: its buttons")
+    check('[Full' not in json.dumps([row['ask'], row['ask_short'], row['what'], row['detail']['steps'], row['detail']['summary']]),
+          'the bracket is not shown in the question', row)
+    eq(U.row_labels('need', row), {'need_answer1': 'Full', 'need_answer2': 'Small', 'need_answer3': 'No change'}, 'what a press sends: the bare names')
+    eq(said(ask('Which size? [small / iPhone (Recommended)]')), [('iPhone (recommended)', 'iPhone'), ('small', 'small')],
+       'the recommended first, the rest as given, names as written')
+    eq(said(ask('Ship it? [Yes / No (recommended)].')), [('No (recommended)', 'No'), ('Yes', 'Yes')], 'Yes and No with one recommended')
+    for bad in ('[A]', '[A/B]', '[A / ]', '[ / B]', '[A / a]', '[A (recommended) / B (recommended)]', '[A / B', '[A / B] or so',
+                '[A [x] / B]', '[A / -b]', '[A / ' + 'b' * 81 + ']', '[' + ' / '.join(f'o{j}' for j in range(13)) + ']', '[(recommended) / B]'):
+        row = ask(f'Which one? {bad}')
+        eq((said(row), row['what']), ([], f'Which one? {bad}'), f'{bad[:30]}: no buttons, and it stays in the question')
+    f = S.C.notes('uploads', 'x').parent.parent / 'asks' / 'D3.json'
+    f.parent.mkdir(parents=True, exist_ok=True)
+    opts = [{'name': 'Keep'}, {'name': 'Move [it] / all', 'rec': True}]
+    f.write_text(json.dumps({'options': opts}), encoding='utf-8')
+    eq(said(ask('Which one, then?')), [('Move [it] / all (recommended)', 'Move [it] / all'), ('Keep', 'Keep')], "the ask file's options")
+    row = ask('Which one? [A / B]')
+    eq((row['answers'][1]['value'], row['what']), ('Keep', 'Which one?'), 'it wins over a bracket, which is still not shown')
+    for bad in ('x', [], [{'name': 'A'}], [{'name': 'A'}, 'B'], [{'name': 'A'}, {'name': 3}], [{'name': 'A'}, {'name': 'B', 'rec': 'yes'}]):
+        f.write_text(json.dumps({'options': bad}), encoding='utf-8')
+        eq([a['value'] for a in ask('Which one? [C / D]')['answers']], ['C', 'D'], f'{bad}: malformed, so the bracket')
+    f.write_text(json.dumps({'options': opts, 'inputs': [{'key': 'a'}]}), encoding='utf-8')
+    row = ask('Which one? [C / D]')
+    eq((row['answers'], row['what']), ([], 'Which one? [C / D]'), 'an item with inputs: Done answers it, the bracket stays')
+    f.unlink()
+    row, _ = U.needs_rows([('BLOCKED', 'F2', '', 'Log in [A / B]', '', 'T', False)], dt.datetime.now())
+    eq((said(row[0]), row[0]['what']), ([('Done', 'Done')], 'Log in [A / B]'), 'only a DECIDE has them')
+    row = ask('Which look? [Full (recommended) / Small]')
+    eq(U.need_options(row), ['Full (recommended)', 'Small'], "the chat's text lists them")
+    with mock.patch.object(U, 'SEND', [lambda t: check(False, 'no session starts', t)]):
+        eq(U.act('run_control', key='need_answer1', tid='D3', text='Full (recommended)')['ok'], False, 'the bare name only')
+        r = U.act('run_control', key='need_answer1', tid='D3', text='Full', note='dark  too')  # the real plan confirm
+    eq((r['ok'], r['gone'], r['argv'][-3:]), (True, 'D3', ['confirm', 'D3', 'Full: dark too']), 'a press: plan confirm, with the note')
+    check('- [ ] **D3**' in (t := todo.read_text(encoding='utf-8')) and '): Full: dark too' in t, 'D3 is open with the answer', t)
+
+
 ASKS_F162 = {  # real asks, as Needs you showed them
     'B160': ('CONFIRM', 'On an iPhone in Safari, after this lands and the run restarts: 1) reload, open a chat, tap the message box; '
              'the header stays and the box rides up with no grey band. 2) Close the keyboard; it glides back. 3) Same in Talk, '
@@ -1257,7 +1308,7 @@ def test_plan_facts_f150(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_decide_options_f181c), in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),

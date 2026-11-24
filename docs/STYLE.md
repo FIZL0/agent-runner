@@ -53,7 +53,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   second text, then `.btns`.
 - **Needs you item** (`.asktap`, `needTap()`): one button, not a card of buttons. What is wanted and where in everyday
   words (`.asklab`), the title on one line, at most two lines of what to do (`.askdo`), then Press for details, the
-  steps count, the id and the age. Its answer buttons sit below it.
+  steps count, the id and the age. Its answer buttons sit below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: title, label, age, id; where and when;
   What to do; What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or Esc goes back); the
   task text folded. An item with inputs draws its steps with Open (a step's link) and the command as code, with

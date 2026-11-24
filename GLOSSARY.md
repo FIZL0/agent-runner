@@ -664,7 +664,7 @@ _In code_: watch_code, code_restart, CODE_QUIET
 _Avoid_: hot reload
 
 **Ask file**:
-The short steps, what to see and pictures an agent writes for what it asks of a person, shown in Needs you; gone once the item is answered
+The short steps, what to see and pictures, and for a DECIDE its `options` (answer buttons), an agent writes for what it asks of a person, shown in Needs you; gone once the item is answered
 _Said_: asks file
 _On screen_: the steps, what to see and pictures on a Needs you card and popup
 _In code_: asks/ID.json, asks.ask_file, clear_ask, ASKS_PROMPT

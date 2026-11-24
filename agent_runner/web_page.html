@@ -803,7 +803,7 @@ function chatGroups(rows,o){
   return{top,quiet};
 }
 /* F143: a Needs you card's Chat, as its first message shows while the run starts it (need_chat_text then replaces it) */
-function needChatAsk(n){const os=needInputs(n).length?[]:answerOpts(n);
+function needChatAsk(n){const os=needInputs(n).length?[]:((n&&n.answers)||[]).map(a=>a.label||a.value);
   return `This chat is about ${n.id}${n.title?` '${n.title}'`:''}, which needs me. What was put to me:\n\n${n.ask||n.what||''}${os.length?`\n\nPossible answers:\n${os.map(o=>'- '+o).join('\n')}`:''}`}
 /* F124: Talk's settings, kept per browser: read (read replies aloud), voice ('' the run's default, else the system's own; F158: an id of a run voice, 'system', or a
    device voice's name), mic 'tap' or 'hold',
@@ -2103,7 +2103,9 @@ const actBtns=(acts,tid,labels={},pri='')=>(acts||[]).map(controlOf).filter(Bool
 /* F180: a Needs you row's fixed answers among its actions (the first is the main button; a pitch draws only that one,
    Not this… has the rest), and its other actions */
 const isAnswer=k=>!!(controlOf(k)||{}).answer;
-const ansBtns=n=>{const ks=(n.acts||[]).filter(isAnswer);return actBtns(n.label==='PITCH'?ks.slice(0,1):ks,n.id,n.labels,ks[0])};
+/* F181c: what its answer buttons say ('Full (recommended)'); what is sent is the row's labels ('Full') */
+const ansWords=(n,ks)=>Object.fromEntries(ks.map((k,j)=>[k,((n.answers||[])[j]||{}).label]).filter(x=>x[1]));
+const ansBtns=n=>{const ks=(n.acts||[]).filter(isAnswer);return actBtns(n.label==='PITCH'?ks.slice(0,1):ks,n.id,{...n.labels,...ansWords(n,ks)},ks[0])};
 const restBtns=n=>actBtns((n.acts||[]).filter(k=>!isAnswer(k)),n.id,n.labels);
 const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+':'+tid).map(c=>ctlSure(c,tid)).join('');
 function slotRow(s){

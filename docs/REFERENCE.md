@@ -363,7 +363,7 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   a phone and a centred dialog from 760px wide, and closes when the item is answered or leaves Needs you. It takes keyboard focus when it opens, and Esc gives focus back to the card, also when the card was redrawn meanwhile. Working now (opens
   that slot's session), Up next (a row folds open to the task's whole text) and Release (when the next one
   lands, or now). Each item's answers come from `ui_model.need_answers` (in each snapshot needs row as `answers`): Yes and No on a
-  CONFIRM or a yes/no ask, a concept's options (A/B/C when its copy has none), a pitch's options, and Done on a BLOCKED item,
+  CONFIRM or a yes/no ask, a concept's options (A/B/C when its copy has none), a pitch's options, a DECIDE's options, and Done on a BLOCKED item,
   on both pages; `agent-runner ui` draws the same, adding only the key letters, and `need_chat_text` uses them too. Each answer is a `need_yes`, `need_no` or `need_answerN` entry of RUN_CONTROLS (at most `ANSWER_MAX`, 12, drawn per item); which one a row's button is comes from `ui_model.answer_of` over its answers. A TOOL row has no answers.
   An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
   answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply open a new control session with them (`control --new --ask`, named for the ask), except a DECIDE's, which are its answer as above. `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
@@ -527,6 +527,8 @@ an old script left in `<notes>/wizards/ID.sh` shows as text steps in the detail 
 {"summary": "Open the pay page on the phone", "where": "iPhone, Safari", "steps": ["Open the shop", "Tap Pay"],
  "expect": ["A green tick"], "shots": [{"file": "uploads/pay.png", "caption": "The pay button"}]}
 ```
+
+A DECIDE's answer buttons come from `options`, a list of `{name, rec}` with `rec` true on at most one: 2 to 12 names, unique, at most 80 characters, none starting with `-`. Without a good `options`, they come from a bracket that ends the question, before any link, with the names separated by ` / `, e.g. `DECIDE: Which look? [Full (recommended) / Small / No change] https://…`. A good bracket is not shown in the question; a malformed one stays in it and gives no buttons, and a malformed `options` falls back to the bracket. Each option is one button, the recommended first and marked "(recommended)". A press sends the bare name at once, with the popup's note; an item with inputs has no option buttons (Done answers it) and keeps its bracket.
 
 A missing, broken or over 64 KB file is ignored. Without one, the ask is split by rule (at sentences, numbered steps,
 `;`, `then` and colons), with nothing lost and no AI. A `file` is relative to `<notes>/asks`, or `uploads/NAME`, or an

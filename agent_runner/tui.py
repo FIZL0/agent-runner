@@ -665,8 +665,11 @@ class RunPage:
                 return out, self.give_foot(it, width), 0
             out += [L(), L(('Your reply is the answer: a run starts it.' if it.get('label') == 'DECIDE' else
                             'Your reply goes to a new chat, which settles the item.', 'dim'))]
-            row = buttons(*[button(c['tui'], c['label']) for c in self.row_controls(it, 'need')
-                            if c.get('tab') == tab and c['tui']], button('L', 'later'))
+            fixed = [c for c in self.row_controls(it, 'need') if c.get('tab') == tab]
+            row = buttons(*[button(c['tui'], c['shown']) for c in fixed if c['tui']], button('L', 'later'))
+            more = ', '.join(c['shown'] for c in fixed if not c['tui']) if it.get('label') == 'DECIDE' else ''
+            if more:  # F181c: options past the last key
+                out += text_lines(f'More options, typed as the reply: {more}', 'dim', width)
             return out, [row] + self.input_lines(f'answer:{it["id"]}', width, 'or your own reply'), 0
         if tab == 'info' and self.panel == 3:  # F184: a shelved task
             out = [L((f'{it["id"]} ', KIND_COLOUR.get(it['id'][:1], 'cyan')), (it.get('title', ''), 'fg')), L(),
@@ -949,7 +952,9 @@ class RunPage:
             return []
         acts = it['acts'] if 'acts' in it else U.row_acts(where, it)
         labels = it.get('labels', {}) if 'acts' in it else U.row_labels(where, it)  # F180: a label that is the row's own
-        return [dict(c, label=labels.get(c['key'], c['label'])) for c in self.snap.get('controls') or U.controls()
+        said = {a['value']: a['label'] for a in it.get('answers') or U.need_answers(it)} if where == 'need' else {}
+        # F181c: 'shown', an answer's button ('Full (recommended)'); its label is what is sent ('Full')
+        return [dict(c, label=(l := labels.get(c['key'], c['label'])), shown=said.get(l, l)) for c in self.snap.get('controls') or U.controls()
                 if c['key'] in acts and c['where'] == where
                 and not (c.get('answer') and where == 'need' and self.give_inputs(it))]  # F175b: Done answers it
 

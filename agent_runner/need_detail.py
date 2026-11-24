@@ -2,7 +2,7 @@
 pictures.
 
 They come from the optional file <notes>/asks/ID.json, {summary, where, steps: [...], expect: [...], shots: [{file,
-caption}], inputs: [...]}, each field standing in for what the ask's own words give. Those are split by rule (`split_ask`), with no AI
+caption}], inputs: [...], options: [...]}, each field standing in for what the ask's own words give. Those are split by rule (`split_ask`), with no AI
 and nothing lost: the pieces joined are the ask. A missing, broken or oversized file is never an error.
 """
 from __future__ import annotations
@@ -23,6 +23,7 @@ FILE_MAX = 64 * 1024        # an asks file larger than this is not read
 LINK_MAX, CMD_MAX, MATCH_MAX, INPUTS_MAX = 1000, 2000, 200, 12  # F175
 KINDS = {'text': 500, 'link': LINK_MAX, 'secret': 4096}  # an input's kinds, and the most characters of each
 INPUT_LABELS = ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK)  # the items inputs can answer
+OPTIONS_MAX, OPTION_LEN = 12, 80  # F181c: a DECIDE's options (ui_model.ANSWER_MAX), and the most characters of one
 SHOT_MAX = 50 * 1024 * 1024
 SHOTS_MAX = 20
 SHOT_DIRS = ('uploads', 'asks')  # under the notes dir, the only folders pictures are shown from
@@ -287,8 +288,42 @@ def input_wrong(x: dict, value) -> str:
     return ''
 
 
+RECOMMENDED = re.compile(r'\s*\(recommended\)$', re.I)
+BRACKET = re.compile(r'(\S.*?)\s+\[([^\[\]]+)\]\s*\.?$', re.S)
+
+
+def _options(v) -> list[dict]:
+    """F181c: the options `v`, each {name, rec}, as a DECIDE's buttons: bare names, the recommended one first. [] when
+    one is malformed: fewer than two or too many, a name that is empty, too long or there twice, two recommended."""
+    out: list[dict] = []
+    for x in v if isinstance(v, list) else []:
+        if not isinstance(x, dict) or not isinstance(x.get('name'), str) or not isinstance(x.get('rec', False), bool):
+            return []
+        said = ' '.join(x['name'].split())
+        name = RECOMMENDED.sub('', said)
+        if not re.search(r'[^\W_]', name) or name.startswith('-') or len(name) > OPTION_LEN or not name.isprintable() or \
+                name.casefold() in {o['name'].casefold() for o in out}:
+            return []
+        out.append({'name': name, 'rec': x.get('rec', False) or name != said})
+    if not 2 <= len(out) <= OPTIONS_MAX or sum(o['rec'] for o in out) > 1:
+        return []
+    return sorted(out, key=lambda o: not o['rec'])
+
+
+def decide_options(tid: str, what: str) -> tuple[list[dict], str]:
+    """F181c: a DECIDE's options, and its question `what` (its link already off) without them: the ask file's
+    `options`, else the bracket that ends the question, 'Which look? [Full (recommended) / Small / No change]'. Never
+    from its prose; a malformed bracket stays in the question. An item with inputs has none: Done is its answer."""
+    d = asks_file(tid)
+    if d.get('inputs'):
+        return [], what
+    m = BRACKET.fullmatch(what.strip())
+    found = _options([{'name': n} for n in re.split(r'\s+/\s+', f' {m[2]} ')]) if m else []
+    return d.get('options') or found, m[1] if m and found else what
+
+
 def asks_file(tid: str) -> dict:
-    """<notes>/asks/ID.json as {summary, where, steps, step_more, expect, inputs, shots}, only what is well formed; {}
+    """<notes>/asks/ID.json as {summary, where, steps, step_more, expect, inputs, options, shots}, only what is well formed; {}
     without one."""
     if not re.fullmatch(r'[\w.-]+', tid or ''):
         return {}
@@ -303,7 +338,8 @@ def asks_file(tid: str) -> dict:
         return {}
     out: dict = {k: ' '.join(d[k].split()) for k in ('summary', 'where') if isinstance(d.get(k), str)}
     steps, more = _steps(d.get('steps'))
-    out.update(steps=steps, step_more=more, expect=_strings(d.get('expect')), inputs=_inputs(d.get('inputs')))
+    out.update(steps=steps, step_more=more, expect=_strings(d.get('expect')), inputs=_inputs(d.get('inputs')),
+               options=_options(d.get('options')))
     shots = d.get('shots') if isinstance(d.get('shots'), list) else []
     out['shots'] = [r for s in shots[:SHOTS_MAX] if isinstance(s, dict) and isinstance(s.get('file'), str) and
                     (r := _shot(s['file'], s['caption'] if isinstance(s.get('caption'), str) else ''))]

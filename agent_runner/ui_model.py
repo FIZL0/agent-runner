@@ -379,12 +379,15 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
     for label, tid, k, what, url, title, shelved, *_ in waiting:
         if shelved:
             continue
+        opts, what = need_detail.decide_options(tid, what) if label == 'DECIDE' else ([], what)  # F181c
         if label == 'CONCEPT':
             concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
                       'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
                       'age': P.age(stamps.get(tid, ''), now),
                       'detail': need_detail.detail(label, tid, ask, title, texts.get(tid, ''), ask_short)})  # F162
+        if opts:
+            needs[-1]['options'] = opts
         if label == 'PITCH':  # F98
             from agent_runner import pitch
             xs = [{'id': x['id'], 'title': x['title']} for x in pitch.changes_of(tid, state='waiting')]
@@ -1879,9 +1882,12 @@ def concept_options(path: str) -> list[dict]:
 def need_answers(row: dict) -> list[dict]:
     """C33: the answers that fit a Needs you row, the one rule for the run page, the terminal UI and the chat
     text: [{'label', 'value'}], the first one the main button. Yes / No for a CONFIRM or a yes-or-no ask, a
-    concept's options (A, B, C when its copy has none), a pitch's, Done for a blocked item; [] when only a reply
-    fits."""
+    concept's options (A, B, C when its copy has none), a pitch's, a DECIDE's (F181c: {name, rec}, the value its bare
+    name), Done for a blocked item; [] when only a reply fits."""
     label, said = row.get('label', ''), f'{row.get("ask", "")} {row.get("what", "")}'
+    if label == 'DECIDE' and any(isinstance(o, dict) for o in row.get('options') or []):
+        return [{'label': o['name'] + (' (recommended)' if o.get('rec') else ''), 'value': o['name']}
+                for o in row['options']]
     if row.get('options'):
         names = [str(o) for o in row['options']]
     elif label == 'CONFIRM' or re.search(r'\byes\s*(/|or)\s*no\b', said, re.I):

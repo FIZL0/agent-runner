@@ -1812,6 +1812,28 @@ def test_answer_tab_b138() -> None:
        'a failure says why and the item stays, its pane open')
 
 
+def test_decide_options_f181c() -> None:
+    """F181c: a DECIDE's options are buttons in the answer tab, the recommended one marked; a key sends the bare name by
+    plan confirm, with no session. One past the last key is typed as the reply."""
+    answer_repo()
+    names = ['Full', 'Small', 'No change'] + [f'Size {j}' for j in range(4, 9)]
+    need = {'label': 'DECIDE', 'id': 'F2', 'concept': '', 'title': 'the look', 'what': 'Which look?', 'url': '', 'ask': 'Which look?',
+            'age': '1m', 'options': [{'name': n, 'rec': n == 'Full'} for n in names]}
+    p = page(dict(SNAP, needs=[need]))
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'open again'))[1]]), \
+            mock.patch.object(U, 'row_of', lambda where, tid: need), mock.patch.object(U, 'need_label', lambda tid: 'DECIDE'), \
+            mock.patch.object(U, 'SEND', [no_send]):
+        p.key('4')
+        p.key('ENTER')
+        text = drawn(p).text()
+        check('[a Full (recommended)] [b Small] [c No change]' in text, 'its options are buttons', text)
+        check('More options, typed as the reply: Size 8' in ' '.join(text.split()), 'one with no key is named', text)
+        p.key('a')
+    eq(ran, [['plan', 'confirm', 'F2', 'Full']], 'a press: the bare name, plan confirm')
+    eq([n['id'] for n in p.snap['needs']], [], 'F2 is off Needs you at once')
+
+
 def test_concept_answer_b149() -> None:
     """B149: a concept's option key (a b c) in the answer tab runs plan approve with that option, never an AI
     session, and the item leaves Needs you at once."""
@@ -2102,7 +2124,7 @@ def test_release_row_f131() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
