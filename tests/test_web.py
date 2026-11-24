@@ -4209,7 +4209,7 @@ def test_session_controls_f170(tmp: Path) -> None:
     ask = ['─' * 60, 'Do you want to proceed?', '❯ 1. Yes', '  2. No', '', 'Esc to cancel']
     listed = ['  Background', '  2 background tasks', '    Shells', '  ❯ ● python3 run_tests.py     running', '',
               '    Background agents', '    ● Tester: run…   running · Haiku', '  x to stop · Esc to close']
-    spot = {'main': 800, 'bar': 60, 'dock': 180, 'strip': 28, 'high': 900, 'pad': 12, 'cell': 20, 'foot': {'top': 38}, 'short': 0, 'off': 0}
+    spot = {'main': 800, 'bar': 60, 'dock': 180, 'row': 28, 'high': 900, 'pad': 12, 'cell': 20, 'foot': {'top': 38}, 'short': 0, 'off': 0}
     live = {'tasks': [{'kind': 'shell', 'running': True}, {'kind': 'shell', 'running': False}], 'mode': 'plan'}
     got = logic_js([['feedFoot', F170_IDLE, None], ['feedFoot', typed, None], ['feedFoot', bash, None], ['feedFoot', work, None],
                     ['feedFoot', menu, None], ['feedFoot', ask, None], ['feedFoot', ['hi'], None], ['taskLines', listed],
@@ -4226,11 +4226,11 @@ def test_session_controls_f170(tmp: Path) -> None:
     eq(got[4:7], [None, None, None], 'a menu, a question, no prompt: nothing is hidden')
     eq([(x['name'], x['on'], x['running']) for x in got[7]],
        [('python3 run_tests.py', True, True), ('Tester: run', False, True)], "Claude Code's own task list")
-    eq(got[8], {'t': -152, 'far': 152, 'cut': 128}, 'at rest the words end on the box')
-    eq(got[9]['t'], 0, 'pulled down, they end on the strip')
-    eq(got[10], {'t': -232, 'far': 232, 'cut': 128}, 'a box that grows moves the frame: its size stays')
+    eq(got[8], {'t': -152, 'off': 0, 'far': 152, 'cut': 128}, 'at rest the words end on the box')
+    eq(got[9]['t'], 0, 'scrolled down all the way, they end on the slim message box')
+    eq(got[10], {'t': -232, 'off': 0, 'far': 232, 'cut': 128}, 'a box that grows moves the frame: its size stays')
     eq((got[11]['t'], got[11]['far']), (60, 0), 'a short chat starts under the bar, with nothing to pull')
-    eq((got[12], got[13]), ({'t': -280, 'far': 0, 'cut': 0}, {'t': 0, 'far': 0, 'cut': 0}), 'nothing is cut while all shows')
+    eq((got[12], got[13]), ({'t': -280, 'off': 0, 'far': 0, 'cut': 0}, {'t': 0, 'off': 0, 'far': 0, 'cut': 0}), 'nothing is cut while all shows')
     eq([c['label'] for c in got[14]], ['Working', 'Plan', '1 shell'], 'only what runs')
     eq([c['label'] for c in got[15]], ['Bypass', '2 agents', 'Update'], 'what the screen says')
     eq(([c['label'] for c in got[16]], got[17], got[18]), (['Session'], '1m 12s', '1h 2m'), 'nothing known; a clock')
@@ -4241,6 +4241,63 @@ def test_session_controls_f170(tmp: Path) -> None:
     head = W.session_frame.with_head(b'<head>', 'c6', 'page').decode()
     check('"light":{' in head and '"dark":{' in head and 'look="page"' in head and 'ar-box' in head, 'a themed session: both looks', head[:200])
     check('LOOKS={}, look="light"' in W.session_frame.with_head(b'<head>', 'c6', 'light').decode(), 'one from before: its one ground')
+
+
+def test_bars_over_text_b192(tmp: Path) -> None:
+    """B192: in a chat the bars only go over the text. The session's frame moves by a scroll alone, its share of it and
+    the session's are the whole scroll, and it is at rest again at the session's end; one slim row stands for the box."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    for gone in ('FD.pulling', '#feedframe.glide', 'data-strip', 'feedSettle'):
+        check(gone not in page, f'no {gone}: the bars never move the frame')
+    check('.main.sess.slim .dockwrap{pointer-events:none}' in page, 'a touch where the box was is the session\'s')
+    row = page[page.index('function slimDraw('):]
+    row = row.split('function workDraw')[0]
+    check(all(x in row for x in ('data-slimbox', 'data-halt', 'data-sheet="sesswork"')) and 'schips' not in row and 'data-clip' not in row,
+          'the slim message box: its words, Working and Stop, no chips or options', row)
+    if not shutil.which('node'):
+        print('  (no node here: the bars script test is skipped)')
+        return
+    spot = {'main': 800, 'bar': 60, 'dock': 180, 'row': 56, 'high': 900, 'pad': 12, 'cell': 20, 'foot': {'top': 38}, 'short': 0, 'off': 0}
+    up = {'off': 0, 'far': 124, 'jump': True, 'slim': True}
+    pill = lambda words: [*F170_IDLE[:2], words, '', *F170_IDLE[4:]]
+    got = logic_js([['feedSpot', {**spot, 'hold': -100}], ['feedSpot', {**spot, 'hold': -100, 'dock': 260}], ['feedSpot', {**spot, 'hold': -28, 'dock': 260}],
+                    ['feedSpot', {**spot, 'hold': None}],
+                    ['feedShare', -10, {**up, 'jump': False}], ['feedShare', -10, {**up, 'slim': False}], ['feedShare', -10, up],
+                    ['feedShare', -10, {**up, 'off': 120}], ['feedShare', 10, {**up, 'off': 120, 'slim': False}], ['feedShare', 10, {**up, 'off': 4}],
+                    ['feedShare', 10, up],
+                    ['feedBars', -5, {'slim': False, 'run': 0}], ['feedBars', -5, {'slim': False, 'run': -5}], ['feedBars', 5, {'slim': True, 'run': -40}],
+                    ['feedBars', 5, {'slim': True, 'run': 5}],
+                    ['feedFoot', pill('● done       Jump to bottom (ctrl+End) ↓'), None], ['feedFoot', pill('● done   2 new messages (ctrl+End) ↓'), None],
+                    ['feedFoot', pill('the Jump to bottom pill'), None], ['feedFoot', F170_IDLE, None]])
+    eq([x['t'] for x in got[:4]], [-100, -100, -28, -152], 'scrolled up its place stays, a grown box or not; at the end it rests on the box')
+    eq((got[0]['off'], got[1]['off']), (52, 132), 'and how far that is from rest is known')
+    eq(got[4:11], [0, 0, -10, -4, 10, 4, 0], 'up: the session first, then the frame; down: the frame first, and no pixel twice')
+    eq([x['slim'] for x in got[11:15]], [False, True, True, False], 'away 8px up, back 8px down')
+    eq([x['jump'] for x in got[15:19]], [True, True, False, False], "scrolled up, as Claude Code's pill says it, new words too")
+    driver = page.split('<script id="logic">', 1)[1].split('</script>', 1)[0] + r"""
+// a whole scroll over a session that takes rows: how far a line went is how far the finger went, at every step
+const ROW = 20; let FD = {off: 0, far: 124, jump: false, slim: false, run: 0}, rest = 0, hist = 0, frame = 0, bad = 0, finger = 0;
+function scroll(px) {
+  finger += px;
+  const b = feedBars(px, FD); FD.run = b.run; if (b.slim !== FD.slim && (!b.slim || FD.jump)) FD.slim = b.slim;
+  const take = feedShare(px, FD); FD.off -= take; frame -= take;
+  const [n, left] = feedSteps(rest + px - take, ROW); rest = left; hist -= n * ROW; FD.jump = hist > 0;
+  if (Math.abs(-finger - (hist + frame)) >= ROW) bad++;
+}
+for (let i = 0; i < 100; i++) scroll(-4);
+const top = {slim: FD.slim, off: FD.off, hist};
+for (let i = 0; i < 100; i++) scroll(4);
+console.log(JSON.stringify({bad, top, end: {slim: FD.slim, off: FD.off, hist, frame}}));
+"""
+    f = tmp / 'b192.js'
+    f.write_text(driver, encoding='utf-8')
+    r = subprocess.run(['node', str(f)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the scroll', r.stderr[-800:])
+    out = json.loads(r.stdout or '{}')
+    eq(out.get('bad'), 0, 'a line is never a row off the finger')
+    eq((out.get('top') or {}).get('slim'), True, 'scrolled up, the bars are away')
+    eq((out.get('top') or {}).get('off'), 124, 'and the lines fill the room')
+    eq(out.get('end'), {'slim': False, 'off': 0, 'hist': 0, 'frame': 0}, 'back at the end all is at rest')
 
 
 def test_frame_typing_b190(tmp: Path) -> None:
@@ -4331,4 +4388,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_frame_typing_b190)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_frame_typing_b190)]))

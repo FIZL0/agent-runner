@@ -208,8 +208,9 @@ a{color:var(--accent)}
 .feed{flex:1;min-height:0;position:relative;background:var(--feed)}
 .feed iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
 /* F170: the session fills the view behind the top bar and the message box (feedPlace sets #feedframe's place), the lines at
-   its bottom past the edge; the page has their controls: the chips above the box, and .slim while the reader scrolls up */
-#feedframe{position:absolute;inset:0} #feedframe.glide{transition:transform var(--dur-slow) var(--ease)}
+   its bottom past the edge; the page has their controls: the chips above the box. B192: .slim while the reader is scrolled up: the bars are away and
+   one row (.slimbox) stands for the message box; the bars only go over the text, they never move it */
+#feedframe{position:absolute;inset:0}
 .main.sess .feed{position:absolute;inset:0;overflow:hidden}
 .main.sess .top,.main.sess .notices,.main.sess .dockwrap{position:absolute;left:0;right:0}
 .main.sess .top{top:0} .main.sess .notices{top:var(--seebar,0px)} .main.sess .dockwrap{bottom:0;z-index:2}
@@ -218,9 +219,12 @@ a{color:var(--accent)}
 .main.sess.slim .top{background-color:transparent;pointer-events:none} .main.sess.slim .top>:not(.menu,[data-new]){opacity:0;visibility:hidden}
 .main.sess.slim .top>:is(.menu,[data-new]){pointer-events:auto;background:var(--surface);border-radius:50%;box-shadow:0 2px 10px var(--shadow)}
 .main.sess.slim .notices{display:none} .main.sess.slim .dock{transform:translateY(100%);opacity:0;pointer-events:none}
-.strip{position:absolute;left:0;right:0;bottom:0;height:28px;border:0;padding:0;background:var(--bg);color:var(--muted);font-size:var(--fs-s);display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;opacity:0;visibility:hidden;transition:opacity var(--dur-fast) var(--ease)}
-.strip::after{content:'';position:absolute;left:0;right:0;bottom:0;height:var(--tap)} .strip i{width:36px;height:4px;border-radius:var(--r-xs);background:var(--muted)}
-.main.sess.slim .strip{opacity:1;visibility:visible}
+.main.sess.slim .dockwrap{pointer-events:none}
+.slimbox{position:absolute;left:0;right:0;bottom:0;height:56px;padding:6px 12px;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));background:var(--bg);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:opacity var(--dur-fast) var(--ease)}
+.main.sess.slim .slimbox{opacity:1;visibility:visible;pointer-events:auto}
+.slimbox>div{display:flex;align-items:center;width:100%;max-width:720px;min-width:0;height:var(--tap);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l)}
+.slimbox button{flex:none;height:100%;min-width:var(--tap);border:0;background:none;color:var(--muted);font-size:var(--fs-m);padding:0 10px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer} .slimbox svg{width:14px;height:14px}
+.slimbox [data-slimbox]{flex:1;min-width:0} .slimbox [data-slimbox] span{overflow:hidden;text-overflow:ellipsis} .slimbox .draft{color:var(--fg)}
 .schips{display:flex;gap:6px;overflow-x:auto;max-width:720px;margin:0 auto 8px} .schips .chip{flex:none;background:var(--surface);white-space:nowrap} .schips .chip.up{border-color:var(--warn)}
 .box .act{height:32px;border-radius:var(--r-s);border:1px solid var(--line2);background:none;color:var(--fg);font-size:var(--fs-m);padding:0 8px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;flex:none} .boxrow:has(.act){gap:4px}
 .box .act.force{background:var(--accent);border-color:var(--accent);color:var(--onaccent)} .box .act.halt{margin-left:auto} .box .act svg{width:14px;height:14px}
@@ -444,7 +448,7 @@ a{color:var(--accent)}
       <div class="news" id="news" role="status" hidden></div></div>
       <div class="body" id="body"></div>
       <div class="feed" id="feed" hidden><div id="feedframe"></div><div class="feedtouch" id="feedtouch"></div><div class="feedsay" id="feedsay" role="status" hidden></div></div>
-      <div class="dockwrap"><div class="dock" id="dock"></div><button type="button" class="strip" id="strip" data-strip aria-label="Show the message box" hidden></button></div>
+      <div class="dockwrap"><div class="dock" id="dock"></div><div class="slimbox" id="slimbox" hidden></div></div>
     </section>
     <div class="scrim sheetscrim" id="sheetscrim"></div>
     <div class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div>
@@ -512,6 +516,8 @@ function feedWords(lines){return lines.map(l=>l.replace(/\s+$/,'')).join('\n').r
    line; rate: a 1: 2: 3: survey stands above it, answered by a digit; work: does it work; jump: is it scrolled up} */
 const FEED_MODES=[['default','Ask first','manual mode|default mode'],['acceptEdits','Accept edits','accept edits'],['plan','Plan','plan mode'],['auto','Auto','auto mode'],['bypassPermissions','Bypass permissions','bypass permissions']];
 const feedRule=l=>/^[─━]{6}/.test(l)&&(l.match(/[─━]/g)||[]).length>=l.length/2;
+// B192: the pill the agent CLI puts at the end of its last line while scrolled up, in each wording it has
+const FEED_JUMP=/(Jump to bottom|\d+ new messages?|Waiting for your answer)( \(.*\))?( ↓| · .* to scroll)\s*$/;
 function feedFoot(lines,dim){
   let end=-1,at=-1;
   for(let y=lines.length-1;y>1&&end<0;y--){
@@ -535,19 +541,27 @@ function feedFoot(lines,dim){
   const near=lines.slice(Math.max(0,top-5),top);
   return{top,end,bash,text:hint?'':own,mode:mode?mode[0]:'',shells:num(/(\d+) shells?\b/),tasks:num(/(\d+) background tasks?\b/),agents:num(/← (\d+) agents?\b/),
     update:m?m[1].replace(/^`|`$/g,''):/Update available/.test(all)?'…':'',status:below.slice(0,modeAt<0?below.length:modeAt).map(l=>l.trim()).filter(l=>l&&!/Update available/.test(l)),
-    rate:lines.slice(Math.max(0,top-8),top).some(l=>/\b1: \S.*\s2: \S/.test(l)),work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.concat(lines.slice(0,top)).some(l=>/Jump to bottom/.test(l))};
+    rate:lines.slice(Math.max(0,top-8),top).some(l=>/\b1: \S.*\s2: \S/.test(l)),work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.some(l=>FEED_JUMP.test(l))};
 }
-/* where the session's frame goes. o: main its room, bar and dock what stands over it, strip the thin strip's, high the
+/* where the session's frame goes. o: main its room, bar and dock what stands over it, row the slim message box's, high the
    frame's own height, pad its terminal's, cell a line, rows, foot (feedFoot's; null: show all), short (its words end at
-   this row, with nothing above to scroll to; 0 when it is full), whole, off how far the reader pulled it down. t: its
-   shift; far: how far it can be pulled; cut: how much of its bottom is hidden */
+   this row, with nothing above to scroll to; 0 when it is full), whole, off how far the reader has scrolled it down, hold:
+   the shift to keep (scrolled up: what stands over it may change, its lines stay). t: its shift; off: that, past its rest;
+   far: how far it can go; cut: how much of its bottom is hidden */
 const FOOT_ROWS=6;  // rows past the edge for the lines at the bottom, so more or fewer of them never resize the session
 function feedSpot(o){
-  if(o.whole||!o.foot)return{t:o.whole?0:o.main-o.dock-o.high,far:0,cut:0};
+  if(o.whole||!o.foot)return{t:o.whole?0:o.main-o.dock-o.high,off:0,far:0,cut:0};
   const end=o.pad+o.foot.top*o.cell, words=o.short?o.pad+o.short*o.cell:end;
-  const rest=Math.min(o.bar,o.main-o.dock-words), slim=o.short?rest:Math.max(rest,Math.min(o.bar,o.main-o.strip-end));
-  return{t:rest+Math.min(Math.max(o.off||0,0),slim-rest),far:slim-rest,cut:Math.max(0,o.high-end)};
+  const rest=Math.min(o.bar,o.main-o.dock-words), low=o.short?rest:Math.max(rest,Math.min(o.bar,o.main-o.row-end));
+  const t=o.hold!=null?Math.min(o.hold,low):rest+Math.min(Math.max(o.off||0,0),low-rest);
+  return{t,off:Math.max(0,t-rest),far:low-rest,cut:Math.max(0,o.high-end)};
 }
+/* B192: a scroll of px (down is more): the part the frame takes, its lines going with the finger; the rest is the session's.
+   Up only once the session itself is scrolled up (it stops following its new words) and the bars are away, to bring lines
+   into the room they left; down all of it before the session, so at the session's end the frame is at rest again */
+function feedShare(px,o){return px<0?o.jump&&o.slim?-Math.min(Math.max(0,o.far-o.off),-px):0:Math.min(o.off,px)}
+/* B192: the bars after a scroll of px. o: slim (they are away), run (how far it went one way). Away 8px up, back 8px down */
+function feedBars(px,o){const run=px*o.run<0?px:o.run+px;return{run,slim:run<=-8?true:run>=8?false:o.slim}}
 /* which chips a session has: only what there is to say. o: foot, live (the run's /live), working */
 function sessionChips(o){
   const f=o.foot||{}, l=o.live||{}, run=k=>(l.tasks||[]).filter(t=>t.kind===k&&t.running).length, out=[];
@@ -1189,7 +1203,7 @@ function pageNews(s,mine,later){
 function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploading?'Wait for the attachments to finish uploading.'
   :o.form?'Save or close the device form first. It is not kept over a refresh.'
   :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
-if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,answerArgs,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,answerArgs,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1865,7 +1879,7 @@ function feedClick(x,y){const f=feedScreen();if(!f)return;[x,y]=feedAt(x,y);
    drawer's swipe has the touch first: once it is on, this leaves it alone */
 {let G=null, glide=0;
 const layer=$('feedtouch'), at=t=>{const r=layer.getBoundingClientRect();return[t.clientX-r.left,t.clientY-r.top]};
-const step=by=>{const f=feedScreen(), px=feedPull(by);if(!f||!px)return;const [n,left]=feedSteps(G.rest+px,f.cell*FEED_LINES);G.rest=left;feedWheel(n,G.x,G.y)};
+const step=by=>{const f=feedScreen(), px=feedScroll(by);if(!f||!px)return;const [n,left]=feedSteps(G.rest+px,f.cell*FEED_LINES);G.rest=left;feedWheel(n,G.x,G.y)};
 layer.addEventListener('touchstart',e=>{cancelAnimationFrame(glide);if(G)clearTimeout(G.hold);
   if(e.touches.length!==1){G=null;return}
   const t=e.touches[0], [x,y]=at(t);G={x,y,y0:t.clientY,x0:t.clientX,ly:t.clientY,lt:e.timeStamp,v:0,rest:0,on:false};
@@ -1880,19 +1894,19 @@ layer.addEventListener('touchmove',e=>{
   G.ly=t.clientY;G.lt=e.timeStamp},{passive:true});
 layer.addEventListener('touchend',e=>{const g=G;if(!g)return;clearTimeout(g.hold);
   if(!g.on){G=null;if(e.cancelable)e.preventDefault();feedClick(g.x,g.y);return}
-  feedSettle();
   let last=performance.now(), v=e.timeStamp-g.lt>60||matchMedia('(prefers-reduced-motion:reduce)').matches?0:g.v;
-  const go=now=>{if(G!==g)return;if(Math.abs(v)<.05){G=null;feedSettle();return}step(v*(now-last));v*=Math.pow(.996,now-last);last=now;glide=requestAnimationFrame(go)};
+  const go=now=>{if(G!==g)return;if(Math.abs(v)<.05){G=null;return}step(v*(now-last));v*=Math.pow(.996,now-last);last=now;glide=requestAnimationFrame(go)};
   glide=requestAnimationFrame(go)},{passive:false});
-layer.addEventListener('touchcancel',()=>{if(G)clearTimeout(G.hold);G=null;feedSettle()},{passive:true});
+layer.addEventListener('touchcancel',()=>{if(G)clearTimeout(G.hold);G=null},{passive:true});
 layer.addEventListener('wheel',e=>{const f=feedScreen();if(!f||feedTake(e.deltaY))return;const r=layer.getBoundingClientRect();feedWheel(Math.sign(e.deltaY),e.clientX-r.left,e.clientY-r.top)},{passive:true});
 layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r=layer.getBoundingClientRect();feedClick(e.clientX-r.left,e.clientY-r.top)}})}
 /* --- F170: the lines at the bottom of the agent's window as the page's own controls (approved on K10's page, option A) --
    The frame is taller than its room by FOOT_ROWS, so those lines lie past the edge; feedSpot says where it goes, by a
-   transform, never by a resize: the bars come and go, the box grows, and the session's size stays. Whole (a menu, a
+   transform, never by a resize: the bars come and go, the box grows, and the session's size stays. B192: the bars going or
+   coming never moves it; only a scroll does (feedScroll), and the session's own going to its end. Whole (a menu, a
    question, unsent words, a look feedFoot does not know): it fits its room exactly, all of it shown. */
-Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,slim:false,jump:false,typed:0,live:null,liveAt:0,raf:0,settle:0,task:''});
-const STRIP=28, FOOT_WAIT=400, TEXT_WAIT=1200, LIVE_EVERY=2000;
+Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',run:0,rest:0,slim:false,jump:false,typed:0,live:null,liveAt:0,raf:0,task:''});
+const SLIM_H=56, FOOT_WAIT=400, TEXT_WAIT=1200, LIVE_EVERY=2000;
 const pageDark=()=>{const t=document.documentElement.dataset.theme;return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches};
 function feedLook(){return pageDark()?'dark':'light'}
 function lookAgain(){try{if(FD.frame&&FD.info&&FD.info.look==='page')FD.frame.contentWindow.arLook(feedLook())}catch(e){}}
@@ -1900,9 +1914,9 @@ matchMedia('(prefers-color-scheme:dark)').addEventListener('change',lookAgain);
 if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 /* does the session of a chat or slot work? The agent CLI's own status; until it is read, or with none, the feed's */
 const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
-function feedGone(){clearTimeout(FD.wait);clearTimeout(FD.settle);Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,slim:false,jump:false,live:null,liveAt:0,settle:0});feedClass()}
-function feedClass(){const m=document.querySelector('.main'), strip=$('strip');if(!m||!strip)return;
-  m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);strip.hidden=!FD.shown;
+function feedGone(){clearTimeout(FD.wait);Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',run:0,rest:0,slim:false,jump:false,live:null,liveAt:0});feedClass()}
+function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');if(!m||!row)return;
+  m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);row.hidden=!FD.shown;
   const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;
   if(!FD.shown){const f=$('feedframe').style;f.cssText=''}}
 function feedShown(on){if(FD.shown!==on){FD.shown=on;if(!on){FD.slim=false;FD.off=0}}feedClass();if(on)requestAnimationFrame(feedPlace)}
@@ -1927,9 +1941,12 @@ function feedSee(){
   if(all!==FD.whole){if(!FD.wait)FD.wait=setTimeout(()=>{FD.wait=0;const f=FD.foot;if(f===undefined)return;const now=!f||!!f.text||f.bash;if(now!==FD.whole)feedWhole(now)},foot&&foot.text?TEXT_WAIT:FOOT_WAIT)}
   else{clearTimeout(FD.wait);FD.wait=0}
   const jump=b.viewportY<b.baseY||!!(foot&&foot.jump);
-  if(FD.jump&&!jump&&FD.slim)feedSlim(false);  // at the end again
+  const ended=FD.jump&&!jump, left=!FD.jump&&jump;
   FD.jump=jump;
+  if(!jump)FD.off=0;  // at its end the last lines stand on the box
+  if(ended&&FD.slim)feedSlim(false);
   feedPlace();
+  if(left&&FD.run<=-8)feedSlim(true);
   const key=f=>f?[f.mode,f.shells,f.tasks,f.agents,f.update,f.status.join('|'),f.work].join():String(f);
   if(key(was)!==key(foot)){if(!was||!foot||was.work!==foot.work||was.shells!==foot.shells)liveLoad();render()}
 }
@@ -1942,38 +1959,34 @@ function feedPlace(){
   if(!FD.slim||!FD.bar)FD.bar=top+say;
   const dock=document.querySelector('.dockwrap').offsetHeight, f=feedScreen();
   const cell=f?f.cell:17, pad=f?f.el.getBoundingClientRect().top:12;
-  const high=FD.whole?Math.max(60,main.clientHeight-FD.bar-dock):Math.round(main.clientHeight-STRIP+FOOT_ROWS*cell);
-  const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,strip:STRIP,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,off:FD.slim&&!FD.pulling?1e6:FD.off});
+  const high=FD.whole?Math.max(60,main.clientHeight-FD.bar-dock):Math.round(main.clientHeight-SLIM_H+FOOT_ROWS*cell);
+  const size=[main.clientHeight,cell].join(), hold=FD.jump&&FD.held===size?FD.t:null;
+  const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,row:SLIM_H,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,off:FD.off,hold});
   if(FD.whole)at.t=FD.bar;
   else if(FD.foot===undefined)at.t=Math.min(FD.bar,main.clientHeight-dock-high+FOOT_ROWS*cell);  // not read yet
-  FD.far=at.far;if(FD.slim&&!FD.pulling)FD.off=at.far;
+  FD.far=at.far;FD.off=at.off;FD.t=at.t;FD.held=FD.whole||!FD.foot?'':size;
   const st=box.style, set=(k,v)=>{if(st[k]!==v)st[k]=v};
   set('inset','0 0 auto 0');set('height',high+'px');set('transform',`translateY(${Math.round(at.t)}px)`);
   const b=f&&f.t.buffer.active, away=b&&b.type==='normal'?(b.baseY-b.viewportY)*cell:0;
   set('clipPath',at.cut>away?`inset(0 0 ${Math.round(at.cut-away)}px 0)`:'none');
 }
 /* the bars and the box away, or back. Never while the person types, or while a menu, a question or a sheet is open */
-const slimMay=()=>!FD.whole&&!!FD.foot&&FD.far>8&&!S.sheet&&!slashOpen()&&!kbH&&Date.now()-FD.typed>2500&&!(document.activeElement&&document.activeElement.matches('[data-in]')&&document.activeElement.value.trim());
-function feedSlim(on){if(on&&!slimMay())on=false;if(FD.slim!==on){FD.slim=on;feedClass();stripDraw()}FD.off=on?FD.far:0;FD.pulling=false;glide();feedPlace()}
-let glideOff=0;
-function glide(){const b=$('feedframe');b.classList.add('glide');clearTimeout(glideOff);glideOff=setTimeout(()=>b.classList.remove('glide'),400)}
-/* a drag or a wheel of px (down is more): the frame goes with it while the bars come and go; what is left scrolls */
-function feedPull(px){
+const slimMay=()=>!FD.whole&&!!FD.foot&&FD.jump&&FD.far>8&&!S.sheet&&!slashOpen()&&!kbH&&Date.now()-FD.typed>2500&&!(document.activeElement&&document.activeElement.matches('[data-in]')&&document.activeElement.value.trim());
+function feedSlim(on){if(on&&!slimMay())return;FD.run=0;if(FD.slim!==on){FD.slim=on;feedClass();slimDraw()}}
+/* a drag or a wheel of px (down is more): the bars go or come, and what is left of it for the session to scroll */
+function feedScroll(px){
   if(!px||!FD.shown)return px;
-  const room=px<0?FD.far-FD.off:FD.off, take=Math.min(room,Math.abs(px));
-  if(take<=0||px<0&&!FD.slim&&!slimMay())return px;
-  FD.pulling=true;$('feedframe').classList.remove('glide');
-  FD.off+=px<0?take:-take;
-  const slim=px<0?FD.slim||FD.off>8:FD.slim&&FD.off>FD.far-8;
-  if(slim!==FD.slim){FD.slim=slim;feedClass();stripDraw()}
-  feedPlace();
-  return px<0?px+take:px-take;
+  const b=feedBars(px,FD);FD.run=b.run;
+  if(b.slim!==FD.slim)feedSlim(b.slim);
+  const take=feedShare(px,FD);if(!take)return px;
+  FD.t-=take;FD.off-=take;feedPlace();
+  return px-take;
 }
-function feedSettle(){if(FD.pulling)feedSlim(FD.slim)}
-/* a wheel step in the frame (session_frame.HEAD asks): was it the page's? */
+/* a wheel step in the frame (session_frame.HEAD asks): was it the page's? What the frame leaves goes on to the session */
 function feedTake(px){
-  const left=feedPull(px);if(left===px)return false;
-  clearTimeout(FD.settle);FD.settle=setTimeout(feedSettle,160);
+  const left=feedScroll(px), f=feedScreen();if(left===px||!f)return false;
+  const [n,rest]=feedSteps(FD.rest+left,f.cell*FEED_LINES), r=$('feedtouch').getBoundingClientRect();
+  FD.rest=rest;feedWheel(n,r.width/2||FD.frame.clientWidth/2,r.height/2||FD.frame.clientHeight/2);
   return true;
 }
 /* B190: a key or a paste in the frame (session_frame.HEAD asks): was it the page's? Its words go in the message box */
@@ -1999,7 +2012,10 @@ async function liveLoad(){
   if(!same)render();
 }
 const workFor=()=>FD.live&&FD.live.status==='busy'&&FD.live.since?'Working '+forWords(Date.now()/1000-FD.live.since):'Working';
-function stripDraw(){const on=FD.n&&sessWorks(FD.n);setHTML($('strip'),`<i></i>${on?'<span data-workfor></span>':''}`);workDraw()}
+/* B192: the message box's one row while the reader is scrolled up: its words, Working (its sheet) and Stop */
+function slimDraw(){
+  const ta=document.querySelector('[data-in]'), words=ta&&ta.value.trim(), on=FD.n&&sessWorks(FD.n);
+  setHTML($('slimbox'),`<div><button type="button" data-slimbox aria-label="Show the message box"><span${words?' class="draft"':''}>${esc(words||(ta?ta.placeholder:''))}</span></button>${on?`<button type="button" data-sheet="sesswork"><span class="livedot"></span><span data-workfor>Working</span></button><button type="button" data-halt="${esc(FD.n)}">${I.stop}Stop</button>`:''}</div>`);workDraw()}
 function workDraw(){for(const e of document.querySelectorAll('[data-workfor]')){const w=workFor();if(e.textContent!==w)e.textContent=w}}
 setInterval(()=>{if(!FD.shown||document.hidden)return;workDraw();if(Date.now()-FD.liveAt>=LIVE_EVERY)liveLoad()},1000);
 addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]')){FD.typed=Date.now();if(FD.slim)feedSlim(false)}});
@@ -2009,7 +2025,7 @@ function sessRow(n){
   if(feedNow(n)!=='session')return '';
   if(FD.foot===null&&FD.whole)return TOUCH()&&!S.keys?keyButtons():'';
   const w=sessWorks(n), icon={work:'<span class="livedot"></span>',update:'<span class="bdot"></span>'};
-  setTimeout(stripDraw,0);
+  setTimeout(slimDraw,0);
   return `<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
 }
 const sessTasks=kind=>((FD.live||{}).tasks||[]).filter(t=>t.kind===kind);
@@ -3202,7 +3218,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-resume]')){const n=x.dataset.resume;outbox('resume_chat',{chat:n},{res:n,say:`Resume ${threadTitle(n)}`});return}
   if(q('#sheetscrim')||q('[data-closesheet]')){closeSheet();return}
   if(q('#sheet [data-pin]')||q('#sheet [data-del]')||q('#sheet [data-ren]'))S.sheet='';  // its own handler goes on
-  if(q('[data-strip]')){feedSlim(false);return}  // F170
+  if(q('[data-slimbox]')){feedSlim(false);const t=document.querySelector('[data-in]');if(t&&(!TOUCH()||!e.detail))t.focus({preventScroll:true});return}  // B192: no keyboard on a phone yet: it would resize the session
   if(x=q('[data-halt]')){const n=x.dataset.halt;act('stop_session',{session:n}).then(()=>liveLoad());return}
   if(q('[data-slashopen]')){const t=document.querySelector('[data-in]');if(t){if(!t.value.trim()){t.value='/';store.set(DRAFT_KEY(boxKey()),'/');grow(t)}kbFocus(t);t.setSelectionRange(t.value.length,t.value.length);slashShow(t)}return}
   if(x=q('[data-mode]')){closeSheet();setMode(x.dataset.mode);return}
