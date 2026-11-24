@@ -883,29 +883,64 @@ def research_code(tid: str, branch: str) -> list[str]:
     return [f for f in files if not docs_only([f], globs)]
 
 
+def research_says(tid: str, branch: str, title: str) -> str:
+    """B221: what task/<tid> changes, in plain words for the question: its release note's first line, else its done
+    message, else the task's `title`; without what would end the question early (a link, a bracket, a ` — `)."""
+    said = ''
+    note_md = git('show', f'task/{tid}:release-notes/{tid}.md')
+    if not note_md.returncode:
+        said = next((l for l in note_md.stdout.splitlines() if l.strip() and not l.startswith(('#', '---'))), '')
+    for s in git('log', '--no-merges', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines():
+        if said:
+            break
+        s = re.sub(rf'^{re.escape(tid)}\b[:\s]*', '', s)
+        said = '' if re.match(r'\(?wip\b|.*\(wip\)$', s, re.I) else s
+    said = re.sub(r'https?://\S+', '', said or title)
+    said = ' '.join(re.sub(r'[\[\]`*]|\bBLOCKED:|\bDECIDE:| [—|] ', ' ', said).split()).lstrip('-— ').rstrip(' .:')
+    said = said if len(said) <= 160 else said[:160].rsplit(' ', 1)[0].rstrip(' ,;:-') + '…'
+    return said[:1].upper() + said[1:]
+
+
+def research_asked(tid: str, branch: str, item: str) -> str:
+    """B221: the person's own words that asked for `tid`'s code, as its commits quote them (`P.asked_for`); ''."""
+    try:
+        long = P.long_form(C.plan_dir, tid).read_text(encoding='utf-8')
+    except OSError:
+        long = ''
+    try:
+        told = P.told_file(C, tid).read_text(encoding='utf-8')
+    except OSError:
+        told = ''
+    messages = git('log', '--format=%B', f'{branch}..task/{tid}').stdout
+    return P.asked_for(messages, P.person_words(item, tid, long, told))
+
+
 def research_held(tid: str, branch: str) -> str | None:
     """F36: why task/<tid> does not merge: a research task whose diff touches code. It is blocked on a person
-    (`DECIDE:` naming the code files) to file the code as a follow-up or merge it anyway; the branch is parked
-    on wip/ by the caller. None when it may merge: no research task, findings only, or the person's answer on
-    the task says `merge anyway`."""
+    (`DECIDE:`, B221) to ship the code or queue it as its own task; the branch is parked on wip/ by the caller.
+    None when it may merge: no research task, findings only, the person's own words asked for the code
+    (`research_asked`), or their answer ships it (`P.research_ships`)."""
     if not (code := research_code(tid, branch)):
         return None
     ls = plan_text(branch)
-    i = next((i for i, l in enumerate(ls) if f'**{tid}**' in l), None)
-    item = '\n'.join(P._item_block(ls, i)) if i is not None and P.ITEM.match(ls[i]) else ''
-    item = item.split(' BLOCKED: ')[0]
-    if ' — ' in item and P.MERGE_ANYWAY.search(item[item.index(' — '):]):  # a note, not the task's title
-        log(f'{tid}: research that changes code ({", ".join(code[:8])}); merged anyway, as the person answered')
-        return None
+    i = next((i for i, l in enumerate(ls) if (m := P.ITEM.match(l)) and m.group(3).rstrip('.') == tid), None)
+    item = '\n'.join(P._item_block(ls, i)) if i is not None else ''
     shown = ', '.join(code[:8]) + (f' and {len(code) - 8} more' if len(code) > 8 else '')
+    if P.research_ships(item, tid):
+        log(f'{tid}: research that changes code ({shown}); merged, as the person answered')
+        return None
+    if quote := research_asked(tid, branch, item):
+        log(f'{tid}: research that changes code ({shown}); merged, as the person asked for it: "{quote}"')
+        return None
     why = f'research changes no product, and this diff changes code: {shown}'
-    ask = (f'DECIDE: {tid} is research, but its diff changes code ({shown}), so it did not merge. Answer '
-           f'`follow-up` (the code is filed as its own task and the findings merge alone) or `merge anyway` '
-           f'(the code lands with the findings); the attempt is parked on wip/{tid}')
+    ask = (f'DECIDE: {research_says(tid, branch, P.title_of(item) if item else tid)}. This is finished, but held '
+           f'because {tid} was research, which changes no product. "{P.SHIP}" merges it with the findings. '
+           f'"{P.QUEUE}" keeps only the findings now and queues the rest. Ship these changes? {P.RESEARCH_BUTTONS}'
+           f' — it changes {shown}; the work is kept on wip/{tid}')
     if block_research(tid, branch, ask):
         note(f'{tid}: LEFT FOR A HUMAN — {why}')
         log(f'{tid}: LEFT FOR A HUMAN — {why}; blocked on a person', EV_LEFT, tid, why=why)
-        return f'{why}; blocked on a person to file it as a follow-up or merge it anyway'
+        return f'{why}; blocked on a person to ship it or queue it as its own task'
     return f'{why}; it could not be blocked now (TODO.md busy), so it starts again'
 
 

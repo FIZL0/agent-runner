@@ -277,10 +277,14 @@ URL, and it files the build task, blocked until the person approves an option.""
 RESEARCH_PROMPT = """\
 {tid} is a research task: find out, measure or check, and change no product. Write your findings where the \
 run merges them ({findings}), queue each change they call for with `{runner} plan add`, and change no code: \
-a research diff that touches any other file is not merged, and the task blocks on a person instead. If its \
-note says a person answered `follow-up`, file the earlier attempt's code (on wip/{tid}) as its own task with \
-`{runner} plan add` and commit only the findings; if it says `merge anyway`, they accepted that code: bring it \
-over from wip/{tid} with the findings."""
+a research diff that touches any other file is not merged, and the task blocks on a person instead. One \
+exception: code the person's own words asked for (the task's request when a person queued it, or their change, \
+answer or message to you). Make only that code, and put a line `asked for: "<their exact words, three or more>"` \
+in the commit message you pass to `done`, above its last line: the merge finds those words in what they said and \
+does not ask them again. If its note says a person answered `Queue them as their own task` (or `follow-up`), file \
+the earlier attempt's code (on wip/{tid}) as its own task with `{runner} plan add` and commit only the findings; \
+if it says `Ship them` (or `merge anyway`, or a plain yes), they accepted that code: bring it over from wip/{tid} \
+with the findings."""
 
 
 def research_task(tid: str) -> bool:
