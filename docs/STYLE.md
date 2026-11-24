@@ -1,6 +1,6 @@
 # Style rules
 
-How the run app (`agent_runner/web_page.html`, Runner Home's page too) looks, moves and speaks. Every change to it
+How the run app (`agent_runner/web_page.html` and its parts in `agent_runner/page/`, CSS and script files named by area, in the order they are joined by the server into one page (an area has several where its code sits among another's: moving it would change the cascade or the order scripts run); Runner Home's page too) looks, moves and speaks. Every change to it
 follows these rules, and a change that needs a new rule writes it here in the same commit. `tests/test_web.py`
 (`test_style_f83`) checks the ones a machine can check. The words for things are in [GLOSSARY.md](../GLOSSARY.md);
 what the app does is in [REFERENCE.md](REFERENCE.md#the-run-app).
@@ -19,7 +19,7 @@ controls (`ui_model.RUN_CONTROLS`).
 
 ## Tokens
 
-All in `:root` at the top of `web_page.html`. Outside `:root` there is no raw colour, no raw duration, and no
+All in `:root` at the top of the page's styles (`page/010-shared.css`). Outside `:root` there is no raw colour, no raw duration, and no
 `border-radius` or `font-size` in px (a circle is `50%`; a `font:` shorthand for reading text, code or a text box may
 name its own size).
 
@@ -254,7 +254,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - **Touch layer.** On a touch device a layer over the frame takes the touch: a drag scrolls the session (a wheel steps
   it, and it glides), a tap clicks in it without opening the keyboard, and a long press or the key row's Text opens a
   sheet with the screen's text to select and copy. A horizontal swipe still opens the drawer.
-- **Key row.** A keyboard button in the message box folds out the key row (`FEED_KEYS` in `web_page.html`, and Text):
+- **Key row.** A keyboard button in the message box folds out the key row (`FEED_KEYS` in the page's scripts, and Text):
   Esc, Tab, ↑, Enter, Ctrl-C, Text, ←, ↓, →. Touch only.
 - **Text size.** 12px on touch, 13px otherwise, in ttyd's DOM renderer (its canvas is wrong at 2x).
 - **Ground and look.** `--feed` is dark unless the person's agent `theme` starts with light (`session_look`). A session the run starts (control sessions and slots) takes the run's own Claude Code theme, `agent-runner` (`session_theme.py`), named only in the settings the run gives its sessions: its colours are 256-colour slots that each browser fills from the page's light or dark, live (`arLook`), so the ground is the page's `--bg`. Code in a diff has its own colours per look too (`CODE` in session_theme.py; plain code is the page's text colour), each 4.5:1 on the diff rows, only for the base in use; a slot the theme's own colours use keeps that colour. Line height 1.3, padding 12px 14px, box lines in the `ar-box` font (they join), minimum contrast 4.5, spinner tips off, reduced motion on. A person's own terminals keep theirs, and a chat open before this keeps its old ground until it restarts.

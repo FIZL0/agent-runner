@@ -1,0 +1,36 @@
+/* B119: the slash command menu, above the message box */
+.box{position:relative}
+.slash{position:absolute;left:0;right:0;bottom:calc(100% + 6px);max-height:min(320px,50vh);max-height:min(320px,50dvh);overflow-y:auto;background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l);padding:4px;box-shadow:0 6px 24px var(--shadow);z-index:5}
+.slash button{display:flex;gap:10px;align-items:baseline;width:100%;border:0;background:none;color:var(--fg);text-align:left;padding:7px 10px;border-radius:var(--r-s);cursor:pointer;font:14px/1.35 var(--sans);min-width:0}
+.slash button.on{background:var(--bubble)}
+.slash b{font-weight:500;white-space:nowrap}
+.slash span{color:var(--muted);font-size:var(--fs-m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* F115: the message box's dictation mic (beside attach), listening; one that cannot listen stays tappable and says why */
+.tool.dict.on{background:var(--bad);border-color:var(--bad);color:var(--onaccent);animation:pulse var(--pulse) infinite}
+.tool.dict.off{opacity:.55}
+.inrow{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.inrow textarea{flex:1;min-width:0}
+.pr{display:none}
+@media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}.box .act{height:40px}}
+@media (pointer:coarse){.feedtouch{display:block} .keyb{display:inline-flex} .keys{display:grid}}
+/* F115: a chat (and Talk) looks like the terminal: monospace, the app's own colours (--t-*), a '>' prompt, tool lines as the agent's terminal draws them */
+:root{--t-bg:var(--bg);--t-fg:var(--fg);--t-dim:var(--muted);--t-line:var(--line2);--t-raise:var(--side);--t-cur:var(--bubble);
+  --t-accent:var(--accent);--t-red:var(--bad);--t-green:var(--ok);--t-yellow:var(--warn);--t-blue:var(--accent)}
+.main.term{--bg:var(--t-bg);--fg:var(--t-fg);--muted:var(--t-dim);--faint:var(--t-dim);--line:var(--t-line);--line2:var(--t-line);
+  --surface:var(--t-raise);--side:var(--t-raise);--bubble:var(--t-cur);--accent:var(--t-accent);--accent2:var(--t-accent);
+  --ok:var(--t-green);--bad:var(--t-red);--warn:var(--t-yellow);background:var(--bg);color:var(--fg)}
+.main.term .msgs{font:14px/1.55 var(--mono);gap:14px}
+.main.term .u{justify-self:stretch;max-width:100%;background:var(--bubble);border-radius:var(--r-s);padding:6px 10px 6px 2em;position:relative;font:inherit}
+.main.term .u::before{content:'>';position:absolute;left:.75em;top:6px;color:var(--muted)}
+.main.term .a,.main.term .a h1,.main.term .a h2,.main.term .a h3,.main.term .a h4{font:inherit}
+.main.term .a h1,.main.term .a h2,.main.term .a h3,.main.term .a h4{font-weight:700}
+.main.term .a .lead{font:500 12.5px var(--mono)}
+.main.term .a .say{position:relative;padding-left:1.6em;min-width:0}
+.main.term .a .say::before{content:'●';position:absolute;left:0;color:var(--fg)}
+.main.term .a code{font:inherit;color:var(--t-blue)}
+.main.term .a pre{font:13px/1.5 var(--mono)}
+.main.term .think{font:13px var(--mono)}
+.main.term .box{border-radius:var(--r-m);padding:10px 10px 8px 12px}
+.main.term .box textarea{font:16px/1.45 var(--mono)}  /* 16px: a phone does not zoom into it */
+.main.term .pr{display:block;font:16px/1.45 var(--mono);color:var(--muted);padding:2px 0}
+.main.term .dock{background:linear-gradient(transparent,var(--bg) 30%)}

@@ -1,0 +1,3 @@
+/* F97: Settings */
+.setline{justify-content:space-between;flex-wrap:nowrap} .setname{flex:1;min-width:0;display:flex;overflow-wrap:anywhere} .setname b{display:block;font-weight:600} .setname .small{display:block} .fold.setname{min-height:var(--tap)}
+.setpick{width:auto;max-width:50%;flex:none} .setkey{font:var(--fs-s) var(--mono);overflow-wrap:anywhere} .setval{font-size:var(--fs-m);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%;flex:none}

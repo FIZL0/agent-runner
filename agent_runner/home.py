@@ -672,8 +672,9 @@ def package_stamp() -> tuple | None:
     """B165: the package's files on disk (name, mtime, size), which an upgrade changes; None when they cannot
     be read (mid-install)."""
     try:
-        return tuple(sorted((f.name, f.stat().st_mtime_ns, f.stat().st_size)
-                            for f in Path(__file__).parent.iterdir() if f.is_file())) or None
+        here = Path(__file__).parent
+        return tuple(sorted((f.name, f.stat().st_mtime_ns, f.stat().st_size)  # C41a: and the page's parts in page/
+                            for f in [*here.iterdir(), *(here / 'page').glob('*')] if f.is_file())) or None
     except OSError:
         return None
 

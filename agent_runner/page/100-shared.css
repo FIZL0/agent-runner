@@ -1,0 +1,65 @@
+/* F83: the state pill, badges and dots */
+.pill{font-size:var(--fs-s);font-weight:600;border:1px solid currentColor;border-radius:var(--r-full);padding:2px 9px;white-space:nowrap;flex:none;background:none;cursor:pointer;color:var(--muted)}
+.pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.btns.tight{gap:6px} .btns.tight .btn{padding-inline:9px;font-size:var(--fs-m)}
+.bdot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.icon.menu{position:relative} .icon.menu .bdot{position:absolute;top:calc(50% - 15px);right:calc(50% - 15px);width:9px;height:9px;border:2px solid var(--bg);box-sizing:content-box}
+.tag{font-size:var(--fs-s);border-radius:var(--r-full);padding:1px 8px;background:var(--bubble);color:var(--muted);white-space:nowrap} .tag.warn{color:var(--warn)} .tag.acc{color:var(--accent)}
+/* F128: quiet chats; F129: a chat's name being edited, a touch row's menu */
+.qline{display:flex;align-items:center;gap:8px;font-size:var(--fs-xs);color:var(--muted);padding:10px 10px 4px} .qline::after{content:'';flex:1;height:1px;background:var(--line2)}
+.crow.quiet .thread{color:var(--muted)} .crow.quiet .t{opacity:.75}
+.renform{margin:0;padding:2px 4px} .renform input{width:100%;border:1px solid var(--accent);border-radius:var(--r-s);background:var(--bg);color:var(--fg);padding:6px 8px;font:16px/1.3 var(--sans)}
+.rowmenu,.rowacts{display:none}
+@media (hover:none){
+  .crow .rowmenu,.rowacts button{touch-action:manipulation}
+  .rowacts{position:absolute;right:0;top:0;bottom:0;display:flex;align-items:center}  /* F187: Delete stands where the dots were */
+  .rowacts button{width:var(--tap);height:var(--tap);border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer}
+  .rowacts button:active{background:var(--line2)} .rowacts [data-pin].on{color:var(--accent)} .rowacts [data-del]{color:var(--bad)} .rowacts svg{width:18px;height:18px}
+  .app:has(.crow.open) .main,.app:has(.crow.open) .main *{pointer-events:none!important}  /* a tap there only closes the row: no keyboard, no mic */
+  .crow .del:not(.undo),.crow .pin:not(.on){display:none}
+  .crow .rowmenu{position:absolute;right:0;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center}
+  .crow .pin.on{right:38px} .crow[data-crow] .thread{padding-right:44px} .crow.pinned .thread{padding-right:74px!important}
+  .crow.open .pin.on{display:none} .crow.open .thread{padding-right:calc(3*var(--tap) + 4px)!important}
+  .thread,.ni,.prow,.shadd{min-height:var(--tap)}
+}
+/* a row that folds open in place (a slot, a task, a setting) */
+.srow{display:grid;gap:var(--s2);border-top:1px solid var(--line);padding-top:var(--s3)} .srow:first-child{border-top:0;padding-top:0}
+.tap{cursor:pointer} .fold{display:flex;align-items:center;gap:12px;width:100%;border:0;background:none;padding:0;text-align:left;color:inherit;cursor:pointer;min-width:0;min-height:32px}
+.fold .chev svg{transition:transform var(--dur-fast) var(--ease)} .fold[aria-expanded="true"] .chev svg{transform:rotate(90deg)}
+.tasktext{font:13px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-m);padding:10px 12px;margin:0}
+.lrow{display:flex;gap:12px;justify-content:space-between;align-items:baseline;min-width:0} .lrow span:first-child{min-width:0;overflow-wrap:anywhere} .lrow .small{white-space:nowrap}
+/* F124: the sheet */
+.sheetscrim{z-index:11}
+.sheet{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;max-height:85%;overflow:auto;overscroll-behavior:contain;z-index:12;background:var(--surface);border:1px solid var(--line2);border-bottom:0;border-radius:var(--r-l) var(--r-l) 0 0;padding:8px 16px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s1);align-content:start;box-shadow:0 -8px 24px var(--shadow);transform:translateY(103%);visibility:hidden;transition:transform var(--dur-spring) var(--spring-soft),visibility var(--dur-spring);outline:0}
+.sheet.open{transform:none;visibility:visible}
+.sheet.open:not(.drag){transition:transform var(--dur-spring) var(--spring-soft)}  /* F162a2: visible at once, so it can take focus */
+#sheet:focus-visible{outline:none}
+.grab{width:36px;height:4px;border-radius:var(--r-xs);background:var(--line2);justify-self:center;margin-bottom:var(--s1)}
+.sheet h2{font:500 17px/1.3 var(--serif);margin:0 0 var(--s1)}
+.sheet .sec{margin-top:var(--s2)}
+.it{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:var(--tap);border:0;border-bottom:1px solid var(--line);background:none;padding:6px 2px;text-align:left;cursor:pointer;color:var(--fg);text-decoration:none}
+.it:hover{background:var(--bubble)} .it.bad{color:var(--bad)} .it .k{font:12px var(--mono);color:var(--muted);flex:none} .it:last-child{border-bottom:0}
+.it.setrow{cursor:default} .it.setrow:hover{background:none}
+.sheet pre.out{font:12.5px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+/* F162: a Needs you item's popup: the sheet on a phone, a centred dialog on a wide screen; its answers stay on screen */
+.sheet.dlg{padding-bottom:0} .app.kb .sheet.dlg{padding-bottom:0}
+.asktop{display:flex;gap:var(--s3);justify-content:space-between;align-items:flex-start} .asktop h2{min-width:0;overflow-wrap:anywhere} .asktop .btn{flex:none}
+.askbody{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s3);padding-block:var(--s3);overflow-wrap:anywhere} .askbody p,.askbody h3{margin:0} .askbody h3{font-size:var(--fs-m);color:var(--muted);font-weight:600}
+.askbody ol,.askbody ul{margin:var(--s1) 0 0;padding-left:22px;display:grid;gap:var(--s2)} .asktext{display:grid;gap:var(--s2);font-size:var(--fs-n)} .asklink{color:var(--accent);min-height:var(--tap);display:flex;align-items:center;gap:var(--s1)}
+.askbody .fold{min-height:var(--tap)} .shots{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s1)}
+.shot{width:92px;height:120px;border:1px solid var(--line2);border-radius:var(--r-m);background:var(--bubble);padding:0;overflow:hidden;cursor:pointer} .shot img{width:100%;height:100%;object-fit:cover;display:block}
+.shotbig{border:0;background:none;padding:0;cursor:zoom-out;min-width:0} .shotbig img{display:block;max-width:100%;margin:0 auto;border-radius:var(--r-m)}
+.give{display:grid;gap:var(--s1)} .give+.give{margin-top:var(--s3)} .askbody h3+.give{margin-top:var(--s1)} .give .v-bad{color:var(--bad)} .askbody li .btns,.askbody li pre{margin-top:var(--s1)}
+/* not over the fields */ .askfoot.end{position:static}
+.askfoot{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding-block:var(--s3) max(var(--s3),env(safe-area-inset-bottom,0px));display:grid;gap:var(--s2)} .app.kb .askfoot{padding-bottom:var(--s3)}
+@container (min-width:760px){
+  .sheet.dlg{top:0;bottom:0;margin:auto;height:fit-content;max-width:600px;border-bottom:1px solid var(--line2);border-radius:var(--r-l);padding-top:var(--s4);opacity:0;transform:translateY(var(--s4));transition:transform var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
+  .sheet.dlg.open{opacity:1;transform:none} .sheet.dlg.open:not(.drag){transition:transform var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease)} .sheet.dlg .grab{display:none}
+}
+/* form controls: a switch, a select, a text field */
+.sw{appearance:none;-webkit-appearance:none;width:44px;height:26px;border-radius:var(--r-full);border:1px solid var(--line2);background:var(--bubble);position:relative;cursor:pointer;flex:none;margin:0;transition:background-color var(--dur-fast) var(--ease)}
+.sw::after{content:'';position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px var(--shadow);transition:transform var(--dur-fast) var(--ease)}
+.sw:checked{background:var(--accent);border-color:var(--accent)} .sw:checked::after{transform:translateX(18px)}
+.sw:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fld{width:100%;min-width:0;border:1px solid var(--line2);border-radius:var(--r-m);background:var(--bg);color:var(--fg);padding:8px 10px;font:16px/1.35 var(--sans)} textarea.fld{font-family:var(--mono);resize:vertical}
+.it .fld{width:auto;max-width:60%}

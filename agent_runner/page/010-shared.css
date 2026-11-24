@@ -1,0 +1,47 @@
+/* Style rules: docs/STYLE.md. Read it before you change how this page looks, moves or speaks, and follow it;
+   tests/test_web.py (test_style_f83) checks the parts a machine can. */
+/* F79: the run app, a calm chat app over F74's model (the snapshot, the feeds, the actions). Warm off-white
+   (dark: warm grey), serif for headings and replies, a rust accent, thin line icons, one big rounded message
+   box. It switches layout by its own width (container query): a sidebar on a desktop, a drawer on a phone. */
+:root{
+  --page:var(--bg); --bg:#faf9f5; --side:#f5f4ee; --surface:#ffffff; --bubble:#f0eee6; --fg:#141413; --muted:#73726c; --faint:#a3a199;
+  --line:#e8e6dc; --line2:#dcd9cd; --accent:#c96442; --accent2:#b5573a; --onaccent:#ffffff; --ok:#4f7a43;
+  --warn:#a8711a; --bad:#b0412e; --onbad:#ffffff; --scrim:rgba(0,0,0,.25); --shadow:rgba(0,0,0,.15); --lift:rgba(0,0,0,.04); --feed:#1f1e1d;
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif; --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --fs-xs:11px; --fs-s:12px; --fs-m:13px; --fs-n:14px; --fs-b:15px; --fs-l:17px; --fs-xl:30px;
+  --r-xs:4px; --r-s:8px; --r-m:10px; --r-l:16px; --r-xl:20px; --r-full:99px;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --tap:44px;
+  --dur-fast:150ms; --dur:200ms; --dur-slow:250ms; --ease:cubic-bezier(.2,.8,.2,1); --pulse:1.6s;
+  --dur-spring:450ms; --spring:cubic-bezier(.3,1.35,.5,1); --spring-soft:cubic-bezier(.2,.9,.25,1);
+}
+@supports (transition-timing-function:linear(0,1)){:root{  /* damping .7 (overshoots 4%) and 1 */
+  --spring:linear(0,.069,.226,.412,.591,.744,.862,.946,1,1.03,1.044,1.046,1.041,1.033,1.025,1.017,1.01,1.005,1.002,.999,.998,.998,.998,.998,1);
+  --spring-soft:linear(0,.057,.179,.319,.453,.571,.669,.748,.811,.859,.895,.923,.944,.959,.97,.979,.985,.989,.992,.994,.996,.997,.998,.999,1)}}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#262624; --side:#1f1e1d; --surface:#30302e; --bubble:#3a3936; --fg:#f3f1ea; --muted:#a3a199; --faint:#7d7b74;
+  --line:#3b3a37; --line2:#4a4945; --accent:#d97757; --accent2:#e08868; --onaccent:#ffffff; --ok:#8fb07c;
+  --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#262624; --side:#1f1e1d; --surface:#30302e; --bubble:#3a3936; --fg:#f3f1ea; --muted:#a3a199; --faint:#7d7b74;
+  --line:#3b3a37; --line2:#4a4945; --accent:#d97757; --accent2:#e08868; --onaccent:#ffffff; --ok:#8fb07c;
+  --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}
+*{box-sizing:border-box;scrollbar-width:none} *::-webkit-scrollbar{display:none}
+[hidden]{display:none!important}
+/* B160: --page is what shows outside .app (behind Safari's bar, round the keyboard): the colour of the view, a chat's too */
+:root.term{--page:var(--t-bg)} :root.lightfeed{--feed:#ffffff} :root.pagefeed{--feed:var(--bg)}  /* session_frame.THEMES' grounds; a themed session's is the page's */
+html,body{height:100%;overscroll-behavior:none;overflow:hidden;background:var(--page)}
+body{position:fixed;inset:0;margin:0;color:var(--fg);font:15px/1.5 var(--sans)}
+svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+button{font:inherit;color:inherit}
+button:focus-visible,[tabindex]:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a{color:var(--accent)}
+
+.edge{position:fixed;left:0;right:0;height:8px;background:var(--page);z-index:3;pointer-events:none} .edge-top{top:0} .edge-bottom{bottom:0}
+.app{--sab:env(safe-area-inset-bottom,0px);position:relative;container-type:inline-size;height:100vh;height:100dvh;display:flex;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+/* B160: the keyboard is open: kbFit() sets .app's top and height from visualViewport, and nothing pans the page */
+.app.kb{position:fixed;left:0;right:0;container-type:size;padding-bottom:0}
+.app.kb .dock{padding-bottom:8px} .app.kb .sheet{padding-bottom:12px;box-shadow:0 100px 0 var(--surface)} .app.kb .slash{max-height:min(320px,50cqh)}
+.app.kb .top,.app.kb .dock,.app.kb .scrim{touch-action:pinch-zoom}
+.shell{flex:1;min-height:0;min-width:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr)}
+

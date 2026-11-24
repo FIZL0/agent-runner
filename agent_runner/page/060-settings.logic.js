@@ -1,0 +1,82 @@
+function settingValue(k,text){
+  const t=String(text==null?'':text).trim(), also=k.also||[];
+  if(k.type==='choice'||k.type==='switch'||typeof k.default==='boolean'||k.off){if(t==='true'&&k.type!=='text'||t==='true'&&typeof k.default==='boolean')return{v:true};if(t==='false')return{v:false}}
+  if(k.type==='choice')return{v:t};
+  if(k.type==='number'||(also.includes('number')&&/^\d/.test(t)))return /^-?\d+(\.\d+)?$/.test(t)?{v:Number(t)}:{err:`${k.key} takes a number`};
+  const list=()=>t.split(/\n/).map(x=>x.trim()).filter(Boolean);
+  if(k.type==='list')return{v:list()};
+  if(k.type==='table'||/^\{/.test(t)){
+    if(!t)return{v:{}};
+    try{const v=JSON.parse(t.replace(/([{,]\s*)"?([\w-]+)"?\s*=\s*/g,'$1"$2": '));if(v&&typeof v==='object'&&!Array.isArray(v))return{v}}catch(e){}
+    return{err:`${k.key} takes a table, like { every = 10 }`}}
+  if(also.includes('list')&&(/\n|,/.test(t)||typeof k.default==='boolean'))return{v:t.split(/[\n,]/).map(x=>x.trim()).filter(Boolean)};
+  return{v:String(text==null?'':text)};
+}
+/* F166: a control's option ('true', '{"every":10}', 'opus'; `settingText` writes it) back as a value */
+function pickValue(k,t){
+  if(k.choices&&k.choices.length){const c=k.choices.find(x=>String(x)===t);return c===undefined?t:c}
+  if(t==='true'||t==='false')return t==='true';
+  if(k.type==='number'&&/^-?\d+(\.\d+)?$/.test(t))return Number(t);
+  if(/^\{/.test(t)){try{return JSON.parse(t)}catch(e){}}
+  if((k.also||[]).includes('list')&&/[\n,]/.test(t))return t.split(/[\n,]/).map(x=>x.trim()).filter(Boolean);
+  return t;
+}
+/* its options as [value, words], the one it has now among them; null when it is typed */
+function pickOptions(k,now){
+  const w=k.words||{}, o=(k.choices&&k.choices.length?k.choices.map(c=>[String(c),w[String(c)]||String(c)]):Object.keys(w).map(x=>[x,w[x]]));
+  if(!o.length)return null;
+  if(now!==''&&now!=null&&!o.some(x=>x[0]===now))o.push([now,settingSays(k,now)]);
+  return o;
+}
+/* F174: a setting set by two controls, a count and a switch ([run] auto_release): what its words `t` hold, as
+   autorelease.auto_release_of reads them; the count's options; and its words once one control changed */
+const hasParts=k=>!!(k.parts&&k.parts.every);
+function partsNow(t){
+  let v=null;try{v=JSON.parse(t)}catch(e){}
+  v=v||{};
+  return{every:Number.isInteger(v.every)&&v.every>0?v.every:0,idle:v.idle===true};
+}
+const partCount=(k,n)=>`${n} ${n===1?k.parts.every.unit.replace(/s$/,''):k.parts.every.unit}`;
+function partOptions(k,t){
+  const n=partsNow(t).every, c=k.parts.every.counts;
+  return [[0,'Off'],...(n&&!c.includes(n)?[...c,n].sort((a,b)=>a-b):c).map(x=>[x,partCount(k,x)])];
+}
+function partSet(t,part,x){
+  const v={...partsNow(t),[part]:x}, o={};
+  if(v.every)o.every=v.every;
+  if(v.idle)o.idle=true;
+  return settingText(v.every||v.idle?o:false);
+}
+/* a value as a person reads it */
+function settingSays(k,t){
+  if(k.words&&k.words[t])return k.words[t];
+  if(hasParts(k)){const v=partsNow(t), p=k.parts, e=v.every?`${p.every.label} ${partCount(k,v.every)}`:'';
+    return e&&v.idle?`${e} and ${p.idle.label.toLowerCase()}`:e||(v.idle?p.idle.label:'Off')}
+  if(k.type==='switch')return t==='true'?'On':'Off';
+  if(t==='')return 'not set';
+  if(t==='false')return 'Off';
+  return k.unit==='$'&&/^\d/.test(t)?`$${t}`:k.unit&&/^\d/.test(t)?`${t}${k.unit==='%'?'':' '}${k.unit}`:t.split('\n').join(', ');
+}
+/* where a row's control saves: this device when it has its own value (it wins), else the setting's home */
+const settingSide=k=>k.has_device||k.home==='device'?'device':'project';
+const settingChanged=k=>k.source!=='default'&&JSON.stringify(k.value)!==JSON.stringify(k.default);
+const settingHit=(k,q)=>!q||`${k.name} ${k.desc} ${k.table}.${k.key} [${k.table}] ${k.key}`.toLowerCase().includes(q);
+/* shown only while its parent is on */
+function settingShows(k,all){
+  if(!k.parent)return true;
+  const p=all.find(x=>`${x.table}.${x.key}`===k.parent);if(!p)return true;
+  const v=p.value;
+  return !(v===false||v===''||v==null);
+}
+/* the rows that set several kinds' models at once */
+const KINDS_ROWS=[{id:'build',name:'Features, fixes, tests',desc:'Also concepts and releases. A stronger model does them better and uses more of your limit.',kinds:['F','B','T','V','K']},
+  {id:'light',name:'Docs, cleanup, research',desc:'Lighter work; a cheaper model does it and saves your limit.',kinds:['D','C','R']}];
+const kindsModel=(kinds,v)=>{const m=[...new Set(kinds.map(x=>(v||{})[x]||''))];return m.length===1?m[0]:''};
+/* the live Talk session: the remembered one, else a chat titled Talk that is not in `old`, the Talk chats New Talk
+   chat left (F157). remembered 'new': a new one was asked for and nothing was sent yet, so none */
+function talkSession(sessions,remembered,old){
+  if(remembered==='new')return '';
+  const live=(sessions||[]).filter(s=>/^c\d+$/.test(s.name)&&s.state==='live');
+  const r=live.find(s=>s.name===remembered);if(r)return r.name;
+  const t=live.find(s=>s.title==='Talk'&&!(old||[]).includes(s.name));return t?t.name:'';
+}

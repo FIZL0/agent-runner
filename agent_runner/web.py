@@ -64,7 +64,36 @@ from agent_runner import devices, home_screen, login_hold, need_detail, page_htt
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
-PAGE = Path(__file__).with_name('web_page.html')
+PAGE_DIR = Path(__file__).with_name('page')  # C41a: the page's CSS and scripts, one file per area
+
+
+class PageFile:
+    """C41a: web_page.html is the page's frame; its parts (agent_runner/page/NNN-area.css, .logic.js, .js) go in at
+    its /*PAGE_PARTS:kind*/ lines in the order of their names, so the one page the server sends is the same as
+    when it was a single file. `read_text` is the joined page, for whoever read the file before."""
+
+    def __init__(self, frame: Path, parts: Path):
+        self.frame, self.parts = frame, parts
+
+    def read_text(self, encoding: str = 'utf-8') -> str:
+        page = self.frame.read_text(encoding=encoding)
+        for kind, ext in (('css', '.css'), ('logic', '.logic.js'), ('js', '.js')):
+            names = sorted(p for p in self.parts.glob('*' + ext) if kind == 'logic' or not p.name.endswith('.logic.js'))
+            page = page.replace(f'/*PAGE_PARTS:{kind}*/\n', ''.join(p.read_text(encoding=encoding) for p in names), 1)
+        return page
+
+    def __str__(self) -> str:
+        """A path to the joined page, for a node script that reads it as a file (the tests' drivers)."""
+        text = self.read_text()
+        at = Path(tempfile.gettempdir()) / f"agent-runner-page-{hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]}.html"
+        if not at.is_file():
+            part = at.with_suffix(f'.{os.getpid()}.tmp')
+            part.write_text(text, encoding='utf-8')
+            part.replace(at)
+        return str(at)
+
+
+PAGE =PageFile(Path(__file__).with_name('web_page.html'), PAGE_DIR)
 # B164: the page as it was when this process loaded its code: an update on disk while the run is up must not
 # serve a page that asks for routes and actions this run does not have. A restart serves the new one.
 PAGE_TEXT = PAGE.read_text(encoding='utf-8')

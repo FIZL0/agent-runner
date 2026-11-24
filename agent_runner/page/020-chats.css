@@ -1,0 +1,53 @@
+/* the sidebar: a drawer on a phone */
+.side{position:absolute;inset:0 auto 0 0;width:280px;max-width:85%;background:var(--side);border-right:1px solid var(--line);z-index:6;
+  transform:translateX(-102%);transition:transform var(--dur-spring) var(--spring-soft),visibility var(--dur-spring);display:flex;flex-direction:column;overflow:hidden auto;touch-action:pan-y pinch-zoom}
+/* F150: the sidebar's two levels: a project's own, and All projects, which slides in over it from the left and back out.
+   .sghost: the level that was there, for the length of the slide */
+.sidein{position:relative;flex:1 0 auto;display:flex;flex-direction:column;background:var(--side);padding:12px 10px;padding-left:max(10px,env(safe-area-inset-left,0px))}
+.sghost{position:absolute;left:0;right:0;min-height:100%;pointer-events:none}
+.side.up #sidein,.sghost.out{z-index:1}
+.side.up #sidein{animation:listin var(--dur-slow) var(--ease)} .sghost.out{animation:listout var(--dur-slow) var(--ease) forwards}
+.side.open{transform:none;box-shadow:8px 0 30px var(--shadow)}
+.side:not(.open):not(.drag){visibility:hidden}
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:5;opacity:0;visibility:hidden;touch-action:pan-y pinch-zoom;transition:opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
+.scrim.on{opacity:1;visibility:visible}
+.side.drag,.sheet.drag,.scrim.drag{transition:none} .sheet.drag,.scrim.drag{visibility:visible}  /* also while it settles (springRun) */
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;color:inherit;text-decoration:none}
+.logo{width:28px;height:28px;border-radius:var(--r-s);background:var(--accent);color:var(--onaccent);display:grid;place-items:center;font:600 13px var(--serif);flex:none}
+.brand b{font:500 17px var(--serif)}
+.nav{display:grid;gap:1px;margin-top:6px}
+.ni{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:var(--r-m);padding:8px 10px;cursor:pointer;text-align:left;color:var(--fg)}
+.ni:hover{background:var(--bubble)} .ni.on{background:var(--bubble);font-weight:500}
+.ni .n{margin-left:auto;font-size:var(--fs-s);background:var(--accent);color:var(--onaccent);border-radius:var(--r-full);padding:0 7px}
+.shead{font-size:var(--fs-s);color:var(--muted);padding:14px 10px 4px}
+.shead.row{display:flex;align-items:center;justify-content:space-between;padding-block:8px 0}
+.shadd{height:28px;border:0;border-radius:var(--r-s);padding:0 8px;background:none;color:var(--accent);font-size:var(--fs-m);font-weight:500;display:flex;align-items:center;gap:4px;cursor:pointer;flex:none}
+.shadd:hover{background:var(--bubble)} .shadd svg{width:14px;height:14px;stroke-width:2.2}
+.thread{display:flex;align-items:center;gap:8px;border:0;background:none;border-radius:var(--r-m);padding:7px 10px;cursor:pointer;text-align:left;width:100%;color:var(--fg);font-size:var(--fs-n)}
+.thread:hover{background:var(--bubble)} .thread.on{background:var(--bubble)}
+.thread .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread .off{width:7px;height:7px;border-radius:50%;border:1px solid var(--faint);flex:none}
+/* F118: a chat row's delete button (on hover; always on touch), its Undo, the selection and its Delete N bar */
+.crow{position:relative} .crow .thread{padding-right:38px}
+.crow .del{position:absolute;right:4px;top:50%;transform:translateY(-50%);height:28px;min-width:28px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0;font-size:var(--fs-s);font-weight:500}
+.crow:hover .del,.crow:focus-within .del,.crow .del.undo{opacity:1} .crow .del:hover{background:var(--line2);color:var(--fg)}
+.crow .del svg{width:15px;height:15px} .crow .del.undo{padding:0 8px;color:var(--accent)}
+@media (hover:none){.crow .del{opacity:1}}
+/* F133: the pin button beside delete (always shown on a pinned chat), and a row being dragged */
+.crow[data-crow] .thread{padding-right:68px}
+.crow .pin{position:absolute;right:34px;top:50%;transform:translateY(-50%);height:28px;width:28px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0}
+.crow:hover .pin,.crow:focus-within .pin,.crow .pin.on{opacity:1} .crow .pin.on{color:var(--accent)} .crow .pin:hover{background:var(--line2);color:var(--fg)}
+.crow .pin svg{width:15px;height:15px}
+@media (hover:none){.crow .pin{opacity:1}}
+.crow[data-crow]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.crow.lift,.crow.drag{background:var(--line2);border-radius:var(--r-m)} .crow.drag{position:relative;z-index:5;box-shadow:0 4px 14px var(--shadow);opacity:.95}
+.thread.sel{background:color-mix(in srgb,var(--accent) 18%,transparent)}
+.thread.gone{opacity:.5;cursor:default} .thread.gone .t{text-decoration:line-through}
+.selbar{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:var(--fs-m);color:var(--muted)} .selbar span{flex:1}
+.selbar .btn{padding:4px 10px;font-size:var(--fs-m)}
+.none{font-size:var(--fs-m);color:var(--faint);padding:4px 10px}
+.livedot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;animation:pulse var(--pulse) infinite}
+@keyframes pulse{50%{opacity:.35}}
+.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px 4px;border-top:1px solid var(--line);font-size:var(--fs-m);color:var(--muted)}
+.me .av{width:28px;height:28px;border-radius:50%;background:var(--fg);color:var(--bg);display:grid;place-items:center;font:600 12px var(--sans);flex:none}
+.me .sub{font-size:var(--fs-xs)}

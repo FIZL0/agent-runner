@@ -32,7 +32,7 @@ package-dir = { "agent_runner.example" = "examples/hello" }
 version = { attr = "agent_runner.__version__" }
 
 [tool.setuptools.package-data]
-agent_runner = ["web_page.html", "harness.mjs"]
+agent_runner = ["web_page.html", "harness.mjs", "page/*.css", "page/*.js"]
 "agent_runner.example" = ["*", "**/*", ".gitignore", "journal/.keep"]
 
 [tool.setuptools.exclude-package-data]

@@ -133,7 +133,8 @@ def test_theme(tmp: Path) -> None:
         return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]
     slots = [r[i] for r in T.ROLES.values() for i in (0, 1)]
     eq(len(slots), len(set(slots)), 'no slot stands for two roles')
-    css = (Path(T.__file__).parent / 'web_page.html').read_text(encoding='utf-8')
+    from agent_runner import web as W
+    css = W.PAGE.read_text(encoding='utf-8')  # C41a: the joined page
     grounds = re.findall(r'--bg:(#\w+)', css)
     for look, at, ground in (('dark', 2, grounds[1]), ('light', 3, grounds[0])):
         got = T.page_look(look)
