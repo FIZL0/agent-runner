@@ -333,6 +333,9 @@ const els = {app: {style: {}, classList: cls()}, body: new Box(600)};
 const $ = k => els[k], box = {matches: () => true, closest: () => null}, docOn = {};
 let clock = 5000, frames = [], reduced = false, glides = [];
 Date.now = () => clock;
+let later = [], every = null;
+const setTimeout = f => later.push(f), tasks = () => { const l = later; later = []; l.forEach(f => f()) };
+const setInterval = f => (every = f, 1), clearInterval = () => { every = null };
 let lastPlace = null;
 const requestAnimationFrame = f => frames.push(f), frame = (ms = 16) => { clock += ms; const l = frames; frames = []; l.forEach(f => f()) };
 const matchMedia = () => ({matches: reduced}), getComputedStyle = () => ({getPropertyValue: k => k === '--ease' ? ' ease-out' : '250ms'});
@@ -392,7 +395,25 @@ docOn.focusout({target: box, relatedTarget: box}); Promise.resolve().then(() => 
   lastPlace = 'a'; noticeRoom(0); S.pin = false; b.scrollTop = 300; noticeRoom(36); const r1 = b.scrollTop; noticeRoom(0); const r2 = b.scrollTop;
   lastPlace = 'b'; noticeRoom(36); out.notice = [r1, r2, b.scrollTop];
   out.notTap = [tap(30, 80), tap(0, 700), tap(0, 80, true)]; document.activeElement = tb; out.scripted = tap(0, 80)[1][0]; vv(420, 0); out.again = tap(0, 80);
+  // B212a: the viewport is back with no event, the box still in focus
+  tasks(); document.activeElement = box; vv(420, 0); frame(2000); frame(2000); const asked = !!every;
+  VVS.height = 800; if (every) every(); out.noEvent = [asked, app(), !!every];
+  // blurred, and the viewport never says the keyboard went: a script's focus later
+  vv(420, 0); document.activeElement = null; docOn.focusout({target: box, relatedTarget: null});
+  const enter = () => { document.activeElement = box; docOn.focusin({target: box, relatedTarget: null}); frame(); return app() };
+  Promise.resolve().then(() => { const full = app(); clock += 2000; out.stale = [full, enter()]; on.resize(); out.staleEvent = app();
+    VVS.scale = 2; VVS.height = 210; on.resize(); VVS.scale = 1; VVS.height = 420; on.resize(); out.staleZoom = app();
+    VVS.height = 800; on.resize(); VVS.height = 420; on.resize(); out.staleOver = app();
+    document.activeElement = null; docOn.focusout({target: box, relatedTarget: null}); return Promise.resolve() }).then(() => {
+    out.soon = enter(); document.activeElement = null; docOn.focusout({target: box, relatedTarget: null}); return Promise.resolve() }).then(() => {
+    clock += 2000; docOn.click(); out.pressed = enter(); tasks();
+    document.activeElement = null; docOn.focusout({target: box, relatedTarget: null}); return Promise.resolve() }).then(() => {
+    clock += 2000; enter(); docOn.input({isTrusted: false}); const own = app(); docOn.input({isTrusted: true}); out.typed = [own, app()];
+    // another app, the keyboard open
+    document.hidden = true; box.blur = () => { document.activeElement = null; docOn.focusout({target: box, relatedTarget: null}) };
+    docOn.visibilitychange(); return Promise.resolve() }).then(() => { document.hidden = false; on.resize(); out.otherApp = [document.activeElement, app(), every];
   console.log(JSON.stringify(out));
+  }).catch(e => { console.error(e); process.exit(1) });
 });`);
 """
 
@@ -440,6 +461,12 @@ def test_keyboard_b160(tmp: Path) -> None:
     eq(got.get('scripted'), 'blur', 'a box focused by a script has no keyboard: the tap focuses it anew')
     eq(got.get('notice'), [336, 300, 300], "a notice's row moves no text; a chat just opened keeps its place")
     eq((got.get('notTap'), got.get('again')), ([[False, []]] * 3, [False, []]), 'a scroll, a long press, a swipe and a box in focus are left to the browser')
+    up = ['420px', '0px', True]
+    eq(got.get('noEvent'), [True, off, False], 'B212a: a viewport back with no event is seen while the keyboard is open, and no longer asked for then')
+    eq((got.get('stale'), got.get('staleEvent'), got.get('staleZoom')), ([off, off], off, off), "B212a: a script's focus over a viewport still short from a keyboard long away: full height")
+    eq((got.get('staleOver'), got.get('soon'), got.get('pressed')), (up, up, up), 'a height that changed, a box back soon, and a press are a keyboard')
+    eq(got.get('typed'), [off, up], 'and so is typing, but not words a script put in')
+    eq(got.get('otherApp'), [None, off, None], 'B212a: going to another app leaves the box, so .app is whole on the way back')
 
 
 KB_FEED_DRIVER = r"""
