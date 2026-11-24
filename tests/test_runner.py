@@ -7939,6 +7939,217 @@ def test_reference_keys_d3():
         has(section, re.escape(f'`[{t}] {k}`'), f'REFERENCE.md says what [{t}] {k} became')
 
 
+STACK_TODO = """# TODO
+
+### Next
+
+- [ ] **S1** the first | files: a.py
+- [ ] **S2** the second | files: a.py
+- [ ] **S3** waits for the first | files: a.py | after: S1
+- [ ] **S1a** a sibling | files: a.py
+- [ ] **S4** (alone) runs alone | files: a.py
+- [ ] **S5** beside a running one | files: a.py, b.py
+- [ ] **V1** release | files: a.py
+
+### Bugs (one at a time)
+
+- [ ] **S6** in order | files: a.py
+- [ ] **S7** in order too | files: c.py
+"""
+
+
+def test_start_on_merge_f198(tmp: Path):
+    print('F198: a task on the files of a finished task starts on its merge during the gate, and lands after it')
+    if R.plat.WINDOWS:
+        return  # no merge gate that outlives a call there
+    from agent_runner import stack
+    here = tmp / 'f198'
+    here.mkdir()
+    repo = make_repo(here)
+    lines = [f'# a{i}' for i in range(20)]
+    (repo / 'a.py').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    (repo / 'plan/TODO.md').write_text(STACK_TODO, encoding='utf-8')
+    (repo / 'runner.toml').write_text((repo / 'runner.toml').read_text() + f'home = "{here.as_posix()}/home"\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'the plan')
+    git(repo, 'push', '-q')
+    start = git(repo, 'rev-parse', 'HEAD')
+    R.init(repo)
+    gating, go = here / 'gating', here / 'go'
+    R.C.run.update(test=f'touch {gating}; while [ ! -e {go} ]; do sleep 0.05; done; python3 check.py',
+                   repair_merges=False, fix_merges=False)
+    saved = stack.POLL, R.MUX.open, R.prompt_for, R.AHEAD_POLL
+    prompts: list[str] = []
+    stack.POLL, R.AHEAD_POLL = 0.1, 0.1
+    R.MUX.open = lambda n, d, prompt, *a, **kw: prompts.append(prompt) or os.getpid()
+    R.prompt_for = lambda *a, **kw: 'brief'
+
+    def until(what, said: str) -> None:
+        end = time.time() + 60
+        while not what() and time.time() < end:
+            time.sleep(0.05)
+        check(what(), said)
+
+    def finish(tid: str) -> threading.Thread:
+        t = threading.Thread(target=R.finish, args=(tid, 0, '(unknown)', 'main'), name=f'merge:{tid}')
+        t.start()
+        return t
+
+    def edit(d: Path, n: int, text: str) -> None:
+        ls = (d / 'a.py').read_text().splitlines()
+        ls[n] = text
+        (d / 'a.py').write_text('\n'.join(ls) + '\n')
+
+    def first(broken: bool = False, moved: bool = False) -> threading.Thread:
+        """S1 finished, its merge in the gate."""
+        gating.unlink(missing_ok=True), go.unlink(missing_ok=True)
+        d = task_branch(repo, 1, 'S1')
+        edit(d, 1, '# S1')
+        (d / 'only1.py').write_text('1\n')
+        if broken:
+            (d / 'BROKEN').write_text('x\n')
+        git(d, 'add', '-A')
+        git(d, 'commit', '-qm', 'S1: the first')
+        git(d, 'checkout', '-q', '--detach')
+        if moved:  # so S1's merge is a commit of its own, not a fast-forward
+            (repo / 'f.py').write_text('# moved\n')
+            git(repo, 'commit', '-qam', 'code on main before the gate')
+        t = finish('S1')
+        until(gating.exists, 'S1 is under its gate')
+        return t
+
+    def second(line: int) -> Path:
+        """S2 started by the run while S1 is in its gate, and finished (committed)."""
+        task = R.pick({}, {'S7'}, 'main', claim=True)
+        eq(task and task[0], 'S2', 'S2, on the same file, starts at once')
+        check(R.start(2, task, 'main', '', 0, 2), 'in its slot')
+        d = R.SLOTS_DIR / 's2'
+        check((d / 'only1.py').exists(), 'on top of what S1 did')
+        has(prompts[-1], r'starts on the merge of S1 \(', 'its brief says what it is on')
+        check('S2' not in R.ahead('main'), 'with nothing committed yet it does not read as finished')
+        eq(R.touched('S2', 'main', d), set(), 'nor as having touched what S1 changed')
+        edit(d, line, '# S2')
+        (d / 'only2.py').write_text('2\n')
+        git(d, 'add', '-A')
+        git(d, 'commit', '-qm', 'S2: the second')
+        eq(R.touched('S2', 'main', d), {'a.py', 'only2.py'}, 'its own files only')
+        git(d, 'checkout', '-q', '--detach')
+        return d
+
+    def reset() -> None:
+        for b in git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/task', 'refs/heads/wip').split():
+            git(repo, 'branch', '-D', b)
+        git(repo, 'reset', '-q', '--hard', start)
+        git(repo, 'push', '-q', '--force')
+        shutil.rmtree(R.C.notes(R.GATES), ignore_errors=True)  # a pass kept there would skip the gate
+
+    log = lambda: (repo / '.runner/run.log').read_text()  # noqa: E731
+    try:
+        one = first()
+        why: dict = {}
+        tried = {'S2', 'S7'}
+        eq(R.pick({}, tried | {'S5'}, 'main', claim=True), None, 'no sibling, after:, (alone), release or task of an ordered section does')
+        R.pick({}, set(), 'main', why=why)
+        eq((why['S2'][0], why['S1a'][0], why['S4'][0]), ('free', 'waiting for a sibling', 'runs alone'), 'the dry run says so')
+        check('S3' not in why, 'one with after: S1 is not up at all')
+        b = next(t for t in R.tasks('main') if t[0] == 'S7')
+        busy = ('X9', 'Next', {'b.py'}, set())
+        u = R.UNDER[0]
+        R.AHEADS[:] = [{'base': u['on'], 'tids': ['X1'], 'merged': 'm2'}, {'base': 'other', 'tids': ['X2'], 'merged': 'm3'},
+                       {'base': u['on'], 'tids': ['X3'], 'merged': 'm4', 'failed': True}]
+        eq(R.under_way(), [u, {'on': 'm2', 'tids': ['S1', 'X1']}],
+           'a merge built ahead on that one can be started on, not one on another base or whose gate failed')
+        R.AHEADS.clear()
+        eq(R.pick({3: busy}, tried, 'main', claim=True), None, 'nor one that also clashes with a running task')
+        eq(R.pick({3: ('S7', b[1], {'c.py'}, set())}, {'S2', 'S5'}, 'main', claim=True), None, 'nor an ordered mate of one')
+        second(10)
+        two = finish('S2')
+        until(lambda: 'S2: finished; it lands after S1' in log(), 'S2 finished first and waits')
+        eq(git(repo, 'rev-parse', 'main'), start, 'nothing landed')
+        go.touch()
+        one.join(60), two.join(60)
+        text = (repo / 'a.py').read_text()
+        check('# S1' in text and '# S2' in text, 'both landed')
+        merges = git(repo, 'log', '--first-parent', '--reverse', '--format=%s', f'{start}..main')
+        check(merges.index('S1') < merges.index('S2'), 'S1 first', merges)
+        check(not R.C.notes('S2.stacked').exists() and not R.UNDER, 'nothing is kept about it')
+
+        for broken_line, say in ((10, 'apply by themselves'), (1, 'conflict, and go to a fix session')):
+            print(f'F198: S1 is refused: S2 lands without its commits; its own {say}')
+            reset()
+            one = first(broken=True)
+            on = git(R.SLOTS_DIR / 'merge', 'rev-parse', 'HEAD')
+            bad = git(repo, 'rev-parse', 'task/S1')
+            second(broken_line)
+            git(repo, 'push', '-q', 'origin', 'task/S2')
+            fixer = R.fixer
+
+            def fake(head, prompt, cwd, *a):
+                has(prompt, r"Task S2's branch was started on the merge of S1", 'the fix session is told what happened')
+                edit_me = git(cwd, 'diff', '--name-only', '--diff-filter=U').split()
+                git(cwd, 'checkout', '--theirs', '--', *edit_me)
+                git(cwd, 'add', *edit_me)
+                git(cwd, '-c', 'core.editor=true', 'cherry-pick', '--continue')
+                return 0, ''
+
+            R.fixer, R.C.run['fix_merges'] = fake, broken_line == 1
+            two = finish('S2')
+            go.touch()
+            one.join(60), two.join(60)
+            R.fixer, R.C.run['fix_merges'] = fixer, False
+            text = (repo / 'a.py').read_text()
+            check('# S2' in text and (repo / 'only2.py').exists(), 'S2 landed, its work kept', log()[-1500:])
+            check('# S1' not in text and not (repo / 'only1.py').exists() and not (repo / 'BROKEN').exists(),
+                  'nothing of S1 came with it')
+            check(not {on, bad} & set(git(repo, 'rev-list', 'main').split()), 'no commit of S1 or its merge is on main')
+            check('wip/S1' in git(repo, 'branch', '--format=%(refname:short)').split(), 'S1 is parked')
+            check('task/S2' not in remote_branches(here), "its remote branch, with S1's commits, is gone")
+
+        print('F198: work that cannot be moved is parked whole')
+        reset()
+        one = first(broken=True)
+        second(1)
+        tip = git(repo, 'rev-parse', 'task/S2')
+        two = finish('S2')
+        go.touch()
+        one.join(60), two.join(60)
+        eq(git(repo, 'rev-parse', 'main'), start, 'nothing landed')
+        eq(git(repo, 'rev-parse', 'wip/S2'), tip, "S2's work is all on wip/S2")
+
+        print('F198: S1 is built again, as main moved: S2 follows it')
+        reset()
+        one = first(moved=True)
+        second(10)
+        (repo / 'g.py').write_text('# moved\n')
+        git(repo, 'commit', '-qam', 'code on main during the gate')  # S1's merge is built again on it
+        two = finish('S2')
+        go.touch()
+        one.join(60), two.join(60)
+        text = (repo / 'a.py').read_text()
+        check('# S1' in text and '# S2' in text and (repo / 'g.py').read_text() == '# moved\n',
+              'S1 landed as built again, and S2 after it', log()[-1500:])
+        has(log()[-1500:], r'S2: the merge of S1 it was started on did not land as it was', 'moved off the first merge')
+        eq(git(repo, 'log', '--format=%s', 'main').count('S1: the first'), 1, 'with no second copy of S1')
+
+        print('F198: a stop before the gate ends; a start that fails')
+        reset()
+        one = first()
+        second(10)
+        stopping, pend = R.stopping, stack.pending
+        R.stopping, stack.pending = (lambda: True), (lambda tid: False)  # as if S1 waited for the next run
+        eq(stack.settle('S2', 'main'), False, 'S2 waits for it too')
+        R.stopping, stack.pending = stopping, pend
+        check(R.merge('S2', 'main').startswith('it was started on the merge of S1'), 'it never merges before that')
+        git(repo, 'branch', '-D', 'task/S2')
+        eq(stack.stacked('S2', 'main'), {}, 'a record whose branch is gone counts for nothing')
+        eq(stack.begin('S2', 'main'), 'main', 'and a later start with nothing chosen is from main')
+        go.touch()
+        one.join(60)
+    finally:
+        go.touch()
+        stack.POLL, R.MUX.open, R.prompt_for, R.AHEAD_POLL = saved
+
+
 def main() -> int:
     # B77: Windows refuses to delete a folder a process still has open (WinError 145 on .git/info once a test
     # crashed, its git children still running): a leftover temp dir must not hide the result of the tests
@@ -7981,7 +8192,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp), lambda: test_done_test_f178(tmp), lambda: test_gate_limit_b186(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), lambda: test_stream_spend_keeps_terminal_turns_b151(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])
+                       lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), lambda: test_stream_spend_keeps_terminal_turns_b151(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo), lambda: test_start_on_merge_f198(tmp)])
 
 
 if __name__ == '__main__':
