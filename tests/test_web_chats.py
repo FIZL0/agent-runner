@@ -524,14 +524,13 @@ def test_interrupt_c1_b141(tmp: Path) -> None:
 
 
 def test_chat_order_f133(tmp: Path) -> None:
-    """F133: the Chats order and pins, set through /act chat_order, are kept by the run (a file in the notes dir):
-    the snapshot after a reload, and a new server's, list the chats in that order with the pins; a deleted chat
-    drops out, a new one goes just under the pins. Each chat row has a pin button and drags by pointer events,
-    and chatMove places a dropped row with the pins kept first."""
+    """F133, F201: the pinned chats, set through /act chat_order, are kept by the run (a file in the notes dir) in
+    their order: in the snapshot after a reload, and a new server's; a deleted chat drops out. Each chat row has a pin
+    button, only a pinned one drags, by pointer events, and chatMove places it among the pins."""
     fake_repo(tmp)
     page = W.page_html().decode()
-    check('data-pin=' in page and "act('chat_order'" in page and "'pointerdown'" in page and 'data-crow=' in page,
-          'the page: a pin button per chat, rows dragged by pointer events, the chat_order action')
+    check('data-pin=' in page and "act('chat_order'" in page and "'pointerdown'" in page and "closest('.crow.pinned[data-crow]')" in page,
+          'the page: a pin button per chat, only pinned rows dragged by pointer events, the chat_order action')
     sessions = [{'name': n} for n in ('c1', 'c3', 'c4', 's1')]
     token = W.web_token()
 
@@ -540,39 +539,99 @@ def test_chat_order_f133(tmp: Path) -> None:
 
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'sessions': sessions})
     try:
-        eq((snap_of(srv)['chat_order'], snap_of(srv)['chat_pins']), (['c1', 'c3', 'c4'], []),
-           'nothing kept yet: the snapshot order')
+        eq(snap_of(srv)['chat_pins'], [], 'nothing kept yet: no pins')
         url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
-        code, out = post(url, {'name': 'chat_order', 'args': {'order': ['c4', 'c1', 'c3'], 'pins': ['c4']}})
+        code, out = post(url, {'name': 'chat_order', 'args': {'pins': ['c4', 'c1']}})
         eq((code, out.get('ok')), (200, True), 'chat_order is taken')
         eq(post(url, {'name': 'chat_order', 'args': {'order': 'c4'}})[1].get('ok'), False, 'order must be a list')
         eq(post(url, {'name': 'chat_order', 'args': {'nope': 1}})[1].get('ok'), False, 'an unknown arg is refused')
+        eq(post(url, {'name': 'chat_order', 'args': {'pins': 'c4'}})[1].get('ok'), False, 'so must pins')
+        eq(post(url, {'name': 'chat_order', 'args': {}})[1].get('ok'), False, 'and one of them is there')
         s = snap_of(srv)
-        eq((s['chat_order'], s['chat_pins']), (['c4', 'c1', 'c3'], ['c4']), 'a reload shows the kept order')
-        eq(post(url, {'name': 'chat_order', 'args': {'order': ['c4', 'c3', 'c1']}})[1].get('ok'), True, 'order alone')
-        s = snap_of(srv)
-        eq((s['chat_order'], s['chat_pins']), (['c4', 'c3', 'c1'], ['c4']), 'an order sent alone keeps the pins')
+        eq((s.get('chat_order'), s['chat_pins']), (None, ['c4', 'c1']), 'a reload shows the pins in their order')
+        eq(post(url, {'name': 'chat_order', 'args': {'order': ['c1', 'c3', 'c4']}})[1].get('ok'), True, 'order alone')
+        eq(snap_of(srv)['chat_pins'], ['c1', 'c4'], "a page from before: the pins in its order, no chat more")
     finally:
         srv.stop()
     check(W.S.C.notes(W.CHAT_ORDER_FILE).exists(), 'kept in the notes dir')
     sessions = [{'name': n} for n in ('c1', 'c3', 'c7', 's1')]  # c4 deleted, c7 new
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'sessions': sessions})
     try:
-        s = snap_of(srv)
-        eq((s['chat_order'], s['chat_pins']), (['c7', 'c3', 'c1'], []),
-           'a new server (another page, a phone): the deleted pinned chat drops out, the new one goes on top')
+        eq(snap_of(srv)['chat_pins'], ['c1'], 'a new server (another page, a phone): the deleted pinned chat drops out')
     finally:
         srv.stop()
     if not shutil.which('node'):
         print('  (no node here: the chat move test is skipped)')
         return
-    names = ['c4', 'c1', 'c3', 'c6']
-    got = logic_js([['chatMove', names, ['c4'], 'c6', 1], ['chatMove', names, ['c4'], 'c1', 3],
-                    ['chatMove', names, ['c4'], 'c4', 3], ['chatMove', names, ['c4', 'c3'], 'c3', 1]])
-    eq(got[0], ['c4', 'c6', 'c1', 'c3'], 'a row dropped at place 1 lands there')
-    eq(got[1], ['c4', 'c3', 'c6', 'c1'], 'and at the end')
-    eq(got[2], ['c4', 'c1', 'c3', 'c6'], 'a pinned chat dragged down stays above the unpinned')
-    eq(got[3], ['c4', 'c3', 'c1', 'c6'], 'a chat just pinned joins the pins')
+    pins = ['c4', 'c1', 'c3']
+    got = logic_js([['chatMove', pins, 'c3', 0], ['chatMove', pins, 'c4', 9], ['chatMove', pins, 'c9', 1]])
+    eq(got, [['c3', 'c4', 'c1'], ['c1', 'c3', 'c4'], pins], 'a pin dropped lands there, or at the end; no other chat does')
+
+
+SORT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = s => { const i = page.indexOf(s); if (i < 0) throw Error(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const now = 1e6, row = (name, at, o) => ({name, at: at && now - at, last: 'you', ...o});
+const p = new Function('now', `
+const shown = [], PD = {}, HOLD_MS = 15000, HOME_PAGE = false, I = {}, H = {alerts: []};
+const S = {snap: {needs: [], chat_quiet: 21600}, seen: {}, sel: [], ob: [], thread: null, ren: null};
+const Date = {now: () => now * 1000}, esc = s => String(s), atAll = () => false, working_ = () => [], allRow = () => '', walkRow = () => '', chatBar = () => '';
+const homeNeeds = () => 0, sessionOf = n => S.snap.sessions.find(s => s.name === n), chatRow = (s, q) => '[' + s.name + (q ? ' q' : '') + ']', sideShow = h => shown.push(h);
+` + logic + line('const chatPins=') + line('const chats=') + line('const chatNames=') + line('const groupChats=') + line('const shownChats=')
+  + slice('let DR=null;', 'function side(){') + slice('function side(){', '/* the sidebar drawn again')
+  + slice('/* F201: the starting chats', 'function obCards(') + `
+return {S, PD, chatNames, drag(d) { DR = d }, draw() { shown.length = 0; side();
+  return shown.length ? (shown[0].match(/\\[c[^\\]]*\\]|data-k="chat:[^"]*"/g) || []).map(x => x.replace(/data-k="chat:|["\\[\\]]/g, '')).join(' ') : 'kept' }};`)(now);
+const {S} = p, out = {}, at = (n, t) => { S.snap.sessions.find(s => s.name === n).at = now - t };
+S.snap.sessions = [row('c1', 90), row('c2', 50000), row('c3', 10), row('c4', 60000), row('c5', 30), row('c6', 40000), row('c10', 30)];
+out.order = p.draw();
+S.snap.chat_pins = ['c4', 'c1']; S.snap.chat_order = ['c6', 'c5', 'c1', 'c4']; out.pins = p.draw(); out.next = p.chatNames();
+S.ob = [{newchat: true, cid: 'a', say: 'A', state: 'sending'}, {newchat: true, cid: 'b', say: 'B', state: 'sending'}, {name: 'chat_to', cid: 'x'}];
+out.starting = p.draw(); out.startNext = p.chatNames();
+S.ob = S.ob.slice(0, 1); S.came = [{name: 'c11', say: 'B', state: 'sending', at: now * 1000}]; out.named = p.draw();
+S.snap.sessions.push(row('c11', 0)); S.ob = []; out.up = p.draw(); at('c11', 1); out.active = p.draw();
+S.snap.sessions.pop(); out.gone = p.draw();
+at('c5', 1); out.moved = p.draw();
+S.ren = 'c3'; at('c10', 0.5); S.snap.sessions.push(row('c12', 0)); out.edit = p.draw();
+at('c2', 0.2); out.editQuiet = p.draw(); S.ren = null; out.edited = p.draw();
+S.ren = 'c6'; S.ob = [{newchat: true, cid: 'z', say: 'Z'}]; out.low = p.draw(); S.ren = null; S.ob = [];
+out.before = p.draw(); at('c3', 0.1); p.PD.row = now * 1000; out.press = [p.draw(), p.PD.late]; p.PD.row = now * 1000 - 20000; out.long = p.draw(); p.PD.row = 0;
+p.drag({on: true}); out.drag = p.draw(); p.drag(null); out.after = p.draw();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_chats_newest_f201(tmp: Path) -> None:
+    """F201: the sidebar's chats, and Quiet, go newest to oldest by last activity, the pins first in their own order,
+    then the chats still starting; next and previous follow; no row moves under a drag, a name edit or a press."""
+    if not shutil.which('node'):
+        print('  (no node here: the chat sort test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(SORT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the sidebar', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['order'], 'c3 c10 c5 c1 c6 q c2 q c4 q', 'both lists newest first; the same time: the newer chat')
+    eq(o['pins'], 'c4 c1 c3 c10 c5 c6 q c2 q', 'pins first in their own order; a kept order of the rest places nothing')
+    eq(o['next'], ['c4', 'c1', 'c3', 'c10', 'c5', 'c6', 'c2'], 'the order next, previous and a range follow')
+    eq(o['starting'], 'c4 c1 @b @a c3 c10 c5 c6 q c2 q', 'starting chats first under the pins, the last started on top')
+    eq(o['startNext'], o['next'], 'a starting chat is no chat to pick yet')
+    eq(o['named'], 'c4 c1 @a c11 c3 c10 c5 c6 q c2 q', 'one with its name, not in the snapshot yet, still shows')
+    eq(o['up'], 'c4 c1 c11 c3 c10 c5 c6 q c2 q', 'a chat with no activity time keeps that place')
+    eq(o['active'], o['up'], 'and so once it is active')
+    eq(o['gone'], o['pins'], 'one that ended does not come back as starting')
+    eq(o['moved'], 'c4 c1 c5 c3 c10 c6 q c2 q', 'the chat last active moves up')
+    eq(o['edit'], 'c4 c1 c5 c3 c10 c12 c6 q c2 q', 'a name edit: no row moves; a new chat goes last')
+    eq(o['editQuiet'], o['edit'], 'nor out of Quiet')
+    eq(o['edited'], 'c4 c1 c12 c2 c10 c5 c3 c6 q', 'once it ends they do')
+    eq(o['low'], 'c4 c1 c12 c2 c10 c5 c3 c6 q @z', 'an edit in Quiet: what is new goes under it')
+    eq(o['press'], ['kept', True], 'a press on a row: not drawn until it ends')
+    eq(o['long'], 'c4 c1 c12 c3 c2 c10 c5 c6 q', 'but never for long')
+    eq([o['drag'], o['after']], ['kept', o['long']], 'a drag holds the list too')
 
 
 def test_answer_button_b138(tmp: Path) -> None:
@@ -768,7 +827,7 @@ def test_outbox_f137(tmp: Path) -> None:
     eq(once.run('', lambda: {'ok': True}), {'ok': True}, 'no cid: it just runs')
     page = W.PAGE.read_text(encoding='utf-8')
     for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid,hold:true})", "addEventListener('online',()=>drain())",
-                 'id="obbar"', 'id="obpop"', 'obChatRows()', 'obBubbles(n)', 'obCards(x=>x.concept)',
+                 'id="obbar"', 'id="obpop"', 'standRows()', 'obBubbles(n)', 'obCards(x=>x.concept)',
                  "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to,..."):
         check(part in page, f'the page has {part}')
     send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
@@ -1348,7 +1407,7 @@ const env = {S: {snap: {sessions: ['c1', 'c2', 'c3'].map(n => ({name: n, title: 
   I: new Proxy({}, {get: (t, k) => '<i>' + String(k) + '</i>'}), esc: s => String(s), CSS: {escape: s => s}, isDrawer: true, all: false,
   document: {addEventListener: add, querySelector: () => null, body: {}}, addEventListener: () => {}, window: {addEventListener: () => {}},
   chatTitle: s => s.title, chatPins: () => env.pins, pins: ['c3'], chatNames: () => ['c1', 'c2', 'c3'], replyDue: () => false, drawerOn: () => env.isDrawer, atAll: () => env.all,
-  sessionOf: n => env.S.snap.sessions.find(s => s.name === n), saveChatOrder: (o, p) => { env.pins = p; env.render() },
+  sessionOf: n => env.S.snap.sessions.find(s => s.name === n), savePins: p => { env.pins = p; env.render() },
   outbox: (n, a) => sent.push([n, a]), openSheet: n => opened.push(n), fetch: () => Promise.resolve({json: () => ({ok: true})}), tq: p => p, slashOpen: () => false,
   open: n => opened.push(n), chatPick: () => ({sel: [], last: ''}), render: () => { env.settle(); env.html = env.S.snap.sessions.map(s => env.row(s)).join('\n') }};
 const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
@@ -1520,17 +1579,17 @@ def test_quiet_stays_b193(tmp: Path) -> None:
     check(r.returncode == 0, 'node runs the Chats code', r.stderr[-1500:])
     if r.returncode:
         return
-    o, still = json.loads(r.stdout), ['c3 c4', 'c1 c2']
+    o, still = json.loads(r.stdout), ['c4 c3', 'c2 c1']
     eq(o['before'], still, 'c1 and c2 are quiet; c3 is old but unread')
     eq(o['quiet'], [still, still], 'a quiet chat opened stays in Quiet')
     eq(o['reload'], [['', ''], still, still], 'and over a reload')
-    eq(o['said'], ['c2 c3 c4', 'c1'], 'something new said in it brings it up')
-    eq(o['held'], ['c2 c3 c4', 'c1'], 'and it stays up while it is open')
+    eq(o['said'], ['c2 c4 c3', 'c1'], 'something new said in it brings it up')
+    eq(o['held'], ['c4 c3 c2', 'c1'], 'and it stays up while it is open')
     eq(o['unread'], [still, still], 'an old unread chat marked seen as it opens stays up')
     eq(o['unreadReload'], [still, still], 'and over a reload')
-    eq(o['closed'], ['c4', 'c1 c2 c3'], 'it goes Quiet once closed')
-    eq(o['pinned'], ['c1 c4', 'c2 c3'], 'an open quiet chat comes up when pinned')
-    eq(o['first'], ['c4', 'c1 c2 c3'], 'a first visit takes all as read')
+    eq(o['closed'], ['c4', 'c3 c2 c1'], 'it goes Quiet once closed')
+    eq(o['pinned'], ['c1 c4', 'c3 c2'], 'an open quiet chat comes up when pinned')
+    eq(o['first'], ['c4', 'c3 c2 c1'], 'a first visit takes all as read')
     eq(o['by'], [['', 'c1']] * 3, "B205: each project's first visit takes its chats as read")
     eq(o['still'], ['', 'c1'], "opening another project's c1 leaves this one read")
     eq(o['kept'], {'ar-seen:a': True, 'ar-seen:b': True, 'ar-seen': True}, 'the record is kept by project')
@@ -1623,4 +1682,4 @@ def test_plus_hold_b213(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_swipe_or_scroll_b167), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_swipe_or_scroll_b167), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213)]))

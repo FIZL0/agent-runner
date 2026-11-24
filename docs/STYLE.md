@@ -70,6 +70,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   not sticky, so they never cover a field.
 - **Row** (`.row`, `.crow`, `.prow`, `.srow`, its folding head `.fold`): one line when folded, with an ellipsis. A row that holds more folds
   open on tap in place (`aria-expanded`), and its chevron turns. A setting's row (`.srow`) shows its name, its description and its control; it opens to show the code name and More… (a sheet with the other home and Reset).
+- **Chat order** (`chatSort()`, `chatPlaces()`, `sideRows()`): pinned chats on top in their own order, then the rest newest to oldest by `at`; a chat with no `at` yet, or still starting, sits first under the pins. No row moves while it is dragged or pressed (`pressHeld()`, 15 s at most), nor while a chat's name is edited: what is new goes last in that row's list, and pins can't be dragged then.
 - **Section** (`.sec`): a small muted heading and a line. Sections keep the TUI's order.
 - **Sheet** (`#sheet`, `openSheet(name)`): more choices about what is on screen. It slides up from the bottom, groups
   its items (`.it`) under `.sec`, closes on the scrim, Esc, a swipe down, or a pick. One sheet, never a sheet over a
@@ -298,7 +299,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - Text boxes are 16px or more, so a phone does not zoom.
 - Every multi-line message box decides Enter with `boxEnter()` and puts `enterHint()` on its textarea, so a phone's Return makes a new line.
 - Touch listeners that watch a gesture are passive, except a `touchmove` that must keep the page still: the drawer
-  swipe and a row drag, and the `touchend` that makes a tap's focus on a text box (`kbTapEnd()`, iOS only). Those call
+  swipe and a row drag (only a pinned chat's row drags), and the `touchend` that makes a tap's focus on a text box (`kbTapEnd()`, iOS only). Those call
   `preventDefault()` only once the gesture has started, so a scroll stays smooth; the `touchend` calls it only for such a tap.
 - A touch is one thing until the finger lifts. One that scrolled never becomes a swipe, and a drawer swipe never scrolls.
   Decide under 10px: iOS cannot cancel a scroll that has begun.

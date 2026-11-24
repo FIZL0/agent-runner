@@ -522,10 +522,10 @@ _In code_: login.py, login.login_of, login.park_unlogged, harness.mjs --login
 _Avoid_: auth, credentials, token
 
 **Chat order**:
-The order of the run app's Chats list and which chats are pinned to its top, kept by the run so every page shows the same list
-_Said_: drag to reorder chats, pin chats
+The order of the run app's Chats list: pinned chats on top in their own order, then the rest newest to oldest by last activity, so every page shows the same list
+_Said_: drag a pinned chat to reorder, pin chats, newest to oldest
 _On screen_: Pin this chat / Unpin this chat
-_In code_: chat_order, chat_list, chatMove, chat_order.json
+_In code_: chat_order, pin_list, chatSort, chatMove, chat_order.json
 _Avoid_: chat sort, favourites
 
 **Pick link**:

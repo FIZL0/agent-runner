@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: on the run page, the Chats list (top and Quiet) runs newest to oldest by last activity instead of a hand-kept order; pinned chats stay on top in their own order, and only pins drag to reorder (F201).
 - Fixed: Talk on iPhone: the mic button's press lets the browser play replies, so the reply to a voice message is read with no tap on the speaker (B166).
 - Changed: on the run page, a chat's or slot's bars hide and come back more slowly, 400ms (`--dur-bars`) instead of 250ms; the top bar, notices, message box, slim message box and dock stay in step. Other `--dur-slow` motion keeps 250ms, and it is still instant under reduced motion. The person on an iPhone found it too quick (B218a).
 - Changed: on the run page, a concept card has one Chat button, which opens the empty new chat view about that concept; nothing is sent until the person sends, and the first message carries their words with the concept's chat text (page link, local copy, guide concepts). The second New chat button, which started a session at once, is gone; the TUI's N is unchanged (B219a).

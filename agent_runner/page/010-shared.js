@@ -300,7 +300,7 @@ function keepFields(root){
     if(on){const el=[...root.querySelectorAll('[data-f]')].find(e=>e.dataset.f===on);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(sel&&sel[0]!=null)el.setSelectionRange(sel[0],sel[1])}catch(e){}}}};
 }
 /* a press under way, or a text selection in the view: a refresh waits for it (the next draw has it all) */
-const PD={down:false,late:false,since:0}, HOLD_MS=15000;
+const PD={down:false,late:false,since:0,row:0}, HOLD_MS=15000;
 const selecting=()=>{const g=window.getSelection&&window.getSelection();return !!(g&&!g.isCollapsed&&g.anchorNode&&$('body').contains(g.anchorNode))};
 const emptyCard=t=>card(`<div class="small">${t}</div>`);
 
