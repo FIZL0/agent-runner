@@ -66,6 +66,7 @@ def test_setup_main():
         git(root, 'commit', '-qm', 'start')
         launch = S.launch
         S.launch = lambda r, text: 0  # no Claude session in a test
+        offer_ttyd, S.offer_ttyd = S.offer_ttyd, lambda: None  # F403: nor a question at a terminal without ttyd
         try:
             eq(S.main(['--yes'], cwd=root), 0, 'setup ran')
             text = (root / 'CLAUDE.md').read_text(encoding='utf-8')
@@ -73,7 +74,7 @@ def test_setup_main():
             eq(S.main(['--yes'], cwd=root), 0, 'setup ran again')
             eq((root / 'CLAUDE.md').read_text(encoding='utf-8'), text, 'and left CLAUDE.md as it was')
         finally:
-            S.launch = launch
+            S.launch, S.offer_ttyd = launch, offer_ttyd
 
 
 if __name__ == '__main__':
