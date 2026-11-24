@@ -149,7 +149,7 @@ _HOMES: dict[str, str] = {'git.land_edited': DEVICE, 'run.questionnaires': EVERY
 _PARENTS: dict[str, str] = {
     'run.approve_wait': 'run.approve', 'run.approve_batch': 'run.approve', 'run.issues_trust': 'run.issues_watch',
     'run.review_min_lines': 'run.review', 'run.web_port': 'run.web', 'run.web_https': 'run.web',
-    'run.fix_ahead_max': 'run.fix_merges', 'models.review': 'run.review',
+    'run.fix_ahead_max': 'run.fix_merges', 'models.review': 'run.review', 'run.auto_release': 'run.releases',
 }
 # a choice in words: value -> what its control says
 _CHOICES: dict[str, dict[str, str]] = {

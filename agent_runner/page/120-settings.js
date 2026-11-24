@@ -99,14 +99,14 @@ function setFold(id,name,about,body){
 function settingsHTML(){
   const d=S.set&&S.set.tables?S.set:null, q=String(S.f.setq||'').trim().toLowerCase();
   if(!d)return `<div class="col">${setErrHTML()||emptyCard('Loading…')}${obCards(x=>x.ctl==='restart:')}</div>`;
-  const all=settingsAll(d), rc=controlOf('restart'), waits=(d.waits||[]).length, changed=all.filter(settingChanged);
-  const kinds=all.find(k=>settingId(k)==='models.kinds'), kr=kinds?KINDS_ROWS.map(g=>kindsRow(g,kinds)).join(''):'';
+  const all=settingsListed(settingsAll(d)), rows=kindsRows(all), rc=controlOf('restart'), waits=(d.waits||[]).length, changed=all.filter(settingChanged);
+  const kinds=all.find(k=>settingId(k)==='models.kinds'), kr=kinds?rows.map(g=>kindsRow(g,kinds)).join(''):'';
   const groups=(ks,o,w)=>d.groups.filter(g=>!w||g[2]===w).map(g=>setGroup(d,g,ks.filter(k=>k.group===g[0]),o)).join('');
   const shown=all.filter(k=>settingShows(k,all));
   let body;
   if(q||S.setChanged){
     const ks=(S.setChanged?changed:all).filter(k=>settingHit(k,q)), un=S.setChanged?d.unknown.filter(u=>!q||`${u.table} ${u.key} ${u.value}`.toLowerCase().includes(q)):[];
-    const kh=S.setChanged||!kinds?'':KINDS_ROWS.filter(g=>settingHit({...kinds,name:g.name,desc:g.desc},q)).map(g=>kindsRow(g,kinds)).join('');
+    const kh=S.setChanged||!kinds?'':rows.filter(g=>settingHit({...kinds,name:g.name,desc:g.desc},q)).map(g=>kindsRow(g,kinds)).join('');
     body=(groups(ks,{reset:S.setChanged,kinds:kh})||emptyCard(q?'No setting matches.':'Nothing is changed from its default.'))
       +(un.length?`<div class="sec">Ignored or moved<span class="ln"></span></div>${card(un.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">${u.table?`[${esc(u.table)}] `:''}${u.key?`${esc(u.key)} = `:''}${esc(u.value)}</span><span class="tag warn">ignored or moved</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:'');
   }else body=d.groups.filter(g=>g[2]==='page').map(g=>setGroup(d,g,shown.filter(k=>k.group===g[0]),{kinds:g[0]==='models'?kr:''})).join('')

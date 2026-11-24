@@ -165,6 +165,14 @@ for at, words in W._CHOICES.items():
 page = [at for at, w in W.WORDS.items() if W._WHERE[w[0]] == 'page']
 check(20 <= len(page) <= 28, 'about 24 everyday settings', len(page))
 
+print('F193: Release by itself shows only while Manage releases is on, and its value is kept while it is off')
+eq((W.parent('run', 'auto_release'), W.parent('run', 'releases')), ('run.releases', ''), 'it hangs on Manage releases, which always shows')
+for on in (True, False):
+    load(f'[run]\nreleases = {str(on).lower()}\nauto_release = {{ every = 10 }}\n')
+    rows = {k['key']: k for t in config.settings_snapshot(repo)['tables'] if t['table'] == 'run' for k in t['keys']}
+    eq((rows['releases']['value'], rows['auto_release']['value'], rows['auto_release']['parent']), (on, {'every': 10}, 'run.releases'),
+       f'the settings answer with releases {on}')
+
 print('F166: the settings that were cut: an old file still works, and is told')
 CUT = {'comment_policy': '"minimal"', 'idle': '9', 'stall': '9', 'pause': '9', 'merge_ahead': 'false', 'fix_timeout': '9',
        'control_idle_quick': 'false', 'control_idle_talked': '"1d"', 'control_open': '["x"]'}
