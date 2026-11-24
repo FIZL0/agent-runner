@@ -295,8 +295,13 @@ def test_tailnet_https_f96(tmp: Path) -> None:
         http_only('for something else')
         eq(web_rules(), changed['Web'], 'a rule on the next port is left alone')
         fake()
-        with socket.create_server(('127.0.0.1', port + 1)):
-            http_only('is taken')
+        try:
+            held = socket.create_server(('127.0.0.1', port + 1))
+        except OSError:  # another process on this machine has it: taken all the same
+            held = None
+        http_only('is taken')
+        if held:
+            held.close()
 
 
 PARTS_DRIVER = r"""

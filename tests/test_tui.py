@@ -25,6 +25,7 @@ from _check import check, eq, git, report
 from agent_runner import state as S  # noqa: E402
 from agent_runner import tui as T  # noqa: E402
 from agent_runner import ui_model as U  # noqa: E402
+from agent_runner import walk as W  # noqa: E402
 
 COPY = '''<html><head><style>h1{color:red}</style></head><body>
 <h1>Lazy layout</h1><p>Three ways to lay out the run page.</p>
@@ -2297,8 +2298,63 @@ def test_manage_releases_f193() -> None:
     eq([k for k in ran if k.startswith('release')], [], 'and no key makes one')
 
 
+def test_walk_f194c() -> None:
+    """The example project's walkthrough: its card, its keys, the panel it points at; nowhere else."""
+    print('F194c: the walkthrough')
+    f = Path(tempfile.mkdtemp(prefix='f194c-')) / 'walk.json'
+    other = page()
+    check('Walkthrough' not in drawn(other).text() and not other.walk, 'not in another project')
+    for k in '<>/':
+        other.key(k)
+        check(not other.msg and other.panel == 1, f'{k} does nothing there')
+    check('walkthrough' not in T.help_text(True), 'nor in its keys list')
+    p = page(walk=W.Walk(f))
+    win = drawn(p, 40)
+    txt = win.text()
+    check('Walkthrough' in txt and 'The queue  1 of 7' in txt and 'side by side' in txt, 'the first card', txt)
+    check('[> next]' in txt and '[/ skip]' in txt and '[< back]' not in txt, 'its keys', txt)
+    check('[3] Queue ◂' in txt and txt.count('◂') == 1, 'its panel is marked', txt)
+    eq(colour_at(win, '/ skip'), 'hkey', 'the key in the key colour')
+    seen = []
+    for _ in range(6):
+        p.key('>')
+        p.draw(win := Win(40, 120))
+        seen.append((p.walk.at, p.panel, p.main, p.tab()[0]))
+        check(f'  {p.walk.i + 1} of 7' in win.text(), f'{p.walk.at}: its card', win.text())
+        for name in ('[1]', '[2]', '[3]', '[4]', '[5]'):
+            check(f' {name} ' in win.text(), f'{p.walk.at}: panel {name} still shows', win.text())
+    eq(seen, [('start', 1, False, 'controls'), ('session', 2, False, 'session'), ('needs', 4, False, 'answer'),
+              ('land', 1, False, 'log'), ('chat', 2, False, 'info'), ('own', 2, False, 'info')], 'each goes to its place')
+    check('[> done]' in win.text() and '[/ skip]' not in win.text(), 'the last is Done', win.text())
+    p.key('<')
+    eq(p.sel(), T.NEW_CHAT, 'back; the chat step is on the new chat row')
+    eq(page(walk=W.Walk(f)).walk.at, 'chat', 'kept for the next time')
+    p.key('/')
+    check('again' in p.msg and 'Walkthrough' not in drawn(p, 40).text(), 'skipped', p.msg)
+    p.key('1')
+    check('/ walkthrough' in drawn(p, 40).lines()[-1], 'the bottom line has its key', drawn(p, 40).lines()[-1])
+    check('walkthrough' in T.help_text(True, True), 'and the keys list')
+    check(page(walk=W.Walk(f)).walk.off, 'skipped the next time too')
+    p.key('/')
+    check('6 of 7' in drawn(p, 40).text() and p.panel == 2, 'shown again where it was')
+    p.key('3')
+    p.key('n')
+    p.key('/')
+    check(p.typing and p.text_of(p.typing) == '/' and not p.walk.off, 'in a box it is typed')
+    p.key('ESC')
+    for h, w in ((24, 80), (24, 40), (12, 80), (8, 24), (3, 30)):
+        for at in p.walk.ids:
+            p.walk.at = at
+            p.panel, p.main = W.PLACE[at][0] or 1, False
+            win = drawn(p, h, w)
+            if h == 24:
+                last = W.words(p.walk.step, True, 2, 3).split()[-1]
+                check(f'[{p.panel}]' in win.text() and last in win.text() and f'[> {"done" if p.walk.last else "next"}]' in win.text(),
+                      f'{w}x{h}: {at}: its panel, its words, its keys', win.text())
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_question_b223b, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_walk_f194c, test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_question_b223b, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

@@ -1,0 +1,42 @@
+/* F194b, F194c: the walkthrough's steps in order, and their words: the one list for the page (walkStep) and the terminal
+   UI (walk.py reads the JSON below, so keep it plain JSON). page…: only on the page. keys…: only in the terminal UI */
+const WALK_STEPS=
+[
+ {"id": "queue", "title": "The queue",
+  "text": "Each task names the files it changes. Tasks that share no files run side by side, one agent each. A task can also wait for another one to land first.",
+  "keys": "It is Queue [3]; Enter there opens a task."},
+ {"id": "start", "title": "Start run",
+  "up": "The run is up. Its agents work on the queue, on your own Claude usage. A run starts only when you start it. Stop lets the running tasks finish, then ends the run.",
+  "off": "Start run sets agents to work on the queue, on your own Claude usage. Nothing starts until you press it.",
+  "keysUp": "Stop is S on Status [1].",
+  "keysOff": "It is T on Status [1]."},
+ {"id": "session", "title": "A session",
+  "text": "Each task has an agent session of its own.",
+  "pageWorking": "Open one to watch it work and to write to it.",
+  "pageIdle": "It shows under Working now while it works, and opening it lets you watch it and write to it.",
+  "keysWorking": "Select one in Sessions [2] to watch it work; Enter goes into it to write to it, and Ctrl-h comes back.",
+  "keysIdle": "It lists in Sessions [2] while it works. Select it there to watch it; Enter goes into it to write to it, and Ctrl-h comes back.",
+  "noRun": "Start the run to see one."},
+ {"id": "needs", "title": "Needs you",
+  "text": "What only you can decide or check waits here, and the rest of the run goes on.",
+  "some": "An answer sends its task back to the queue.",
+  "pageOff": "You can answer it once the run is up.",
+  "none": "Nothing does right now.",
+  "keys": "It is Needs you [4]; Enter there opens one, with a key for each answer."},
+ {"id": "land", "title": "A merge landing",
+  "text": "A finished task is merged and its tests run. It lands on main only when they pass.",
+  "page": "Then it is listed under Landed lately on Status.",
+  "none": "Nothing has landed yet.",
+  "keys": "The log on Status [1] says so.",
+  "noRun": "Start the run to see one."},
+ {"id": "chat", "title": "Talk to a control session",
+  "text": "Write in your own words: ask how it goes, add a task, change one.",
+  "page": "Each message here opens a chat with a control session, which knows the run and uses your own Claude usage.",
+  "pageOff": "The message box is on Home once the run is up.",
+  "keys": "c starts a chat with a control session, which knows the run and uses your own Claude usage. It lists in Sessions [2]."},
+ {"id": "own", "title": "Your own project",
+  "text": "That is how a run goes.",
+  "pageHome": "Add the folder of a git project of yours, and its queue and its run get a page like this one.",
+  "setup": "For a project of yours, run agent-runner setup in its folder, in a terminal."}
+]
+;

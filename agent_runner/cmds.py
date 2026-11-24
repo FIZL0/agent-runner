@@ -1153,7 +1153,7 @@ def picker_paint(here: Path | None, env=None) -> PickerPaint | None:
     return PickerPaint(TH.get(name), TH.terminal_colours(env))
 
 
-def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint) -> str:
+def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint, hint: str = '') -> str:
     """Screen 1 in colour (F109, concept K2 option A)."""
     out = [p.c('accent', 'agent-runner', True) + f'{BOLD} · pick a run{RESET}', '']
     if not rows:
@@ -1177,6 +1177,7 @@ def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint) -> str:
         bits = [p.c(slot_tok, slots)] + ([p.c(left_tok, left)] if left else [])
         line = f'  {p.key(str(i + 1))}  {name}' + ' · '.join(bits) + gap + p.c('dim', str(r['root']))
         out.append(line + ('  ' + p.c('accent', 'here') if r['here'] else '') + warn)
+    out += ['', p.c('dim', hint)] if hint else []  # F194c
     out += ['', p.hints([('j/k', 'move'), ('1-9', 'pick'), ('⏎', 'pick')], ('q', 'quit'))]
     return '\n'.join(out) + '\n'
 
@@ -1200,11 +1201,11 @@ def launcher_text_painted(row: dict, said: str, p: PickerPaint) -> str:
     return '\n'.join(out) + '\n'
 
 
-def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None) -> str:
+def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None, hint: str = '') -> str:
     """Screen 1, the run picker: one numbered row per run, the selected one marked (F109: in colour with
-    `paint`, else bold and dim)."""
+    `paint`, else bold and dim). `hint`: a line over the keys (F194c, demo.hint)."""
     if paint is not None:
-        return picker_text_painted(rows, sel, paint)
+        return picker_text_painted(rows, sel, paint, hint)
     out = [f'{BOLD}agent-runner · pick a run{RESET}', '']
     if not rows:
         out.append('  no run is up on this device; start one from inside a project: agent-runner')
@@ -1214,6 +1215,7 @@ def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None) ->
         mark = '>' if i == sel else ' '
         line = f'{mark} {i + 1}  {r["name"]:<16} {what:<28} {r["root"]}' + ('  here' if r['here'] else '')
         out += [f'{BOLD}{line}{RESET}' if i == sel else line, *([f'     {r["no_settings"]}'] if r.get('no_settings') else [])]
+    out += ['', hint] if hint else []
     out += ['', f'{DIM}j/k or arrows move · 1-9 picks · Enter picks · q quits{RESET}']
     return '\n'.join(out) + '\n'
 
@@ -1264,13 +1266,13 @@ def read_key() -> str:
     return ch
 
 
-def pick_run(rows: list[dict], key=read_key, show=None, paint: PickerPaint | None = None) -> int | None:
+def pick_run(rows: list[dict], key=read_key, show=None, paint: PickerPaint | None = None, hint: str = '') -> int | None:
     """Screen 1: the index of the run picked (a digit, or Enter on the selection), None when q or Esc quit.
     Starts on row 1 (the current folder's project when there is one)."""
     show = show or (lambda s: (sys.stdout.write(CLEAR + s), sys.stdout.flush()))
     sel = 0
     while True:
-        show(picker_text(rows, sel, paint))
+        show(picker_text(rows, sel, paint, hint))
         k = key()
         if k in ('q', 'esc'):
             return None
@@ -1386,16 +1388,18 @@ def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint 
             sys.stdout.flush()
 
 
-def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=None, paint=None) -> int:
+def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=None, paint=None, hint: str = '') -> int:
     """F91: bare `agent-runner` at a terminal. Screen 1 picks a run (the current folder's project first, its
     run started when it is not up); screen 2, the launcher, opens its run page, its terminal UI or copies the
     link. q on screen 2 goes back to screen 1. F109: drawn to the terminal (no `show`), both screens take the
     run page's colours (`picker_paint`)."""
     rows = picker_rows((sessions or device_sessions)(), here)
+    if here is None and rows:  # F194c: a run is up on this device: no first time
+        hint = ''
     if paint is None and show is None:
         paint = picker_paint(here)
     while True:
-        i = pick_run(rows, key, show, paint)
+        i = pick_run(rows, key, show, paint, hint)
         if i is None:
             return 0
         row = rows[i]
