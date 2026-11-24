@@ -76,8 +76,9 @@ def missing(transcript: str, prompt: str) -> str | None:
 
 
 def check(procs: dict, running: dict) -> None:
-    """End each running task's session whose brief did not arrive, and say so in the run log. A session that was
-    resumed has its brief from its start. One that ended before this look is only said."""
+    """End each running task's session whose brief did not arrive, and say so in the run log. A resumed
+    session is not looked at: its first message is the old one, and its flags name the long brief it was started
+    with (`Claude.flags`). One that ended before this look is only said."""
     from agent_runner.slots import transcript
     for n, (pid, sid, _) in [(n, p) for n, p in procs.items() if n in running and p[1] not in SEEN]:
         if not (t := transcript(sid)):

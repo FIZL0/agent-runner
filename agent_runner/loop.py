@@ -1236,6 +1236,7 @@ class Run:
         save what it left and merge its task."""
         procs, r, branch = self.procs, self.r, self.branch
         if n in procs and not plat.alive(procs[n][0]):
+            brief_arrives.check(procs, self.running)  # B775: it may have ended since `top` looked
             (pid, sid, since), task = procs.pop(n), self.running.pop(n)
             if over := context_over(sid, r.get('context_warn')):  # F25: soft only, the exit line says it
                 log(f'slot {n}: {task[0]} exited ({stats(sid)}); {task[0]} {over[0]}', kind=EV_CONTEXT,
