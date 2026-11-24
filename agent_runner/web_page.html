@@ -219,18 +219,43 @@ a{color:var(--accent)}
 .main.sess .feed{position:absolute;inset:0;overflow:hidden}
 .main.sess .top,.main.sess .notices,.main.sess .dockwrap{position:absolute;left:0;right:0}
 .main.sess .top{top:0} .main.sess .notices{top:var(--seebar,0px)} .main.sess .dockwrap{bottom:0;z-index:2}
-.main.sess .dockwrap .dock{background:var(--bg);transition:transform var(--dur-slow) var(--ease),opacity var(--dur-fast) var(--ease)}
-.main.sess .top>*{transition:opacity var(--dur-fast) var(--ease),transform var(--dur-spring) var(--spring)}
-/* B215: the menu fades with the bar; it alone stays focusable, and keyboard focus on it shows the bar */
-.main.sess.slim .top:not(:has(:focus-visible)){background-color:transparent;pointer-events:none}
-.main.sess.slim .top:not(:has(:focus-visible))>*{opacity:0} .main.sess.slim .top:not(:has(:focus-visible))>:not(.menu){visibility:hidden}
-.main.sess.slim .notices{display:none} .main.sess.slim .dock{transform:translateY(100%);opacity:0;pointer-events:none}
+/* B218: the bars' one motion, all on --dur-slow and --ease, from where each is on screen. Away, the top bar and a notice's row
+   slide off as one and fade. The message box shrinks into the slim one: .slimskin is its card in three parts (its top, its
+   sides, its bottom, which stays), .dockclip keeps what rides down with the top inside it, and the words ride to the slim
+   row's place as that fades in. .slimground is the ground behind it, .slimfoot the line
+   under the box, which fades where it is. slimSize() measures; .still: at once, under calm().
+   At rest the box's own card and the dock's own ground show, after the motion (0s, --dur-slow later) */
+.main.sess{--edgel:max(12px,env(safe-area-inset-left,0px));--edger:max(12px,env(safe-area-inset-right,0px));--slimgap:14px}
+.main.sess .top{transition:transform var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease)} .main.sess .notices{transition:transform var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
+.main.sess .top>*{transition:visibility var(--dur-slow),opacity var(--dur-fast) var(--ease),transform var(--dur-spring) var(--spring)}
+/* B215: the menu goes with the bar; it alone stays focusable, and keyboard focus on it shows the bar */
+.main.sess.slim .top:not(:has(:focus-visible)){transform:translateY(calc(-1*var(--slimtop,100%) - env(safe-area-inset-top,0px)));opacity:0;pointer-events:none}
+.main.sess.slim .top:not(:has(:focus-visible))>:not(.menu){visibility:hidden}
+.main.sess.slim .notices{transform:translateY(calc(-1*var(--slimtop,100%) - env(safe-area-inset-top,0px)));opacity:0;visibility:hidden;pointer-events:none}
+.main.sess .dockwrap .dock{background:none;background-color:var(--bg);transition:translate var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease),background-color 0s linear var(--dur-slow)}
+.main.sess.slim .dockwrap .dock{translate:0 var(--slimride,48px);opacity:0;background-color:transparent;pointer-events:none;transition-delay:0s}
+.main.sess .dock .box:not(:focus-within){transition:background-color 0s linear var(--dur-slow),border-color 0s linear var(--dur-slow),box-shadow 0s linear var(--dur-slow)}
+.main.sess.slim .dock .box:not(#_){background-color:transparent;border-color:transparent;box-shadow:none;transition-delay:0s}
+.slimbox button:not([data-slimbox]){opacity:0;transition:opacity var(--dur-fast) var(--ease)} .main.sess.slim .slimbox button:not([data-slimbox]){opacity:1;transition-delay:calc(var(--dur-slow) - var(--dur-fast))}
+.main.sess .dockclip{clip-path:inset(-100vh -100vw -100vh -100vw round 0 0 var(--r-m) var(--r-m));transition:clip-path 0s linear var(--dur-slow)}
+.main.sess.slim .dockclip{--in:max(0px,(100% - 720px - var(--edgel) - var(--edger))/2);clip-path:inset(-100vh calc(var(--in) + var(--edger)) calc(var(--slimgap) + 1px) calc(var(--in) + var(--edgel)) round 0 0 var(--r-m) var(--r-m));transition-delay:0s}
 .main.sess.slim .dockwrap{pointer-events:none}
-.slimbox{position:absolute;left:0;right:0;bottom:0;height:56px;padding:6px 12px;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));background:var(--bg);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:opacity var(--dur-fast) var(--ease)}
-.main.sess.slim .slimbox{opacity:1;visibility:visible;pointer-events:auto}
-.slimbox>div{display:flex;align-items:center;width:100%;max-width:720px;min-width:0;height:var(--tap);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l)}
+.main:not(.sess) :is(.slimground,.slimskin){display:none}
+.slimground,.slimskin{position:absolute;left:0;right:0;bottom:0;pointer-events:none;visibility:hidden;transition:visibility 0s linear var(--dur-slow)} .main.sess.slim :is(.slimground,.slimskin){visibility:visible;transition-delay:0s}
+.slimground{height:calc(var(--slimgap,14px) + 48px)} .slimground i{display:block;height:100%;background:var(--bg);transform:scaleY(var(--slimgrow,2));transform-origin:50% 100%;transition:transform var(--dur-slow) var(--ease)} .main.sess.slim .slimground i{transform:none}
+.slimskin{bottom:var(--slimgap);padding-left:var(--edgel);padding-right:var(--edger)} .slimskin>div:first-child{position:relative;max-width:720px;height:var(--tap);margin:0 auto}
+.slimfoot{position:absolute;left:var(--edgel);right:var(--edger);top:100%;opacity:1;transition:opacity var(--dur-slow) var(--ease)} .main.sess.slim .slimfoot{opacity:0}
+.slimskin i{position:absolute;left:0;right:0;height:50%;background:var(--surface);border:1px solid var(--line2);transition:transform var(--dur-slow) var(--ease)}
+.slimskin i:nth-child(1){bottom:0;border-top:0;border-radius:0 0 var(--r-m) var(--r-m);box-shadow:0 2px 10px var(--lift)}
+.slimskin i:nth-child(2){bottom:calc(50% - 1px);height:1px;border-block:0;transform-origin:50% 100%;transform:scaleY(calc(var(--slimd,48) + 2))}
+.slimskin i:nth-child(3){top:0;border-bottom:0;border-radius:var(--r-m) var(--r-m) 0 0;transform:translateY(calc(-1px*var(--slimd,48)))}
+.main.sess.slim .slimskin i:nth-child(n){transform:none}
+.slimbox{position:absolute;left:0;right:0;bottom:0;height:calc(var(--slimgap,14px) + 48px);padding:4px 0 var(--slimgap,14px);padding-left:var(--edgel);padding-right:var(--edger);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;pointer-events:none;translate:0 calc(-1*var(--slimride,48px));transition:translate var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
+.main.sess.slim .slimbox{translate:none;opacity:1;visibility:visible;pointer-events:auto}
+.main.sess.still :is(.top,.top>*,.notices,.dock,.dockclip,.slimground,.slimground i,.slimskin,.slimskin i,.slimfoot,.slimbox,.slimbox button,.box:not(#_)){transition:none}
+.slimbox>div{display:flex;align-items:center;width:100%;max-width:720px;min-width:0;height:var(--tap)}
 .slimbox button{flex:none;height:100%;min-width:var(--tap);border:0;background:none;color:var(--muted);font-size:var(--fs-m);padding:0 10px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer} .slimbox svg{width:14px;height:14px}
-.slimbox [data-slimbox]{flex:1;min-width:0} .slimbox [data-slimbox] span{overflow:hidden;text-overflow:ellipsis} .slimbox .draft{color:var(--fg)}
+.slimbox [data-slimbox]{flex:1;min-width:0;padding-left:13px;gap:8px;font:16px/1.45 var(--mono);color:var(--faint)} .slimbox [data-slimbox] span{overflow:hidden;text-overflow:ellipsis} .slimbox .draft{color:var(--fg)}
 .schips{display:flex;gap:6px;overflow-x:auto;max-width:720px;margin:0 auto 8px} .schips .chip{flex:none;background:var(--surface);white-space:nowrap} .schips .chip.up{border-color:var(--warn)}
 .box .act{height:32px;border-radius:var(--r-s);border:1px solid var(--line2);background:none;color:var(--fg);font-size:var(--fs-m);padding:0 8px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;flex:none} .boxrow:has(.act){gap:4px}
 .box .act.halt{margin-left:auto} .box .act.halt+.send{margin-left:0} .send:not(.force) .forcemark{display:none} .send.force svg{stroke-width:3.2}.box .act svg{width:14px;height:14px}
@@ -496,7 +521,7 @@ html.vt-out::view-transition-old(main){z-index:1;animation:toright var(--dur-spr
       <div class="news" id="news" role="status" hidden></div></div></div>
       <div class="body" id="body"></div>
       <div class="feed" id="feed" hidden><div id="feedframe"></div><div class="feedtouch" id="feedtouch"></div><div class="feedsay" id="feedsay" role="status" hidden></div></div>
-      <div class="dockwrap"><div class="dock" id="dock"></div><div class="slimbox" id="slimbox" hidden></div></div>
+      <div class="dockwrap"><div class="slimground" aria-hidden="true"><i></i></div><div class="slimskin" aria-hidden="true"><div><i></i><i></i><i></i></div><div class="foot slimfoot" id="slimfoot"></div></div><div class="dockclip"><div class="dock" id="dock"></div></div><div class="slimbox" id="slimbox" hidden></div></div>
     </section>
     <div class="scrim sheetscrim" id="sheetscrim"></div>
     <div class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div>
@@ -2444,8 +2469,8 @@ if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.docu
 const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
 function feedGone(){clearTimeout(FD.wait);Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,live:null,liveAt:0});feedClass()}
 function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');if(!m||!row)return;
-  m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);row.hidden=!FD.shown;
-  const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;
+  m.classList.toggle('still',calm());m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);row.hidden=!FD.shown;
+  const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;row.inert=!FD.slim;
   if(!FD.shown){const a=feedFly;feedFly=null;if(a)a.cancel();$('feed').style.bottom='';$('feedframe').style.cssText=''}}
 function feedShown(on){if(FD.shown!==on){FD.shown=on;if(!on){FD.slim=false;FD.off=0}}feedClass();if(on)requestAnimationFrame(feedPlace)}
 /* its socket is open: its screen is read at each draw */
@@ -2518,6 +2543,21 @@ function feedGrow(d){
   if(feedGrew)feedGrew.cancel();
   feedGrew=moAnim($('feedframe'),[{translate:`0 ${d}px`},{translate:'0 0'}],{ease:'--ease',dur:'--dur-slow',composite:'add'});
 }
+/* B218: the slim message box's row: the box's own bottom edge, 44px and 4px. Its height is the same with the keyboard open */
+function slimGap(){const d=$('dock'), b=d&&d.querySelector('.box');return b?Math.round(d.getBoundingClientRect().bottom-b.getBoundingClientRect().bottom):0}
+function slimRow(){const g=slimGap();return g?48+g+(kbH?KB_PAD:0):SLIM_H}
+/* B218: how far the bars' motion goes: the dock's and the box's height over the slim box's, and how far its words ride */
+function slimSize(){
+  const m=document.querySelector('.main'), d=$('dock'), b=d&&d.querySelector('.box'), ta=b&&b.querySelector('[data-in]');if(!ta||!FD.shown)return;
+  const by=Math.max(0,b.offsetHeight-44), c=getComputedStyle(ta);
+  const mid=ta.getBoundingClientRect().top-b.getBoundingClientRect().top+parseFloat(c.paddingTop)+parseFloat(c.lineHeight)/2-22;  // the first line's middle over a slim row's
+  const set=(k,v)=>m.style.setProperty(k,v), o=+getComputedStyle(d).opacity, rest=o===0||o===1;
+  if(rest)m.classList.add('still');  // nothing moves now: the new sizes are not a motion
+  set('--slimd',by);set('--slimride',by-Math.min(8,Math.max(0,mid))+'px');set('--slimgap',slimGap()+'px');set('--slimgrow',d.offsetHeight/(48+slimGap()));
+  const f=d.querySelector('.foot');setHTML($('slimfoot'),f?f.innerHTML:'');
+  set('--slimtop',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px');
+  if(rest){for(const e of [d,b,$('top'),document.querySelector('.notices'),$('slimbox'),...document.querySelectorAll('.slimground i,.slimskin i')])getComputedStyle(e).translate;m.classList.remove('still')}
+}
 /* what the frame's place is made of; null while there is none */
 function feedPlace(){
   const main=document.querySelector('.main'), box=$('feedframe');if(!FD.shown||!FD.frame||!main||!main.clientHeight)return;
@@ -2526,9 +2566,9 @@ function feedPlace(){
   if(!FD.slim||!FD.bar)FD.bar=top+say;
   const dock=document.querySelector('.dockwrap').offsetHeight, f=feedScreen();
   const cell=f?f.cell:17, pad=f?f.el.getBoundingClientRect().top:12;
-  const full=feedRoom(main), high=FD.whole?Math.max(60,full-FD.bar-dockRest(dock)):Math.round(full-SLIM_H+FOOT_ROWS*cell);
+  const row=slimRow(), full=feedRoom(main), high=FD.whole?Math.max(60,full-FD.bar-dockRest(dock)):Math.round(full-row+FOOT_ROWS*cell);
   const size=[full,cell].join(), above=main.clientHeight-dock+dockRest(dock), hold=FD.jump&&FD.held===size?FD.t+above-FD.above:null;  // scrolled up: where it was over the box; a chip or a file that comes moves nothing
-  const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,row:SLIM_H,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,hold});
+  const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,row,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,hold});
   if(!FD.whole&&FD.foot===undefined)at.t=Math.min(FD.bar,main.clientHeight-dock-high+FOOT_ROWS*cell);  // not read yet
   FD.far=at.far;FD.off=at.off;FD.t=at.t;FD.above=above;FD.held=FD.whole||!FD.foot?'':size;
   const st=box.style, set=(k,v)=>{if(st[k]!==v)st[k]=v};
@@ -2538,7 +2578,7 @@ function feedPlace(){
 }
 /* the bars and the box away, or back. Never while the person types, or while a menu, a question or a sheet is open */
 const slimMay=()=>!FD.whole&&!!FD.foot&&FD.jump&&FD.far>8&&!S.sheet&&!slashOpen()&&!kbH&&Date.now()-FD.typed>2500&&!(document.activeElement&&document.activeElement.matches('[data-in]')&&document.activeElement.value.trim());
-function feedSlim(on){if(on&&!slimMay())return;FD.run=0;if(FD.slim!==on){FD.slim=on;feedClass();slimDraw()}}
+function feedSlim(on){if(on&&!slimMay())return;FD.run=0;if(FD.slim!==on){slimSize();FD.slim=on;feedClass();slimDraw()}}
 /* a drag or a wheel of px (down is more): the bars go or come, and what is left of it for the session to scroll */
 function feedScroll(px){
   if(!px||!FD.shown)return px;
@@ -2581,7 +2621,7 @@ const workFor=()=>FD.live&&FD.live.status==='busy'&&FD.live.since?'Working '+for
 /* B192: the message box's one row while the reader is scrolled up: its words, Working (its sheet) and Stop */
 function slimDraw(){
   const ta=document.querySelector('[data-in]'), words=ta&&ta.value.trim(), on=FD.n&&sessWorks(FD.n);
-  setHTML($('slimbox'),`<div><button type="button" data-slimbox aria-label="Show the message box"><span${words?' class="draft"':''}>${esc(words||(ta?ta.placeholder:''))}</span></button>${on?`<button type="button" data-sheet="sesswork"><span class="livedot"></span><span data-workfor>Working</span></button><button type="button" data-halt="${esc(FD.n)}">${I.stop}Stop</button>`:''}</div>`);workDraw()}
+  setHTML($('slimbox'),`<div><button type="button" data-slimbox aria-label="Show the message box"><span class="pr" aria-hidden="true">&gt;</span><span${words?' class="draft"':''}>${esc(words||(ta?ta.placeholder:''))}</span></button>${on?`<button type="button" data-sheet="sesswork"><span class="livedot"></span><span data-workfor>Working</span></button><button type="button" data-halt="${esc(FD.n)}">${I.stop}Stop</button>`:''}</div>`);workDraw()}
 function workDraw(){for(const e of document.querySelectorAll('[data-workfor]')){const w=workFor();if(e.textContent!==w)e.textContent=w}}
 setInterval(()=>{if(!FD.shown||document.hidden)return;workDraw();if(Date.now()-FD.liveAt>=LIVE_EVERY)liveLoad()},1000);
 addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]')){FD.typed=Date.now();if(FD.slim)feedSlim(false)}});

@@ -5022,11 +5022,13 @@ def test_style_f83(tmp: Path) -> None:
     rules = re.sub(r'(?::root[^{]*)\{[^}]*\}', '', bare)
     for what, pat in (('raw colour', r'#[0-9a-fA-F]{3,8}\b|rgba?\('), ('font-size in px', r'font-size:\s*[\d.]'),
                       ('border-radius in px', r'border-radius:[^;}]*\d+px'),
-                      ('raw duration', r'(?:transition|animation)[^;}]*[\s:]\.?\d+(?:\.\d+)?m?s\b')):
+                      ('raw duration', r'(?:transition|animation)[^;}]*[\s:](?!0s)\.?\d+(?:\.\d+)?m?s\b')):
         eq(re.findall(pat, rules), [], f'no {what} outside the tokens')
     for kind in re.findall(r'transition:([^;}]+)', rules):
         for part in re.split(r',(?![^(]*\))', kind):
-            check(part.split()[0] in ('transform', 'opacity', 'visibility', 'background-color', 'none', 'none!important'),
+            if part.split()[0] in ('border-color', 'box-shadow') and ' 0s ' in part:  # B218: a step, not a motion
+                continue
+            check(part.split()[0] in ('transform', 'translate', 'opacity', 'clip-path', 'visibility', 'background-color', 'none', 'none!important'),
                   f'a transition on {part.split()[0]}', kind)
     for name, frames in re.findall(r'@keyframes (\w+)\{((?:[^{}]*\{[^}]*\})+)\}', bare):
         props = set(re.findall(r'[{;]\s*([a-z-]+):', frames))
@@ -5612,10 +5614,19 @@ def test_bars_over_text_b192(tmp: Path) -> None:
         check(gone not in page, f'no {gone}: the bars never move the frame')
     check('.main.sess.slim .dockwrap{pointer-events:none}' in page, 'a touch where the box was is the session\'s')
     bar = '.main.sess.slim .top:not(:has(:focus-visible))'
-    check(bar + '{background-color:transparent;pointer-events:none}' in page and bar + '>*{opacity:0}' in page
+    check(bar + '{transform:translateY(calc(-1*var(--slimtop,100%) - env(safe-area-inset-top,0px)));opacity:0;pointer-events:none}' in page
           and bar + '>:not(.menu){visibility:hidden}' in page,
           'B215: the menu fades with the bar and takes no taps, keyboard focus on it shows the bar')
     eq(page.count('.main.sess.slim .top'), page.count(bar), 'B215: no other rule keeps a control over the text')
+    slow = lambda *ps: ','.join(f'{p} var(--dur-slow) var(--ease)' for p in ps)  # noqa: E731
+    for rule, what in (('.main.sess .top{transition:' + slow('transform', 'opacity') + '}', 'the top bar'),
+                       ('.main.sess .notices{transition:' + slow('transform', 'opacity') + ',visibility var(--dur-slow)}', "a notice's row"),
+                       ('.dock{background:none;background-color:var(--bg);transition:' + slow('translate', 'opacity') + ',', 'the message box'),
+                       ('transition:' + slow('translate', 'opacity') + ',visibility var(--dur-slow)}', 'the slim box')):
+        check(rule in page, f'B218: {what} goes and comes on the one motion', rule)
+    check('.main.sess.slim .notices{transform:translateY(calc(-1*var(--slimtop' in page, 'B218: a notice goes with the top bar, as one')
+    check('.main.sess.still :is(' in page and "toggle('still',calm())" in page, 'B218: at once under calm()')
+    check('d.inert=FD.shown&&FD.slim;row.inert=!FD.slim' in page and 'slimSize();FD.slim=on' in page, 'B218: only the one that shows takes a tap; measured before it moves')
     row = page[page.index('function slimDraw('):]
     row = row.split('function workDraw')[0]
     check(all(x in row for x in ('data-slimbox', 'data-halt', 'data-sheet="sesswork"')) and 'schips' not in row and 'data-clip' not in row,
