@@ -82,7 +82,9 @@ over 24,000 characters (a Windows command line holds 32,767) is handed over as a
 
 ### In the background
 
-Bare `agent-runner` starts the run where no terminal shows it and returns within seconds: a detached process
+At a terminal, bare `agent-runner` opens the run picker: one row per run on this device, the current folder's project first. Picking a row opens its launcher, the second screen, and never starts a run by itself; a run that is not up shows `not running · N tasks left`, and `s` there starts it as the background run below, from that project's checkout (logged as started by picker). The launcher then shows the run up with its link, or the error. No pick, and none of `w`, `t`, `c` or Enter, starts a run. For a run not up, `w` and `c` use Runner Home's /p/KEY/ link when Home routes the project, else they say `no run page yet`. Where there is no TUI (Windows; also no tmux, `tui.refusal`) the launcher has no `t`, shows the reason in a dim line and the link, and Enter opens the run page as `w` does (its key line says `⏎ open the run page`); elsewhere Enter is the terminal UI.
+
+Without a terminal (and in a slot), bare `agent-runner` starts the run where no terminal shows it and returns within seconds: a detached process
 (`plat.spawn_detached`: `agent-runner run`, its output in `.runner/background.out`), its slots hidden (see above). The
 launch waits for the run's start line in `run.log`, then prints the slot count and the commands: `status`, `attach`,
 `stop`, and claude.ai/code with `[run] remote`. If the run fails within that time, it prints the end of its output. If a

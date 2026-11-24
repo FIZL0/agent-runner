@@ -180,7 +180,8 @@ def test_launcher_actions():
             't': lambda root: called.append(('t', root)) or ''}
     shown = []
     row = rows(None)[0]
-    eq(M.launch(row, keys('w', 't', 'c', 'enter', 'q'), shown.append, acts), 'back', 'Enter stays, q goes back')
+    with mock.patch('agent_runner.tui.refusal', lambda: ''):
+        eq(M.launch(row, keys('w', 't', 'c', 'enter', 'q'), shown.append, acts), 'back', 'Enter stays, q goes back')
     eq(called, [('w', FACTS[A]['link']), ('t', A), ('c', FACTS[A]['link']), ('t', A)],
        'w opens, t the ui, c copies, Enter the ui as t')
     eq('⏎ terminal UI' in shown[0] and 'done' not in shown[0], True, 'the hint line says Enter opens the ui')
@@ -193,13 +194,71 @@ def test_launcher_actions():
     eq(code, 0, 'q in the launcher goes back, Enter picks again, q back and q quits')
     eq([s.splitlines()[0] for s in seen if 'pick a run' not in s][:2], ['\x1b[1mgamma\x1b[0m [0 all runs]  ' + str(C),
        '\x1b[1malpha\x1b[0m [0 all runs]  ' + str(A)], 'row 2 (gamma) first, then back on row 1 (alpha)')
-    started = []
-    with mock.patch.object(M, 'run_info', lambda r: {'up': False}), \
-            mock.patch.object(M, 'run_facts', lambda r, run: FACTS.get(r, {})), \
-            mock.patch.object(M, 'cmd_background', lambda argv, by='': started.append((argv, by)) or 7):
-        eq(M.cmd_pick(B, keys('enter'), seen.append, acts, sessions=lambda: RUNS), 7,
-           'picking here when its run is not up starts it')
-    eq(started, [([], 'picker')], 'with cmd_background, logged as started by the picker (B145)')
+
+
+def test_launcher_not_up_f402a():
+    print('F402a: a row whose run is not up opens the launcher; only its s starts the run')
+    from agent_runner import tui, theme as TH
+    infos, facts, started, called, links = [{'up': False}], [FACTS[B]], [], [], ['http://home/p/beta/?t=h']
+    up_at = {'up': True, 'slots': 3, 'at': '2999-01-01T00:00:00'}
+
+    def background(argv, by=''):
+        started.append((argv, by, Path.cwd()))
+        print('why it failed', file=M.sys.stderr)
+        return 1 if fail else 0
+    acts = {k: (lambda a, k=k: called.append((k, a)) or '') for k in 'wtc'}
+    with tempfile.TemporaryDirectory() as d, mock.patch.object(M, 'run_info', lambda r: infos[-1]), \
+            mock.patch.object(M, 'run_facts', lambda r, run: dict(facts[-1])), \
+            mock.patch.object(tui, 'refusal', lambda: ''), mock.patch.object(M, 'home_link', lambda r: links[-1]), \
+            mock.patch.object(M, 'cmd_background', background):
+        here = Path(d).resolve()
+        for paint in (None, M.PickerPaint(TH.get('terminal'), 256, 120)):
+            called.clear()
+            shown: list[str] = []
+            eq(M.cmd_pick(here, keys('enter', 'w', 't', 'c', 'enter', 'q', 'q'), shown.append, acts,
+                          sessions=lambda: RUNS, paint=paint), 0, 'picked, each key, back, quit')
+            eq(started, [], 'nothing started')
+            eq(called, [('w', links[0]), ('t', here), ('c', links[0]), ('t', here)], 'w and c take Home\'s link')
+            text = M.re.sub(r'\x1b\[[0-9;]*[mK]', '', shown[1])
+            check('not running · 2 tasks left' in text and 'start the run' in text and 'run up' not in text
+                  and links[0] in text, 'the launcher says so and offers s', text)
+        links.append('')
+        shown = []
+        called.clear()
+        M.cmd_pick(here, keys('enter', 'w', 'q', 'q'), shown.append, acts, sessions=lambda: RUNS)
+        check(not called and shown[2].count('no run page yet') == 2, 'Home does not route it: no page yet', shown[2])
+        cwd, fail, shown = Path.cwd(), True, []
+        M.cmd_pick(here, keys('enter', 's', 'q', 'q'), shown.append, acts, sessions=lambda: RUNS)
+        check('starting the run' in shown[2] and 'why it failed' in shown[3] and 'not running' in shown[3],
+              's that fails: the error, in the launcher', shown[3])
+        fail, shown = False, []
+        facts.append({'left': 2, 'stopping': False, 'link': 'http://beta/?t=r'})
+        infos[:] = [{'up': False}]
+        real = M.cmd_background
+        with mock.patch.object(M, 'cmd_background', lambda argv, by='': (infos.append(up_at), real(argv, by))[1]):
+            M.cmd_pick(here, keys('enter', 's', 's', 'q', 'q'), shown.append, acts, sessions=lambda: RUNS)
+        check('● run up · 3 slots · 2 tasks left' in shown[3] and 'http://beta/?t=r' in shown[3]
+              and 'start the run' not in shown[3], 's: the launcher again, the run up, with its link', shown[3])
+        eq(started, [([], 'picker', here)] * 2, 'cmd_background by the picker, in its checkout; s does nothing once up')
+        eq(Path.cwd(), cwd, 'the folder is put back')
+        row = {'root': here, 'name': 'beta', 'run': {'up': False}, 'link': ''}
+        infos.append({**up_at, 'at': '2000-01-01T00:00:00'})
+        M.started_row(row, '2026-11-24T00:00:00')
+        eq(row['run'], {'up': True}, 'an earlier run\'s STATE gives no slot count')
+
+
+def test_launcher_no_tui_f402a():
+    print('F402a: with no TUI the launcher has no t, and Enter opens the run page as w')
+    from agent_runner import tui, theme as TH
+    for paint in (None, M.PickerPaint(TH.get('terminal'), 256, 120)):
+        called, shown = [], []
+        with mock.patch.object(tui, 'refusal', lambda: tui.NO_WINDOWS):
+            M.launch(rows(None)[0], keys('t', 'enter', 'q'), shown.append,
+                     {k: (lambda a, k=k: called.append((k, a)) or '') for k in 'wt'}, paint)
+        eq(called, [('w', FACTS[A]['link'])], 't does nothing, Enter is w')
+        text = M.re.sub(r'\x1b\[[0-9;]*[mK]', '', shown[0])
+        check('⏎ open the run page' in text and 'terminal UI' not in text.replace(tui.NO_WINDOWS, '')
+              and FACTS[A]['link'] in text, 'the link and the key line say so', text)
 
 
 def test_picker_colours():
@@ -229,7 +288,8 @@ def test_picker_colours():
     plain = M.re.sub(r'\x1b\[[0-9;]*[mK]', '', lines[2])
     eq(len(plain), 119, 'the bar runs across the width')
     seen = []
-    with mock.patch.object(M, 'run_facts', lambda r, run: FACTS.get(r, {})):
+    with mock.patch.object(M, 'run_facts', lambda r, run: FACTS.get(r, {})), \
+            mock.patch('agent_runner.tui.refusal', lambda: ''):
         eq(M.cmd_pick(None, keys('1', 'c', 'q', 'q'), seen.append, {'c': lambda u: 'link copied'},
                       sessions=lambda: RUNS, paint=p), 0, 'pick, copy, back, quit')
     launcher = seen[1]
@@ -335,7 +395,8 @@ def test_launcher_back_b153():
     eq(M.launch(row, keys('0'), shown.append, {}), 'back', '0 goes back')
     check(shown[0].splitlines()[0].startswith(f'\x1b[1m{row["name"]}\x1b[0m [0 all runs]'),
           'the name first, with its key', shown[0])
-    eq(M.launch(row, keys('t'), shown.append, {'t': lambda root: M.PICK}), 'back', '0 in the TUI goes back')
+    with mock.patch('agent_runner.tui.refusal', lambda: ''):
+        eq(M.launch(row, keys('t'), shown.append, {'t': lambda root: M.PICK}), 'back', '0 in the TUI goes back')
     calls = []
     from agent_runner import tui
     with mock.patch.object(tui, 'refusal', lambda: ''), \
@@ -430,7 +491,8 @@ def test_started_by_tty_b760():
 if __name__ == '__main__':
     raise SystemExit(report([test_attach_routes, test_run_view_posts_keys, test_list_two_projects,
                              test_attach_number, test_windows_hidden_consoles, test_picker_rows, test_picker_keys,
-                             test_launcher_actions, test_picker_colours, test_copy_link_fallbacks,
+                             test_launcher_actions, test_launcher_not_up_f402a,
+                             test_launcher_no_tui_f402a, test_picker_colours, test_copy_link_fallbacks,
                              test_copy_link_daemon_b153, test_launcher_back_b153,
                              test_run_facts_https_link, test_bare_not_a_tty, test_started_by_logged,
                              test_started_by_tty_b760]))

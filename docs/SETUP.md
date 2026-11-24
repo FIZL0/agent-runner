@@ -137,7 +137,7 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    lean brief) that reads the repo, checks the gate, writes the goal and a first task list with
    `agent-runner plan goal` and `plan add`, adds a short `## Agent notes` section to CLAUDE.md or AGENTS.md,
    and commits it all.
-4. It prints what it set up; `agent-runner` then starts the run.
+4. It prints what it set up; `agent-runner` then opens the run picker, where `s` starts the run.
 
 Run again on a repo that has a plan, it asks before the session touches it (`--yes`: go on without asking).
 
@@ -188,7 +188,7 @@ agent-runner plan                 # what it sees
 agent-runner plan brief A1        # what the session will be handed
 agent-runner run --dry-run 3      # what three slots would start
 agent-runner run once             # one task, one session; watch it
-agent-runner run 3                # three slots, in this terminal (bare agent-runner: in the background)
+agent-runner run 3                # three slots, in this terminal (bare agent-runner: the picker, then s, in the background)
 ```
 
 ## Your own CLI for tools only

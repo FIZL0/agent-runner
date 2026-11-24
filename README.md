@@ -40,7 +40,7 @@ agent-runner home install          # recommended: one always-on page for every p
 agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now, and why the rest wait
 agent-runner run once              # one task, one session, then stop: try it like this first
-agent-runner                       # the run in the background; the prompt comes straight back
+agent-runner                       # pick a run, then s: the run in the background; the prompt comes straight back
 agent-runner --attach              # the same (or the run already up), then the run view here
 agent-runner status                # is it up, merged / left counts, each slot's task, what merged lately
 agent-runner attach                # the run view: its log, live, and its keys (s, p, +, ?); Ctrl-C leaves it
@@ -50,7 +50,7 @@ agent-runner control               # a control session here: "status?", "pause",
 agent-runner stop                  # finish the running tasks, then end it
 ```
 
-Bare `agent-runner` starts the run as a detached process, so no terminal is taken and nothing pops up.
+At a terminal, bare `agent-runner` opens the run picker; pick a run, then `s` starts it as a detached process, so no terminal is taken and nothing pops up. Without a terminal, bare `agent-runner` starts it straight away.
 `agent-runner run 3` is the same run in the foreground of this terminal. Either way each slot runs hidden, in
 a terminal with no window, its output in `.runner/slotN.log`: `agent-runner attach s2` puts this terminal on
 it, and you watch and steer the run through `agent-runner attach` (the run view), `status`, `ui`, control

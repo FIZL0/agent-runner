@@ -13,7 +13,7 @@ import shutil
 import subprocess as sp
 import sys
 import time
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from agent_runner import control_held, no_push, plan as P, plansync, plat, shared_tools, stack
@@ -1185,22 +1185,23 @@ def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint, hint: str = 
     return '\n'.join(out) + '\n'
 
 
-def launcher_text_painted(row: dict, said: str, p: PickerPaint) -> str:
+def launcher_text_painted(row: dict, said: str, p: PickerPaint, no_tui: str = '') -> str:
     """Screen 2 in colour (F109): the run page's keys as buttons, the link in blue."""
-    left = left_words(row)
-    status = ' · '.join([p.c('green', '● run up')] + ([p.c('green', slots_words(row['run']))]
-                                                     if slots_words(row['run']) else [])
+    left, up = left_words(row), (row['run'] or {}).get('up')
+    slots = slots_words(row['run']) if up else ''
+    status = ' · '.join([p.c('green', '● run up') if up else p.c('dim', 'not running')]
+                        + ([p.c('green', slots)] if slots else [])
                         + ([p.c('yellow' if row.get('stopping') else 'dim', left)] if left else []))
     link = f'\x1b[4;{p.code("bblue")}m{row["link"]}{RESET}' if row['link'] else \
-        p.c('dim', 'no run page link (`status` says why)')
+        p.c('dim', no_link_words(row))
     button = lambda k, label: p.c('dim', '[') + p.key(k) + f' {label}' + p.c('dim', ']')  # noqa: E731
     out = [p.c('accent', row['name'], True) + ' ' + button('0', 'all runs') + '  ' + p.c('dim', str(row['root'])),
            status, *([p.c('yellow', row['no_settings'])] if row.get('no_settings') else []), link, '',
-           '  '.join((button('w', 'open the run page'), button('t', 'terminal UI'), button('c', 'copy the link'))),
-           '']
+           '  '.join(button(k, label) for k, label in launcher_keys(row, no_tui)),
+           '', *([p.c('dim', no_tui), ''] if no_tui else [])]
     if said:
         out += [said, '']
-    out += [p.hints([('⏎', 'terminal UI')], ('q', 'back')), p.c('dim', 'status · attach · stop · control: agent-runner --help')]
+    out += [p.hints([('⏎', enter_words(no_tui))], ('q', 'back')), p.c('dim', 'status · attach · stop · control: agent-runner --help')]
     return '\n'.join(out) + '\n'
 
 
@@ -1223,15 +1224,33 @@ def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None, hi
     return '\n'.join(out) + '\n'
 
 
-def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None) -> str:
-    """Screen 2, the launcher for the picked run: its status, its run page link, the keys, the dim footer."""
+def no_link_words(row: dict) -> str:
+    return 'no run page link (`status` says why)' if (row['run'] or {}).get('up') else 'no run page yet'
+
+
+def launcher_keys(row: dict, no_tui: str = '') -> list[tuple[str, str]]:
+    """The launcher's keys and labels: F402a s while the run is not up, t only where there is a TUI."""
+    return ([] if (row['run'] or {}).get('up') else [('s', 'start the run')]) + [('w', 'open the run page')] \
+        + ([] if no_tui else [('t', 'terminal UI')]) + [('c', 'copy the link')]
+
+
+def enter_words(no_tui: str) -> str:
+    return 'open the run page' if no_tui else 'terminal UI'
+
+
+def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None, no_tui: str = '') -> str:
+    """Screen 2, the launcher for the picked project: its run's status (F402a: not running while it is not up), its
+    run page link, the keys, the dim footer. `no_tui`: why there is no TUI here (`tui.refusal`), '' when there is."""
     if paint is not None:
-        return launcher_text_painted(row, said, paint)
-    status = ' · '.join(x for x in ('● run up', slots_words(row['run']), left_words(row)) if x)
+        return launcher_text_painted(row, said, paint, no_tui)
+    up = (row['run'] or {}).get('up')
+    status = ' · '.join(x for x in ('● run up' if up else 'not running', slots_words(row['run']) if up else '',
+                                    left_words(row)) if x)
+    more = {'w': ' in the browser', 't': ' (agent-runner ui)'}
     out = [f'{BOLD}{row["name"]}{RESET} [0 all runs]  {row["root"]}', status, *([row['no_settings']] if row.get('no_settings') else []),
-           row['link'] or f'{DIM}no run page link (`status` says why){RESET}', '',
-           '  w  open the run page in the browser', '  t  open the terminal UI (agent-runner ui)',
-           '  c  copy the link', '  q  back · ⏎ terminal UI', '']
+           row['link'] or f'{DIM}{no_link_words(row)}{RESET}', '',
+           *(f'  {k}  {"open the " if k == "t" else ""}{label}{more.get(k, "")}' for k, label in launcher_keys(row, no_tui)),
+           f'  q  back · ⏎ {enter_words(no_tui)}', '', *([f'{DIM}{no_tui}{RESET}', ''] if no_tui else [])]
     out += [said, ''] if said else []
     out.append(f'{DIM}status · attach · stop · control: agent-runner --help{RESET}')
     return '\n'.join(out) + '\n'
@@ -1358,32 +1377,83 @@ def open_ui(root: Path) -> str:
     return PICK if rc == PICK_RC else ''
 
 
-LAUNCHER_ACTIONS = {'w': open_link, 'c': copy_link, 't': open_ui}
+def home_link(root: Path) -> str:
+    """F402a: Runner Home's /p/KEY/ for the project at `root` while no run serves its page; '' when Home does not
+    route it."""
+    from agent_runner.home import site_links
+    return (site_links(root) or [''])[0]
+
+
+def start_row(root: Path) -> str:
+    """F402a: the launcher's s: start the run of the project at `root` (`cmd_background`, from its own checkout); ''
+    once it is up, else why not. Only stderr is kept for that: a question `remote_ready` asks stays on screen."""
+    err, repo, was = io.StringIO(), os.environ.pop('AGENT_RUNNER_REPO', None), os.getcwd()
+    try:
+        os.chdir(root)
+        with redirect_stderr(err):
+            rc = cmd_background([], by='picker')
+    except SystemExit as e:
+        rc, _ = 1, err.write(str(e))
+    except OSError as e:
+        rc, _ = 1, err.write(f'the run did not start: {e}')
+    finally:
+        os.chdir(was)
+        if repo is not None:
+            os.environ['AGENT_RUNNER_REPO'] = repo
+    return (err.getvalue().strip() or 'the run did not start') if rc else ''
+
+
+def started_row(row: dict, since: str) -> None:
+    """F402a: `row` read again after s. A STATE from before `since` is an earlier run's (a new run writes its own on
+    its first tick), so only that it is up is taken from it."""
+    root = Path(row['root'])
+    run = run_info(root)
+    if run.get('up') and str(run.get('at') or '') < since:
+        run = {'up': True}
+    row.update({'run': run, **run_facts(root, run)})
+
+
+LAUNCHER_ACTIONS = {'w': open_link, 'c': copy_link, 't': open_ui, 's': start_row}
 
 
 def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint | None = None) -> str:
-    """Screen 2 for the picked run: w, t and c act and stay, Enter as t (F117); 'back' for q or Esc, and B153
+    """Screen 2 for the picked project: w, t and c act and stay, Enter as t (F117); F402a: s starts its run while
+    it is not up, and no other key does; with no TUI here no t, and Enter as w. 'back' for q or Esc, and B153
     for 0 (the project name's key) or 0 in the TUI t opened. B153: drawn to the terminal, the project's name is
     the window title until it goes back."""
     title = show is None
     show = show or (lambda s: (sys.stdout.write(CLEAR + s), sys.stdout.flush()))
     acts = {**LAUNCHER_ACTIONS, **(actions or {})}
     said = ''
+    from agent_runner.tui import refusal
+    no_tui = refusal()
     if title:
         from agent_runner.tui import window_title
         sys.stdout.write(window_title(f'{row["name"]} · runner'))
     try:
         while True:
-            show(launcher_text(row, said, paint))
+            up = (row['run'] or {}).get('up')
+            if not up and not row.get('link'):
+                row['link'] = home_link(Path(row['root']))
+            show(launcher_text(row, said, paint, no_tui))
             k = key()
             if k in ('q', 'esc', '0'):
                 return 'back'
-            if k in ('t', 'enter'):
+            if k == 'enter':
+                k = 'w' if no_tui else 't'
+            if k == 's' and not up:
+                show(launcher_text(row, 'starting the run…', paint, no_tui))
+                since = dt.datetime.now().isoformat(timespec='seconds')
+                said = acts['s'](Path(row['root'])) or ''
+                started_row(row, since)
+                if not said and not row['run'].get('up'):
+                    said = 'the run started and ended again; its run log says why'
+            elif k == 't' and not no_tui:
                 said = acts['t'](Path(row['root'])) or ''
                 if said == PICK:
                     return 'back'
             elif k in ('w', 'c'):
-                said = acts[k](row['link']) if row['link'] else 'no run page link to use'
+                said = acts[k](row['link']) if row['link'] else 'no run page link to use' if up else no_link_words(row)
     finally:
         if title:
             from agent_runner.tui import TITLE_BACK
@@ -1392,9 +1462,9 @@ def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint 
 
 
 def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=None, paint=None, hint: str = '') -> int:
-    """F91: bare `agent-runner` at a terminal. Screen 1 picks a run (the current folder's project first, its
-    run started when it is not up); screen 2, the launcher, opens its run page, its terminal UI or copies the
-    link. q on screen 2 goes back to screen 1. F109: drawn to the terminal (no `show`), both screens take the
+    """F91: bare `agent-runner` at a terminal. Screen 1 picks a run (the current folder's project first,
+    also when its run is not up); screen 2, the launcher, opens its run page, its terminal UI or copies the link,
+    and F402a starts a run that is not up only on its s. q on screen 2 goes back to screen 1. F109: drawn to the terminal (no `show`), both screens take the
     run page's colours (`picker_paint`)."""
     rows = picker_rows((sessions or device_sessions)(), here)
     if here is None and rows:  # F194c: a run is up on this device: no first time
@@ -1405,7 +1475,4 @@ def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=
         i = pick_run(rows, key, show, paint, hint)
         if i is None:
             return 0
-        row = rows[i]
-        if not (row['run'] or {}).get('up'):
-            return cmd_background([], by='picker')
-        launch(row, key, show, actions, paint)
+        launch(rows[i], key, show, actions, paint)
