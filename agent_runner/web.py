@@ -810,8 +810,18 @@ def with_extras(snap: dict) -> dict:
         snap['ttyd_install'] = ttyd_install_cmd()  # B120: the page's one line on how to get it
     for c in snap.get('concepts') or []:
         c['options'] = concept_options(c.get('copy', ''))
+    snap['example'] = example_project()  # F194b: its page shows the walkthrough
     snap['home'] = home_address()  # B153: the project name top-left links to Runner Home
     return snap
+
+
+def example_project() -> bool:
+    """F194b: is the run's project the example one (demo.py)? Only its page shows the walkthrough."""
+    try:
+        from agent_runner.demo import is_demo
+        return S.ROOT is not None and is_demo(S.ROOT)
+    except Exception:  # noqa: BLE001 - a run's page never fails over the walkthrough
+        return False
 
 
 def home_address() -> dict:

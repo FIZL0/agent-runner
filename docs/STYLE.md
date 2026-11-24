@@ -85,6 +85,12 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   tasks by title, what landed today. One main button (`mainBtn()`: Start run or Open); the rest is in the
   … sheet (`dotsBtn()`), never beside it.
 - **Release card** (New release, `release_wait`, `release_now`): one line of what is open, then its buttons; the question takes their place; a press with a release open asks in place, Yes then No, and a Drop on a release that has not started asks its own question first.
+- **Walkthrough** (`.walk`, `walkDraw()`, `walkStep()`): one card at a time (`.walkcard`), only on the example project's
+  page (`walkNow()` says when), never in a chat or Talk. Its row of its own under the view covers nothing, and goes while
+  the keyboard is open. A 2px `--accent` ring (`[data-walkat]`) is on the real thing it points at. Back, Next and Skip
+  (Done on the last) stand in it; Show me when the page is on another view. A press goes to the step's view with the
+  thing on screen, and glides within one view; a redraw or a reload never moves the page for it. Home's offer of the
+  example project is `exampleOffer()`.
 - **Badge** (`.n`): a count of what waits on the person, never of anything else. **Dot** (`.bdot`): something
   waits, no count. **Pill** (`.pill`): a state in a word or two. Same words on every page: Running, Paused,
   Stopping, Caps forced, Not up.

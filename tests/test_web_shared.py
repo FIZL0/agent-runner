@@ -146,7 +146,7 @@ def test_page(tmp: Path) -> None:
                  'container-type:inline-size', '@container (min-width:760px)', '<div class="logo">${esc(PN().charAt(0)'):
         check(part in page, f'the page has {part}')
     for gone in ('Anthropic', 'Claude', 'plan_change', 'direct edit', 'JetBrains Mono', '/*THEMES*/', 'threadMsgs', 'data-steps', 'data-jump', 'stepbox', 'Older messages'):
-        check(gone not in page, f'the page has no {gone}')
+        check(gone not in page.replace('your own Claude usage', ''), f'the page has no {gone}')  # F194b: whose usage a run spends
 
 
 def test_logic(tmp: Path) -> None:

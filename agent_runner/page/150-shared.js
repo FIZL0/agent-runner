@@ -47,6 +47,7 @@ function render(force){
   obDraw();  // F137
   newsDraw();  // F149
   loginDraw();
+  walkDraw();  // F194b
   rowSettle();side();sheetDraw();
   if(HOME_PAGE){  // F134: Home's own page: All projects, and F150 a project with no run up
     setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button><div class="title">${atAll()?H.tab==='devices'?'Devices':'Overview':esc((projectOf(HKEY)||{}).name||HKEY)}</div>${plusBtn()||'<span class="icon"></span>'}`);

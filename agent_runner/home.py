@@ -187,6 +187,25 @@ def remove_project(path: str) -> tuple[bool, str]:
     return (True, f'Home no longer lists {p.name}') if was else (False, f'Home did not list {p}')
 
 
+EXAMPLE_LOCK = threading.Lock()  # F194b: two presses make one
+
+
+def make_example() -> dict:
+    """F194b: make the example project with `demo`'s own function (or take the one that is there) and list it:
+    {'ok', 'out', 'made' (it is new), 'root'}. Starts nothing."""
+    from agent_runner import demo
+    with EXAMPLE_LOCK:
+        try:
+            root = Path(demo.DEFAULT).expanduser().resolve()
+            made = not demo.is_demo(root)
+            if made:
+                root = demo.make(root)
+            ok, out = add_project(str(root))
+        except (demo.DemoError, OSError) as e:
+            return {'ok': False, 'out': f'The example project was not made: {e}', 'made': False, 'root': ''}
+    return {'ok': ok, 'out': out, 'made': made, 'root': str(root)}
+
+
 def keys(roots: list[Path]) -> dict[str, Path]:
     """{key: root}: a project's key in Home's addresses is its folder name, made safe, -2, -3… when taken."""
     out: dict[str, Path] = {}
@@ -324,8 +343,9 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said, p
     """What Home shows of one project: {'key', 'name', 'root', 'state' (running|idle|off), 'paused',
     'stopping', 'slots', 'running' (task ids), 'titles' (F150: the running tasks' titles by id), 'queue' (the next
     tasks, [{'id', 'title'}]), 'landed' (the last 3 titles that landed today) and 'landed_n' (how many did), 'left', 'needs' (how many), 'asks'
-    (their 'ID - what to do' lines), 'no_settings' (F178: its warning or ''), 'page' (its run app through Home, or
-    '')}."""
+    (their 'ID - what to do' lines), 'no_settings' (F178: its warning or ''), 'example' (F194b: the example project),
+    'page' (its run app through Home, or '')}."""
+    from agent_runner.demo import is_demo
     n, asks = needs(root)
     from agent_runner import cmds
     run = (info or cmds.run_info)(root) or {}
@@ -346,6 +366,7 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said, p
             'queue': [q for q in said.get('queue') or [] if q['id'] not in running], 'landed': (said.get('landed') or [])[:3], 'landed_n': len(said.get('landed') or []),
             'left': f.get('left'), 'needs': n, 'asks': asks[:ASKS],
             'no_settings': f.get('no_settings') or '',  # F178
+            'example': is_demo(root),  # F194b: its page shows the walkthrough
             'page': f'p/{key}/' if up and f.get('link') else ''}
 
 
@@ -488,7 +509,7 @@ class HomeHandler(BaseHTTPRequestHandler):
             return self.send(200, {'ok': True, 'machine': socket.gethostname(), 'projects': self.server.rows(),
                                    'page': PAGE_PRINT, 'restart_needed': self.server.restart_needed(),  # F149
                                    'claude_login': self.server.claude_login()})  # F126a
-        if method == 'POST' and path in ('/act', '/add', '/remove'):
+        if method == 'POST' and path in ('/act', '/add', '/remove', '/example'):
             try:
                 req = json.loads(self.body() or b'{}')
                 if not isinstance(req, dict):
@@ -498,6 +519,8 @@ class HomeHandler(BaseHTTPRequestHandler):
             if path == '/add':
                 ok, out = add_project(str(req.get('path') or ''))
                 return self.send(200, {'ok': ok, 'out': out})
+            if path == '/example':  # F194b
+                return self.send(200, self.server.example())
             root = self.server.project(str(req.get('project') or ''))
             if root is None:
                 return self.send(404, {'ok': False, 'out': f'no such project: {req.get("project")}'})
@@ -719,6 +742,14 @@ class HomeServer(ThreadingHTTPServer):
 
     def rows(self) -> list[dict]:
         return self._rows()
+
+    def example(self) -> dict:
+        """F194b: `make_example`'s answer, with the project's key in Home's addresses."""
+        d = make_example()
+        key = next((k for k, r in keys(self._roots()).items() if str(r) == d['root']), '')
+        if d['ok'] and not key:
+            return {**d, 'ok': False, 'out': 'The example project was made, but Runner Home does not list it'}
+        return {**d, 'key': key}
 
     def claude_login(self) -> str:
         """F126a: the banner about this machine's Claude login, '' for none."""
