@@ -508,7 +508,7 @@ _In code_: SidePane, RunPage.sync, want_side
 _Avoid_: chat view, side window
 
 **Harness loop**:
-agent-runner's own agent loop, which runs a task or fix session on a model from a provider other than claude
+agent-runner's own agent loop, which runs a task, fix or control session on a model from a provider other than claude
 _Said_: our own agent loop, the loop engine
 _On screen_: harness loop
 _In code_: harness.mjs, slots.Harness, config.harness_model

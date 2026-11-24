@@ -229,7 +229,8 @@ def control_new_hidden(n: int, cmd: list[str], name: str, wait: float = CONTROL_
         print(f'control {n} is starting in {where}')
         return 0
     if not remote_on():
-        why = remote_off_why() if C.run['remote'] == 'auto' else ''
+        from agent_runner.control_harness import harness_control
+        why = 'on the harness loop' if harness_control() else remote_off_why() if C.run['remote'] == 'auto' else ''
         print(f'control {n} is up in {where}; it is local' +
               (f' ({why})' if why else ': [run] remote = true puts control sessions on claude.ai/code'))
         return 0

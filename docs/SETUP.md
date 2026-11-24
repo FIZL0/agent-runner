@@ -74,6 +74,8 @@ enterprise Copilot, Codex, Gemini, Ollama, or your own `[models.providers.<name>
 code = "copilot:<model>"  # a model your account lists; a bare name or claude:<model> stays on Claude Code
 ```
 
+`[models] control` can name a provider too; a control session on it then runs on the harness loop as well.
+
 The session runs on the [harness loop](REFERENCE.md#the-harness-loop), a Node program that needs Node.js 22 or later
 on PATH. Log in once with `agent-runner login copilot` (for enterprise Copilot, `--enterprise company.ghe.com`; see
 [Provider logins](#provider-logins-run-login)). `agent-runner login` with no argument lists the providers the repo

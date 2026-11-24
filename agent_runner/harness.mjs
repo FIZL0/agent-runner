@@ -5,6 +5,7 @@
 //   node harness.mjs --session-id SID --model codex:gpt-6-sol --notes DIR --prompt-file F [options]
 //   node harness.mjs --resume SID ...          continue session SID from its transcript, F its next message
 //   ... --once --tools read                    a one-shot (F406e): one answer, with only the tools named (a comma between)
+//   ... --chat                                 a control session (F406f): many turns, waiting for the person between them
 //
 // Tools: bash, read, edit, write, finish, ask and publish_page (writes the page file and runs `run publish-page`
 // on it: the run page shows it, and a one-shot publishes it to claude.ai when Claude Code is here).
@@ -42,7 +43,7 @@ const PROVIDER_IDS = { copilot: 'github-copilot', codex: 'openai-codex', gemini:
 // --- arguments ----------------------------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const a = { idle: 300, once: false, resume: false, taskTokens: 0, taskUsd: 0, tools: null, contextWarn: 0, contextText: '', fence: null, runner: null,
+  const a = { idle: 300, once: false, chat: false, resume: false, taskTokens: 0, taskUsd: 0, tools: null, contextWarn: 0, contextText: '', fence: null, runner: null,
     provider: null, systemFile: '', promptFile: '', notes: '', sid: '', model: '', fallback: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i], v = () => argv[++i];
@@ -54,6 +55,7 @@ function parseArgs(argv) {
     else if (k === '--system-file') a.systemFile = v();
     else if (k === '--idle') a.idle = Number(v());
     else if (k === '--once') a.once = true;
+    else if (k === '--chat') { a.chat = true; a.tools = CHAT_TOOLS; }
     else if (k === '--tools') a.tools = v().split(',').filter(Boolean);
     else if (k === '--task-tokens') a.taskTokens = Number(v()) || 0;
     else if (k === '--task-usd') a.taskUsd = Number(v()) || 0;
@@ -234,9 +236,13 @@ class Transcript {
 // The runner types a tell as a bracketed paste and Enter (slots.send_fifo); a plain line works too. Each one is
 // queued and goes in as the next user message.
 class Tells {
-  constructor(input) {
+  constructor(input, chat = null) { // chat (F406f): {interrupt(), end()}, for Escape, Ctrl-C and a closed terminal
     this.queue = [];
     this.waiters = [];
+    this.chat = chat;
+    this.ended = false;
+    this.held = ''; // the start of an escape sequence, until the rest of it comes
+    this.echo = Boolean(chat && input.isTTY);
     this.buf = '';
     this.paste = false;
     this.cr = false; // the last character was '\r': a '\n' after it is the same line end (CRLF, as Windows pipes it)
@@ -247,21 +253,60 @@ class Tells {
     input.setEncoding('utf8');
     input.on('data', (d) => this.feed(d));
     input.on('error', () => {});
+    input.on('end', () => { this.ended = true; this.wake(); });
+    if (this.echo) process.stdout.write('\x1b[?2004h'); // bracketed paste on: it takes input (control_takes_input)
     input.resume();
   }
 
+  show(s) { if (this.echo) process.stdout.write(s); }
+
+  // a key of a chat's line editor; whether it was one
+  key(c) {
+    if (c === '\x03' || c === '\x1b') {
+      if (!this.chat.interrupt() && c === '\x03') this.chat.end();
+    } else if (c === '\x04') {
+      if (!this.buf) this.chat.end();
+    } else if (c === '\x7f' || c === '\b') {
+      if (this.buf) this.show('\b \b');
+      this.buf = [...this.buf].slice(0, -1).join('');
+    } else if (c === '\x15') {
+      this.show('\b \b'.repeat([...this.buf].length));
+      this.buf = '';
+    } else return false;
+    return true;
+  }
+
   feed(data) {
+    data = this.held + data;
+    this.held = '';
+    clearTimeout(this.lone);
     for (let i = 0; i < data.length; i++) {
+      if (data[i] === '\x1b') {
+        const rest = data.slice(i);
+        // a paste mark cut by the read: kept for the next one. A chat's lone Escape waits 50 ms for the rest of one
+        if (['\x1b[200~', '\x1b[201~'].some((m) => m !== rest && m.startsWith(rest)) && (rest.length > 1 || this.paste || this.chat)) {
+          this.held = rest;
+          if (this.chat && rest === '\x1b' && !this.paste) {
+            this.lone = setTimeout(() => { this.held = ''; this.key('\x1b'); }, 50);
+          }
+          return;
+        }
+        // an arrow or another key's sequence: nothing here
+        const seq = this.chat && !this.paste && !/^\x1b\[20[01]~/.test(rest) && /^\x1b(?:\[[0-9;?]*[ -/]*[@-~]|O[A-Za-z])/.exec(rest);
+        if (seq) { i += seq[0].length - 1; continue; }
+      }
       if (data.startsWith('\x1b[200~', i)) { this.paste = true; this.cr = false; i += 5; continue; }
       if (data.startsWith('\x1b[201~', i)) { this.paste = false; this.cr = false; i += 5; continue; }
       const c = data[i];
       const crlf = this.cr && c === '\n';
       this.cr = c === '\r';
       if (crlf) continue;
-      if ((c === '\r' || c === '\n') && !this.paste) { this.push(this.buf); this.buf = ''; continue; }
+      if ((c === '\r' || c === '\n') && !this.paste) { this.show('\r\n'); this.push(this.buf); this.buf = ''; continue; }
+      if (this.chat && !this.paste && this.key(c)) continue;
       if (c === '\x03') process.exit(130); // Ctrl-C in its terminal
       if (c === '\x1b' && !this.paste) continue; // a lone Escape (an interrupt to Claude Code): nothing here
       this.buf += c === '\r' ? '\n' : c;
+      this.show(c === '\r' || c === '\n' ? '\r\n' : c < ' ' ? '' : c);
     }
   }
 
@@ -269,17 +314,23 @@ class Tells {
     text = text.trim();
     if (!text) return;
     this.queue.push(text);
-    for (const w of this.waiters.splice(0)) w();
+    this.wake();
   }
+
+  wake() { for (const w of this.waiters.splice(0)) w(); }
 
   take() { return this.queue.splice(0); }
 
-  // resolves true when a tell came within `seconds`, false when none did
+  // resolves true when a tell came within `seconds` (Infinity: no limit, but a closed input ends it), false when none did
   wait(seconds) {
     if (this.queue.length) return Promise.resolve(true);
+    if (seconds === Infinity) {
+      if (this.ended) return Promise.resolve(false);
+      return new Promise((resolve) => { this.waiters.push(() => resolve(this.queue.length > 0)); });
+    }
     return new Promise((resolve) => {
       const t = setTimeout(() => resolve(false), seconds * 1000);
-      this.waiters.push(() => { clearTimeout(t); resolve(true); });
+      this.waiters.push(() => { if (this.queue.length) { clearTimeout(t); resolve(true); } });
     });
   }
 }
@@ -482,6 +533,8 @@ const TOOLS = [
       html: { type: 'string' } }, required: ['name', 'html'] } },
 ];
 
+const CHAT_TOOLS = ['bash', 'read', 'edit', 'write', 'publish_page'];
+
 // the tool calls the git fence reads, as Claude Code's (tools.FENCE_TOOLS)
 const FENCED = { bash: (a) => ['Bash', { command: a.command || '' }], edit: (a) => ['Edit', { file_path: a.path }],
   write: (a) => ['Write', { file_path: a.path }] };
@@ -492,19 +545,29 @@ function clip(text) {
   return `${text.slice(0, head)}\n\n[... ${text.length - OUTPUT_MAX} characters cut ...]\n\n${text.slice(-(OUTPUT_MAX - head))}`;
 }
 
-function run(argv, cwd, input, timeout) {
+const RUNNING = new Set(); // the tools' processes, ended with a chat
+const STOPPED = 130;
+
+function killTree(p) { try { process.kill(-p.pid, 'SIGKILL'); } catch { try { p.kill('SIGKILL'); } catch {} } }
+
+function run(argv, cwd, input, timeout, signal) {
   return new Promise((resolve) => {
     const p = spawn(argv[0], argv.slice(1), { cwd, env: process.env, detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '', timedOut = false;
+    RUNNING.add(p);
     const t = setTimeout(() => {
       timedOut = true;
-      try { process.kill(-p.pid, 'SIGKILL'); } catch { try { p.kill('SIGKILL'); } catch {} }
+      killTree(p);
     }, timeout * 1000);
+    const stop = () => killTree(p);
+    if (signal?.aborted) stop();
+    signal?.addEventListener('abort', stop, { once: true });
+    const over = () => { clearTimeout(t); RUNNING.delete(p); signal?.removeEventListener('abort', stop); };
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { out += d; });
-    p.on('error', (e) => { clearTimeout(t); resolve({ code: 127, out: String(e) }); });
-    p.on('close', (code) => { clearTimeout(t); resolve({ code: timedOut ? 124 : code, out, timedOut }); });
+    p.on('error', (e) => { over(); resolve({ code: 127, out: String(e) }); });
+    p.on('close', (code) => { over(); resolve({ code: timedOut ? 124 : signal?.aborted ? STOPPED : code, out, timedOut }); });
     p.stdin.on('error', () => {});
     p.stdin.end(input || '');
   });
@@ -515,6 +578,7 @@ class Session {
     this.a = a;
     this.cwd = cwd;
     this.ended = '';
+    this.ctl = null; // F406f: the turn under way's AbortController, which a chat's Escape stops
     this.tid = this.task();
   }
 
@@ -564,7 +628,7 @@ class Session {
 
   async tool_bash(a) {
     const timeout = Math.min(Math.max(Number(a.timeout) || BASH_TIMEOUT, 1), BASH_TIMEOUT_MAX);
-    const r = await run(['bash', '-c', String(a.command || '')], this.cwd, '', timeout);
+    const r = await run(['bash', '-c', String(a.command || '')], this.cwd, '', timeout, this.ctl?.signal);
     const tail = r.timedOut ? `\n[timed out after ${timeout} s; the command was killed]` :
       r.code ? `\n[exit code ${r.code}]` : '';
     return [clip(r.out) + tail || '(no output)', Boolean(r.code)];
@@ -637,7 +701,9 @@ class Session {
     // F106f: `run publish-page` copies it where the run page shows it and publishes it to claude.ai (a one-shot
     // of up to 300 s), printing the URL and recording it for `done`
     if (!this.a.runner) return [`page written to ${f}; no runner command was given, so it is not published`, true];
-    const r = await run([...this.a.runner, 'publish-page', f], this.cwd, '', 420);
+    // a chat has no task: its page gets an id of its own, the same each time it publishes that name
+    const id = this.a.chat && !this.tid ? ['--id', `chat1${crypto.createHash('md5').update(`${this.a.sid}/${name}`).digest('hex').slice(0, 8)}`] : [];
+    const r = await run([...this.a.runner, 'publish-page', f, ...id], this.cwd, '', 420, this.ctl?.signal);
     return [`page written to ${f}\n${r.out.trim() || `publish-page failed (exit code ${r.code})`}`, Boolean(r.code)];
   }
 }
@@ -654,6 +720,11 @@ const SYSTEM = `You are an unattended coding agent that agent-runner started in 
 const ONE_SHOT = `You answer one message, unattended: nobody can reply. Use only the tools you are given, change nothing, ` +
   `and end with your whole answer as text.`;
 
+// F406f: a control session; what it is for is in the control brief (--system-file)
+const CHAT = `You are in a conversation with a person, in the main checkout of a git repository. Answer each message, ` +
+  `using your tools (bash, read, edit, write, publish_page) as the brief below says, then stop: the person's next ` +
+  `message comes when they send it. Paths are relative to the checkout.`;
+
 function overBudget(a, tokens, usd) {
   const tok = tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1)}M` : `${Math.round(tokens / 1e3)}k`;
   const spent = `${tok} tok $${usd.toFixed(2)}`;
@@ -662,24 +733,52 @@ function overBudget(a, tokens, usd) {
   return '';
 }
 
+// `p`, or undefined as soon as `signal` aborts
+function stoppable(signal, p) {
+  if (!signal) return p;
+  return Promise.race([p, new Promise((resolve) => {
+    if (signal.aborted) resolve();
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  })]);
+}
+
 async function main() {
   const a = parseArgs(process.argv.slice(2));
   const cwd = process.cwd();
   const file = path.join(a.notes, 'harness-sessions', `${a.sid}.jsonl`);
   if (a.resume && !fs.existsSync(file)) throw new Error(`harness: session ${a.sid} has no transcript at ${file}`);
-  if (!a.resume && fs.existsSync(file)) throw new Error(`harness: session ${a.sid} exists already (${file}); --resume it`);
+  if (!a.resume && fs.existsSync(file) && !(a.chat && !fs.statSync(file).size)) throw new Error(`harness: session ${a.sid} exists already (${file}); --resume it`);
   const t = new Transcript(file, a.sid, cwd);
   let { messages, tokens, usd } = t.load();
-  const system = [a.tools ? ONE_SHOT : SYSTEM, a.systemFile && fs.existsSync(a.systemFile) ? fs.readFileSync(a.systemFile, 'utf8') : '']
+  const system = [a.chat ? CHAT : a.tools ? ONE_SHOT : SYSTEM, a.systemFile && fs.existsSync(a.systemFile) ? fs.readFileSync(a.systemFile, 'utf8') : '']
     .filter(Boolean).join('\n\n');
   const prompt = a.promptFile ? fs.readFileSync(a.promptFile, 'utf8') : '';
   const s = new Session(a, cwd);
-  const tells = new Tells(process.stdin);
+  const quit = (code) => {
+    for (const p of RUNNING) killTree(p);
+    if (process.stdout.isTTY) process.stdout.write('\x1b[?2004l');
+    process.exit(code);
+  };
+  const tells = new Tells(process.stdin, a.chat ? { end: () => quit(0),
+    interrupt: () => { const going = Boolean(s.ctl && !s.ctl.signal.aborted); s.ctl?.abort(); return going; } } : null);
+  if (a.chat) for (const sig of ['SIGTERM', 'SIGHUP']) process.on(sig, () => quit(0));
   let provider = await loadProvider(a.model, a.provider);
   console.log(`harness: ${a.resume ? 'resumed' : 'started'} session ${a.sid} on ${a.model} in ${cwd}`);
   const pending = prompt.trim() ? [prompt] : [];
-  let failures = 0, peak = t.peak();
+  const stopped = () => { // as Claude Code words it, so the transcript's readers know it
+    messages.push(t.user('[Request interrupted by user]'));
+    console.log('harness: interrupted');
+  };
+  let failures = 0, peak = t.peak(), over = a.chat; // over: a chat's turn is done (or none has begun)
   for (;;) {
+    if (over && !pending.length) {
+      s.ctl = null;
+      console.log('\n(waiting for you)');
+      if (!(await tells.wait(Infinity))) return 0;
+      if (tells.queue.some((x) => x === '/exit' || x === '/quit')) return 0;
+    }
+    if (a.chat && (over || !s.ctl)) s.ctl = new AbortController();
+    over = false;
     for (const text of [...pending.splice(0), ...tells.take()]) {
       messages.push(t.user(text));
       console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
@@ -693,16 +792,22 @@ async function main() {
     }
     let m;
     try {
-      m = await provider.call({ systemPrompt: system, messages,
-        tools: a.tools ? TOOLS.filter((x) => a.tools.includes(x.name)) : TOOLS });
+      const context = { systemPrompt: system, messages,
+        tools: a.tools ? TOOLS.filter((x) => a.tools.includes(x.name)) : TOOLS };
+      m = await stoppable(s.ctl?.signal, provider.call(context, s.ctl?.signal));
     } catch (e) {
       m = { role: 'assistant', content: [], stopReason: 'error', errorMessage: String(e?.message || e), model: a.model,
         timestamp: Date.now() };
     }
+    if (s.ctl?.signal.aborted) {
+      stopped();
+      over = true;
+      continue;
+    }
     if (m.stopReason === 'error' && transientError(m.errorMessage || '') && failures < RETRIES) {
       failures++;
       console.log(`harness: the model call failed (${m.errorMessage}); trying again (${failures}/${RETRIES})`);
-      await new Promise((r) => setTimeout(r, 5000 * 2 ** failures));
+      await stoppable(s.ctl?.signal, new Promise((r) => setTimeout(r, 5000 * 2 ** failures)));
       continue;
     }
     if (m.stopReason === 'error' && capError(m.errorMessage || '') && a.fallback.length) {
@@ -721,7 +826,9 @@ async function main() {
       if (!next) {
         t.assistant(m);
         console.log(`harness: the model call failed: ${m.errorMessage}; no model in --fallback could be loaded`);
-        return 1;
+        if (!a.chat) return 1;
+        over = true;
+        continue;
       }
       markCapped(a.notes, was.split(':')[0]);
       a.model = next.model;
@@ -738,7 +845,9 @@ async function main() {
     peak = Math.max(peak, contextOf(claudeUsage(m.usage)));
     if (m.stopReason === 'error' || m.stopReason === 'aborted') {
       console.log(`harness: the model call failed: ${m.errorMessage || m.stopReason}`);
-      return 1;
+      if (!a.chat) return 1;
+      over = true; // the person sees it, and their next message is tried
+      continue;
     }
     messages.push(m);
     const said = textOf(m.content.filter((b) => b.type === 'text'));
@@ -746,9 +855,14 @@ async function main() {
     const calls = m.content.filter((b) => b.type === 'toolCall');
     for (const c of calls) {
       console.log(`· ${c.name} ${JSON.stringify(c.arguments || {}).slice(0, 200)}`);
-      const [text, isError] = c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
+      const [text, isError] = s.ctl?.signal.aborted ? ['The person interrupted before this tool call ran; it did not run.', true] : c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
       messages.push(t.toolResult(c, text, isError));
       if (!s.ended) s.ended = s.endedNow();
+    }
+    if (s.ctl?.signal.aborted) {
+      stopped();
+      over = true;
+      continue;
     }
     if (s.ended) {
       console.log(`harness: the session ended (${s.ended})`);
@@ -756,6 +870,10 @@ async function main() {
     }
     if (calls.length) continue;
     if (a.once) return 0;
+    if (a.chat) {
+      over = true;
+      continue;
+    }
     const full = path.join(a.notes, `${a.sid}.full`); // F177: said once, at a turn's end (watch.full_message)
     if (a.contextWarn && Math.floor(peak / 1000) > a.contextWarn && s.undone() && !/^[KV]\d/.test(s.tid) && !fs.existsSync(full)) {
       fs.writeFileSync(full, `${Math.floor(peak / 1000)}\n`);
