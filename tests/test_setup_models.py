@@ -99,7 +99,8 @@ def test_claude_only():
     with tempfile.TemporaryDirectory() as t:
         root = repo(t, local='[models.kinds]\nF = "copilot:m"\n')
         out, _, _ = setup(root, ['claude'], claude=CLAUDE, logged=True)
-        has(out, 'not all written.*kinds.*by hand', 'kinds in a section of their own are left to the person, and said')
+        has(out, 'not written.*kinds.*by hand', 'kinds in a section of their own are left to the person, and said')
+        check('code' not in (root / CF.LOCAL).read_text(encoding='utf-8'), 'and nothing is half done')
 
 
 def test_ghe_no_claude():
@@ -120,11 +121,14 @@ def test_ghe_no_claude():
         eq({c.task_model(k + '1') for k in 'FBTVKDCR'}, {'copilot:gpt-x'}, 'every kind of task runs on it')
         (root / 'plan').mkdir()
         (root / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
-        out, asked, runs = setup(root, ['2', ''], creds={'github-copilot': {'type': 'oauth', 'enterpriseUrl': 'corp.ghe.com'}})
+        out, asked, runs = setup(root, ['2', '', ''], creds={'github-copilot': {'type': 'oauth', 'enterpriseUrl': 'corp.ghe.com'}})
         eq(runs, [], 'logged in already: no login')
         has(out, r'logged in: .*GitHub Enterprise corp.ghe.com', 'the list names the domain')
         eq(CF.Config(root).models['code'], 'copilot:gpt-x', 'Enter keeps the model')
-        eq(len(asked), 2, 'a repo with a plan is not asked about a session that cannot start')
+        _, _, again = setup(root, ['2', 'y', '', 'gpt-y'], creds={'github-copilot': {'type': 'oauth'}}, code=1)
+        eq(words(again), [['login', 'copilot', '--enterprise=']], 'a login on another domain, when asked for')
+        eq(CF.Config(root).models['code'], 'copilot:gpt-y', 'a failed login keeps the pick: its tasks wait for the login')
+        eq(len(asked), 3, 'a repo with a plan is not asked about a session that cannot start')
 
 
 def test_several():

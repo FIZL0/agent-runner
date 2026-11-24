@@ -1,7 +1,7 @@
 """F406d: `agent-runner setup` asks which providers to use, logs in to each, and writes [models] code and fix.
 
 At a terminal it lists the built-in providers with what is found and logged in here. The person picks; each pick is
-logged in there (`run login PROVIDER`; `claude auth login` for Claude Code), and [models] code and fix are written to
+logged in there (`agent-runner login PROVIDER`; `claude auth login` for Claude Code), and [models] code and fix are written to
 this machine's runner.local.toml for the first pick. A kind ([models.kinds]) on another provider goes to the pick too:
 it would win over `code`. Nothing picked changes nothing; no terminal asks nothing and gives the login commands.
 """
@@ -65,8 +65,10 @@ def rows(root: Path, providers: dict) -> list[tuple[str, bool, str]]:
             out.append((p, state == 'in', said))
             continue
         ok, where = login.login_of(p, providers, creds)
-        if ok:
-            said = where if where.startswith('needs none') else f'logged in: {where}'
+        if login.needs_none(p, {}):
+            said = ('found' if shutil.which(p) else 'not found on this machine') + ', needs no login'
+        elif ok:
+            said = f'logged in: {where}'
         else:
             said = f'not logged in ({HINTS[p]})' if p in HINTS else 'not logged in'
         out.append((p, ok, said))
@@ -150,12 +152,12 @@ def write(root: Path, provider: str, code: str, fix: str, models: dict, provider
     try:
         if provider in CF.LOCAL_PROVIDERS:
             CF.save_local_setting(root, 'models', 'local', True)
+        if to != kinds:  # a kind wins over `code`, and the defaults name Claude's; first, as it may be refused
+            CF.save_local_setting(root, 'models', 'kinds', to)
         CF.save_local_setting(root, 'models', 'code', code)
         CF.save_local_setting(root, 'models', 'fix', fix)
-        if to != kinds:  # a kind wins over `code`, and the defaults name Claude's
-            CF.save_local_setting(root, 'models', 'kinds', to)
     except (OSError, ValueError, SystemExit) as e:
-        return f'[models] is not all written to {CF.LOCAL}: {e}'
+        return f'[models] code and fix are not written to {CF.LOCAL}: {e}'
     return f'{CF.LOCAL}: [models] code = "{code}", fix = "{fix}"' + (', and every kind of task on it' if to != kinds else '')
 
 
@@ -177,8 +179,10 @@ def offer(root: Path, terminal: bool) -> list[str]:
             return ['no provider picked: logins and [models] are as they were']
         has = {p: ok for p, ok, _ in table}
         for p in picks:
+            again = p == 'copilot' and has[p] and input(  # on github.com, and wanted on a domain, or the reverse
+                'GitHub Copilot is logged in: log in again, as on another domain? [y/N] ').strip().lower() in ('y', 'yes')
             said.append(f'{NAMES[p]}: {"needs no login" if login.needs_none(p, {}) else "already logged in"}'
-                        if has[p] else log_in(root, p))
+                        if has[p] and not again else log_in(root, p))
         if 'claude' in picks and not claude_program(root):  # no session on it can start here
             picks.remove('claude')
         if not picks:
