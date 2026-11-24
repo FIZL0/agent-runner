@@ -522,10 +522,10 @@ line names shows too. The TUI's Needs you pane shows the same steps, expected li
 (500 characters at most), `link` (a web address, 1000 at most) or `secret` (4096 at most), and a secret's `env` is its
 NAME, the key in capitals by default. `match` is a regex the whole value must match (200 characters at most), `hint`
 says what is wrong when it does not, and `confirm` is a question asked before anything is sent. A value is one line,
-every input must be filled, at most 12 are read, and a malformed one is left out. Only CONFIRM, DECIDE, BLOCKED and
+every input must be filled, and with a malformed one, or more than 12, the item has none and keeps its plain answers. Only CONFIRM, DECIDE, BLOCKED and
 stuck items take inputs. `ui_model.need_give` checks each value and sends nothing when one fails, naming that input.
 Text and links go quoted as data in the answer the task reopens with; a CONFIRM with inputs reopens rather than ticks.
-A secret goes only to `<notes>/asks/ID.env` as `NAME='value'`, owner-only and kept out of git, and the answer names its
+A secret goes only to `<notes>/asks/ID.env` as `NAME='value'`, owner-only (on Windows, as its folder is) and kept out of git, and the answer names its
 NAME and that path. It is kept while the task is open and removed when it lands or is dropped, and is taken only over
 https or from this computer or the terminal UI:
 

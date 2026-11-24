@@ -22,7 +22,7 @@ FILE_MAX = 64 * 1024        # an asks file larger than this is not read
 LINK_MAX, CMD_MAX, MATCH_MAX, INPUTS_MAX = 1000, 2000, 200, 12  # F175
 KINDS = {'text': 500, 'link': LINK_MAX, 'secret': 4096}  # an input's kinds, and the most characters of each
 INPUT_LABELS = ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK)  # the items inputs can answer
-SHOT_MAX = 50* 1024 * 1024
+SHOT_MAX = 50 * 1024 * 1024
 SHOTS_MAX = 20
 SHOT_DIRS = ('uploads', 'asks')  # under the notes dir, the only folders pictures are shown from
 SHOT_TYPES = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -239,28 +239,34 @@ def _steps(v) -> tuple[list[str], list[dict]]:
 
 
 def _inputs(v) -> list[dict]:
-    """F175: what an asks file wants the person to give, [{key, label, kind, hint, match, confirm, env}], only what is
-    well formed; `env` is a secret's name in <notes>/asks/ID.env ('' for the others)."""
+    """F175: what an asks file wants the person to give, [{key, label, kind, hint, match, confirm, env}]; [] when one
+    is malformed, as the rest alone would be half an answer (the item keeps its plain answers). `env` is a secret's name
+    in <notes>/asks/ID.env ('' for the others)."""
     out: list[dict] = []
-    for x in v[:INPUTS_MAX] if isinstance(v, list) else []:
+    if not isinstance(v, list) or len(v) > INPUTS_MAX:
+        return []
+    for x in v:
         if not isinstance(x, dict) or not isinstance(x.get('key'), str) or not re.fullmatch(r'[A-Za-z][\w-]{0,39}', x['key'], re.A):
-            continue
-        say = {k: ' '.join(x[k].split())[:300] if isinstance(x.get(k), str) else '' for k in ('label', 'hint', 'confirm')}
-        kind, match, env = x.get('kind', 'text'), x.get('match', ''), ''
+            return []
+        if not all(isinstance(x.get(k, ''), str) for k in ('label', 'hint', 'confirm')):
+            return []  # a question that does not read must not go unasked
+        say = {k: ' '.join(x.get(k, '').split())[:300] for k in ('label', 'hint', 'confirm')}
+        # an env with no kind may be a secret, so it is not taken as text
+        kind, match, env = x.get('kind', '' if x.get('env') else 'text'), x.get('match', ''), ''
         if not isinstance(kind, str) or kind not in KINDS:
-            continue
+            return []
         if kind == 'secret':
             env = x.get('env') or x['key'].replace('-', '_').upper()
             if not isinstance(env, str) or not re.fullmatch(r'[A-Za-z_]\w{0,79}', env, re.A):
-                continue
+                return []
         try:
             if not isinstance(match, str) or len(match) > MATCH_MAX:
                 raise ValueError('match')
             re.compile(match)
         except (re.error, ValueError, OverflowError, RecursionError):
-            continue  # its check cannot be made, so no value may pass it
+            return []  # its check cannot be made, so no value may pass it
         if x['key'] in {o['key'] for o in out} or env and env in {o['env'] for o in out}:
-            continue
+            return []
         out.append({'key': x['key'], **say, 'label': say['label'] or x['key'], 'kind': kind, 'match': match, 'env': env})
     return out
 

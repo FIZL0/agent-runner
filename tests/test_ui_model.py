@@ -1072,9 +1072,11 @@ def test_need_give_f175(tmp: Path) -> None:
 
     plain = ask('{')
     eq((plain['detail']['inputs'], plain['detail']['step_more']), ([], []), 'a broken file falls back: no inputs')
-    for odd in (5, {}, [5, {}, {'key': 'a b'}, {'key': 'a', 'kind': 'pin'}, {'key': 'a', 'match': '('}, {'key': 'a', 'match': 'x' * 201},
-                        {'key': 'a', 'kind': 'secret', 'env': 'A B'}, {'key': 'a', 'kind': ['x']}]):
-        eq(ask({'inputs': odd, 'steps': odd})['detail']['inputs'], [], f'left out: {str(odd)[:30]}')
+    good = {'key': 'ok'}
+    for odd in (5, {}, [good] * 2, *([good, x] for x in (
+            5, {}, {'key': 'a b'}, {'key': 'a', 'kind': 'pin'}, {'key': 'a', 'match': '('}, {'key': 'a', 'match': 'x' * 201},
+            {'key': 'a', 'kind': 'secret', 'env': 'A B'}, {'key': 'a', 'kind': ['x']}, {'key': 'a', 'confirm': True}, {'key': 'a', 'env': 'TOK'}))):
+        eq(ask({'inputs': odd, 'steps': odd})['detail']['inputs'], [], f'one malformed, so none: {str(odd)[-40:]}')
     row = ask(F399_ASK)
     d = row['detail']
     eq((d['steps'], d['step_more']), (["Add main's copy of Install Switch to Shortcuts", 'Share > Copy iCloud Link'],

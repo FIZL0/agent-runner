@@ -903,7 +903,10 @@ def need_give(tid: str, values: dict | None = None, confirm: bool = False, secur
         f'{x["env"]} is in {where}' if x['kind'] == 'secret' else f'{as_data(x["label"])} is {as_data(got[x["key"]])}'
         for x in inputs)
     # a CONFIRM's yes would tick the task: what was given is for the task to go on with, so it reopens
-    r = call(['plan', 'change' if label == 'CONFIRM' else 'confirm', tid, said])
+    try:
+        r = call(['plan', 'change' if label == 'CONFIRM' else 'confirm', tid, said])
+    except OSError as e:  # the runner did not start
+        r = no(str(e))
     if r['ok']:
         r.update(said=f'{tid} has what you gave: a run starts it', gone=tid)
     else:
