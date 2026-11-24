@@ -7962,14 +7962,18 @@ def test_start_on_merge_f198(tmp: Path):
     print('F198: a task on the files of a finished task starts on its merge during the gate, and lands after it')
     if R.plat.WINDOWS:
         return  # no merge gate that outlives a call there
-    from agent_runner import stack
     here = tmp / 'f198'
     here.mkdir()
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_HOME': str(here / 'home')}):
+        start_on_merge_f198(here)
+
+
+def start_on_merge_f198(here: Path):
+    from agent_runner import stack
     repo = make_repo(here)
     lines = [f'# a{i}' for i in range(20)]
     (repo / 'a.py').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     (repo / 'plan/TODO.md').write_text(STACK_TODO, encoding='utf-8')
-    (repo / 'runner.toml').write_text((repo / 'runner.toml').read_text() + f'home = "{here.as_posix()}/home"\n')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'the plan')
     git(repo, 'push', '-q')
