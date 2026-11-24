@@ -3036,9 +3036,15 @@ def _tell(c, argv: list[str]) -> int:
         return 2
     tid, text = argv[0], ' '.join(argv[1:])
     told, said = tell(c, tid, text)
+    if told is None:  # B767: not answered in time, and it may ask the person by now: then no slot runs it
+        try:
+            _ask_or_parked(tid, c.todo)
+            told = False
+        except SystemExit:
+            pass
     if told is False:
         print(f'{PROG}: {said or f"{tid} is not running: no slot of a run here is on it"}'
-              + _not_told(tid, text, ensure()[0]), file=sys.stderr)
+              + _not_told(tid, text, c.todo), file=sys.stderr)
         return 1
     print(said)
     return 0

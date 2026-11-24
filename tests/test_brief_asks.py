@@ -10,6 +10,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from _check import check, eq, git, has, report, run
 
@@ -183,6 +184,8 @@ def test_tell(root: Path, env: dict) -> None:
     has(r.stderr, rf'plan change {tid} {said}`', 'the exact change')
     check('plan note' not in r.stderr, 'no note: it would not answer the question')
     eq(todo.read_text(encoding='utf-8'), before, 'nothing is answered')
+    with mock.patch.object(P, 'tell', lambda *a: (None, 'asked the run')):
+        eq((P._tell(R.C, [tid, 'red']), P._tell(R.C, ['F1', 'red'])), (1, 0), 'no answer in time: an asked task fails, another waits')
     A.block_asks('main')
     check(asks_of(tid), 'now blocked')
     r = run(root, 'plan', 'tell', tid, 'red', env=env)
@@ -213,7 +216,13 @@ def test_answer_parked(root: Path, env: dict) -> None:
         check(words in P.last_answer(tid, todo=R.C.todo, about=slots.asked(tid).get('question', '')), 'its session gets the answer')
         eq(slots.asked(tid).get('sid'), 's', 'the next start resumes the session')
         eq((A.answered_asks(), A.answered_asks()), ({tid}, set()), 'the run tries it again, once')
-        eq(slots.asked(tid).get('sid'), 's', 'still to resume')
+        opened = mock.Mock()
+        opened.open.return_value = 42
+        with mock.patch.multiple(slots, MUX=opened, move_transcript=lambda sid, d: True, on_harness=lambda m: False,
+                                 HARNESS=mock.Mock(find_transcript=lambda sid: None), slot_header=lambda n, t: (None, 0)):
+            got = slots.answer_ask(1, tid, root, slots.asked(tid), 'opus', 30)
+        eq(got, (42, 's', 0), 'its session resumes')
+        check(words in opened.open.call_args.args[2] and opened.open.call_args.kwargs.get('resume'), 'with the answer', opened.open.call_args)
         mark.unlink()
     print('... and when the block is in the plan but not marked')
     tid, mark = parked(root, 'half blocked')
