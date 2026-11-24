@@ -2330,7 +2330,7 @@ let skew = 0;
 Date.now = () => realNow() + skew;
 const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
 eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + grab('function outbox(') + grab('async function drain(')
-  + grab('function obDone(') + grab('function obBubbles(') + line('const ended=') + grab('function talkConvo(') + line('const notDelivered=') + grab('async function loadFeed(')
+  + "const DK = {}, CHATS_OF = '';" + line('const DRAFT_KEY=') + grab('function boxMove(') + grab('function obDone(') + grab('function obBubbles(') + line('const ended=') + grab('function talkConvo(') + line('const notDelivered=') + grab('async function loadFeed(')
   + grab('function addSent(') + grab('function carrySent(') + line('const keepSent=') + line('const busy=n') + line('const obState=') + line('const obBtns=') + `
 const tick = () => new Promise(r => setTimeout(r, 5));
 const settle = async () => { for (let i = 0; i < 6; i++) await tick() };
@@ -4813,7 +4813,8 @@ const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const said = [], toast = t => said.push(t), render = () => {}, tq = p => p, esc = t => String(t);
 const els = {}, $ = k => els[k] = els[k] || {}, setHTML = (el, h) => { el.h = h };
 const emptyCard = t => t, card = h => h, pageTitle = () => '', HOME_PAGE = false, document = {}, I = {chev: ''}, stepWait = {};
-const working_ = () => [], talkWaitName = () => '', chats = () => [], open = n => { S.thread = n };
+const working_ = () => [], talkWaitName = () => '', chats = () => S.chats || [], open = n => { S.thread = n };
+const DK = {rec: null, key: '', base: ''}, CHATS_OF = '';
 const carrySent = () => {}, addSent = () => {};
 let reply = null, status = 200, posts = [];
 const fetch = async (p, o) => {
@@ -4827,7 +4828,7 @@ const threadTitle = n => n, cutsOff = () => '', sureHTML = q => q;
 let cids = 0;
 const newCid = () => 'k' + (++cids);
 eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + line('function actFailed(') + grab('async function act(') + grab('function outbox(') + grab('async function drain(')
-  + grab('function obDone(') + line('const controlOf=') + line('const ctlSure=') + line('const ctlBusy=') + slice('function oldRunHTML(', 'const obBtns=')
+  + line('const DRAFT_KEY=') + grab('function boxMove(') + grab('function obDone(') + line('const controlOf=') + line('const ctlSure=') + line('const ctlBusy=') + slice('function oldRunHTML(', 'const obBtns=')
   + line('const obBtns=') + line('const obState=') + line('const notDelivered=') + grab('function obDraw(') + line('function obBoot(') + grab('function obRetryClick(')
   + line('function obCards(') + slice('const settingId=', 'const setErrHTML=') + slice('const setErrHTML=', 'SHEETS.setting=') + grab('async function loadSettings(') + grab('function takeSnap(') + `
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 5)) };
@@ -4869,6 +4870,14 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => 
   for (const j of [{ok: true, out: 'x'}, {ok: false, out: 'no'}]) for (const wait of [true, false]) {
     S.f[f] = 'new'; S.ob = wait ? [{...one, cid: 'p2', state: 'sending'}] : [];
     obDone(one, j); await settle(); out.newer.push(f in S.f)}
+  // B202: words typed in a chat still starting: Retry, its name by the run's answer, and by a snapshot
+  const drafts = () => [S.thread, Object.fromEntries(Object.entries(kept).filter(([k, v]) => k.startsWith('ar-draft:') && v)), DK.key, DK.base];
+  S.ob = [{cid: 'n1', name: 'new_control', args: {}, newchat: true, state: 'failed', err: 'x', say: 'n'}]; S.thread = '@n1';
+  store.set(DRAFT_KEY('@n1'), 'and mo'); store.set(DRAFT_KEY('c1'), 'other'); Object.assign(DK, {rec: {}, key: '@n1', base: 'and'});
+  reply = {ok: false, out: 'busy'}; cids = 100; obRetryClick('n1'); await settle(); out.words = [drafts()];
+  reply = {ok: true, name: 'c9'}; obRetryClick('k101'); await settle(); out.words.push(drafts());
+  DK.rec = null; S.ob = []; S.thread = '@w'; S.waitNew = {ph: '@w', known: ['c9'], at: Date.now()}; S.chats = [{name: 'c9'}, {name: 'c10'}];
+  store.set(DRAFT_KEY('@w'), 'newer'); store.set(DRAFT_KEY('c10'), 'older'); takeSnap({boot: S.snap.boot}); await settle(); out.words.push(drafts());
   console.log(JSON.stringify(out));
   process.exit(0);
 })();`);
@@ -5097,6 +5106,10 @@ def test_older_run_b164(tmp: Path) -> None:
     check('2 waiting for a restart' in o['pill'] and 'failed' not in o['pill'].split('>', 1)[1], 'the pill says it waits', o['pill'])
     eq(o['ctl'], [0, True], 'a confirmed action never goes by itself after a restart: Retry')
     eq(o['newer'], [True, False, True, False], 'F174: a save that settles keeps a newer value waiting to go in its field')
+    c1, c9 = {'ar-draft:c1': 'other'}, {'ar-draft:c1': 'other', 'ar-draft:c9': 'and mo'}
+    eq(o['words'], [['@k101', {**c1, 'ar-draft:@k101': 'and mo'}, '@k101', 'and'], ['c9', c9, 'c9', 'and'],
+                    ['c10', {**c9, 'ar-draft:c10': 'older\nnewer'}, 'c9', 'and']],
+       "B202: words typed in a chat still starting are in its box after Retry and when it gets its name")
     eq(o['same'], 0, 'the same run: not sent again')
     eq(o['sent'], [[['need_chat', 'k1~b2', ''], ['chat_to', 'k2', 'c7']], 0, 'c7'], 'the run restarted: both go, once')
     eq(o['legacy'], [['z~b3'], ['y']], 'one an earlier page left there goes too; a plain failure waits for Retry')
