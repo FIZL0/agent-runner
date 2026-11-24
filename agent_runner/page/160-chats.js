@@ -1,6 +1,16 @@
 const VV=window.visualViewport, IOS=!!(window.CSS&&CSS.supports('-webkit-touch-callout','none')), KB_MS=900;
 let kbH=0;  // .app's height while the keyboard is open, 0 when it is closed
 let kbUntil=0, kbLoop=0;  // the keyboard is on its way in or out until then
+/* B212a: what iOS tells late, or never. kbAsk asks again while the keyboard is open; kbGone is the height of a keyboard that
+   is away, which the viewport still has; kbLeft is when the last field was left; kbPress is true in a press's own events */
+const KB_ASK=300;
+let kbAsk=0, kbGone=0, kbLeft=0, kbPress=false;
+function kbPressed(){kbPress=true;setTimeout(()=>{kbPress=false},0)}
+/* a script's focus brings no keyboard, so a viewport still short after KB_MS without a field is out of date */
+function kbEnter(e){
+  if(kbPress)kbGone=0;
+  else if(!kbH&&!typingIn(e.relatedTarget)&&Date.now()-kbLeft>KB_MS)kbGone=kbHeight(VV,document.documentElement.clientHeight,typingIn(e.target));
+}
 /* B214: and so it is on a touch device whose browser shrinks the page itself: the session keeps its size for as long */
 let kbStill=0, kbStillT=0;
 for(const t of ['focusin','focusout'])document.addEventListener(t,e=>{if(!TOUCH()||!typingIn(e.target))return;
@@ -8,7 +18,9 @@ for(const t of ['focusin','focusout'])document.addEventListener(t,e=>{if(!TOUCH(
 function kbHeight(vv,full,typing){return vv&&typing&&Math.abs(vv.scale-1)<.02&&full-vv.height>100?Math.round(vv.height):0}
 const typingIn=el=>!!(el&&el.matches&&el.matches('textarea,input,select,[contenteditable]'));
 function kbFit(){
-  const app=$('app'), el=document.activeElement, h=kbHeight(VV,document.documentElement.clientHeight,typingIn(el));
+  const app=$('app'), el=document.activeElement;
+  if(kbGone&&Math.abs(VV.height-kbGone)>1)kbGone=0;
+  const h=kbGone?0:kbHeight(VV,document.documentElement.clientHeight,typingIn(el));
   const moving=Date.now()<kbUntil&&Math.abs(VV.scale-1)<.02;  // a pan comes before the resize, or outlasts the blur: follow it, at full height
   const pin=chatShown()&&S.pin, changed=h!==kbH;  // before the new height can move the chat
   const was=changed?kbSpot():null;
@@ -18,6 +30,8 @@ function kbFit(){
   app.style.height=h?h+'px':'';app.style.top=h||top?top+'px':'';
   if((h||moving)&&window.scrollY)window.scrollTo(0,0);  // Safari scrolls even a locked document to show the box
   if(!changed)return;
+  if(h&&!kbAsk)kbAsk=setInterval(kbFit,KB_ASK);
+  if(!h){clearInterval(kbAsk);kbAsk=0}
   if(pin)toEnd();
   if(h)kbReveal(el);
   kbGlide(was,pin);feedGlide(was.feed);
@@ -58,7 +72,7 @@ function kbTapStart(e){
   KT=el&&!(kbH&&el===document.activeElement)&&!el.disabled&&!el.readOnly&&Math.abs(VV.scale-1)<.02?{el,x:t.clientX,y:t.clientY,at:Date.now()}:null;
 }
 function kbTapEnd(e){
-  const k=KT, t=e.changedTouches[0];KT=null;
+  const k=KT, t=e.changedTouches[0];KT=null;kbPressed();
   if(!k||!e.cancelable||e.defaultPrevented||!k.el.isConnected||Date.now()-k.at>450||Math.abs(t.clientX-k.x)>9||Math.abs(t.clientY-k.y)>9)return;  // a scroll, a swipe or a long press
   e.preventDefault();
   if(k.el===document.activeElement)k.el.blur();  // a script's focus (open()) brought no keyboard: only a new focus does
@@ -81,11 +95,15 @@ function kbReveal(el,press){
   if(press||MO.scroll.has(b))scrollGlide(b,b.scrollTop+d);else b.scrollTop+=d;
 }
 if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
-  document.addEventListener('focusin',e=>{if(IOS&&typingIn(e.target))kbWatch();kbFit();if(kbH)kbReveal(e.target)});
+  document.addEventListener('focusin',e=>{if(IOS)kbEnter(e);if(IOS&&typingIn(e.target))kbWatch();kbFit();if(kbH)kbReveal(e.target)});
   /* left for no other field: the full height at once, not when the viewport says so. After the microtask: a refresh that
      drew the box again has put the focus back by then */
-  document.addEventListener('focusout',e=>{if(kbH&&!typingIn(e.relatedTarget))queueMicrotask(()=>{if(typingIn(document.activeElement))return;if(IOS)kbWatch();kbFit()})});
-  if(IOS){document.addEventListener('touchstart',kbTapStart,{passive:true});document.addEventListener('touchcancel',()=>{KT=null},{passive:true});
+  document.addEventListener('focusout',e=>{if(typingIn(e.target)&&!typingIn(e.relatedTarget))kbLeft=Date.now();if(kbH&&!typingIn(e.relatedTarget))queueMicrotask(()=>{if(typingIn(document.activeElement))return;if(IOS)kbWatch();kbFit()})});
+  if(IOS){for(const t of ['pointerup','mousedown','click'])document.addEventListener(t,kbPressed,true);
+    document.addEventListener('input',e=>{if(kbGone&&e.isTrusted){kbGone=0;kbFit()}});  // typed: there is a keyboard after all
+    /* another app puts the keyboard away, can leave the box in focus, and no event may say so: the focus goes with it */
+    document.addEventListener('visibilitychange',()=>{if(document.hidden&&kbH)document.activeElement.blur()});
+    document.addEventListener('touchstart',kbTapStart,{passive:true});document.addEventListener('touchcancel',()=>{KT=null},{passive:true});
     document.addEventListener('touchend',kbTapEnd,{passive:false})}}
 let boxWas={k:'',h:0};
 function grow(ta,drawn){
