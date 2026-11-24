@@ -830,6 +830,7 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
                     sent = SEND[0](f'{tid}: approved. {words}')
                     if not sent['ok']:
                         why = (sent['out'].splitlines() or [''])[0]
+                        S.log(f'{tid}: approved; the words with it went to no chat ({why}): {words}')
                         done += f'. Your words were not sent ({why}): {words}'
             r.update(said=done, gone=tid)
         return r

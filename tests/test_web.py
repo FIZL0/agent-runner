@@ -1756,6 +1756,8 @@ def test_answer_button_b138(tmp: Path) -> None:
     eq((yes['ok'], yes['said'], yes['gone']), (True, 'F1 ticked', 'F1'), 'the result says what was done')
     eq(no['said'], 'F1 reopened: the check failed', "No's words")
     page = W.PAGE.read_text(encoding='utf-8')
+    check("if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need]" in page,
+          'F162a: the reply box is emptied only of words that were sent', '')
     check("outbox('answer',answerArgs(n,x.dataset.v," in page, 'the page sends a button answer', '')
     check("obCards(x=>x.need)" in page, 'the answer stands in Needs you while it is sent (F137)', '')
     if not shutil.which('node'):

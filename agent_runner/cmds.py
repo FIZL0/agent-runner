@@ -478,6 +478,7 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
     do.add_argument('--path', action='store_true', help='print where the sheet is')
     ap.add_argument('--note', default='', help='with --picks or --go: words to note beside the picks')
     a = ap.parse_args(argv)
+    a.note and a.picks is None and not a.go and ap.error('--note goes with --picks or --go')
     init()
     f = C.notes('sheets', f'{a.id}.json')
     if a.path:
@@ -506,8 +507,7 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
         print(f'{prog}: {e}', file=sys.stderr)
         return 2
     from agent_runner import plan
-    note = ' '.join(a.note.split())
-    return plan.main(['confirm', a.id, sheet.picks_note(spec, picks) + (f'; note: {note}' if note else '')])
+    return plan.main(['confirm', a.id, sheet.picks_note(spec, picks) + (f'; note: {note}' if (note := " ".join(a.note.split())) else '')])
 
 
 NO_PICK_HTTPS = ('no https address for the run page ({why}): '
