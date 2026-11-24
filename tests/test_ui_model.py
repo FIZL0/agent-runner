@@ -194,12 +194,13 @@ def test_run_controls(tmp: Path) -> None:
         for windows in (False, True):  # B163: no re-exec on Windows, so no restart there
             want = {*RUN_CONTROL_ARGV, 'task_take', 'queue_take', 'queue_drop', 'queue_priority', 'queue_unpark',
                     'shelved_back', 'shelved_drop', 'release_wait', 'release_now', 'need_later', 'need_chat', 'need_drop', 'concept_chat',
+                    'need_yes', 'need_no', *(f'need_answer{j}' for j in range(1, U.ANSWER_MAX + 1)),  # F180
                     'concept_drop', 'session_close'} - ({'restart'} if windows else set())
             on = ' (Windows)' if windows else ''
             with mock.patch('agent_runner.plat.WINDOWS', windows):
                 cs = U.controls()
             eq(sorted(c['key'] for c in cs), sorted(want), f'the list holds every control the task names{on}')
-            eq(len({(c['where'], c['tui']) for c in cs}), len(want), f'each has a key of its own in its panel{on}')
+            eq(len({(c['where'], c['tui']) for c in cs if c['tui']}), len([c for c in cs if c['tui']]), f'each has a key of its own in its panel{on}')
         for key, argv in RUN_CONTROL_ARGV.items():
             ran.clear()
             r = U.act('run_control', key=key, n='4', tid='main-checkout-1' if 'wip' in key else 'F1', confirm=True)
@@ -230,17 +231,23 @@ def test_row_actions(tmp: Path) -> None:
     fake_run(tmp)
     seen = set()
     for c in U.RUN_CONTROLS:
-        check(c.get('argv') or c.get('ask') or c.get('fn') or c['key'] == 'start', f'{c["key"]} has an action', c)
-        for k in (c['tui'], c.get('tui_also')):
-            check(k is None or (c['where'], k) not in seen, f'{c["key"]}: {k} is no other key of {c["where"]}')
-            seen.add((c['where'], k))
+        check(c.get('argv') or c.get('ask') or c.get('fn') or c.get('answer') or c['key'] == 'start', f'{c["key"]} has an action', c)
+        # where its keys work: on the panel and in the main pane, or only one of them (F180: an answer's, in its tab)
+        keys = [(p, c['tui']) for p in (('main',) if c.get('tab') else ('panel', 'main') if c.get('tui_main', True)
+                                        else ('panel',)) if c['tui']]
+        for at in keys + ([('panel', c['tui_also'])] if c.get('tui_also') else []):
+            check((c['where'], *at) not in seen, f'{c["key"]}: {at} is no other key of {c["where"]}')
+            seen.add((c['where'], *at))
     snap = U.snapshot(up=True, now=NOW, links={})
     acts = {q['id']: q['acts'] for q in snap['queue']}
     eq(acts['F1'], ['queue_priority', 'queue_take', 'queue_drop'], 'a queued task: priority, do it here, drop')
     eq(acts['R8'], ['queue_unpark', 'queue_take', 'queue_drop'], 'a parked task: unpark, not priority')
     eq(snap['release_acts'], ['release_wait', 'release_now'], 'the release tab\'s actions')
     eq({n['id']: n['acts'] for n in snap['needs']}, {'D3': ['need_later', 'need_chat', 'need_drop'],
-                                                     'F4': ['need_later', 'need_chat', 'need_drop']}, 'C35: a Needs you item')
+                                                     'F4': ['need_answer1', 'need_answer2', 'need_answer3', 'need_later', 'need_chat',
+                                                            'need_drop']}, 'C35: a Needs you item; F180: its fixed answers first')
+    eq([(n['id'], n.get('labels')) for n in snap['needs']],
+       [('D3', None), ('F4', {'need_answer1': 'A', 'need_answer2': 'B', 'need_answer3': 'C'})], "F180: the row's own labels")
     eq([c['acts'] for c in snap['concepts']], [['concept_chat', 'concept_drop']], 'a concept: chat, drop')
     eq({s['name']: s['acts'] for s in snap['sessions'] if s['acts']}, {n: ['session_close'] for n in
        [s['name'] for s in snap['sessions'] if re.fullmatch(r'c\d+', s['name'])]}, 'only a control session closes')
@@ -273,6 +280,37 @@ def test_row_actions(tmp: Path) -> None:
             eq(U.run_control(key, tid=tid, confirm=True)['code'], 1, f'{key} on {tid} is refused')
         with mock.patch('agent_runner.control.close_from_tui', lambda n: {'ok': True, 'out': f'c{n} closed'}):
             eq(U.run_control('session_close', tid='c6')['out'], 'c6 closed', 'a control session closes')
+
+
+def test_answers_f180(tmp: Path) -> None:
+    """F180: a Needs you row's fixed answers are row actions: Yes and No, Done or its options, labelled by the row;
+    one runs the plan command only when the row still has the answer pressed, with the words beside it."""
+    fake_run(tmp)
+    for row, want in (({'label': 'CONFIRM'}, {'need_yes': 'Yes', 'need_no': 'No'}),
+                      ({'label': 'DECIDE', 'ask': 'Which port?'}, {}),
+                      ({'label': 'BLOCKED'}, {'need_answer1': 'Done'}),
+                      ({'label': 'TOOL', 'ask': 'Connect it, yes or no'}, {}),
+                      ({'label': 'PITCH', 'options': ['Approve', 'Not this: drop']},
+                       {'need_answer1': 'Approve', 'need_answer2': 'Not this: drop'})):
+        eq(U.row_labels('need', row), want, f'{row["label"]}: its answers')
+        eq([k for k in U.row_acts('need', row) if U.run_control_of(k).get('answer')], list(want), 'and its acts')
+    ran = []
+    rows = {'B2': {'id': 'B2', 'label': 'CONFIRM'}, 'F1': {'id': 'F1', 'label': 'BLOCKED'}, 'D3': {'id': 'D3', 'label': 'DECIDE'}}
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+            mock.patch.object(U, 'row_of', lambda where, tid: rows.get(tid)), \
+            mock.patch.object(U, 'need_label', lambda tid: rows.get(tid, {}).get('label', '')):
+        r = U.act('run_control', key='need_yes', tid='B2', text='Yes', note='on  wifi')
+        eq((r['ok'], r['said'], r['gone']), (True, 'B2 ticked', 'B2'), 'Yes ticks it')
+        U.act('run_control', key='need_no', tid='B2', text='No')
+        U.act('run_control', key='need_answer1', tid='F1', text='Done')
+        eq(ran, [['plan', 'confirm', 'B2', 'Yes: on wifi'], ['plan', 'change', 'B2', 'No: the check failed'],
+                 ['plan', 'confirm', 'F1', 'Done']], 'the plan commands')
+        ran.clear()
+        for key, tid, text in (('need_answer1', 'F1', 'Option A'), ('need_answer1', 'F1', ''), ('need_yes', 'F1', 'Yes'),
+                               ('need_answer1', 'D3', 'A'), ('need_yes', 'ZZ9', 'Yes')):
+            eq(U.run_control(key, tid=tid, text=text)['code'], 1, f'{key} {text!r} on {tid} is refused')
+        eq(U.run_control('need_yes', tid='ZZ9', text='Yes')['out'], 'ZZ9 no longer needs you (answered already?)', 'and says why')
+        eq(ran, [], 'and runs nothing')
 
 
 def test_real_command(tmp: Path) -> None:
@@ -1019,4 +1057,4 @@ if __name__ == '__main__':
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
                          in_tmp(test_delete_chats), in_tmp(test_chat_list_f133),
                          in_tmp(test_status_f124), in_tmp(test_chat_rows_f128), in_tmp(test_need_chat_f143),
-                         in_tmp(test_feed_ids_b134), in_tmp(test_need_answers_c33), in_tmp(test_typed_decide_f181a)]))
+                         in_tmp(test_feed_ids_b134), in_tmp(test_need_answers_c33), in_tmp(test_answers_f180), in_tmp(test_typed_decide_f181a)]))

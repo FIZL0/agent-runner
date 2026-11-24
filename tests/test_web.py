@@ -272,18 +272,20 @@ def test_row_actions(tmp: Path) -> None:
     fake_repo(tmp)
     page = W.PAGE.read_text(encoding='utf-8')
     for part in ('actBtns(q.acts,q.id)', 'actSure(q.acts,q.id)', 'S.snap.release_acts', 'if(c.chat){',
-                 'actBtns(n.acts,n.id)', 'actSure(n.acts,n.id)', 'actBtns(c.acts,c.id)', 'actSure(c.acts,c.id)'):
+                 'ansBtns(n)', 'restBtns(n)', 'actSure(n.acts,n.id)', 'actBtns(c.acts,c.id)', 'actSure(c.acts,c.id)'):
         check(part in page, f'the page has {part}')
     for gone in ('data-unpark', "outbox('unpark'", 'data-rel=', "outbox('release'", 'data-later=', 'data-needdrop=',
-                 'data-needchat=', 'data-cchat=', "outbox('shelve'", "outbox('need_drop'"):
+                 'data-needchat=', 'data-cchat=', "outbox('shelve'", "outbox('need_drop'", 'data-ans=', 'answerArgs'):  # F180
         check(gone not in page, f'the page has no {gone}: one handler')
     cs = [c for c in U.controls() if c['where'] in ('queue', 'shelved', 'release', 'need', 'concept')]
-    eq(len(cs), 13, 'the row actions the page draws (C35: Needs you and Concepts too)')
+    opts = [f'Option {j}' for j in range(1, U.ANSWER_MAX + 1)]
+    text = lambda c: c['label'].replace('Answer', 'Option') if c['answer'] else ''  # noqa: E731
+    eq(len(cs), 15 + U.ANSWER_MAX, 'the row actions the page draws (C35: Needs you and Concepts too)')
     if shutil.which('node'):
-        reqs = logic_js([['controlReq', c, {'tid': 'F83', 'sure': True}] for c in cs])
+        reqs = logic_js([['controlReq', c, {'tid': 'F83', 'sure': True, 'text': text(c), 'note': ' '}] for c in cs])
     else:
         print('  (no node here: the page requests are built in Python instead)')
-        reqs = [{'name': 'run_control', 'args': {'key': c['key'], **({'tid': 'F83'} if c['needs'] == 'id' else {}),
+        reqs = [{'name': 'run_control', 'args': {'key': c['key'], **({'text': text(c)} if c['answer'] else {}), **({'tid': 'F83'} if c['needs'] == 'id' else {}),
                                                   **({'confirm': True} if c['confirm'] else {})}} for c in cs]
     ran = []
     token = W.web_token()
@@ -293,12 +295,14 @@ def test_row_actions(tmp: Path) -> None:
         chat = lambda tid, wait: U.call(['control', '--new', tid])  # noqa: E731
         with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
                 mock.patch.dict(U.ROW_FNS, {'need_chat': chat, 'concept_chat': chat}), \
-                mock.patch.object(U, 'row_of', lambda where, tid: {'id': tid, 'pri': 'normal', 'state': 'parked',
-                                                                    'ask': 'Look', 'label': 'CONFIRM', 'concept': tid}):
+                mock.patch.object(U, 'need_label', lambda tid: 'CONFIRM'), \
+                mock.patch.object(U, 'row_of', lambda where, tid: {'id': tid, 'pri': 'normal', 'state': 'parked', 'ask': 'Look',
+                                                                   'label': 'CONFIRM', 'concept': tid, 'options': opts}):
             for c, rq in zip(cs, reqs):
                 ran.clear()
                 code, out = post(url, rq)
-                fits = c['key'] not in ('queue_priority',)  # the stand-in row is parked: priority does not fit
+                # the stand-in row is parked: priority does not fit; its answers are options: not Yes and No
+                fits = c['key'] not in ('queue_priority', 'need_yes', 'need_no')
                 eq((code, out.get('ok')), (200, fits), f'{c["label"]} sent from the page: {"runs" if fits else "refused"}')
                 eq(bool(ran), fits, f'{c["label"]}: its command ran or not, as the row allows')
     finally:
@@ -479,7 +483,7 @@ def test_page(tmp: Path) -> None:
                  'side.open', 'class="scrim"', 'data-menu',  # a drawer on a phone
                  'greeting()', 'How can I help with the run?', 'data-quick="since">', 'Since my last look',
                  'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
-                 '>Needs you<', 'data-ans=', 'actBtns(n.acts,n.id)', '>Working now<', '>Up next<',
+                 '>Needs you<', 'ansBtns(n)', 'restBtns(n)', '>Working now<', '>Up next<',
                  'data-about="plan:', 'S.snap.release_acts',
                  "outbox('answer'", "newChat('quick_ask'", "outbox('chat_to'",
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
@@ -1747,8 +1751,8 @@ def test_answer_button_b138(tmp: Path) -> None:
     try:
         with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'confirmed and ticked F1'))[1]]), \
                 mock.patch.object(U, 'SEND', [no_send]):
-            code, yes = post(url, {'name': 'answer', 'args': {'tid': 'F1', 'text': 'Yes', 'button': True}})
-            code, no = post(url, {'name': 'answer', 'args': {'tid': 'F1', 'text': 'No', 'button': True}})
+            code, yes = post(url, {'name': 'run_control', 'args': {'key': 'need_yes', 'tid': 'F1', 'text': 'Yes'}})
+            code, no = post(url, {'name': 'run_control', 'args': {'key': 'need_no', 'tid': 'F1', 'text': 'No'}})
     finally:
         srv.stop()
     eq(ran, [['plan', 'confirm', 'F1', 'Yes'], ['plan', 'change', 'F1', 'No: the check failed']],
@@ -1758,7 +1762,6 @@ def test_answer_button_b138(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     check("if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need]" in page,
           'F162a: the reply box is emptied only of words that were sent', '')
-    check("outbox('answer',answerArgs(n,x.dataset.v," in page, 'the page sends a button answer', '')
     check("obCards(x=>x.need)" in page, 'the answer stands in Needs you while it is sent (F137)', '')
     if not shutil.which('node'):
         print('  (no node here: the page script test is skipped)')
@@ -2226,21 +2229,21 @@ const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
 const el = {h: '', cls: new Set(), focus() {}, scrollTop: 0, classList: {toggle: (c, on) => on ? el.cls.add(c) : el.cls.delete(c)}};
 const sent = [], handlers = {}, fetched = [];
-const env = {S: {snap: {needs}, f: {}, sheet: '', askShot: -1, askFold: {}, ob: []}, I: {ext: '', chev: ''}, SHEETS: {}, sheetBack: null,
+const env = {S: {snap: {needs, controls: JSON.parse(process.argv[4])}, f: {}, sheet: '', askShot: -1, askFold: {}, ob: []}, I: {ext: '', chev: ''}, SHEETS: {}, sheetBack: null,
   $: () => el, esc: t => env.E(t), setHTML: (n, h) => { el.h = h; return false }, keepScroll: () => () => {}, keepFields: () => () => {},
   document: {activeElement: null, addEventListener: (t, f) => { (handlers[t] = handlers[t] || []).push(f) }}, card: (h, c, a) => `<div class="card" ${a}>${h}</div>`,
-  actBtns: () => '', actSure: () => '', tq: p => p + '?t=T', toast: t => sent.push(['toast', t]), composing: () => false, HOME_PAGE: false,
+  actSure: () => '', tq: p => p + '?t=T', toast: t => sent.push(['toast', t]), composing: () => false, HOME_PAGE: false,
   fetch: async p => { fetched.push(p); return {json: async () => ({ok: true, text: 'A task | files: <a>\nBLOCKED: CONFIRM'})} },
   render: () => env.sheetDraw(), outbox: (n, a, o) => { sent.push([n, a]); env.S.snap.needs = env.S.snap.needs.filter(x => x.id !== o.need); env.sheetDraw() }};
 const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
 env.env = env;
-new Function('known', 'env', 'with (known) {' + logic + 'env.E=E_;' + slice('function needBtns(', '/* F85: a task') + 'env.needOf=needOf;'
+new Function('known', 'env', 'with (known) {' + logic + 'env.E=E_;' + line('const controlOf=') + line('const ctlBusy=') + slice('const actBtns=', 'const actSure=') + slice('function needBtns(', '/* F85: a task') + 'env.needOf=needOf;'
   + line('SHEETS.need=') + line('function openSheet(') + line('function closeSheet(') + slice('function sheetDraw(', '/* --- F97') + 'env.sheetDraw=sheetDraw;env.card0=needCard;'
   + slice("document.addEventListener('click',async e=>{", "document.addEventListener('submit'")
   + slice("document.addEventListener('keydown',e=>{\n", "document.addEventListener('input',") + '}')(known, env);
 const press = (sel, dataset = {}, inSheet = true) => handlers.click.forEach(f => f({target: {closest: s => s === sel ? {dataset, closest: () => inSheet, hasAttribute: () => false} : null}}));
 const esc = () => handlers.keydown.forEach(f => f({key: 'Escape', preventDefault() {}, target: {closest: () => null, matches: () => false}}));
-const S = env.S, out = {};
+const S = env.S, out = {}, ans = (ctl, tid, inSheet) => press('[data-ctl]', {ctl, tid}, inSheet);
 (async () => {
   const wait = () => new Promise(r => setTimeout(r, 10));
   out.card = env.card0(needs[0], 0);
@@ -2248,15 +2251,15 @@ const S = env.S, out = {};
   out.opened = [S.sheet, S.sheetArg, el.cls.has('open'), el.cls.has('dlg')]; out.fetched = [...fetched].sort(); out.html = el.h;
   press('[data-askfold]', {askfold: 'task'}); out.text = el.h;
   press('[data-shot]', {shot: '0'}); out.big = el.h; esc(); out.esc1 = [S.sheet, S.askShot]; esc(); out.esc2 = S.sheet;
-  press('[data-ans]', {ans: '1', v: 'Done'}, false); out.buttons = [S.sheet, sent.length];
+  ans('need_answer1', 'F2', false); out.buttons = [S.sheet, sent.length];
   press('[data-needopen]', {needopen: 'B160'}, false);
-  S.f['askre:B160'] = ' still grey '; press('[data-ans]', {ans: '0', v: 'No'}); out.closed = S.sheet;
+  S.f['askre:B160'] = ' still grey '; ans('need_no', 'B160'); out.closed = S.sheet;
   press('[data-needopen]', {needopen: 'D7'}, false); out.reply = el.h;
   press('[data-reply]', {reply: 'D7'}); S.f['askre:D7'] = '8770'; press('[data-reply]', {reply: 'D7'}); out.sent = sent;
-  const pitch = {id: 'pitch1', label: 'PITCH', ask: 'Approve 1 change', options: ['Approve'], changes: [{id: 'F1', title: 'a'}]};
+  const pitch = {id: 'pitch1', label: 'PITCH', ask: 'Approve 1 change', options: ['Approve', 'Not this: drop'], acts: ['need_answer1', 'need_answer2', 'need_chat'], labels: {need_answer1: 'Approve', need_answer2: 'Not this: drop'}, changes: [{id: 'F1', title: 'a'}]};
   const no = {pitchno: '0', how: 'reopen', tid: 'F1'};
   S.snap.needs = [pitch]; S.f['askre:pitch1'] = ' nice '; press('[data-needopen]', {needopen: 'pitch1'}, false);
-  press('[data-ans]', {ans: '0', v: 'Approve'}); S.snap.needs = [pitch]; press('[data-pitchno]', no);
+  out.pitchHtml = el.h; ans('need_answer1', 'pitch1'); S.snap.needs = [pitch]; press('[data-pitchno]', no);
   handlers.click.forEach(f => f({target: {closest: s => s === '[data-pitchno]' ? {dataset: no, closest: () => true, hasAttribute: () => true} : null}}));
   out.pitch = sent.slice(-2); sent.length -= 2; S.snap.needs = needs.slice(-1);
   press('[data-needopen]', {needopen: 'tool-x'}, false); out.tool = el.h; S.snap.needs = []; env.render(); out.left = S.sheet;
@@ -2281,8 +2284,10 @@ def test_need_popup_f162(tmp: Path) -> None:
              {'id': 'F2', 'label': 'BLOCKED', 'ask': 'Log in', 'answers': [{'label': 'Done', 'value': 'Done'}]},
              {'id': 'D7', 'label': 'DECIDE', 'ask': 'Which port?', 'detail': {**none, 'said': 'Choose', 'where': '', 'title': 'Port', 'summary': 'p', 'steps': ['Which port?']}, 'answers': []},
              {'id': 'tool-x', 'label': 'TOOL', 'ask': 'Connect it', 'answers': []}]
+    for n in needs:  # F180: as the snapshot carries them
+        n.update(acts=U.row_acts('need', n), labels=U.row_labels('need', n))
     (tmp / 'driver.js').write_text(NEED_DRIVER, encoding='utf-8')
-    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps(needs)], capture_output=True, text=True, timeout=60)
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps(needs), json.dumps(U.controls())], capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node presses the card', r.stderr[-1500:])
     if r.returncode:
         return
@@ -2290,27 +2295,28 @@ def test_need_popup_f162(tmp: Path) -> None:
     card = o['card']
     check('Check this · iPhone, Safari' in card and 'Keyboard &lt;b&gt;' in card and '<code>x</code> &lt;i&gt;' in card
           and '2 steps · B160 · 20m' in card, 'the card: what is wanted and where, the title, what to do', card)
-    check('Close it' not in card and card.index('</button>') < card.index('data-ans="0"'), 'no steps on it, and its buttons are not inside its words', card)
+    check('Close it' not in card and card.index('</button>') < card.index('data-ctl="need_yes"'), 'no steps on it, and its buttons are not inside its words', card)
     eq(o['opened'], ['need', 'B160', True, True], 'a press on its words opens the popup')
     eq(o['fetched'], ['task/B160?t=T', 'why/B160?t=T'], 'which asks for why it waits and the whole task')
     h = o['html']
     parts = ['Keyboard &lt;b&gt;', 'Check this', '20m', 'On an iPhone', '<ol><li>Tap &lt;script&gt;</li><li>Close it</li></ol>',
              '<ul><li>No grey &quot;band&quot;</li></ul>', 'src="shot/uploads/a%20b.png?t=T"', 'Its page', 'Why it waits',
-             'Full task', 'data-f="askre:B160"', 'data-v="Yes"', 'data-v="No"', '>Open ']
+             'Full task', 'data-f="askre:B160"', 'class="btn pri" data-ctl="need_yes" data-tid="B160">Yes<', 'class="btn" data-ctl="need_no" data-tid="B160">No<', '>Later<', '>Open ']
     at = [h.find(x) for x in parts]
     check(-1 not in at and at == sorted(at), 'the popup, in order', list(zip(parts, at)))
     check('<script>' not in h and '<img onerror' not in h and '&quot;&gt;&lt;img onerror=1&gt;' in h, 'all of it escaped', h)
     check('<p>| files: &lt;a&gt;</p><p>BLOCKED: CONFIRM</p>' in o['text'] and '<pre' not in o['text'], 'the task text in paragraphs', o['text'])
-    check('data-shotclose' in o['big'] and 'What to do' not in o['big'] and 'data-v="Yes"' in o['big'], 'a picture opens in it, the answers stay', o['big'])
+    check('data-shotclose' in o['big'] and 'What to do' not in o['big'] and 'data-ctl="need_yes"' in o['big'], 'a picture opens in it, the answers stay', o['big'])
     eq((o['esc1'], o['esc2']), (['need', -1], ''), 'Esc closes the picture, then the popup')
     eq(o['buttons'], ['', 1], 'a button of the card answers and opens nothing')
     eq(o['closed'], '', 'an answer closes it')
     check('data-reply="D7"' in o['reply'], 'an ask with no answers has Reply', o['reply'])
-    eq(o['sent'], [['answer', {'tid': 'F2', 'text': 'Done', 'button': True}],
-                   ['answer', {'tid': 'B160', 'text': 'No', 'button': True, 'note': 'still grey'}],
+    eq(o['sent'], [['run_control', {'key': 'need_answer1', 'tid': 'F2', 'text': 'Done'}],
+                   ['run_control', {'key': 'need_no', 'tid': 'B160', 'text': 'No', 'note': 'still grey'}],
                    ['toast', 'Write your reply first'], ['answer', {'tid': 'D7', 'text': '8770'}]],
        "what is sent: the reply box's words go with the answer")
-    eq(o['pitch'], [['answer', {'tid': 'pitch1', 'text': 'Approve', 'button': True, 'note': 'nice'}],
+    check('>Approve<' in o['pitchHtml'] and 'need_answer2' not in o['pitchHtml'] and '>Chat<' in o['pitchHtml'], 'a pitch draws Approve alone', o['pitchHtml'])
+    eq(o['pitch'], [['run_control', {'key': 'need_answer1', 'tid': 'pitch1', 'text': 'Approve', 'note': 'nice'}],
                     ['pitch_no', {'pid': 'pitch1', 'how': 'reopen', 'tid': 'F1', 'confirm': True, 'why': 'nice'}]],
        "F162a: a pitch's answers carry the words too")
     check('askfoot' not in o['tool'] and 'data-askfold' not in o['tool'], 'a missing tool has nothing to answer, and no task', o['tool'])
@@ -3605,7 +3611,7 @@ def test_needs_drop_chat_f110(tmp: Path) -> None:
     """F110, F143: a Needs you card's Drop asks in the page, then need_drop; its Chat sends need_chat and opens a new chat (run_control)."""
     fake_repo(tmp)
     page = W.page_html().decode()
-    for part in ('actBtns(n.acts,n.id)', 'actSure(n.acts,n.id)', 'needChatAsk(n)'):
+    for part in ('restBtns(n)', 'actSure(n.acts,n.id)', 'needChatAsk(n)'):
         check(part in page, f'the run app has {part}')
     ask = logic_js([['needChatAsk', {'id': 'R1', 'title': 'Phone', 'label': 'CONFIRM', 'ask': 'Does it work?',
                                      'answers': U.need_answers({'label': 'CONFIRM'})}]])[0]

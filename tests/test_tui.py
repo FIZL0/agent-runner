@@ -1791,21 +1791,25 @@ def test_answer_tab_b138() -> None:
     p = page(dict(SNAP, needs=[need] + SNAP['needs'][2:]))
     ran = []
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'confirmed and ticked F1'))[1]]), \
-            mock.patch.object(U, 'SEND', [no_send]):
+            mock.patch.object(U, 'row_of', lambda where, tid: need), mock.patch.object(U, 'SEND', [no_send]):
         p.key('4')
+        check(not any(k in ('y', 'n') for k, _ in p.hint_keys()), 'F180: no answer key while the panel has focus', p.hint_keys())
+        p.key('y')
+        eq((ran, p.main), ([], False), 'F180: y answers in the answer tab only')
         p.key('ENTER')
+        check('[y Yes] [n No] [L later]' in drawn(p).text(), 'F180: its answers are buttons there', drawn(p).text())
         p.key('y')
     eq(ran, [['plan', 'confirm', 'F1', 'Yes']], 'y runs plan confirm')
     eq((p.msg, p.msg_ok), ('F1 ticked', True), 'the bottom line says what was done')
     eq([n['id'] for n in p.snap['needs']], ['D7'], 'F1 is off Needs you at once')
     p = page(dict(SNAP, needs=[need]))
     with mock.patch.object(U, 'RUN', [lambda argv: (1, 'plan: F1 is not waiting')]), \
-            mock.patch.object(U, 'SEND', [no_send]):
+            mock.patch.object(U, 'row_of', lambda where, tid: need), mock.patch.object(U, 'SEND', [no_send]):
         p.key('4')
         p.key('ENTER')
         p.key('n')
-    eq((p.msg, p.msg_ok, [n['id'] for n in p.snap['needs']]), ('plan: F1 is not waiting', False, ['F1']),
-       'a failure says why and the item stays')
+    eq((p.msg, p.msg_ok, p.main, [n['id'] for n in p.snap['needs']]), ('plan: F1 is not waiting', False, True, ['F1']),
+       'a failure says why and the item stays, its pane open')
 
 
 def test_concept_answer_b149() -> None:
@@ -1818,10 +1822,18 @@ def test_concept_answer_b149() -> None:
     eq(U.need_label(bid), 'CONCEPT', 'the build task waits on the concept')
     need = {'label': 'CONCEPT', 'id': bid, 'concept': 'K1', 'title': 'menu layout', 'what': '',
             'url': 'https://x.invalid/k1', 'ask': 'Pick an option on the concept page', 'age': '1m',
-            'answers': [{'label': n, 'value': n} for n in ('Option A', 'Option B')]}
+            'answers': [{'label': n, 'value': n} for n in ('Option A', 'Option B', 'Option C', 'Option D')]}
     p = page(dict(SNAP, needs=[need] + SNAP['needs'][2:]))
     ran = []
-    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'approved'))[1]]), \
+    for k, opt in (('c', 'Option C'), ('d', 'Option D')):  # F180: not a new chat, not Drop, in the answer tab
+        q = page(dict(SNAP, needs=[need]))
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'approved'))[1]]), \
+                mock.patch.object(U, 'row_of', lambda where, tid: need), mock.patch.object(U, 'SEND', [no_send]):
+            for x in ('4', 'ENTER', k):
+                q.key(x)
+        eq(ran, [['plan', 'approve', bid, opt]], f'{k} picks {opt}')
+        ran.clear()
+    with mock.patch.object(U, 'row_of', lambda where, tid: need), mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'approved'))[1]]), \
             mock.patch.object(U, 'SEND', [no_send]):
         p.key('4')
         p.key('ENTER')

@@ -111,7 +111,6 @@ KINDS = ('B', 'F', 'T', 'D', 'R', 'C', 'K', 'V')  # the direct edit's kind field
 QUICK_KEYS = {'since': 's', 'yesterday': 'y', 'needs': 'w', 'usage': 'u'}  # F74's quick asks, by key
 FIELDS = ('t', 'k', 'p', 'f', 'a', 'e')  # the direct edit's fields, in Tab order
 TEXT_FIELDS = {'t': 'text', 'f': 'files', 'a': 'after', 'e': 'needs'}  # the ones typed into
-OPTION_KEYS = 'abcdefg'  # a Needs you item's answers beyond yes / no
 TAIL_TABS = ('log',)  # tabs that show their newest lines, at the bottom
 SIDE_SHARE = '64%'  # F112: the width the session's tmux pane takes beside the TUI (the main pane's share)
 
@@ -193,9 +192,8 @@ Queue [3]
   ^S       save the direct edit
   t k K   what, kind (cycles, back)        p f a    priority, files, after
 Needs you [4]
-  a        answer                 y n      yes, no
+  a        answer
 {need_actions}
-  a b c    a pick's options (answer tab)
 Concepts [5]
   j/k      option                 Enter    go with it
   i        what to change         O        open in the browser
@@ -213,8 +211,8 @@ ROW_PANELS = {2: 'session', 3: 'queue', 4: 'need', 5: 'concept'}  # C35: the pan
 def action_help(where: str) -> str:
     """C34: the keys list's lines for panel `where`'s row actions (ui_model.RUN_CONTROLS), two to a line."""
     cs = [c for c in U.RUN_CONTROLS if c['where'] == where]
-    cells = [(f'{c["tui_also"]} {c["tui"]}' if c.get('tui_also') else c['tui'],
-              c.get('help') or c['label'].lower()) for c in cs]
+    cells = [(c.get('help_keys') or (f'{c["tui_also"]} {c["tui"]}' if c.get('tui_also') else c['tui']),
+              c.get('help') or c['label'].lower()) for c in cs if c.get('help') != '']
     return '\n'.join('  ' + ''.join(f'{k:<9}{v:<23}' if j < len(row) - 1 else f'{k:<9}{v}'
                                     for j, (k, v) in enumerate(row)) for row in
                      (cells[i:i + 2] for i in range(0, len(cells), 2)))
@@ -568,14 +566,6 @@ class RunPage:
         t = title if len(title) <= tw else title[:max(tw - 1, 0)] + ('…' if tw else '')
         return [head + [(t.ljust(tw), 'fg'), (' ', ''), (tag, colour)]]
 
-    def answers(self, it) -> list[tuple[str, str]]:
-        """F76: a Needs you item's answers (C33: the row's own, `ui_model.need_answers`) with their key letters:
-        y / n for Yes / No, a, b, c … for the rest."""
-        xs = it.get('answers') if 'answers' in it else U.need_answers(it)
-        if [x['label'] for x in xs] == ['Yes', 'No']:
-            return [('y', 'Yes'), ('n', 'No')]
-        return [(k, x['value']) for k, x in zip(OPTION_KEYS, xs)]
-
     def concept(self, it) -> dict:
         """The concept page of a Concepts row (or a Needs you CONCEPT item), parsed from its K copy."""
         copy = it.get('copy') or next((c.get('copy') for c in self.snap.get('concepts') or []
@@ -651,7 +641,8 @@ class RunPage:
                 out += [L(), L((it['url'], 'blue'))]
             out += [L(), L(('Your reply is the answer: a run starts it.' if it.get('label') == 'DECIDE' else
                             'Your reply goes to a new chat, which settles the item.', 'dim'))]
-            row = buttons(*[button(k, v) for k, v in self.answers(it)], button('L', 'later'))
+            row = buttons(*[button(c['tui'], c['label']) for c in self.row_controls(it, 'need')
+                            if c.get('tab') == tab and c['tui']], button('L', 'later'))
             return out, [row] + self.input_lines(f'answer:{it["id"]}', width, 'or your own reply'), 0
         if tab == 'info' and self.panel == 3:  # F184: a shelved task
             out = [L((f'{it["id"]} ', KIND_COLOUR.get(it['id'][:1], 'cyan')), (it.get('title', ''), 'fg')), L(),
@@ -755,6 +746,7 @@ class RunPage:
     def control_by_tui(self, k: str, where: str) -> dict | None:
         k = '⏎' if k == 'ENTER' else k
         return next((c for c in self.snap.get('controls') or U.controls() if c['where'] == where
+                     and (not c.get('tab') or (self.main and self.tab()[0] == c['tab']))  # F180: in its tab only
                      and ((c['tui'] == k and (not self.main or c.get('tui_main', True)))
                           or (c.get('tui_also') == k and not self.main)) and not c['needs'] == 'n'),
                     None)
@@ -764,7 +756,20 @@ class RunPage:
         if not isinstance(it, dict) or it.get('new') or it.get('placeholder'):
             return []
         acts = it['acts'] if 'acts' in it else U.row_acts(where, it)
-        return [c for c in self.snap.get('controls') or U.controls() if c['key'] in acts and c['where'] == where]
+        labels = it.get('labels', {}) if 'acts' in it else U.row_labels(where, it)  # F180: a label that is the row's own
+        return [dict(c, label=labels.get(c['key'], c['label'])) for c in self.snap.get('controls') or U.controls()
+                if c['key'] in acts and c['where'] == where]
+
+    def row_key(self, k: str, it) -> bool:
+        """C34, C35: key `k` as one of row `it`'s actions, from ui_model's one list; True when it was one."""
+        w = self.row_where(it)
+        if not w or not self.row_id(it, w) or not (c := self.control_by_tui(k, w)):
+            return False
+        c = next((x for x in self.row_controls(it, w) if x['key'] == c['key']), None)
+        if c is None:
+            return False
+        self.run_control(c['key'], tid=self.row_id(it, w), **({'text': c['label']} if c.get('answer') else {}))
+        return True
 
     def row_where(self, it) -> str:
         """The `where` of the selected row's actions: its panel's, or 'shelved' for a shelved task in the queue (F184)."""
@@ -813,7 +818,7 @@ class RunPage:
             self.msg = f'new control session about {args["tid"]}: {r["link"]}'
         elif c.get('chat'):
             self.say_new_session(r)
-        if c['where'] in ('need', 'shelved'):  # B138: the item is off Needs you; the pane closes
+        if c['where'] in ('need', 'shelved') and (r.get('ok') or not c.get('answer')):  # B138: the item is off Needs you; the pane closes
             self.main = False
         if c['where'] == 'queue':  # C34: the selection follows its task, or leaves the pane when the task is gone
             ids = [t.get('id') for t in self.items(3)]
@@ -1111,7 +1116,7 @@ class RunPage:
                 + [(c['tui_also'] or c['tui'], c['label'].lower()) for c in self.row_controls(it)]
         if self.panel == 4:
             return [('⏎', 'open'), ('a', 'answer')] + [(c['tui'], c['label'].lower())
-                                                       for c in self.row_controls(it, 'need')]
+                                                       for c in self.row_controls(it, 'need') if not c.get('tab')]
         if isinstance(it, dict) and it.get('new'):
             return [('⏎', 'type')]
         return [('⏎', 'view'), ('O', 'open in the browser'), ('n', 'new concept')] + \
@@ -1592,13 +1597,8 @@ class RunPage:
                 return True
             return False
         if tab == 'answer' and it is not None:
-            for key, answer in self.answers(it):
-                if k == key:
-                    r = U.answer(it['id'], answer, button=True)  # B138: the plan command, no AI session
-                    if r.get('ok'):
-                        self.main = False
-                    self.done(r)
-                    return True
+            if self.row_key(k, it):  # F180: before the panels' keys, so c picks the third option
+                return True
             if k == 'ENTER':
                 self.type_in()
                 return True
@@ -1731,9 +1731,8 @@ class RunPage:
         elif self.panel == 3 and k == 'E' and it is not None and not it.get('placeholder'):
             self.set_tab('chat edit')
             self.type_in()
-        elif (w := self.row_where(it)) and self.row_id(it, w) and (c := self.control_by_tui(k, w)) \
-                and c in self.row_controls(it, w):
-            self.run_control(c['key'], tid=self.row_id(it, w))  # C34, C35: a row's actions, from ui_model's one list
+        elif self.row_key(k, it):  # C34, C35: a row's actions, from ui_model's one list
+            pass
         elif self.panel == 3 and k in ('J', 'K') and tid and it.get('state') not in ('parked', 'shelved'):
             self.reorder(1 if k == 'J' else -1)
         elif self.panel == 4 and k == 'a' and it is not None:
