@@ -2,8 +2,8 @@
 
 A task is searched whole: its id, its line and every line under it. Case never matters, every character stands for
 itself, and several words must all be there, in any order. Best first: the task whose id was typed, then ids that
-start with it, then titles, then the rest of the text; among equals, open tasks in plan order and done ones newest
-first. Reads only.
+start with it, then titles, then the rest of the text; among equals, open tasks in plan order and done ones from the
+end of the archive. Reads only.
 """
 from __future__ import annotations
 

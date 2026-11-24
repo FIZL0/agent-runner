@@ -29,9 +29,9 @@ function planFound(q){
   if(!g||PQ.err&&g.q!==q)return err||emptyCard('Loading…');
   const hits=[...g.open,...g.parked,...g.done].map(planHit).filter(Boolean), of=k=>hits.filter(h=>h[0]===k).map(h=>h[1]).join('');
   const sec=(name,h)=>h?`<div class="sec">${name}<span class="ln"></span></div>${h}`:'';
-  const open=of('open')+obCards(x=>obActs(x,'queue')), parked=of('parked')+obCards(x=>x.shelved), done=of('done');
-  return err+sec('Open',open)+sec('Parked',parked)+sec('Done',done)+(g.more?`<div class="small">${g.more} more done ${g.more===1?'task':'tasks'}. Add a word to find fewer.</div>`:'')
-    +(open||parked||done?'':emptyCard('No task matches.'));
+  const open=of('open'), parked=of('parked'), done=of('done'), sent=obCards(x=>obActs(x,'queue')||x.shelved);  // what was pressed is no match
+  return err+sent+sec('Open',open)+sec('Parked',parked)+sec('Done',done)+(g.more?`<div class="small">${g.more} more done ${g.more===1?'task':'tasks'}. Add a word to find fewer.</div>`:'')
+    +(open||parked||done?'':emptyCard(g.q===q?'No task matches.':'Loading…'));
 }
 /* the field in use stays the same element, as in Settings (F204a) */
 function planDraw(el,h){

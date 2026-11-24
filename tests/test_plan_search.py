@@ -54,7 +54,7 @@ def test_matching(tmp: Path) -> None:
     plan(fake_repo(tmp))
     for q in ('F21', 'f21', ' f21 '):
         eq(ids(q), [['F21', 'F212', 'B7'], [], []], f'{q!r}: the id itself, then its prefix, then the words')
-    eq(ids('zebra'), [['F21'], ['F83'], ['F2', 'F1']], 'a word only in the body, a parked task, done ones newest first')
+    eq(ids('zebra'), [['F21'], ['F83'], ['F2', 'F1']], 'a word only in the body, a parked task, done ones from the end')
     eq(ids('ZEBRA read'), [[], ['F83'], []], 'every word, in any order and case')
     eq(ids('read zebra missing'), [[], [], []], 'and not when one is missing')
     eq(ids('aardvark')[0], ['F212'], 'a line under the task')

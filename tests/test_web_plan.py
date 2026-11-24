@@ -537,7 +537,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace
 const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1), slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
 const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
 const S = {f: {}, ob: [], taskOpen: {}, tasks: {}, sure: null, view: 'plan', snap: JSON.parse(process.argv[3])}, I = {chev: '', x: 'x'}, SHEETS = {};
-const card = (h, cls = '', attr = '') => `<div class="card" ${attr}>${h}</div>`, emptyCard = t => card(t), obCards = () => '', oldRunHTML = esc0 => esc0, releaseCard = () => '', nextReleaseCard = () => '', newReleaseCard = () => '';
+const card = (h, cls = '', attr = '') => `<div class="card" ${attr}>${h}</div>`, emptyCard = t => card(t), obCards = f => S.ob.filter(f).map(x => card('sent ' + x.say)).join(''), oldRunHTML = esc0 => esc0, releaseCard = () => '', nextReleaseCard = () => '', newReleaseCard = () => '';
 const controlOf = k => S.snap.controls.find(c => c.key === k), ctlBusy = () => false, ctlSure = () => '', actSure = () => '', MO = {}, HKEY = 'k', T = 't';
 const field = () => root.querySelectorAll('[data-f]').find(x => x.dataset.f === 'planq'), x = () => root.querySelectorAll('[data-planqclear]')[0];
 const ears = {}, n = null, body = root, document = {get activeElement() { return doc.activeElement }, querySelector: field, createElement: () => ({content: new Node(11, '#fragment'), set innerHTML(h) { this.content.innerHTML = h }}),
@@ -547,7 +547,7 @@ const setTimeout_ = setTimeout, fetch = url => new Promise((ok, no) => calls.pus
 { const setTimeout = f => timers.push(f), clearTimeout = i => { timers[i - 1] = null };
 eval(logic + line('const esc=') + line('const tq=') + slice('const actBtns=', '\n') + '\n' + slice('function setHTML(', '/* F83') + slice('function keepFields(', '/* a press under way')
   + slice('function fieldHTML(', '/* F189b: a press in the sheet') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + grab('function planCard(') + grab('function parkedCard(') + grab('function shelvedCard(')
-  + slice('/* F212: the search', '/* F87: the Concepts view') + grab('function setqClear(') + line("document.addEventListener('input',") + slice("/* F114, F204a", "document.addEventListener('visibilitychange'")
+  + line('const obActs=') + slice('/* F212: the search', '/* F87: the Concepts view') + grab('function setqClear(') + line("document.addEventListener('input',") + slice("/* F114, F204a", "document.addEventListener('visibilitychange'")
   + "function render() { const keep = keepFields(body), h = planHTML(); " + slice('const drew=', '\n').replace("!n&&S.view==='settings'?settingsDraw(body,h):", '') + " if (drew) keep() }"
   + "press = q => { " + slice("if(q('[data-planqclear]'))", "if(q('[data-setqclear]'))") + " };"
   + "Object.assign(globalThis, {render, openTask, PQ});"); }
@@ -568,10 +568,12 @@ const none = {ok: true, open: [], parked: [], done: [], more: 0};
   press(s => s === '[data-planqload]'); calls[3].say({...none, q: 'merge', done: [hit('F0', 'Old', 'done')], more: 1}); await tick(); out.again = [secs(), root.text.includes('1 more done task.'), root.text.includes('Could not')];
   const p = openTask('F0'); out.url = calls[4].url; calls[4].say({ok: true, text: 'whole <text>'}); await p; out.fold = root.text.includes('whole <text>');
   type('zzz'); due(); calls[5].say({...none, q: 'zzz'}); await tick(); out.none = [secs(), root.text];
-  type('zz'); due(); calls[6].fail(); await tick(); out.failed = [secs(), root.text];
+  S.ob = [{ctl: '', shelved: 'D3', say: 'Drop D3'}]; render(); out.sent = [secs(), root.text]; S.ob = [];
+  type('zzzz'); out.next = root.text; type('zzz'); due(); calls[6].say({...none, q: 'zzz'}); await tick();
+  type('zz'); due(); calls[7].fail(); await tick(); out.failed = [secs(), root.text];
   press(s => s === '[data-planqclear]'); out.cleared = [secs(), cards(), S.f.planq, kept().slice(0, 2), due(), PQ.got];
   type('q'); type('  '); out.blank = [secs(), due()];
-  type('late'); due(); type(''); calls[7].say({...none, q: 'late'}); await tick(); out.lateGone = [secs(), PQ.got];
+  type('late'); due(); type(''); calls[8].say({...none, q: 'late'}); await tick(); out.lateGone = [secs(), PQ.got];
   console.log(JSON.stringify(out));
 })();
 """
@@ -612,6 +614,8 @@ def test_search_f212(tmp: Path) -> None:
     eq(o['again'], [['Done'], True, False], 'Try again asks again')
     eq((o['url'], o['fold']), ('task/F0?t=t', True), "a done task's fold opens its text")
     check(o['none'][0] == [] and 'No task matches.' in o['none'][1], 'no match says so', o['none'])
+    check(o['sent'][0] == [] and 'sent Drop D3' in o['sent'][1] and 'No task matches.' in o['sent'][1], 'a press under way shows, and is no match', o['sent'])
+    check('Loading…' in o['next'] and 'No task' not in o['next'], 'other words are not said to match nothing before their answer', o['next'])
     check(o['failed'][0] == [] and 'Could not reach the run page.' in o['failed'][1] and 'No task' not in o['failed'][1],
           'a failed read says so, not that nothing matches', o['failed'])
     eq(o['cleared'], [['Queue', 'Parked'], ['B2', 'F83', 'D3'], '', [True, True], 0, None], 'the x brings the groups back, with focus')
