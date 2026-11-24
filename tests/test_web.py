@@ -2471,6 +2471,7 @@ def test_home_switcher_f134(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     check("fetch(tq(HB+'projects'))" in page, "the switcher reads Home's /projects, with the page's token")
     check('${HB?switcher():' in page and 'data-psw' in page, 'the sidebar starts with the switcher when Home is around')
+    check('ps.map(projectCard)' in page, "All projects keeps Home's order (F148)")
     check("nav.concat([['projects','All projects']])" in page and 'projects:projectsHTML' in page,
           'and the run app has an All projects view')
     run_page = W.page_html().decode()
