@@ -100,8 +100,8 @@ name in [run.tools]), without which no run starts it. Prose is never parsed for 
 That marker is no list to keep up: the run resolves it on every pick to each task above it in its own section
 that is not done (open or blocked), tasks added above it later included, so it starts once the section has
 drained. Tasks blocked on a person (CONFIRM, DECIDE, BLOCKED, a concept's OK) or shelved do not hold it until they
-reopen, nor do tasks whose `after:` (or `BLOCKED: (after X)`) leads to one of those or to a shelved one, through any
-number of tasks; other sections (Follow-ups) never do. `status`, `plan ID`, `reopen` and `waiting` say what it
+reopen, nor do tasks whose `after:` (or `BLOCKED: (after X)`) leads to one of those or to a shelved, Parked or Stretch
+one, through any number of tasks, or `(split into …)` tasks with such a subtask; other sections (Follow-ups) never do. `status`, `plan ID`, `reopen` and `waiting` say what it
 still waits on and what it does not.
 
 **A task that waits for everything before it** takes `--after all` (`add`, `edit`, `block`; any kind): `after:
@@ -109,8 +109,8 @@ all`, or `BLOCKED: (after all) why`, which the run resolves on every pick (and `
 open or blocked task above it in TODO.md, in any section, tasks queued above it later included. Tasks a run never
 starts do not hold it, or it would never run: Parked (`--pri later`) and Stretch sections, shelved tasks, and
 tasks blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK) until they reopen, and tasks
-that cannot start before one of these two is answered or brought back: their `after:` or `BLOCKED: (after X)`
-leads to it, through any number of tasks. A task that can still run holds it. `status`, `plan ID`, `reopen` and
+that cannot be done before one of these is answered or brought back: their `after:` or `BLOCKED: (after X)`, or an
+open subtask of a `(split into …)` one, leads to it, through any number of tasks. A task that can still run holds it. `status`, `plan ID`, `reopen` and
 `waiting` say 'T5 waits for everything before it (12 open); not waiting on: R6 (needs you), R9 (after R6)'.
 
 **A release is kind V** (F38): `add V` files it at the end of Next, no `--after` or `--files` needed, and with
@@ -526,6 +526,7 @@ def _split_skipped(ls: list[str], at: list[int]) -> tuple[list[str], dict[str, l
     """Of the tasks at the lines `at`: (the ids waited on, {id skipped: what it is stuck on}, [] for one that
     itself needs the person). A shelved task is neither: the person set it aside."""
     where = _open_at(ls)
+    never = {i for section, _, _, _, i in iter_tasks(ls) if section.startswith(SKIPPED)}
     out, person, stuck = [], {}, {}
     for j in at:
         tid = ITEM.match(ls[j]).group(3).rstrip('.')
@@ -533,7 +534,7 @@ def _split_skipped(ls: list[str], at: list[int]) -> tuple[list[str], dict[str, l
             continue
         if _on_person(ls, j):
             person[tid] = []
-        elif roots := _stuck_on(ls, j, where):
+        elif roots := _stuck_on(ls, j, where, never):
             stuck[tid] = roots
         else:
             out.append(tid)
@@ -556,20 +557,29 @@ def _named_after(ls: list[str], i: int) -> list[str]:
     return [t for t in ids if t and t not in (ALL, LAST)]
 
 
-def _stuck_on(ls: list[str], i: int, where: dict[str, int]) -> list[str]:
-    """B207: the tasks blocked for the person or shelved that the task at ls[i] waits on, directly or down the
-    chain of unfinished tasks (`where`: `_open_at`), so no run can start it until they are answered. [] when it
-    can still run. A cycle is walked once."""
-    out, seen, todo = [], {i}, _named_after(ls, i)
+def _held_by(ls: list[str], i: int, where: dict[str, int]) -> list[str]:
+    """What the task at ls[i] cannot be done before: `_named_after`, and a `(split into …)` parent's unfinished
+    subtasks (B209). Only a parent that says it was split, as `_close_parents`: any other may be the work its own
+    session is on."""
+    kids = subtasks(ITEM.match(ls[i]).group(3).rstrip('.'), ls[i], where) if SPLIT.search(ls[i]) else ()
+    return _named_after(ls, i) + sorted(kids, key=where.get)
+
+
+def _stuck_on(ls: list[str], i: int, where: dict[str, int], never: set[int]) -> list[str]:
+    """B207, B209: the tasks blocked for the person, shelved, or in a section no run starts (`never`: the lines of
+    the Parked and Stretch tasks) that the task at ls[i] waits on, directly or down the chain of unfinished tasks
+    (`where`: `_open_at`) and split parents' subtasks, so no run can finish it until the person acts on them. []
+    when it can still run. A cycle is walked once."""
+    out, seen, todo = [], {i}, _held_by(ls, i, where)
     while todo:
         j = where.get(todo.pop(0))
         if j is None or j in seen:
             continue
         seen.add(j)
-        if _on_person(ls, j) or _shelved(ls, j):
+        if j in never or _on_person(ls, j) or _shelved(ls, j):
             out.append(ITEM.match(ls[j]).group(3).rstrip('.'))
         else:
-            todo += _named_after(ls, j)
+            todo += _held_by(ls, j, where)
     return out
 
 
@@ -591,14 +601,14 @@ def before_all(ls: list[str], i: int) -> list[str]:
     it in TODO.md, in any section, that is not done (open or blocked), in order. Tasks a run never starts do not
     hold it, or it would never run: those in Parked (`--pri later`) and Stretch sections, shelved ones, and those
     blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK: B101), and those that wait on
-    a shelved or person-blocked one (`_stuck_on`, B207). `not_waiting_on` lists them; once the person answers and
+    a shelved, person-blocked, Parked or Stretch one, or whose subtask does (`_stuck_on`, B207, B209). `not_waiting_on` lists them; once the person answers and
     such a task reopens, it holds it again."""
     return _before_all(ls, i)[0]
 
 
 def not_waiting_on(ls: list[str], i: int) -> dict[str, list[str]]:
     """The tasks `after: all` (or `all above`) on ls[i] would wait on but skips: the ones blocked for the person
-    (B101), {id: []}, then the ones that wait on one blocked or shelved (B207), {id: those}. Shelved ones are left
+    (B101), {id: []}, then the ones stuck on one blocked, shelved or never started (`_stuck_on`), {id: those}. Shelved ones are left
     out, and so is one its `after:` names itself, which it does wait on. {} for a task with neither marker."""
     skipped = (_before_all(ls, i)[1] if _waits_all(ls, i)
                else _above(ls, i)[1] if LAST in fields(ls[i]).get('after', []) else {})

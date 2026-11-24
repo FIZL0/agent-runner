@@ -1172,6 +1172,44 @@ def test_after_all_skips_stuck():
         eq(plan.last_waits(todo), [('V17', ['B415', 'R89'])], 'the person answered: both hold the release again')
 
 
+def test_after_all_skips_never_started():
+    print('plan: `after: all` and `all above` skip what waits on a Parked/Stretch task or a stuck subtask (B209)')
+    ask = '- [~] **P1b** check it BLOCKED: CONFIRM: look at it'
+    whole = '- [ ] **P1** the importer (split into P1a, P1b)'
+    part = '- [ ] **P1a** the header'
+
+    def said(*above, after='all', below=()):
+        ls = ['# TODO', '', '### Next', '', *above, f'- [ ] **V17** Release | after: {after}', '', *below]
+        i = next(k for k, l in enumerate(ls) if '**V17**' in l)
+        return plan.waits_on(ls, i), plan.not_waiting(plan.not_waiting_on(ls, i))
+    for after in ('all', 'all above'):
+        for name in ('Parked', 'Stretch goals'):
+            eq(said('- [ ] **R8** then | after: R7', '- [ ] **R7** next | after: B7', '- [ ] **F1** runs', after=after,
+                    below=(f'### {name}', '- [ ] **B7** big')),
+               (['F1'], '; not waiting on: R8 (after B7), R7 (after B7)'), f'{after}: a chain to a {name} task')
+        eq(said('- [ ] **R8** then | after: B7', after=after, below=('### Parked', '- [x] **B7** big')),
+           (['R8'], ''), f'{after}: the Parked one is done')
+        eq(said('- [ ] **R8** then | after: B7', after=after, below=('### Follow-ups', '- [ ] **B7** big')),
+           (['R8'], ''), f'{after}: it was moved out of Parked')
+        eq(said(whole, part, ask, after=after), (['P1a'], '; not waiting on: P1b (needs you), P1 (after P1b)'),
+           f'{after}: a split parent with a subtask blocked for the person; its other subtask holds')
+        eq(said(whole, part + ' | after: B7', after=after, below=('### Parked', '- [ ] **B7** big')),
+           ([], '; not waiting on: P1 (after B7), P1a (after B7)'), f'{after}: a stuck subtask')
+        eq(said(whole, after=after, below=('### Parked', part)), ([], '; not waiting on: P1 (after P1a)'),
+           f'{after}: a Parked subtask')
+        eq(said(whole, '- [~] **P1b** b BLOCKED: shelved: later', after=after),
+           ([], '; not waiting on: P1 (after P1b)'), f'{after}: a shelved subtask')
+        eq(said('- [ ] **R8** then | after: P1', whole, ask, after=after),
+           ([], '; not waiting on: P1b (needs you), R8 (after P1b), P1 (after P1b)'), f'{after}: after such a parent')
+        eq(said('- [ ] **P1** it (split into X2)', '- [~] **X2** b BLOCKED: DECIDE: which?', after=after),
+           ([], '; not waiting on: X2 (needs you), P1 (after X2)'), f'{after}: a subtask by its list')
+        eq(said(whole, part, after=after), (['P1', 'P1a'], ''), f'{after}: a split that can run holds')
+        eq(said(whole, part + ' | after: P1', after=after), (['P1', 'P1a'], ''), f'{after}: a cycle ends')
+        eq(said('- [ ] **P1** the importer', ask, after=after), (['P1'], '; not waiting on: P1b (needs you)'),
+           f'{after}: not `(split into …)`: left to its own session')
+        eq(said(whole, ask.replace('[~]', '[x]'), after=after), (['P1'], ''), f'{after}: the subtask is done')
+
+
 def test_release_kind():
     print('plan: add V files a release: `after: all` at the end of Next, the default brief, no duplicate refusal (F38)')
     eq(plan.kinds()[0].get(plan.RELEASE, '')[:8], 'release:', 'V is a kind of task, the release')
@@ -1698,7 +1736,7 @@ def test_multi_line_text():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_after_all_skips_stuck, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_after_all_skips_stuck, test_after_all_skips_never_started, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_drop_parts, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_own_project, test_needs_config, test_slot_writes_own_plan, test_concept_shown]))
