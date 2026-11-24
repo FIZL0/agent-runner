@@ -227,7 +227,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   run is up, at the same address (`turnIntoApp()`), but not while a sheet is open on it.
 - A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
-  sideways scroll.
+  sideways scroll. In a Needs you sheet the field in use stays the same element (`sheetHTML()` patches around it), because a new one under the phone's keyboard loses its autocorrect; never put a typed value in markup: `keepFields()` puts it back.
 - A notice (`.notice`) floats over the top of the view and never pushes it down, except in a chat: there it has its own
   row under the header, so it covers no text, and `noticeRoom()` keeps the text in place. Elsewhere it floats as
   before. In Talk the top bar may be away while scrolled up, and the notice's row moves up with it (See-through Talk).

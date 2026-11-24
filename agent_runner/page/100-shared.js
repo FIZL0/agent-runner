@@ -43,12 +43,47 @@ function openSheet(name,arg){if(name==='talk')loadVoices();runStop($('sheet'));S
 function sheetOpener(){const b=sheetBack, id=b&&b.dataset&&b.dataset.needopen;
   return !b||b.isConnected||!id?b:[...document.querySelectorAll('[data-needopen]')].find(x=>x.dataset.needopen===id)}
 function closeSheet(){if(!S.sheet)return;runStop($('sheet'));S.sheet='';S.sure=null;render(true);const b=sheetOpener();if(b&&b.isConnected&&b.focus)b.focus({preventScroll:true});sheetBack=null}
+/* B222a: the sheet's markup; a Needs you sheet with a field in use is patched around that field, which stays the same
+   element: a new one under the keyboard loses its autocorrect and the letters on their way */
+function sheetHTML(el,h){
+  const a=document.activeElement, f=S.sheet==='need'&&a&&a!==el&&el.contains(a)&&a.dataset&&a.dataset.f;
+  if(!f||el._h===h)return setHTML(el,h);
+  const t=document.createElement('template');t.innerHTML=h;
+  const at=[...t.content.querySelectorAll('[data-f]')].find(x=>x.dataset.f===f), up=(x,top)=>{const l=[];for(;x&&x!==top;x=x.parentNode)l.unshift(x);return l};
+  const was=up(a,el), now=up(at,t.content);
+  if(!at||was.length!==now.length||was.some((x,i)=>x.nodeName!==now[i].nodeName))return setHTML(el,h);
+  let box=el, want=t.content;
+  was.forEach((x,i)=>{patchKids(box,want,x,now[i]);sameAttrs(x,now[i]);box=x;want=now[i]});
+  el._h=h;return true;
+}
+/* box's children become want's, but `stay` (want's is `at`) is left; one that did not change is left too */
+function patchKids(box,want,stay,at){
+  const side=(olds,news,end)=>{
+    for(let j=0;j<news.length;j++){const i=olds.findIndex(x=>x.isEqualNode(news[j]));if(i<0)continue;
+      side(olds.slice(0,i),news.slice(0,j),olds[i]);return side(olds.slice(i+1),news.slice(j+1),end)}
+    if(olds.length===1&&news.length===1&&patchIn(olds[0],news[0]))return;
+    olds.forEach(x=>x.remove());news.forEach(x=>box.insertBefore(x,end));
+  };
+  const o=[...box.childNodes], n=[...want.childNodes], p=o.indexOf(stay), q=n.indexOf(at);
+  if(!stay)return side(o,n,null);
+  side(o.slice(0,p),n.slice(0,q),stay);side(o.slice(p+1),n.slice(q+1),null);
+}
+/* one thing that changed inside: patched in place, so what did not change in it (a picture) is not drawn again */
+function patchIn(x,y){
+  if(x.nodeType!==1||x.nodeName!==y.nodeName||!x.childNodes.length||x.dataset.f)return false;
+  patchKids(x,y,null,null);sameAttrs(x,y);return true;
+}
+function sameAttrs(x,y){
+  for(const k of x.getAttributeNames())if(!y.hasAttribute(k))x.removeAttribute(k);
+  for(const k of y.getAttributeNames())if(x.getAttribute(k)!==y.getAttribute(k))x.setAttribute(k,y.getAttribute(k));
+}
 function sheetDraw(){
   const el=$('sheet');
   if(S.sheet==='need'&&!needOf(S.sheetArg)){S.sheet='';S.sure=null;sheetBack=null}  // F162: answered, or it left Needs you
   if(S.sheet!=='need')shotEnd();  // F189
   if(S.sheet)el.classList.toggle('dlg',S.sheet==='need');
-  if(S.sheet&&SHEETS[S.sheet]){const put=keepScroll(el), f=keepFields(el);if(setHTML(el,'<div class="grab"></div>'+SHEETS[S.sheet]())){f();put()}}  // closing, it keeps its words while it slides
+  if(S.sheet&&SHEETS[S.sheet]){const put=keepScroll(el), f=keepFields(el);if(sheetHTML(el,'<div class="grab"></div>'+SHEETS[S.sheet]())){f();put()}}  // closing, it keeps its words while it slides
+  if(S.sheet==='need')for(const x of el.querySelectorAll('[data-f^="askre:"]')){const v=S.f[x.dataset.f]||'';if(x.value!==v)x.value=v}  // B222a: a sent reply's words go
   if(S.sheet!=='device'&&S.sheet!=='devsecrets')toolForget();  // F169: a typed secret goes with its sheet
   giveForget(S.sheet==='need'?S.sheetArg:'');  // F175a
   if(S.sheet!=='login'&&LG.frame)loginLeave();  // F126b
