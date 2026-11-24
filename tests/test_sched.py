@@ -480,7 +480,7 @@ def test_agent_held(tmp: Path):
     print('B764c: while [run] agent is wrong the run stays up and starts nothing; fixed, it starts with no restart')
     import argparse
     import datetime as dt
-    from agent_runner import loop, merge, settings_live
+    from agent_runner import agent_hold, loop, merge, settings_live, state
     (tmp / 'held').mkdir()
     repo = make_repo(tmp / 'held')
     good, late, local = repo / 'my-claude', repo / 'late-claude', repo / 'runner.local.toml'
@@ -491,6 +491,7 @@ def test_agent_held(tmp: Path):
         local.write_text(f"[run]\nagent = '{v}'\n", encoding='utf-8')
 
     def run_of(v: str):
+        agent_hold.SAID[0] = ''
         agent(v)
         CF._LIVE.clear()
         CF._cfg.cache_clear()
@@ -508,13 +509,12 @@ def test_agent_held(tmp: Path):
         resumed.append(tid)
 
     def tick(run):
-        settings_live.take(run)
-        run.say_agent(S.agent_held())
+        agent_hold.tick(run)
         run.slot(1)
         return run.end()
 
     with mock.patch.object(settings_live, 'SETTINGS_STILL', 0), mock.patch.object(loop, 'start', start), \
-            mock.patch.object(loop, 'resume', resume), mock.patch.object(loop, 'log', lambda m, *a, **k: said.append(m)), \
+            mock.patch.object(loop, 'resume', resume), mock.patch.object(state, 'log', lambda m, *a, **k: said.append(m)), \
             mock.patch.object(loop, 'MUX', mock.Mock(panes=lambda: {})), mock.patch.object(loop, 'capped', lambda f: None), \
             mock.patch.object(loop, 'api_down', lambda s: False), mock.patch.object(loop, 'unlogged', lambda *a: False), \
             mock.patch.object(loop, 'ask_stop', lambda w: None), mock.patch.object(loop, 'stopping', lambda: False), \
@@ -579,14 +579,13 @@ def test_agent_held(tmp: Path):
             agent('my-claude')
             settings_live.take(run)
 
-        with mock.patch.object(loop, 'time', mock.Mock(sleep=nap)):
-            eq(loop.once_agent_right('T3', step), None, 'the merge goes on')
+        with mock.patch.object(agent_hold, 'time', mock.Mock(sleep=nap)):
+            eq(agent_hold.once_right('T3', step, lambda: False), None, 'the merge goes on')
         eq((len(fixes), seen), (1, [(0, '')]), 'with its fix session, once fixed')
         run = run_of('pi')
-        with mock.patch.object(loop, 'stopping', lambda: True):
-            eq(loop.once_agent_right('T3', step), False, 'a stop leaves the branch for the next run')
-        with mock.patch.object(loop, 'halt_requests', lambda: {'T3': 'drop'}):
-            eq(loop.once_agent_right('T3', step), False, 'and a drop ends the wait')
+        with mock.patch.object(state, 'stopping', lambda: True):
+            eq(agent_hold.once_right('T3', step, lambda: False), False, 'a stop leaves the branch for the next run')
+        eq(agent_hold.once_right('T3', step, lambda: True), False, 'and a drop ends the wait')
         eq(len(fixes), 1, 'no session in either')
     CF._LIVE.clear()
     CF._cfg.cache_clear()

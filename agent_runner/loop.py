@@ -19,26 +19,23 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import ci, file_split, gitops, no_push, plan as P, plansync, plat, shared_tools, stack, undo
+from agent_runner import agent_hold, fallback as FB, settings_live, ci, file_split, gitops, no_push, plan as P, plansync, plat, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
 from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_plan, default_branch, FORCED, forced,
     git, HIDDEN, IDLE, init, KEYS, KEYS_LOCK, LANDING, log, MERGE, note, PAUSED, plan_rel, plan_text, POWER, queued,
-    READING, ROOT, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE)
-from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
+    READING, ROOT, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE, EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED, EV_CONTEXT)
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
 from agent_runner.brief import no_remote_line
-from agent_runner.sched import agent_held, AgentHeld, blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
+from agent_runner.sched import agent_held, blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
 from agent_runner.tools import take_end
 from agent_runner.login import retry_held, unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, no_slot, park_asked, unblocked_asks
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
-    single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
-from agent_runner.slots import budget_mark, budgets, SPENT
-from agent_runner import fallback as FB, settings_live
+    single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged, budget_mark, budgets, SPENT)
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
@@ -47,7 +44,7 @@ from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_
 from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main, no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, merge)
-from agent_runner.control import hand_hook, rc_sweep_start, reopen_when_right, start_control, start_control_server
+from agent_runner.control import hand_hook, rc_sweep_start, start_control, start_control_server
 from agent_runner.feed import rc_sweep_stop
 
 
@@ -764,43 +761,15 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         note(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
         log(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}', EV_LEFT, tid, why=f'the merge crashed: {e!r}')
 
-
-AGENT_POLL = 5  # s: how often a merge that needs a fix session looks whether [run] agent is right again
-
-
-def once_agent_right(tid: str, step):
-    """B764c: `step()`, again each time [run] agent is right after it raised AgentHeld. False when the run stops, or the
-    person drops or changes `tid`, while it waits."""
-    while True:
-        try:
-            return step()
-        except AgentHeld as e:
-            note(f'{tid}: waits to merge: {e}')
-            log(f'{tid}: not merged yet: it needs a fix session, and {e}. task/{tid} stays, and merges once it is fixed')
-        while agent_held():
-            if tid in halt_requests():
-                return False
-            if stopping():
-                log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it', EV_DEFERRED, tid)
-                return False
-            time.sleep(AGENT_POLL)
-
-
-def drop_finished(tid: str) -> bool:
-    """B19: finished `tid` was dropped or changed before its merge: its branch never lands."""
-    did = discard_task(tid, None)
-    DISCARDED[tid] = 'its finished branch never merged' + (f' ({", ".join(did)})' if did else '')
-    return True
-
-
 def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     """False when task/<tid> waits for the next run to merge it."""
     halted = lambda: tid in halt_requests()  # noqa: E731
-    unsettled = once_agent_right(tid, lambda: stack.settle(tid, branch, halted))  # F198
-    if halted():
-        return drop_finished(tid)
-    if unsettled is False:
-        return False
+    if (unsettled := agent_hold.once_right(tid, lambda: stack.settle(tid, branch, halted), halted)) is False and not halted():
+        return False  # F198, B764c
+    if halted():  # B19: dropped or changed before its merge: never lands
+        did = discard_task(tid, None)
+        DISCARDED[tid] = 'its finished branch never merged' + (f' ({", ".join(did)})' if did else '')
+        return True
     landed_for = ''
     if rs := restyle_mark(tid):  # F19: a restyle held it while it ran
         passed = (not git('rev-parse', '--verify', '-q', TESTED + tid).returncode
@@ -823,8 +792,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         C.notes(f'{tid}.budget').unlink(missing_ok=True)
         if git('rev-parse', '--verify', '-q', TESTED + tid).returncode and not (plansync.ticks(C) / tid).exists():
             over = f'stopped over its budget: {bm}'
-    while (why := over or unsettled or once_agent_right(tid, lambda: merge(tid, branch))) and \
-            why.startswith((EDITED, ELSEWHERE)):
+    while (why := over or unsettled or agent_hold.once_right(tid, lambda: merge(tid, branch), halted)) and why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
         alarm(f'{tid} is not merging: ' + ('uncommitted edits in the main checkout' if why.startswith(EDITED)
@@ -844,7 +812,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
             time.sleep(EDITS_POLL)
         log(f'{tid}: the main checkout is clear again; merging task/{tid} now')
     if why is False:  # B764c: it needed a fix session, and the wait for one ended
-        return drop_finished(tid) if halted() else False
+        return halted() and _finish(tid, n, sid, branch)  # dropped meanwhile: it goes as one dropped before its merge
     if late := restyle_mark(tid):  # F19: a restyle that asked while this merge ran
         landed_for = landed_for or late['rid']
         C.notes(f'{tid}.restyle').unlink(missing_ok=True)
@@ -1159,7 +1127,6 @@ class Run:
         self.failed_starts: dict[str, int] = {}  # task -> sessions that did not start
         self.cap_said = False
         self.cap_fell = False  # F142: said that new tasks start down the chain, this time past a cap
-        self.agent_said = ''  # B764c: the wrong [run] agent, as logged
         self.held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
         self.foreign: dict[int, int] = {}  # slot -> pid of a session no run knew (see queue_cut_off)
         self.waiting: dict[int, tuple] = {}  # slot -> (task, session id, why) queued to resume there
@@ -1233,9 +1200,7 @@ class Run:
         """The start of a tick: keys typed, the slot count, forced stops, tells and halts, the stop note."""
         procs, running = self.procs, self.running
         sweep_tmp()
-        settings_live.take(self)  # F202a
-        self.say_agent(agent_held())
-        reopen_when_right()
+        agent_hold.tick(self)  # F202a, B764c: settings changed, a wrong [run] agent
         prune_wips(self.branch)  # F23: now and then, for tasks ticked or dropped by hand while the run is up
         take_keys()
         IDLE[0] = self.idle_said
@@ -1378,14 +1343,6 @@ class Run:
             self.running[n] = next((t for t in tasks(self.branch) if t[0] == tid), (tid, '', set(), set()))
             self.tried.add(tid)
             self.idle_said = False
-
-    def say_agent(self, bad: str) -> None:
-        """B764c: log once that a wrong [run] agent holds every start, and once that it is right again."""
-        if bad and bad != self.agent_said:
-            log(f'{bad}. No agent session starts until then; running ones go on')
-        elif self.agent_said and not bad:
-            log('[run] agent is right again: sessions start again')
-        self.agent_said = bad
 
     def say_cap(self, w: str) -> None:
         """The usage-cap alarm, once each time a cap is reached."""

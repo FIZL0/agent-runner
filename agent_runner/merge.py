@@ -16,7 +16,6 @@ import threading
 import time
 import uuid
 from pathlib import Path
-
 from contextlib import ExitStack
 
 from agent_runner import pitch, plan as P, plat, plansync, stack
@@ -25,8 +24,7 @@ from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_
 from agent_runner.gitops import _net
 from agent_runner.sched import agent_held, AgentHeld
 from agent_runner.strays import drop_strays, new_empty
-from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
-from agent_runner.state import commit_plan, EV_LANDED, EV_LEFT, EV_PART
+from agent_runner.state import (C, clean, commit_plan, EV_LANDED, EV_LEFT, EV_PART, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR)
 from agent_runner.slots import (backend, entries, env_vars, merge_env, MUX, slot_env, trim, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
 from agent_runner.land import (announce_release, BROKEN, flaky, land, land_tick, published, push_landed,
