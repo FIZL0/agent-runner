@@ -135,7 +135,7 @@ DEFAULTS: dict = {
                                 # checkout's agent_runner code changed on main; false: only `u` or a restart does
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
-        'questionnaires': True, # a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a
+        'questionnaires': True, # a DECIDE with more than one question is asked as a pick sheet (<notes>/sheets/<ID>.json, a
                                 # page with `agent-runner sheet <ID>`); Needs you shows one line and its link
         'grill': 'ask',         # control sessions ask rounds of numbered questions before queueing:
                                 # ask = when the person says grill me / poke holes; big = also big vague asks; off

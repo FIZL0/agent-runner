@@ -1286,6 +1286,38 @@ def test_settled_rule_in_guide():
     check('Re-read an item right before' in ' '.join(G.CONTROL.split()), 'the brief says it')
 
 
+def test_decide_options_f181d():
+    print('F181d: a control session ends its DECIDE with the options, and filing keeps the bracket for the buttons')
+    from agent_runner import guide as G, need_detail as N, plan as P, runner as R
+    core = ' '.join(G.CONTROL.split())
+    for words in ('`DECIDE: Which look? [Full (recommended) / Small / No change]`', 'any link after the bracket',
+                  'One DECIDE per question'):
+        check(words in core, f'the brief: {words}')
+    check('[Full (recommended) / Small]' in G.topic('needs', 'run'), 'the needs guide says what the bracket is')
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-decide-'))
+    git(d, 'init', '-q')
+    (d / 'plan').mkdir()
+    (d / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **F1** other | files: a.py\n', encoding='utf-8')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    todo, link, names = d / 'plan' / 'TODO.md', 'https://claude.ai/code/session_01AbC', ['Full', 'Small', 'No change']
+    more = ' https://example.com/a'
+    for n, (words, after) in enumerate((('Which look?', ''), ('Which look? ' + 'It is a long story. ' * 20, ''),
+                                        ('Which look?', more), ('Which look? ' + 'It is a long story. ' * 20, more))):
+        q = P.decide_question(f'Two ways.\n\n**DECIDE: {words.strip()} [Full (recommended) / Small / No change]{after}**')
+        check(len(q) <= 240 and ('…' in q) == (len(words) > 100), f'{n}: {len(q)} characters, cut only when long', q)
+        tid = K.file_control_ask(n + 3, f'sid-{n}', q, link)
+        a = next(x for x in P.asks(todo) if x[1] == tid)
+        line = next(x for x in todo.read_text(encoding='utf-8').splitlines() if f'**{tid}**' in x)
+        opts, what = N.decide_options(tid, a[3], line)
+        eq([o['name'] for o in opts], names, f'{n}: filed as {tid}, its options are buttons')
+        check(opts and opts[0]['rec'] and what.startswith('Which look?') and '[' not in what, f'{n}: and off the question', what)
+    long = 'Which look? [' + ' / '.join(f'{c * 60}' for c in 'abcd') + ']'
+    eq(P.decide_question(f'DECIDE: {long}'), long, 'a long bracket costs a short question no word')
+    eq(len(P.decide_question('DECIDE: ' + 'word ' * 100)) <= 240, True, 'no bracket: cut as before')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
@@ -1294,4 +1326,4 @@ if __name__ == '__main__':
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once,
                              test_settled_verbs_and_openers, test_settled_waits_and_skips, test_settled_landing,
-                             test_settled_rule_in_guide]))
+                             test_settled_rule_in_guide, test_decide_options_f181d]))

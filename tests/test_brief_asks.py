@@ -63,7 +63,11 @@ def test_brief(root: Path) -> None:
                   'Never tell the person to run a script', 'put no secret in the file',
                   f'{root / ".runner" / "asks" / f"{tid}.env"}'):
             check(k in p, f'{tid}: BLOCKED steps: {k}', p)
+        for k in ('A `DECIDE:` is one question', '`DECIDE: Which look? [Full (recommended) / Small / No change]`, before any link',
+                  '"options": [{"name": "Full", "rec": true}, {"name": "Small"}] in the ask file', 'With `ask` use the ask file'):
+            check(k in p, f'{tid}: DECIDE options: {k}', p)
         check('wizard' not in p, f'{tid}: no wizard', p)
+    check('that takes more than one question' in R.SHEET_PROMPT, 'a pick sheet is for more than one question')
     eq(p.count('{path}') + p.count('{{'), 0, 'nothing left unfilled')
 
 
