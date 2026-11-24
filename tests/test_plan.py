@@ -1124,6 +1124,8 @@ def test_after_all_skips_stuck():
            (['F1'], '; not waiting on: B415 (needs you), R89 (after B415)'), f'{after}: one runnable, one blocked')
         eq(said(ask, '- [~] **R89** read it BLOCKED: (after B415) its data', after=after),
            ([], '; not waiting on: B415 (needs you), R89 (after B415)'), f'{after}: a block that waits on it')
+        eq(said(ask, '- [~] **R89** read it BLOCKED: (after B415) its data', '  - a sub-item', after=after),
+           ([], '; not waiting on: B415 (needs you), R89 (after B415)'), f'{after}: that block before a sub-item')
         eq(said('- [~] **B7** later BLOCKED: shelved: DECIDE: maybe?', '- [ ] **R8** then | after: B7', after=after),
            ([], '; not waiting on: R8 (after B7)'), f'{after}: after a shelved one, which is not said itself')
         eq(said('- [~] **B7** later BLOCKED: shelved: some words', '- [ ] **R8** then | after: B7', after=after),

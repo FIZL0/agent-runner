@@ -99,8 +99,8 @@ name in [run.tools]), without which no run starts it. Prose is never parsed for 
 **A task that goes last** (a release) is filed with `add … --last`: at the end of Next, with `after: all above`.
 That marker is no list to keep up: the run resolves it on every pick to each task above it in its own section
 that is not done (open or blocked), tasks added above it later included, so it starts once the section has
-drained. Tasks blocked on a person (CONFIRM, DECIDE, BLOCKED, a concept's OK) do not hold it until they reopen,
-nor do tasks whose `after:` (or `BLOCKED: (after X)`) leads to one of those or to a shelved one, through any
+drained. Tasks blocked on a person (CONFIRM, DECIDE, BLOCKED, a concept's OK) or shelved do not hold it until they
+reopen, nor do tasks whose `after:` (or `BLOCKED: (after X)`) leads to one of those or to a shelved one, through any
 number of tasks; other sections (Follow-ups) never do. `status`, `plan ID`, `reopen` and `waiting` say what it
 still waits on and what it does not.
 
@@ -551,8 +551,8 @@ def _named_after(ls: list[str], i: int) -> list[str]:
     `all` and `all above` are left out: what they stand for already skips what is stuck."""
     ids = list(fields(ls[i]).get('after', []))
     if ITEM.match(ls[i]).group(2) == '~':
-        w = WAITS.findall(ls[i + len(_item_block(ls, i)) - 1])
-        ids += [t.strip() for t in w[-1].split(',')] if w else []
+        w = WAITS.findall(' '.join(_item_block(ls, i)))
+        ids +=[t.strip() for t in w[-1].split(',')] if w else []
     return [t for t in ids if t and t not in (ALL, LAST)]
 
 

@@ -6191,7 +6191,7 @@ def test_plan_last(repo: Path):
         eq(R.pick({}, set(), 'main')[0], 'T5', 'and a free slot takes it')
         plan['ls'] = head + ['- [ ] **F7** added later | files: q.py', '- [~] **F2** two BLOCKED: DECIDE: which?', rel] + fu
         eq(ids(), ['F7', 'B9'], 'a task added above it later holds it again')
-        eq(R.release_line(plan['ls']), 'release: waits on 1 of 1 task (T5): F7', 'status names what it still waits on')
+        eq(R.release_line(plan['ls']), 'release: waits on 1 of 1 task (T5): F7; not waiting on: F2 (needs you)', 'status names what it still waits on')
         plan['ls'] = head + [rel.replace('Release: cut the next version', 'Tidy up last')] + fu
         eq(R.release_line(plan['ls']), 'last: ready, nothing left to wait on (T5)', 'a non-release last task gets a line too')
     finally:
