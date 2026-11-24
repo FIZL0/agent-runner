@@ -350,6 +350,10 @@ def cmd_publish_page(argv: list[str]) -> int:
     from agent_runner import plan as P
     dest, url = publish_page(tid, src.resolve())
     print(f'the run page shows it at /concept/{tid} (copy: {dest})')
+    if not url and tid.startswith('chat1'):  # F406f: a chat's page: no task to finish with it
+        print('run publish-page: the one-shot could not publish it to claude.ai (the run log says why): the copy on the '
+              'run page is the page.', file=sys.stderr)
+        return 1
     if not url:
         print(f'run publish-page: the one-shot could not publish it to claude.ai (the run log says why). Run this '
               f'again, or finish with `done {tid} "<msg>" --blocked "<why>"`.', file=sys.stderr)

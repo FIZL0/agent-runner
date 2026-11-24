@@ -241,6 +241,8 @@ def test_fence(env: Env):
     eq(fence('Bash', command=f'cd {wt} && git commit -m "x"'), None, 'a commit in a take worktree runs')
     check(fence('Bash', command=f'git -C {wt} push'), 'a push there does not')
     eq(fence('Bash', command=f'git -C {other} push'), None, 'another repository is not fenced')
+    for cmd in ('bash -c "git push"', '(cd /tmp); git push', 'cd /nowhere-at-all || git commit -m x', 'sh -c "git merge main"'):
+        check(fence('Bash', command=cmd), f'refused: {cmd}')
     check(fence('Bash', command='git reset --hard'), 'git reset --hard does not run')
     check(fence('Edit', file_path='README.md'), 'no edit of a file in the main checkout')
     eq(fence('Edit', file_path='runner.local.toml'), None, 'but one git ignores')

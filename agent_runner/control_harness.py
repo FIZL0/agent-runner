@@ -135,6 +135,25 @@ def _common(where: Path) -> str:
     return os.path.realpath(where / d) if d else ''
 
 
+def git_calls(cmd: str, cwd: Path):
+    """`tools._git_calls` of a command and of the ones it hands a shell (`bash -c "…"`, `eval "…"`); one whose folder
+    cannot be told (not there, or a `cd` in a subshell) is judged where the session is too."""
+    from agent_runner import tools as T
+    for where, sub, args in T._git_calls(cmd, cwd):
+        if where.is_dir():
+            yield where, sub, args
+        if where != cwd and (not where.is_dir() or '(' in cmd):
+            yield cwd, sub, args
+    toks = T._tokens(cmd)
+    for i, t in enumerate(toks):
+        if t.rpartition('/')[2] in ('bash', 'sh', 'zsh', 'dash', 'eval'):
+            for inner in toks[i + 1:]:
+                if inner in T.SEPARATORS:
+                    break
+                if ' ' in inner:
+                    yield from git_calls(inner, cwd)
+
+
 def fence(tool: str, tool_input: dict, cwd: str | Path, root: str | Path, slots_dir: str | Path, notes: str | Path,
           push: bool) -> str | None:
     """Why the git fence denies this tool call of a control session, or None to let it run: no push in this project,
@@ -165,7 +184,7 @@ def fence(tool: str, tool_input: dict, cwd: str | Path, root: str | Path, slots_
         return None
     if tool != 'Bash':
         return None
-    for where, sub, args in T._git_calls((tool_input or {}).get('command', ''), cwd):
+    for where, sub, args in git_calls((tool_input or {}).get('command', ''), cwd):
         top = _git(where, 'rev-parse', '--show-toplevel')
         if sub in LANDS and top and os.path.realpath(top) == str(root):
             return (f'the git fence: no `git {sub}` in the main checkout: work lands only through a task\'s branch, '

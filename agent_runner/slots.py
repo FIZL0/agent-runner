@@ -486,10 +486,11 @@ def remote_line() -> str:
     if on or slots:
         what = 'control sessions and the slots' if on and slots else 'control sessions' if on else 'slots'
         return f'remote control on: the {what} show at {REMOTE_URL} and in the Claude apps; Enter here opens it'
-    if C.run['remote'] == 'auto':
+    if C.run['remote']:
         from agent_runner.control_harness import harness_control
         if harness_control():
             return 'remote control off: [models] control is another provider\'s'
+    if C.run['remote'] == 'auto':
         return f'remote control off: {remote_off_why()}; [run] remote = true forces it'
     return ''  # false: off, as asked, and nothing to say
 
