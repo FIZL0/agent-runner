@@ -313,7 +313,7 @@ const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b));
 const S = {f: {}, ob: [], setOpen: {}, set: {tables: [{table: 'run', keys: [k]}]}}, esc = t => String(t).replace(/"/g, '&quot;');
 const document = {querySelectorAll: () => []}, render = () => {}, toast = t => { throw new Error(t) };
 let saved = [];
-const outbox = (n, a) => saved.push([n, a.value]);
+const draftSet = (id, side, d) => saved.push([side, d.text]), closeSheet = () => {};
 eval(logic + slice('const settingId=', 'const resetBtn=') + slice('function saveSetting(', 'function resetSetting(') + `
 const row = text => { S.f = {}; k.value = JSON.parse(text); k.has_project = k.value !== false; k.project = k.value; return settingRow(k, {}) };
 const out = {rows: {}};
@@ -527,8 +527,8 @@ def test_settings_f97(tmp: Path) -> None:
     check(CF.setting_problem('ui', 'chat_quiet', 5), 'a bare number is refused')
     key_parts = next(x['parts'] for t in CF.settings_snapshot(repo)['tables'] if t['table'] == 'run' for x in t['keys'] if x['key'] == 'auto_release')
     page = W.page_html().decode()
-    for part in ('settingsHTML', 'data-setsave="${side}"', 'data-setreset=', 'data-setmore=', 'data-setstep=', 'Find a setting',
-                 "'Advanced'", "'Project file'", 'Ask a chat to change it', 'Restart the run', "'setting_device':'setting_project'"):
+    for part in ('settingsHTML', 'data-setsave="${other}"', 'data-setreset=', 'data-setmore=', 'data-setstep=', 'Find a setting',
+                 "'Advanced'", "'Project file'", 'Ask a chat to change it', 'Restart the run', "outbox('settings_save'"):
         check(part in page, f'the Settings view has {part}')
     if not shutil.which('node'):
         return
@@ -578,9 +578,9 @@ def test_settings_f97(tmp: Path) -> None:
             html, v = o['rows'][text], value or {}
             eq(re.findall(r'<option value="(\d+)" selected', html), [str(v.get('every', 0))], f'{says}: the Every list')
             eq(bool(re.search(r'data-setpart="idle"[^>]* checked>', html)), bool(v.get('idle')), f'{says}: the When idle switch')
-        eq(o['saved'], [['setting_project', {'every': 10}], ['setting_project', {'every': 10, 'idle': True}],
-                        ['setting_project', {'idle': True}], ['setting_project', False]], 'each change saves the whole value, at once')
-        eq(o['sheet'], [['setting_project', False]], "More…'s own two controls save only on Save")
+        eq(o['saved'], [['project', '{"every":10}'], ['project', both], ['project', '{"idle":true}'], ['project', 'false']],
+           'F202b: each change of one is the whole value, in the draft')
+        eq(o['sheet'], [['project', 'false']], "More…'s own two controls change it only on its button")
         check('setpart' not in o['readonly'], 'a read-only row has no control')
     # F166: a row's control, and which rows show
     rem = k(type='choice', choices=['auto', True, False], words={'auto': 'Auto', 'true': 'On', 'false': 'Off'})
@@ -610,7 +610,7 @@ const S = {f: {}, ob: [], setOpen: {}, set, snap: {}}, esc = t => String(t).repl
 const I = {chev: '', x: ''}, card = t => `<div>${t}</div>`, emptyCard = card, obCards = () => '', controlOf = () => null, foldIn = (k, t) => t, SHEETS = {};
 const document = {querySelector: () => null, querySelectorAll: () => []}, render = () => {}, toast = t => { throw new Error(t) };
 let saved = [];
-const outbox = (n, a) => saved.push([n, a.key, a.value]);
+const closeSheet = () => {}, draftSet = (id, side, d) => saved.push([side, id, d.unset ? null : d.text]), draftDrop = () => {};
 eval(logic + slice('const settingId=', '/* the stepper:') + `
 const k = set.tables.find(t => t.table === 'run').keys.find(x => x.key === 'agent'), row = () => settingRow(settingOf('run.agent'), {}), out = {row: row()};
 const pick = (value, side, now) => pickAgent({value, dataset: {id: 'run.agent', setagent: side, ...(now ? {now: ''} : {})}});
@@ -687,13 +687,13 @@ def test_agent_picker_f405(tmp: Path) -> None:
             for part in (f'At {one}, version 2.1.330', 'Logged in: OAuth', f'Not logged in: <span class="setkey">{CF.RUNNER} login codex</span>',
                          'No login needed', 'chosen per role in [models], not here', 'data-setmodels'):
                 check(part in o['row'], f'the row says {part!r}', o['row'])
-            check('data-f="setother:device:run.agent"' in o['other'] and 'data-setsave="device"' in o['other'], 'Other path: a field and Save')
-            eq((o['asked'], o['wrap']), (0, [['setting_device', 'agent', '/opt/wrap']]), 'saved by Save only, as typed')
+            check('data-f="setother:device:run.agent"' in o['other'] and ' data-now' in o['other'].split('setother:')[1].split('>')[0], 'Other path: a field, for the bar')
+            eq((o['asked'], o['wrap']), (0, [['device', 'run.agent', '/opt/wrap']]), 'F202b: its words are the change')
             check('value=" /opt/wrap "' in o['kept'], 'what is typed stays until it is what is kept')
             eq(o['left'], True, 'then the field goes')
             eq(o['reset'], True, 'a reset takes the field too')
-            eq(o['picked'], [['setting_device', 'agent', 'claude']], 'a pick saves at once')
-            eq((o['sheet'], o['sheetSaved']), (0, [['setting_project', 'agent', 'claude']]), "in More… it waits for Save")
+            eq(o['picked'], [['device', 'run.agent', 'claude']], 'F202b: a pick goes to the draft')
+            eq((o['sheet'], o['sheetSaved']), (0, [['project', 'run.agent', 'claude']]), "in More… it waits for its button")
             check({'models.control', 'models.code', 'models.kinds', 'models.providers'} <= set(o['models'])
                   and all(m.startswith('models.') for m in o['models']), 'the link shows the [models] settings', o['models'])
         for kept, bad in (('nosuchagent', 'is not on this machine'), ('pi', 'was removed')):

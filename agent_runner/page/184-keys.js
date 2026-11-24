@@ -1,4 +1,4 @@
-/* F124, F97: a switch or a select acts at once; a setting's on its row saves at once too */
+/* F124: a switch or a select acts at once; F202b: a setting's on its row goes to the draft */
 document.addEventListener('change',e=>{
   const t=e.target, ts=t.dataset&&t.dataset.ts, f=(t.dataset&&t.dataset.f)||'';
   if(t.dataset&&t.dataset.tooluse){toolPost({op:'use',name:t.dataset.tooluse,on:t.checked},t.dataset.tooluse);return}  // F169
@@ -10,7 +10,7 @@ document.addEventListener('change',e=>{
   if(t.dataset&&t.dataset.kinds){saveKinds(t.dataset.kinds,t.value);return}
   if(!f.startsWith('set:'))return;
   S.f[f]=t.type==='checkbox'?String(t.checked):t.value;
-  if(t.dataset.now!==undefined){const [,side,...id]=f.split(':');saveSetting(id.join(':'),side)}  // F166: a row's own switch or select
+  if(t.dataset.now!==undefined){const [,side,...id]=f.split(':');draftSet(id.join(':'),side,{text:S.f[f]});render(true)}
 });
 function selectedText(t){
   if(t&&typeof t.selectionStart==='number'&&t.selectionEnd>t.selectionStart)return true;
@@ -35,7 +35,8 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.sheet){e.preventDefault();closeSheet();return}  // the topmost thing only
   if(e.key==='Escape'&&S.rowOpen){e.preventDefault();rowShut();return}  // F187
   if(e.target.matches&&e.target.matches('[data-f]')&&e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.dataset.f.startsWith('set:')){
-    e.preventDefault();const [,side,...id]=e.target.dataset.f.split(':');S.f[e.target.dataset.f]=e.target.value;saveSetting(id.join(':'),side);return}
+    e.preventDefault();if(e.target.dataset.now!==undefined){e.target.blur();return}  // F202b: a row's is in the draft
+    const [,side,...id]=e.target.dataset.f.split(':');S.f[e.target.dataset.f]=e.target.value;saveSetting(id.join(':'),side);return}
   if(e.target.matches&&e.target.matches('[data-f^="askre:"]')&&e.key==='Enter'){  // F162: Enter sends a reply; beside answers the note waits for one
     const n=needOf(S.sheetArg);if(n&&needReplies(n)&&!composing(e)){e.preventDefault();needReply(n.id)}return}
   if(e.target.matches&&e.target.matches('[data-f^="give"]')&&e.key==='Enter'){  // F175a: as Done does; one with a secret it cannot take has no Done
@@ -63,7 +64,7 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('beforeinput',e=>{
   if((e.inputType==='insertLineBreak'||e.inputType==='insertParagraph')&&!e.isComposing&&TOUCH()&&e.target.matches&&e.target.matches('[data-in]')&&slashOpen()&&slashPicks(e.target)){e.preventDefault();slashTake(SL.i)}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(['setq','planq'].includes(e.target.dataset.f))render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.now!==undefined)draftType(e.target);if(['setq','planq'].includes(e.target.dataset.f))render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('cancel',holdPlus);

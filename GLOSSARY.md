@@ -606,7 +606,7 @@ _In code_: speech.py, speech_worker.py, /speech, runVoice, playClips
 _Avoid_: TTS, voice file
 
 **Setting's home**:
-Where a change to a setting is saved: both are saved at once, this device in runner.local.toml, everyone in runner.toml
+Where a change to a setting is saved: both are saved when the Settings bar's Save is pressed, this device in runner.local.toml, everyone in runner.toml
 _Said_: this device or everyone
 _On screen_: this device, everyone
 _In code_: setting_words.home, settingSide, setting_project, plansync.commit_file
@@ -795,3 +795,10 @@ _Said_: web page of a device
 _On screen_: Web page to open
 _In code_: device_page.py, page_state, run device start|stop
 _Avoid_: app, service, server
+
+**Settings bar**:
+The bar at the foot of the run page's Settings that holds the changes made to its rows and not yet saved, with Undo and Save; after a Save it says what was saved, with Undo and a close.
+_Said_: save and undo button
+_On screen_: N changes not saved, Save, Undo
+_In code_: #setbar, setBarDraw, settings_save
+_Avoid_: save bar, footer

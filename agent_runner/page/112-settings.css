@@ -1,0 +1,4 @@
+/* F202b: the Settings page's bar, a row of its own under the view, so it covers nothing */
+.setbar{flex:none;padding:var(--s2) var(--s4);padding-left:max(var(--s4),env(safe-area-inset-left,0px));padding-right:max(var(--s4),env(safe-area-inset-right,0px));border-top:1px solid var(--line);background:var(--surface)}
+.setbar .row{max-width:688px;margin:0 auto;flex-wrap:nowrap;min-height:var(--tap)} .setbar .btn{min-height:var(--tap);flex:none} .setbar .btns{margin:0;flex-wrap:nowrap} .setbar .grow{min-width:0;overflow-wrap:anywhere}
+.setnew.v-bad{color:var(--bad)}

@@ -247,7 +247,7 @@ let reduced = false, frames = []; const requestAnimationFrame = f => frames.push
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: {}, ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
-const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, walkDraw = () => {}, side = () => {}, rowSettle = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
+const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, walkDraw = () => {}, setBarDraw = () => {}, side = () => {}, rowSettle = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, settingsDraw = (el, h) => setHTML(el, h), planDraw = settingsDraw, projectsHTML = () => VIEW;
@@ -563,7 +563,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const said = [], toast = t => said.push(t), render = () => {}, tq = p => p, esc = t => String(t);
 const els = {}, $ = k => els[k] = els[k] || {}, setHTML = (el, h) => { el.h = h };
-const emptyCard = t => t, card = h => h, pageTitle = () => '', HOME_PAGE = false, document = {}, I = {chev: ''}, stepWait = {};
+const emptyCard = t => t, card = h => h, pageTitle = () => '', HOME_PAGE = false, document = {}, I = {chev: ''}, draftTidy = () => {};
 const working_ = () => [], talkWaitName = () => '', chats = () => S.chats || [], open = n => { S.thread = n };
 const DK = {rec: null, key: '', base: ''}, CHATS_OF = '';
 const carrySent = () => {}, addSent = () => {};
