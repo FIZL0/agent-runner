@@ -51,3 +51,4 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 
 ### Parked
 - [ ] **F191** (follow-up, later) Run page chats scroll smoothly: history drawn by the page, the live session at the bottom (split into parts) | files: agent_runner/web_page.html, tests/test_web.py
+- [ ] **F194** (follow-up, later) The example project and a first-run walkthrough (split into parts) | files: agent_runner/demo.py
