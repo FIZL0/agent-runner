@@ -27,9 +27,10 @@ function settingNow(k,side,field){
 }
 /* F406c: the providers' logins as they are now; refused without the key, then Settings shows the commands */
 async function loadLogins(){
-  let j;try{const r=await fetch(tq('logins'));j=await r.json();j=r.ok&&j&&j.ok&&Array.isArray(j.providers)?j.providers:[]}catch(e){return}
+  let j;try{const r=await fetch(tq('logins'));j=await r.json();j=r.ok&&j&&j.ok&&Array.isArray(j.providers)?j.providers:[]}catch(e){return false}
   const was=JSON.stringify(S.logins||[]);S.logins=j;
   if(JSON.stringify(j)!==was)render(true);
+  return true;
 }
 const loginBtn=p=>p.name==='claude'?p.terminal?'<button class="btn" data-login>Log in again</button>':''
   :p.terminal&&p.state!=='none'?`<button class="btn" data-plogin="${esc(p.name)}" aria-label="${p.run==='running'?'Show the login of':p.state==='in'?'Log in again to':'Log in to'} ${esc(p.name)}">${p.run==='running'?'Show the login':p.state==='in'?'Log in again':'Log in'}</button>`:'';

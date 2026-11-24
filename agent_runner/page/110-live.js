@@ -55,8 +55,9 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.sheet==
 /* F406c: how a provider's login ended, as the run says it */
 async function loginEnded(){
   const p=LG.p, turn=LG.turn;LG.ended=true;loginSay('The login has ended.');
-  await loadLogins();
+  const got=await loadLogins();
   if(turn!==LG.turn||S.sheet!=='login')return;
+  if(!got){loginSay('The page could not be reached. Trying again…');LG.timer=setTimeout(loginEnded,3000);return}
   const l=((S.logins||[]).find(x=>x.name===p)||{}).login;
   LG.done=!!l&&l.state==='done';
   loginSay(LG.done?`${l.said}${(l.reopened||[]).length?`. Starts again: ${l.reopened.join(', ')}`:''}`:l&&l.said?`The login failed: ${l.said}`:'The login has ended.');

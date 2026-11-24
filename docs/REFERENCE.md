@@ -1951,7 +1951,8 @@ serves it with no run up: at `/logins` for the built-in providers, under `/p/KEY
 reopens the tasks parked for it in every project. Home does not restart on an upgrade during a login.
 
 The run page's Settings uses the same logins. A `[models]` role, kind or fallback that names a provider with no login says
-so on its row, with Log in; the Save is kept, and the Settings bar says that tasks on it wait for the login. Log in (in
+so on its row, with Log in; the Save is kept, and the Settings bar says that tasks on it wait for the login (a
+role other than `code`, or a fallback: that the provider has no login yet). Log in (in
 Advanced > This machine > Providers, per provider) opens one login sheet for claude and every provider. Copilot first asks
 for github.com or a GitHub Enterprise domain; then the terminal opens, with Open the sign-in page and the device code in
 words. A typed secret is a password field whose words go only to that terminal, and the field is emptied. Done says which
