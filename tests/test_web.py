@@ -4269,6 +4269,8 @@ out.own = [key('Enter'), key('Escape'), key('c', {ctrlKey: true}), key('v', {met
   key('x', {isComposing: true}), key('Process', {keyCode: 229}), key('Enter', {shiftKey: true, ctrlKey: true})];
 out.altgr = key('@', {ctrlKey: true, altKey: true, getModifierState: k => k === 'AltGraph'});
 S.sheet = 'run'; out.sheet = key('x'); S.sheet = '';
+FD.foot = feedFoot(['● ok', '● How is Claude doing this session? (optional)', '  1: Bad    2: Fine   3: Good   0: Dismiss', '', '─'.repeat(40), '❯ ', '─'.repeat(40)], null);
+out.rate = [key('2'), key(...SE)];
 const had = ta.value;
 FD.whole = true; FD.foot = {text: 'own words', bash: false};
 out.words = [key('x'), key(...SE), feedTyped({}, 'p'), sent];
@@ -4285,6 +4287,7 @@ console.log(JSON.stringify(out));
     eq(out.get('many'), [True] * 5 + ['ax\n\n/p1\np2b', 0, 5, 5, False], 'hidden: all of it in the message box, the session gets none')
     eq(out.get('own'), [False] * 8, "every other key is the session's")
     eq((out.get('altgr'), out.get('sheet')), (True, False), 'AltGr types; a sheet open: not ours')
+    eq(out.get('rate'), [False, True], "a survey's digit is the session's")
     eq(out.get('words'), [False, True, False, ['\n']], 'words in its prompt: Shift+Enter is a new line there')
     eq((out.get('menu'), out.get('menuNew'), out.get('same')), ([False, False, False, False, 1], [False, False], True), 'a menu or a question is untouched')
 
