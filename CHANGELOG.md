@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.64.0 (2026-11-24)
+
 - Changed: at a terminal, bare `agent-runner` (the run picker) no longer starts a run when you pick one that is not up: picking a row always opens its launcher, the second screen. There `s` starts the run in the background (logged as started by picker), and the launcher then shows the run up with its link, or the error. No pick, and none of w, t, c or Enter, starts a run; a bare `agent-runner` without a terminal, `agent-runner run`, `--attach` and every Start control still do. Where there is no TUI (Windows, no tmux) the launcher has no `t`, shows the reason in a dim line, and Enter opens the run page (F402a)
 - Added: on the run page's Plan view, a Find a task field at the top finds tasks by words or task id, in any case and in any order, over open, parked and done tasks (the whole plan text, not only titles; all words must match). With text in it the matches replace the groups, best first (an exact id, an id prefix, titles, then the rest of the text); the x clears it. Served by the read-only `GET /plan-search?q=WORDS` (F212).
 - Fixed: on the run page on a phone, the first lines of a new chat or slot no longer stay behind the top bar: a drag down brings them clear of it (B766).
