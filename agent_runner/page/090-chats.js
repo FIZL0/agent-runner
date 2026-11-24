@@ -5,8 +5,8 @@
    FD: n its chat, info the run's answer, frame, want (it is to be connected), up (its socket is open), dialing (since when
    it is being opened), drawn (the terminal shows this chat), old (the kept screen over it), since (when it stopped being
    drawn), was (it was drawn, or kept, before) */
-const FD={n:'',turn:0,info:null,frame:null,want:false,up:false,dialing:0,drawn:false,old:null,since:0,was:false,timer:0,sayT:0,upT:0,away:0,downs:0,keptAt:0}, FEED_AWAY=15000, FEED_AGAIN=3000;
-const KEPT=new Map(), FEED_SAY=5000, FEED_DIAL=10000, FEED_KEEP=2000;
+const FD={n:'',turn:0,info:null,frame:null,want:false,up:false,dialing:0,drawn:false,old:null,since:0,was:false,timer:0,sayT:0,upT:0,away:0,downs:0,keptAt:0,ask:null,deaf:0,hid:0,muted:false}, FEED_AWAY=15000, FEED_AGAIN=3000;
+const KEPT=new Map(), FEED_SAY=5000, FEED_DIAL=10000, FEED_KEEP=2000, LIVE_GIVE=8000;
 const FEED_LINES=1;  // lines of a drag to one wheel step
 const TOUCH=()=>!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
 const enterHint=()=>TOUCH()?' enterkeyhint="enter"':'';  // B181
@@ -28,7 +28,7 @@ function feedBack(n){
   const k=KEPT.get(n);FD.old=k?k.node:null;FD.was=!!k;FD.since=Date.now();
   if(k){Object.assign(FD,{foot:k.foot,whole:k.whole,short:k.short,last:k.last});if(!FD.info)FD.info=k.info}
 }
-function feedHang(){FD.turn++;for(const t of [FD.timer,FD.upT])clearTimeout(t);FD.timer=0;FD.want=FD.up=FD.drawn=false;FD.dialing=0;const l=feedLine();if(l)l.hang()}
+function feedHang(){FD.turn++;for(const t of [FD.timer,FD.upT])clearTimeout(t);FD.timer=0;FD.want=FD.up=FD.drawn=false;FD.dialing=0;liveStop();const l=feedLine();if(l)l.hang()}
 function feedLeave(){feedKeep();feedHang();FD.old=null;feedGone()}
 /* connected to the open chat, after its place and size are known */
 function feedDial(){
@@ -72,14 +72,14 @@ addEventListener('message',e=>{
 function feedDrawn(){if(FD.drawn||!FD.up)return;clearTimeout(FD.upT);FD.drawn=FD.was=true;FD.downs=0;FD.fresh=true;feedSee();FD.fresh=false;FD.old=null;feedSkin();feedPlace()}
 /* what stands over the terminal until it is drawn: the kept screen, else the chat's latest messages; and the line */
 function feedSkin(){
-  const l=feedLine(), st=FD.n?feedNow(FD.n):'', wait=FD.shown&&!FD.drawn&&st!=='ended';
+  const l=feedLine(), st=FD.n?feedNow(FD.n):'', wait=FD.shown&&(!FD.drawn||feedMute())&&st!=='ended';FD.muted=feedMute();
   if(l)l.show(FD.drawn?null:FD.old);
   if(FD.frame)FD.frame.className=FD.drawn||FD.old&&l?'':'blank';
   const stand=$('feedstand');stand.hidden=!FD.shown||FD.drawn||!!(FD.old&&l);if(!stand.hidden)setHTML(stand,standHTML(FD.n));
   $('feedline').hidden=!wait;feedSay(wait);
 }
 function feedSay(wait){
-  const el=$('feedsay'), left=FD.since+FEED_SAY-Date.now(), on=wait&&left<=0;clearTimeout(FD.sayT);
+  const el=$('feedsay'), left=FD.muted?0:FD.since+FEED_SAY-Date.now(), on=wait&&left<=0;clearTimeout(FD.sayT);
   if(wait&&!on)FD.sayT=setTimeout(feedSkin,left);
   el.hidden=!on;setHTML(el,on?`<span class="livedot"></span>${FD.was?'Reconnecting…':'Connecting to the session…'}`:'');
 }
@@ -103,10 +103,28 @@ function feedDraw(n){
 }
 document.addEventListener('visibilitychange',()=>{
   clearTimeout(FD.away);
-  if(document.hidden)FD.away=setTimeout(()=>{if(document.hidden&&FD.n){feedLeave();feedBack(FD.n);feedSkin()}},FEED_AWAY);
-  else if(FD.n&&!FD.up){FD.since=Date.now();feedLoad()}
+  if(document.hidden){FD.hid=Date.now();FD.away=setTimeout(()=>{if(document.hidden&&FD.n){feedLeave();feedBack(FD.n);feedSkin()}},FEED_AWAY)}
+  else{liveStop();if(FD.n&&!FD.up){FD.since=Date.now();feedLoad()}else if(FD.n&&Date.now()-FD.hid>=FEED_AWAY)feedAgain()}  // frozen before its timer: the socket may be dead
 });
-addEventListener('online',()=>{if(FD.n&&FD.want){feedKeep();feedHang();feedBack(FD.n);feedSkin();feedLoad()}});  // the socket may be dead and not know it
+/* F206a: the network can go silent with the socket still open: for FEED_SAY the run has not answered and the session has
+   sent nothing. The line and Reconnecting… show then, and the first answer dials again.
+   FD: ask the question that is out, deaf since when none is answered, muted what feedSkin last showed */
+function feedMute(){const l=FD.up&&FD.deaf&&feedLine();return!!l&&Date.now()-Math.max(FD.deaf,l.heard())>=FEED_SAY}
+function liveStop(){const a=FD.ask;FD.ask=null;FD.deaf=0;if(a)a.abort()}
+/* /live, one at a time: on a dead network they pile up and hold the browser's few connections */
+async function liveGet(n){
+  if(FD.ask)return null;
+  FD.deaf=FD.deaf||Date.now();
+  const ask=FD.ask=new AbortController(), give=setTimeout(()=>ask.abort(),LIVE_GIVE);
+  let r=null,j=null;try{r=await fetch(tq('live/'+encodeURIComponent(n)),{signal:ask.signal});j=await r.json()}catch(e){if(!(e instanceof SyntaxError))r=null}  // a body that stalls is no answer
+  clearTimeout(give);
+  if(FD.ask!==ask)return null;
+  FD.ask=null;if(!r)return null;
+  if(FD.muted=feedMute()){feedAgain();return null}
+  FD.deaf=0;return j;
+}
+function feedAgain(){const deaf=FD.muted&&FD.deaf;feedKeep();feedHang();feedBack(FD.n);if(deaf)FD.since=deaf;feedSkin();feedLoad()}
+addEventListener('online',()=>{if(FD.n&&FD.want)feedAgain()});  // the socket may be dead and not know it
 /* an ended chat whose last screen is kept: what to do now, over its message box */
 function feedEnd(n){return feedNow(n)==='ended'&&FD.old?`<div class="feedend">${feedHTML(n,true)}</div>`:''}
 /* what a chat or slot with no session to show says */
@@ -183,7 +201,7 @@ layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r
    transform, never by a resize: the bars come and go, the box grows, and the session's size stays. B192: the bars going or
    coming never moves it; only a scroll does (feedScroll), and the session's own going to its end. Whole (a menu, a
    question, unsent words, a look feedFoot does not know): it fits its room exactly, all of it shown. */
-Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',above:0,last:0,run:0,rest:0,slim:false,jump:false,typed:0,full:0,wide:0,doc:0,live:null,liveAt:0,raf:0,task:''});
+Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',above:0,last:0,run:0,rest:0,slim:false,jump:false,typed:0,full:0,wide:0,doc:0,live:null,liveAt:0,task:''});
 const KB_PAD=6;  // .dock's bottom padding: 14px, and 8px in .app.kb
 const SLIM_H=56, FOOT_WAIT=400, TEXT_WAIT=1200, LIVE_EVERY=2000;
 const pageDark=()=>{const t=document.documentElement.dataset.theme;return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches};
@@ -199,10 +217,10 @@ function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');i
   const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;row.inert=!FD.slim;
   if(!FD.shown){const a=feedFly;feedFly=null;if(a)a.cancel();$('feed').style.bottom=''}}
 function feedShown(on){if(FD.shown!==on){FD.shown=on;if(!on){FD.slim=false;FD.off=0}}feedClass();if(on)requestAnimationFrame(feedPlace)}
-/* its socket is open: its screen is read at each draw */
+/* its socket is open: its screen is read at each draw, in the very frame it shows: one frame later, a row more or less is a jump (F206a) */
 function feedUp(){
   let t;try{t=FD.frame.contentWindow.term}catch(e){}
-  if(t&&!t.arSeen){t.arSeen=true;t.onRender(()=>{if(!FD.raf)FD.raf=requestAnimationFrame(()=>{FD.raf=0;feedSee()})})}
+  if(t&&!t.arSeen){t.arSeen=true;t.onRender(feedSee)}
   lookAgain();liveLoad();
 }
 function feedLines(t){const b=t.buffer.active,l=[];for(let y=b.baseY;y<b.baseY+t.rows;y++){const x=b.getLine(y);l.push(x?x.translateToString(true):'')}return l}
@@ -288,7 +306,7 @@ function slimSize(){
 /* what the frame's place is made of; null while there is none */
 function feedPlace(){
   const main=document.querySelector('.main'), box=$('feedframe');if(!FD.shown||!main||!main.clientHeight)return;
-  if(!FD.drawn){main.style.setProperty('--feeddock',document.querySelector('.dockwrap').offsetHeight+'px');main.style.setProperty('--feedbar',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px')}
+  if(!FD.drawn||FD.muted){main.style.setProperty('--feeddock',document.querySelector('.dockwrap').offsetHeight+'px');main.style.setProperty('--feedbar',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px')}
   if(!FD.frame){main.style.setProperty('--seebar',$('top').offsetHeight+'px');return}
   const top=$('top').offsetHeight, say=document.querySelector('.notices').offsetHeight;
   main.style.setProperty('--seebar',top+'px');
@@ -341,8 +359,8 @@ function feedAt(x,y){const l=$('feedtouch').getBoundingClientRect(), r=FD.frame.
 async function liveLoad(){
   const n=FD.n, turn=FD.turn;if(!n||!FD.frame||document.hidden||!/^[cs]\d+$/.test(n))return;
   FD.liveAt=Date.now();
-  let j;try{j=await (await fetch(tq('live/'+encodeURIComponent(n)))).json()}catch(e){return}
-  if(turn!==FD.turn||FD.n!==n)return;
+  const j=await liveGet(n);
+  if(turn!==FD.turn||FD.n!==n||!j)return;
   const same=JSON.stringify(FD.live)===JSON.stringify(j);FD.live=j;
   if(!same)render();
 }
@@ -352,12 +370,12 @@ function slimDraw(){
   const ta=document.querySelector('[data-in]'), words=ta&&ta.value.trim(), on=FD.n&&sessWorks(FD.n);
   setHTML($('slimbox'),`<div><button type="button" data-slimbox aria-label="Show the message box"><span class="pr" aria-hidden="true">&gt;</span><span${words?' class="draft"':''}>${esc(words||(ta?ta.placeholder:''))}</span></button>${on?`<button type="button" data-sheet="sesswork"><span class="livedot"></span><span data-workfor>Working</span></button><button type="button" data-halt="${esc(FD.n)}">${I.stop}Stop</button>`:''}</div>`);workDraw()}
 function workDraw(){for(const e of document.querySelectorAll('[data-workfor]')){const w=workFor();if(e.textContent!==w)e.textContent=w}}
-setInterval(()=>{if(!FD.shown||document.hidden)return;workDraw();if(Date.now()-FD.liveAt>=LIVE_EVERY)liveLoad()},1000);
+setInterval(()=>{if(!FD.shown||document.hidden)return;workDraw();if(feedMute()!==FD.muted){feedSkin();feedPlace()}if(Date.now()-FD.liveAt>=LIVE_EVERY)liveLoad()},1000);
 addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]')){FD.typed=Date.now();if(FD.slim)feedSlim(false)}});
 addEventListener('keydown',e=>{if(FD.slim&&e.target.matches&&e.target.matches('[data-in]')&&e.key!=='Escape')feedSlim(false)});
 /* the row above the box: what there is to say, each a sheet; a menu or a question has the key row in its place */
 function sessRow(n){
-  if(feedNow(n)!=='session')return '';
+  const st=feedNow(n);if(st!=='session'&&!(st==='loading'&&sessionOf(n)))return '';  // F206a: there from the first frame, so what stands over it does not move
   if(FD.foot===null&&FD.whole)return TOUCH()&&!S.keys?keyButtons():'';
   const w=sessWorks(n), icon={work:'<span class="livedot"></span>',update:'<span class="bdot"></span>'};
   setTimeout(slimDraw,0);
