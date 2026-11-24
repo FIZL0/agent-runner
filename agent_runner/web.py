@@ -20,6 +20,8 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
     GET  /live/NAME?t=TOKEN      F170: what session NAME's Claude is doing: its status, mode and background work
                                  (session_now.live)
     GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
+    GET  /history/NAME?t=TOKEN   F191a: a page of session NAME's whole history, the newest, or &before=MARK, or
+                                 &since=MARK (session_history)
     GET  /settings?t=TOKEN       F97: every setting, its value, source and default (`ui_model.settings`)
     GET  /tools?t=TOKEN          F169: every tool and device of the Tools page, with no secret (`devices.page`)
     POST /tools?t=TOKEN          F169: {"op": …}: a device added, edited, tested, its secrets set (`devices.post`); only
@@ -60,7 +62,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plat, session_frame, session_now, session_theme, speech, trust, watch
+from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plat, session_frame, session_history, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -1122,6 +1124,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(self.server.terms.open(path.split('/')[2])))
         if path.startswith('/feed/'):
             return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
+        if path.startswith('/history/'):  # F191a
+            q = parse_qs(urlsplit(self.path).query)
+            return self.send(200, json.dumps(session_history.asked(path.split('/')[2], q), ensure_ascii=False))
         if path == '/settings':  # F97
             return self.send(200, json.dumps(U.settings(), ensure_ascii=False, default=str))
         if path == '/tools':  # F169

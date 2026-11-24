@@ -767,3 +767,10 @@ _Said_: no-push policy
 _On screen_: Never push
 _In code_: no_push, [git] no_push, AGENT_RUNNER_NO_PUSH
 _Avoid_: push lock, offline mode
+
+**Session history**:
+A chat's or slot's whole transcript as data for the run page, in pages: the person's messages, the agent's words, each tool call folded with its result, and notes. Unlike the Session feed, it reaches back to the transcript's start.
+_Said_: history
+_On screen_: nothing yet
+_In code_: session_history.py, history, /history/NAME
+_Avoid_: scrollback, log
