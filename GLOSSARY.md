@@ -466,7 +466,7 @@ _In code_: peers, peer add, peer_links
 _Avoid_: node, remote host
 
 **Device alert**:
-A warning Device Vitals raises about a machine (too hot, disk nearly full), told to the person as a needs-you line
+A warning Device Vitals raises about a machine (too hot, disk nearly full, a Claude login ending), told to the person as a needs-you line
 _Said_: device alert
 _On screen_: needs you: box: CPU at 95°C (over 90°C)
 _In code_: EV_DEVICE, vitals.push_alert

@@ -588,22 +588,115 @@ def test_push():
                         procs={}, proc_cpu={})
     tried = []
     v0 = V.Vitals(lambda: [], None, tailscale=False, sampler=s, usage=lambda: {},
+                  login=lambda now: '',
                   push=lambda roots, what, host: tried.append(what) and 0)
     v0.foot, v0.foot_at = {}, time.time()
     v0.tick(walk=True)
     v0.tick(walk=True)
     eq(len(tried), 2, 'no run up took it: tried again on the next sample, so a run started later hears it')
     v = V.Vitals(lambda: [], t / 'store', tailscale=False, sampler=s, usage=lambda: {},
+                 login=lambda now: '',
                  push=lambda roots, what, host: pushed.append(what) or 1)
     v.foot, v.foot_at = {}, time.time()
     v.tick(walk=True)
     v.tick(walk=True)
     eq(pushed, ['box: CPU at 99°C (over 90°C)'], 'pushed once over two samples')
     v2 = V.Vitals(lambda: [], t / 'store', tailscale=False, sampler=s, usage=lambda: {},
-                  push=lambda roots, what, host: pushed.append(what) or 1)
+                  login=lambda now: '',
+                 push=lambda roots, what, host: pushed.append(what) or 1)
     v2.foot, v2.foot_at = {}, time.time()
     v2.tick(walk=True)
     eq(len(pushed), 1, 'and not again after Home restarts')
+
+
+def test_push_login():
+    print('F126c: the Claude login warning is pushed once a day, as a needs-you event')
+    import datetime as dt
+    from agent_runner import status
+    from agent_runner.config import Config
+    from agent_runner.state import EV_DEVICE
+    t = tmpdir()
+    claude, other, idle = t / 'claude', t / 'other', t / 'idle'
+    for root, toml in ((claude, ''), (other, 'agent = "otheragent"\n'), (idle, '')):
+        root.mkdir()
+        git(root, 'init', '-q')
+        write(root / 'runner.toml', '[run]\nslots = 1\n' + toml)
+    cfg, store = t / 'cfg', t / 'store'
+    cfg.mkdir()
+    store.mkdir()
+    cred = cfg / '.credentials.json'
+    day, up = 86400, {claude, other}
+    start = dt.datetime(2026, 11, 2, 9, 0).timestamp()
+    s = SimpleNamespace(proc=t / 'none', sample=lambda now: snap(t=int(now)), disk=t, procs={}, proc_cpu={})
+
+    def login(ends: float) -> None:
+        write(cred, json.dumps({'claudeAiOauth': {'accessToken': 'a', 'refreshToken': 'r',
+                                                  'refreshTokenExpiresAt': int(ends * 1000)}}))
+
+    def vitals() -> V.Vitals:
+        return V.Vitals(lambda: [claude, other, idle], store, tailscale=False, sampler=s, usage=lambda: {},
+                        info=lambda root: {'up': root in up})
+
+    def tick(v: V.Vitals, now: float) -> None:
+        v.foot, v.foot_at = {}, now
+        v.tick(now)
+
+    def said(root: Path = claude) -> list[str]:
+        f = Config(root).notes('events.jsonl')
+        return [json.loads(x)['text'] for x in f.read_text(encoding='utf-8').splitlines()] if f.exists() else []
+
+    off = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN',
+           'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
+    with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(cfg)}), mock.patch('sys.platform', 'linux'), \
+            mock.patch('agent_runner.cmds.run_info', lambda root: {'up': root in up}):
+        for k in off:
+            os.environ.pop(k, None)
+        v = vitals()
+        login(start + 10 * day)
+        tick(v, start)
+        eq(said(), [], 'far away: nothing')
+
+        login(start + 2.5 * day)
+        up.clear()
+        tick(v, start)
+        eq((said(), v.login_day), ([], ''), 'no run up to hear it: not counted as said')
+        up.update({claude, other})
+        tick(v, start)
+        tick(v, start + 3600)
+        first = 'box: Claude login expires in 2 days: log in again (claude auth login)'
+        eq(said(), [first], 'once on a day')
+        eq((said(other), said(idle)), ([], []), 'not to a project with another agent or no run up')
+        ev = json.loads(Config(claude).notes('events.jsonl').read_text(encoding='utf-8'))
+        eq((ev['kind'], ev['device']), (EV_DEVICE, 'box'), 'as a device alert')
+        eq(status.since_event(ev, {})[2], f'needs you: {first}', 'since shows it as needs you')
+        check((status.needs_you_line(ev, {}, dt.datetime.fromisoformat(ev['time']), []) or '').endswith(first),
+              'and since --follow --needs-you sends it')
+
+        v = vitals()
+        tick(v, start + 7200)
+        eq(len(said()), 1, 'not twice after a restart')
+        tick(v, start + day)
+        eq(said()[1:], ['box: Claude login expires in 1 day: log in again (claude auth login)'], 'again the next day')
+        tick(v, start + 3 * day)
+        eq(said()[2:], ['box: Claude login has expired: log in again (claude auth login)'], 'past: pushed too')
+        cred.unlink()
+        tick(v, start + 4 * day)
+        eq(said()[3:], ['box: No Claude login: log in (claude auth login)'], 'missing: pushed too')
+
+        login(start + 30 * day)
+        tick(v, start + 4 * day + 60)
+        tick(v, start + 5 * day)
+        eq(len(said()), 4, 'renewed: nothing')
+        cred.unlink()
+        v = vitals()
+        tick(v, start + 5 * day + 60)
+        eq(len(said()), 5, 'a new warning after that is pushed again')
+        login(start + 30 * day)
+        tick(v, start + 5 * day + 120)
+        cred.unlink()
+        v = vitals()
+        tick(v, start + 5 * day + 180)
+        eq(len(said()), 6, 'also on the same day, over a restart')
 
 
 # --- Home's vitals calls and peers --------------------------------------------------------------------------------
@@ -724,4 +817,5 @@ def test_sessions():
 
 if __name__ == '__main__':
     raise SystemExit(report([test_headroom, test_fallback_room, test_linux_collectors, test_other_collectors,
-                             test_history, test_clean, test_open_sessions, test_auto_clean, test_alerts, test_push, test_home_calls, test_tailscale, test_sessions]))
+                             test_history, test_clean, test_open_sessions, test_auto_clean, test_alerts, test_push, test_push_login,
+                             test_home_calls, test_tailscale, test_sessions]))

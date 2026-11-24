@@ -13,7 +13,8 @@ From a sample Home works out:
     alerts     the thresholds that need the person: disk under min_free_gb, high temperatures, memory nearly
                full, session temp folders over 5% of the disk after the auto-clean (`alerts`); they show under
                Needs you on Home and go to each running project's events, which its run page and `since` show
-               (`Vitals.push_alerts`)
+               (`Vitals.push_alerts`); a Claude login ending, ended or missing goes the same way once a day
+               (`Vitals.push_login`)
     footprint  what agent-runner keeps on disk: worktrees under each run home, session temp folders, logs,
                wip/ branches, each sized (`footprint`), and Clean's safe list (`clean_plan`, `clean`);
                each regular walk removes the ended sessions' temp folders on that list by itself (`auto_clean`)
@@ -805,8 +806,9 @@ class Project:
     run has busy and the sessions waiting to resume."""
 
     def __init__(self, root: Path, home: Path, notes: Path, main: str, up: bool, busy: set[str],
-                 resume: set[str], min_free_gb: float = 10, caps: dict | None = None, fallback: bool = False):
-        self.fallback = fallback
+                 resume: set[str], min_free_gb: float = 10, caps: dict | None = None, fallback: bool = False,
+                 agent: str = 'claude'):
+        self.fallback, self.agent = fallback, agent
         self.root, self.home, self.notes, self.main, self.up = root, home, notes, main, up
         self.busy, self.resume, self.min_free_gb, self.caps = busy, resume, min_free_gb, caps or {}
 
@@ -818,7 +820,7 @@ class Project:
             home, notes = c.home, c.notes()
             main = c.master_branch or git_out(root, 'branch', '--show-current') or 'main'
             mff, caps = c.run.get('min_free_gb', 10), {k: c.run.get(k) for k in ('weekly_max', 'session_max')}
-            fallback = free_fallback(c)
+            fallback, agent = free_fallback(c), c.run.get('agent') or 'claude'
         except (OSError, SystemExit, ValueError, KeyError, TypeError):
             return None
         if info is None:
@@ -834,7 +836,7 @@ class Project:
                     continue
         except OSError:
             pass
-        return cls(root, home, notes, main, bool(run.get('up')), busy, resume, mff, caps, fallback)
+        return cls(root, home, notes, main, bool(run.get('up')), busy, resume, mff, caps, fallback, agent)
 
 
 def tmp_roots(projects: list[Project]) -> list[Path]:
@@ -1200,6 +1202,13 @@ def usage_now() -> dict:
         return {}
 
 
+def login_now(now: float) -> str:
+    """F126c: what to push about this machine's Claude login, with the command that renews it; '' when it is fine."""
+    from agent_runner.watch import LOGIN_CMD, claude_login
+    said = claude_login(now)
+    return f'{said} ({LOGIN_CMD})' if said else ''
+
+
 class Vitals:
     """This machine's vitals for Home: samples every EVERY s in a thread once started, walks the footprint every
     FOOTPRINT_EVERY s and removes the ended sessions' temp folders it finds (`auto_clean`), pushes new alerts,
@@ -1207,12 +1216,15 @@ class Vitals:
 
     def __init__(self, roots, store: Path | None, peers=lambda: [], token: str = '', tailscale: bool = True,
                  sampler: Sampler | None = None, sessions=None, usage=usage_now, info=None, push=push_alert,
-                 act=None, registry: Path | None = None, log=lambda said: print(said, flush=True)):
-        self.registry, self.log = registry, log
+                 act=None, registry: Path | None = None, log=lambda said: print(said, flush=True),
+                 login=login_now):
+        self.registry, self.log, self.login_fn = registry, log, login
         self.roots, self.peers, self.token, self.tailscale = roots, peers, token, tailscale
         self.sampler = sampler or Sampler()
         self.history = History(store / 'vitals.jsonl' if store else None)
         self.said_file = store / 'vitals-alerts.json' if store else None
+        self.login_file = store / 'vitals-login' if store else None  # F126c: the day login_day holds
+        self.login_day = ((_read(self.login_file) if self.login_file else None) or '').strip()
         self.sessions_fn, self.usage_fn, self.info, self.push, self.act = sessions, usage, info, push, act
         self.snap: dict = {}
         self.foot: dict | None = None
@@ -1273,6 +1285,7 @@ class Vitals:
             else:
                 threading.Thread(target=self.refresh_footprint, name='home-footprint', daemon=True).start()
         self.push_alerts(projs)
+        self.push_login(projs, now)
         return snap
 
     def refresh_footprint(self, projs: list[Project] | None = None, now: float | None = None,
@@ -1320,6 +1333,32 @@ class Vitals:
         if self.said_file and fresh:
             try:
                 self.said_file.write_text(json.dumps(sorted(self.said)), encoding='utf-8')
+            except OSError:
+                pass
+
+    def push_login(self, projs: list[Project], now: float) -> None:
+        """F126c: while the Claude login is ending, has ended or is missing, push that once a day (local date), as a
+        device alert, to the running projects whose [run] agent is claude. The day is kept over a restart, and
+        forgotten once the login is fine, so a new warning is pushed again."""
+        try:
+            said = self.login_fn(now)
+        except Exception:  # noqa: BLE001 - a login that cannot be read must not stop the sampling
+            return
+        today = time.strftime('%Y-%m-%d', time.localtime(now)) if said else ''
+        if today == self.login_day:
+            return
+        if said:
+            host = self.snap.get('host', '')
+            try:
+                got = self.push([p.root for p in projs if p.agent == 'claude'], f'{host}: {said}', host)
+            except Exception:  # noqa: BLE001 - a push that fails must not stop the sampling
+                got = 0
+            if not got:  # no run up to hear it: tried again on the next sample
+                return
+        self.login_day = today
+        if self.login_file:
+            try:
+                self.login_file.write_text(today, encoding='utf-8')
             except OSError:
                 pass
 

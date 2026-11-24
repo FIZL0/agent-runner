@@ -1175,7 +1175,7 @@ loop reads on every pass, so the run acts within 10 s; with no run up they say s
 `agent-runner status` is short enough for a phone: whether a run is up and what the keys have set, each
 slot's task id, title and minutes running (from `.runner/STATE`, rewritten every pass), what is merging, the
 last five merged, blocked or parked tasks from `run.log`, and the account's usage as the caps last read it.
-A Claude login under 3 days from its end, ended, or missing adds one line, here and in `agent-runner ui`, naming `claude auth login` (not with an API key or token in the environment, on Bedrock, Vertex or Foundry, with another ANTHROPIC_BASE_URL or an apiKeyHelper, or for a `[run]` agent other than claude; on macOS, where the login is in the Keychain, a missing file is no warning).
+A Claude login under 3 days from its end, ended, or missing adds one line, here and in `agent-runner ui`, naming `claude auth login` (not with an API key or token in the environment, on Bedrock, Vertex or Foundry, with another ANTHROPIC_BASE_URL or an apiKeyHelper, or for a `[run]` agent other than claude; on macOS, where the login is in the Keychain, a missing file is no warning). With Runner Home running, the same warning is also pushed once a day per machine (local date) as a device alert in the events of each running claude project, and `since --follow --needs-you` sends it; the day is kept over a Home restart, and nothing is pushed once the login is renewed.
 `-n 30` adds the end of `run.log`.
 
 Both write `.runner/STOP` (with who asked; `.runner/STOP.force` for a stop now), and the loop checks that
