@@ -422,7 +422,7 @@ words never show. `/terminal/NAME` says
   there is something to say). Its sheets: Working (Stop), mode (Shift+Tab, one press at a time), shells (what runs, its
   output tail, Stop through `/tasks`), agents (Open through `/tasks`), Update (the command, run on the run's machine: only
   known update commands; Restart chat, `restart_chat`, for an idle c2 and up). The status comes from `/live/NAME` (Claude
-  Code's status, mode and background work). The `/` button's commands come from `/commands?s=NAME`: the runner's, Claude
+  Code's status, mode and background work). Its `queued` counts the messages sent that Claude Code has not taken in yet, read from its queue entries in the transcript (background events are not counted; 0 when idle); `chat_to` with `force` and no text sends one Escape, so Claude Code takes them in as its next turn, and does nothing with nothing queued. The `/` button's commands come from `/commands?s=NAME`: the runner's, Claude
   Code's own, the project's and the person's, and the skills named in that chat's transcript. While Claude works and the
   box has words or an attachment, the box's send arrow is Force send (drawn bolder, with a second arrowhead; otherwise the plain Send, the same size). Force send interrupts with Escape, waits until Claude Code's status is at rest, then sends once. Scrolling up hides the chips,
   box and top bar and leaves a thin strip that says Working; scrolling down, at the end, a tap on the strip or typing
