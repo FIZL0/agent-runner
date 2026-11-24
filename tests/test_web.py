@@ -886,7 +886,7 @@ const DRAFT_KEY = k => 'd:' + k, boxKey = () => 'home', toast = t => said.push(t
 const document = {title: 't', querySelector: () => ta}, location = {reload() { reloads++ }}, els = {}, $ = k => els[k] = els[k] || {};
 const setHTML = (e, h) => { e.h = h }, controlOf = () => rc, ctlBusy = () => false, ctlSure = () => 'SURE';
 let H, S;
-const fresh = (snap, f) => { H = {add: ''}; S = {snap, f: f || {}, atts: [], ob: [], setOpen: {}, sure: null}; };
+const fresh = (snap, f) => { H = {add: ''}; S = {snap, f: f || {}, atts: {}, ob: [], setOpen: {}, sure: null}; };
 fresh({});
 const src = (home, mine) => logic + part.replace("let RUN_VERSION=''", "var RUN_VERSION=''").replace(/\bconst /g, 'var ')
   + `;var HOME_PAGE=${home}, PAGE_PRINT=${JSON.stringify(mine)};`;
@@ -907,12 +907,13 @@ out.noReload = reloads;
 // Refresh keeps what is written, or waits
 const go = () => { const n = reloads; said = []; newsRefresh(); return [reloads - n, said[0] || ''] };
 fresh({}, {'set:project:x': '5', setq: 'cap'}); H.add = '/x'; S.ren = 'c2'; S.setOpen = {a: 1};
-S.atts = [{name: 'p.png', path: '/up/p.png', thumb: 'data:'}]; S.ob = [{cid: '1'}]; store.set('ob', JSON.stringify(S.ob));
+S.atts = {c1: [{name: 'p.png', path: '/up/p.png', thumb: 'data:'}], c2: []}; S.ob = [{cid: '1'}]; store.set('ob', JSON.stringify(S.ob));
 ta = {value: 'half a thought'}; store.set('d:home', ta.value);
 out.kept = go();
 fresh({}); takeTyped(); out.back = [S.f, H.add, S.ren, S.setOpen, S.atts]; out.once = tabStore.get(TYPED_KEY);
 fresh({}); ta = null; out.nothing = [go(), tabStore.get(TYPED_KEY)];
-fresh({}); S.atts = [{name: 'x'}]; out.uploading = go();
+fresh({}); tabStore.set(TYPED_KEY, JSON.stringify({atts: [{name: 'o', path: '/o'}]})); takeTyped(); out.oldAtts = S.atts;  // kept by a page before B182
+fresh({}); S.atts = {c9: [{name: 'x'}]}; out.uploading = go();
 fresh({}); TK.rec = {}; out.mic = go(); TK.rec = null; DK.rec = {}; out.dict = go(); DK.rec = null;
 fresh({}, {'dev:password': 'hunter2', setq: 'a'}); out.form = [go(), JSON.stringify(tabStore.m).includes('hunter2')];
 fresh({}); ta = {value: 'not kept'}; store.set('d:home', ''); out.unkept = go();
@@ -968,7 +969,8 @@ def test_news_f149(tmp: Path) -> None:
     eq(o['noReload'], 0, 'nothing of that reloads the page')
     eq(o['kept'], [1, ''], 'Refresh with a draft and an outbox reloads')
     eq(o['back'], [{'set:project:x': '5', 'setq': 'cap'}, '/x', 'c2', {'a': 1},
-                   [{'name': 'p.png', 'path': '/up/p.png'}]], 'and what was written comes back')
+                   {'c1': [{'name': 'p.png', 'path': '/up/p.png'}]}], 'and what was written comes back, an attachment to its own box')
+    eq(o['oldAtts'], {'home': [{'name': 'o', 'path': '/o'}]}, "B182: an older page's attachments come back in the open box")
     eq((o['once'], o['nothing']), ('', [[1, ''], '']), 'once; with nothing written nothing is kept')
     for k, word in (('uploading', 'uploading'), ('mic', 'mic'), ('dict', 'mic'), ('unkept', 'cannot keep'), ('dead', 'cannot keep'),
                     ('deadOb', 'cannot keep')):
@@ -1602,7 +1604,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const handlers = {}, window = globalThis;
 let COARSE = false, log = [];
 globalThis.matchMedia = q => ({matches: q === '(pointer:coarse)' && COARSE});
-const S = {thread: null, view: 'home', sel: [], atts: [], f: {}}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
+const S = {thread: null, view: 'home', sel: [], atts: {}, f: {}}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
 const DRAFT_KEY = k => k, boxKey = () => 'k', esc = s => String(s), tq = p => p, I = {}, HI = {i: null};
 const busy = () => false, act = () => {}, selectedText = () => false, render = () => {}, histKey = () => false;
 const send = () => log.push('send');
@@ -2232,7 +2234,7 @@ const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
 const log = {acts: [], fetched: [], focus: 0, draws: 0}, kept = {}, ta = {value: ''}, tab = {};
 const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [{id: 'F1', title: 'Board page'}], concepts: [{id: 'K5', concept: 'K5', title: 'Lazy layout'}]},
-    view: 'home', thread: null, ctx: null, atts: [], ob: [], sel: [], feeds: {}, sent: {}},
+    view: 'home', thread: null, ctx: null, atts: {}, ob: [], sel: [], feeds: {}, sent: {}},
   HI: {i: null}, DK: {}, I: {}, HOME_PAGE: false, HB: '', location: {hash: ''}, PLACE_KEY: 'p', placeWas: '', FD: {}, TOUCH: () => false,
   store: {get: k => kept[k] || '', set: (k, v) => { if (v) kept[k] = v; else delete kept[k] }},
   tabStore: {get: k => tab[k] || '', set: (k, v) => { tab[k] = v }},
@@ -2244,12 +2246,12 @@ const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [{id: 'F1', t
   render: () => { log.draws++; env.keepPlace(); ta.value = kept['ar-draft:' + env.boxKey()] || '' }};
 const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
 env.env = env;
-const names = ['about', 'send', 'open', 'goView', 'keepPlace', 'takePlace', 'boxKey', 'shownSession', 'threadTitle', 'feedHTML', 'box', 'keptCheck', 'feedLoad', 'homeHTML', 'conceptsHTML'];
+const names = ['about', 'send', 'open', 'goView', 'keepPlace', 'takePlace', 'boxKey', 'shownSession', 'threadTitle', 'feedHTML', 'box', 'keptCheck', 'feedLoad', 'homeHTML', 'conceptsHTML', 'upload', 'attsMove'];
 new Function('known', 'env', 'with (known) {' + logic + line('const DRAFT_KEY=') + line('const boxKey=') + line('const shownSession=') + line('const sessionOf=')
   + line('const isAgent=') + line('const threadTitle=') + grab('function box(') + line('const feedNow=') + grab('async function feedLoad(') + grab('function feedHTML(')
   + grab('async function loadFeed(') + line('function keepPlace(') + grab('function takePlace(') + grab('function keptCheck(')
   + line('function open(') + line('function goView(') + grab('async function send(') + line('function newChat(') + line("  S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open(")
-  + grab('function about(') + grab('function homeHTML(') + grab('function conceptsHTML(') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
+  + grab('function about(') + grab('async function upload(') + grab('function homeHTML(') + grab('function conceptsHTML(') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
 const type = t => { ta.value = t; env.store.set('ar-draft:' + env.boxKey(), t) };
 const S = env.S, out = {press: []};
 (async () => {
@@ -2278,6 +2280,26 @@ const S = env.S, out = {press: []};
   S.ctx = null; S.thread = null; env.takePlace(); env.keptCheck(); out.kreload = [S.view, S.thread, S.ctx];
   const n = log.acts.length; type('a dark mode'); await env.send();
   out.ksent = [log.acts.slice(n), S.ctx, S.view, env.threadTitle(S.thread), Object.keys(kept).filter(k => k.includes('newconcept'))];
+  // B182: attachments per box
+  const seen = () => ['a.png', 'b.txt'].filter(x => env.box('x').includes(x)), go = n => { env.open(n); return seen() };
+  let answer; env.fetch = p => p.startsWith('upload') ? new Promise(r => { answer = j => r({json: async () => j}) }) : Promise.reject(0);
+  env.goView('home'); env.open('c1'); let up = env.upload({name: 'a.png', type: ''}); out.atts = {at: seen()};
+  out.atts.away = go('c2'); answer({ok: true, path: '/up/a.png'}); await up; out.atts.landed = seen();
+  let m = log.acts.length; type('only words'); await env.send(); out.atts.sent2 = log.acts.slice(m).map(a => a[1].text);
+  up = env.upload({name: 'b.txt', type: ''}); answer({ok: true, path: '/up/b.txt'}); await up;
+  env.goView('home'); out.atts.home = seen(); env.goView('talk'); out.atts.talk = seen();
+  env.goView('plan'); env.about('plan:F1'); out.atts.fresh = seen();
+  out.atts.back = [go('c2'), go('c1')];
+  m = log.acts.length; type('look'); await env.send(); out.atts.sent1 = log.acts.slice(m).map(a => a[1].text);
+  out.atts.after = [seen(), go('c2')];
+  S.atts = env.attsMove(S.atts, 'c2', 'c7'); out.atts.moved = [seen(), go('c7')];
+  // Talk: a message that did not go puts its attachment back in Talk's box, though another is open
+  env.talkSend = async () => { env.open('c1'); return false };
+  env.goView('talk'); up = env.upload({name: 'a.png', type: ''}); answer({ok: true, path: '/up/a.png'}); await up;
+  type('hi'); await env.send(); out.atts.talkBack = [S.thread, seen(), (env.goView('talk'), seen())];
+  const unatt = page.slice(page.indexOf("if(x=q('[data-unatt]'))"), page.indexOf('\n', page.indexOf("if(x=q('[data-unatt]'))")));
+  new Function('S', 'boxKey', 'q', 'render', 'let x;' + unatt)(S, env.boxKey, () => ({dataset: {unatt: '0'}}), () => {});
+  out.atts.removed = [seen(), go('c7')];
   console.log(JSON.stringify(out)); process.exit(0);
 })();
 """
@@ -2328,6 +2350,10 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     eq(o['kreload'], ['home', '+newconcept', {'kind': 'newconcept', 'label': 'New concept'}], 'a reload keeps the view')
     eq(o['ksent'], [[['new_control', {'ask': 'Concept: a dark mode', 'wait': False}]], None, 'home', 'New concept', []],
        'the first message starts a control session with Concept: …')
+    eq(o['atts'], {'at': ['a.png'], 'away': [], 'landed': [], 'sent2': ['only words'], 'home': [], 'talk': [], 'fresh': [],
+                   'back': [['b.txt'], ['a.png']], 'sent1': ['look\n\nAttached: /up/a.png'], 'after': [[], ['b.txt']],
+                   'moved': [[], ['b.txt']], 'talkBack': ['c1', [], ['a.png']], 'removed': [[], ['b.txt']]},
+       'B182: an attachment stays in the box it was added in, goes only with its message, and is there on coming back')
 
 
 NEED_DRIVER = r"""
@@ -2923,7 +2949,7 @@ const document = {activeElement: null, hidden: false, querySelector: s => s === 
 const on = {}, main = {classList: {toggle: (c, v) => on[c] = v}, style: {setProperty() {}}};
 const window = {};
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
-const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: [], ob: [], feeds: {}, live: true, sheet: ''};
+const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: {}, ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
 const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
