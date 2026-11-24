@@ -1099,8 +1099,9 @@ const obBootCid=(x,boot)=>x.cid.split('~')[0]+'~'+boot;
 const obTo=x=>String((x&&x.args&&x.args.to)||'');
 /* take an item in; a setting's own later save for everyone takes the place of one that did not go yet (`at`: the one going now) */
 function obAdd(box,it,at){return(box||[]).filter(x=>!(it.name==='setting_project'&&it.set&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending'&&x.cid!==at)).concat([it])}
-/* the next item to send: the first still sending, skipping messages to a chat that is not up yet */
-function obNext(box){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@'))||null}
+/* the next item for tab `tab` to send: the first still sending, skipping messages to a chat that is not up yet and
+   (B161) what a tab still there (`live`) has to send: x.by */
+function obNext(box,tab,live){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@')&&(!x.by||x.by===tab||!(live||[]).includes(x.by)))||null}
 /* a starting chat (placeholder '@cid') got its name: its messages go there */
 function obName(box,ph,name){return(box||[]).map(x=>obTo(x)===ph?{...x,args:{...x.args,to:name}}:x)}
 /* the run answered item cid with r: ok drops it (and names its new chat's messages), else it fails and stays */
@@ -1112,12 +1113,12 @@ function obSettle(box,cid,r,boot){
   return l.map(x=>x.cid===cid?{...x,state:'failed',err,...(oldSaid(err)?{boot:boot||''}:{})}:obTo(x)===ph?{...x,state:'failed',err:oldSaid(err)?err:'the new chat did not start'}:x);
 }
 /* Retry: sent again under a new cid (the run's answer to the old one is kept); a message waiting on a chat
-   that did not start retries that chat */
-function obRetry(box,cid,fresh){
+   that did not start retries that chat. B161: `by`: the tab that sends it ('' any one) */
+function obRetry(box,cid,fresh,by){
   const l=box||[], it=l.find(x=>x.cid===cid);if(!it)return l;
   const up=obTo(it).startsWith('@')&&l.find(x=>'@'+x.cid===obTo(it));
-  if(up)return obRetry(l,up.cid,fresh);
-  return l.map(x=>x.cid===cid?{...x,cid:fresh,state:'sending',err:''}:obTo(x)==='@'+cid?{...x,args:{...x.args,to:'@'+fresh},state:'sending',err:''}:x);
+  if(up)return obRetry(l,up.cid,fresh,by);
+  return l.map(x=>x.cid===cid?{...x,cid:fresh,by:by||'',state:'sending',err:''}:obTo(x)==='@'+cid?{...x,args:{...x.args,to:'@'+fresh},state:'sending',err:''}:x);
 }
 /* Discard: the item goes, and with a new chat the messages waiting for it */
 function obDrop(box,cid){return(box||[]).filter(x=>x.cid!==cid&&obTo(x)!=='@'+cid)}
@@ -1367,11 +1368,24 @@ async function act(name,args){
 }
 
 /* --- F137: the outbox (obParse and the rest in the logic script) ------------------------------------------ */
-const OB_KEY='ar-outbox';
-S.ob=obParse(store.get(OB_KEY));S.obOpen=false;
-const OB={at:'',busy:false,offline:false,timer:0,wait:2000};
+/* B161: the tabs of one project share it (Runner Home serves every project from one address). One tab sends an item:
+   the one it was taken in (by), which marks itself as there (OB_TAB) while it has items to send; another takes the
+   item over only once that mark is gone or OB_DEAD ms old */
+const OB_KEY='ar-outbox'+(HKEY?':'+HKEY:''), OB_TAB='ar-outbox-tab:', OB_DEAD=20000;
 const newCid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,10);
-function obChange(fn){S.ob=fn(S.ob);store.set(OB_KEY,S.ob.length?JSON.stringify(S.ob):'')}
+S.ob=obParse(store.get(OB_KEY));S.obOpen=false;
+const OB={tab:newCid(),kept:true,at:'',busy:false,offline:false,timer:0,beat:0,wait:2000};  // kept: this browser stores it
+function obLoad(){if(OB.kept)S.ob=obParse(store.get(OB_KEY))}  // what another tab changed: never an old copy over it
+function obChange(fn){obLoad();S.ob=fn(S.ob);const t=S.ob.length?JSON.stringify(S.ob):'';store.set(OB_KEY,t);OB.kept=store.get(OB_KEY)===t;obBeat()}
+function obBeat(){const on=S.ob.some(x=>x.by===OB.tab&&x.state==='sending');store.set(OB_TAB+OB.tab,on?String(Date.now()):'');clearTimeout(OB.beat);if(on)OB.beat=setTimeout(obBeat,4000)}
+function obLive(){return S.ob.map(x=>x.by).filter(t=>t&&Date.now()-Number(store.get(OB_TAB+t))<OB_DEAD)}
+/* take over an item whose tab is gone; false when another tab took it at the same moment */
+async function obTake(it){
+  if(it.by)store.set(OB_TAB+it.by,'');
+  obChange(b=>b.map(x=>x.cid===it.cid?{...x,by:OB.tab}:x));
+  await new Promise(r=>setTimeout(r,60));obLoad();
+  return S.ob.some(x=>x.cid===it.cid&&x.by===OB.tab&&x.state==='sending');
+}
 /* B154: the sent messages (sentStep), kept over a reload */
 const SENT_KEY='ar-sent';
 S.sent=sentParse(store.get(SENT_KEY));
@@ -1396,23 +1410,25 @@ function sentBubbles(n,shown){
 }
 /* take an action: drawn at once by the caller, kept in the outbox, sent behind */
 function outbox(name,args,more){
-  const it={cid:newCid(),name,args:args||{},state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
+  const it={cid:newCid(),name,args:args||{},by:OB.tab,state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
   obChange(b=>obAdd(b,it,OB.at));render(true);drain();return it;
 }
 async function drain(){
   if(OB.busy)return;OB.busy=true;clearTimeout(OB.timer);
   try{
-    for(let it;(it=obNext(S.ob));){
+    for(let it;obLoad(),(it=obNext(S.ob,OB.tab,obLive()));){
+      if(it.by!==OB.tab&&!await obTake(it))continue;
       let j;OB.at=it.cid;
       try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:it.name,args:it.args,cid:it.cid})});
         if(r.status>=500)throw new Error(`HTTP ${r.status}`);
         j=await r.json()}
       catch(e){OB.offline=true;OB.timer=setTimeout(drain,OB.wait);OB.wait=Math.min(OB.wait*2,30000);obDraw();return}
-      OB.offline=false;OB.wait=2000;
+      OB.offline=false;OB.wait=2000;obLoad();
       if(!S.ob.some(x=>x.cid===it.cid))continue;  // discarded while it went
       obChange(b=>obSettle(b,it.cid,j,S.snap.boot));
       obDone(it,j);render(true);
     }
+    if(obNext(S.ob))OB.timer=setTimeout(drain,OB_DEAD);  // B161: another tab's: looked at again, should it go away
   }finally{OB.busy=false;OB.at=''}
   obDraw();
 }
@@ -1478,7 +1494,7 @@ const notDelivered=()=>Object.entries(S.sent||{}).flatMap(([n,s])=>(s.pending||[
 /* B164: the run restarted: what the older one did not know is sent again */
 function obBoot(boot){for(const x of obDue(S.ob,boot))obRetryClick(x.cid,obBootCid(x,boot))}
 function obRetryClick(cid,as){  /* Retry: a new chat sent again gets a new cid, so its stand-in follows */
-  const before=S.ob, fresh=as||newCid();obChange(b=>obRetry(b,cid,fresh));
+  obLoad();const before=S.ob, fresh=as||newCid();obChange(b=>obRetry(b,cid,fresh,as?'':OB.tab));  // B161: the run restarted: any one tab sends it
   const was=before.find(y=>y.newchat&&!S.ob.some(z=>z.cid===y.cid));
   if(was){const ph='@'+fresh;if(S.thread==='@'+was.cid)S.thread=ph;S.waitNew={known:chats().map(c=>c.name),at:Date.now(),ph}}
   render(true);drain();
@@ -1491,7 +1507,12 @@ function obEditBack(cid){  /* a message that failed goes back in its box */
   store.set(DRAFT_KEY(t),x.text||'');open(t);
 }
 addEventListener('online',()=>drain());
-addEventListener('storage',e=>{if(e.key===OB_KEY){S.ob=obParse(e.newValue);render(true);drain()}});  // another tab
+addEventListener('storage',e=>{if(e.key===OB_KEY){obLoad();render(true);drain()}else if(e.key&&e.key.startsWith(OB_TAB)&&!e.newValue)drain()});  // another tab
+/* B161: a tab that goes leaves its items to another (or to its own reload); one that comes back looks what went meanwhile */
+function obBack(){const was=JSON.stringify(S.ob);obLoad();obBeat();if(JSON.stringify(S.ob)!==was)render(true);drain()}
+addEventListener('pagehide',()=>{clearTimeout(OB.beat);store.set(OB_TAB+OB.tab,'')});
+addEventListener('pageshow',e=>{if(e.persisted)obBack()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)obBack()});
 
 /* --- what the snapshot holds ------------------------------------------------------------------------------- */
 /* F133: the chats in the order the run keeps (snap.chat_order); one it does not list yet goes just under the pins */
