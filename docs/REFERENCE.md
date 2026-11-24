@@ -251,7 +251,10 @@ in `home.json`, and `home status` lists it; it takes effect with no restart. Thr
 and Home fills the run's own key on `/p/<project>/`. A run's own page (not through Home) reads `[ui] trusted_networks`
 at the run's start. Loopback is never trusted; a bad network is an error that names it. Printed links drop `?t=` only
 when every address their host resolves to is trusted. Anyone on a trusted network can do everything the page does,
-including type into sessions, so with no key a request must come from the page itself (another site's page is refused).
+including type into sessions, so with no key a request must come from the page itself (another site's page is refused),
+at an IP address, a `*.ts.net` name or a local one (a bare name, .local, .lan, .home, .home.arpa, .internal,
+.localdomain); at any other name the key is needed. Behind a proxy on this machine (Tailscale Serve) the client is the
+last address in `X-Forwarded-For`, read from a loopback peer only, so another program on this machine can fake it.
 
 Home's links put the https address first. `home status`, `home install` (and its QR code, which holds the https
 link when there is one) and a run's link through Home (`/p/<project>/`) list a Tailscale Serve https address for
