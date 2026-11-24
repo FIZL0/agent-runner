@@ -171,16 +171,25 @@ def test_tailnet_https_f96(tmp: Path) -> None:
     def changes():
         return [c for c in calls.read_text(encoding='utf-8').splitlines() if c.startswith('serve --')]
 
-    def free():
+    def hold_pair():
+        """Two ports in a row, bound for the whole test so that no other process gets them. Bound but not listening:
+        a connection is refused, as on a free port. The run's server can bind the first beside its holder (both have
+        SO_REUSEADDR; only Linux lets it, so elsewhere the first is let go)."""
         while True:
-            with socket.socket() as a, socket.socket() as b:
-                a.bind(('0.0.0.0', 0))
-                try:
-                    b.bind(('0.0.0.0', a.getsockname()[1] + 1))
-                    return a.getsockname()[1]
-                except (OSError, OverflowError):
-                    pass
-    port = free()
+            a, b = socket.socket(), socket.socket()
+            a.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            a.bind(('0.0.0.0', 0))
+            try:
+                b.bind(('0.0.0.0', a.getsockname()[1] + 1))
+            except (OSError, OverflowError):
+                a.close()
+                b.close()
+                continue
+            port = a.getsockname()[1]
+            if sys.platform != 'linux':
+                a.close()
+            return port, a, b
+    port, *held = hold_pair()
     log: list[str] = []
 
     def start(home=0, site=(), path='', **settings):
@@ -296,13 +305,10 @@ def test_tailnet_https_f96(tmp: Path) -> None:
         http_only('for something else')
         eq(web_rules(), changed['Web'], 'a rule on the next port is left alone')
         fake()
-        try:
-            held = socket.create_server(('127.0.0.1', port + 1))
-        except OSError:  # another process on this machine has it: taken all the same
-            held = None
+        held[1].listen()
         http_only('is taken')
-        if held:
-            held.close()
+    for one in held:
+        one.close()
 
 
 PARTS_DRIVER = r"""

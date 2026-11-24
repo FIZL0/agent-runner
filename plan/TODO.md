@@ -2,7 +2,6 @@
 
 ### Next
 
-- [ ] **T27** (follow-up, critical) make the test `http only: is taken` robust: it failed under load in F406f's merge gate and passed alone. Find what it races (wall-clock time, shared ports or files, other processes) and remove that, rather than widening a timeout (filed 2026-11-24) | test: http only: is taken
 - [ ] **T28** (follow-up, critical) make the test `the page is served over http` robust: it failed under load in F406f's merge gate and passed alone. Find what it races (wall-clock time, shared ports or files, other processes) and remove that, rather than widening a timeout (filed 2026-11-24) | test: the page is served over http
 - [ ] **T29** (follow-up, critical) make the test `nothing to turn off` robust: it failed under load in F406f's merge gate and passed alone. Find what it races (wall-clock time, shared ports or files, other processes) and remove that, rather than widening a timeout (filed 2026-11-24) | test: nothing to turn off
 - [ ] **F421** Setup and Settings offer auto audit. The person agreed, 2026-11-24 grill. agent-runner setup asks once (default no); the run page's Settings has the switch, every N and the model. Check: tests of both, and the page at phone width. | files: agent_runner/setup.py, agent_runner/settings_live.py, agent_runner/setting_words.py, tests/test_audit_setup.py, docs/REFERENCE.md | after: F417
