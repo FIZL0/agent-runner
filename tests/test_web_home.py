@@ -632,9 +632,9 @@ def test_home_switcher_f134(tmp: Path) -> None:
     eq([now[0].get('starting'), (now[1]['paused'], now[1]['slots']), now[2], now[3]['stopping'], now[4]['paused']],
        [True, (True, 5), up, True, False], 'F150: an action on its way shows at once; one that failed, or of another project, does not')
     eq([(r['key'], r['said'], r['needs'], r['href'], r['on']) for r in got[0]],
-       [('alpha', 'running', 2, '/p/alpha/?t=HT%261', True), ('beta two', 'paused', 0, '/p/beta%20two/?t=HT%261', False),
-        ('gamma', 'off', 0, '/p/gamma/?t=HT%261', False)],
-       "the switcher lists Home's projects with their state and needs-you count, each linking /p/KEY/?t=TOKEN")
+       [('alpha', 'running', 2, '/p/alpha/?t=HT%261#home', True), ('beta two', 'paused', 0, '/p/beta%20two/?t=HT%261#home', False),
+        ('gamma', 'off', 0, '/p/gamma/?t=HT%261#home', False)],
+       "the switcher lists Home's projects with their state and needs-you count, each linking /p/KEY/?t=TOKEN#home")
     eq(got[1:6], ['/', '/', '', 'beta two', ''],
        "Home's address from the page's path: /p/KEY/ through Home, / on Home's own page, none on a run's own port")
     eq([got[6]['label'], got[7]['label'], got[8]['label']], ['Start run', 'Starting…', 'Open'], "a card's one main button")
@@ -643,12 +643,39 @@ def test_home_switcher_f134(tmp: Path) -> None:
        [('Pause', 'pause', False), ('Slots', None, False), ('Stop', 'stop', True), ('Unlist', None, True)], 'Stop and Unlist ask first')
     eq(got[11], 'paused · 0 of 1 slot · 3 queued', 'the words under a project')
     eq([r['key'] for r in got[12]], ['A', 'b', 'Idle', 'paused', 'Off1', 'off2'], 'F150: running, idle or paused, off; by name in each')
-    eq([r['href'] for r in got[13]][0], '/p/alpha/?t=T#plan', 'switching keeps the tab')
+    eq([r['href'] for r in got[13]][0], '/p/alpha/?t=T#home', 'switching opens Home')
     eq(got[14:19], [False, True, False, 2, 0], "All projects' row hides with one project; its count is the others'")
     eq([(a['key'], a['id'], a['what']) for a in got[19]], [('a', 'K1', 'Pick one'), ('z', 'F2', 'Check - it')], 'what needs you, over all projects')
     eq(got[20], {'queue': [1]}, 'the snapshot kept for the next visit holds no token and nothing of one run or version')
     eq(got[21], '/', "Home's page at /p/KEY/ (a project that is off) knows where Home is")
     eq((got[22], got[23]['link']), ({'v': 'home', 't': '', 'link': True, 'need': 'F162a2'}, False), 'a link to an item of Needs you')
+
+
+SWITCH_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const i = page.indexOf("const TAB_KEY='ar-tab'"), src = page.slice(i, page.indexOf("/* the list's level or the project's", i));
+const ps = [{key: 'a', state: 'idle'}, {key: 'b', state: 'idle'}];
+const from = tab => new Function('tabStore', 'projectsNow', logic + `const HKEY='a',HB='/',T='T';` + src + ';return [rowsNow()[1].href, projectHref("b"), lastTab()]')({get: () => tab}, () => ps);
+const key = new Function(logic + 'return placeOf')();
+console.log(JSON.stringify(['plan', '', 'home'].map(from).concat([['{"v":"plan","t":""}', '{"v":"home","t":"c3"}'].map(k => key(k, '#home', true, []))])));
+"""
+
+
+def test_switch_home_f203(tmp: Path) -> None:
+    """F203: a switch to another project (the list, its number keys, a card, Open) opens its Home, from Plan or a chat
+    here, also when Plan or a chat was open there; the view last open is still known for coming down again."""
+    if not shutil.which('node'):
+        print('  (no node here: the switch script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(SWITCH_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, encoding='utf-8')
+    check(r.returncode == 0, 'node runs the switch script', r.stderr[-800:])
+    if r.returncode:
+        return
+    got, b = json.loads(r.stdout), '/p/b/?t=T#home'
+    eq(got[:3], [[b, b, 'plan'], [b, b, ''], [b, b, 'home']], "the list's link and a card's open Home, from Plan, a chat or Home")
+    eq(got[3], [{'v': 'home', 't': '', 'link': True}] * 2, 'over the view or chat kept there')
 
 
 HOME_ACT_DRIVER = r"""
@@ -851,4 +878,4 @@ def test_status_view_f124(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124)]))

@@ -274,7 +274,7 @@ main button (Start run or Open) and a … sheet for the rest (Pause or Go on, Sl
 a + Project button and Devices. Projects with a run up (running, idle or paused) come first, then
 those off, by name in each group. Through Home, a run's app (`/p/<project>/`) has an "All projects" row at the top of
 the sidebar, with a count of what needs you in other projects; tapping it turns the sidebar into the project list
-(Overview, Running, Idle, Off, Devices), and each project in it moves to `/p/<project>/` on the same Home address. An
+(Overview, Running, Idle, Off, Devices), and each project in it moves to `/p/<project>/` on the same Home address. Another project opens at its Home view (also from a card); coming back down to the project you were in restores what was open. An
 off project's page has Start run and turns into its app once the run is up.
 
 On a phone's Home Screen: add the app from Home's link. Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
