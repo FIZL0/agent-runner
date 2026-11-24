@@ -56,7 +56,12 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   steps count, the id and the age. Its answer buttons sit below it.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: title, label, age, id; where and when;
   What to do; What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or Esc goes back); the
-  task text folded. The reply box (`.askfoot`) stays on screen at the foot, with the answer buttons.
+  task text folded. An item with inputs draws its steps with Open (a step's link) and the command as code, with
+  "Run on <machine>" and Copy; then What you should see; then What to enter, one field per input (its label above it;
+  a secret is a password field, and over plain http words stand in its place and say why), a refusal in `--bad` under
+  its field; then one Done (`.pri`), all in the body. A confirm question takes Done's place (Yes, send it / No). There
+  are no plain answers on its card or sheet and no reply box: Later, Chat and Drop stand at the foot (`.askfoot.end`),
+  not sticky, so they never cover a field.
 - **Row** (`.row`, `.crow`, `.prow`, `.srow`, its folding head `.fold`): one line when folded, with an ellipsis. A row that holds more folds
   open on tap in place (`aria-expanded`), and its chevron turns. A setting's row (`.srow`) shows its name, its description and its control; it opens to show the code name and More… (a sheet with the other home and Reset).
 - **Section** (`.sec`): a small muted heading and a line. Sections keep the TUI's order.
@@ -88,8 +93,10 @@ once; its stand-in shows in the same place. A failure brings Retry, Edit or Disc
 nothing to draw (an interrupt, an order kept) and for Talk, which draws the person's words itself.
 
 A secret never goes through `outbox()`, which the browser keeps: a device's change goes straight to the run
-(`toolPost()`), a secret's field is emptied when it is sent or its sheet closes, and a saved secret is shown only as
-`set, changed <date>`.
+(`toolPost()`; its secret's field is emptied when sent), and an input goes straight to the run too (`giveSend()`), a text or link as well. A refusal or a
+question keeps what was typed, the secret too, while the sheet is open; a secret is forgotten when the sheet closes
+(`giveForget()`), a text or link is kept. Once sent, all its fields and words go. No value goes in the markup, and a
+saved secret is shown only as `set, changed <date>`.
 
 ## Words
 
@@ -141,7 +148,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   `data-k` on screen stays where it was. At the very top, new things show.
 - **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session scrolls it, and its bars fade away over the text; the slim message box stays (see The session).
 - Going to a view starts at its top; coming back to one you left returns to where you were.
-- **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form is not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
+- **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form and a typed secret (`givesec:` keys) are not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
 - A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll.

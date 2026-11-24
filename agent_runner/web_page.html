@@ -492,7 +492,7 @@ function giveHTML(n,o){const xs=needInputs(n);
 /* the popup's lists and pictures; url: a picture's address; give: its inputs' fields */
 function needBody(n,url,give=''){const d=needD(n), more=d.step_more||[], list=(t,h,xs)=>xs.length?`<section><h3>${h}</h3><${t}>${xs.map((x,j)=>`<li>${askWords(x)}${t==='ol'?stepMore(more[j],j):''}</li>`).join('')}</${t}></section>`:'';
   return d.lead.map(x=>`<p>${askWords(x)}</p>`).join('')+list('ol','What to do',d.steps)+list('ul','What you should see',d.expect)+give
-    +d.notes.filter(x=>!needInputs(n).length||!/^Reply (done|yes)/i.test(x)).map(x=>`<p class="small">${askWords(x)}</p>`).join('')
+    +d.notes.filter(x=>!needInputs(n).length||!/^Reply (done once it is|yes\/no)$/i.test(x)).map(x=>`<p class="small">${askWords(x)}</p>`).join('')
     +(d.shots.length?`<section><h3>Pictures</h3><div class="shots">${d.shots.map((s,j)=>`<button class="shot" data-shot="${j}" aria-label="Open the picture: ${E_(s.caption||'no caption')}"><img src="${E_(url(s))}" alt="${E_(s.caption||'Picture')}" loading="lazy"></button>`).join('')}</div></section>`:'')}
 /* a task's text as paragraphs: its fields, notes, block and numbered parts each on their own */
 function taskParas(text){return String(text||'').split(/\n+|(?= \| )|(?= — )|(?= BLOCKED: )|(?=\s\(?\d\)\s)/).map(x=>x.trim()).filter(Boolean)}
@@ -763,7 +763,7 @@ function chatGroups(rows,o){
   return{top,quiet};
 }
 /* F143: a Needs you card's Chat, as its first message shows while the run starts it (need_chat_text then replaces it) */
-function needChatAsk(n){const os=answerOpts(n);
+function needChatAsk(n){const os=needInputs(n).length?[]:answerOpts(n);
   return `This chat is about ${n.id}${n.title?` '${n.title}'`:''}, which needs me. What was put to me:\n\n${n.ask||n.what||''}${os.length?`\n\nPossible answers:\n${os.map(o=>'- '+o).join('\n')}`:''}`}
 /* F124: Talk's settings, kept per browser: read (read replies aloud), voice ('' the run's default, else the system's own; F158: an id of a run voice, 'system', or a
    device voice's name), mic 'tap' or 'hold',
@@ -3459,7 +3459,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true)}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});

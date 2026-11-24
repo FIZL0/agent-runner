@@ -340,7 +340,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   what to do, and Press for details; its answer buttons sit below it, Later to shelve it, Chat to open a new chat that shows the
   question and its answers, Drop to drop the task after a confirm). Pressing the card's words opens a popup with the whole ask: what to
   do as numbered steps, what you should see, notes, pictures, a link to its page, Why it waits, the agent's last words (`GET /why/ID`, shown only when the agent left a session with words of its own), and the
-  full task (`GET /task/ID`, always shown for a task item), and at the foot a one-line reply box with the answer buttons. The reply's words go with the answer
+  full task (`GET /task/ID`, always shown for a task item), and at the foot a one-line reply box with the answer buttons (an item with inputs has their fields and Done instead). The reply's words go with the answer
   (Yes is `plan confirm ID "Yes: words"`, No is `plan change ID "No: words"`, a concept option likewise; a pick sheet's go or
   picks is `sheet ID … --note "words"`, Not this on a PITCH is `pitch no ID --why "words"`, and the words beside its Approve go
   to a new chat once it is approved; if that chat cannot start, the toast and the run log say them). An item with no
@@ -525,6 +525,9 @@ says what is wrong when it does not, and `confirm` is a question asked before an
 every input must be filled, and with a malformed one, or more than 12, the item has none and keeps its plain answers. Only CONFIRM, DECIDE, BLOCKED and
 stuck items take inputs. `ui_model.need_give` checks each value and sends nothing when one fails, naming that input.
 Text and links go quoted as data in the answer the task reopens with; a CONFIRM with inputs reopens rather than ticks.
+The run page sends them with `POST /give` {tid, values, confirm}. Whether it may hold a secret is worked out from the
+connection (https, also through Tailscale Serve or Runner Home, or localhost), never from what the page sends: over
+plain http text and links are still sent, and an item with a secret is refused. The claude.ai copy has no fields.
 A secret goes only to `<notes>/asks/ID.env` as `NAME='value'`, owner-only (on Windows, as its folder is) and kept out of git, and the answer names its
 NAME and that path. It is kept while the task is open and removed when it lands or is dropped, and is taken only over
 https or from this computer or the terminal UI:

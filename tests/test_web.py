@@ -2332,7 +2332,7 @@ def test_need_popup_f162(tmp: Path) -> None:
     eq(o['left'], '', 'it closes when the item leaves Needs you')
 
 
-GIVE_DRIVER = NEED_DRIVER.split("  out.card = env.card0")[0] + r"""
+GIVE_DRIVER = NEED_DRIVER.split("  out.card = env.card0")[0].replace("  + slice(\"document.addEventListener('click'", "  + line(\"document.addEventListener('input',\") + slice(\"document.addEventListener('click'") + r"""
   const answers = JSON.parse(process.argv[5]), posts = [];
   env.sureHTML = new Function('esc', line('const sureHTML=') + 'return sureHTML')(env.E); env.kbReveal = () => {}; env.window = {isSecureContext: true}; env.KEEP = k => S.f[k];
   el.querySelector = () => null;
@@ -2340,6 +2340,7 @@ GIVE_DRIVER = NEED_DRIVER.split("  out.card = env.card0")[0] + r"""
   el.querySelectorAll = s => s.startsWith('[data-f') ? nodes : [];
   env.fetch = async (p, o) => { if (!o) return {json: async () => ({ok: true, text: 't'})}; posts.push([p, JSON.parse(o.body), env.S.giving]); return {json: async () => answers.shift()} };
   const type = (k, v) => { S.f[k] = v };
+  const type2 = (f, v) => handlers.input.forEach(h => h({target: {dataset: {f}, value: v, matches: s => s === '[data-f]'}}));
   const done = async sure => { press2(sure); await wait() };
   const press2 = sure => handlers.click.forEach(f => f({target: {closest: s => s === '[data-give]' ? {dataset: {give: 'F399'}, hasAttribute: () => sure} : null}}));
   out.card = env.card0(needs[0], 0); out.other = env.card0(needs[1], 1);
@@ -2348,7 +2349,7 @@ GIVE_DRIVER = NEED_DRIVER.split("  out.card = env.card0")[0] + r"""
   type('give:F399:link', 'https://evil.example'); type('givesec:F399:tok', 'hunter2');
   await done(false); out.refused = [el.h, {...S.f}];
   await done(false); out.asked = [el.h, {...S.f}];
-  await done(true); out.sent = [S.sheet, {...S.f}, nodes.map(n => [n.value, !!n.gone]), S.snap.needs.map(n => n.id)];
+  S.sure = 'give:F399'; type2('give:F399:link', 'https://evil.example'); out.edited = S.sure; await done(true); out.sent = [S.sheet, {...S.f}, nodes.map(n => [n.value, !!n.gone]), S.snap.needs.map(n => n.id)];
   out.posts = posts; out.acts = sent;
   S.snap.needs = needs; nodes[1].value = 'x'; press('[data-needopen]', {needopen: 'F399'}, false);
   type('give:F399:link', 'kept'); type('givesec:F399:tok', 'hunter2'); env.closeSheet(); out.closed = [{...S.f}, nodes[1].value];
@@ -2407,6 +2408,7 @@ def test_need_give_page_f175a(tmp: Path) -> None:
     check('hunter2' not in json.dumps([o['refused'][0], o['asked'][0], o['html']]), 'a secret is never in the markup')
     eq(o['sent'], ['', {}, [['', True], ['', True]], ['F2']], 'sent: the popup closes, its fields and their values are gone')
     eq(o['acts'], [['toast', 'F399 has what you gave']], 'nothing went through the outbox')
+    eq(o['edited'], None, 'a field changed under the question: Done asks again')
     eq(o['closed'], [{'give:F399:link': 'kept'}, ''], 'closing forgets a secret, not a link')
     page = W.PAGE.read_text(encoding='utf-8')
     check("!k.startsWith('givesec:')" in page[page.index('function keepTyped'):page.index('function takeTyped')]
