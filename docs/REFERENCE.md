@@ -693,7 +693,7 @@ words in a note on the task (after ` — `, not in its title), its next merge la
 - `plan add` also refuses (exit 3, nothing written) text that looks like an open task's work, naming it:
   `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
   is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,
-  overtaken): archived with `dropped: WHY`, so its id stays used and what waits on it reopens.
+  overtaken): archived with `dropped: WHY`, so its id stays used and what waits on it reopens. Dropping every part of a `(split into …)` task does not tick it: see A12 below.
 - Reaching a running agent: `plan tell ID TEXT` types `A note on your task, from the person running this run: TEXT` into
   the session of the slot running ID, through its shim's FIFO, or on Windows its named pipe (Claude Code queues it for
   its next turn while busy), and edits no plan; it fails when no slot of a run here runs ID. `plan change ID TEXT` on a
@@ -851,7 +851,7 @@ Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task 
 A plain new number (`plan add A "…"`) is an independent task and may run beside anything. `agent-runner help order`
 prints this summary; `agent-runner run --dry-run N` shows what N free slots would start now, and why the rest wait.
 
-A task over `[run] task_size` is split the same way: `plan add A12 "…"` per part (A12a, A12b, …), then `plan edit A12 "<title> (split into A12a, A12b)"`. `plan add`, `edit`, `note` and an approval say when a task is too big and how to split it, and a run that starts an unsplit one has its session split it before it does the first part (F177). A12 ticks itself once its parts land.
+A task over `[run] task_size` is split the same way: `plan add A12 "…"` per part (A12a, A12b, …), then `plan edit A12 "<title> (split into A12a, A12b)"`. `plan add`, `edit`, `note` and an approval say when a task is too big and how to split it, and a run that starts an unsplit one has its session split it before it does the first part (F177). A12 ticks itself once its parts land. Once its last open part closes it ticks only if at least one part landed; if every part was dropped (each one's `dropped: WHY` note), it stays open as one whole task: its `(split into …)` is taken off, a BLOCKED on it stays, and `plan drop` says so and to edit the task if its text lacks the work the parts held.
 
 When `plan add` says a task is too big, it also writes `| split-by: <UTC time, 5 minutes ahead>` on the task line, and no run starts it before that time (B196), so its author can file the parts first. The hold ends at once when the first part is filed (`plan add A12 …`), when `(split into …)` is written or the task is brought under the size, or on `plan move ID top`; `take` starts it any time. An edit that leaves it too big keeps the same end time. A task a run's own agent files behaves the same. Only `add` sets `split-by`; a note, edit or approval that makes a task too big does not hold it. While one is held, `status`, `plan` and the queue say `waits to be split, starts in 4 min if it is not`, the dry run says `waiting to be split`, and the run does not show idle.
 

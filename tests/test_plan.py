@@ -260,6 +260,8 @@ def test_drop_parts():
             '- [ ] **R1b** the numbers',
             '- [~] **S1** the writer (split into S1a) BLOCKED: DECIDE: which?',
             '- [ ] **S1a** a part',
+            '- [ ] **U1** the printer (split into U1a)',
+            '- [ ] **U1a** a part',
             '- [x] **T1a** by hand — dropped: no',
             '- [ ] **T1** the reader (split into T1a)', '']), encoding='utf-8')
         plan.archive(todo, done)
@@ -286,12 +288,12 @@ def test_drop_parts():
         out, real = io.StringIO(), plan.drop
         x = SimpleNamespace(say=lambda s: print(s) or 0)
         try:
-            plan.drop = lambda *a: ['P1']
+            plan.drop = lambda *a: real(*a, **kw)
             with redirect_stdout(out):
-                plan._p_drop(SimpleNamespace(id='P1b', rest=['no']), x)
+                plan._p_drop(SimpleNamespace(id='U1a', rest=['no']), x)
         finally:
             plan.drop = real
-        has(out.getvalue(), r'^dropped P1b\nno part of P1 landed, so P1 is one whole task again', 'plan drop says it')
+        has(out.getvalue(), r'^dropped U1a\nno part of U1 landed, so U1 is one whole task again', 'plan drop says it')
 
 
 def test_add_bottom():

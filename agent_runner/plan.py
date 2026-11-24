@@ -326,7 +326,7 @@ def subtasks(tid: str, line: str, ids) -> set[str]:
 
 def _dropped(ls: list[str], i: int) -> bool:
     """Whether the closed task at ls[i] was dropped (`drop` noted it), so it never landed."""
-    return any(DROPPED in l for l in _item_block(ls, i))
+    return DROPPED in _item_block(ls, i)[-1]  # where `note` appends
 
 
 def _close_parents(ls: list[str], dl: list[str]) -> list[str]:
