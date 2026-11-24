@@ -1104,6 +1104,8 @@ function obAdd(box,it,at){return(box||[]).filter(x=>!(it.name==='setting_project
 function obNext(box,tab,live){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@')&&(!x.by||x.by===tab||!(live||[]).includes(x.by)))||null}
 /* a starting chat (placeholder '@cid') got its name: its messages go there */
 function obName(box,ph,name){return(box||[]).map(x=>obTo(x)===ph?{...x,args:{...x.args,to:name}}:x)}
+/* B182: the unsent attachments by message box ({box key: [...]}): a starting chat's go with it when its box gets another key */
+function attsMove(all,from,to){const {[from]:a,...rest}=all||{};return a&&from!==to?{...rest,[to]:[...a,...(rest[to]||[])]}:all||{}}
 /* the run answered item cid with r: ok drops it (and names its new chat's messages), else it fails and stays */
 function obSettle(box,cid,r,boot){
   const l=box||[], it=l.find(x=>x.cid===cid);if(!it)return l;
@@ -1286,7 +1288,7 @@ const I={
 const LOGLINE_ICON={ok:'check',bad:'alert',go:'play','':'dot'};
 
 const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:'',machine:'',slots:0},
-  view:'home',thread:null,ctx:null,atts:[],drawer:false,feeds:{},sent:{},waitNew:null,online:true,
+  view:'home',thread:null,ctx:null,atts:{},drawer:false,feeds:{},sent:{},waitNew:null,online:true,
   sheet:'',askShot:-1,askFold:{},ren:null,f:{},taskOpen:{},tasks:{},set:null,setOpen:{},setChanged:false,
   sel:[],selLast:'',undo:null};  // F118: chats picked for delete, the last one clicked, a delete Undo can still take back
 const $=id=>document.getElementById(id);
@@ -1439,7 +1441,7 @@ function obDone(it,j){
   if(it.set&&!later&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
   if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
-  if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
+  if(it.newchat&&j.name){carrySent(j.name,j,it.ask);S.atts=attsMove(S.atts,'@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
   else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&(j.gone||it.args.text)))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.shelved){if(S.gone)delete S.gone[it.shelved];toast(j.said||`${it.say}: done`);snapNow()}  // F184: Needs you may show it at once
@@ -1496,7 +1498,7 @@ function obBoot(boot){for(const x of obDue(S.ob,boot))obRetryClick(x.cid,obBootC
 function obRetryClick(cid,as){  /* Retry: a new chat sent again gets a new cid, so its stand-in follows */
   obLoad();const before=S.ob, fresh=as||newCid();obChange(b=>obRetry(b,cid,fresh,as?'':OB.tab));  // B161: the run restarted: any one tab sends it
   const was=before.find(y=>y.newchat&&!S.ob.some(z=>z.cid===y.cid));
-  if(was){const ph='@'+fresh;if(S.thread==='@'+was.cid)S.thread=ph;S.waitNew={known:chats().map(c=>c.name),at:Date.now(),ph}}
+  if(was){const ph='@'+fresh;S.atts=attsMove(S.atts,'@'+was.cid,ph);if(S.thread==='@'+was.cid)S.thread=ph;S.waitNew={known:chats().map(c=>c.name),at:Date.now(),ph}}
   render(true);drain();
 }
 function obEditBack(cid){  /* a message that failed goes back in its box */
@@ -1863,7 +1865,7 @@ function conceptCard(c,i){
     <div class="btns">${conceptButtons(c).map(b).join('')}${actBtns(c.acts,c.id)}</div>${actSure(c.acts,c.id)}`,'',`data-k="concept:${esc(c.id)}"`);
 }
 function box(ph,foot){
-  const a=S.atts, shownNow=shownSession(), real=!!S.thread&&!isNew(S.thread), busyNow=!!shownNow&&(real?sessWorks(shownNow):busy(shownNow));
+  const a=S.atts[boxKey()]||[], shownNow=shownSession(), real=!!S.thread&&!isNew(S.thread), busyNow=!!shownNow&&(real?sessWorks(shownNow):busy(shownNow));
   return `<form class="box" data-form>
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
@@ -3173,8 +3175,8 @@ const devTyped=()=>Object.keys(S.f).some(k=>k.startsWith('dev:'));
 /* the words no store has yet, for the page that comes next; false when this browser keeps nothing */
 function keepTyped(){
   const f=Object.fromEntries(Object.entries(S.f).filter(([k])=>!k.startsWith('dev:')&&!k.startsWith('givesec:')));
-  const atts=S.atts.filter(a=>a.path).map(a=>({name:a.name,path:a.path}));
-  const some=Object.keys(f).length||atts.length||H.add||S.ren, text=some?JSON.stringify({f,atts,add:H.add,ren:S.ren,setOpen:S.setOpen}):'';
+  const atts=Object.fromEntries(Object.entries(S.atts).map(([k,l])=>[k,l.filter(a=>a.path).map(a=>({name:a.name,path:a.path}))]).filter(([,l])=>l.length));
+  const some=Object.keys(f).length||Object.keys(atts).length||H.add||S.ren, text=some?JSON.stringify({f,atts,add:H.add,ren:S.ren,setOpen:S.setOpen}):'';
   tabStore.set(TYPED_KEY,text);
   const ta=document.querySelector('[data-in]');
   return tabStore.get(TYPED_KEY)===text&&(!ta||!ta.value||HI.i!==null||store.get(DRAFT_KEY(boxKey()))===ta.value)
@@ -3184,10 +3186,10 @@ function takeTyped(){
   let k=null;try{k=JSON.parse(tabStore.get(TYPED_KEY)||'null')}catch(e){}
   tabStore.set(TYPED_KEY,'');
   if(!k||typeof k!=='object')return;
-  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?k.atts:[];H.add=k.add||'';S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};
+  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?{[boxKey()]:k.atts}:k.atts||{};H.add=k.add||'';S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};
 }
 function newsRefresh(){
-  const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:S.atts.some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
+  const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
   if(said)return toast(said,true);
   location.reload();
 }
@@ -3204,7 +3206,7 @@ function takeSnap(s){
   if(S.waitNew&&S.waitNew.ph&&S.ob.some(y=>'@'+y.cid===S.waitNew.ph)){}
   else if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
     if(fresh.length){const nm=fresh[fresh.length-1], ph=S.waitNew.ph, ws=S.waitNew.sent;S.waitNew=null;if(ws)carrySent(nm,ws.j,ws.ask);  // F137: its waiting messages go there
-      if(ph){obChange(b=>obName(b,ph,nm));drain()}if(!ph||S.thread===ph)open(nm);else render();return}
+      if(ph){obChange(b=>obName(b,ph,nm));S.atts=attsMove(S.atts,ph,nm);drain()}if(!ph||S.thread===ph)open(nm);else render();return}
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
   if(S.kept)keptCheck();  // B177
@@ -3267,17 +3269,18 @@ function open(n){const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n
 function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);if(S.view==='settings')loadSettings();if(S.view==='tools')loadTools()}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
-  if(S.atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
-  const paths=S.atts.filter(a=>a.path).map(a=>a.path);
+  const key=boxKey(), atts=S.atts[key]||[];  // B182: this box's own
+  if(atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
+  const paths=atts.filter(a=>a.path).map(a=>a.path);
   if(!text&&!paths.length)return;
-  if(!S.thread&&S.view==='talk'){const key=boxKey(), atts=S.atts;  // F93; F83: out of the box at once, back in it if it did not go
-    histAdd(key,text);HI.i=null;store.set(DRAFT_KEY(key),'');if(ta)ta.value='';S.atts=[];
-    if(!await talkSend(compose(null,text,paths))){if(!store.get(DRAFT_KEY(key)))store.set(DRAFT_KEY(key),text);S.atts=atts;render(true)}return}
-  const ctx=S.ctx, to=S.thread||'', key=boxKey();
+  if(!S.thread&&S.view==='talk'){  // F93; F83: out of the box at once, back in it if it did not go
+    histAdd(key,text);HI.i=null;store.set(DRAFT_KEY(key),'');if(ta)ta.value='';delete S.atts[key];
+    if(!await talkSend(compose(null,text,paths))){if(!store.get(DRAFT_KEY(key)))store.set(DRAFT_KEY(key),text);if(atts.length)S.atts[key]=[...atts,...(S.atts[key]||[])];render(true)}return}
+  const ctx=S.ctx, to=S.thread||'';
   const msg=compose(ctx,text,paths);
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
-  S.atts=[];
+  delete S.atts[key];
   const rq=sendReq(ctx,to,msg);
   if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx?ctx.label:text||`${paths.length} attachment(s)`,msg);return}  // B139, F176
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
@@ -3299,7 +3302,7 @@ function about(a){
   open(ctxKey(S.ctx));const ta=document.querySelector('[data-in]');if(ta)kbFocus(ta);  // in the tap itself, so a phone's keyboard comes
 }
 async function upload(file){
-  const it={name:file.name||'file'};S.atts.push(it);
+  const it={name:file.name||'file'};(S.atts[boxKey()]=S.atts[boxKey()]||[]).push(it);
   if((file.type||'').startsWith('image/')){const r=new FileReader();r.onload=()=>{it.thumb=r.result;render(true)};r.readAsDataURL(file)}
   render(true);
   try{const r=await fetch(tq('upload?name='+encodeURIComponent(it.name)),{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});
@@ -3419,7 +3422,7 @@ document.addEventListener('click',async e=>{
     newChat('quick_ask',{key:x.dataset.quick},t,t);return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
     outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});return}
-  if(x=q('[data-unatt]')){S.atts.splice(+x.dataset.unatt,1);render(true);return}
+  if(x=q('[data-unatt]')){(S.atts[boxKey()]||[]).splice(+x.dataset.unatt,1);render(true);return}
   if(q('[data-clip]')){$('file').click();return}
   if(q('[data-dict]'))return dictate();  // F115
   if(x=q('[data-stop]')){const n=x.dataset.stop||shownSession();if(n)act('interrupt',{session:n});return}
