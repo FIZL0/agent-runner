@@ -188,6 +188,50 @@ console.log(JSON.stringify({moves: run(false), calm: run(true), hidden: run(fals
 """
 
 
+OVER_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const run = (reduced, hidden) => {
+  const anims = [], edges = [], css = {clipPath: 'none', getPropertyValue: k => k.startsWith('--dur') ? (k === '--dur' ? '200ms' : '450ms') : 'e-' + k};
+  let high = 600, S = {sheet: ''};
+  const node = name => ({name, matches: s => s === '.' + name, animate(f, o) { const a = {f, o, cancel() { this.oncancel && this.oncancel() }}; anims.push([name, o.duration, f]); this.last = a; return a }, removeAttribute() {}, setAttribute() {}, remove() { this.gone = true }, style: {}});
+  const sheet = {...node('sheet'), scrollTop: 40, children: [node('grab'), node('words')], focus() {}, offsetWidth: 400, getBoundingClientRect: () => ({left: 0, top: 800 - high, right: 400, bottom: 800, width: 400, height: high})};
+  const view = {...node('cview'), hidden: true, inert: false, querySelector: () => ({focus() {}})};
+  const f = new Function('S', '$', 'document', 'matchMedia', 'getComputedStyle', 'render', 'shotEnd', 'shotEdges', 'runStop', 'scrollStop', 'sheetBack', 'loadVoices', 'I', 'esc',
+    slice('const MO={', '/* an element moved by') + slice('function shotSeen(', '/* the part of a box') + slice('function sheetOver(', '/* F162a2') + slice('function conceptOpen(', "document.addEventListener('click'") + 'return {openSheet, conceptOpen, conceptClose}')(
+    S, id => id === 'cview' ? view : sheet, {hidden: !!hidden, documentElement: {}}, () => ({matches: reduced}), () => css, () => { high = S.sheet === 'b' ? 400 : 600 }, () => {}, (el, t, b) => edges.push([t, b]), () => {}, () => {}, null, () => {}, {}, x => x);
+  f.openSheet('a'); const out = {first: [edges.length, anims.length]};
+  f.openSheet('b'); out.over = [[...edges], anims.map(a => a.slice(0, 2)), sheet.scrollTop];
+  anims.length = 0; f.conceptOpen('x', 'X'); out.view = [view.hidden, anims.map(a => a[2][0].transform)];
+  f.conceptClose(); out.leaving = [view.hidden, view.inert, anims.length]; if (view.last && view.last.onfinish) view.last.onfinish(); out.left = [view.hidden, view.inert];
+  f.conceptOpen('x', 'X'); f.conceptClose(); f.conceptOpen('y', 'Y'); if (view.last && view.last.onfinish) view.last.onfinish(); out.again = [view.hidden, view.inert];
+  return out;
+};
+console.log(JSON.stringify({moves: run(false), calm: run(true), hidden: run(false, true)}));
+"""
+
+
+def test_sheet_over_sheet_f189b(tmp: Path) -> None:
+    """F189b: a sheet that takes another's place moves its edges from there and its words fade in, from its top; a concept's
+    page slides in and out. All at once when calm()."""
+    if not shutil.which('node'):
+        print('  (no node here: the sheet script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(OVER_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node opens one sheet over another', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    m = o['moves']
+    eq(m['first'], [0, 0], "the first sheet slides in by the stylesheet alone")
+    eq(m['over'], [[[200, 0]], [['words', 200]], 0], 'over another: the edges move by what it lost, the words fade in, from its top')
+    eq((m['view'], m['leaving'], m['left']), ([False, ['translateX(100%)']], [False, True, 2], [True, False]), "a concept's page slides in and out, out of reach at once")
+    eq(m['again'], [False, False], 'opened again while it leaves: it stays')
+    for k in ('calm', 'hidden'):
+        eq((o[k]['over'], o[k]['view'], o[k]['leaving']), ([[], [], 0], [False, []], [True, False, 0]), f'{k}: at once')
+
+
 def test_need_picture_moves_f189(tmp: Path) -> None:
     """F189: a picture opens out of its thumbnail and goes back into it, Back returns to the scroll place left; at once
     when calm()."""
@@ -807,4 +851,4 @@ def test_status_view_f124(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124)]))

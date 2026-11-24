@@ -22,7 +22,8 @@
   .crow.open .pin.on{display:none} .crow.open .thread{padding-right:calc(3*var(--tap) + 4px)!important}
   .thread,.ni,.prow,.shadd{min-height:var(--tap)}
 }
-/* a row that folds open in place (a slot, a task, a setting) */
+/* a row that folds open in place (a slot, a task, a setting), and what it shows (.foldin) */
+.foldin{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-width:0} .srow>.foldin{gap:var(--s2)} .col>.foldin{gap:12px} .sheet>.foldin{gap:var(--s1)}
 .srow{display:grid;gap:var(--s2);border-top:1px solid var(--line);padding-top:var(--s3)} .srow:first-child{border-top:0;padding-top:0}
 .tap{cursor:pointer} .fold{display:flex;align-items:center;gap:12px;width:100%;border:0;background:none;padding:0;text-align:left;color:inherit;cursor:pointer;min-width:0;min-height:32px}
 .fold .chev svg{transition:transform var(--dur-fast) var(--ease)} .fold[aria-expanded="true"] .chev svg{transform:rotate(90deg)}

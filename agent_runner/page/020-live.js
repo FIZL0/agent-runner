@@ -107,11 +107,19 @@ function obDraw(){
   setHTML(bar,parts.length?`<button class="obpill${c.failed||lost.length?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'');
   if(!all.length&&!S.oldRun&&!lost.length)S.obOpen=false;
   if(!S.obOpen)S.oldRun=false;
+  if(!S.obOpen&&!pop.hidden&&pop.animate)popOut(pop);
   pop.hidden=!S.obOpen;
   setHTML(pop,S.obOpen?`<div class="obcard" role="dialog" aria-label="Outbox"><div class="row"><b class="grow">Outbox</b><button class="btn" data-obclose>Close</button></div>
     ${S.oldRun||S.ob.some(obRefused)?oldRunHTML(OLD_RUN):''}
     ${all.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}
     ${lost.map(({n,p})=>`<div class="obrow failed"><div class="grow"><div class="ell2">${esc(p.text)}</div><div class="small">Not delivered: it is not in ${esc(threadTitle(n))}</div></div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" data-n="${esc(n)}">Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" data-n="${esc(n)}">Discard</button></div></div>`).join('')}</div>`:'');
+}
+/* F189b: a copy of the closed popup fades */
+function popOut(pop){
+  if(calm())return;
+  const g=pop.cloneNode(true);g.removeAttribute('id');g.setAttribute('aria-hidden','true');g.inert=true;Object.assign(g.style,{animation:'none',pointerEvents:'none'});
+  document.body.appendChild(g);
+  const a=moAnim(g,[{opacity:1},{opacity:0}],{ease:'--ease',dur:'--dur-fast',fill:'forwards'});a.onfinish=a.oncancel=()=>g.remove();
 }
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
 /* F201: the starting chats as rows: those in the outbox, then one that has its name but that no snapshot lists yet (S.came) */

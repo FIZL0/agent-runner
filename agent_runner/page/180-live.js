@@ -163,14 +163,23 @@ async function upload(file){
   render(true);
 }
 
+/* F189b: the key row opens or closes over the message box: what stands above it goes to its new place, the session's frame with it */
+function keysToggle(){
+  const d=$('dock'), h=d.offsetHeight, was=feedTop();S.keys=!S.keys;render(true);
+  const by=d.offsetHeight-h, row=d.querySelector('.schips'), keys=d.querySelector('.keys');if(!by||calm())return;
+  if(row)glideTo(row,0,by,FOLD_MO);
+  if(S.keys&&keys)moAnim(keys,[{transform:`translateY(${by}px)`,opacity:0},{transform:'none',opacity:1}],FOLD_MO);
+  if(was!=null){feedPlace();feedGrow(was-feedTop())}
+}
 let tapped={n:'',at:0};
 document.addEventListener('click',async e=>{
   const q=s=>e.target.closest(s);let x;
+  if(q('[aria-expanded],#sheet button'))MO.folded=Date.now();  // F189b
   if(S.undo&&!q('[data-undo]'))finalDelete();  // F118: any other click makes the delete final
   if(x=q('[data-feedkey]')){feedKey(x.dataset.feedkey);return}  // F114
   if(q('[data-newsrefresh]')){newsRefresh();return}  // F149
   if(x=q('[data-newslater]')){newsLater(x.dataset.newslater);return}
-  if(q('[data-feedkeys]')){S.keys=!S.keys;render(true);return}
+  if(q('[data-feedkeys]')){keysToggle();return}
   if(q('[data-login]')){loginOpen();return}  // F126b
   if(q('[data-feedtext]')){feedText();return}
   if(x=q('[data-feedcopy]')){const pre=$('feedtext'), pick=()=>{const r=document.createRange();r.selectNodeContents(pre);const g=getSelection();g.removeAllRanges();g.addRange(r)};
@@ -273,7 +282,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-setmore]')){openSheet('setting',x.dataset.setmore);return}
   if(q('[data-setchanged]')){S.setChanged=!S.setChanged;render(true);return}
   if(x=q('[data-thread]')){const n=x.dataset.thread;return viewGo(()=>{S.ctx=null;open(n)},n===S.thread?null:n)}
-  if(q('[data-newtalk]'))return newTalk();  // F157
+  if(q('[data-newtalk]')){newTalk();if(S.live)viewIn($('body'));return}  // F157
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
   if(x=q('[data-needopen]')){needOpen(x.dataset.needopen);return}  // F162
   if(x=q('[data-askfold]')){S.askFold={...S.askFold,[x.dataset.askfold]:!S.askFold[x.dataset.askfold]};render(true);return}
@@ -544,11 +553,18 @@ if(HB){loadProjects();homeDrain();let tick=0;  // F134: every 5 s while All proj
 }
 /* B179: a concept's page in the Home Screen app, where a new tab would be iOS's browser over the app */
 function conceptOpen(src,title){
-  const el=$('cview');
+  const el=$('cview');if(el._bye)el._bye();
   el.innerHTML=`<div class="top"><button class="icon" data-cviewclose aria-label="Back" title="Back">${I.back}</button><b class="ell">${esc(title)}</b></div><iframe src="${esc(src)}" sandbox="allow-scripts" title="${esc(title)}"></iframe>`;
   el.hidden=false;el.querySelector('button').focus({preventScroll:true});
+  moAnim(el,[{transform:'translateX(100%)'},{transform:'none'}],{ease:'--spring-soft'});
 }
-function conceptClose(){const el=$('cview');el.hidden=true;el.innerHTML=''}
+/* F189b: it slides out, out of reach at once */
+function conceptClose(){
+  const el=$('cview'), a=moAnim(el,[{transform:'none'},{transform:'translateX(100%)'}],{ease:'--spring-soft',fill:'forwards'});
+  const bye=el._bye=()=>{if(el._bye!==bye)return;el._bye=null;if(a)a.cancel();el.inert=false;el.hidden=true;el.innerHTML=''};
+  if(!a){bye();return}
+  el.inert=true;a.onfinish=bye;
+}
 document.addEventListener('click',e=>{
   if(e.target.closest('[data-cviewclose]')){conceptClose();return}
   const a=ON_HOME_SCREEN&&e.target.closest('a[target="_blank"]'), k=a?appLink(a.href,location.origin,ROOT):'';
@@ -558,4 +574,4 @@ document.addEventListener('click',e=>{
   else location.href=a.href;
 });
 /* Esc closes the topmost thing only */
-window.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('cview').hidden===false){e.preventDefault();e.stopImmediatePropagation();conceptClose()}},true);
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('cview').hidden===false&&!$('cview').inert){e.preventDefault();e.stopImmediatePropagation();conceptClose()}},true);

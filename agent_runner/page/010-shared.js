@@ -111,13 +111,15 @@ function keepScroll(box){
 }
 /* F147: motion (docs/STYLE.md, Motion). born: when a key came in, so a redraw half way goes on from there; fly: what
    glides now; said: how long a reply was; sent: the words on their way out of the message box; vt: a View Transition */
-const MO={born:new Map(),said:new Map(),grown:new Map(),rolls:new Map(),fly:new Map(),sent:null,vt:null,named:[],scroll:new Map()}, MO_MS=450;
+const MO={born:new Map(),said:new Map(),grown:new Map(),rolls:new Map(),fly:new Map(),sent:null,vt:null,named:[],scroll:new Map(),folded:0}, MO_MS=450;
 const calm=()=>document.hidden||matchMedia('(prefers-reduced-motion:reduce)').matches;
 function moAnim(el,frames,o){
   if(!el.animate||calm())return null;
   const css=getComputedStyle(document.documentElement), {ease='--spring',dur='--dur-spring',...more}=o||{};
   return el.animate(frames,{duration:parseFloat(css.getPropertyValue(dur)),easing:css.getPropertyValue(ease).trim(),...more});
 }
+/* F189b: a press on a fold or in a sheet: what opens, closes or moves for it does so on one curve, also over a redraw in this time */
+const FOLD_MO={ease:'--spring-soft'}, folding=()=>Date.now()-MO.folded<MO_MS;
 /* an element moved by (x, y) on its way to its place; flying: how far down a thing (or what holds it) is moved now */
 function glideTo(el,x,y,o){
   const old=MO.fly.get(el);if(old)old.cancel();
@@ -150,39 +152,53 @@ const shiftOf=el=>new DOMMatrix(getComputedStyle(el).transform);
 function flying(el){let d=0;for(const x of MO.fly.keys()){if(!x.isConnected)MO.fly.delete(x);else if(x===el||x.contains(el))d+=shiftOf(x).m42}return d}
 for(const t of ['pointerdown','touchstart','wheel'])document.addEventListener(t,e=>{for(const b of [...MO.scroll.keys()])if(b.contains(e.target)){scrollStop(b);if(b===$('body')&&chatShown())S.pin=atEnd(b)}},{capture:true,passive:true});
 /* the lists: where each thing was on screen before a redraw, then each glides from there; what left collapses */
-const GLIDES='[data-k],.col>.sec', LEAVES='.card,.srow,.lrow,.ev,.crow';
+const GLIDES='[data-k],.col>.sec,#sheet>:not(.askbody,.gone0),.askbody>*', LEAVES='.card,.srow,.lrow,.ev,.crow,.qline,.foldin';
 const glideKey=el=>el.dataset.k||'sec:'+el.textContent.replace(/\d+/g,'');
 function glideSpot(box){
-  if(!S.live||!box.animate||calm()||box.contains(document.activeElement)&&document.activeElement.matches('[data-f]'))return null;
+  if(!S.live||!box.animate||calm()||!folding()&&box.contains(document.activeElement)&&document.activeElement.matches('[data-f]'))return null;
   const e=box.getBoundingClientRect(), m=new Map();
   for(const el of box.querySelectorAll(GLIDES)){const k=glideKey(el), r=el.getBoundingClientRect();if(!m.has(k))m.set(k,{el,r,on:r.bottom>e.top&&r.top<e.bottom})}
   return m;
 }
 function glide(scroller,root,was){
   if(!was||!was.size)return;
-  const e=scroller.getBoundingClientRect(), now=new Map();
+  const e=scroller.getBoundingClientRect(), now=new Map(), o=folding()?FOLD_MO:undefined;
   for(const el of root.querySelectorAll(GLIDES)){const k=glideKey(el);if(!now.has(k))now.set(k,{el,r:el.getBoundingClientRect()})}
   const by=new Map();
   for(const [k,n] of now){
     const w=was.get(k), p=n.el.parentElement.closest('[data-k]'), up=p&&by.get(p)||[0,0];
-    const d=w&&(w.on||n.r.bottom>e.top&&n.r.top<e.bottom)?[w.r.left-n.r.left,w.r.top-n.r.top]:up;
+    const d=w&&(w.on||n.r.bottom>e.top&&n.r.top<e.bottom)?[w.r.left-n.r.left,w.r.top-n.r.top]:!w&&o&&n.el.matches('.foldin')&&by.get(n.el.previousElementSibling)||up;  // what opens goes with its button
     if(n.el.matches('.pill')){by.set(n.el,d);if(w&&Math.abs(w.r.width-n.r.width)>1){n.el.style.transformOrigin='0 50%';moAnim(n.el,[{transform:`translateX(${d[0]}px) scaleX(${w.r.width/n.r.width})`},{transform:'none'}])}continue}
     const x=d[0]-up[0], y=d[1]-up[1], far=Math.abs(y)>e.height||Math.abs(x)>e.width;
     by.set(n.el,far?up:d);
-    if(!far&&(Math.abs(x)>=1||Math.abs(y)>=1))glideTo(n.el,x,y);
+    if(!far&&(Math.abs(x)>=1||Math.abs(y)>=1))glideTo(n.el,x,y,o);
+    if(o&&w&&n.el.matches('.card'))foldEdge(n.el,w.r.height,n.r.height);
   }
   const left=[...was].filter(([k,w])=>w.on&&!now.has(k)&&w.el.matches(LEAVES)&&!w.el.closest('.msgs')).map(x=>x[1]);
   const tops=left.filter(w=>!left.some(o=>o!==w&&o.el.contains(w.el)));
-  if(tops.length<=8)for(const w of tops)leave(scroller,w,e);
+  if(tops.length>8)return;
+  for(const w of tops){
+    const q=w.el.matches('.foldin')&&[w.el.previousElementSibling,w.el.parentElement.closest(GLIDES)].map(x=>x&&now.get(glideKey(x))).find(Boolean);
+    leave(scroller,w,e,q&&by.get(q.el));  // what closes goes with its button
+  }
+}
+/* a card that a fold made taller or shorter: its lower edge moves there; a clip, with room kept for what it lost */
+function foldEdge(el,was,now){
+  const d=now-was, round=getComputedStyle(el).borderRadius||'0px', at=y=>({clipPath:`inset(0px 0px ${y}px 0px round ${round})`});if(Math.abs(d)<1)return;
+  const a=moAnim(el,d>0?[at(d),at(0)]:[at(0),at(-d)],FOLD_MO);if(!a||d>0)return;
+  el.style.paddingBottom=parseFloat(getComputedStyle(el).paddingBottom)-d+'px';el.style.marginBottom=d+'px';
+  a.onfinish=a.oncancel=()=>{el.style.paddingBottom=el.style.marginBottom=''};
 }
 /* a copy of what left, without its data, ids and typed words: it is gone, only its picture goes on */
-function leave(box,w,e){
+function leave(box,w,e,by){
   const g=w.el.cloneNode(true);
   for(const x of [g,...g.querySelectorAll('*')])for(const a of [...x.attributes])if(/^(data-|id$|name$|for$)/.test(a.name))x.removeAttribute(a.name);
   g.classList.add('gone0');g.classList.remove('enter','changed');g.setAttribute('aria-hidden','true');g.inert=true;
   g.style.animation='none';
-  Object.assign(g.style,{left:w.r.left-e.left+'px',top:w.r.top-e.top+box.scrollTop+'px',width:w.r.width+'px',height:w.r.height+'px'});
-  const a=moAnim(g,[{transform:'none',opacity:1},{transform:'scale(.96,.4)',opacity:0}],{ease:'--spring-soft',dur:'--dur-slow',fill:'forwards'});
+  Object.assign(g.style,{left:w.r.left-e.left-(box.clientLeft||0)+'px',top:w.r.top-e.top-(box.clientTop||0)+box.scrollTop+'px',width:w.r.width+'px',height:w.r.height+'px'});
+  const fold=w.el.matches('.foldin'), cut=Math.max(0,w.r.bottom-e.bottom);
+  const a=fold?moAnim(g,[{transform:'none',clipPath:`inset(0px 0px ${cut}px 0px)`,opacity:1},{transform:by?`translate(${-by[0]}px,${-by[1]}px)`:'none',clipPath:`inset(0px 0px ${w.r.height}px 0px)`,opacity:0}],{...FOLD_MO,fill:'forwards'})
+    :moAnim(g,[{transform:'none',opacity:1},{transform:'scale(.96,.4)',opacity:0}],{ease:'--spring-soft',dur:'--dur-slow',fill:'forwards'});
   if(!a)return;
   (box._gone=box._gone||new Set()).add(g);a.onfinish=a.oncancel=()=>{g.remove();box._gone.delete(g)};
   box.appendChild(g);
@@ -203,6 +219,9 @@ function enter(box,had){
     const rl=MO.rolls.get(k);if(rl&&rl.v===el.dataset.v&&now>rl.at&&now-rl.at<MO_MS&&had.get(k)===rl.v)roll(el,rl.was,rl.at);  // a redraw half way
     const age=MO.born.has(k)?now-MO.born.get(k):-1;
     if(age<0||!fresh&&!el.style)continue;
+    const held=el.parentElement&&el.parentElement.closest&&el.parentElement.closest('.foldin');
+    if(held&&folding()&&MO.born.has(held.dataset.k))continue;  // with its fold
+    if(folding()&&el.matches&&el.matches('.foldin')){const a=moAnim(el,[{clipPath:'inset(0px 0px 100% 0px)',opacity:0},{clipPath:'inset(0px 0px 0% 0px)',opacity:1}],FOLD_MO);if(a)a.currentTime=age;continue}
     if(el.matches&&el.matches('.a')){[...el.querySelectorAll('.lead,.say>*,.speakb')].forEach((x,i)=>{x.classList.add('fresh');x.style.animationDelay=Math.min(i,10)*60-age+'ms'});continue}
     if(el.matches&&el.matches('.say'))continue;  // with its .a
     el.classList.add('enter');if(age)el.style.animationDelay=-age+'ms';

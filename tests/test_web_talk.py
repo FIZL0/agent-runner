@@ -290,7 +290,7 @@ def test_talk_new_chat_f157(tmp: Path) -> None:
     page = W.page_html().decode()
     top = page.split('function topHTML(){', 1)[1].split('\n}', 1)[0]
     check('${plusBtn()}' in top and "talk:()=>b('data-newtalk','New talk','New Talk chat')" in page
-          and "if(q('[data-newtalk]'))return newTalk()" in page, "in Talk the top bar's button is New Talk chat")
+          and "if(q('[data-newtalk]')){newTalk();if(S.live)viewIn(" in page, "in Talk the top bar's button is New Talk chat")
     if not shutil.which('node'):
         print('  (no node here: the New Talk chat script test is skipped)')
         return

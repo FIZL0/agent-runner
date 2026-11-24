@@ -60,7 +60,7 @@ function pitchNo(n,i){
 function needBtns(n,i,more=''){
   const open=a=>a?`<a class="btn" href="${esc(a)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:'';
   if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id];
-    return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?pitchNo(n,i):''}`}
+    return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?foldIn('pitch:'+n.id,pitchNo(n,i)):''}`}
   if(n.label==='TOOL')return '';  // F168: nothing to answer, it clears once the tool is back
   return `<div class="btns">${needInputs(n).length?'':ansBtns(n)}${more}${restBtns(n)}${open(n.url)}</div>${actSure(n.acts,n.id)}`;
 }
@@ -72,7 +72,7 @@ const askField=id=>'askre:'+id;
 const askTask=id=>!/^(tool-|pitch)/.test(id);
 function askFold(key,label,got){
   const on=!!S.askFold[key];
-  return `<button class="fold" data-askfold="${key}" aria-expanded="${on}"><span class="grow"><b>${label}</b></span><span class="chev">${I.chev}</span></button>${on?`<div class="asktext">${!got?'<div class="small">Loading…</div>':got.err?`<div class="small v-bad">${esc(got.err)}</div><div class="btns"><button class="btn" data-askload>Retry</button></div>`:taskParas(got.text).map(p=>`<p>${esc(p)}</p>`).join('')||'<div class="small">There are no words of it.</div>'}</div>`:''}`;
+  return `<button class="fold" data-k="askfold:${key}" data-askfold="${key}" aria-expanded="${on}"><span class="grow"><b>${label}</b></span><span class="chev">${I.chev}</span></button>${on?foldIn('ask:'+key,`<div class="asktext">${!got?'<div class="small">Loading…</div>':got.err?`<div class="small v-bad">${esc(got.err)}</div><div class="btns"><button class="btn" data-askload>Retry</button></div>`:taskParas(got.text).map(p=>`<p>${esc(p)}</p>`).join('')||'<div class="small">There are no words of it.</div>'}</div>`):''}`;
 }
 /* F162a2: only when there are words of the agent */
 function askWhyFold(id){const got=(S.askWhy||{})[id];return got&&got.text?askFold('why','Why it waits',got):''}
@@ -105,7 +105,7 @@ function shotFrame(to,seen,round){
 const shotThumb=i=>$('sheet').querySelector(`[data-shot="${i}"]`);
 const shotBig=()=>$('sheet').querySelector('.shotbig img');
 function shotGo(i){
-  const sh=$('sheet');scrollStop(sh);
+  MO.folded=0;const sh=$('sheet');scrollStop(sh);
   const open=i>=0, old=S.askShot, go=()=>{
     if(open)SHOT.at=sh.scrollTop;
     S.askShot=i;render(true);sh.scrollTop=open?0:SHOT.at};
@@ -163,7 +163,7 @@ function needSheet(){
   const i=S.snap.needs.indexOf(n), d=needD(n), big=d.shots[S.askShot], rep=needReplies(n), f=askField(n.id), said=S.giveSaid&&S.giveSaid.id===n.id?S.giveSaid:{}, secure=window.isSecureContext!==false;
   const body=big?`<button class="shotbig" data-shotclose aria-label="Back to the details"><img src="${esc(shotUrl(big))}" alt="${esc(big.caption||'Picture')}"></button>${big.caption?`<p class="small">${esc(big.caption)}</p>`:''}`
     :`${needBody(n,shotUrl,giveHTML(n,{secure,...said,done:giveDone(n,said,secure)}))}${n.url?`<a class="asklink" href="${esc(n.url)}" target="_blank" rel="noopener">Its page ${I.ext}</a>`:''}${askTask(n.id)?askWhyFold(n.id)+askFold('task','Full task',(S.askText||{})[n.id]):''}`;
-  const foot=needInputs(n).length?`<div class="askfoot end">${needBtns(n,i)}</div>`:n.label==='TOOL'?'':`<div class="askfoot"><input class="fld" data-f="${esc(f)}" aria-label="${rep?'Your reply':'A note with your answer'}" placeholder="${rep?'Your reply':'Add a note (optional)'}" autocomplete="off">${needBtns(n,i,rep?`<button class="btn ${answerOpts(n).length?'':'pri'}" data-reply="${esc(n.id)}">Reply</button>`:'')}</div>`;
+  const foot=needInputs(n).length?`<div class="askfoot end" data-k="askfoot">${needBtns(n,i)}</div>`:n.label==='TOOL'?'':`<div class="askfoot" data-k="askfoot"><input class="fld" data-f="${esc(f)}" aria-label="${rep?'Your reply':'A note with your answer'}" placeholder="${rep?'Your reply':'Add a note (optional)'}" autocomplete="off">${needBtns(n,i,rep?`<button class="btn ${answerOpts(n).length?'':'pri'}" data-reply="${esc(n.id)}">Reply</button>`:'')}</div>`;
   return `<div class="asktop"><div class="grow"><h2>${needHead(n)}</h2>${needTitle(n)?`<div class="small">${esc(needTitle(n))}</div>`:''}</div>${big?'<button class="btn" data-shotclose>Back</button>':'<button class="btn" data-closesheet>Close</button>'}</div>
     <div class="small"><span class="asklab">${esc(needLab(n))}</span>${n.age?` · ${esc(n.age)}`:''} · ${esc(n.id)}</div><div class="askbody">${body}</div>${foot}`;
 }
@@ -207,7 +207,7 @@ async function askLoad(id){
   const one=async(path,key)=>{let got;
     try{const j=await (await fetch(tq(path+encodeURIComponent(id)))).json();got=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read')}}
     catch(e){got={err:'Could not reach the run page'}}
-    S[key]={...(S[key]||{}),[id]:got};render(true)};
+    S[key]={...(S[key]||{}),[id]:got};if(S.sheetArg===id&&S.askFold[key==='askWhy'?'why':'task'])MO.folded=Date.now();render(true)};
   await Promise.all([one('why/','askWhy'),one('task/','askText')]);
 }
 function needOpen(id){if(!needOf(id))return;shotEnd();S.askShot=-1;S.askFold={};S.giveSaid={};openSheet('need',id);askLoad(id)}
@@ -217,15 +217,16 @@ function needReply(id){
   outbox('answer',{tid:id,text},{need:id,say:`${id} · replied “${text}”`});
 }
 /* F85: a task's row: one line; a tap folds its whole text (plan ID) open in place */
-function taskRow(q,title){
+function taskRow(q,title,more=''){
   const open=!!S.taskOpen[q.id], t=S.tasks[q.id];
-  return `<button class="fold" data-task="${esc(q.id)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(q.id)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(open&&q.release?(q.release.all||q.release.words)+(q.release.note||''):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?(t&&t.text?`<pre class="tasktext" data-k="text:${esc(q.id)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>'):''}`;
+  return `<button class="fold" data-task="${esc(q.id)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(q.id)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(open&&q.release?(q.release.all||q.release.words)+(q.release.note||''):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(q.id,(t&&t.text?`<pre class="tasktext" data-k="text:${esc(q.id)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>')+more):''}`;
 }
 async function openTask(id){
   S.taskOpen[id]=!S.taskOpen[id];render(true);
   if(!S.taskOpen[id])return;
   try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read'),old:oldRun(j)}}
   catch(e){if(!S.tasks[id])S.tasks[id]={err:'Could not reach the run page: fold it and open it again'}}
+  if(S.taskOpen[id])MO.folded=Date.now();  // what the press opened goes on to its words
   render(true);
 }
 /* F186: a release's Drop, there until it starts (ui_model's `acts`) */
@@ -233,18 +234,18 @@ const relDrop=q=>(q.acts||[]).filter(k=>k==='queue_drop');
 const releaseCard=q=>planCard(q,true);
 function planCard(q,rel){
   const drop=rel===true?relDrop(q):[];
-  return card(`${taskRow(q,(q.release&&q.release.title)||q.title||q.id)}${S.taskOpen[q.id]?`<div class="btns"><button class="btn" data-about="plan:${esc(q.id)}">Chat</button>${actBtns(q.acts,q.id)}</div>${actSure(q.acts,q.id)}`:drop.length?`<div class="btns">${actBtns(drop,q.id)}</div>${actSure(drop,q.id)}`:''}`,'',`data-k="task:${esc(q.id)}"`);
+  return card(`${taskRow(q,(q.release&&q.release.title)||q.title||q.id,`<div class="btns"><button class="btn" data-about="plan:${esc(q.id)}">Chat</button>${actBtns(q.acts,q.id)}</div>${actSure(q.acts,q.id)}`)}${!S.taskOpen[q.id]&&drop.length?`<div class="btns" data-k="acts:${esc(q.id)}">${actBtns(drop,q.id)}</div>${actSure(drop,q.id)}`:''}`,'',`data-k="task:${esc(q.id)}"`);
 }
 function nextReleaseCard(r){  // F131, F185: a release that is no open task (the auto release's count, the last one released), dimmed
   return card(`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc((r.id?r.id+' · ':'')+(r.words||''))}</span></div></div>`,'relph');
 }
 function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
   return card(`${taskRow(q,q.title||q.id)}
-    <div class="btns">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
+    <div class="btns" data-k="acts:${esc(q.id)}">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
 }
 function shelvedCard(q){  // F184: a shelved task: what it waits on the person for, Bring back (plan unshelve), Drop and the usual chat
-  return card(`${taskRow(q,q.title||q.id)}${q.ask?`<span class="askdo">${esc(q.ask)}</span>`:''}
-    <div class="btns">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
+  return card(`${taskRow(q,q.title||q.id)}${q.ask?`<span class="askdo" data-k="askdo:${esc(q.id)}">${esc(q.ask)}</span>`:''}
+    <div class="btns" data-k="acts:${esc(q.id)}">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
 }
 function conceptCard(c,i){  // B219a: its one Chat is the new chat view; concept_chat, which starts a session at once, is the TUI's
   const os=c.options||[], acts=(c.acts||[]).filter(k=>k!=='concept_chat'), view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
