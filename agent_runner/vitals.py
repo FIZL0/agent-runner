@@ -1225,6 +1225,7 @@ class Vitals:
         self.said_file = store / 'vitals-alerts.json' if store else None
         self.login_file = store / 'vitals-login' if store else None  # F126c: the day login_day holds
         self.login_day = ((_read(self.login_file) if self.login_file else None) or '').strip()
+        self.login_bad: bool | None = None  # whether the last sample had a login warning
         self.sessions_fn, self.usage_fn, self.info, self.push, self.act = sessions, usage, info, push, act
         self.snap: dict = {}
         self.foot: dict | None = None
@@ -1339,10 +1340,14 @@ class Vitals:
     def push_login(self, projs: list[Project], now: float) -> None:
         """F126c: while the Claude login is ending, has ended or is missing, push that once a day (local date), as a
         device alert, to the running projects whose [run] agent is claude. The day is kept over a restart, and
-        forgotten once the login is fine, so a new warning is pushed again."""
+        forgotten once the login is fine, so a new warning is pushed again. Two samples in a row must agree: one
+        read while Claude Code rewrites its credentials file neither warns nor counts as a renewal."""
         try:
             said = self.login_fn(now)
         except Exception:  # noqa: BLE001 - a login that cannot be read must not stop the sampling
+            return
+        before, self.login_bad = self.login_bad, bool(said)
+        if before != self.login_bad:
             return
         today = time.strftime('%Y-%m-%d', time.localtime(now)) if said else ''
         if today == self.login_day:

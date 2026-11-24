@@ -640,6 +640,7 @@ def test_push_login():
     def tick(v: V.Vitals, now: float) -> None:
         v.foot, v.foot_at = {}, now
         v.tick(now)
+        v.tick(now + 30)
 
     def said(root: Path = claude) -> list[str]:
         f = Config(root).notes('events.jsonl')
@@ -683,8 +684,21 @@ def test_push_login():
         tick(v, start + 4 * day)
         eq(said()[3:], ['box: No Claude login: log in (claude auth login)'], 'missing: pushed too')
 
+        v.foot_at = start + 4 * day
         login(start + 30 * day)
+        v.tick(start + 4 * day + 40)
+        cred.unlink()
         tick(v, start + 4 * day + 60)
+        eq(len(said()), 4, 'one fine sample is no renewal: not pushed twice that day')
+
+        login(start + 30 * day)
+        tick(v, start + 4 * day + 120)
+        v.tick(start + 4 * day + 180)
+        write(cred, '{"claudeAi')
+        v.tick(start + 4 * day + 210)
+        login(start + 30 * day)
+        tick(v, start + 4 * day + 240)
+        eq(len(said()), 4, 'one half-written read is no missing login')
         tick(v, start + 5 * day)
         eq(len(said()), 4, 'renewed: nothing')
         cred.unlink()
