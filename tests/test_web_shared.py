@@ -90,7 +90,7 @@ def test_server(tmp: Path) -> None:
                 mock.patch.object(W, 'session_live', return_value=True):
             code, body = get(f'{base}/terminal/s1?t={token}')
         r = json.loads(body)
-        check(not r['ok'] and r['out'].startswith(W.TTYD_INSTALL) and 'chat' in r['out'],
+        check(not r['ok'] and r['out'].startswith('ttyd is not installed, so a chat cannot show') and 'Until then, messages still reach s1.' in r['out'],
               'without ttyd the terminal tab says how to install it, and that the chat works meanwhile', r)
         check(r['mode'] == 'install' and 'capture' not in r and 'every' not in r,
               "C24: and no 'builtin' mode: the built-in view is gone", r)

@@ -5,6 +5,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - Fixed: on the run page, + Chat at the top right of an open chat or a slot's session is disabled for one second after the file picker closes (a file picked or cancelled), as + Task on Home and Plan already is, so a double press in the picker cannot start a chat. It comes back by itself, also while a redraw waits; attachments, Send and the sidebar's + Chat are not held (B768).
+- Fixed: on the run page, without ttyd, the card "The session cannot be shown here" in a chat or slot listed the install commands of every system and then this machine's again. Now it is one sentence with only the command of the machine's package manager, shown as `code`, named once; the list of all commands appears only where no package manager is found. On Windows, a ttyd that winget installs while a run is up is now found (in winget's Links folder or its package folder under `%LOCALAPPDATA%\Microsoft\WinGet`), though that run still has the old PATH, so opening the chat again shows the session with no restart (B761).
 
 ## 0.64.0 (2026-11-24)
 

@@ -127,6 +127,6 @@ def start_web() -> WebServer | None:
     shown += [x for x in (shown_links([], urls) if site else []) if x not in shown]
     closed = '' if shown else closed_line()
     S.log(f'run page: {" or ".join(shown) or closed}' +
-          ('' if shutil.which('ttyd') else ' (ttyd is not installed, so a chat cannot show its session)'))
+          ('' if U.find_ttyd() else ' (ttyd is not installed, so a chat cannot show its session)'))
     threading.Thread(target=HomeWatch(srv, closed).loop, name='run-page-home', daemon=True).start()
     return srv
