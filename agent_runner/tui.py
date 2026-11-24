@@ -188,6 +188,7 @@ Sessions [2]
 Queue [3]
   e        direct edit            E        chat edit
   n        new task               J/K      move down / up
+  R        new release (the release tab; D there drops one that has not started)
 {queue_actions}
 {shelved_actions}
   ^S       save the direct edit
@@ -359,6 +360,7 @@ class RunPage:
         self.got = time.time()
         self.window_keys: set[str] = set()  # the keys the last frame showed above the bottom line
         self.confirm = ''  # F82: the run control waiting for its key again (stop now), '' none
+        self.confirm_ask, self.confirm_seen = '', ''  # F186: its question, and the open releases a New release names
         self.confirm_id = ''  # F124: what that control works on (a moved-aside branch), '' none
         self.last_result: dict = {}  # C34: the last run control's result
         self.output: list[str] = []  # F124: what the last W showed
@@ -899,8 +901,16 @@ class RunPage:
             out += [L(), L(('running now:', 'dim'))]
             out += [L(('  ', ''), (f'{s["task"]} ', 'cyan'), (s.get('title', ''), 'fg'), (f' in {s["name"]}', 'dim'))
                     for s in running]
-        return out + [L(), buttons(*[button(c['tui'], c['label'].lower(), i == 0)
-                                     for i, c in enumerate(self.control_list('release'))])]
+        said = self.snap.get('release_said') or ''  # F186
+        out += [L(), L(('New release', 'fg'), (f': {said}' if said else '', 'yellow')),
+                buttons(*[button(c['tui'], c['label'].lower(), i == 0)
+                          for i, c in enumerate(self.control_list('release'))])]
+        if ts := self.droppable_releases():
+            out += [L(), buttons(button('D', f'drop {ts[0]["id"]}' if len(ts) == 1 else 'drop one'))]
+        if self.confirm in (*(c['key'] for c in self.control_list('release')), 'queue_drop'):
+            c = next(c for c in U.RUN_CONTROLS if c['key'] == self.confirm)
+            out += [L()] + text_lines(f'{self.confirm_ask} {c["tui"]} again: yes; any other key: no', 'red', width)
+        return out
 
     def control_list(self, where: str) -> list[dict]:
         return [c for c in self.snap.get('controls') or U.controls() if c['where'] == where]
@@ -999,18 +1009,25 @@ class RunPage:
                 self.msg, self.msg_ok = f'{c["label"].lower()}: which one? {", ".join(ids)}', True
                 return
             args['tid'] = ids[0]
-        if c.get('confirm') and not c.get('tui_sure', True):
+        row = next((t for t in self.snap.get('queue') or [] if t.get('id') == args.get('tid')), {}) if c['where'] == 'queue' else {}
+        asks = (row.get('asks') or {}).get(key, '')  # F186: the row's own confirm, asked here too
+        if c.get('confirm') and not c.get('tui_sure', True) and not asks:
             args['confirm'] = True  # the page asks; here the key is the answer
         if c.get('confirm') and not args.get('confirm'):
             self.confirm, self.confirm_id = key, args.get('tid', '')
+            self.confirm_ask = asks or c['confirm'].replace('{id}', self.confirm_id)
+            self.confirm_seen = c.get('seen', '')
             if c['where'] == 'run':
                 self.panel, self.main = 1, True
                 self.set_tab('controls')
-            self.msg, self.msg_ok = f'{c["confirm"].replace("{id}", args.get("tid", ""))} {c["tui"]} again: yes', False
+            self.msg, self.msg_ok = f'{self.confirm_ask} {c["tui"]} again: yes', False
             return
         if c['where'] == 'queue':
             args.setdefault('why', 'dropped from agent-runner ui')
-        self.control_done(key, self.quiet(U.run_control, key, **args) if c.get('fn') else U.run_control(key, **args))
+        r = self.quiet(U.run_control, key, **args) if c.get('fn') else U.run_control(key, **args)
+        if c['where'] == 'release' and self.ask_again(key, r):
+            return
+        self.control_done(key, r)
         r = self.last_result
         if c['where'] in ('need', 'concept') and c.get('chat') and r.get('ok') and r.get('link'):  # F86
             self.msg = f'new control session about {args["tid"]}: {r["link"]}'
@@ -1024,6 +1041,33 @@ class RunPage:
                 self.cur[3] = ids.index(args['tid'])
             else:
                 self.main = False
+
+    def ask_again(self, key: str, r: dict) -> bool:
+        """F186: a New release refused because a release is open that the last snapshot did not show: ask."""
+        if not r.get('seen'):
+            return False
+        self.refresh()
+        self.confirm, self.confirm_ask, self.confirm_seen = key, r['confirm'], r['seen']
+        c = next(c for c in U.RUN_CONTROLS if c['key'] == key)
+        self.msg, self.msg_ok = f'{self.confirm_ask} {c["tui"]} again: yes', False
+        return True
+
+    def droppable_releases(self) -> list[dict]:
+        """F186: the open releases that have not started: their Drop works."""
+        return [t for t in self.items(3) if t.get('release')
+                and any(c['key'] == 'queue_drop' for c in self.row_controls(t))]
+
+    def drop_release(self) -> None:
+        """F186 D in the release tab: drop the one that waits; with more, pick its row in the queue panel."""
+        ts = self.droppable_releases()
+        if not ts:
+            self.msg, self.msg_ok = 'no release waits: one that has started cannot be dropped', True
+        elif len(ts) == 1:
+            self.run_control('queue_drop', tid=ts[0]['id'])
+        else:
+            self.panel, self.main = 3, False
+            self.cur[3] = self.items(3).index(ts[0])
+            self.msg, self.msg_ok = 'which release? d drops the selected one', True
 
     def control_done(self, key: str, r: dict) -> None:
         """A run control's result; what W shows (the files a moved-aside branch holds) stays in the controls pane."""
@@ -1126,7 +1170,8 @@ class RunPage:
         out += [L(('    ', ''), (after_hint(f['after'], self.snap.get('queue') or []), 'dim')), L()]
         if names := self.snap.get('tool_names'):  # F168: only in a project with shared tools
             out[-1:] = [label('e', 'needs', f'({", ".join(names)})')] + value('e') + [L()]
-        bs = [button('^S', 'save', True)] + ([] if f['new'] else [button('D', 'drop'), button('H', 'do it here')])
+        bs = [button('^S', 'save', True)] + ([] if f['new'] else (
+            [button('D', 'drop')] if not it.get('started') else []) + [button('H', 'do it here')])
         return out + [buttons(*bs)]
 
     def preview_pane(self, it, width: int) -> tuple[list, int]:
@@ -1219,6 +1264,7 @@ class RunPage:
         heads = [group_head(rows, i) if n == 3 else '' for i in range(len(rows))]  # F185
         if inner < len(lines[cur]) + 1:  # no room for a heading over the selected row
             heads = [''] * len(rows)
+        heads = [h + (' · R new release' if h == 'Releases' else '') for h in heads]  # F186
         lines = [([[(h, 'dim')]] if h else []) + l for h, l in zip(heads, lines)]
         top = cur
         used = len(lines[cur])
@@ -1319,14 +1365,15 @@ class RunPage:
             return keys
         if self.panel == 3:
             if isinstance(it, dict) and it.get('placeholder'):  # F131: the release tab's own keys
-                return [('⏎', 'open')]
+                return [('⏎', 'open'), ('R', 'new release')]
             if isinstance(it, dict) and it.get('new'):
                 return [('⏎', 'open'), ('E', 'chat edit')]
             if (it or {}).get('state') == 'shelved':  # F184
                 return [('⏎', 'open'), ('E', 'chat edit')] + [(c['tui_also'] or c['tui'], c['label'].lower())
                                                               for c in self.row_controls(it, 'shelved')]
             return [('e', 'edit'), ('E', 'chat edit')] + ([('J/K', 'reorder')] if (it or {}).get('state') != 'parked' else []) \
-                + [(c['tui_also'] or c['tui'], c['label'].lower()) for c in self.row_controls(it)]
+                + [(c['tui_also'] or c['tui'], c['label'].lower()) for c in self.row_controls(it)] \
+                + ([('R', 'new release')] if (it or {}).get('release') else [])
         if self.panel == 4:
             return [('⏎', 'open'), ('a', 'answer')] + [(c['tui'], c['label'].lower())
                                                        for c in self.row_controls(it, 'need') if not c.get('tab')]
@@ -1652,9 +1699,16 @@ class RunPage:
         if self.confirm:  # F82: stop now runs only on its key again
             key, self.confirm = self.confirm, ''
             tid, self.confirm_id = self.confirm_id, ''
+            seen, self.confirm_seen = self.confirm_seen, ''
+            self.confirm_ask = ''
             c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == key), {})
-            if k in (c.get('tui'), c.get('tui_also')):
-                self.control_done(key, U.run_control(key, confirm=True, **({'tid': tid} if tid else {})))
+            if ('⏎' if k == 'ENTER' else k) in (c.get('tui'), c.get('tui_also')):
+                more = {'why': 'dropped from agent-runner ui'} if c.get('where') == 'queue' else {}
+                r = U.run_control(key, confirm=True, **({'tid': tid} if tid else {}), **({'text': seen} if seen else {}), **more)
+                if not self.ask_again(key, r):
+                    self.control_done(key, r)
+                    if more and self.panel == 3 and tid not in [t.get('id') for t in self.items(3)]:
+                        self.main = False
             else:
                 self.msg, self.msg_ok = f'{c.get("label", key)}: not done', True
             return False
@@ -1834,6 +1888,9 @@ class RunPage:
                 self.type_in()
                 return True
             return False
+        if tab == 'release' and k in ('D', 'd'):  # F186
+            self.drop_release()
+            return True
         if tab == 'release' and (c := self.control_by_tui(k, 'release')):
             self.run_control(c['key'])
             return True
@@ -1927,7 +1984,8 @@ class RunPage:
         elif k == 'i':
             self.main = True
             self.type_in()
-        elif self.panel == 1 and k == 'R':
+        elif self.panel in (1, 3) and k == 'R':  # F186: the Queue too, where the releases are listed
+            self.panel = 1
             self.release_tab()
         elif self.panel == 1 and (q := next((q for q, c in QUICK_KEYS.items() if c == k), '')):
             self.done(r := U.quick_ask(q))  # B139: a new control session answers
