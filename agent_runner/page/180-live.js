@@ -51,7 +51,7 @@ function takeSnap(s){
   if(S.waitNew&&S.waitNew.ph&&S.ob.some(y=>'@'+y.cid===S.waitNew.ph)){}
   else if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
     if(fresh.length){const nm=fresh[fresh.length-1], ph=S.waitNew.ph, ws=S.waitNew.sent;S.waitNew=null;if(ws)carrySent(nm,ws.j,ws.ask);  // F137: its waiting messages go there
-      if(ph){obChange(b=>obName(b,ph,nm));boxMove(ph,nm);drain()}if(!ph||S.thread===ph)open(nm);else render();return}
+      if(ph){obChange(b=>obName(b,ph,nm));boxMove(ph,nm);drain()}if(!ph||S.thread===ph)open(nm,!!ph);else render();return}
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
   if(S.kept)keptCheck();  // B177
@@ -112,7 +112,9 @@ function needGo(){const id=S.needGo;if(!id||!S.snap.at)return;S.needGo='';if(nee
 function placeLoad(){if(S.thread)loadFeed(S.thread);if(S.view==='tools')loadTools();if(S.view==='settings')loadSettings()}
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
-function open(n){const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;if(!isNew(n))S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet)setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
+/* B212: on touch a script's focus brings no keyboard, so open() gives none (about() does, in the tap) and drops one left from
+   the box before; not when a starting chat gets its name (named): its box may be in use */
+function open(n,named){if(TOUCH()&&!isNew(n)&&!named&&typingIn(document.activeElement))document.activeElement.blur();const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;if(!isNew(n))S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet&&!TOUCH())setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
 function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);if(S.view==='settings')loadSettings();if(S.view==='tools')loadTools()}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();

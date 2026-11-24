@@ -622,7 +622,7 @@ function load(o) {
 const log = {draws: [], settings: 0, spoke: [], heard: 0, on: {}};
 const HOME_PAGE = false, location = {pathname: o.path || '/p/a/', search: '?t=x', hash: o.hash || ''}, document = {title: o.title || 'a · runner', querySelector: () => null};
 const history = {replaceState(a, b, u) { log.url = u; location.hash = '' }}, addEventListener = (t, f) => { log.on[t] = f };
-const setTimeout = () => { log.focus = (log.focus || 0) + 1 }, tq = p => p, takeTyped = () => {}, toast = () => {}, esc = t => String(t), LOGO = () => '', md = t => t, I = {chev: ''};
+const setTimeout = () => { log.focus = (log.focus || 0) + 1 }, tq = p => p, TOUCH = () => false, takeTyped = () => {}, toast = () => {}, esc = t => String(t), LOGO = () => '', md = t => t, I = {chev: ''};
 const fetch = async p => ({json: async () => (o.feeds || {})[decodeURIComponent(p.split('/')[1])] || {ok: false, name: decodeURIComponent(p.split('/')[1]), entries: [], out: 'none'}});
 const S = {snap: {sessions: [], needs: []}, view: 'home', thread: null, ctx: null, feeds: {}, sent: o.sent || {}, ob: o.ob || [], openSteps: {}, gone: {}, waitNew: null};
 const OB = {}, drain = () => {}, working_ = () => [], keepSent = () => {}, loadSettings = () => { log.settings++ }, loadTools = () => {};

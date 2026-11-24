@@ -1170,6 +1170,17 @@ const S = env.S, out = {press: []};
   const unatt = page.slice(page.indexOf("if(x=q('[data-unatt]'))"), page.indexOf('\n', page.indexOf("if(x=q('[data-unatt]'))")));
   new Function('S', 'boxKey', 'q', 'render', 'let x;' + unatt)(S, env.boxKey, () => ({dataset: {unatt: '0'}}), () => {});
   out.atts.removed = [seen(), go('c7')];
+  // B212: focus on open, on touch and on desktop: [blurred before the draw, the box focused by the timer, by the tap]
+  const draw = env.render, doc = env.document; let at;
+  env.talkSend = () => ''; env.typingIn = el => !!el; env.setTimeout = f => { f(); return 0 };
+  ta.focus = () => { at.timer++ };
+  const left = {blur() { at.blur++; doc.activeElement = null }};
+  env.render = () => { draw(); if (doc.activeElement) at.drawnFocused = true };
+  const focus = (on, go) => { at = {blur: 0, timer: 0, drawnFocused: false}; log.focus = 0; doc.activeElement = on ? left : null; go(); doc.activeElement = null; return [at.blur, at.timer, log.focus, at.drawnFocused] };
+  const home = () => { env.goView('home'); env.about('new'); type('a task') };
+  const all = () => ({open: focus(false, () => env.open('c1')), over: focus(true, () => env.open('c2')), about: focus(false, () => env.about('plan:F1')),
+    aboutOver: focus(true, () => env.about('plan:F1')), send: (home(), focus(true, () => env.send())), named: focus(true, () => env.open('c8', true))});
+  env.TOUCH = () => true; out.touch = all(); env.TOUCH = () => false; out.desk = all();
   console.log(JSON.stringify(out)); process.exit(0);
 })();
 """
@@ -1198,6 +1209,10 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     check('F1 Board page' in o['body'] and 'starts with your first message' in o['body'], 'it is empty and says so', o['body'])
     check('to a new chat' in o['box'] and 'data-feedkeys' not in o['box'], 'its box has no session keys', o['box'])
     eq(o['stop'], '', 'there is no session to interrupt')
+    eq(o['touch'], {'open': [0, 0, 0, False], 'over': [1, 0, 0, False], 'about': [0, 0, 1, False], 'aboutOver': [0, 0, 1, True], 'send': [1, 0, 0, False], 'named': [0, 0, 0, True]},
+       'B212: on touch a chat opens without focus and drops what was left before the draw; Chat and + Task focus in the tap; a chat that gets its name keeps it')
+    eq(o['desk'], {'open': [0, 1, 0, False], 'over': [0, 1, 0, True], 'about': [0, 1, 1, False], 'aboutOver': [0, 1, 1, True], 'send': [0, 1, 0, True], 'named': [0, 1, 0, True]},
+       'B212: a desktop pointer focuses the box on open, and nothing is dropped')
     eq(o['back'], ['plan', None, None, 0, 0], 'left unsent: back on Plan, no action sent and no session asked for')
     eq(o['draft'], 'make it fir', 'pressed again: the draft is there')
     eq(o['reload'], ['plan', '+plan:F1', True, 0], 'a reload keeps it open, without focus')
