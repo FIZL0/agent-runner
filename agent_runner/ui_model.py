@@ -1056,7 +1056,7 @@ RUN_CONTROLS = (
 )
 TASK_DROP_WHY = 'dropped from its slot from the run controls'
 SLOT_COUNT = re.compile(r'[+-]?\d{1,3}')
-TASK_ID = re.compile(r'[A-Z]+\d+[a-z]?')
+TASK_ID = P.TASK_ID  # B199: the ids plan takes, parts of parts (F162a2) too
 
 
 CONTROL_ROWS = (('start',), ('slot_add', 'slot_remove', 'slots_set'), ('pause', 'go_on'), ('force', 'caps_on'),

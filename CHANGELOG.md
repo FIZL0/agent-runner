@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: the run page and `agent-runner ui` refused a Needs you item whose id is a part of a part, such as F162a2 ("a task id (F83), not 'F162a2'"), so its inputs could not be sent and its Why it waits, Chat, task text and row actions (Drop, Later, Take back) were refused. They now take every id the plan takes (B199).
 - Fixed: the Needs you popup no longer repeats Full task as Why it waits when the agent left no session; it takes the keyboard focus and Esc returns it to the card (F162a2).
 - Changed: a Needs you item's fixed answers (Yes, No, options, Done) are one list now, the run's RUN_CONTROLS (F180). An answer whose options changed since it was drawn is refused with "answers changed: look again", and an item shows at most 12 fixed answers; nothing else looks different.
 - Fixed: in a Needs you item's details, a step after a ";" that follows what to see is a step again (F162a1). In "Tap Save: it says Saved; tap Undo; the list returns", "Tap Undo" had been listed under What you should see; now each piece after a ";" is classed again as a step or as what to see. Nothing of the ask is lost.
