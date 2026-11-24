@@ -32,6 +32,9 @@ Home's /p/KEY/ (B146, site_links), so one device address switches between runner
                                  the token is in the path, since ttyd's page drops the query
     GET  /terminal/login, /t/TOKEN/login/...  F126b: the terminal that renews this machine's Claude login (ttyd on
                                  watch.LOGIN_CMD), with no run up too; never without the key
+    GET  /logins, /terminal/login-PROVIDER, /t/TOKEN/login-PROVIDER/...  F406a: the model providers' logins
+                                 (provider_login), Home's own (the built-in providers); under /p/KEY the run's, or with
+                                 no run up Home's, in that project; never without the key
     GET  /devices?t=TOKEN        F95: Device Vitals, this machine and each peer Home's (vitals.py), and their
                                  alerts (Needs you); /device?id=ID the vitals page; /vitals/device this
                                  machine's; /vitals/clean Clean; /dev/ID/... the same on device ID
@@ -489,12 +492,15 @@ class HomeHandler(BaseHTTPRequestHandler):
                                    '`agent-runner home status` prints (…/?t=TOKEN)'})
         if method == 'GET' and path.endswith('/' + home_screen.MANIFEST):  # B179
             return self.manifest(path)
-        if login := re.fullmatch(r'(?:/p/[^/]+)?/+(?:terminal/+login|t/[^/]*/+login)(/.*)?', path):  # F126b
+        if login := re.fullmatch(r'(?:/p/([^/]+))?/+(?:(?:terminal/+|t/[^/]*/+)(login(?:-[^/]*)?)(/.*)?|logins)',
+                                 path):  # F126b, F406a
             if self.keyless:  # with the key only, also on a trusted network
                 return self.send(403, {'ok': False, 'out': 'Logging in needs the key: open the link '
                                        '`agent-runner home status` prints (…/?t=TOKEN)'})
-            if not path.startswith('/p/'):  # works with no run up
-                return self.login(method, path, (login[1] or '/')[1:])
+            if not login[1]:  # works with no run up
+                return self.login(method, path, login[3] or '', login[2], self.server.terms())
+            if login[2] != 'login' and (terms := self.server.login_terms(login[1])):  # F406a
+                return self.login(method, path, login[3] or '', login[2], terms)
         if path == '/p' or path.startswith('/p/'):
             return self.proxy(method)
         if method == 'GET' and (png := home_screen.icon_at(path)):
@@ -532,14 +538,17 @@ class HomeHandler(BaseHTTPRequestHandler):
                                                        str(req.get('arg') or '')))
         self.send(404, {'ok': False, 'out': f'no such page: {path}'})
 
-    def login(self, method: str, path: str, rest: str) -> None:
-        """F126b: the Claude login's terminal, Home's own: /terminal/login says where it is, /t/TOKEN/login/ serves it."""
+    def login(self, method: str, path: str, rest: str, name: str | None, terms) -> None:
+        """F126b: the Claude login's terminal, Home's own: /terminal/login says where it is, /t/TOKEN/login/ serves it.
+        F406a: a provider's login likewise, and with no `name` their list."""
         if method != 'GET':
             return self.send(404, {'ok': False, 'out': f'no such page: {path}'})
-        if path.startswith('/terminal/'):
-            return self.send(200, self.server.terms().open('login'))
+        if not name:
+            return self.send(200, {'ok': True, 'providers': terms.logins.rows()})
+        if re.match(r'(?:/p/[^/]+)?/+terminal/', path):
+            return self.send(200, terms.open(name + (rest if name != 'login' else '')))
         from agent_runner.session_frame import login_frame
-        login_frame(self, self.server.terms(), rest)
+        login_frame(self, terms, rest[1:], name)
 
     def manifest(self, path: str) -> None:
         """B179: Home's root is the app's scope; `p` names the project whose run app the icon opens on. Under /p/KEY/
@@ -692,6 +701,15 @@ class HomeHandler(BaseHTTPRequestHandler):
             conn.close()
 
 
+def own_providers(root: Path) -> dict:
+    """F406a: project `root`'s [models.providers]; none when its settings do not load."""
+    from agent_runner.config import Config
+    try:
+        return Config(root).providers
+    except (SystemExit, OSError, ValueError):
+        return {}
+
+
 def package_stamp() -> tuple | None:
     """B165: the package's files on disk (name, mtime, size), which an upgrade changes; None when they cannot
     be read (mid-install)."""
@@ -731,6 +749,7 @@ class HomeServer(ThreadingHTTPServer):
         self.acts: dict[str, cf.Future] = {}  # F150: a page's actions by cid, so one sent again is not run again
         self.acts_lock = threading.Lock()
         self._terms = None  # F126b
+        self._project_terms: dict[Path, object] = {}  # F406a
         self.vitals = vitals or home_vitals(self)
         if self.vitals.act is None:
             self.vitals.act = self.act_key  # the vitals page's + slot runs this Home's buttons
@@ -759,15 +778,54 @@ class HomeServer(ThreadingHTTPServer):
 
     def terms(self):
         """F126b: Home's own terminals (web.Terminals): the Claude login's, with no run behind it."""
+        from agent_runner.provider_login import Logins
         from agent_runner.web import Terminals
         with self.acts_lock:
-            self._terms = self._terms or Terminals(self.token, self.server_address[1], '127.0.0.1')
+            self._terms = self._terms or Terminals(self.token, self.server_address[1], '127.0.0.1', Path.home(),
+                                                   Logins(dict, self.logged_in, child_env))
             return self._terms
+
+    def login_terms(self, key: str):
+        """F406a: Home's terminals for the provider logins of project `key` while no run of it is up (or one of its
+        logins is under way here); None when its run serves them, or there is no such project."""
+        if (root := self.project(key)) is None:
+            return None
+        from agent_runner.provider_login import Logins
+        from agent_runner.web import Terminals
+        got = self._project_terms.get(root)
+        if not (got and got.login_live()) and self.link(root) is not None:
+            return None
+        with self.acts_lock:
+            if not (got := self._project_terms.get(root)):
+                got = self._project_terms[root] = Terminals(
+                    self.token, self.server_address[1], '127.0.0.1', root,
+                    Logins(lambda: own_providers(root), self.logged_in, child_env))
+            return got
+
+    def logged_in(self, provider: str) -> tuple[list[str], list[str]]:
+        """F406a: a login is this machine's, so the tasks of every project that wait for it reopen: their ids, and the
+        projects where that failed (one that does not know the provider has none waiting: exit 2)."""
+        ids, failed = [], []
+        for root in self._roots():
+            try:
+                r = runner(root, ['login', provider, '--reopen'])
+            except (OSError, sp.SubprocessError):
+                failed.append(root.name)
+                continue
+            if r.returncode not in (0, 2):
+                failed.append(root.name)
+            if m := re.search(r'^reopened (.+), blocked until', r.stdout, re.M):
+                ids += m[1].split(', ')
+        return ids, failed
+
+    def login_live(self) -> bool:
+        return any(t.login_live() for t in [self._terms, *list(self._project_terms.values())] if t)
 
     def server_close(self) -> None:
         super().server_close()
-        if getattr(self, '_terms', None):
-            self._terms.close()
+        for t in [getattr(self, '_terms', None), *getattr(self, '_project_terms', {}).values()]:
+            if t:
+                t.close()
 
     def project(self, key: str) -> Path | None:
         return keys(self._roots()).get(key)
@@ -829,7 +887,7 @@ class HomeServer(ThreadingHTTPServer):
         super().service_actions()
         if self.restart or not self.restart_due():
             return
-        if self._terms and self._terms.login.live():  # F126b: its person is on the sign-in page
+        if self.login_live():  # F126b: its person is on the sign-in page
             return
         with self.open_lock:
             self.restart = self.open == 0

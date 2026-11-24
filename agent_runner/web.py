@@ -13,6 +13,10 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
                                  drop, chat, answer, move, run_control, rename_chat, need_chat,
                                  setting_device …; F93 `talk`, the Talk view's words to its own control
                                  session), its result as JSON
+    GET  /logins?t=TOKEN         F406a: each model provider, its login (never a secret) and how its terminal's last one
+                                 ended (provider_login.Logins.rows); only with the key
+    GET  /terminal/login-PROVIDER, /terminal/login-copilot~DOMAIN?t=TOKEN   F406a: `run login` in a terminal, served as
+                                 NAME below; only with the key
     GET  /terminal/NAME?t=TOKEN  where slot NAME's (or cN's) own terminal is served by ttyd (`attach NAME`),
                                  started on demand; without one, why (no ttyd, not up), its session link and whether
                                  it can be resumed
@@ -63,7 +67,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plan_search, plat, session_frame, session_history, session_now, session_theme, speech, trust, watch
+from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plan_search, plat, provider_login, session_frame, session_history, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -154,9 +158,14 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith('/live/'):  # F170
             return self.send(200, json.dumps(session_now.live(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/terminal/'):
-            if self.keyless and path.split('/')[2] == session_frame.LOGIN:  # F126b
+            name = path.split('/')[2]
+            login = provider_login.is_login(name)  # F406a: its whole rest is the name, so a domain's path is refused
+            if self.keyless and (login or name == session_frame.LOGIN):  # F126b
                 return self.refuse()
-            return self.send(200, json.dumps(self.server.terms.open(path.split('/')[2])))
+            return self.send(200, json.dumps(self.server.terms.open(path[len('/terminal/'):] if login else name)))
+        if path == '/logins':  # F406a
+            return self.refuse() if self.keyless else self.send(200, json.dumps(
+                {'ok': True, 'providers': self.server.terms.logins.rows()}, ensure_ascii=False))
         if path.startswith('/feed/'):
             return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/history/'):  # F191a
@@ -233,8 +242,9 @@ class Handler(BaseHTTPRequestHandler):
         if len(bits) < 5 or not self.key_ok(bits[2]):
             return self.refuse()
         name = bits[3]
-        if name == session_frame.LOGIN:  # F126b: with the key only, also on a trusted network; its query goes nowhere
-            return self.refuse() if self.keyless else session_frame.login_frame(self, self.server.terms, bits[4])
+        if name == session_frame.LOGIN or provider_login.is_login(name):
+            # F126b: with the key only, also on a trusted network; its query goes nowhere
+            return self.refuse() if self.keyless else session_frame.login_frame(self, self.server.terms, bits[4], name)
         path = f'/t/{self.server.token}/{name}/{bits[4]}'  # the ttyd's own path, whatever key this one had (F136)
         if not re.fullmatch(r'[cs]\d+', name):
             return self.send(404, json.dumps({'ok': False, 'out': f'no such session: {name}'}))

@@ -20,6 +20,13 @@ def terminal_fallback(name: str) -> dict:
     this machine's command, once in `out` (the page shows it as code); with none found, `out` lists them all. F126b:
     the login names its command, to be run by hand."""
     cmd = ttyd_install_cmd()
+    if provider_login.is_login(name):  # F406a: a name already checked
+        from agent_runner.config import RUNNER
+        provider, _, domain = name.removeprefix(provider_login.PREFIX).partition('~')
+        return {'ok': False, 'mode': 'install', 'cmd': cmd, 'out':
+                f'ttyd is not installed, so the login cannot be shown here. Install it on {socket.gethostname()} (' +
+                (cmd or TTYD_INSTALL) + ') and open the login again, or run '
+                f'{" ".join([RUNNER, *provider_login.words(provider, domain)])} in a terminal there.'}
     if name == session_frame.LOGIN:
         return {'ok': False, 'mode': 'install', 'out':
                 f'ttyd is not installed, so the login cannot be shown here. Install it on {socket.gethostname()} (' +

@@ -49,7 +49,8 @@ def frame(opcode: int, body: bytes, mask: bool = False) -> bytes:
 
 
 class LoginHold:
-    def __init__(self):
+    def __init__(self, began=None, over=None):
+        self.began, self.over = began, over  # F406a: told as a login starts and as it ends, the lock held
         self.lock = threading.RLock()
         self.up: socket.socket | None = None
         self.said: list[bytes] = []  # what ttyd sent, for a browser that comes back
@@ -76,6 +77,8 @@ class LoginHold:
             up.close()
             raise
         self.up, self.said = up, []
+        if self.began:
+            self.began()
         threading.Thread(target=self._listen, args=(up, f), name='login-hold', daemon=True).start()
 
     def _listen(self, up: socket.socket, f) -> None:
@@ -106,6 +109,8 @@ class LoginHold:
             up.close()
             if self.up is up:
                 self.up = None
+                if self.over:  # before a browser is told, which then asks how it ended
+                    self.over()
                 for v in self.viewers:
                     self._send(v, frame(8, struct.pack('>H', ENDED)))
                     try:
