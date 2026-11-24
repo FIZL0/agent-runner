@@ -60,7 +60,10 @@ const BOX_KEYS=[['Enter','sends'],['Shift+Enter','new line'],['↑ ↓','earlier
 const composing=e=>!!e.isComposing||e.keyCode===229;
 const boxEnter=(e,touch)=>e.key!=='Enter'||composing(e)?'':(touch?e.ctrlKey||e.metaKey:!e.shiftKey)?'send':'line';
 /* B208: is Send a Force send? Only while the session works, with words or an attachment (uploaded, as send() takes it) */
-const sendForces=(works,words,atts)=>!!works&&(!!String(words||'').trim()||(atts||[]).some(a=>a.path));
+const sendForces=(works,words,atts)=>!!works&&sendHas(words,atts);
+/* F205: is there something to send (words or an uploaded attachment), and is an attachment still uploading? */
+const sendHas=(words,atts)=>!!String(words||'').trim()||(atts||[]).some(a=>a.path);
+const sendWaits=atts=>(atts||[]).some(a=>!a.path&&!a.err);
 const keysLine=()=>'<span class="keysl">'+BOX_KEYS.map(([k,d])=>`${k} ${d}`).join(' · ')+'</span>';
 /* B120: the chat's message history (kept per chat): HIST_MAX the most it keeps; histPush the list once `text` is
    sent (not twice in a row); histEdge whether ArrowUp / ArrowDown leaves the box's text for history (the caret on

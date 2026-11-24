@@ -1131,7 +1131,7 @@ def test_session_controls_f170(tmp: Path) -> None:
     eq([c['label'] for c in got[15]], ['Bypass', '2 agents', 'Update'], 'what the screen says')
     eq(([c['label'] for c in got[16]], got[17], got[18]), (['Session'], '1m 12s', '1h 2m'), 'nothing known; a clock')
     page = W.PAGE.read_text(encoding='utf-8')
-    check("say=on?'Force send':'Send'" in page and 'data-halt' in page and "{force:true}" in page, 'Force send and Stop while it works')
+    check("on?'Force send':'Send'" in page and 'data-halt' in page and "{force:true}" in page, 'Force send and Stop while it works')
     check('act force' not in page and '>Force send<' not in page and page.count('data-send aria-label="Send" title="Send">${I.send}') == 1,
           'B208: one Send arrow, never a wide text button')
     check('\n  sendDraw(ta);' in page.split('function grow(', 1)[1][:60], 'B208: it follows the words, the attachments and the status')
@@ -1342,5 +1342,59 @@ def test_session_run_side_f170(tmp: Path) -> None:
         srv.stop()
 
 
+SEND_WAIT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const slice = (a, b) => { const i = page.indexOf(a); if (i < 0) throw Error(a); return page.slice(i, page.indexOf(b, i) + b.length); };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const attrs = {}, cls = {}, toggle = (n, on) => { cls[n] = !!on };
+const btn = {title: '', classList: {toggle}, setAttribute(k, v) { attrs[k] = v }, removeAttribute(k) { delete attrs[k] }};
+const boxEl = {classList: {toggle}, querySelector: () => btn};
+const ta = {value: '', style: {}, scrollHeight: 20, offsetHeight: 20, closest: s => s === '.box' ? boxEl : null};
+const S = {thread: 'c1', view: 'home', atts: {}}, said = [], asks = [];
+let works = false, growGlide = () => {}, toast = t => said.push(t), tq = p => p, plainErr = String;
+const boxKey = () => S.thread, isNew = () => false, sessWorks = () => works, document = {querySelector: () => ta};
+const render = () => grow(ta, true), fetch = () => new Promise((ok, no) => asks.push({ok: j => ok({json: async () => j}), no}));
+const tick = () => new Promise(r => setTimeout(r, 0));
+eval(logic + slice('let boxWas=', '\n}\n') + slice('function sendDraw(', '\n}\n') + slice('async function send(){', '\n}\n')
+     + slice('async function upload(', '\n}\n') + `
+(async () => {
+  const look = () => [attrs['aria-label'], btn.title, attrs['aria-disabled'] || '', !!cls.force, !!cls.has], out = {};
+  const start = (v, w) => { S.atts = {}; asks.length = said.length = 0; ta.value = v; works = !!w; upload({name: 'a'}) };
+  start(''); out.alone = look(); asks[0].ok({ok: true, path: '/a'}); await tick(); out.aloneUp = look();
+  start('hi'); out.words = look(); await send(); out.said = said.slice(); out.kept = [ta.value, S.atts.c1.length];
+  asks[0].ok({ok: true, path: '/a'}); await tick(); out.wordsUp = look();
+  start(''); asks[0].no('net'); await tick(); out.failed = look();
+  start('hi'); asks[0].ok({ok: false, out: 'no'}); await tick(); out.failedWords = look();
+  start('hi'); S.atts.c1.splice(0, 1); render(); out.removed = look();
+  start('hi', true); out.force = look(); asks[0].ok({ok: true, path: '/a'}); await tick(); out.forceUp = look();
+  start('hi'); upload({name: 'b'}); asks[0].ok({ok: true, path: '/a'}); await tick(); out.one = look();
+  asks[1].ok({ok: true, path: '/b'}); await tick(); out.both = look();
+  start('hi'); S.thread = 'c2'; render(); out.other = look();
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_send_waits_f205(tmp: Path) -> None:
+    """F205: the send arrow is gray, and says Uploading…, while an attachment of its box uploads; it turns back at once,
+    and an uploaded attachment alone is something to send."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('.box .send[data-send][aria-disabled=true]:not(#_){opacity:.4;filter:grayscale(1);' in page, 'gray, Force send and an empty box too')
+    if not shutil.which('node'):
+        print('  (no node here: the send arrow test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(SEND_WAIT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the send arrow', r.stderr[-800:])
+    o = json.loads(r.stdout or '{}')
+    wait = lambda force, has: ['Uploading…', 'Uploading…', 'true', force, has]  # noqa: E731
+    ready = lambda has, say='Send': [say, say, '', say != 'Send', has]  # noqa: E731
+    for k, want in (('alone', wait(False, False)), ('aloneUp', ready(True)), ('words', wait(False, True)), ('wordsUp', ready(True)),
+                    ('failed', ready(False)), ('failedWords', ready(True)), ('removed', ready(True)), ('force', wait(True, True)),
+                    ('forceUp', ready(True, 'Force send')), ('one', wait(False, True)), ('both', ready(True)), ('other', ready(True))):
+        eq(o.get(k), want, f'F205: {k}')
+    eq((o.get('said'), o.get('kept')), (['Wait for the attachments to finish uploading'], ['hi', 1]), 'a tap or Enter says why, and nothing is lost')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_session_run_side_f170)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205)]))

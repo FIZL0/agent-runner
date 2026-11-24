@@ -6,7 +6,7 @@ function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sh
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
   const key=boxKey(), atts=S.atts[key]||[];  // B182: this box's own
-  if(atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
+  if(sendWaits(atts))return toast('Wait for the attachments to finish uploading');
   const paths=atts.filter(a=>a.path).map(a=>a.path);
   if(!text&&!paths.length)return;
   sentMark(text);
