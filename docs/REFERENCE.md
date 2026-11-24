@@ -351,7 +351,9 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   question and its answers, Drop to drop the task after a confirm). Pressing the card's words opens a popup with the whole ask: what to
   do as numbered steps, what you should see, notes, pictures, a link to its page, the agent's last words (`GET /why/ID`) and the
   full task (`GET /task/ID`), and at the foot a one-line reply box with the answer buttons. The reply's words go with the answer
-  (Yes is `plan confirm ID "Yes: words"`, No is `plan change ID "No: words"`, a concept option likewise). An item with no
+  (Yes is `plan confirm ID "Yes: words"`, No is `plan change ID "No: words"`, a concept option likewise; a pick sheet's go or
+  picks is `sheet ID … --note "words"`, Not this on a PITCH is `pitch no ID --why "words"`, and the words beside its Approve go
+  to a new chat once it is approved; if that chat cannot start, the toast and the run log say them). An item with no
   answer buttons, and a DECIDE, STUCK or PITCH, has a Reply button. A DECIDE's words are its answer and run at once with no session (`plan confirm ID "<words>"`; on an item with a pick sheet, `go` or `recommended` is `sheet ID --go` and a pasted `ID picks: ...` line is `sheet ID --picks`), and Chat stays for asking about a DECIDE. A STUCK's or PITCH's words go to a new chat, as does a typed reply to any other label. The popup is a sheet on
   a phone and a centred dialog from 760px wide, and closes when the item is answered or leaves Needs you. Working now (opens
   that slot's session), Up next (a row folds open to the task's whole text) and Release (when the next one

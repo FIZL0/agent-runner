@@ -1756,6 +1756,8 @@ def test_answer_button_b138(tmp: Path) -> None:
     eq((yes['ok'], yes['said'], yes['gone']), (True, 'F1 ticked', 'F1'), 'the result says what was done')
     eq(no['said'], 'F1 reopened: the check failed', "No's words")
     page = W.PAGE.read_text(encoding='utf-8')
+    check("if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need]" in page,
+          'F162a: the reply box is emptied only of words that were sent', '')
     check("outbox('answer',answerArgs(n,x.dataset.v," in page, 'the page sends a button answer', '')
     check("obCards(x=>x.need)" in page, 'the answer stands in Needs you while it is sent (F137)', '')
     if not shutil.which('node'):
@@ -2251,6 +2253,12 @@ const S = env.S, out = {};
   S.f['askre:B160'] = ' still grey '; press('[data-ans]', {ans: '0', v: 'No'}); out.closed = S.sheet;
   press('[data-needopen]', {needopen: 'D7'}, false); out.reply = el.h;
   press('[data-reply]', {reply: 'D7'}); S.f['askre:D7'] = '8770'; press('[data-reply]', {reply: 'D7'}); out.sent = sent;
+  const pitch = {id: 'pitch1', label: 'PITCH', ask: 'Approve 1 change', options: ['Approve'], changes: [{id: 'F1', title: 'a'}]};
+  const no = {pitchno: '0', how: 'reopen', tid: 'F1'};
+  S.snap.needs = [pitch]; S.f['askre:pitch1'] = ' nice '; press('[data-needopen]', {needopen: 'pitch1'}, false);
+  press('[data-ans]', {ans: '0', v: 'Approve'}); S.snap.needs = [pitch]; press('[data-pitchno]', no);
+  handlers.click.forEach(f => f({target: {closest: s => s === '[data-pitchno]' ? {dataset: no, closest: () => true, hasAttribute: () => true} : null}}));
+  out.pitch = sent.slice(-2); sent.length -= 2; S.snap.needs = needs.slice(-1);
   press('[data-needopen]', {needopen: 'tool-x'}, false); out.tool = el.h; S.snap.needs = []; env.render(); out.left = S.sheet;
   console.log(JSON.stringify(out)); process.exit(0);
 })();
@@ -2302,6 +2310,9 @@ def test_need_popup_f162(tmp: Path) -> None:
                    ['answer', {'tid': 'B160', 'text': 'No', 'button': True, 'note': 'still grey'}],
                    ['toast', 'Write your reply first'], ['answer', {'tid': 'D7', 'text': '8770'}]],
        "what is sent: the reply box's words go with the answer")
+    eq(o['pitch'], [['answer', {'tid': 'pitch1', 'text': 'Approve', 'button': True, 'note': 'nice'}],
+                    ['pitch_no', {'pid': 'pitch1', 'how': 'reopen', 'tid': 'F1', 'confirm': True, 'why': 'nice'}]],
+       "F162a: a pitch's answers carry the words too")
     check('askfoot' not in o['tool'] and 'data-askfold' not in o['tool'], 'a missing tool has nothing to answer, and no task', o['tool'])
     eq(o['left'], '', 'it closes when the item leaves Needs you')
 
@@ -2320,6 +2331,29 @@ def test_need_note_f162(tmp: Path) -> None:
         U.act('answer', tid='B2', text='Yes', button=True, note='on Monday')
     eq(ran, [['plan', 'confirm', 'F1', 'Yes: on wifi'], ['plan', 'change', 'F1', 'No: still grey'],
              ['plan', 'change', 'F1', 'No: the check failed'], ['plan', 'confirm', 'B2', 'Yes: on Monday']], 'the note goes with it')
+
+
+def test_pitch_note_f162a(tmp: Path) -> None:
+    """F162a: the words beside a pitch's answer are kept: Approve's go to a new chat, once it is approved; Not this's
+    are its --why; if the chat does not start, the toast says the words."""
+    fake_repo(tmp)
+    ran, sent, code, ok = [], [], [0], [True]
+    send = lambda t: (sent.append(t), {'ok': ok[0], 'code': 0, 'out': 'no session', 'argv': []})[1]  # noqa: E731
+    with mock.patch.object(U, 'need_label', lambda tid: 'PITCH'), mock.patch.object(U, 'SEND', [send]), \
+            mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (code[0], 'pushed'))[1]]):
+        r = U.act('answer', tid='pitch1', text='Approve', button=True, note='- watch  the menu')
+        U.act('answer', tid='pitch1', text='Not F1: drop', button=True, note='too slow')
+        U.act('pitch_no', pid='pitch1', how='reopen', tid='F1', confirm=True, why='too  slow')
+        U.act('answer', tid='pitch1', text='Approve', button=True)
+        code[0] = 1
+        U.act('answer', tid='pitch1', text='Approve', button=True, note='not yet')
+        code[0], ok[0] = 0, False
+        bad = U.act('answer', tid='pitch1', text='Approve', button=True, note='hold on')
+    eq((r['said'], r['gone'], sent), ('pushed', 'pitch1', ['pitch1: approved. - watch the menu', 'pitch1: approved. hold on']),
+       "Approve's words go to a chat, only once it is approved")
+    eq(ran[:4], [['pitch', 'approve', 'pitch1'], ['pitch', 'no', 'pitch1', '--drop', 'F1', '--why=too slow'],
+                 ['pitch', 'no', 'pitch1', '--reopen', 'F1', '--why=too slow'], ['pitch', 'approve', 'pitch1']], "Not this's are its why")
+    check(bad['gone'] == 'pitch1' and 'hold on' in bad['said'], 'a chat that does not start: the words are said', bad)
 
 
 def test_shot_f162(tmp: Path) -> None:

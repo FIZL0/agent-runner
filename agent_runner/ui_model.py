@@ -781,24 +781,26 @@ def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tu
     CONFIRM's No is `plan change ID "No: the check failed"`; a pick sheet's go or Send line is `sheet ID
     --go|--picks`; a concept's option button is `plan approve ID "<option>"` (B149). F181a: words typed as the
     reply to a DECIDE are its answer, so they run the same command as a button's; typed for any other label they
-    are a new chat's. F162: `note`, the words beside a button's answer, go with it (a pitch or a pick sheet
-    takes none)."""
+    are a new chat's. F162: `note`, the words beside a button's answer, go with it: in the task's note,
+    or a pitch no's --why; `answer` sends an approved pitch's to a new chat."""
     said, label, note = (text or '').strip(), need_label(tid), ' '.join((note or '').split())
     noted = f': {note}' if note else ''
+    why = [f'--why={note}'] if note else []  # one word of the command line, so words that start with - stay words
+    noting = [f'--note={note}'] if note else []
     if label == 'PITCH' and button:  # F98
         if said.lower() == 'approve':
             return ['pitch', 'approve', tid], f'{tid} approved'
         if m := re.fullmatch(r'not (\w+): (reopen|drop)', said, re.I):
             one, how = m[1], m[2].lower()
             argv = ([] if how == 'reopen' else ['--drop', 'all']) if one.lower() == 'this' else [f'--{how}', one]
-            return ['pitch', 'no', tid, *argv], f'{tid}: the run undoes it'
+            return ['pitch', 'no', tid, *argv, *why], f'{tid}: the run undoes it'
         return [], ''
     if label == 'DECIDE':
         from agent_runner.brief import has_sheet
         if has_sheet(tid) and said.lower() in SHEET_GO:
-            return ['sheet', tid, '--go'], f'{tid} answered with the recommended picks'
+            return ['sheet', tid, '--go', *noting], f'{tid} answered with the recommended picks'
         if has_sheet(tid) and said.startswith(f'{tid} picks:'):
-            return ['sheet', tid, '--picks', said], f'{tid} answered with your picks'
+            return ['sheet', tid, '--picks', said, *noting], f'{tid} answered with your picks'
     if label == 'CONCEPT' and button and said:  # B149: a concept's option button approves that option itself
         return ['plan', 'approve', tid, said + noted], f'{tid} approved ({said}): a run starts its build'
     if not said or label not in ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK) or not (button or label == 'DECIDE'):
@@ -823,6 +825,13 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
         if r['ok']:
             if argv[0] == 'pitch':
                 done = r['out'].splitlines()[0] if r['out'] else done  # F98: pushed, or what it waits for
+                words = ' '.join((note or '').split())
+                if words and argv[1] == 'approve':  # F162a: its tasks are done, so the words go where a reply does
+                    sent = SEND[0](f'{tid}: approved. {words}')
+                    if not sent['ok']:
+                        why = (sent['out'].splitlines() or [''])[0]
+                        S.log(f'{tid}: approved; the words with it went to no chat ({why}): {words}')
+                        done += f'. Your words were not sent ({why}): {words}'
             r.update(said=done, gone=tid)
         return r
     title = P.titles(S.C.todo).get(tid, '')
@@ -1489,9 +1498,9 @@ ACTIONS['delete_chats'] = delete_chats
 
 # --- F83: the combined run app rework: Needs you Drop and Chat, Rename, Settings, a task's whole text ----------
 
-def pitch_no(pid: str, how: str = 'reopen', tid: str = '', confirm: bool = False) -> dict:
+def pitch_no(pid: str, how: str = 'reopen', tid: str = '', confirm: bool = False, why: str = '') -> dict:
     """F98: Not this on a pitch, for all of it or the one change `tid`: the run undoes it here and reopens or drops
-    its task. After a confirm, as a run control's."""
+    its task, with the words `why`. After a confirm, as a run control's."""
     from agent_runner import pitch
     if not pitch.PITCH_ID.fullmatch(pid or '') or how not in ('reopen', 'drop') or \
             (tid and not P.TASK_ID.fullmatch(tid)):
@@ -1500,8 +1509,9 @@ def pitch_no(pid: str, how: str = 'reopen', tid: str = '', confirm: bool = False
     ask = f'Undo {tid or "all of it"} here and {how} {"its task" if tid else "the tasks"}?'
     if confirm is not True:
         return {'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'argv': []}
-    r = call(['pitch', 'no', pid, f'--{how}', tid] if tid else
-             ['pitch', 'no', pid] + (['--drop', 'all'] if how == 'drop' else []))
+    why = ' '.join((why or '').split())
+    r = call((['pitch', 'no', pid, f'--{how}', tid] if tid else
+              ['pitch', 'no', pid] + (['--drop', 'all'] if how == 'drop' else [])) + ([f'--why={why}'] if why else []))
     if r['ok']:
         r['said'] = f'{tid or pid}: the run undoes it'
         if not pitch.changes_of(pid, state='waiting'):  # the rest of it still waits otherwise
