@@ -283,7 +283,7 @@ function slimSize(){
 /* what the frame's place is made of; null while there is none */
 function feedPlace(){
   const main=document.querySelector('.main'), box=$('feedframe');if(!FD.shown||!main||!main.clientHeight)return;
-  main.style.setProperty('--feeddock',document.querySelector('.dockwrap').offsetHeight+'px');
+  if(!FD.drawn){main.style.setProperty('--feeddock',document.querySelector('.dockwrap').offsetHeight+'px');main.style.setProperty('--feedbar',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px')}
   if(!FD.frame){main.style.setProperty('--seebar',$('top').offsetHeight+'px');return}
   const top=$('top').offsetHeight, say=document.querySelector('.notices').offsetHeight;
   main.style.setProperty('--seebar',top+'px');
@@ -454,11 +454,11 @@ function statusHTML(){
 }
 
 /* F206: the title's switcher: the chats in the sidebar's order, each with its last line */
-SHEETS.chats=()=>{
-  const g=shownChats(), row=s=>{const n=s.name, f=S.feeds[n], said=chatLast(feedOf(n).map(e=>({...e,text:plain(e.text)})),busy(n)), on=S.thread===n;
+function chatsSheet(){
+  const g=shownChats(), row=s=>{const n=s.name, f=S.feeds[n], said=plain(chatLast(feedOf(n),busy(n))), on=S.thread===n;
     return `<button class="it swc" data-thread="${esc(n)}" data-k="swc:${esc(n)}"${on?' aria-current="true"':''}><span class="grow"><span class="ell">${esc(chatTitle(s))}</span><span class="small ell">${esc(said||(f?' ':'Loading…'))}</span></span>${replyDue(s)?'<span class="bdot" role="img" aria-label="needs your reply"></span>':on?I.check:''}</button>`};
   const n=S.thread, own=n&&sessionOf(n)&&!isAgent(n);
   return `<h2>Chats</h2>${g.top.map(row).join('')}${g.quiet.length?`<div class="sec">Quiet<span class="ln"></span></div>${g.quiet.map(row).join('')}`:''}${own?`<div class="btns"><button class="btn" data-ren="${esc(n)}">Rename this chat</button></div>`:''}`;
-};
+}
 function chatsLoad(){for(const s of chats().slice(0,40))if(!S.feeds[s.name]||Date.now()-(S.feeds[s.name].at||0)>4000)loadFeed(s.name)}
 setInterval(()=>{if(S.sheet==='chats'&&!document.hidden)chatsLoad()},5000);

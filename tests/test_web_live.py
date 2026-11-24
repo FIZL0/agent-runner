@@ -965,7 +965,7 @@ def test_session_feed_f114(tmp: Path) -> None:
 def test_switcher_f206(tmp: Path) -> None:
     """F206: a chat's last line in the title's switcher, the stand-in's messages, and how many screens are kept."""
     page = W.PAGE.read_text(encoding='utf-8')
-    check('data-chats aria-haspopup="dialog"' in page and 'SHEETS.chats=' in page, "a chat's title opens the switcher")
+    check('data-chats aria-haspopup="dialog"' in page and 'SHEETS.chats=chatsSheet' in page, "a chat's title opens the switcher")
     check('viewTransitionName' not in page and '||S.thread&&n!==S.thread){go();return}' in page, 'a switch is at once: no title flies')
     if not shutil.which('node'):
         return
