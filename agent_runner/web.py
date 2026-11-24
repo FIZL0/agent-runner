@@ -551,7 +551,11 @@ class ActsOnce:
             return {**got[1], 'again': True}
         try:
             got[1] = fn()
-            self.keep(cid, got[1])
+            if got[1].get('hold'):  # B158: nothing was done yet: the outbox's next try runs it
+                with self.lock:
+                    self.seen.pop(cid, None)
+            else:
+                self.keep(cid, got[1])
         except BaseException:
             with self.lock:  # it did not finish: a later copy runs it
                 self.seen.pop(cid, None)
@@ -1121,6 +1125,8 @@ class Handler(BaseHTTPRequestHandler):
             cid = str(body.get('cid') or '')[:80]  # F137: the outbox's client id
             if not isinstance(args, dict):
                 raise ValueError('args must be an object')
+            if name == 'chat_to' and body.get('hold'):  # B158: beside args, so a run older than the page ignores it
+                args = {**args, 'wait': False}
         except (ValueError, AttributeError) as e:
             return self.send(400, json.dumps({'ok': False, 'out': f'bad request: {e}'}))
         if name in WEB_REFUSED:

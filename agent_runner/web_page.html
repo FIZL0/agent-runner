@@ -1147,8 +1147,23 @@ const obTo=x=>String((x&&x.args&&x.args.to)||'');
 /* take an item in; a setting's own later save for everyone takes the place of one that did not go yet (`at`: the one going now) */
 function obAdd(box,it,at){return(box||[]).filter(x=>!(it.name==='setting_project'&&it.set&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending'&&x.cid!==at)).concat([it])}
 /* the next item for tab `tab` to send: the first still sending, skipping messages to a chat that is not up yet and
-   (B161) what a tab still there (`live`) has to send: x.by */
-function obNext(box,tab,live){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@')&&(!x.by||x.by===tab||!(live||[]).includes(x.by)))||null}
+   (B161) what a tab still there (`live`) has to send: x.by. B158: a message held for a starting chat (obHold) holds
+   the next ones to that chat, not other items */
+function obNext(box,tab,live,now){const t=now||Date.now(), held=[];
+  for(const x of box||[]){if(x.state!=='sending'||obTo(x).startsWith('@'))continue;
+    const mine=!x.by||x.by===tab||!(live||[]).includes(x.by);
+    if(x.until>t||(x.heldAt&&!mine))held.push(obTo(x));
+    else if(mine&&!(x.name==='chat_to'&&held.includes(obTo(x))))return x}
+  return null;
+}
+/* B158: the run answered 'hold' to item cid (its chat does not take input yet): tried again in a moment, until
+   HOLD_MS, when it fails with the run's words */
+const HOLD_MS=120000, HOLD_STEP=1500;
+function obHold(box,cid,r,now){
+  const it=(box||[]).find(x=>x.cid===cid);
+  if(it&&it.heldAt&&now-it.heldAt>HOLD_MS)return obSettle(box,cid,{ok:false,out:r&&r.out});
+  return(box||[]).map(x=>x.cid===cid?{...x,heldAt:x.heldAt||now,until:now+HOLD_STEP}:x);
+}
 /* a starting chat (placeholder '@cid') got its name: its messages go there */
 function obName(box,ph,name){return(box||[]).map(x=>obTo(x)===ph?{...x,args:{...x.args,to:name}}:x)}
 /* B182: the unsent attachments by message box ({box key: [...]}): a starting chat's go with it when its box gets another key */
@@ -1167,7 +1182,7 @@ function obRetry(box,cid,fresh,by){
   const l=box||[], it=l.find(x=>x.cid===cid);if(!it)return l;
   const up=obTo(it).startsWith('@')&&l.find(x=>'@'+x.cid===obTo(it));
   if(up)return obRetry(l,up.cid,fresh,by);
-  return l.map(x=>x.cid===cid?{...x,cid:fresh,by:by||'',state:'sending',err:''}:obTo(x)==='@'+cid?{...x,args:{...x.args,to:'@'+fresh},state:'sending',err:''}:x);
+  return l.map(x=>x.cid===cid?{...x,cid:fresh,by:by||'',state:'sending',err:'',heldAt:0,until:0}:obTo(x)==='@'+cid?{...x,args:{...x.args,to:'@'+fresh},state:'sending',err:''}:x);
 }
 /* Discard: the item goes, and with a new chat the messages waiting for it */
 function obDrop(box,cid){return(box||[]).filter(x=>x.cid!==cid&&obTo(x)!=='@'+cid)}
@@ -1642,16 +1657,18 @@ async function drain(){
     for(let it;obLoad(),(it=obNext(S.ob,OB.tab,obLive()));){
       if(it.by!==OB.tab&&!await obTake(it))continue;
       let j;OB.at=it.cid;
-      try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:it.name,args:it.args,cid:it.cid})});
+      try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:it.name,args:it.args,cid:it.cid,hold:true})});
         if(r.status>=500)throw new Error(`HTTP ${r.status}`);
         j=await r.json()}
       catch(e){OB.offline=true;OB.timer=setTimeout(drain,OB.wait);OB.wait=Math.min(OB.wait*2,30000);obDraw();return}
       OB.offline=false;OB.wait=2000;obLoad();
       if(!S.ob.some(x=>x.cid===it.cid))continue;  // discarded while it went
+      if(j&&j.hold){obChange(b=>obHold(b,it.cid,j,Date.now()));if(S.ob.some(x=>x.cid===it.cid&&x.state==='failed'))obDone(it,j);render(true);continue}  // B158
       obChange(b=>obSettle(b,it.cid,j,S.snap.boot));
       obDone(it,j);render(true);
     }
-    if(obNext(S.ob))OB.timer=setTimeout(drain,OB_DEAD);  // B161: another tab's: looked at again, should it go away
+    if(S.ob.some(x=>x.state==='sending'&&x.heldAt&&(!x.by||x.by===OB.tab)))OB.timer=setTimeout(drain,HOLD_STEP+100);  // B158
+    else if(S.ob.some(x=>x.state==='sending'&&x.heldAt)||obNext(S.ob))OB.timer=setTimeout(drain,OB_DEAD);  // B161: another tab's: looked at again, should it go away
   }finally{OB.busy=false;OB.at=''}
   obDraw();
 }
@@ -1685,7 +1702,7 @@ function obHide(){
 function oldRunHTML(msg){const rc=controlOf('restart');
   return `<div class="small v-bad">${esc(msg)}</div>${!rc||S.snap.up===false?'<div class="small">Stop the run and start it again.</div>':S.sure==='restart'?ctlSure(rc):`<div class="btns"><button class="btn acc${ctlBusy('restart')?' busy':''}" data-ctl="restart">Restart the run</button></div>`}`}
 const obBtns=x=>`${x.state==='failed'&&!obOld(x)?`<button class="btn pri" data-obretry="${esc(x.cid)}">Retry</button>`:''}${x.state==='failed'&&x.name==='chat_to'?`<button class="btn" data-obedit="${esc(x.cid)}">Edit</button>`:''}<button class="btn" data-obdrop="${esc(x.cid)}">Discard</button>`;
-const obState=x=>obOld(x)?OLD_WAIT:x.state==='failed'?`Not sent: ${obRefused(x)?OLD_RUN:x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
+const obState=x=>obOld(x)?OLD_WAIT:x.state==='failed'?`Not sent: ${obRefused(x)?OLD_RUN:x.err||'it did not work'}`:OB.offline?'waiting for the connection':x.heldAt?'waiting for the chat to start':'sending…';
 function obDraw(){
   const all=S.ob.concat(S.hob||[]), c=obCounts(all), old=S.ob.filter(obOld).length;c.failed-=old;
   const lost=notDelivered();

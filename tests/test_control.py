@@ -540,6 +540,62 @@ def test_first_message_typed_after_remote_control():
     eq(got, b'\x1b[200~hi\x1b[201~\r', 'the ask went through the FIFO as a paste and Enter')
 
 
+def test_takes_input_b158():
+    print('B158: a starting control session takes input once its TUI is up (bracketed paste on) and its first message is in')
+    import json
+    import os
+    import time
+    from agent_runner import control_first as KF, runner as R
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-control-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    job, log, first = R.C.notes('control14.job'), R.C.notes('control14.log'), R.C.notes('control14.first')
+    log.write_bytes(b'\x1b[?2004h an earlier session of this number')
+    was = log.stat().st_size
+    with mock.patch.object(K.plat, 'spawn_detached', lambda *a, **k: None):
+        K.hidden_shim('control14', ['control', '14'], wait=0.1)
+    eq(json.loads(job.read_text(encoding='utf-8')).get('log_from'), was, 'the job keeps where its log starts')
+    with mock.patch.object(K.plat, 'WINDOWS', True):
+        check(K.control_takes_input(14), 'a Windows console does not pass it on: nothing is held')
+    if os.name == 'nt':
+        return
+    check(K.control_takes_input(15), 'no hidden session of this number: nothing to wait for')
+    check(not K.control_takes_input(14), 'only the earlier session was up')
+    with log.open('ab') as fh:
+        fh.write(b'starting...')
+    check(not K.control_takes_input(14), 'the launcher is not the TUI')
+    with log.open('ab') as fh:
+        fh.write(b'\x1b[?25h\x1b[?2004h')
+    check(K.control_takes_input(14), 'the TUI is up')
+    first.write_text('', encoding='utf-8')
+    check(not K.control_takes_input(14), 'its first message is still to be typed in')
+    old = time.time() - 3600
+    os.utime(first, (old, old))
+    check(K.control_takes_input(14), 'a first-message mark left behind holds nothing')
+    first.unlink()
+    go = d / 'go'
+
+    def typing(m, t, since):
+        end = time.monotonic() + 20
+        while not go.exists() and time.monotonic() < end:
+            time.sleep(0.02)
+        return True
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': str(R.C.notes('control14.live'))}), \
+            mock.patch.object(KF, 'type_first', typing):
+        KF.type_first_later('hi')
+        check(first.exists(), 'type_first_later marks it before the agent starts')
+        go.write_text('')
+        end = time.monotonic() + 20
+        while first.exists() and time.monotonic() < end:
+            time.sleep(0.05)
+        check(not first.exists(), 'and clears it once typed')
+    log.write_bytes(b'')
+    check(K.control_takes_input(14), 'a log cut since holds nothing')
+
+
 def P_lines(d: Path) -> list[str]:
     return (d / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
 
@@ -1234,7 +1290,7 @@ if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
-                             test_first_message_typed_after_remote_control, test_rename_f129, test_held_delivered_once,
+                             test_first_message_typed_after_remote_control, test_takes_input_b158, test_rename_f129, test_held_delivered_once,
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once,
                              test_settled_verbs_and_openers, test_settled_waits_and_skips, test_settled_landing,

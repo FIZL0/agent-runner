@@ -644,8 +644,10 @@ def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[i
     ended = marker.with_suffix('.exit')
     marker.unlink(missing_ok=True)
     ended.unlink(missing_ok=True)
+    log_file = C.notes(f'{stem}.log')
+    log_from = log_file.stat().st_size if log_file.exists() else 0  # B158: this session's output starts here
     job.write_text(json.dumps({'argv': cmd, 'cwd': str(ROOT), 'env': {}, 'marker': str(marker), 'look': session_theme.settings().get('theme', ''),
-                               'log': str(C.notes(f'{stem}.log'))}), encoding='utf-8')
+                               'log': str(log_file), 'log_from': log_from}), encoding='utf-8')
     shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
     try:
         plat.spawn_detached(shim, C.notes(f'{stem}.shim'), ROOT, control_env())  # .shim: its own errors
@@ -659,6 +661,37 @@ def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[i
             return 0, ended.read_text(encoding='utf-8').strip()[:300] or 'it ended at once'
         time.sleep(0.2)
     return 0, f'it did not start in {SHIM_WAIT if wait is None else wait:g} s (see {C.notes(f"{stem}.shim")})'
+
+
+PASTE_ON = b'\x1b[?2004h'  # what Claude Code's TUI prints as it starts to take input (bracketed paste on)
+START_BYTES = 1_000_000  # how far into a session's output `control_takes_input` looks for it
+FIRST_MARK_AGE = 180  # s after which a `.first` mark was left behind (type_first gives up long before)
+
+
+def control_takes_input(n: int) -> bool:
+    """B158: can control session `n` take a message typed into its hidden shim's FIFO? Not before its TUI is up
+    (its log shows PASTE_ON since its job started): until then the terminal turns the Enter into a newline, so the
+    text lands in the prompt unsent. Nor while its own first message is still to be typed in (`type_first_later`'s
+    `control<n>.first`). True for one with no job, whose job predates `log_from` or whose log was cut since, and on
+    Windows, whose console does not pass PASTE_ON on."""
+    if plat.WINDOWS:
+        return True
+    try:
+        job = json.loads(C.notes(f'control{n}.job').read_text(encoding='utf-8'))
+        since = job['log_from']
+        with open(job['log'], 'rb') as fh:
+            if fh.seek(0, os.SEEK_END) >= since:
+                fh.seek(since)
+                if PASTE_ON not in fh.read(START_BYTES):
+                    return False
+    except FileNotFoundError:
+        return not C.notes(f'control{n}.job').exists()
+    except (OSError, ValueError, KeyError, TypeError):
+        return True
+    try:
+        return time.time() - C.notes(f'control{n}.first').stat().st_mtime > FIRST_MARK_AGE
+    except OSError:
+        return True
 
 
 CONTROL_LINK_WAIT = 90  # s `control --new` watches the new pane for its claude.ai/code link

@@ -564,6 +564,37 @@ def test_chat_at_b154(tmp: Path) -> None:
         U.RUN[0] = real
 
 
+def test_chat_hold_b158(tmp: Path) -> None:
+    """B158: a message to a chat that cannot take input yet is not typed: the run page is told to hold it
+    (wait False), any other caller waits; a slot's and a new chat's never wait."""
+    from unittest import mock
+    from agent_runner import control as K, plat, session_now, slots
+    fake_run(tmp)
+    typed, ready, real = [], [False], U.RUN[0]
+    U.RUN[0] = lambda argv: (0, 'control 3 is starting in a hidden terminal\n')
+    try:
+        with mock.patch.object(U, 'hidden_inbox', return_value=Path('/x/control3.in')), \
+                mock.patch.object(plat, 'WINDOWS', False), \
+                mock.patch.object(K, 'control_takes_input', side_effect=lambda n: ready[0]), \
+                mock.patch.object(slots, 'send_fifo', side_effect=lambda p, x: (typed.append(x), True)[1]):
+            for more in ({}, {'force': True}, {'unsent': True}):
+                with mock.patch.object(session_now, 'force_send', side_effect=AssertionError('sent')):
+                    r = U.act('chat_to', text='hi', to='c3', wait=False, **more)
+                eq((r['ok'], r.get('hold'), typed), (False, True, []), f'held, not typed, while the chat starts {more}')
+            with mock.patch.object(U, 'START_WAIT', 0.2):
+                r = U.act('chat_to', text='hi', to='c3')
+            eq((r['ok'], r.get('hold'), typed), (False, None, []), 'a caller that waits: not delivered, and not held')
+            check('starting' in r['out'], 'and says why', r)
+            eq(U.act('chat_to', text='new', wait=False).get('hold'), None, 'a new chat is never held')
+            check(U.act('chat_to', text='slot', to='s3', wait=False)['ok'], 'nor is a slot')
+            typed.clear()
+            ready[0] = True
+            r = U.act('chat_to', text='hi', to='c3', wait=False)
+            eq((r['ok'], typed), (True, ['hi']), 'typed once the chat takes input')
+    finally:
+        U.RUN[0] = real
+
+
 def test_chat_and_terminal(tmp: Path) -> None:
     """F74: chat to any control session (none named: SEND; cN typed in through its shim's FIFO), interrupt
     (Escape typed in), a new control session's link, the quick asks to c1, and the terminal view: ttyd,
@@ -1230,7 +1261,7 @@ if __name__ == '__main__':
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),
-                         in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154),
+                         in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154), in_tmp(test_chat_hold_b158),
                          in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
                          in_tmp(test_delete_chats), in_tmp(test_chat_list_f133),

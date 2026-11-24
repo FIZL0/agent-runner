@@ -67,13 +67,15 @@ def type_first_later(text: str) -> None:
         since = marker.with_suffix('.log').stat().st_size
     except OSError:
         since = 0
+    mark = marker.with_suffix('.first')  # B158: other messages wait for this one (control_takes_input)
+    mark.write_text('', encoding='utf-8')
     pid = os.fork()
     if pid:
         os.waitpid(pid, 0)
         return
     try:
         os.setsid()
-        if os.fork():
+        if os.fork():  # _exit skips the finally: the mark is the typer's to clear
             os._exit(0)
         null = os.open(os.devnull, os.O_RDWR)
         for fd in (0, 1, 2):  # off the session's terminal, so nothing it prints lands in the TUI
@@ -81,4 +83,7 @@ def type_first_later(text: str) -> None:
         if not type_first(marker, text, since):  # recorded, so a lost first message is not silent
             log(f'{marker.stem}: its first message could not be typed in (no shim read {marker.with_suffix(".in")})')
     finally:
-        os._exit(0)
+        try:
+            mark.unlink(missing_ok=True)
+        finally:
+            os._exit(0)

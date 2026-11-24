@@ -2210,11 +2210,18 @@ def test_outbox_f137(tmp: Path) -> None:
             gate.set()
             t.join(10)
         eq((code, len(ran2)), (503, 1), 'a copy of an action still running gets 503 (sent again later), not a failure')
+        asked = []
+        with mock.patch.object(U, 'act', lambda name, **a: (asked.append(a), {'ok': False, 'hold': True, 'out': ''})[1]):
+            for body in ({'hold': True}, {'hold': True}, {}):  # B158
+                post(url, {'name': 'chat_to', 'args': {'text': 'x', 'to': 'c3'}, 'cid': 'k11', **body})
+            post(url, {'name': 'answer', 'args': {'tid': 'F1'}, 'cid': 'k12', 'hold': True})
+        eq(asked, [{'text': 'x', 'to': 'c3', 'wait': False}] * 2 + [{'text': 'x', 'to': 'c3'}, {'tid': 'F1'}],
+           'B158: a held message is tried again under its client id; only a message of a page that holds is not waited for')
     finally:
         srv.stop()
     eq(once.run('', lambda: {'ok': True}), {'ok': True}, 'no cid: it just runs')
     page = W.PAGE.read_text(encoding='utf-8')
-    for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid})", "addEventListener('online',()=>drain())",
+    for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid,hold:true})", "addEventListener('online',()=>drain())",
                  'id="obbar"', 'id="obpop"', 'obChatRows()', 'obBubbles(n)', 'obCards(x=>x.concept)',
                  "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to,..."):
         check(part in page, f'the page has {part}')
@@ -2241,7 +2248,10 @@ def test_outbox_f137(tmp: Path) -> None:
         ['obHidden', box, 'need'], ['obHidden', [{**box[2], 'state': 'failed'}], 'need'], ['obHidden', box, 'concept'],
         ['obPill', {'sending': 2, 'failed': 1}, False], ['obPill', {'sending': 1, 'failed': 0}, True],
         ['obPill', {'sending': 0, 'failed': 0}, False],
+        ['obNext', [it('h1', 'chat_to', args={'to': 'c3'}, by='a', heldAt=1, until=2),
+                    it('h2', 'chat_to', args={'to': 'c3'}, by='b')], 'b', ['a'], 5000],
     ])
+    eq(got[17], None, "B158: a message another tab holds is not overtaken")
     eq([x['cid'] for x in got[0]], ['n1', 'm1', 'a1', 'p1'], 'a stored outbox keeps only whole items')
     eq(got[1], [], 'a broken store is an empty outbox')
     eq(got[2]['cid'], 'n1', 'items go in order')
@@ -2319,6 +2329,18 @@ const shows = (n, t) => talkConvo(n).includes(t);
   out.lost = notDelivered().map(x => [x.n, x.p.text]);
   feeds.c3.entries.push({kind: 'you', text: 'yes', at: 260});
   await loadFeed('c3'); out.late = S.sent.c3.pending.length;
+  // B158: held while the chat starts: kept, not sent past, then sent in order
+  posts = []; answers = [{ok: false, hold: true, out: 'c3 is still starting'}];
+  for (const t of ['one', 'two']) outbox('chat_to', {text: t, to: 'c3'}, {text: t, say: t});
+  outbox('answer', {tid: 'F1'}, {say: 'F1'});
+  await settle(); clearTimeout(OB.timer);
+  out.held = [posts.map(p => p.args.text || p.name), S.ob.map(x => [x.args.text, x.state, obState(x)])];
+  skew += 5000; await drain(); await settle();
+  out.after = [posts.map(p => p.args.text || p.name), S.ob.length, S.sent.c3.pending.map(p => p.text)];
+  answers = [{ok: false, hold: true, out: 'c3 is still starting'}, {ok: false, hold: true, out: 'c3 is still starting'}];
+  outbox('chat_to', {text: 'never', to: 'c3'}, {text: 'never', say: 'never'});
+  await settle(); clearTimeout(OB.timer); skew += 200000; await drain(); await settle(); clearTimeout(OB.timer);
+  out.never = [S.ob.map(x => [x.state, x.err]), said.includes('Not sent: never')];
   console.log(JSON.stringify(out));
   process.exit(0);
 })();`);
@@ -2372,6 +2394,11 @@ def test_sent_b154(tmp: Path) -> None:
     eq(o.get('kept'), ['yes', 'and more'], 'kept over a reload')
     eq(o.get('own'), ['yes'], 'only the message in the feed leaves')
     eq((o.get('failed'), o.get('failedShown')), ([['yes', 'failed']], [True] * 3), 'never landed: Not delivered, Retry, Discard')
+    wait = 'waiting for the chat to start'
+    eq(o.get('held'), [['one', 'answer'], [['one', 'sending', wait], ['two', 'sending', 'sending…']]],
+       'B158: a held message holds the next to its chat, not other actions')
+    eq(o.get('after'), [['one', 'answer', 'one', 'two'], 0, ['one', 'two']], 'then both go, in order')
+    eq(o.get('never'), [[['failed', 'c3 is still starting']], True], 'a chat that never takes input: failed, with Retry')
     eq(o.get('lost'), [['c3', 'yes']], 'F114: and the outbox lists it')
     eq(o.get('late'), 0, 'one that lands after all leaves')
 

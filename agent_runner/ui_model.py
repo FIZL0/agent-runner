@@ -1649,10 +1649,30 @@ def send(name: str, text: str) -> dict:
             'argv': []}
 
 
-def chat_to(text: str, to: str = '', force: bool = False, unsent: bool = False) -> dict:
+START_WAIT = 120.0  # s a message waits for a starting chat to take input (its first message may take 90)
+
+
+def _starting(name: str, wait: bool) -> dict | None:
+    """B158: None once control session `name` takes input (`control.control_takes_input`), waiting up to START_WAIT
+    s for it; else the answer: not sent, with 'hold' when not told to `wait` (nothing typed, so try again)."""
+    from agent_runner import control as K
+    end = time.monotonic() + (START_WAIT if wait else 0)
+    while re.fullmatch(r'c\d+', name) and hidden_inbox(name) and not K.control_takes_input(int(name[1:])):
+        if time.monotonic() >= end:
+            return {'ok': False, 'code': 1, 'out': f'{name} is still starting, so it could not take the message',
+                    'argv': [], **({} if wait else {'hold': True})}
+        time.sleep(0.2)
+    return None
+
+
+def chat_to(text: str, to: str = '', force: bool = False, unsent: bool = False, wait: bool = True) -> dict:
     """F74: the chat box of any control session: `to` (c6) gets `text`, with no `to` a new one (F176). B154: 'at' is when it was typed, and
     'name' the new control session. F170: `force` interrupts it first while it works
-    (`session_now.force_send`); `unsent`: the page sees words in its input, so the text goes below them."""
+    (`session_now.force_send`); `unsent`: the page sees words in its input, so the text goes below them.
+    B158: a chat still starting gets it once it takes input; with `wait` False (the run page) the answer is 'hold'
+    meanwhile."""
+    if held := _starting(to, wait):
+        return held
     at = time.time()
     if to and (force or unsent):
         from agent_runner.session_now import force_send
