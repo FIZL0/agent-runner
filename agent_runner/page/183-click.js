@@ -54,7 +54,8 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-askhere]')){e.preventDefault();S.needGo=x.dataset.askhere;goDown();goView('home');needGo();return}
   if((x=q('a[data-pkey]'))&&x.dataset.pkey===HKEY&&atAll()&&!(e.ctrlKey||e.metaKey||e.shiftKey)){e.preventDefault();goDown(false,!e.detail);return}
   if((x=q('[data-pgo]'))&&x.dataset.pkey===HKEY&&HKEY&&atAll()&&!q('a,button,input,form')){goDown();return}
-  if((x=q('[data-pgo]'))&&!q('a,button,input,form')){location.href=x.dataset.pgo;return}
+  if((x=q('a[data-pkey]'))&&!(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)){e.preventDefault();openProject(x.dataset.pkey,x.href);return}  // B769b
+  if((x=q('[data-pgo]'))&&!q('a,button,input,form')){if(x.dataset.pkey)openProject(x.dataset.pkey,x.dataset.pgo);else location.href=x.dataset.pgo;return}
   if(slashOpen()&&!q('[data-in]'))slashClose();
   if(q('[data-undo]')){S.undo=null;render(true);return}
   if(x=q('[data-pin]')){const n=x.dataset.pin,names=chatNames(),p=chatPins().filter(m=>names.includes(m));  // F133

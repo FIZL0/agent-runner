@@ -79,12 +79,12 @@ const meRow=(name,sub)=>`<div class="me"><div class="av">${esc((name||'?').charA
 function allRow(){
   if(!HB||oneProject(H.projects))return brand();
   const n=needsOf(H.projects,HKEY)+H.alerts.length, cur=(H.projects||[]).find(p=>p.key===HKEY);
-  return `<button class="ni allp" data-up title="All projects">${I.back}All projects${n?`<span class="n" data-k="n:all" data-roll data-v="${n}" title="need you in other projects">${n}</span>`:''}</button><div class="slevel">${esc(cur&&cur.name||S.snap.project||HKEY)}</div>`;
+  return `<button class="ni allp" data-up title="All projects">${I.back}All projects${n?`<span class="n" data-k="n:all" data-roll data-v="${n}" title="need you in other projects">${n}</span>`:''}</button>${H.opening&&H.opening!==HKEY?`<div class="slevel opening"><span class="livedot"></span> Opening ${esc((projectOf(H.opening)||{}).name||H.opening)}…</div>`:`<div class="slevel">${esc(cur&&cur.name||S.snap.project||HKEY)}</div>`}`;
 }
 function allSide(){
   const rows=rowsNow(), n=homeNeeds()+H.alerts.length;let i=0;
-  const row=r=>{const k=++i, hint=k<10?` title="Alt+${k}"`:'';
-    return `<a class="prow ${r.on?'on ':''}${r.group}" href="${esc(r.href)}" data-pkey="${esc(r.key)}" data-k="p:${esc(r.key)}"${hint}><span class="pdot ${esc(r.group)}"></span><span class="t">${esc(r.name)}</span>${['running','idle','off'].includes(r.said)?'':`<span class="st">${esc(r.said)}</span>`}${r.needs?`<span class="n" data-k="n:p:${esc(r.key)}" data-roll data-v="${r.needs}" title="needs you">${r.needs}</span>`:''}</a>`};
+  const row=r=>{const k=++i, opens=H.opening===r.key, hint=k<10?` title="Alt+${k}"`:'';
+    return `<a class="prow ${r.on?'on ':''}${opens?'opening ':''}${r.group}" href="${esc(r.href)}" data-pkey="${esc(r.key)}" data-k="p:${esc(r.key)}"${hint}><span class="pdot ${esc(r.group)}"></span><span class="t">${esc(r.name)}</span>${opens?`<span class="st">${OPENING}</span>`:['running','idle','off'].includes(r.said)?'':`<span class="st">${esc(r.said)}</span>`}${r.needs?`<span class="n" data-k="n:p:${esc(r.key)}" data-roll data-v="${r.needs}" title="needs you">${r.needs}</span>`:''}</a>`};
   return `<div class="slevel">All projects</div><div class="nav"><button class="ni ${H.tab!=='devices'?'on':''}" data-alltab="">${I.projects}Overview${n?`<span class="n" data-k="n:over" data-roll data-v="${n}">${n}</span>`:''}</button></div>
     <div class="plist">${H.projects===null?'<div class="none">Loading…</div>':PGROUPS.map(([g,label])=>{const rs=rows.filter(r=>r.group===g);return rs.length?`<div class="shead">${label}</div>${rs.map(row).join('')}`:''}).join('')||'<div class="none">No projects</div>'}</div>
     <div class="nav"><button class="ni ${H.tab==='devices'?'on':''}" data-alltab="devices">${I.tools}Devices</button></div>${meRow(H.machine,'Runner Home')}`;
@@ -104,7 +104,7 @@ function goUp(stay,keys){
 }
 function goDown(stay,keys){
   if(!atAll()||!HKEY)return;
-  const p=!HOME_PAGE&&!stay&&projectOf(HKEY);if(p&&projectGroup(p)==='off'&&!p.starting){location.href=projectLink(HB,HKEY,T);return}  // its run ended meanwhile: its page as it is off
+  const p=!HOME_PAGE&&!stay&&projectOf(HKEY);if(p&&projectGroup(p)==='off'&&!p.starting){openProject(HKEY,projectLink(HB,HKEY,T));return}  // its run ended meanwhile: its page as it is off
   const b=S.below||{v:lastTab()||'home',t:null,c:null};S.below=null;
   if(!stay)try{history.pushState({level:'in'},'')}catch(e){}
   if(b.t){S.view=b.v;S.ctx=b.c;open(b.t)}else goView(b.v==='projects'?'home':b.v);
@@ -112,7 +112,23 @@ function goDown(stay,keys){
 }
 function focusSide(s){const el=$('sidein').querySelector(s);if(el)el.focus({preventScroll:true})}
 addEventListener('popstate',e=>{if(e.state&&e.state.level==='all')goUp(true);else if(atAll())goDown(true)});
-function goProject(r){if(r.on)atAll()?goDown():0;else location.href=r.href}
+function goProject(r){if(r.on)atAll()?goDown():0;else openProject(r.key,r.href)}
+/* B769b: a pressed project is marked as opening at once, until its page comes. A load that fails without leaving this page
+   says so only where there is a Navigation API, so the mark also goes after OPEN_MS; navigateerror of a load that a newer
+   press replaced comes while that press starts its own */
+const OPEN_MS=20000, OP={timer:0,going:false};
+function openProject(key,href){
+  clearTimeout(OP.timer);H.opening=key;OP.timer=setTimeout(openingEnd,OPEN_MS);
+  render(true);
+  if(!openingSeen()){const p=projectOf(key);toast(`Opening ${p&&p.name||key}…`)}
+  OP.going=true;try{location.href=href}finally{setTimeout(()=>{OP.going=false},0)}
+}
+function openingEnd(){clearTimeout(OP.timer);if(!H.opening)return;H.opening='';render(true)}
+/* the mark is on screen: a number key also opens a project from where no row or card of it shows */
+const openingSeen=()=>[...document.querySelectorAll('.opening')].some(el=>{const b=el.getBoundingClientRect();return b.width>0&&b.right>0&&b.left<innerWidth&&b.bottom>0&&b.top<innerHeight});
+const OPENING='<span class="livedot"></span> Opening…';
+addEventListener('pageshow',openingEnd);
+if(window.navigation&&navigation.addEventListener)navigation.addEventListener('navigateerror',()=>{if(!OP.going)openingEnd()});
 /* B153: the run's own page top-left: the project's name, a link to Runner Home when it is installed */
 function brand(){const href=homeHref(HB,T,S.snap.home,location), inner=`<div class="logo">${esc(PN().charAt(0).toLowerCase())}</div><b>${esc(PN())}</b>`;
   return href?`<a class="brand" href="${esc(href)}" title="Runner Home: every project's run">${inner}</a>`:`<div class="brand">${inner}</div>`}
@@ -120,17 +136,17 @@ function meterHTML(m){const pct=Math.max(0,Math.min(100,+m.pct||0)), c=pct>=90?'
   return `<div class="meter"><span>${esc(m.name)}</span><div class="bar"><i class="${c}" style="width:${pct}%"></i></div><span class="r">${esc(m.said)}</span></div>`}
 const hobOf=(key)=>(S.hob||[]).filter(x=>x.args.project===key&&x.state==='failed').map(x=>`<div class="row obstand failed" data-k="ob:${esc(x.cid)}"><div class="grow"><div>${esc(x.say)}</div><div class="small">Not done: ${esc(x.err||'it did not work')}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('');
 function mainBtn(p){const b=projectMain(p);
-  return !b?'':b.open?`<a class="btn" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">Open</a>`:`<button class="btn${b.busy?' busy':' pri'}" ${b.busy?'disabled':''} data-pact="${b.a}" data-pkey="${esc(p.key)}">${b.label}</button>`}
+  return !b?'':b.open?`<a class="btn${H.opening===p.key?' busy':''}" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">Open</a>`:`<button class="btn${b.busy?' busy':' pri'}" ${b.busy?'disabled':''} data-pact="${b.a}" data-pkey="${esc(p.key)}">${b.label}</button>`}
 const dotsBtn=p=>`<button class="btn" data-projmore="${esc(p.key)}" aria-label="More for ${esc(p.name||p.key)}" title="More">…</button>`;
 function landedLine(p){const l=p.landed||[], n=p.landed_n||l.length;return n?`<div class="ptasks small"><div>Landed today · ${n}</div>${l.map(x=>`<div class="ell">${esc(x)}</div>`).join('')}</div>`:''}
 /* the project's warnings: no settings found, a wrong [run] agent */
 const projectWarn=p=>[p.no_settings,p.agent_problem].filter(Boolean).map(w=>`<div class="small"><span class="v-warn">${esc(w)}</span></div>`).join('');
 function projectCard(p){
-  const off=projectGroup(p)==='off', words=projectWords(p), tasks=p.running||[], name=`<a class="pname grow ell" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">${esc(p.name||p.key)}</a>`;
+  const off=projectGroup(p)==='off', opens=H.opening===p.key, words=opens?OPENING:esc(projectWords(p)), tasks=p.running||[], name=`<a class="pname grow ell" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">${esc(p.name||p.key)}</a>`;
   const warn=projectWarn(p);
-  return card(`<div class="row"><span class="pdot ${projectGroup(p)}"></span>${name}${off&&p.left?`<span class="small">${esc(words)}</span>`:''}${mainBtn(p)}${dotsBtn(p)}</div>${off?'':
-    `${tasks.length?`<div class="ptasks">${tasks.map(id=>`<div class="ell" title="${esc(id)}">${esc((p.titles||{})[id]||id)}</div>`).join('')}</div>`:''}<div class="small">${esc(words)}</div>${landedLine(p)}`}${warn}${hobOf(p.key)}`,
-    `pcard tap${off?' off':''}`,`data-pgo="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}" data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`);
+  return card(`<div class="row"><span class="pdot ${projectGroup(p)}"></span>${name}${off&&(p.left||opens)?`<span class="small">${words}</span>`:''}${mainBtn(p)}${dotsBtn(p)}</div>${off?'':
+    `${tasks.length?`<div class="ptasks">${tasks.map(id=>`<div class="ell" title="${esc(id)}">${esc((p.titles||{})[id]||id)}</div>`).join('')}</div>`:''}<div class="small">${words}</div>${landedLine(p)}`}${warn}${hobOf(p.key)}`,
+    `pcard tap${off?' off':''}${opens?' opening':''}`,`data-pgo="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}" data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`);
 }
 /* a thing that waits on the person, in any project: it opens there */
 function askRow(a){const here=a.key===HKEY&&!HOME_PAGE;
