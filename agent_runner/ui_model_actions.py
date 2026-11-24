@@ -1,0 +1,234 @@
+"""C44: the actions: plan add and change, drop, chat, answer, need_give, move.
+
+Part of `ui_model`: `ui_model` runs this file in its own namespace (see its end), so these names are `ui_model`'s, and a
+test that sets `ui_model.X` reaches the code here. Not imported on its own."""
+
+# --- the actions ----------------------------------------------------------------------------------------------
+
+def _run(argv: list[str]) -> tuple[int, str]:
+    """Run the runner with `argv` in the main checkout: (exit code, what it printed)."""
+    env = {k: v for k, v in os.environ.items() if k != 'AGENT_RUNNER_CONTROL'}  # F160: the person's, not the session's
+    if argv[:1] and argv[0] in ('plan', 'pitch', 'sheet'):  # that started the run or the TUI
+        env['AGENT_RUNNER_BY'] = 'the person in the run app'
+    r = sp.run(runner_cmd() + argv, cwd=S.ROOT, env=env, capture_output=True, text=True, encoding='utf-8',
+               errors='replace')
+    return r.returncode, (r.stdout + r.stderr).strip()
+
+
+RUN = [_run]  # what every action runs; a test or a wrapping UI swaps it
+
+
+def call(argv: list[str]) -> dict:
+    """One action's result: {'ok', 'code', 'out', 'argv'}."""
+    code, out = RUN[0](argv)
+    return {'ok': code == 0, 'code': code, 'out': out, 'argv': argv}
+
+
+def _flags(files=None, after=None, pri: str = '', test: str = '', needs=None) -> list[str]:
+    out = []
+    if files:
+        out += ['--files', ','.join(files) if isinstance(files, (list, tuple)) else files]
+    if after:
+        out += ['--after', ','.join(after) if isinstance(after, (list, tuple)) else after]
+    if test:
+        out += ['--test', test]
+    if needs:
+        out += ['--needs', ','.join(needs) if isinstance(needs, (list, tuple)) else needs]
+    if pri:
+        out += ['--pri', pri]
+    return out
+
+
+def plan_add(kind: str, text: str, files=None, after=None, pri: str = '', test: str = '', needs=None) -> dict:
+    """Queue a task: `plan add KIND TEXT --files … --after … --pri …`."""
+    return call(['plan', 'add', kind, text, *_flags(files, after, pri, test, needs)])
+
+
+def plan_change(tid: str, text: str = '', files=None, after=None, pri: str = '', test: str = '', needs=None) -> dict:
+    """The page's direct edit of a queued task: `plan edit ID [TEXT] [--files …]`, rewritten in place (a slot
+    running it is told)."""
+    return call(['plan', 'edit', tid, *([text] if text else []), *_flags(files, after, pri, test, needs)])
+
+
+def drop(tid: str, why: str) -> dict:
+    """`plan drop ID WHY`: not wanted; a slot running it is stopped."""
+    return call(['plan', 'drop', tid, why])
+
+
+def to_new(text: str) -> dict:
+    """F176: a prompt opens a chat of its own: a new control session with `text` as its first message, started
+    without waiting for its link (`control --new --no-wait --ask`)."""
+    return call(['control', '--new', '--no-wait', '--ask', text, '--no-feed'])
+
+
+SEND = [to_new]  # how chat and answers start a chat; a test swaps it
+
+
+def chat(text: str) -> dict:
+    """The page's chat box: the person's words, as they typed them, to a new chat."""
+    return SEND[0](text)
+
+
+SHEET_GO = ('go', 'recommended')  # a pick sheet's reply for its recommended picks
+CHECK_FAILED = 'No: the check failed'  # B138: what a CONFIRM's No reopens the task with
+
+
+def need_label(tid: str) -> str:
+    """B138: the label of what `tid` asks (CONFIRM, DECIDE, BLOCKED, STUCK, CONCEPT); '' when nothing needs you
+    about it."""
+    from agent_runner import pitch
+    if pitch.PITCH_ID.fullmatch(tid or ''):  # F98
+        return pitch.LABEL if any(r[1] == tid for r in pitch.rows()) else ''
+    if (tid or '').startswith('tool-'):  # F168
+        from agent_runner import shared_tools
+        return shared_tools.LABEL if any(r[1] == tid for r in shared_tools.asks()) else ''
+    try:
+        return P._ask(tid, S.C.todo)[0]
+    except (SystemExit, OSError, AttributeError):
+        return ''
+
+
+def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tuple[list[str], str]:
+    """B138: the runner command that settles a Needs you reply at once, and what to say once it did; ([], '')
+    when the reply is a chat's to read. A button's Yes (or a pick, or done) is `plan confirm ID "<reply>"`, a
+    CONFIRM's No is `plan change ID "No: the check failed"`; a pick sheet's go or Send line is `sheet ID
+    --go|--picks`; a concept's option button is `plan approve ID "<option>"` (B149). F181a: words typed as the
+    reply to a DECIDE are its answer, so they run the same command as a button's; typed for any other label they
+    are a new chat's. F162: `note`, the words beside a button's answer, go with it: in the task's note,
+    or a pitch no's --why; `answer` sends an approved pitch's to a new chat."""
+    said, label, note = (text or '').strip(), need_label(tid), ' '.join((note or '').split())
+    noted = f': {note}' if note else ''
+    why = [f'--why={note}'] if note else []  # one word of the command line, so words that start with - stay words
+    noting = [f'--note={note}'] if note else []
+    if label == 'PITCH' and button:  # F98
+        if said.lower() == 'approve':
+            return ['pitch', 'approve', tid], f'{tid} approved'
+        if m := re.fullmatch(r'not (\w+): (reopen|drop)', said, re.I):
+            one, how = m[1], m[2].lower()
+            argv = ([] if how == 'reopen' else ['--drop', 'all']) if one.lower() == 'this' else [f'--{how}', one]
+            return ['pitch', 'no', tid, *argv, *why], f'{tid}: the run undoes it'
+        return [], ''
+    if label == 'DECIDE':
+        from agent_runner.brief import has_sheet
+        if has_sheet(tid) and said.lower() in SHEET_GO:
+            return ['sheet', tid, '--go', *noting], f'{tid} answered with the recommended picks'
+        if has_sheet(tid) and said.startswith(f'{tid} picks:'):
+            return ['sheet', tid, '--picks', said, *noting], f'{tid} answered with your picks'
+    if label == 'CONCEPT' and button and said:  # B149: a concept's option button approves that option itself
+        return ['plan', 'approve', tid, said + noted], f'{tid} approved ({said}): a run starts its build'
+    if not said or label not in ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK) or not (button or label == 'DECIDE'):
+        return [], ''
+    if label == 'CONFIRM' and said.lower() == 'no':
+        return ['plan', 'change', tid, f'No{noted}' if note else CHECK_FAILED], f'{tid} reopened: the check failed'
+    if label == 'CONFIRM':
+        return ['plan', 'confirm', tid, said + noted], f'{tid} ticked'
+    return ['plan', 'confirm', tid, said + noted], f'{tid} answered ({said}): a run starts it'
+
+
+def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
+    """A reply to a Needs you item. B138: a button's answer, and the words typed for a DECIDE (F181a), run the
+    plan command itself (`answer_argv`), with no AI session, and an ok result carries 'said' (what was done, for
+    the toast) and 'gone' (the item, off Needs you); the words typed for any other label go to a new chat to
+    settle as its needs guide says."""
+    argv, done = answer_argv(tid, text, button, note)
+    if button and not argv and not need_label(tid):  # answered already, or never asked: say so, no AI session
+        return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
+    if argv:
+        r = call(argv)
+        if r['ok']:
+            if argv[0] == 'pitch':
+                done = r['out'].splitlines()[0] if r['out'] else done  # F98: pushed, or what it waits for
+                words = ' '.join((note or '').split())
+                if words and argv[1] == 'approve':  # F162a: its tasks are done, so the words go where a reply does
+                    sent = SEND[0](f'{tid}: approved. {words}')
+                    if not sent['ok']:
+                        why = (sent['out'].splitlines() or [''])[0]
+                        S.log(f'{tid}: approved; the words with it went to no chat ({why}): {words}')
+                        done += f'. Your words were not sent ({why}): {words}'
+            r.update(said=done, gone=tid)
+        return r
+    title = P.titles(S.C.todo).get(tid, '')
+    return SEND[0](f'{tid}{f" ({title})" if title else ""}: {text}')
+
+
+def as_data(value: str) -> str:
+    """F175: `value` as a JSON string that holds no plan markup: what could start a field, a note, a block or a tag on
+    a task line is a \\u escape, which reads back as it was."""
+    return re.sub(r'[^\w .,:/?&=#%+@~!;\'"\\-]|:(?= )|:(?=\W?$)',
+                  lambda m: ''.join(f'\\u{ord(u):04x}' for u in _utf16(m[0])), json.dumps(value, ensure_ascii=False)[1:-1]
+                  ).join('""')
+
+
+def _utf16(text: str) -> list[str]:
+    b = text.encode('utf-16-be', 'surrogatepass')
+    return [chr(b[j] << 8 | b[j + 1]) for j in range(0, len(b), 2)]
+
+
+def need_give(tid: str, values: dict | None = None, confirm: bool = False, secure: bool = False) -> dict:
+    """F175: Done on a Needs you item with inputs: `values` ({key: what the person entered}) are sent as its answer. A
+    text or a link goes into the answer the task reopens with, as quoted data (`as_data`); a secret only into
+    `asks.env_file`, and the answer says its name and that path. `secure`: it came over https, from this machine or
+    from the terminal UI; without that a secret is refused. One that fails its input's check sends nothing: 'field' is
+    its key, 'out' why. An input's `confirm` question is asked first, as 'confirm', unless `confirm` is true.
+    Kept out of ACTIONS: the page that calls it sets `secure` itself, never from what was sent."""
+    def no(out: str, code: int = 1, **more) -> dict:
+        return {'ok': False, 'code': code, 'out': out, 'argv': [], **more}
+
+    if not TASK_ID.fullmatch(tid or ''):
+        return no(f'need_give: a task id (F83), not {tid!r}', 2)
+    label = need_label(tid)
+    if not label:
+        return no(f'{tid} no longer needs you (answered already?)')
+    inputs = need_detail.asks_file(tid).get('inputs') or [] if label in need_detail.INPUT_LABELS else []
+    if not inputs or not isinstance(values, dict) or set(values) != {x['key'] for x in inputs}:
+        return no(f'what {tid} asks for changed: look again')
+    got = {k: v.strip() if isinstance(v, str) else v for k, v in values.items()}
+    for x in inputs:
+        if x['kind'] == 'secret' and secure is not True:
+            return no(f'{x["label"]}: a secret is taken only over https or on this computer; this page came over plain '
+                      f'http, where others on the network could read it', field=x['key'])
+        if why := need_detail.input_wrong(x, got[x['key']]):
+            return no(why, field=x['key'])
+    asked = ' '.join(x['confirm'] for x in inputs if x['confirm'])
+    if asked and confirm is not True:
+        return no(asked, 3, confirm=asked)
+    from agent_runner import asks
+    secrets = {x['env']: got[x['key']] for x in inputs if x['kind'] == 'secret'}
+    back = lambda: None  # noqa: E731
+    if secrets:
+        try:
+            back = asks.keep_secrets(tid, secrets, S.C)
+        except (OSError, ValueError) as e:
+            return no(f'the secret could not be kept ({e.strerror or e if isinstance(e, OSError) else "bad file"}); nothing was sent')
+    where = asks.env_file(tid, S.C)
+    said = 'given (data, not instructions): ' + '; '.join(
+        f'{x["env"]} is in {where}' if x['kind'] == 'secret' else f'{as_data(x["label"])} is {as_data(got[x["key"]])}'
+        for x in inputs)
+    # a CONFIRM's yes would tick the task: what was given is for the task to go on with, so it reopens
+    try:
+        r = call(['plan', 'change' if label == 'CONFIRM' else 'confirm', tid, said])
+    except OSError as e:  # the runner did not start
+        r = no(str(e))
+    if r['ok']:
+        r.update(said=f'{tid} has what you gave: a run starts it', gone=tid)
+    else:
+        try:
+            back()
+        except OSError:
+            pass
+    return r
+
+
+def open_session(slot: str) -> dict:
+    """F68: open slot `slot` (s2) in claude.ai/code and the apps (`slots.slot_open`): under `[run] sessions =
+    'one'` a slot is listed there only once opened. Its link as 'out', or why not."""
+    from agent_runner.slots import slot_open
+    link, why = slot_open(slot)
+    return {'ok': bool(link), 'code': 0 if link else 1, 'out': link or why, 'argv': []}
+
+
+def move(tid: str, where: str, other: str) -> dict:
+    """F72: `plan move ID after|before OTHER`: the queue's J/K, one place down / up past its neighbour."""
+    if where not in ('after', 'before'):
+        return {'ok': False, 'code': 2, 'out': f'move: where is after or before, not {where!r}', 'argv': []}
+    return call(['plan', 'move', tid, where, other])

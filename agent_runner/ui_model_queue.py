@@ -1,0 +1,403 @@
+"""C44: the queue, the releases, Needs you and the shelved rows of a snapshot.
+
+Part of `ui_model`: `ui_model` runs this file in its own namespace (see its end), so these names are `ui_model`'s, and a
+test that sets `ui_model.X` reaches the code here. Not imported on its own."""
+
+# --- the snapshot -------------------------------------------------------------------------------------------
+
+def _state(up: bool) -> dict:
+    try:
+        return json.loads(S.C.notes('STATE').read_text(encoding='utf-8')) if up else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _kind_names() -> dict[str, str]:
+    try:
+        return P.kinds()[0]
+    except (OSError, SystemExit, KeyError, AttributeError):
+        return dict(P.KINDS)
+
+
+def task_kind(tid: str, names: dict[str, str]) -> str:
+    """The kind a task id's letters name ('F65' -> its `plan kinds` line), else the letters themselves."""
+    letters = re.match(r'[A-Za-z]+', tid)
+    k = letters.group(0) if letters else ''
+    return str(names.get(k, k))
+
+
+def task_pri(rest: str, section: str) -> str:
+    """A queued task's level: its `(follow-up, LEVEL)` tag; under Parked (where `--pri later` files) 'later';
+    else 'normal'."""
+    if t := P.PRI_TAG.search(rest):
+        return t.group(1)
+    return 'later' if section.startswith(P.PARKED) else 'normal'
+
+
+def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) -> list[dict]:
+    """Every open task ([ ] or [~]) of TODO.md's lines `ls`, in plan order. F74: each row also carries
+    `after_title` (what it waits on, in words: `after_words`) and `state` (`queue_state`; STATE `st` says
+    which slot runs it and since when)."""
+    names, out = _kind_names(), []
+    tasks = list(P.iter_tasks(ls))
+    titles = {tid: P.short_title(rest, 200) for _, _, tid, rest, _ in tasks}
+    names_of = {tid: after_name(rest) for _, _, tid, rest, _ in tasks}
+    live = {tid for _, box, tid, _, _ in tasks if box in ' ~'}
+    landed = {tid for _, box, tid, _, _ in tasks if box not in ' ~'} | done_ids()
+    where = slot_of(st or {}, time.time() if now is None else now)
+    tool_waits, tool_names = split_wait_words(ls, st, now) | tool_wait_words(ls, st, now), project_tools()
+    for section, box, tid, rest, i in tasks:
+        if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
+            continue
+        f = P.fields(ls[i])
+        after, pri = P.waits_on(ls, i), task_pri(rest, section)
+        everything = P.ALL in f.get('after', [])
+        out.append({'id': tid, 'kind': task_kind(tid, names), 'title': titles[tid],
+                    'files': f.get('files', []), 'after': after, 'pri': pri,
+                    'section': section, 'blocked': box == '~',
+                    'after_title': after_words(after, names_of, live, everything, landed),
+                    'state': queue_state(tid, pri, after, live, where, box == '~', tid in tool_waits)})
+        if tool_names:  # F168
+            out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
+        elif tid in tool_waits:  # B184: memory; B196: its author's split
+            out[-1]['tool_wait'] = tool_waits[tid]
+        if P.release(tid) and releases_on():  # F186: one that started cannot be dropped from its row
+            out[-1]['started'] = release_started(tid, st or {})
+    return out
+
+
+def releases_on() -> bool:
+    from agent_runner import autorelease
+    return autorelease.releases_on()
+
+
+def release_started(tid: str, st: dict) -> bool:
+    """F186: is release task `tid` under way: a slot of STATE `st` runs it, it merges, or a person took it."""
+    from agent_runner.sched import taken
+    return tid in (st.get('running') or {}).values() or tid in (st.get('merging') or []) or \
+        bool(S.C and tid in taken())
+
+
+# F74: a queue row's state, first word. 'blocked' (beyond the design's four): a [~] task waits on a person or
+# a fix, and 'ready' would say it can start. B118: 'parked' (level later, TODO.md's Parked section): a run never
+# starts it, so it must not say 'ready' either.
+QUEUE_STATES = ('running', 'blocked', 'critical', 'after', 'tool', 'parked', 'ready')
+
+
+def done_ids() -> set[str]:
+    """The ids DONE.md holds (landed tasks the plan moved there)."""
+    try:
+        return {tid for _, _, tid, _, _ in P.iter_tasks(P.lines(S.C.done))}
+    except Exception:  # noqa: BLE001 - no DONE.md
+        return set()
+
+
+def slot_of(st: dict, now: float) -> dict[str, str]:
+    """F74: {task id: 'running sN Nm'} for every task a slot of STATE `st` runs ('running sN' with no start)."""
+    out = {}
+    for n, tid in (st.get('running') or {}).items():
+        if not tid:
+            continue
+        name = f's{n}' if str(n).isdigit() else str(n)
+        since = (st.get('since') or {}).get(n)
+        out[tid] = f'running {name} {int((now - since) // 60)}m' if since else f'running {name}'
+    return out
+
+
+def after_name(rest: str, width: int = 40) -> str:
+    """B115: a task as an `after` names it: its short title up to its first ': ' ('Release: bump the version…'
+    -> 'Release'), cut at a word to about `width`."""
+    t = P.short_title(rest, 200)
+    head = t.split(': ', 1)[0].strip()
+    return P.short_title(head or t, width)
+
+
+def after_words(after: list[str], titles: dict[str, str], live: set[str], everything: bool = False,
+                landed: set[str] | None = None) -> str:
+    """F74: what a queued task waits on, as the queue row says it: 'all: everything above it' for `after: all`;
+    else each id with its name while it is open ('F66 Run page', `after_name`), '(landed)' once it is done ('B109
+    (landed)'), '(not in the plan)' for an id neither open nor in `landed` (None: every id not open is landed);
+    joined by ', '; '' for nothing."""
+    if everything:
+        return 'all: everything above it'
+
+    def one(t: str) -> str:
+        if t in live:
+            return f'{t} {titles.get(t, "")}'.rstrip()
+        return f'{t} (landed)' if landed is None or t in landed else f'{t} (not in the plan)'
+    return ', '.join(one(t) for t in after)
+
+
+def queue_state(tid: str, pri: str, after: list[str], live: set[str], where: dict[str, str],
+                blocked: bool = False, tool: bool = False) -> str:
+    """F74: a queue row's state: 'running sN Nm' while a slot runs it, else 'blocked' ([~]: waits on a person
+    or a fix), else 'parked' (B118: level 'later': a run never starts it), else 'critical', else 'after' while a
+    task it waits on is still open, else 'ready'. F168: 'tool' comes before 'critical': only a shared tool keeps it."""
+    if tid in where:
+        return where[tid]
+    if blocked:
+        return 'blocked'
+    if pri == 'later':
+        return 'parked'
+    if tool and not any(t in live for t in after):
+        return 'tool'
+    if pri == 'critical':
+        return 'critical'
+    return 'after' if any(t in live for t in after) else 'ready'
+
+
+def tool_wait_words(ls: list[str], st: dict | None, now: float | None = None) -> dict[str, str]:
+    """F168: {task: 'waits for iPhone 15, held by F389, 12 min'}; {} when nothing waits, or they do not read."""
+    from agent_runner import shared_tools
+    try:
+        return shared_tools.wait_words(ls, st or {}, now)
+    except Exception:  # noqa: BLE001 - costs the words, not the snapshot
+        return {}
+
+
+def split_wait_words(ls: list[str], st: dict | None, now: float | None = None) -> dict[str, str]:
+    """B196: {task: 'waits to be split, starts in 4 min if it is not'}; not one running or taken by hand."""
+    from agent_runner import sched
+    try:
+        return P.split_waits(ls, now, {*sched.taken(), *((st or {}).get('running') or {}).values()})
+    except Exception:  # noqa: BLE001 - costs the words, not the snapshot
+        return {}
+
+
+def project_tools() -> list[str]:
+    """The names a task's `needs:` may have here: [run.tools], and the devices the project uses (F169)."""
+    from agent_runner import shared_tools
+    return sorted(shared_tools.specs())
+
+
+def tool_rows(up: bool, ls: list[str], st: dict, now: float | None = None) -> list[dict]:
+    """F168: the project's shared tools (`shared_tools.rows`) while a run is up; [] without the setting."""
+    from agent_runner import shared_tools
+    try:
+        return shared_tools.rows(ls, st, now) if up else []
+    except Exception:  # noqa: BLE001 - costs the line, not the snapshot
+        return []
+
+
+RELEASE_SHOWN = 5  # how many of the tasks a release waits for its line names; the rest are a count
+
+
+def release_rows(ls: list[str], st: dict | None = None, landed: int | None = None, now: float | None = None) -> list[dict]:
+    """F185: the releases, one row each, the same words on the run page, the TUI, `status` and `plan`: each
+    release task (kind V) open in TODO.md's lines `ls` (`release_tasks`), one releasing now first; with none
+    open and `[run] auto_release` on, a placeholder 'Next release · auto at 10 landed: 6/10 · when the run goes
+    idle' (F131; `landed`: tasks landed since the last release, counted when None); last, the newest release
+    that landed (`last_release`). `text` is a whole row, `note` what it does not wait on; `placeholder` True for a
+    row that is no open task. [] with `[run] releases` off (F193)."""
+    if not releases_on():
+        return []
+    st = st or {}
+    rows = release_tasks(ls, st)
+    if not rows and (ph := auto_release_row(ls, landed)):
+        rows = [ph]
+    done = last_release(now)
+    return rows + ([done] if done and done['id'] not in {r['id'] for r in rows} else [])
+
+
+def release_tasks(ls: list[str], st: dict) -> list[dict]:
+    """The open release tasks of `ls` as `release_rows`' rows, `state` 'releasing' (a slot of STATE `st` runs it,
+    or it merges), 'blocked', 'waits' (`waits`: [{id, title}]; `words` names the first RELEASE_SHOWN, `all` every
+    one) or 'next' (nothing left before it)."""
+    tasks = [t for t in P.iter_tasks(ls) if t[1] in ' ~']
+    live, titles, away, out = P.open_ids(ls), {}, None, []
+    for section, box, tid, rest, i in tasks:
+        if not P.release(tid) or section.startswith(P.SKIPPED) or P._shelved(ls, i):
+            continue
+        titles = titles or {t: after_name(_no_tag(r)) for _, _, t, r, _ in tasks}
+        note, held = '', []
+        waits = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' else []
+        if tid in (st.get('running') or {}).values() or tid in (st.get('merging') or []):
+            state = 'releasing'
+        elif box == '~' and not waits:
+            state = 'blocked'
+        else:
+            if P._waits_all(ls, i):
+                held = [t for t in P.before_all(ls, i) if t in live and t != tid]
+                note = P.not_waiting(P.not_waiting_on(ls, i))  # B101, B207
+                if P.ALL in P.fields(ls[i]).get('after', []):  # B107: a task taken by hand lands after it
+                    from agent_runner.sched import taken
+                    from agent_runner.status import taken_note
+                    away = set(taken()) if away is None else away
+                    note += taken_note([t for t in held if t in away])
+                    held = [t for t in held if t not in away]
+            else:
+                ids = [t.strip() for t in waits[-1].split(',')] if waits else P.waits_on(ls, i)
+                held = [t for t in dict.fromkeys(ids) if t in live and t != tid]
+                note = '' if waits else P.not_waiting(P.not_waiting_on(ls, i))  # B207: `after: all above`
+            state = 'waits' if held else 'next'
+        names = [f'{t} {titles.get(t, "")}'.rstrip() for t in held]
+        more = len(names) - RELEASE_SHOWN
+        words = full = {'releasing': 'releasing now', 'blocked': 'blocked', 'next': 'next'}.get(state, '')
+        if held:
+            full = f'waits for {len(names)}: {", ".join(names)}'
+            words = f'waits for {len(names)}: {", ".join(names[:RELEASE_SHOWN])}, and {more} more' if more > 0 else full
+        out.append({'id': tid, 'title': titles[tid], 'state': state, 'words': words, 'all': full, 'placeholder': False,
+                    'waits': [{'id': t, 'title': titles.get(t, '')} for t in held],
+                    'text': f'{tid} {titles[tid]} · {words}', 'note': note})
+    return sorted(out, key=lambda r: r['state'] != 'releasing')
+
+
+def release_ask(rows: list[dict]) -> dict | None:
+    """F186: what a New release is told of the open releases among `release_rows`' rows: {'said': 'V17 is already
+    queued', 'ask': the question before another is queued, 'seen': their ids, which the Yes carries}; None with none."""
+    rows = [r for r in rows if not r.get('placeholder')]
+    if not rows:
+        return None
+    from agent_runner.sched import taken
+    by_hand = taken() if S.C else {}
+    said = '; '.join(f'{r["id"]} is ' + ('releasing now' if r['state'] == 'releasing' else 'taken by a person'
+                                         if r['id'] in by_hand else 'already queued') for r in rows)
+    return {'said': said, 'ask': f'{said}. Queue another release?', 'seen': ' '.join(sorted(r['id'] for r in rows))}
+
+
+RELEASE_WAIT = 60.0  # s a New release waits for another one to be queued (the page's, a TUI's)
+
+
+def new_release(argv: list[str], seen: str = '', confirm: bool = False) -> dict:
+    """F186: queue a release by `argv`; with one open already only on a `confirm` that names the ones open now
+    (`seen`), so neither a second press nor a second Yes queues one more unasked. One at a time looks at the plan
+    and adds to it, across the pages and TUIs (a file lock of its own: the `plan add` it runs takes the plan's)."""
+    if not S.C:  # before `state.init`
+        return call(argv)
+    end = time.monotonic() + RELEASE_WAIT
+    while not (f := _plat().lock(S.C.notes('release.lock'))):
+        if time.monotonic() >= end:
+            return {'ok': False, 'code': 1, 'out': 'another release is being queued: look again', 'argv': argv}
+        time.sleep(0.05)
+    with f:
+        ask = release_ask(release_tasks(P.lines(S.C.todo), _state(S.run_up())))
+        if ask and not (confirm is True and seen == ask['seen']):
+            return {'ok': False, 'code': 3, 'out': ask['ask'], 'confirm': ask['ask'], 'seen': ask['seen'], 'argv': argv}
+        return call(argv)
+
+
+def _no_tag(rest: str) -> str:
+    """A task's line without F130's `(alone)` tag, which is no title."""
+    return re.sub(r'^\s*(?:\(follow-up, \w+\)\s*)?\(alone\)\s*', '', rest)
+
+
+def auto_release_row(ls: list[str], landed: int | None = None) -> dict | None:
+    """F131: the placeholder row while `[run] auto_release` counts and no release is queued, else None."""
+    from agent_runner.autorelease import auto_release_of
+    every, idle = auto_release_of(S.C.run.get('auto_release', False) if S.C else False)
+    if not (every or idle) or P.open_release(ls):  # a shelved or Parked release: none is queued by itself
+        return None
+    if every and landed is None:
+        landed = landed_count()
+    count = '' if landed is None else f': {landed}/{every}'
+    words = ' · '.join(([f'auto at {every} landed{count}'] if every else []) +
+                       (['when the run goes idle'] if idle else []))
+    return {'id': '', 'title': 'Next release', 'state': 'auto', 'words': words, 'all': words, 'placeholder': True,
+            'waits': [], 'text': f'Next release · {words}', 'note': ''}
+
+
+_LAST_RELEASE: list = [None, None]  # `last_release`: the event log's mark when last read, and (stamp, id, title)
+
+
+def last_release(now: float | None = None) -> dict | None:
+    """F185: the newest release task the run log says landed, as a row 'V9 Release 0.62.0 · released 17:06'
+    (the date too when that is not today); None when none did."""
+    from agent_runner.status import as_event, events_file, read_events, release_version
+    if not S.C:  # before `state.init`: the plan's lines alone
+        return None
+    try:
+        f = events_file().stat()
+        mark = (str(events_file()), f.st_size, f.st_mtime_ns)
+        if _LAST_RELEASE[0] != mark:
+            evs = [e for x in read_events() if (e := as_event(x))]
+            j = next((j for j in range(len(evs) - 1, -1, -1)
+                      if evs[j]['kind'] == S.EV_LANDED and P.release(evs[j].get('id') or '')), None)
+            _LAST_RELEASE[:] = [mark, None if j is None else
+                                (evs[j]['time'], evs[j]['id'], f'Release {release_version(evs, j)}'.rstrip())]
+        if not _LAST_RELEASE[1]:
+            return None
+        stamp, tid, title = _LAST_RELEASE[1]
+        at = dt.datetime.fromisoformat(stamp[:19])
+    except (OSError, ValueError):  # no event log yet: costs the row
+        return None
+    today = dt.datetime.fromtimestamp(time.time() if now is None else now).date()
+    words = f'released {at:%H:%M}' if at.date() == today else f'released {at:%Y-%m-%d %H:%M}'
+    return {'id': tid, 'title': title, 'state': 'released', 'words': words, 'all': words, 'placeholder': True,
+            'waits': [], 'text': f'{tid} {title} · {words}', 'note': ''}
+
+
+LANDED_COUNT: list = [None, 0.0, None]  # what the last count was of, when (monotonic), and the count
+LANDED_FOR = 30.0  # seconds a count holds while events.jsonl is unchanged (a version tag can still arrive)
+
+
+def landed_count() -> int | None:
+    """F131: how many tasks landed since the last release, counted again after a new event or `LANDED_FOR`
+    seconds (a page reads a snapshot every few seconds; the count runs git). None: it could not be counted."""
+    from agent_runner.autorelease import landed_since_release
+    f = S.C.notes('events.jsonl')
+    try:
+        s = f.stat()
+        mark = (str(f), s.st_size, s.st_mtime)
+    except OSError:
+        mark = (str(f), None, None)
+    if mark != LANDED_COUNT[0] or time.monotonic() - LANDED_COUNT[1] > LANDED_FOR:
+        try:
+            n = len(landed_since_release(S.default_branch()))
+        except (Exception, SystemExit):  # noqa: BLE001 - a git hiccup costs the count, not the row
+            n = None
+        LANDED_COUNT[:] = [mark, time.monotonic(), n]
+    return LANDED_COUNT[2]
+
+
+def pin_releases(queue: list[dict], rows: list[dict]) -> list[dict]:
+    """The queue with the release tasks `rows` stand for moved to its end, each carrying `release`: its row. The
+    plan views show them in the Releases group above the queue (F185). A placeholder row is not a task: not added."""
+    by = {r['id']: r for r in rows if not r.get('placeholder')}
+    at = {q['id']: q for q in queue}
+    return [q for q in queue if q['id'] not in by] + [dict(at[t], release=r) for t, r in by.items() if t in at]
+
+
+def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
+    """(needs-you items, concepts) from `status.waiting_ok()`'s list; shelved items are left out of both."""
+    needs, concepts = [], []
+    stamps = {w[1]: w[7] for w in waiting if len(w) > 7 and w[7]}
+    texts = need_detail.task_lines() if waiting else {}
+    for label, tid, k, what, url, title, shelved, *_ in waiting:
+        if shelved:
+            continue
+        opts, what = need_detail.decide_options(tid, what, texts.get(tid, '')) if label == 'DECIDE' else ([], what)  # F181c
+        if label == 'CONCEPT':
+            concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
+            concepts[-1]['lead'] = concept_chat_text(concepts[-1])  # B219a: the run page's first message opens with it
+        needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
+                      'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
+                      'age': P.age(stamps.get(tid, ''), now),
+                      'detail': need_detail.detail(label, tid, ask, title, texts.get(tid, ''), ask_short)})  # F162
+        if opts:
+            needs[-1]['options'] = opts
+        elif label == 'DECIDE' and url and (easy := sheet_options(tid, texts.get(tid, ''))):  # F181b
+            needs[-1].update(options=easy, picks={o['name']: o.pop('send') for o in easy})
+        if label == 'PITCH':  # F98
+            from agent_runner import pitch
+            xs = [{'id': x['id'], 'title': x['title']} for x in pitch.changes_of(tid, state='waiting')]
+            needs[-1].update(copy=concept_copy(tid), changes=xs, options=['Approve'] + [
+                f'Not {w}: {how}' for w in ['this'] + ([x['id'] for x in xs] if len(xs) > 1 else [])
+                for how in ('reopen', 'drop')])
+        needs[-1]['answers'] = need_answers(needs[-1])  # C33: both pages draw these
+    return needs, concepts
+
+
+def shelved_rows(ls: list[str], waiting) -> list[dict]:
+    """F184: every shelved task (`plan shelve`) of TODO.md's lines `ls`, in plan order, a list of its own: the Plan
+    view shows them in the Parked group, and the queue, Needs you and Concepts leave them out. `ask`: what it waits on
+    the person for, from `status.waiting_ok()`'s list ('' for one that list does not have, which `plan unshelve`
+    refuses)."""
+    names, by = _kind_names(), {w[1]: w for w in waiting if w[6]}
+    out = []
+    for section, _, tid, rest, i in P.iter_tasks(ls):
+        if not P._shelved(ls, i):
+            continue
+        w = by.get(tid)
+        out.append({'id': tid, 'kind': task_kind(tid, names), 'title': P.short_title(w[5] if w else rest, 200),
+                    'section': section, 'ask': P.plain_ask(w[0], w[3], w[5]) if w else '', 'state': 'shelved'})
+    return out

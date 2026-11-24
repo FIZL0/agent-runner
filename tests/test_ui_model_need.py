@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+"""F65, C44: the run page model: what Needs you shows: answers, options, sheets and details.
+
+    python3 tests/test_ui_model_need.py        (a temp repo, no agent, no network)
+
+The fake run and the helpers are in tests/_ui_model.py.
+"""
+from __future__ import annotations
+import datetime as dt
+import json
+from pathlib import Path
+from unittest import mock
+from _check import check, eq, report
+from agent_runner import state as S  # noqa: E402
+from agent_runner import ui_model as U  # noqa: E402
+from _ui_model import in_tmp,TODO, NOW, fake_run, ran_by, chat, said  # noqa: E402
+
+
+ASKS_F162 = {  # real asks, as Needs you showed them
+    'B160': ('CONFIRM', 'On an iPhone in Safari, after this lands and the run restarts: 1) reload, open a chat, tap the message box; '
+             'the header stays and the box rides up with no grey band. 2) Close the keyboard; it glides back. 3) Same in Talk, '
+             'Home, Settings and a sheet. Chat and Home were already seen working on the iPhone 15 Pro - reply yes/no'),
+    'F154': ('CONFIRM', "On an iPhone, in a long chat, on Home and in the open drawer's list: scroll up/down and bend sideways (the "
+             'drawer must not open or close); swipe the drawer open and closed at a slant (nothing may scroll up or down); taps '
+             'still open rows, and holding a chat row still drags it - reply yes/no'),
+    'F106h': ('BLOCKED', 'Log in to Copilot: `run login copilot` (device code; unattended it ended exit 124 waiting for approval at '
+              'github.com/login/device). Then the Copilot check, the default and the docs follow; findings in '
+              'docs/research/F106h-harness-end-to-end.md - reply done once it is'),
+    'B163': ('STUCK', 'Stuck: waits for its Windows run - reply with what to do'),
+    'B177': ('CONFIRM', 'On the iPhone, reload the run page on Talk, then on a chat, then on Plan: each opens again without Home '
+             'flashing, and Talk neither listens nor speaks by itself - reply yes/no'),
+    'R6': ('CONFIRM', "Once B79 is released and upgraded on the work Windows machine: in the Claude desktop app open a runner repo in "
+           "its Claude Code (no run started from a terminal): (1) does 'status' give the run's status (the control brief)? (2) start "
+           'a run from it, close the app: is the run still going? - reply with what you saw - reply yes/no')}
+
+
+def test_need_answers_c33(tmp: Path) -> None:
+    """C33: every needs row carries its answers; one rule for both pages and the chat text."""
+    copy = tmp / 'K1.html'
+    copy.write_text('<h1>Menu</h1><h2>Tabs</h2><p>a</p><h2>Drawer · recommended</h2><p>b</p>', encoding='utf-8')
+    names = lambda row: [a['label'] for a in U.need_answers(row)]  # noqa: E731
+    eq(names({'label': 'CONFIRM'}), ['Yes', 'No'], 'CONFIRM: Yes, No')
+    eq(names({'label': 'DECIDE', 'ask': 'Ship it? yes or no'}), ['Yes', 'No'], 'a yes/no ask: Yes, No')
+    eq(names({'label': 'DECIDE', 'ask': 'Which port?'}), [], 'DECIDE with no pick: reply only')
+    eq(names({'label': 'BLOCKED'}), ['Done'], 'BLOCKED: Done, on both pages')
+    eq(names({'label': 'CONCEPT', 'copy': str(copy)}), ['Tabs', 'Drawer · recommended'], "CONCEPT: the copy's options")
+    eq(names({'label': 'CONCEPT'}), ['A', 'B', 'C'], 'CONCEPT without a copy: A, B, C')
+    eq(names({'label': 'PITCH', 'options': ['Approve', 'Not this: drop']}), ['Approve', 'Not this: drop'], 'PITCH')
+    rows, _ = U.needs_rows([('CONFIRM', 'F1', '', 'ok?', '', 'T', False), ('BLOCKED', 'F2', '', 'log in', '', 'T', False)],
+                           dt.datetime.now())
+    eq([[a['value'] for a in r['answers']] for r in rows], [['Yes', 'No'], ['Done']], 'the snapshot rows carry them')
+    eq(U.need_options(rows[1]), ['Done'], 'the chat text uses the same')
+    run, fix = {'forced': False}, {'unclaim': [{'id': 'F1'}]}
+    on = U.controls_shown(True, run, fix)
+    check('force' in on['shown'] and 'caps_on' not in on['shown'] and 'unclaim' in on['shown'], 'shown now', on)
+    eq(U.controls_shown(False, run, fix)['card'], ['start'], 'no run: Start the run')
+    check('pause' not in U.controls_shown(False, run, fix)['shown'], 'no run: no Pause')
+    check(U.task_controls_on({'name': 's1', 'task': 'F1'}) and not U.task_controls_on({'name': 's1', 'task': 'F1',
+          'state': 'merging'}) and not U.task_controls_on({'name': 'c1', 'task': 'F1'}), 'task controls')
+
+
+def test_decide_options_f181c(tmp: Path) -> None:
+    """F181c: a DECIDE's options are its answers, from the ask file or the bracket that ends its question, never from
+    prose; the recommended one is first and marked, and the value sent is the bare name, by plan confirm."""
+    repo = fake_run(tmp)
+    todo, link = repo / 'plan' / 'TODO.md', 'https://claude.ai/artifact/QCMg'
+    plain = todo.read_text(encoding='utf-8')
+
+    def ask(words: str) -> dict:
+        todo.write_text(plain.replace('DECIDE: which layout https://claude.ai/artifact/abc', f'DECIDE: {words}'), encoding='utf-8')
+        return U.row_of('need', 'D3')
+    said = lambda row: [(a['label'], a['value']) for a in row['answers']]  # noqa: E731
+    look = [('Full (recommended)', 'Full'), ('Small', 'Small'), ('No change', 'No change')]
+    f179 = 'Which look for the chat window: Full (recommended), Small, or no change?'
+    eq((said(row := ask(f'{f179} {link}')), row.get('options')), ([], None), "F179's question, options in prose: never guessed")
+    row = ask(f'Which look for the chat window? [Full (recommended) / Small / No change] {link}')
+    eq((said(row), row['url'], row['what']), (look, link, 'Which look for the chat window?'), "F179's as a bracket: its buttons")
+    check('[Full' not in json.dumps([row['ask'], row['ask_short'], row['what'], row['detail']['steps'], row['detail']['summary']]),
+          'the bracket is not shown in the question', row)
+    eq(U.row_labels('need', row), {'need_answer1': 'Full', 'need_answer2': 'Small', 'need_answer3': 'No change'}, 'what a press sends: the bare names')
+    eq(said(ask('Which size? [small / iPhone (Recommended)]')), [('iPhone (recommended)', 'iPhone'), ('small', 'small')],
+       'the recommended first, the rest as given, names as written')
+    eq(said(ask('Ship it? [Yes / No (recommended)].')), [('No (recommended)', 'No'), ('Yes', 'Yes')], 'Yes and No with one recommended')
+    for bad in ('[A]', '[A/B]', '[A / ]', '[ / B]', '[A / a]', '[A (recommended) / B (recommended)]', '[A / B', '[A / B] or so',
+                '[A [x] / B]', '[A / -b]', '[A / ' + 'b' * 81 + ']', '[' + ' / '.join(f'o{j}' for j in range(13)) + ']', '[(recommended) / B]'):
+        row = ask(f'Which one? {bad}')
+        eq((said(row), row['what']), ([], f'Which one? {bad}'), f'{bad[:30]}: no buttons, and it stays in the question')
+    for late in (f'Which? {link} [A / B]', f'Which? [A {link} / B]'):
+        eq(said(ask(late)), [], f'{late}: a link before the bracket ends, no buttons')
+    row = ask(f'Which? [A / B] {link} https://example.com/b')
+    eq((said(row), row['what']), ([('A', 'A'), ('B', 'B')], 'Which? https://example.com/b'), 'two links after it')
+    f = S.C.notes('uploads', 'x').parent.parent / 'asks' / 'D3.json'
+    f.parent.mkdir(parents=True, exist_ok=True)
+    opts = [{'name': 'Keep'}, {'name': 'Move [it] / all', 'rec': True}]
+    f.write_text(json.dumps({'options': opts}), encoding='utf-8')
+    eq(said(ask('Which one, then?')), [('Move [it] / all (recommended)', 'Move [it] / all'), ('Keep', 'Keep')], "the ask file's options")
+    row = ask('Which one? [A / B]')
+    eq((row['answers'][1]['value'], row['what']), ('Keep', 'Which one?'), 'it wins over a bracket, which is still not shown')
+    for bad in ('x', [], [{'name': 'A'}], [{'name': 'A'}, 'B'], [{'name': 'A'}, {'name': 3}], [{'name': 'A'}, {'name': 'B', 'rec': 'yes'}]):
+        f.write_text(json.dumps({'options': bad}), encoding='utf-8')
+        eq([a['value'] for a in ask('Which one? [C / D]')['answers']], ['C', 'D'], f'{bad}: malformed, so the bracket')
+    f.write_text(json.dumps({'options': opts, 'inputs': [{'key': 'a'}]}), encoding='utf-8')
+    row = ask('Which one? [C / D]')
+    eq((row['answers'], row['what']), ([], 'Which one? [C / D]'), 'an item with inputs: Done answers it, the bracket stays')
+    f.unlink()
+    row, _ = U.needs_rows([('BLOCKED', 'F2', '', 'Log in [A / B]', '', 'T', False)], dt.datetime.now())
+    eq((said(row[0]), row[0]['what']), ([('Done', 'Done')], 'Log in [A / B]'), 'only a DECIDE has them')
+    row = ask('Which look? [Full (recommended) / Small]')
+    eq(U.need_options(row), ['Full (recommended)', 'Small'], "the chat's text lists them")
+    with mock.patch.object(U, 'SEND', [lambda t: check(False, 'no session starts', t)]):
+        eq(U.act('run_control', key='need_answer1', tid='D3', text='Full (recommended)')['ok'], False, 'the bare name only')
+        r = U.act('run_control', key='need_answer1', tid='D3', text='Full', note='dark  too')  # the real plan confirm
+    eq((r['ok'], r['gone'], r['argv'][-3:]), (True, 'D3', ['confirm', 'D3', 'Full: dark too']), 'a press: plan confirm, with the note')
+    check('- [ ] **D3**' in (t := todo.read_text(encoding='utf-8')) and '): Full: dark too' in t, 'D3 is open with the answer', t)
+
+
+def test_sheet_buttons_f181b(tmp: Path) -> None:
+    """F181b: a pick sheet's easy answers are its item's buttons: the recommended picks (sheet ID --go), and with one
+    question each of its answers (sheet ID --picks), with the note and no session. Never from a sheet that does not
+    read, or for an ask that is not the sheet's."""
+    repo = fake_run(tmp)
+    todo, f = repo / 'plan' / 'TODO.md', S.C.notes('sheets', 'D3.json')
+    f.parent.mkdir(parents=True, exist_ok=True)
+    plain = todo.read_text(encoding='utf-8')
+    lay = {'id': 'lay', 'q': 'Which layout?', 'answers': ['Keep `tabs`', 'Drawer'], 'recommended': 1}
+    size = {'id': 'size', 'q': 'Which size?', 'answers': ['Small', 'Big']}
+    go = ('Go with the recommended picks', 'Go with the recommended picks')
+
+    def said(*qs: dict) -> list:
+        f.write_text(json.dumps({'summary': 'Pick a layout', 'groups': [{'questions': list(qs)}]}), encoding='utf-8')
+        return [(a['label'], a['value']) for a in U.row_of('need', 'D3')['answers']]
+    eq(said(lay, size), [go], 'more questions: the recommended picks alone')
+    eq(said(lay), [go, ('Drawer (recommended)', 'Drawer'), ('Keep tabs', 'Keep tabs')], 'one question: each answer too, plain')
+    check(U.need_options(U.row_of('need', 'D3')) == ['Which layout?: Keep `tabs` / Drawer (recommended)'], "the chat's text has its question")
+    ran = []
+    with ran_by(ran, 'D3 is open again'), mock.patch.object(U, 'SEND', [lambda t: check(False, 'no session starts', t)]):
+        r = U.act('run_control', key='need_answer1', tid='D3', text=go[0])
+        eq((r['ok'], r['gone'], r['said']), (True, 'D3', 'D3 answered with the recommended picks'), 'go')
+        U.act('run_control', key='need_answer2', tid='D3', text='Drawer', note='dark  too')
+        U.act('run_control', key='need_answer3', tid='D3', text='Keep tabs')
+        n = len(ran)
+        eq(U.act('run_control', key='need_answer3', tid='D3', text='Tabs')['ok'], False, 'its answers changed: refused')
+        eq(len(ran), n, 'and nothing ran')
+    eq(ran, [['sheet', 'D3', '--go'], ['sheet', 'D3', '--picks', 'D3 picks: lay=b', '--note=dark too'],
+             ['sheet', 'D3', '--picks', 'D3 picks: lay=a']], 'what each press runs')
+    for bad in (['Drawer', 'drawer'], ['A', 'b' * 81], ['A', go[0]]):
+        eq(said(dict(lay, answers=bad)), [go], f'{bad[1][:30]}: answers that make no buttons of their own')
+    for bad in ('x', '{}', '{"summary": "s", "groups": [{"questions": [{"id": "a"}]}]}'):
+        f.write_text(bad, encoding='utf-8')
+        eq(U.row_of('need', 'D3')['answers'], [], f'{bad}: no buttons')
+    said(lay)
+    asks = S.C.notes('uploads', 'x').parent.parent / 'asks' / 'D3.json'
+    asks.parent.mkdir(parents=True, exist_ok=True)
+    asks.write_text(json.dumps({'inputs': [{'key': 'a', 'label': 'A'}]}), encoding='utf-8')
+    if U.need_detail.asks_file('D3')['inputs']:
+        eq(said(lay), [], 'an item with inputs: Done answers it')
+    else:
+        check(False, 'the fixture has an input', asks.read_text())
+    asks.unlink()
+    with mock.patch('agent_runner.brief.questionnaires_on', lambda: False):
+        eq(said(lay), [], 'questionnaires off')
+    todo.write_text(plain.replace('which layout https://claude.ai/artifact/abc', 'which layout [A / B] https://claude.ai/artifact/abc'),
+                    encoding='utf-8')
+    eq([v for _, v in said(lay)], ['A', 'B'], "the ask's own options come first")
+    todo.write_text(plain.replace('which layout https://claude.ai/artifact/abc', 'which colour'), encoding='utf-8')
+    eq(said(lay), [], "a later ask with no page is not the sheet's")
+    todo.write_text(plain, encoding='utf-8')
+    with mock.patch.object(U, 'SEND', [lambda t: check(False, 'no session starts', t)]):
+        r = U.act('run_control', key='need_answer2', tid='D3', text='Drawer')  # the real sheet --picks
+    t = todo.read_text(encoding='utf-8')
+    check(r['ok'] and '- [ ] **D3**' in t and 'picks on the sheet: lay (Which layout?): Drawer (recommended)' in t, 'D3 is open with the pick', (r, t))
+    U.P.block('D3', 'DECIDE: which font https://claude.ai/artifact/def', todo=S.C.todo)
+    eq(said(lay), [], 'a sheet answered once makes no buttons for the next ask')
+    eq(said(size), [go, ('Small (recommended)', 'Small'), ('Big', 'Big')], 'a new sheet does')
+
+
+def test_need_detail_f162(tmp: Path) -> None:
+    """F162: real asks split into what to do and what to see, nothing lost; <notes>/asks/ID.json stands in for them, a
+    broken, odd or oversized one is the fallback; the pictures a task names and the file's are found."""
+    from agent_runner import need_detail as N
+    got = {}
+    for tid, (label, ask) in ASKS_F162.items():
+        pieces = N.split_ask(ask, label in ('CONFIRM', 'BLOCKED'))
+        eq(''.join(p for _, p in pieces), ask, f'{tid}: the pieces joined are the ask')
+        got[tid] = N.detail(label, tid, ask, 'A task', '', U.ask_short)
+    for odd in ('', 'x', '  a; b  ', 'Pick: 1) a 2) b', 'Read (a; b: c', 'See https://x.y/z: ok. e.g. This one; then\nthat', '`a; b` then c'):
+        eq(''.join(p for _, p in N.split_ask(odd)), odd, f'joined back: {odd!r}')
+    b = got['B160']
+    eq((b['said'], b['where'], b['summary']), ('Check this', 'iPhone, Safari', 'Reload, open a chat, tap the message box'), 'the card')
+    eq(b['steps'], ['Reload, open a chat, tap the message box', 'Close the keyboard', 'Same in Talk, Home, Settings and a sheet.'], 'B160: the steps')
+    eq(b['expect'], ['The header stays and the box rides up with no grey band.', 'It glides back.'], 'B160: what to see')
+    eq(b['lead'], ['On an iPhone in Safari, after this lands and the run restarts'], 'B160: where and when')
+    check('Chat and Home were already seen working on the iPhone 15 Pro' in b['notes'], 'B160: the rest is kept', b['notes'])
+    eq((len(got['F154']['steps']), got['F154']['expect'], got['F154']['where']),
+       (2, ['Taps still open rows, and holding a chat row still drags it'], 'iPhone'), 'F154')
+    eq((got['F106h']['said'], len(got['F106h']['steps']), got['F106h']['expect']), ('Do this', 1, []), 'F106h: code after a colon is the same step')
+    check('`run login copilot`' in got['F106h']['steps'][0], 'and it is kept', got['F106h'])
+    eq((got['B163']['said'], got['B163']['steps']), ('Stuck', ['Waits for its Windows run']), 'B163')
+    eq((len(got['B177']['steps']), len(got['B177']['expect'])), (3, 1), 'B177: then is a step, the colon what to see')
+    eq((len(got['R6']['steps']), got['R6']['expect']), (3, ['Is the run still going?']), 'R6: (1) and (2)')
+    eq(N.detail('DECIDE', 'F1', 'Which look: Full, Small?', '', '', U.ask_short)['question'], 'Which look: Full, Small?', 'a question is one piece')
+    for semi, do, see in (  # F162a1: after a colon each piece after a ';' is classed again
+            ('Tap Save: it says Saved; tap Undo; the list returns', ['Tap Save', 'Tap Undo'], ['It says Saved', 'The list returns']),
+            ('Tap Save: it says Saved; and the list returns; and tap Undo', ['Tap Save', 'And tap Undo'], ['It says Saved', 'And the list returns']),
+            ('Tap Save: it says Saved; on Home, the list returns; in Talk, tap Undo', ['Tap Save', 'In Talk, tap Undo'],
+             ['It says Saved', 'On Home, the list returns']),
+            ('Tap Save: it says Saved; your words are sent; Talk stays quiet', ['Tap Save'], ['It says Saved', 'Your words are sent', 'Talk stays quiet']),
+            ('Tap Save: it says Saved; tap Undo: rows come back', ['Tap Save', 'Tap Undo'], ['It says Saved', 'Rows come back'])):
+        pieces = N.split_ask(semi)
+        eq(''.join(p for _, p in pieces), semi, f'joined back: {semi!r}')
+        eq([[N.shown(p) for k, p in pieces if k == kind] for kind in ('do', 'see')], [do, see], f'classed again: {semi!r}')
+    repo = fake_run(tmp)
+    notes = repo / '.runner'
+    for d in ('asks', 'uploads'):
+        (notes / d).mkdir(parents=True, exist_ok=True)
+    png = b'\x89PNG\r\n\x1a\nfake'
+    for f in ('asks/one.png', 'uploads/IMG_1.png', 'uploads/IMG_2.PNG', 'secret.png'):
+        (notes / f).write_bytes(png)
+    S.C.todo.write_text(TODO.replace('which layout', f'which layout, see {notes}/uploads/IMG_1.png and .runner/uploads/gone.png'), encoding='utf-8')
+    d3 = lambda: next(n['detail'] for n in U.snapshot(up=False, now=NOW, links={})['needs'] if n['id'] == 'D3')  # noqa: E731
+    plain = d3()
+    eq([s['src'] for s in plain['shots']], ['uploads/IMG_1.png'], 'the picture its line names, only one that is there')
+    js = notes / 'asks' / 'D3.json'
+    js.write_text(json.dumps({'summary': 'Open both', 'where': 'iPad', 'steps': ['Open one', 7, ''], 'expect': ['Two tabs'], 'shots': [
+        {'file': 'one.png', 'caption': 'Before'}, {'file': 'uploads/IMG_2.PNG'}, {'file': '../secret.png', 'caption': 'x'},
+        {'file': str(notes / 'secret.png')}, 'x', {'caption': 'y'}]}), encoding='utf-8')
+    full = d3()
+    eq({k: full[k] for k in ('summary', 'where', 'steps', 'expect', 'lead')},
+       {'summary': 'Open both', 'where': 'iPad', 'steps': ['Open one'], 'expect': ['Two tabs'], 'lead': []}, 'the file stands in')
+    eq([(s['src'], s['caption']) for s in full['shots']], [('asks/one.png', 'Before'), ('uploads/IMG_2.PNG', ''),
+                                                           ('uploads/IMG_1.png', 'Picture named in the task')], 'its pictures, none from outside')
+    for bad in ('{', '[]', 'null', '"x"', '{"steps": 5, "shots": {}, "expect": null, "summary": []}', '[' * 100000, '{"a": "' + 'x' * N.FILE_MAX + '"}'):
+        js.write_text(bad, encoding='utf-8')
+        eq(d3(), plain, f'the fallback for {bad[:20]!r}')
+    js.write_bytes(b'\xff\xfe\x00')
+    eq(d3(), plain, 'and for one that is no text')
+
+
+def test_decide_question_b223a(tmp: Path) -> None:
+    """B223a: a DECIDE is a question with its background as paragraphs, no steps unless its ask file has them; a CONFIRM
+    or BLOCKED keeps its steps. `needs` shows the question."""
+    from agent_runner import need_detail as N, plan as P
+    repo = fake_run(tmp)
+
+    def row(ask: str, label: str = 'DECIDE') -> dict:
+        return U.needs_rows([(label, 'D9', '', ask, '', 'T', False)], NOW)[0][0]
+    need = lambda ask: P.needs_lines([('DECIDE', 'D9', '', ask, '', 'T', False)])[0]  # noqa: E731
+    b221 = ('And a fix. This is finished, but held because R8 was research, which changes no product. "Ship them" merges it '
+            'with the findings. "Queue them as their own task" keeps only the findings now and queues the rest. '
+            f'Ship these changes? {P.RESEARCH_BUTTONS}')
+    r = row(b221)
+    d = r['detail']
+    eq((d['question'], d['summary'], d['steps'], d['expect']), ('Ship these changes?', 'Ship these changes?', [], []), 'B221: one question, no steps')
+    eq(d['lead'], [b221.split(' Ship these changes?')[0]], 'B221: the rest is its background, whole')
+    eq(d['notes'], ['Reply with your answer'], 'its notes kept')
+    eq([o['name'] for o in r['options']], [P.SHIP, P.QUEUE], 'its buttons')
+    check(not any('[' in x for x in [*d['lead'], d['question'], *d['notes']]), 'no bracket repeated', d)
+    eq(need(b221), 'D9 - Ship these changes?', 'needs shows the question')
+    old = ('R90 is research, but its diff changes code (done.log), so it did not merge. Answer `follow-up` (the code is filed) or '
+           '`merge anyway` (the code lands); the attempt is parked on wip/R90')
+    d = row(old)['detail']
+    eq((d['question'], d['steps']), ('R90 is research, but its diff changes code, so it did not merge.', []), 'an old ask: its first sentence')
+    eq((d['summary'], d['lead'], d['notes']), (d['question'], [old], ['Reply with your answer']), 'all of it is kept as background')
+    eq(need('pick a layout. Full is larger'), 'D9 - pick a layout', 'needs: the first sentence when nothing is asked')
+    d = row('Pick a layout')['detail']
+    eq((d['question'], d['lead']), ('Pick a layout', []), 'said whole in the question, so not again')
+    for ask, want in (('It is slow; then keep it? Full is larger. Evidence is in the log', ('It is slow; then keep it?', ['Full is larger.'], 'Evidence is in the log')),
+                      ('Keep it? (asked with `run ask`: your answer resumes its session)',
+                       ('Keep it?', ['(asked with `run ask`: your answer resumes its session)'], None)),
+                      ('The log is already kept, drop it?', ('The log is already kept, drop it?', [], None)),
+                      ('Why? - a thing - another', ('Why?', ['- a thing - another'], None)),
+                      ('Keep it? we would say yes', ('Keep it?', ['We would say yes'], None)),
+                      ('Full? or Small?', ('Full? or Small?', [], None)),
+                      ('Two looks. Keep it (or drop it?)', ('Keep it (or drop it?)', ['Two looks.'], None)),
+                      ('Keep the log (why? it is old), then?', ('Keep the log (why? it is old), then?', [], None)),
+                      ('Keep e.g. the log?', ('Keep e.g. the log?', [], None)),
+                      ('It is old. Which? https://example.com/b', ('Which?', ['It is old.', 'https://example.com/b'], None)),
+                      ('One.\n\nTwo. Keep it?', ('Keep it?', ['One.', 'Two.'], None))):
+        d = row(ask)['detail']
+        eq((d['question'], d['lead'], d['notes']), (*want[:2], [n for n in (want[2], 'Reply with your answer') if n]), ask)
+    eq(need('It is old. Keep e.g. the log? Yes is simpler'), 'D9 - Keep e.g. the log?', 'needs: the whole question')
+    eq(need(f'Background. {"Is it so " * 12}or not?'), f'D9 - {"Is it so " * 12}or not?', 'a long one is not cut')
+    f = repo / '.runner' / 'asks' / 'D9.json'
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({'summary': 'Choose a look', 'steps': ['Open both'], 'expect': ['Two'], 'options': [{'name': 'Full'}, {'name': 'Small'}]}), encoding='utf-8')
+    r = row('Two are ready. Which look? [A / B]')
+    d = r['detail']
+    eq((d['question'], d['summary'], d['steps'], d['expect'], d['lead']), ('Which look?', 'Which look?', ['Open both'], ['Two'], []), 'an ask file: its steps')
+    eq([o['name'] for o in r['options']], ['Full', 'Small'], 'and its options')
+    d = row('The look')['detail']
+    eq((d['question'], d['summary']), ('Choose a look',) * 2, 'no question mark: the file summary')
+    eq(need('The look'), 'D9 - Choose a look', 'in needs too')
+    f.unlink()
+    for label in ('CONFIRM', 'BLOCKED'):
+        d = row('Open Home; tap Undo: the list returns', label)['detail']
+        eq((d['steps'], d['expect'], d['lead'], d['question'], d['summary']),
+           (['Open Home', 'Tap Undo'], ['The list returns'], [], '', 'Open Home'), f'{label}: unchanged')
+
+
+def test_old_script_c37a(tmp: Path) -> None:
+    """C37a: a BLOCKED item with an old <notes>/wizards/ID.sh shows its steps and links, read as text, nothing run."""
+    from agent_runner import need_detail as N
+    repo = fake_run(tmp)
+    w = repo / '.runner' / 'wizards'
+    w.mkdir(parents=True, exist_ok=True)
+    mark = repo / 'ran'
+    (w / 'D3.sh').write_text(f'#!/bin/bash\nstage() {{ touch {mark}; }}\n# STAGES: author this section.\n'
+                             f'stage "Get the key"\nopen_url https://example.com/keys\nsay "Create a key, see https://example.com/help"\n'
+                             f'step "Copy it"\ntouch {mark}\n', encoding='utf-8')
+    d = N.detail('BLOCKED', 'D3', 'Give the key', 'T', '', U.ask_short)
+    eq(d['steps'], ['Get the key', 'Open this', 'Create a key, see https://example.com/help', 'Copy it'], 'its steps')
+    eq([m.get('link') for m in d['step_more']], [None, 'https://example.com/keys', 'https://example.com/help', None], 'its links')
+    check(not mark.exists(), 'nothing ran')
+    check(not any('cmd' in m for m in d['step_more']), 'no run line')
+    eq(N.detail('CONFIRM', 'D3', 'Check it', 'T', '', U.ask_short)['steps'], ['Check it'], 'only a BLOCKED item reads it')
+
+
+def test_part_of_part_b199(tmp: Path) -> None:
+    """B199: a part of a part (F162a2) is a task id to every call that takes one; what is no id is still refused."""
+    repo = fake_run(tmp)
+    todo, asks = repo / 'plan' / 'TODO.md', repo / '.runner' / 'asks'
+    todo.write_text(TODO.replace('**D3**', '**F162a2**'), encoding='utf-8')
+    asks.mkdir(exist_ok=True)
+    (asks / 'F162a2.json').write_text(json.dumps({'inputs': [{'key': 'note'}]}), encoding='utf-8')
+    with mock.patch.object(U, 'agent_said', lambda tid: f'{tid} said'):
+        eq(U.need_why('F162a2').get('text'), 'F162a2 said', 'Why it waits')
+    check('F162a2' in U.task_text('F162a2').get('text', ''), "the task's text")
+    with mock.patch.object(U, 'new_control', lambda text, wait: {'ok': True, 'text': text}):
+        check('F162a2' in U.need_chat('F162a2').get('text', ''), 'Chat')
+    check('F162a2' in U.control_argv('task_drop', tid='F162a2'), 'a run control')
+    for bad in ('', None, 'f162a2', 'F', '162', 'F162-a', 'F162 a2', 'F162a2\n', '--F162a2'):
+        eq([U.need_why(bad)['ok'], U.need_give(bad, {'note': 'x'}).get('code')], [False, 2], f'no task id: {bad!r}')
+    r = U.need_give('F162a2', {'note': 'the top one'})
+    eq((r['ok'], r.get('gone')), (True, 'F162a2'), 'its inputs are sent')
+    check('- [ ] **F162a2**' in todo.read_text(encoding='utf-8'), 'and it reopens', todo.read_text(encoding='utf-8'))
+
+
+if __name__ == '__main__':
+    raise SystemExit(report([in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
