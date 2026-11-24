@@ -216,6 +216,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   iPhone 'aborted' stands for any failure, silence too, so the message tells them apart); a stop that never gets an end
   no longer leaves Talk listening for ever; a listen with no words shows a "Copy mic report" button: the events from
   press to end with times, words counted, not kept. The cause on the person's iPhone is still not proven.
+  Hold to talk also heard nothing on an iPhone or iPad (the person's report: mic on 4 s, no words; the cause is not
+  proven), so there Talk now works as Tap (tap to start, tap again to send); the mic line and Talk settings say so, the
+  saved setting is kept, and other devices keep Hold.
 - Fixes: run app on a phone: a vertical scroll could also open the sidebar drawer, and the page scrolled while the
   drawer followed the finger. Now each touch is one thing until the finger lifts: a touch that scrolled never becomes
   a drawer swipe, and during a drawer swipe nothing scrolls; a swipe must also be more nearly sideways (B167).
