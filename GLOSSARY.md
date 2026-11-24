@@ -687,8 +687,8 @@ _Avoid_: form field, parameter
 **Claude login**:
 the claude.ai sign-in on a machine that its Claude Code sessions run on; it ends after a while and a person renews it
 _Said_: Claude login, log in again
-_On screen_: Claude login, login banner under the top bar
-_In code_: watch.claude_login, watch.LOGIN_CMD, claude_login (snapshot), vitals.login_banner
+_On screen_: Claude login, login banner under the top bar, Log in again button
+_In code_: watch.claude_login, watch.LOGIN_CMD, claude_login (snapshot), vitals.login_banner, session_frame.login_argv, login_hold.LoginHold
 _Avoid_: credentials, token, auth
 
 **Trusted network**:

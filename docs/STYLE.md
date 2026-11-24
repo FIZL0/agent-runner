@@ -210,8 +210,11 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **The Claude login banner** (`.login`, `loginDraw()`) is the one notice that stays until what it says is fixed, so it
   has its own row under the header in every view and covers nothing; a scrolled-up session (`.slim`) puts it away with
-  the other bars. It has no button and no Later, and goes by itself
-  after a new login. The other notices stand under it, in `.over`. A run's page shows the run's own words; Home, and All
+  the other bars. It has one button, Log in again, and no Later, and goes by itself after a new login. Log in again
+  opens a sheet (`SHEETS.login`) with numbered steps, `1. Open the sign-in page` and `2. The code the sign-in page
+  gives you` with Send code, since a phone cannot press a link or paste in a terminal. The terminal (`claude auth login`
+  in ttyd) sits under the steps in `.loginterm`, its frame put there by script, so a redraw never takes it. The other
+  notices stand under it, in `.over`. A run's page shows the run's own words; Home, and All
   projects on any page, show Home's.
 
 ### See-through Talk
