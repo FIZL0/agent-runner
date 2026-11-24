@@ -202,6 +202,21 @@ def test_tell_ending_ask():
         parked.unlink()
 
         running[1] = (tid, '', set(), set())
+        end()
+        with mock.patch.object(loop.plat, 'alive', lambda pid: False):
+            rc, held, out = command('tell', tid, 'red', between=park)
+        eq((rc, held, typed), (1, True, []), 'the same when its session is dead and not reaped yet')
+        check('asks the person: Red or blue?' in out and 'no live pane' not in out and 'plan note' not in out, 'the question', out)
+        parked.unlink()
+
+        running[1] = (tid, '', set(), set())
+        with mock.patch.object(mux, 'send', lambda hit, text: end() or True):
+            rc, held, out = command('tell', tid, 'red', between=park)
+        eq((rc, held), (1, True), 'asked as the text was typed: not told either')
+        check('asks the person: Red or blue?' in out, 'the question', out)
+        parked.unlink()
+
+        running[1] = (tid, '', set(), set())
         for how, of in (('finish', tid), ('wait', tid), ('ask', 'F99')):
             end(how, of)
             typed.clear()

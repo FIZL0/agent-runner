@@ -2331,7 +2331,7 @@ def _asks_now(c, tid: str, where: str) -> bool:
     if ending_ask(c, tid, where):
         return True
     try:
-        return bool(_ask_or_parked(tid, c.todo))
+        return _ask_or_parked(tid, c.todo)[1] == tid  # not another task that waits on concept `tid`
     except SystemExit:
         return False
 
