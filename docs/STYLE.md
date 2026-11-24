@@ -75,7 +75,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   opens is the project list (`allSide()`), and a project's own list turns it back. A `.prow` is one project: its state
   dot, its name, and a `.n` only for what needs you in that project. Badge rules apply as below.
 - **+ button** (`.btn.plus`, `plusBtn()`): one per view, top right, its word kept on a phone (Project, Task, Concept,
-  Slot, New talk, Device). `+ Chat` stands only beside Chats. None in Settings or in a chat.
+  Slot, New talk, Device). `+ Chat` stands only beside Chats. None in Settings or in a chat. + Task is disabled for 1 s after the file picker closes (`holdPlus()`), so a double press in it cannot land there.
 - **Project card** (`.pcard`, `projectCard()`): one project on the Overview or in a list: its state dot and name, its
   tasks by title, what landed today. One main button (`mainBtn()`: Start run or Open); the rest is in the
   … sheet (`dotsBtn()`), never beside it.
