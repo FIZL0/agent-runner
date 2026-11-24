@@ -354,7 +354,7 @@ def test_split_side_by_side(tmp: Path):
                                        '- [ ] **P5c** shares | files: a.py, c.py\n'
                                        '- [ ] **P5d** no files\n'
                                        '- [ ] **P5e** waits | files: e.py | after: P5a\n'
-                                       '- [ ] **P5b1** part of two | files: f.py\n', encoding='utf-8')
+                                       '- [ ] **P5f** six | files: f.py\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
     (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
                                       'shared_files = ["S.md"]\n', encoding='utf-8')
@@ -368,14 +368,14 @@ def test_split_side_by_side(tmp: Path):
     eq(a[0], 'P5a', 'the first part starts')
     sib = ('waiting for a sibling', 'P5a')
     why = S.explain({1: a}, set(), 'main')
-    eq((why['P5b1'], why['P5c'], why['P5d']), (('free', ''), sib, sib),
+    eq((why['P5b'], why['P5c'], why['P5d']), (('free', ''), sib, sib),
        'a disjoint part is free; one on its file and one naming no files wait')
-    eq(S.choose(S.held({1: a}, 'main'), set(), 'main')[0], 'P5b1', 'and it starts beside it')
+    eq(S.choose(S.held({1: a}, 'main'), set(), 'main')[0], 'P5b', 'and it starts beside it')
     d = todo['P5d']
     eq(S.explain({1: d}, set(), 'main')['P5a'], ('waiting for a sibling', 'P5d'), 'nothing starts beside one naming none')
     e = ('P5e', 'Next', {'e.py'}, {'P5a'})
     eq((S.clash(a, e, set()), S.clash(e, a, set())), (True, True), 'an after: pair stays apart, either way round')
-    f = ('P5f', 'Next', {'f.py'}, set())
+    f = todo['P5f']
     eq((S.clash(a, f, set()), S.clash(f, a, set())), (False, False), 'disjoint parts do not clash, either way round')
     for kin in (('P5', 'Next', {'z.py'}, set()), ('P5a1', 'Next', {'z.py'}, set())):
         eq((S.clash(a, kin, set()), S.clash(kin, a, set())), (True, True), f'a task and its own part stay apart: {kin[0]}')
@@ -386,7 +386,7 @@ def test_split_side_by_side(tmp: Path):
     git(repo, 'commit', '-qm', 'P5a')
     git(repo, 'checkout', '-q', 'main')
     why = S.explain({}, set(), 'main')
-    eq((why['P5b1'], why['P5c'], why['P5d']), (('free', ''), sib, sib), 'the same while it waits to merge')
+    eq((why['P5b'], why['P5c'], why['P5d']), (('free', ''), sib, sib), 'the same while it waits to merge')
 
 
 def main() -> int:
