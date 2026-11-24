@@ -460,7 +460,6 @@ a{color:var(--accent)}
 /* a chat opening and closing (viewGo): the main part slides, the drawer goes, the chat's title is carried over */
 html.vt .main{view-transition-name:main} html.vt .side{view-transition-name:side} html.vt .scrim:not(.sheetscrim){view-transition-name:scrim}
 html.vt :is(.side,.scrim){transition:none}
-::view-transition{pointer-events:none}
 ::view-transition-group(*){animation-duration:var(--dur-spring);animation-timing-function:var(--spring-soft)}
 ::view-transition-group(main){overflow:clip}
 ::view-transition-old(*),::view-transition-new(*){animation-duration:var(--dur-spring);animation-timing-function:var(--ease)}
@@ -1545,10 +1544,18 @@ function viewGo(go,n){
   let done=false;const once=()=>{if(!done){done=true;go()}};
   const me={};MO.vt=me;
   const end=()=>{if(MO.vt!==me)return;MO.vt=null;clear();root.classList.remove('vt','vt-in','vt-out','vt-drawer');render()};
-  try{const t=document.startViewTransition(()=>{once();if(MO.vt!==me)return;clear();if(from)name(into?bar():row())});
+  try{const t=document.startViewTransition(()=>{once();if(MO.vt!==me)return;clear();if(from)name(into?bar():row())});me.skip=()=>t.skipTransition();
     t.ready.catch(()=>{});t.updateCallbackDone.catch(()=>{});t.finished.then(end,end)}
   catch(e){once();end()}
 }
+/* the browser gives a press during a View Transition to the page's root: the press ends it, and its click goes to what is there */
+document.addEventListener('pointerdown',()=>{if(MO.vt&&MO.vt.skip)MO.vt.skip()},true);
+document.addEventListener('click',e=>{
+  if(e.target!==document.documentElement||!e.isTrusted)return;
+  const el=document.elementFromPoint(e.clientX,e.clientY);if(!el||el===document.documentElement)return;
+  const f=el.closest('textarea,input,select');if(f)kbFocus(f);
+  el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,detail:e.detail,clientX:e.clientX,clientY:e.clientY}));
+});
 function viewSlide(to){
   if(MO.vt)return;
   const x=to==='in'?'40%':'-60px';

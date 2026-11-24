@@ -151,7 +151,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   wherever it was pressed (a row, a card, Back, Esc). `viewGo()` runs this as a View Transition where the browser has
   them; the chat row's title in the sidebar is carried to the top bar's title and back while that row is on screen.
   Without View Transitions, with the keyboard open, or where focus must move in the tap (`about()`, new chat),
-  `viewSlide()` slides the new view in. A View Transition never takes pointer events, so a tap during one works, and
+  `viewSlide()` slides the new view in. A press during a View Transition ends it and lands on what is there, and
   refreshes wait while it runs, as for a press. The real session's frame slides whole; nothing animates inside the
   terminal. Another view (Home, Plan...) fades in and rises 10px.
 - **Sending.** Your message springs out of the message box to its place in Talk and in a starting chat (`sentFrom()`).

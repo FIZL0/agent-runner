@@ -1615,7 +1615,7 @@ const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
                   querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
 const fetch = () => Promise.resolve({json: () => Promise.resolve([{name: 'clear', desc: ''}])});
 eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
-     + slice('let boxWas=', '\n/* F147: a box that grew') + 'function growGlide(){}'
+     + slice('let boxWas=', '\n}\n') + 'function growGlide(){}\n'
      + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n')
      + slice("document.addEventListener('input',", ')}});\n') + `
 (async () => {
@@ -4214,7 +4214,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const S = {live: true, f: {}, drawer: false, sheet: '', thread: null};
 let reduced = false, now = 1000, ran = [];
 Date.now = () => now;
-const document = {hidden: false, activeElement: null, documentElement: {classList: {cls: new Set(), add(...c) { c.forEach(x => this.cls.add(x)) }, remove(...c) { c.forEach(x => this.cls.delete(x)) }}}, querySelector: () => null, createElement: () => new El('')};
+const document = {hidden: false, activeElement: null, documentElement: {classList: {cls: new Set(), add(...c) { c.forEach(x => this.cls.add(x)) }, remove(...c) { c.forEach(x => this.cls.delete(x)) }}}, querySelector: () => null, addEventListener() {}, createElement: () => new El('')};
 const matchMedia = () => ({matches: reduced}), getComputedStyle = () => ({getPropertyValue: k => k.startsWith('--dur') ? '450ms' : 'ease'});
 // a laid-out thing: key k, its class, top y; kids nest
 class El {
@@ -4331,7 +4331,7 @@ def test_style_f83(tmp: Path) -> None:
     for one in ('--spring:', '--spring-soft:'):
         check(css.count(one) == 2 and f'{one}cubic-bezier(' in css and f'{one}linear(0,' in css, f'{one} a spring, and its fallback')
     check('@supports (transition-timing-function:linear(0,1)){:root{' in css, 'only where the browser has linear()')
-    check('::view-transition{pointer-events:none}' in css, 'a tap during a View Transition works')
+    check('if(MO.vt&&MO.vt.skip)MO.vt.skip()' in js and 'e.target!==document.documentElement' in js, 'a press during a View Transition ends it and lands')
     tokens = set(re.findall(r'(--[a-z0-9-]+):', re.search(r':root\{(.*?)\n\}', css, re.S)[1]))
     for t in re.findall(r'`(--[a-z0-9- ]+)`', doc):
         for one in t.split():
