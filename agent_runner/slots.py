@@ -812,8 +812,7 @@ def free_gb() -> float:
 def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, kept: str = '') -> str:
     """F105: the model `tid`'s own session runs on: the task's `model:` field (`plan add --model`), else the
     model the run was given on its command line (`run --model`), else its kind's (`[models.kinds]`), else
-    `model` (`[models] code`). Read afresh on every start and resume: a changed field or setting applies
-    (F202a: a session that was up as the settings changed keeps `kept`, its own; a changed field still applies).
+    `model` (`[models] code`). Read afresh on every start and resume: a changed field or setting applies (F202a: not over `kept`).
     `branch` '' reads the plan file itself, not the branch's copy; `ls`: the plan's lines, when already read."""
     from agent_runner.state import plan_text
     try:
@@ -821,9 +820,7 @@ def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, k
         own = next((P.fields(rest).get('model', [''])[0] for _, _, t, rest, _ in P.iter_tasks(ls) if t == tid), '')
     except (OSError, IndexError):
         own = ''
-    if not own and kept:
-        return kept
-    if not own and (flag := C.run.get('model_flag')):
+    if not own and (flag := kept or C.run.get('model_flag')):
         return flag
     return C.task_model(tid, own) or model
 
