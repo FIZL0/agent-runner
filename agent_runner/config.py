@@ -30,6 +30,7 @@ Every session runs on Claude Code, or on the harness loop for another provider's
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shlex
@@ -749,6 +750,7 @@ class Config:
             raise SystemExit(f'agent-runner: {problem}')
         self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
         self.models = self.resolve_models(given_models)
+        self.loaded = copy.deepcopy(settled(self))  # F202a: what the files said
 
     def resolve_models(self, given: dict) -> dict:
         """F101: `[models]`, each role settled: a role the files set wins, else the default. `C.run['model']` and
@@ -890,7 +892,7 @@ def _cfg(root: Path) -> Config:
     live = next(iter(_LIVE.values()), None)
     try:
         c = Config(root)
-        if live and (bad := _problem(settled(live), settled(c))):
+        if live and (bad := _problem(live.loaded, c.loaded)):
             raise ValueError(bad)
     except (SystemExit, Exception):  # noqa: BLE001
         if not live:
@@ -1311,7 +1313,7 @@ def settled(c: Config) -> dict[tuple[str, str], object]:
 
 def _keep(c: Config, values: dict) -> None:
     for (t, k), v in values.items():
-        c.raw[t][k] = v
+        c.raw[t][k] = c.loaded[t, k] = v
 
 
 def read_again(c: Config) -> tuple[Config, dict, list]:
@@ -1330,11 +1332,11 @@ def read_again(c: Config) -> tuple[Config, dict, list]:
         raise ValueError(str(e).removeprefix('agent-runner: ')) from None
     except Exception as e:  # noqa: BLE001 - whatever a file holds, the run goes on with what it has
         raise ValueError(f'{type(e).__name__}: {e}') from None
-    was, now = settled(c), settled(new)
+    was, now = c.loaded, new.loaded
     changed = {k: v for k, v in now.items() if v != was[k] or type(v) is not type(was[k])}
     if problem := _problem(was, now):  # only of the changed ones: what the run started with it goes on with
         raise ValueError(problem)
-    waits = {k: was[k] for k in changed if k in SETTING_NEXT}
+    waits = {k: c.raw[k[0]][k[1]] for k in changed if k in SETTING_NEXT}
     _keep(new, waits)
     for t, k in waits:
         (new.given.setdefault(t, set()).add if k in c.given.get(t, ()) else new.given.get(t, set()).discard)(k)

@@ -75,6 +75,15 @@ def test_takes_changes() -> None:
     eq((L.SLOTS, run.model, S.C.run['model_flag']), (3, 'haiku', 'haiku'), '`run once` and `--model` hold')
 
 
+def test_comments_only() -> None:
+    print('a file that changes no value (the runner.local.toml a start makes) leaves the run as it is')
+    d, run = run_of()
+    r = S.C.run
+    config.ensure_local(d)
+    SV.take(run)
+    check(S.C.run is r and not LOGS, 'nothing is taken or said', LOGS)
+
+
 def test_bad_kept() -> None:
     print('a file that does not parse, or a bad value: the old settings stay, said once, and the fix is taken')
     d, run = run_of('[run]\nweekly_max = 70\n')
@@ -216,5 +225,5 @@ if __name__ == '__main__':
     for m in list(sys.modules.values()):
         if getattr(m, '__name__', '').startswith('agent_runner.') and hasattr(m, 'log') and callable(m.log):
             m.log = lambda msg, *a, **k: LOGS.append(msg)
-    raise SystemExit(report([test_takes_changes, test_bad_kept, test_next_run, test_running_keep,
+    raise SystemExit(report([test_takes_changes, test_comments_only, test_bad_kept, test_next_run, test_running_keep,
                              test_remote_and_silent, test_tick]))

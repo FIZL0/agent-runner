@@ -70,6 +70,8 @@ def read_settings(before=lambda: None, once: bool = False) -> dict:
     except ValueError as e:
         S.log(f'settings: changed, but not taken, so the run keeps the ones it has: {e}')
         return {}
+    if not changed and not waits and not config._WAITING and new.given == S.C.given:
+        return {}  # comments only
     before()
     config.reload(S.C, new, waits)
     for w in S.C.warnings:
