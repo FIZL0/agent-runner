@@ -72,14 +72,6 @@ _Avoid_: control window, coordinator, chat
 Number 1, the project chat older versions kept beside the run; retired (F176): numbers start at 2, and an older c1 is a chat like any other.
 _Avoid_: control 1, main session, first control session, project chat
 
-**Runner feed**:
-The lean session in the Claude apps that reposted what lands and what needs the person; retired (B195): a run starts none and ends an older one, so nothing pushes to the phone unasked.
-_Avoid_: feed session, bot
-
-**Board**:
-The hidden session that held the runner feed; retired (B195): a run starts none and ends an older one. The run page shows what lands (`attach board` still opens agent-runner ui).
-_Avoid_: dashboard, status window
-
 **Remote**:
 Running the run's sessions on Remote Control, so the person steers from claude.ai/code or the Claude apps; the git remote that merges go to is the **push remote**.
 _Avoid_: cloud, online, headless, remote (for the push remote)

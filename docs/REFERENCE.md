@@ -92,8 +92,7 @@ window (before 1809, a console that starts hidden, `STARTUPINFO.wShowWindow = SW
 `agent-runner attach` (or `attach run`) is the run view, from any terminal and over ssh: the end of `.runner/run.log`,
 then each new line as the run logs it, and the runner keys typed there (`s`, `s!`, `p`, `f`, `+`, `-`, `slots N`, `z`,
 `x`, `u`, `?`, and an empty line for Remote Control), each posted to the run through `.runner/KEYS` as `agent-runner
-key` does. `?` lists them (they print once as the view opens too). Ctrl-C leaves the view; the run keeps going. `attach
-feed` and `attach board` open `agent-runner ui` (which needs tmux, so not on Windows).
+key` does. `?` lists them (they print once as the view opens too). Ctrl-C leaves the view; the run keeps going.
 A hidden session (`attach s2`, `attach c3`, or the session tab of `agent-runner ui`, which shows it beside
 its panels) is attached to its own terminal, the way dtach does it, on Linux, macOS and Windows 1809 and later. On Linux
 and macOS the shim listens on a Unix socket beside its marker (`.runner/slotN.sock`, `controlN.sock`, mode 0600, gone
@@ -1393,10 +1392,9 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ```
 agent-runner                           the run in the background (a detached process, its slots hidden), the
                                        prompt straight back; `help` prints the usage
-agent-runner attach [run|sN|cN|feed]   the run view (its log, live, and its keys; Ctrl-C leaves it), or a
+agent-runner attach [run|sN|cN]        the run view (its log, live, and its keys; Ctrl-C leaves it), or a
                                        session's own terminal (Ctrl-b d detaches; Windows 1809 and later too;
-                                       before 1809 the hidden console); feed or
-                                       board: agent-runner ui
+                                       before 1809 the hidden console)
 agent-runner control [N]               a new control session in this terminal, blank (no opening summary)
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --no-wait   the same, returning once it starts ("control N is starting in a hidden terminal"),

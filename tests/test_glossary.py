@@ -10,7 +10,7 @@ from _check import FAILED, check
 from agent_runner import brief, guide
 
 ROOT = Path(__file__).resolve().parent.parent
-TERMS = ['Run', 'Slot', 'Task', 'Kind', 'Control session', 'c1', 'Runner feed', 'Board', 'Take', 'Gate', 'Fixer',
+TERMS = ['Run', 'Slot', 'Task', 'Kind', 'Control session', 'c1', 'Take', 'Gate', 'Fixer',
          'Merge worktree', 'Concept', 'Needs you', 'Shelve', 'Claim', 'Notes dir', 'Remote']
 
 print('GLOSSARY.md has an entry per term')
