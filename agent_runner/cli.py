@@ -259,18 +259,22 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:  # bare: the run in the background (outside a repository: the usage, as before)
         from agent_runner.config import toplevel
         from agent_runner import cmds
+        from agent_runner.demo import hint  # F194c
         picker = cmds.picker_wanted()  # F91: at a terminal, the run picker, then the launcher
         try:
-            toplevel()
+            said = hint(toplevel())
         except SystemExit as e:
             if not adopt_folder():
                 if picker:
-                    return cmds.cmd_pick(None)
-                print(f'{e}\nagent-runner --help: every command', file=sys.stderr)
+                    return cmds.cmd_pick(None, hint=hint(None))
+                print(f'{e}\n{hint(None)}\nagent-runner --help: every command', file=sys.stderr)
                 return 2
+            said = ''
         if picker:
             from agent_runner.config import main_checkout
-            return cmds.cmd_pick(main_checkout())
+            return cmds.cmd_pick(main_checkout(), hint=said)
+        if said:
+            print(f'agent-runner: {said}', file=sys.stderr)
         from agent_runner import runner
         return runner.cmd_background(rest)
     if cmd == 'home' and rest[:1] and rest[0] in ('install', 'uninstall', 'status', 'list', 'serve', 'add',

@@ -727,8 +727,8 @@ _In code_: micTest, MT, SHEETS.mictest
 _Avoid_: diagnostic
 
 **Walkthrough**:
-Short cards, one at a time, that point at the parts of a run on the example project's page; skipped or not and where the person is are kept
+Short cards, one at a time, that point at the parts of a run on the example project's page and in the terminal UI; skipped or not and where the person is are kept
 _Said_: walkthrough, tour
 _On screen_: Walkthrough
-_In code_: walkStep, walkDraw, 065-walk.js
+_In code_: walkStep, walkDraw, 065-walk.js, walk.py, WALK_STEPS
 _Avoid_: tutorial, onboarding, tour guide

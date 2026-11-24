@@ -1,31 +1,22 @@
 /* F194b: the example project's walkthrough: one card at a time, each pointing at the real thing. x: {off: its page with
    no run up, up, working, needs, landed: how many of each there are, home: reached through Runner Home}. A step is
    {id, title, text, view: where the thing is in the run app, at: selectors for it, the first one on screen counts
-   ('sec:Words' is a section's heading), many: how many of them to point at} */
-const WALK=['queue','start','session','needs','land','chat','own'];
+   ('sec:Words' is a section's heading), many: how many of them to point at}; its words are WALK_STEPS' */
+const WALK=WALK_STEPS.map(s=>s.id);
 function walkStep(id,x){
-  const first='[data-pact="start"]', off=(words)=>x.off?` ${words}`:'';
+  const w=WALK_STEPS.find(s=>s.id===id);if(!w)return null;
+  const first='[data-pact="start"]', off=x.off?w.pageOff||w.noRun:'';
   const s={
-    queue:{title:'The queue',view:'plan',many:3,at:x.off?['[data-k="pq"]','sec:Queue']:['.card[data-k^="task:"]','sec:Queue'],
-      text:'Each task names the files it changes. Tasks that share no files run side by side, one agent each. A task can also wait for another one to land first.'},
-    start:{title:'Start run',view:'status',at:x.off?[first,'.pcard']:x.up?['.card:has([data-k="runsaid"])']:['[data-ctl="start"]','.card:has([data-k="runsaid"])'],
-      text:x.up?'The run is up. Its agents work on the queue, on your own Claude usage. A run starts only when you start it. Stop lets the running tasks finish, then ends the run.'
-        :'Start run sets agents to work on the queue, on your own Claude usage. Nothing starts until you press it.'},
-    session:{title:'A session',view:'home',at:x.off?[first,'.pcard']:['#body .card[data-thread]','sec:Working now'],
-      text:(x.working?'Each task has an agent session of its own. Open one to watch it work and to write to it.'
-        :'Each task has an agent session of its own. It shows under Working now while it works, and opening it lets you watch it and write to it.')+off('Start the run to see one.')},
-    needs:{title:'Needs you',view:'home',at:x.off?['.card.need','sec:Needs you']:['#body .card:has([data-needopen])','sec:Needs you'],
-      text:x.needs?'What only you can decide or check waits here, and the rest of the run goes on. '+(x.off?'You can answer it once the run is up.':'An answer sends its task back to the queue.')
-        :'What only you can decide or check waits here, and the rest of the run goes on. Nothing does right now.'},
-    land:{title:'A merge landing',view:'status',at:x.off?[first,'.pcard']:['[data-k="late"]','sec:Landed lately'],
-      text:'A finished task is merged and its tests run. It lands on main only when they pass, and then it is listed under Landed lately on Status.'+(x.landed||x.off?'':' Nothing has landed yet.')+off('Start the run to see one.')},
-    chat:{title:'Talk to a control session',view:'home',at:x.off?[first,'.pcard']:['#body .box'],
-      text:'Write in your own words: ask how it goes, add a task, change one. Each message here opens a chat with a control session, which knows the run and uses your own Claude usage.'+off('The message box is on Home once the run is up.')},
-    own:{title:'Your own project',view:'',at:['#top [data-addproject]','[data-up]','a.brand','.icon[data-menu]'],
-      text:x.home?'That is how a run goes. Add the folder of a git project of yours, and its queue and its run get a page like this one.'
-        :'That is how a run goes. For a project of yours, run agent-runner setup in its folder, in a terminal.'},
+    queue:{view:'plan',many:3,at:x.off?['[data-k="pq"]','sec:Queue']:['.card[data-k^="task:"]','sec:Queue'],say:[w.text]},
+    start:{view:'status',at:x.off?[first,'.pcard']:x.up?['.card:has([data-k="runsaid"])']:['[data-ctl="start"]','.card:has([data-k="runsaid"])'],say:[x.up?w.up:w.off]},
+    session:{view:'home',at:x.off?[first,'.pcard']:['#body .card[data-thread]','sec:Working now'],say:[w.text,x.working?w.pageWorking:w.pageIdle,off]},
+    needs:{view:'home',at:x.off?['.card.need','sec:Needs you']:['#body .card:has([data-needopen])','sec:Needs you'],say:[w.text,x.needs?off||w.some:w.none]},
+    land:{view:'status',at:x.off?[first,'.pcard']:['[data-k="late"]','sec:Landed lately'],say:[w.text,w.page,x.landed||x.off?'':w.none,off]},
+    chat:{view:'home',at:x.off?[first,'.pcard']:['#body .box'],say:[w.text,w.page,off]},
+    own:{view:'',at:['#top [data-addproject]','[data-up]','a.brand','.icon[data-menu]'],say:[w.text,x.home?w.pageHome:w.setup]},
   }[id];
-  return s?{id,...s}:null;
+  const{say,...rest}=s;
+  return{id,title:w.title,text:say.filter(Boolean).join(' '),...rest};
 }
 /* what a press does to where the person is: {at: the step's id, off: skipped or done}; nothing kept is the first step */
 function walkParse(text){

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from agent_runner import plat
-from agent_runner.config import RUNNER, Config, shown_cmd
+from agent_runner.config import RUNNER, Config, main_checkout, shown_cmd
 
 DEFAULT = '~/agent-runner-demo'
 MARK = 'agent-runner-demo.json'  # in the project's .git: this folder was made by `demo`
@@ -115,6 +115,19 @@ def _home(root: Path) -> Path | None:
         return Config(root).home.resolve()
     except (SystemExit, OSError, ValueError, KeyError, TypeError):
         return None
+
+
+def hint(top: Path | None) -> str:
+    """The one line a first `agent-runner` says in a folder that is not set up (`top`: its git checkout, None
+    outside a repository), '' in any other."""
+    if top is not None:
+        try:
+            c = Config(top)
+            if c.file or c.todo.exists() or (main_checkout(top) / c.run['notes'] / 'run.log').exists():
+                return ''
+        except (SystemExit, OSError, ValueError, KeyError, TypeError):
+            return ''
+    return f'not set up here yet; to try it first: {shown_cmd()} demo (an example project, in a folder of its own)'
 
 
 def busy(root: Path) -> str:

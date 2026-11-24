@@ -46,6 +46,9 @@ the left / right side, Ctrl-j / Ctrl-k down / up the left side's list (in a box 
 (anywhere but in a box), Tab the next panel; in the main pane j/k scroll it (the terminal has no scrollbar), and
 move through a concept's options.
 
+F194c: in the example project a walkthrough's card stands over the bottom line (walk.py): the page's steps, worded for
+keys; < back, > next, / skips it and shows it again. A step goes to its panel, which is marked.
+
 The bottom line: the mode badge, this place's keys (yellow), a separator, then 1-5 panel, c new chat, ? keys
 (blue); never a key the window already shows (on a button, a label, a row), never j/k or Ctrl-h/Ctrl-l.
 
@@ -70,6 +73,7 @@ import time
 from agent_runner import plat
 from agent_runner import theme as TH
 from agent_runner import ui_model as U
+from agent_runner import walk as W
 
 REFRESH = 3.0  # seconds between snapshots (and between reads of a shown diff)
 TWO_COLUMNS = 70  # narrower than this: one column, the panels or the main pane
@@ -226,11 +230,15 @@ for _w in ('queue', 'shelved', 'need', 'concept', 'task', 'session'):
     HELP = HELP.replace('{%s_actions}' % _w, action_help(_w))
 
 
-def help_text(releases: bool) -> str:
-    """The keys list; F193: with Manage releases off (`releases` False), without its R lines."""
-    if releases:
-        return HELP
-    return re.sub(r'(?m)^  R        release +', '  ', re.sub(r'(?m)^  R        new release.*\n', '', HELP))
+def help_text(releases: bool, walk: bool = False) -> str:
+    """The keys list; F193: with Manage releases off (`releases` False), without its R lines; F194c: `walk`, with the
+    walkthrough's keys."""
+    text = HELP if releases else \
+        re.sub(r'(?m)^  R        release +', '  ', re.sub(r'(?m)^  R        new release.*\n', '', HELP))
+    if walk:
+        text = text.replace('Status [1]\n', f'  {W.BACK} {W.NEXT}      walkthrough back, next   {W.SKIP}        '
+                            'skip it, show it again\nStatus [1]\n', 1)
+    return text
 
 
 def help_line(line: str) -> list[tuple[str, str]]:
@@ -331,8 +339,9 @@ class RunPage:
     """The terminal Run page's state and drawing; `key()` takes one key, `draw()` paints one frame."""
 
     def __init__(self, snap: dict, get_snap=None, attrs=None, diff=None, opener=None,
-                 read=None, out=None, tmux=None, socket=None):
+                 read=None, out=None, tmux=None, socket=None, walk=None):
         self.snap = snap
+        self.walk = walk  # F194c: the example project's walkthrough (walk.Walk), else None
         self.socket = socket or hidden_terminal  # F88: the session has a socket to attach to
         self.side = SidePane(tmux)  # F112: the selected session in a tmux pane beside this one
         self.full = False  # F112 Ctrl-f with no session pane beside: the main pane between the bars, no panels
@@ -1267,6 +1276,10 @@ class RunPage:
         """Each panel's box height: SHORT rows (fewer when it has fewer) unfocused, the rest for the focused."""
         heads = sum(bool(group_head(self.items(3), i)) for i in range(len(self.items(3))))  # F185
         hs = {n: min(max(len(self.items(n)), 1), SHORT) + 2 + (heads if n == 3 else 0) for n, _, _ in PANELS if n != self.panel}
+        if self.walk and not self.walk.off:  # F194c: the card takes rows: fewer rows in each, so every panel shows
+            for n in (5, 2, 4, 3, 1):
+                if n in hs:
+                    hs[n] -= min(max(sum(hs.values()) + 3 - body, 0), hs[n] - 3)
         hs[self.panel] = max(3, body - sum(hs.values()))
         return hs
 
@@ -1279,7 +1292,9 @@ class RunPage:
         count = f'{cur - queued + 1} of {n_sh} shelved' if n_sh and cur >= queued else \
             f'{cur + 1 if rows else 0} of {queued}'
         count += f' · {n} to expand' if not focused and len(rows) > SHORT else ''
-        self.edge(win, y, x, h, w, [(f' [{n}] {name} ', 'accent' if on else 'dim')], on, count)
+        here = self.walk and not self.walk.off and W.PLACE[self.walk.at][0] == n  # F194c: the step points here
+        self.edge(win, y, x, h, w, [(f' [{n}] {name} ', 'accent' if on else 'dim')] + ([('◂ ', 'yellow')] if here else []),
+                  on, count)
         inner = h - 2
         if not rows:
             self.put(win, y + 1, x + 2, [(self.empty_line(n), 'dim')], w - 4)
@@ -1341,6 +1356,51 @@ class RunPage:
                 self._keys_on = self.main
                 self.put(win, fy + i, x + 2, segs, w - 4)
                 self._keys_on = False
+
+    # --- F194c: the example project's walkthrough ---------------------------------------------------------
+
+    def walk_lines(self, width: int, room: int) -> list:
+        """The walkthrough's card in `width` columns, only its title and keys when its words do not fit `room` rows;
+        [] with none to show, or no room."""
+        if not self.walk or self.walk.off:
+            return []
+        s, last, row = self.walk.step, self.walk.last, []
+        if self.walk.i:
+            row += button(W.BACK, 'back') + [(' ', '')]
+        row += button(W.NEXT, 'done') if last else button(W.NEXT, 'next', True) + [(' ', '')] + button(W.SKIP, 'skip')
+        up = bool(self.snap.get('up'))
+        said = W.words(s, up, sum(bool(r.get('task')) for r in self.snap.get('sessions') or []),
+                       len(self.snap.get('needs') or []), len(self.snap.get('lately') or []))
+        head = [(s['title'], 'accent'), (f'  {self.walk.i + 1} of {len(self.walk.steps)}', 'dim')]
+        lines = wrap(head, width) + wrap([(said, 'fg')], width) + wrap(row, width)
+        short = wrap(head + [('  ', '')] + row, width)
+        return lines if len(lines) <= room else short if len(short) <= room else []
+
+    def draw_walk(self, win, y: int, w: int, lines: list) -> None:
+        self._keys_on = not self.typing
+        self.edge(win, y, 0, len(lines) + 2, w, [(' Walkthrough ', 'yellow')], False)
+        for i, segs in enumerate(lines):
+            self.put(win, y + 1 + i, 2, segs, w - 4)
+        self._keys_on = False
+
+    def walk_key(self, k: str) -> bool:
+        """A key of the walkthrough; True when it was one. The step's panel is focused, its thing selected."""
+        if not self.walk or not self.walk.press(k):
+            return False
+        if self.walk.off:
+            self.msg, self.msg_ok = f'{W.SKIP} shows the walkthrough again', True
+            return True
+        n, tab = W.PLACE[self.walk.at]
+        if not n:
+            return True
+        self.panel, self.main = n, False
+        rows = self.items(n)
+        want = {'session': lambda r: r.get('task'), 'chat': lambda r: r is NEW_CHAT}.get(self.walk.at)
+        if want:
+            self.cur[n] = next((i for i, r in enumerate(rows) if want(r)), self.cur[n])
+        if tab in self.tab()[1]:
+            self.tabs[self._tab_key(self.sel())] = tab
+        return True
 
     def hint_keys(self) -> list[tuple[str, str]]:
         """F76: this place's keys for the bottom line, never one the window shows (a button, a label, a row's
@@ -1419,7 +1479,8 @@ class RunPage:
             return [(self.msg, 'green' if self.msg_ok else 'red')] + \
                 ([(' ', ''), self.link(self.msg_link)] if self.msg_link else [])
         keys = [kv for kv in self.hint_keys() if kv[0] not in self.window_keys]
-        glob = [] if self.typing else [kv for kv in self.GLOBAL if kv[0] not in self.window_keys]  # a pick's c
+        every = self.GLOBAL + ([(W.SKIP, 'walkthrough')] if self.walk and self.walk.off else [])  # F194c
+        glob = [] if self.typing else [kv for kv in every if kv[0] not in self.window_keys]  # a pick's c
 
         def line(keys):
             out = []
@@ -1472,6 +1533,8 @@ class RunPage:
             return
         self.put(win, 0, 0, top, w)
         body = h - 2
+        card = self.walk_lines(w - 4, body - 7)  # F194c: its border, and a panel of 5 rows
+        body -= len(card) + 2 if card else 0
         if self.side.pane or self.full:  # F112: the session is in tmux's pane beside this one; Ctrl-f: no panels
             left, mx, mw = (0, 0, w) if self.full else (w, 0, 0)
         elif w >= TWO_COLUMNS:
@@ -1481,6 +1544,8 @@ class RunPage:
             left, mx, mw = (0, 0, w) if self.main else (w, 0, 0)
         if left:
             y, hs = 1, self.heights(body)
+            if card and sum(hs.values()) > body:  # F194c: no room for every panel: the focused one
+                hs = {n: body if n == self.panel else 0 for n in hs}
             for n, name, _ in PANELS:
                 hh = min(hs[n], 1 + body - y)
                 if hh >= 2:
@@ -1489,8 +1554,10 @@ class RunPage:
                 y += hs[n]
         if mw:
             self.draw_main(win, 1, mx, body, mw)
+        if card:
+            self.draw_walk(win, 1 + body, w, card)
         if self.help:
-            lines = help_text(self.manage_releases()).splitlines()
+            lines = help_text(self.manage_releases(), bool(self.walk)).splitlines()
             bw, bh = min(w - 2, max(len(l) for l in lines) + 4), min(h - 2, len(lines) + 2)
             by, bx = (h - bh) // 2, (w - bw) // 2
             for r in range(bh):
@@ -1747,6 +1814,8 @@ class RunPage:
         if k == '0':  # B153: the project name's key: back to the pick-a-run screen
             self.pick = True
             return True
+        if self.walk_key(k):
+            return False
         if k == 'ESC':  # B116: back out only, never an interrupt
             self.main = False
             return False
@@ -2566,7 +2635,7 @@ def run_curses(win, box: dict | None = None, bar: bool = False) -> int:
     win.clear()  # B112: the first refresh repaints every cell, so the terminal's earlier screen is gone
     win.keypad(True)
     win.timeout(1000)
-    page = RunPage(U.snapshot(), attrs=attrs)
+    page = RunPage(U.snapshot(), attrs=attrs, walk=None if bar else W.of(U.S.ROOT, U.S.C.notes()))
     page.bar_only = bar
     if not bar:
         page.restore_place(taken_place())
