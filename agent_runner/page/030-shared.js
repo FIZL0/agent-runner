@@ -1,13 +1,12 @@
 /* --- what the snapshot holds ------------------------------------------------------------------------------- */
-/* F133: the chats in the order the run keeps (snap.chat_order); one it does not list yet goes just under the pins */
+/* F201: the pinned chats in the order the run keeps (F133), then the others, newest first */
 const chatPins=()=>S.snap.chat_pins||[];
-const chats=()=>{const o=S.snap.chat_order||[], at=s=>{const i=o.indexOf(s.name);return i<0?chatPins().length-.5:i};
-  return S.snap.sessions.filter(s=>/^c\d+$/.test(s.name)).map((s,k)=>[s,k]).sort((a,b)=>at(a[0])-at(b[0])||a[1]-b[1]).map(x=>x[0])};
-const chatNames=()=>{const g=shownChats();return g.top.concat(g.quiet).map(c=>c.name)};
-/* F133: keep a new chat order and pins: shown at once, then sent to the run so every page shows the same list */
-function saveChatOrder(order,pins){
-  S.snap.chat_order=order;S.snap.chat_pins=pins;render(true);
-  act('chat_order',{order,pins});
+const chats=()=>chatSort(S.snap.sessions.filter(s=>/^c\d+$/.test(s.name)),chatPins());
+const chatNames=()=>{const g=sideRows();return g.top.concat(g.quiet).filter(c=>!c.stand).map(c=>c.name)};
+/* F133: keep the pins, in their order: shown at once, then sent to the run so every page shows the same list */
+function savePins(pins){
+  S.snap.chat_pins=pins;render(true);
+  act('chat_order',{pins});
 }
 const slots=()=>S.snap.sessions.filter(s=>/^s\d+$/.test(s.name)||(!/^c\d+$/.test(s.name)&&s.task));
 const working_=()=>slots().filter(s=>s.task);

@@ -1,7 +1,12 @@
 /* --- drawing ----------------------------------------------------------------------------------------------- */
-let DR=null;  // F133: a chat row being dragged (its pointer, where it started, whether the drag is on)
+let DR=null;  // F133: a pinned chat's row being dragged (its pointer, where it started, whether the drag is on)
+/* F201: the Chats rows as shown: no row moves while a chat's name is edited (ROWS, the names as last drawn) */
+let ROWS=null;
+const sideRows=()=>chatPlaces(shownChats(),standRows(),chatPins(),ROWS,S.ren);
+const pressHeld=()=>!!PD.row&&Date.now()-PD.row<HOLD_MS;  // a press on a chat's row
 function side(){
   if(DR&&(DR.on||DR.ready&&DR.hold))return;  // F133: a redraw would drop the row from under the finger
+  if(pressHeld()){PD.late=true;PD.since=PD.row;return}  // F201: drawn once the press ends
   const nav=NAV;  // F93: Talk first
   const needs=S.snap.needs.length, use=usageOf(S.snap.status), cn=(S.snap.concepts||[]).length;
   const count={home:needs,concepts:cn};
@@ -10,10 +15,11 @@ function side(){
   const due0=homeNeeds()+H.alerts.length;
   if(atAll()){S.menuDot=!!due0;sideShow(allSide(),'all');return}  // F150
   if(HOME_PAGE){S.menuDot=!!due0;sideShow(offSide(),'in');return}  // F134: no run behind it
-  const g=shownChats(), due=needs||cn;S.menuDot=!!due;  // F128: the phone's menu button gets a dot
+  const g=sideRows(), due=needs||cn;S.menuDot=!!due;  // F128: the phone's menu button gets a dot
+  ROWS={top:g.top.map(x=>x.name),quiet:g.quiet.map(x=>x.name)};S.came=(S.came||[]).filter(x=>!sessionOf(x.name));
   sideShow(`${allRow()}
    <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n" data-k="n:${k}" data-roll data-v="${count[k]}">${count[k]}</span>`:''}</button>`).join('')}</div>${walkRow()}
-   <div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button></div>${chatBar()}${cs.length?g.top.map(x=>chatRow(x)).join('')+obChatRows()+(g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>chatRow(x,true)).join(''):''):'<div class="none">No chats yet</div>'+obChatRows()}
+   <div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button></div>${chatBar()}${cs.length?'':'<div class="none">No chats yet</div>'}${g.top.map(x=>sideRow(x)).join('')}${g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>sideRow(x,true)).join(''):''}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}" data-k="ag:${esc(s.name)}"><span class="livedot"></span><span class="t"><span class="tt">${esc(s.title||s.task)}</span></span></button>`).join(''):'<div class="none">None right now</div>'}
    <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>`,'in');
 }

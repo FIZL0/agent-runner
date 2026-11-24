@@ -838,21 +838,16 @@ def home_address() -> dict:
         return {}
 
 
-CHAT_ORDER_FILE = 'chat_order.json'  # F133: the sidebar's chat order and pins, in the notes dir
+CHAT_ORDER_FILE = 'chat_order.json'  # F133: the sidebar's pinned chats, in their order, in the notes dir
 
 
-def chat_list(names: list[str], saved: dict | None) -> list[str]:
-    """F133: the Chats list in its shown order: the pinned chats first (in their saved order), then chats the saved
-    order does not know yet (new ones, just under the pins), then the rest in the saved order. A chat that is gone
-    (not in `names`) drops out; with nothing saved the list stays as `names` gives it."""
+def pin_list(names: list[str], saved: dict | None) -> list[str]:
+    """F133, F201: the pinned chats of `names`, in their saved order. A file from before F201 also keeps an `order`
+    of every chat: there the pins stand in that order. A chat that is gone (not in `names`) drops out."""
     saved = saved if isinstance(saved, dict) else {}
-    order = [n for n in saved.get('order') or [] if isinstance(n, str)]
-    pins = [n for n in saved.get('pins') or [] if isinstance(n, str)]
-    if not order and not pins:
-        return list(names)
-    known = list(dict.fromkeys([n for n in order if n in names] + [n for n in pins if n in names]))
-    pinned = [n for n in known if n in pins]
-    return pinned + [n for n in names if n not in known] + [n for n in known if n not in pins]
+    order, pins = ([n for n in saved.get(k) or [] if isinstance(n, str)] for k in ('order', 'pins'))
+    place = {n: i for i, n in enumerate(order)}
+    return sorted(dict.fromkeys(n for n in pins if n in names), key=lambda n: place.get(n, len(order)))
 
 
 def chat_order_path() -> Path | None:
@@ -872,31 +867,36 @@ def load_chat_order() -> dict:
 
 
 def save_chat_order(order=None, pins=None) -> dict:
-    """F133: the `chat_order` action: keep the sidebar's chat order and pins (lists of cN names) for every page."""
+    """F133: the `chat_order` action: keep the sidebar's pinned chats, in their order (`pins`, cN names), for every
+    page. F201: the rest sort by last activity, so `order` (a page from before) only orders the pins."""
     def names(v):
         return list(dict.fromkeys(n for n in v if isinstance(n, str) and re.fullmatch(r'c\d+', n))) \
             if isinstance(v, list) else None
-    order, pins = names(order), names(pins if pins is not None else load_chat_order().get('pins') or [])
-    if order is None or pins is None:
+    if (order is None and pins is None) or (order is not None and names(order) is None):
         return {'ok': False, 'code': 2, 'out': 'chat_order: order and pins are lists of chat names', 'argv': []}
+    saved = load_chat_order()
+    old = [n for n in saved.get('pins') or [] if isinstance(n, str)]
+    pins = names(pins) if pins is not None else pin_list(old, saved)
+    if pins is None:
+        return {'ok': False, 'code': 2, 'out': 'chat_order: order and pins are lists of chat names', 'argv': []}
+    if order is not None:
+        pins = pin_list(pins, {'order': names(order), 'pins': pins})
     p = chat_order_path()
     if not p:
         return {'ok': False, 'code': 2, 'out': 'chat_order: no project here to keep it in', 'argv': []}
     tmp = p.with_name(p.name + '.tmp')  # written whole, then moved in: a snapshot never reads half a file
-    tmp.write_text(json.dumps({'order': order, 'pins': pins}), encoding='utf-8')
+    tmp.write_text(json.dumps({'pins': pins}), encoding='utf-8')
     os.replace(tmp, p)
     return {'ok': True, 'code': 0, 'out': 'chat order kept', 'argv': []}
 
 
 def with_chat_order(snap):
-    """F133: the snapshot with the kept chat order (`chat_order`, every chat shown) and pins (`chat_pins`)."""
+    """F133: the snapshot with the pinned chats in their order (`chat_pins`)."""
     if not isinstance(snap, dict) or 'error' in snap:
         return snap
-    saved = load_chat_order()
     names = [s.get('name') for s in snap.get('sessions') or [] if isinstance(s, dict)
              and re.fullmatch(r'c\d+', str(s.get('name')))]
-    snap['chat_order'] = chat_list(names, saved)
-    snap['chat_pins'] = [n for n in saved.get('pins') or [] if n in names]
+    snap['chat_pins'] = pin_list(names, load_chat_order())
     return snap
 
 

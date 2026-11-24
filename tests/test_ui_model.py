@@ -913,24 +913,17 @@ def test_delete_chats(tmp: Path) -> None:
             p.wait()
 
 
-def test_chat_list_f133(tmp: Path) -> None:
-    """F133: the run app's Chats order (web.chat_list): pins first in their saved order, then chats the saved order
-    does not know (new ones, just under the pins), then the saved order; a deleted chat drops out; nothing saved
-    keeps the snapshot's order."""
+def test_pin_list_f133(tmp: Path) -> None:
+    """F133, F201: the run app's pinned chats (web.pin_list), in their order; a chat that is gone drops out."""
     from agent_runner import web as W
     names = ['c1', 'c3', 'c4', 'c6']
-    eq(W.chat_list(names, {}), names, 'nothing saved: the snapshot order')
-    eq(W.chat_list(names, None), names, 'no file: the snapshot order')
-    eq(W.chat_list(names, {'order': ['c6', 'c3', 'c1', 'c4'], 'pins': []}), ['c6', 'c3', 'c1', 'c4'], 'the saved order')
-    eq(W.chat_list(names, {'order': ['c6', 'c3', 'c1', 'c4'], 'pins': ['c1', 'c4']}), ['c1', 'c4', 'c6', 'c3'],
-       'pins first, in the saved order')
-    eq(W.chat_list(names, {'order': ['c3', 'c1'], 'pins': ['c1']}), ['c1', 'c4', 'c6', 'c3'],
-       'new chats just under the pins')
-    eq(W.chat_list(['c1', 'c3'], {'order': ['c9', 'c3', 'c4', 'c1'], 'pins': ['c9', 'c1']}), ['c1', 'c3'],
-       'deleted chats (pinned or not) drop out')
-    eq(W.chat_list(names, {'order': ['c4'], 'pins': ['c6']}), ['c6', 'c1', 'c3', 'c4'],
-       'a pin missing from the order is still first')
-    eq(W.chat_list(names, {'order': 'junk', 'pins': [3, 'c3']}), ['c3', 'c1', 'c4', 'c6'], 'junk in the file is skipped')
+    eq(W.pin_list(names, {}), [], 'nothing saved')
+    eq(W.pin_list(names, None), [], 'no file')
+    eq(W.pin_list(names, {'pins': ['c4', 'c1']}), ['c4', 'c1'], 'the pins in their own order')
+    eq(W.pin_list(names, {'order': ['c6', 'c3', 'c1', 'c4'], 'pins': ['c4', 'c1', 'c6']}), ['c6', 'c1', 'c4'],
+       'a file from before F201: in its order')
+    eq(W.pin_list(['c1', 'c3'], {'pins': ['c9', 'c1']}), ['c1'], 'a gone chat drops out')
+    eq(W.pin_list(names, {'order': 'junk', 'pins': [3, 'c3', 'c3']}), ['c3'], 'junk in the file is skipped')
 
 
 def ran_by(out: list, text: str = 'ok'):
@@ -1562,6 +1555,6 @@ if __name__ == '__main__':
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154), in_tmp(test_chat_hold_b158),
                          in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
-                         in_tmp(test_delete_chats), in_tmp(test_chat_list_f133),
+                         in_tmp(test_delete_chats), in_tmp(test_pin_list_f133),
                          in_tmp(test_status_f124), in_tmp(test_chat_rows_f128), in_tmp(test_need_chat_f143),
                          in_tmp(test_feed_ids_b134), in_tmp(test_need_answers_c33), in_tmp(test_answers_f180), in_tmp(test_typed_decide_f181a)]))

@@ -50,7 +50,7 @@ function takeSnap(s){
   // F137: a chat the outbox still starts is named by new_control's answer (obSettle), not by this guess
   if(S.waitNew&&S.waitNew.ph&&S.ob.some(y=>'@'+y.cid===S.waitNew.ph)){}
   else if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
-    if(fresh.length){const nm=fresh[fresh.length-1], ph=S.waitNew.ph, ws=S.waitNew.sent;S.waitNew=null;if(ws)carrySent(nm,ws.j,ws.ask);  // F137: its waiting messages go there
+    if(fresh.length){const nm=fresh.sort((a,b)=>b.slice(1)-a.slice(1))[0], ph=S.waitNew.ph, ws=S.waitNew.sent;S.waitNew=null;if(ws)carrySent(nm,ws.j,ws.ask);  // F137: its waiting messages go there
       if(ph){obChange(b=>obName(b,ph,nm));boxMove(ph,nm);drain()}if(!ph||S.thread===ph)open(nm,!!ph);else render();return}
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
@@ -221,7 +221,7 @@ document.addEventListener('click',async e=>{
   if(slashOpen()&&!q('[data-in]'))slashClose();
   if(q('[data-undo]')){S.undo=null;render(true);return}
   if(x=q('[data-pin]')){const n=x.dataset.pin,names=chatNames(),p=chatPins().filter(m=>names.includes(m));  // F133
-    const pins=p.includes(n)?p.filter(m=>m!==n):p.concat([n]);saveChatOrder(chatMove(names,pins,n,names.indexOf(n)),pins);return}
+    const pins=p.includes(n)?p.filter(m=>m!==n):p.concat([n]);savePins(pins);return}
   if(x=q('[data-del]')){S.undo={names:[x.dataset.del],bar:false};S.sel=[];render(true);return}
   if(q('[data-delsel]')){if(S.sel.length){S.undo={names:S.sel,bar:true};S.sel=[]}render(true);return}
   if((x=q('[data-thread]'))&&/^c\d+$/.test(x.dataset.thread)){  // F118: Ctrl/Cmd+click picks, Shift+click a range
@@ -373,12 +373,12 @@ document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.len
 /* F114: a key of the row keeps the box's focus (and its keyboard) */
 for(const t of ['pointerdown','mousedown'])document.addEventListener(t,e=>{if(e.target.closest&&e.target.closest('.keys .tool,[data-feedkeys]'))e.preventDefault()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)loadFeed(S.thread)});
-/* F133: drag a chat row to set its place, by pointer events so a phone's touch works too: a mouse drags at once,
+/* F133, F201: drag a pinned chat's row to set its place among the pins, by pointer events so a phone's touch works too: a mouse drags at once,
    a touch after a short hold (a swipe before it still scrolls the list); the drop is kept by the run */
 const dragEnd=()=>{if(!DR)return;const {row,on}=DR, y=on?shiftOf(row).m42:0;clearTimeout(DR.hold);row.classList.remove('lift','drag');row.style.transform='';DR=null;if(y)glideTo(row,0,y);if(on)render(true)};
 document.addEventListener('pointerdown',e=>{
-  const row=e.target.closest&&e.target.closest('.crow[data-crow]');
-  if(!row||e.button>0||e.target.closest('.pin,.del,.rowmenu,.rowacts')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
+  const row=e.target.closest&&e.target.closest('.crow.pinned[data-crow]');
+  if(!row||e.button>0||S.ren||e.target.closest('.pin,.del,.rowmenu,.rowacts')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
   dragEnd();
   DR={row,name:row.dataset.crow,id:e.pointerId,y0:e.clientY,on:false,ready:e.pointerType==='mouse'};
   if(!DR.ready)DR.hold=setTimeout(()=>{if(DR&&DR.row===row){DR.ready=true;row.classList.add('lift')}},350);
@@ -397,22 +397,22 @@ document.addEventListener('touchmove',e=>{if(DR&&DR.ready)e.preventDefault()},{p
 document.addEventListener('pointerup',e=>{
   if(!DR||e.pointerId!==DR.id)return;
   if(!DR.on)return dragEnd();
-  const name=DR.name, others=[...document.querySelectorAll('.crow[data-crow]')].filter(r=>r!==DR.row);
+  const name=DR.name, others=[...document.querySelectorAll('.crow.pinned[data-crow]')].filter(r=>r!==DR.row);
   const to=others.filter(r=>{const b=r.getBoundingClientRect();return b.top+b.height/2<e.clientY}).length;
   dragEnd();
   noClick=true;setTimeout(()=>noClick=false,0);  // the click that ends a drag opens nothing
-  const names=chatNames(),pins=chatPins().filter(m=>names.includes(m)),order=chatMove(names,pins,name,to);
-  if(order.join()!==names.join())saveChatOrder(order,pins);
+  const names=chatNames(),pins=chatPins().filter(m=>names.includes(m)),moved=chatMove(pins,name,to);
+  if(moved.join()!==pins.join())savePins(moved);
 });
 document.addEventListener('pointercancel',e=>{if(DR&&e.pointerId===DR.id)dragEnd()});
 document.addEventListener('contextmenu',e=>{if(DR&&DR.ready&&e.target.closest&&e.target.closest('.crow'))e.preventDefault()});
 let noClick=false;
 document.addEventListener('click',e=>{if(noClick){noClick=false;e.preventDefault();e.stopPropagation();return}rowTap(e)},true);
 /* F83: a press under way holds the refreshes back, so what it lands on is still there when it ends */
-document.addEventListener('pointerdown',e=>{PD.down=!(e.button>0)},true);
-for(const t of ['contextmenu','blur','visibilitychange'])addEventListener(t,()=>{PD.down=false},true);
+document.addEventListener('pointerdown',e=>{PD.down=!(e.button>0);PD.row=PD.down&&e.target.closest&&e.target.closest('.crow,.renform')?Date.now():0},true);
+for(const t of ['contextmenu','blur','visibilitychange'])addEventListener(t,e=>{PD.down=false;if(t==='contextmenu'?!TOUCH():e.target===window||e.target===document)PD.row=0},true);  // F201: a finger held on a row is still on it, and so is a press that takes the focus from a box
 for(const t of ['blur','focus','pagehide'])addEventListener(t,()=>{if(TK.ear)micLog('window '+t)});  // B162: a permission question, another app
-for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{PD.down=false;if(PD.late)setTimeout(()=>{if(!PD.down)render()},60)},true);
+for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{PD.down=false;PD.row=0;if(PD.late)setTimeout(()=>{if(!PD.down)render()},60)},true);
 document.addEventListener('selectionchange',()=>{if(PD.late&&!PD.down&&!selecting())render()});
 /* B162: the mic report's pointer events: those on the mic, a new report from a press while nothing listens */
 for(const t of ['pointerdown','pointerup','pointercancel','gotpointercapture','lostpointercapture','touchend','touchcancel','contextmenu'])document.addEventListener(t,e=>{

@@ -75,7 +75,7 @@ function obDone(it,j){
     S.sure=it.ctl.split(':')[0];toast(j.confirm,true);snapNow();return}
   if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
-  if(it.newchat&&j.name){carrySent(j.name,j,it.ask);boxMove('@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name,true)}
+  if(it.newchat&&j.name){S.came=(S.came||[]).filter(x=>x.name!==j.name&&now-x.at<60000).concat([{name:j.name,was:'@'+it.cid,start:it.at,say:it.say,state:'sending',at:now}]);carrySent(j.name,j,it.ask);boxMove('@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name,true)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
   else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&(j.gone||it.args.text)))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.shelved){if(S.gone)delete S.gone[it.shelved];toast(j.said||`${it.say}: done`);snapNow()}  // F184: Needs you may show it at once
@@ -114,7 +114,10 @@ function obDraw(){
     ${lost.map(({n,p})=>`<div class="obrow failed"><div class="grow"><div class="ell2">${esc(p.text)}</div><div class="small">Not delivered: it is not in ${esc(threadTitle(n))}</div></div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" data-n="${esc(n)}">Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" data-n="${esc(n)}">Discard</button></div></div>`).join('')}</div>`:'');
 }
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
-function obChatRows(){return S.ob.filter(x=>x.newchat).map(x=>`<div class="crow" data-k="chat:@${esc(x.cid)}"><button class="thread ${S.thread==='@'+x.cid?'on':''} ob ${x.state}" data-thread="@${esc(x.cid)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`).join('')}
+/* F201: the starting chats as rows: those in the outbox, then one that has its name but that no snapshot lists yet (S.came) */
+const standRows=()=>(S.came||[]).filter(x=>!sessionOf(x.name)&&Date.now()-x.at<60000).concat(S.ob.filter(x=>x.newchat).map(x=>({name:'@'+x.cid,say:x.say,state:x.state,start:x.at}))).map(x=>({...x,stand:true})).sort((a,b)=>(a.start||0)-(b.start||0));
+const standRow=x=>`<div class="crow" data-k="chat:${esc(x.name)}"><button class="thread ${S.thread===x.name?'on':''} ob ${x.state}" data-thread="${esc(x.name)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`;
+const sideRow=(x,quiet)=>x.stand?standRow(x):chatRow(x,quiet);
 function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}">${x.state==='failed'?'':'<span class="livedot"></span>'}<div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`,'',`data-k="ob:${esc(x.cid)}" data-v="${x.state}"`)).join('')}
 /* what waits for a chat that is still starting: its first message, then what was written since */
 function obBubbles(n){

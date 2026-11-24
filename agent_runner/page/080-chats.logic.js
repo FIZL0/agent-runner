@@ -1,7 +1,24 @@
-function chatMove(names,pins,name,to){
-  names=names||[];const rest=names.filter(n=>n!==name),p=new Set(pins||[]);
-  if(names.includes(name))rest.splice(Math.max(0,Math.min(+to||0,rest.length)),0,name);
-  return rest.filter(n=>p.has(n)).concat(rest.filter(n=>!p.has(n)));
+function chatMove(pins,name,to){
+  pins=pins||[];const rest=pins.filter(n=>n!==name);
+  if(pins.includes(name))rest.splice(Math.max(0,Math.min(+to||0,rest.length)),0,name);
+  return rest;
+}
+/* F201: the chats as the sidebar lists them: the pinned ones in their own order, then newest to oldest by last activity
+   (at; with none yet it just came up: first), the highest number first when that is the same */
+function chatSort(rows,pins){
+  const p=pins||[], pin=s=>{const i=p.indexOf(s.name);return i<0?p.length:i}, no=s=>+s.name.slice(1), at=s=>s.at>0?s.at:Infinity;
+  return(rows||[]).slice().sort((a,b)=>pin(a)-pin(b)||(at(a)===at(b)?no(b)-no(a):at(b)>at(a)?1:-1));
+}
+/* F201: the sidebar's two lists of rows with the chats still starting (stand, the newest last) first under the pins.
+   was: {top, quiet}, the names as last drawn; held: the name of a row that must not move: the rows keep their places (one that got its name, was '@cid', too),
+   and what is new goes last in that row's list */
+function chatPlaces(g,stand,pins,was,held){
+  const pinned=g.top.filter(s=>(pins||[]).includes(s.name)), up=(stand||[]).slice().reverse();
+  const now={top:pinned.concat(up,g.top.filter(s=>!pinned.includes(s))),quiet:g.quiet};
+  if(!held||!was||!was.top.concat(was.quiet).includes(held))return now;
+  const all=now.top.concat(now.quiet), keep=l=>l.map(n=>all.find(s=>s.name===n||s.was===n)).filter(Boolean);
+  const fresh=all.filter(s=>![s.name,s.was].some(n=>n&&was.top.concat(was.quiet).includes(n))), low=was.quiet.includes(held);
+  return{top:keep(was.top).concat(low?[]:fresh),quiet:keep(was.quiet).concat(low?fresh:[])};
 }
 /* B119: the message box's slash command menu. SLASH_FALLBACK, the commands it offers when the run page cannot
    give the session's own list (/commands) */
