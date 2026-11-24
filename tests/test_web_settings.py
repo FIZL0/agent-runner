@@ -27,6 +27,7 @@ from agent_runner import config as CF  # noqa: E402
 from agent_runner import state as S  # noqa: E402
 from agent_runner import ui_model as U  # noqa: E402
 from agent_runner import web as W  # noqa: E402
+from test_web_sheet import DOM  # noqa: E402
 from _web import TODO, fake_repo, get, post, LOGIC_DRIVER, logic_js, in_tmp  # noqa: E402
 
 
@@ -379,6 +380,61 @@ def test_manage_releases_f193(tmp: Path) -> None:
     eq(draws[2], draws[0], 'turned back on, everything is as it was')
 
 
+CLEAR_DRIVER = DOM + r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const set = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const S = {f: {}, ob: [], setOpen: {}, set, snap: {}, view: 'settings'}, esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), I = {chev: '', x: 'x'};
+const card = t => `<div>${t}</div>`, emptyCard = card, obCards = () => '', controlOf = () => null, foldIn = (k, t) => t, SHEETS = {};
+const field = () => root.querySelectorAll('[data-f]').find(x => x.dataset.f === 'setq'), x = () => root.querySelectorAll('[data-setqclear]')[0];
+const ears = {}, n = null, body = root, document = {get activeElement() { return doc.activeElement }, querySelector: field, createElement: () => ({content: new Node(11, '#fragment'), set innerHTML(h) { this.content.innerHTML = h }}),
+  addEventListener: (k, f) => { (ears[k] = ears[k] || []).push(f) }};
+const kbFocus = e => e.focus(), $ = () => root; let press;
+eval(logic + slice('const settingId=', 'function saveSetting(') + slice('function setHTML(', '/* F83') + slice('function keepFields(', '/* a press under way')
+  + slice('function fieldHTML(', '/* F189b: a press in the sheet') + slice("document.addEventListener('input',", "document.addEventListener('paste'") + slice("/* F114, F204a", "document.addEventListener('visibilitychange'")
+  + "function render() { const keep = keepFields(body), h = settingsHTML(); " + slice('const drew=', '\n') + " if (drew) keep() }"
+  + "press = q => { " + slice("if(q('[data-setqclear]'))", '\n') + " };");
+const now = () => [!x().hasAttribute('hidden'), root.text.length], type = v => { field().typed = v; field().writes = 0; field().focused = 0; field().selectionStart = 1; field().matches = s => s === '[data-f]'; ears.input[0]({target: field()}) };
+const out = {}; render(); const f = field(); out.start = now(); f.focus();
+const fresh = () => { const t = new Node(11, '#fragment'); t.innerHTML = root._h; return root.childNodes.every((c, i) => c.isEqualNode(t.childNodes[i])) };
+const kept = () => [field() === f, f.isConnected, doc.activeElement === f, f.writes, f.focused, fresh()];
+type('r'); out.one = [now(), kept()]; type('releases'); out.more = [now(), kept()]; type('zzzz'); out.none = [now(), kept()]; type(''); out.empty = [now(), kept()];
+type('releases'); let stopped = 0; ears.pointerdown[0]({target: {closest: s => s.includes('[data-setqclear]')}, preventDefault: () => stopped++}); out.holds = stopped;
+out.label = [x().getAttribute('aria-label'), x().nodeName];
+press(s => s === '[data-setqclear]'); out.cleared = [now(), S.f.setq, f.value, field() === f, doc.activeElement === f, f.focused, fresh()];
+type('r'); doc.activeElement = null; press(s => s === '[data-setqclear]'); out.unfocused = [now(), S.f.setq, field().value, doc.activeElement === field()];
+console.log(JSON.stringify(out));
+"""
+
+
+def test_search_clear_f204a(tmp: Path) -> None:
+    """F204a: the x in the Settings search shows only with text and clears it; the field in use stays the same element."""
+    css = (W.PAGE).read_text(encoding='utf-8')
+    check('.setq .fld::-webkit-search-cancel-button{display:none}' in css and 'width:var(--tap);height:var(--tap)' in css.split('.setq .x{')[1].split('}')[0],
+          'the native x is hidden, and ours is the size of a finger')
+    if not shutil.which('node'):
+        return
+    repo = fake_repo(tmp)
+    (tmp / 'set.json').write_text(json.dumps(CF.settings_snapshot(repo)), encoding='utf-8')
+    (tmp / 'clear.js').write_text(CLEAR_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'clear.js'), str(W.PAGE), str(tmp / 'set.json')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node types in the search', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    same = [True, True, True, 0, 0, True]  # the same element, in the page, in focus, never written to or focused again; the list as drawn anew
+    shown, whole = o['start']
+    eq(shown, False, 'no x with no text')
+    for k in ('one', 'more', 'none'):
+        eq((o[k][0][0], o[k][1]), (True, same), f'typing ({k}): the x shows and the field stays')
+    check(o['more'][0][1] < whole and o['none'][0][1] < o['more'][0][1], 'the list is what matches')
+    eq(o['empty'], [[False, whole], same], 'deleting the words hides it')
+    eq((o['holds'], o['label']), (1, ['Clear search', 'button']), 'a press on it leaves the focus where it is')
+    eq(o['cleared'], [[False, whole], '', '', True, True, 0, True], 'it empties the search, shows the full list and keeps focus and field')
+    eq(o['unfocused'], [[False, whole], '', '', True], 'pressed with focus elsewhere, focus goes to the field')
+
+
 def test_settings_f97(tmp: Path) -> None:
     """F97: the Settings view: every key with its value, source and default; a device value saved and reset in place in
     runner.local.toml, its comments kept; a project value committed in runner.toml (F173); bad values refused."""
@@ -542,4 +598,4 @@ def test_settings_f97(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_settings_f97)]))
+    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97)]))
