@@ -5904,7 +5904,7 @@ def test_code_restart(tmp):
 
             def at(now, merging=False):
                 WA.watch_code(merging, now)
-                return len(execs), WA.RESTART_NEEDED[0]
+                return len(execs), bool(WA.RESTART_NEEDED[0])
             eq(at(1000), (0, False), 'the code it started on')
             land('docs', 'README.md')
             eq(at(2000), (0, False), 'a commit outside agent_runner changes nothing')
@@ -5916,17 +5916,21 @@ def test_code_restart(tmp):
             eq(at(4700), (0, False), 'not settled yet')
             eq(at(5200, True), (0, False), 'settled, but merging')
             (co / 'agent_runner' / 'watch.py').write_text('half', encoding='utf-8')
-            eq(at(5300), (0, False), 'edits under way in the checkout: wait')
+            eq(at(5260), (0, False), 'edits under way in the checkout: wait')
             git(co, 'checkout', '-q', '--', '.')
             git(co, 'checkout', '-q', '-b', 'side')
-            eq(at(5350), (0, False), 'not on main: wait')
+            eq(at(5320), (0, False), 'not on main: wait')
             git(co, 'checkout', '-q', 'main')
-            eq(at(5400), (1, False), 'one restart for both commits')
+            eq(at(5360, True), (0, False), 'merging again')
+            eq(at(5362), (1, False), 'the tick after the merge: one restart for both commits')
             has(said[-1], 'code changed on main; restarting', 'logged')
             execs.clear()
             WA.code_start(False)
             land('four')
             eq([at(9000), at(9700)], [(0, False), (0, True)], 'off: the page says a restart is needed; none happens')
+            git(co, 'checkout', '-q', 'side')
+            eq(at(9750), (0, True), 'the checkout leaves main: the restart is still needed')
+            git(co, 'checkout', '-q', 'main')
             land('three')
             eq(at(9800), (0, False), 'taken back on main: nothing to restart for')
             with mock.patch.object(WA, 'installed_version', lambda: '9999.0.0'):
@@ -5950,7 +5954,7 @@ def test_code_restart(tmp):
         R.log, WA.AUTO_UPGRADE[0] = real[0], real[1]
         WA.log = real[0]
         WA.CODE.update(real[2])
-        WA.RESTART_NEEDED[0] = WA.UPGRADED[0] = False
+        WA.RESTART_NEEDED[0], WA.UPGRADED[0] = '', False
         WA._upgrade_seen = None
 
 

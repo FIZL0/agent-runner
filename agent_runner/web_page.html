@@ -1146,7 +1146,7 @@ function projectButtons(p){
 function pageNews(s,mine,later){
   const l=[];
   if(mine&&s.page&&s.page!==mine)l.push({kind:'refresh',key:'page:'+s.page});
-  if(s.restart_needed)l.push({kind:'restart',key:'restart:'+(s.boot||'')});
+  if(s.restart_needed)l.push({kind:'restart',key:'restart:'+s.restart_needed});
   return l.find(x=>!later.includes(x.key))||null;
 }
 /* why Refresh waits: o says what a refresh would lose. '' : nothing */

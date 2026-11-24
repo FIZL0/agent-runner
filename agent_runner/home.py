@@ -38,6 +38,7 @@ AGENT_RUNNER_HOME_CONFIG) holds the projects added by hand, scanned ones hidden 
 from __future__ import annotations
 
 import concurrent.futures as cf
+import hashlib
 import hmac
 import http.client
 import json
@@ -663,9 +664,11 @@ class HomeServer(ThreadingHTTPServer):
         with self.open_lock:
             self.open -= 1
 
-    def restart_needed(self) -> bool:
-        """F149: the package's files changed and this Home does not restart on them by itself: its page says so."""
-        return self.stamp is None and package_stamp() not in (None, self.package)
+    def restart_needed(self) -> str:
+        """F149: the package's files changed and this Home does not restart on them by itself: which files
+        ('': none), so its page says so."""
+        now = None if self.stamp else package_stamp()
+        return '' if now in (None, self.package) else hashlib.sha256(repr(now).encode()).hexdigest()[:12]
 
     def restart_due(self) -> bool:
         """B165: the package's files are not the ones this server started on, and were the same on two looks, so a

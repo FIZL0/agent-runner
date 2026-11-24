@@ -650,7 +650,7 @@ def auto_upgrade(merging: bool) -> threading.Thread | None:
 
 _upgrade_seen: str | None = None
 UPGRADED = [False]  # F149: this run installed the version on disk itself (`u`, auto_upgrade): it restarts on it
-RESTART_NEEDED = [False]  # F149: newer code is on disk and only a person restarts the run on it; the page says so
+RESTART_NEEDED = ['']  # F149: which newer code only a person restarts the run on ('': none); the page says so
 RESTART = [False]  # F97: the `restart` key was sent: the next tick with no merge going restarts the run
 
 
@@ -693,7 +693,8 @@ def restart_if_upgraded() -> None:
 CODE_EVERY = 30  # s between looks at the checkout's main
 CODE_QUIET = 600  # s main's agent_runner code holds still before the run restarts on it: one restart per batch
 CODE_LONGEST = 3600  # s after the first change, the run restarts even while main still moves
-CODE = {'on': None, 'seen': None, 'first': 0.0, 'last': 0.0, 'looked': 0.0}  # trees started on and last seen; when
+CODE = {'on': None, 'seen': None, 'first': 0.0, 'last': 0.0, 'looked': 0.0,
+        'held': False, 'person': ''}  # trees started on and last seen; when; a restart held by a merge; the tree a person restarts for
 
 
 def code_tree(root: str | Path) -> str | None:
@@ -722,8 +723,8 @@ def code_on_main(root: str | Path) -> bool:
 def code_start(auto: bool) -> None:
     """F149: as the run starts: [run] auto_upgrade, and the code it runs."""
     AUTO_UPGRADE[0] = auto
-    CODE.update(on=code_tree(Path(__file__).resolve().parents[1]), seen=None, first=0.0, last=0.0, looked=0.0)
-    RESTART_NEEDED[0] = False
+    CODE.update(on=code_tree(Path(__file__).resolve().parents[1]), seen=None, first=0.0, last=0.0, looked=0.0, held=False, person='')
+    RESTART_NEEDED[0] = ''
 
 
 def code_settled(first: float, last: float, now: float) -> bool:
@@ -747,25 +748,28 @@ def watch_code(merging: bool, now: float | None = None) -> None:
     and between merges; else note for the run page that a person must (`RESTART_NEEDED`)."""
     from agent_runner import __version__
     now = time.time() if now is None else now
-    if now - CODE['looked'] < CODE_EVERY:
+    wait = CODE['held']  # settled, but a merge was under way: look again on every tick
+    if now - CODE['looked'] < CODE_EVERY and (merging or not wait):
         return
     CODE['looked'] = now
     root, installed = Path(__file__).resolve().parents[1], installed_version()
     tree = code_tree(root) if CODE['on'] else None
-    what = ''
-    if tree and code_on_main(root):
+    if tree and code_on_main(root):  # elsewhere, or edits under way: what was last seen still holds
         if tree == CODE['on']:
             CODE.update(seen=None, first=0.0)
         elif tree != CODE['seen']:
             CODE.update(seen=tree, first=CODE['first'] or now, last=now)
-        what = code_restart(code_settled(CODE['first'], CODE['last'], now), AUTO_UPGRADE[0], merging, __version__,
-                            installed, plat.WINDOWS)
-    if what == 'restart':
-        log(f"agent-runner's code changed on main; restarting on it, keeping {state_line()}")
-        return restart_run()
-    newer = bool(installed) and installed != __version__
-    RESTART_NEEDED[0] = not (UPGRADED[0] and not plat.WINDOWS) and (what == 'person' or newer and (
-        plat.WINDOWS or breaking(__version__, installed) or not AUTO_UPGRADE[0]))
+        settled = code_settled(CODE['first'], CODE['last'], now)
+        what = code_restart(settled, AUTO_UPGRADE[0], merging, __version__, installed, plat.WINDOWS)
+        CODE['held'] = settled and not what
+        if what == 'restart':
+            log(f"agent-runner's code changed on main; restarting on it, keeping {state_line()}")
+            return restart_run()
+        if what == 'person' or not CODE['first']:
+            CODE['person'] = tree if what else ''
+    newer = installed if installed and installed != __version__ and (
+        plat.WINDOWS or breaking(__version__, installed) or not AUTO_UPGRADE[0]) else ''
+    RESTART_NEEDED[0] = '' if UPGRADED[0] and not plat.WINDOWS else '-'.join(x for x in (newer, CODE['person']) if x)
 
 
 def ask_restart() -> None:

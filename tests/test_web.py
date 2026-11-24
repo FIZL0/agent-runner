@@ -883,10 +883,10 @@ out.oldRun = draw({version: '2'});
 out.newer = draw({page: 'bbb', version: '1'});
 newsLater('page:bbb'); out.later = draw({page: 'bbb'}); out.next = draw({page: 'ccc'});
 S.later = tabStore.get(LATER_KEY).split(' '); out.laterKept = draw({page: 'bbb'})[0];
-out.restart = draw({page: 'aaa', restart_needed: true, boot: 'b1'});
-S.sure = 'restart'; out.sure = draw({page: 'aaa', restart_needed: true, boot: 'b1'})[1]; S.sure = null;
-rc = null; out.noctl = draw({page: 'aaa', restart_needed: true, boot: 'b1'})[1];
-newsLater('restart:b1'); out.restartLater = [draw({page: 'aaa', restart_needed: true, boot: 'b1'})[0], draw({page: 'aaa', restart_needed: true, boot: 'b2'})[0]];
+out.restart = draw({page: 'aaa', restart_needed: 'k1'});
+S.sure = 'restart'; out.sure = draw({page: 'aaa', restart_needed: 'k1'})[1]; S.sure = null;
+rc = null; out.noctl = draw({page: 'aaa', restart_needed: 'k1'})[1];
+newsLater('restart:k1'); out.restartLater = [draw({page: 'aaa', restart_needed: 'k1'})[0], draw({page: 'aaa', restart_needed: 'k2'})[0]];
 PAGE_PRINT = '/' + '*PAGE_PRINT*/'; out.raw = draw({page: 'bbb'})[0]; PAGE_PRINT = 'aaa';
 out.noReload = reloads;
 // Refresh keeps what is written, or waits
@@ -914,9 +914,9 @@ def test_news_f149(tmp: Path) -> None:
     check(f"const PAGE_PRINT='{W.PAGE_PRINT}'" in page and f"const PAGE_PRINT='{W.PAGE_PRINT}'" in W.page_html(home=True).decode(),
           "the page holds its own fingerprint, Home's too")
     snap = W.with_extras({})
-    eq((snap['page'], snap['restart_needed']), (W.PAGE_PRINT, False), 'the snapshot names the page the run serves')
-    with mock.patch.object(W.watch, 'RESTART_NEEDED', [True]):
-        eq(W.with_extras({})['restart_needed'], True, 'and that a person must restart the run')
+    eq((snap['page'], snap['restart_needed']), (W.PAGE_PRINT, ''), 'the snapshot names the page the run serves')
+    with mock.patch.object(W.watch, 'RESTART_NEEDED', ['k']):
+        eq(W.with_extras({})['restart_needed'], 'k', 'and that a person must restart the run')
     eq(page.count('location.reload()'), 1, 'one reload in the page, the Refresh button')
     from agent_runner import home as H
     stamps = [('a', 1)]
@@ -926,9 +926,9 @@ def test_news_f149(tmp: Path) -> None:
         try:
             url = f'http://127.0.0.1:{srv.server_address[1]}/projects?t=HT'
             got = json.loads(get(url)[1])
-            eq((got['page'], got['restart_needed']), (W.PAGE_PRINT, False), 'Home answers its page too')
+            eq((got['page'], got['restart_needed']), (W.PAGE_PRINT, ''), 'Home answers its page too')
             stamps[0] = ('b', 2)
-            eq(json.loads(get(url)[1])['restart_needed'], True, 'a Home that cannot restart itself says so')
+            check(json.loads(get(url)[1])['restart_needed'], 'a Home that cannot restart itself says so')
             check(not own.restart_needed(), 'one that restarts by itself needs no person')
         finally:
             srv.stop()
@@ -949,7 +949,7 @@ def test_news_f149(tmp: Path) -> None:
     check('Restart the run to use it' in o['restart'][1] and 'data-ctl="restart"' in o['restart'][1], 'a restart is needed', o['restart'])
     eq(o['sure'].count('SURE'), 1, 'its button asks first')
     check('data-ctl' not in o['noctl'] and 'start it again' in o['noctl'], 'a run without the control: what to do', o['noctl'])
-    eq(o['restartLater'], [True, False], 'Later holds for this run of the code')
+    eq(o['restartLater'], [True, False], 'Later holds for that code; newer code shows')
     eq(o['noReload'], 0, 'nothing of that reloads the page')
     eq(o['kept'], [1, ''], 'Refresh with a draft and an outbox reloads')
     eq(o['back'], [{'set:project:x': '5', 'setq': 'cap'}, True, 'a dark mode', '/x', 'c2', {'a': 1},
