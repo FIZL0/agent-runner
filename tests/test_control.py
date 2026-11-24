@@ -1446,7 +1446,7 @@ def test_decide_options_f181d():
 
 def test_wrong_agent_b764c():
     print('B764c: while [run] agent is wrong a new control session is refused with the reason, and none is reopened')
-    from agent_runner import cmds, config as CF, control_held as H, control_reopen as CR, feed, runner as R, web as W
+    from agent_runner import cmds, config as CF, control_held as H, control_reopen as CR, feed, runner as R, session_now as SN, web as W
     d = Path(tempfile.mkdtemp(prefix='agent-runner-agent-'))
     git(d, 'init', '-q')
     (d / 'my-claude').write_text('#!/bin/sh\n', encoding='utf-8')
@@ -1472,6 +1472,10 @@ def test_wrong_agent_b764c():
             code, said = ask(fn)
             check(code == 1 and "[run] agent = 'nosuchagent' is not on this machine: install it" in said, f'{name} is refused, with why', said)
         check('install it' in W.resume_chat('c3')['out'], 'so is Resume on an ended chat')
+        with mock.patch.object(SN, 'record', lambda c: {'status': 'idle', 'sessionId': 'sid', 'pid': 1}), \
+                mock.patch.object(K, 'transcript', lambda s: '/x'), mock.patch.object(SN.plat, 'terminate') as end:
+            got = SN.restart_chat('c3')
+        check('install it' in got['out'] and not got['ok'] and not end.called, 'Restart too, and the chat goes on', got)
         eq(CR.reopen_control(3, 'sid'), '', 'nothing reopens one')
         stayed = []
         with mock.patch.object(H, 'stays', lambda rec, why='', stuck='': stayed.append(why)), \
