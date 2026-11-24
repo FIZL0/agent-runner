@@ -4334,6 +4334,30 @@ def test_needs_drop_chat_f110(tmp: Path) -> None:
     check('R1' in ask and 'Does it work?' in ask and '- Yes' in ask and '- No' in ask, 'the question and its answers show at once', ask)
 
 
+SURE_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1);
+const S = {snap: {controls: JSON.parse(process.argv[3])}, sure: 'need_drop:R1'}, cutsOff = () => '';
+eval(line('const esc=') + line('const controlOf=') + line('const sureHTML=') + line('const ctlSure=') + line('const actSure=')
+  + `console.log(JSON.stringify([actSure(['need_drop'], 'R1'), actSure(['need_drop'], 'R2')]))`);
+"""
+
+
+def test_drop_confirm_id_b191(tmp: Path) -> None:
+    """B191: the Drop confirm on a Needs you item names that item, and only that item asks."""
+    if not shutil.which('node'):
+        print('  (no node here: the Drop confirm test is skipped)')
+        return
+    drop = [{k: c[k] for k in ('key', 'label', 'confirm')} for c in U.RUN_CONTROLS if c['key'] == 'need_drop']
+    (tmp / 'driver.js').write_text(SURE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps(drop)],
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
+    asked_, other = json.loads(r.stdout or '["", ""]')
+    check('Drop R1? It leaves the plan' in asked_ and '{id}' not in asked_, "the confirm has the row's id", asked_)
+    eq(other, '', 'another item asks nothing')
+
+
 def test_task_text_f85(tmp: Path) -> None:
     """F85: a queue row folds open to the task's whole text (plan ID)."""
     fake_repo(tmp)
@@ -5395,5 +5419,5 @@ if __name__ == '__main__':
                            in_tmp(test_outbox_f137), in_tmp(test_once_b161), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
-                           in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
+                           in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_task_text_f85),
                            in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_motion_f147), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190)]))
