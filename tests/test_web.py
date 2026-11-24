@@ -4388,6 +4388,48 @@ console.log(JSON.stringify({bad, top, end: {slim: FD.slim, off: FD.off, hist, fr
     eq(out.get('end'), {'slim': False, 'off': 0, 'hist': 0, 'frame': 0}, 'back at the end all is at rest')
 
 
+def test_phone_screen_b194(tmp: Path) -> None:
+    """B194: a narrow window: the rule over the prompt is mostly the session's name, and the pill is drawn over the
+    middle of a line. Neither makes the page show the agent CLI's own input, and words in an answer are not them."""
+    if not shutil.which('node'):
+        print('  (no node here: the phone screen test is skipped)')
+        return
+    shot = ['● Built, landed and live: F149 (the run page', '  keeps it Jump to bottom (ctrl+End) ↓ :09.', '',
+            '─────── agent-runner · F149 · page auto-update ─', '❯', '─' * 48, '  [PONYTAIL]', '  ⏵⏵ bypass permissions on · ← 2 agents']
+    rule = lambda l, w=48: [*shot[:3], l, '❯ ', '─' * w, *shot[6:]]
+    over = lambda label, w=48: ('x' * w)[:(w - len(label) - 2) // 2] + f' {label} ' + 'tail of line'
+    pill = lambda l, w=48: ['● ok', l, '', '─' * w, '❯ ', '─' * w, '  ⏵⏵ auto mode on']
+    labels = ['Jump to bottom (ctrl+End) ↓', '1 new message (ctrl+End) ↓', '12 new messages (ctrl+End) ↓', 'Waiting for your answer (ctrl+End) ↓',
+              'Jump to bottom ↓', 'Jump to bottom (click) ↓', 'Jump to bottom · fn+↓ to scroll']
+    # what Claude Code 2.1.331 draws at 48 and 34 columns
+    names = [(' agent-runner · F149 · page auto-update and m… ─', 48), (' agent-runner · F149 · page aut… ─', 34),
+             ('────── agent-runner · F149 · page auto-updates ─', 48), ('── agent-runner · F149 · page auto-update soon ─', 48),
+             (' 日本語の長い名前の会話がここにあります日本語… ─', 48), ('─' * 43 + ' c3 ─', 48), (' 日本語の長い名前の会話がここに… ─', 34)]
+    table = ['● x', ' Name │ Value', '───────┼──────── long words in the table here ─', '  a │ b', '', '─' * 48, '  more']
+    md = ['● x', '', '─' * 48, '', '  words of an answer', ' a line that ends with a dash ─', '  more words', '─' * 48, '  more']
+    short = [*shot[:3], ' not as wide as the window ─', '❯ ', '─' * 48]
+    typed = [*shot[:4], '❯ own words', '  second ─', '─' * 48, *shot[6:]]
+    jumps = [over(x) for x in labels]
+    no = ['  the Jump to bottom (ctrl+End) ↓ pill is there', '  Jump to bottom (ctrl+End) ↓ goes to the end', '  a Jump to bottom pill in the middle, no more',
+          '           Jump to bottom (ctrl+End) is words']
+    got = logic_js([['feedFoot', x, None] for x in [shot, *(rule(*n) for n in names), table, md, short, typed,
+                                                    *(pill(x) for x in jumps), *(pill(x) for x in no),
+                                                    pill('  日本語 Jump to bottom (ctrl+End) ↓ 語'.replace('語 J', '語x J')),
+                                                    [*pill('')[:2], over(labels[2]), *pill('')[3:]]]])
+    eq([got[0][k] for k in ('top', 'end', 'text', 'mode', 'agents', 'jump')], [3, 5, '', 'bypassPermissions', 2, True], "the screenshot's own lines")
+    i = 1 + len(names)
+    eq([(f or {}).get('top') for f in got[1:i]], [3] * len(names), 'a longer name, a cut one, a wide one, a short one')
+    eq(got[i:i + 3], [None, None, None], 'a table, a markdown rule or a narrower line is not the prompt')
+    eq((got[i + 3]['top'], got[i + 3]['text']), (3, 'own words\n  second ─'), 'unsent words that end in a dash are words')
+    i += 4
+    eq([f['jump'] for f in got[i:i + len(jumps)]], [True] * len(jumps), 'the pill over the middle of a line, in each wording')
+    i += len(jumps)
+    eq([f['jump'] for f in got[i:i + len(no)]], [False] * len(no), 'words that only mention it')
+    i += len(no)
+    eq(got[i]['jump'], True, 'over a line of wide letters')
+    eq((got[i + 1]['jump'], got[i + 1]['top']), (True, 3), "right over the rule it is the pill, not Claude Code's note")
+
+
 def test_frame_typing_b190(tmp: Path) -> None:
     """B190: with the keyboard in the session's frame, what is typed or pasted goes to the message box while the agent
     CLI's input is hidden, Shift+Enter a new line there; with words in its prompt Shift+Enter is a new line in it; a
@@ -4476,4 +4518,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_frame_typing_b190)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190)]))

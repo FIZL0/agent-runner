@@ -515,24 +515,33 @@ function feedWords(lines){return lines.map(l=>l.replace(/\s+$/,'')).join('\n').r
    line; rate: a 1: 2: 3: survey stands above it, answered by a digit; work: does it work; jump: is it scrolled up} */
 const FEED_MODES=[['default','Ask first','manual mode|default mode'],['acceptEdits','Accept edits','accept edits'],['plan','Plan','plan mode'],['auto','Auto','auto mode'],['bypassPermissions','Bypass permissions','bypass permissions']];
 const feedRule=l=>/^[─━]{6}/.test(l)&&(l.match(/[─━]/g)||[]).length>=l.length/2;
+// cells of a line's words: 2 for a wide letter or an emoji, 0 for a mark on the letter before it
+const feedCells=l=>[...l].reduce((n,c)=>n+(/[\p{M}\u200d]/u.test(c)?0:/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]|\p{Emoji_Presentation}/u.test(c)?2:1),0);
+// B194: the rule over the prompt with a session name on it: on a narrow window mostly the name, cut with no dashes before
+// it when it is long (' agent-runner · F149 · pa… ─'); as wide as the rule under the prompt (cols), its > on the next line
+const feedNamed=(l,next,cols)=>/^[─━]* \S.* [─━]+$/.test(l)&&Math.abs(feedCells(l)-cols)<=1&&/^[❯!>](\s|$)/.test(next||'');
 // B192: the pill the agent CLI puts at the end of its last line while scrolled up, in each wording it has
+const FEED_PILL=/ (?:Jump to bottom|\d+ new messages?|Waiting for your answer)(?: \([^)]*\))?(?: ↓| · \S+ to scroll)(?: |$)/g;
 const FEED_JUMP=/(Jump to bottom|\d+ new messages?|Waiting for your answer)( \(.*\))?( ↓| · .* to scroll)\s*$/;
+// B194: it is drawn over the middle of that line, whose words may go on after it: known by its place, the middle of cols
+const feedJump=(l,cols)=>FEED_JUMP.test(l)||[...l.matchAll(FEED_PILL)].some(m=>Math.abs(feedCells(l.slice(0,m.index))-(cols-feedCells(m[0].trim())-2)/2)<1);
 function feedFoot(lines,dim){
   let end=-1,at=-1;
   for(let y=lines.length-1;y>1&&end<0;y--){
     if(!feedRule(lines[y]))continue;
-    let t=y-1;while(t>=0&&t>y-14&&!feedRule(lines[t]))t--;
-    if(t>=0&&y-t>1&&feedRule(lines[t])&&/^[❯!>](\s|$)/.test(lines[t+1])){end=y;at=t}else return null;
+    const cols=feedCells(lines[y]), rule=t=>feedRule(lines[t])||t<y-1&&feedNamed(lines[t],lines[t+1],cols);
+    let t=y-1;while(t>=0&&t>y-14&&!rule(t))t--;
+    if(t>=0&&y-t>1&&rule(t)&&/^[❯!>](\s|$)/.test(lines[t+1])){end=y;at=t}else return null;
   }
   if(end<0)return null;
   const below=lines.slice(end+1);
   if(below.some(l=>/(Esc|Enter) to (cancel|close|confirm|exit|go back)/i.test(l)))return null;
-  const bash=lines[at+1][0]==='!';
+  const bash=lines[at+1][0]==='!', cols=feedCells(lines[end]);
   const own=lines.slice(at+1,end).map((l,i)=>i?l:l.slice(1)).join('\n').trim();
   const hint=/^\s*$/.test(own)||!!(dim&&dim(at+1,lines[at+1].slice(1).search(/[^\s ]/)+1));
   let top=at;
   const note=lines[at-1]||'';
-  if(/^\s+Update available/.test(note)||/^\s{12,}\S/.test(note)&&!/Jump to bottom/.test(note)&&/ · |Update available|\/effort|ctrl\+/.test(note))top=at-1;
+  if(/^\s+Update available/.test(note)||/^\s{12,}\S/.test(note)&&!/Jump to bottom/.test(note)&&!feedJump(note,cols)&&/ · |Update available|\/effort|ctrl\+/.test(note))top=at-1;
   const foot=(top<at?[note]:[]).concat(below), all=foot.join('\n'), num=re=>{const m=re.exec(all);return m?+m[1]:0};
   const m=/Update available(?: · run |! Run: | · Run: )(.+?)\s*$/m.exec(all);
   const mode=FEED_MODES.find(x=>new RegExp('[⏵⏸][^\\n]*\\b(?:'+x[2]+')','i').test(all)||new RegExp('^\\s*(?:'+x[2]+') on','im').test(all));
@@ -540,7 +549,7 @@ function feedFoot(lines,dim){
   const near=lines.slice(Math.max(0,top-5),top);
   return{top,end,bash,text:hint?'':own,mode:mode?mode[0]:'',shells:num(/(\d+) shells?\b/),tasks:num(/(\d+) background tasks?\b/),agents:num(/← (\d+) agents?\b/),
     update:m?m[1].replace(/^`|`$/g,''):/Update available/.test(all)?'…':'',status:below.slice(0,modeAt<0?below.length:modeAt).map(l=>l.trim()).filter(l=>l&&!/Update available/.test(l)),
-    rate:lines.slice(Math.max(0,top-8),top).some(l=>/\b1: \S.*\s2: \S/.test(l)),work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.some(l=>FEED_JUMP.test(l))};
+    rate:lines.slice(Math.max(0,top-8),top).some(l=>/\b1: \S.*\s2: \S/.test(l)),work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.some(l=>feedJump(l,cols))};
 }
 /* where the session's frame goes. o: main its room, bar and dock what stands over it, row the slim message box's, high the
    frame's own height, pad its terminal's, cell a line, rows, foot (feedFoot's; null: show all), short (its words end at
