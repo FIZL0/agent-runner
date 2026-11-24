@@ -3613,6 +3613,7 @@ const dockEl = {style: {}, animate: anim('dock'), getBoundingClientRect: () => (
 const document = {activeElement: null, documentElement: {clientHeight: 800}, addEventListener: (t, f) => docOn[t] = f, querySelector: s => s === '.dockwrap' ? dockEl : null};
 const S = {view: 'talk', thread: null, pin: true, sheet: ''};
 const seeRoom = () => {}, seeBar = () => {};
+const feedTop = () => null, feedGlide = () => {}, TOUCH = () => false;
 eval(line('const atEnd=') + line('const chatShown=') + line('function toEnd(') + page.slice(page.indexOf('const VV='), page.indexOf('function grow(')) + `
 const b = $('body'), out = {}, left = () => b.scrollHeight - b.scrollTop - b.clientHeight;
 const app = () => [$('app').style.height || '', $('app').style.top || '', $('app').classList.contains('kb')];
@@ -3710,6 +3711,90 @@ def test_keyboard_b160(tmp: Path) -> None:
     eq(got.get('scripted'), 'blur', 'a box focused by a script has no keyboard: the tap focuses it anew')
     eq(got.get('notice'), [336, 300, 300], "a notice's row moves no text; a chat just opened keeps its place")
     eq((got.get('notTap'), got.get('again')), ([[False, []]] * 3, [False, []]), 'a scroll, a long press, a swipe and a box in focus are left to the browser')
+
+
+# B214: the keyboard over a session: the page's own kbFit() and feedPlace(), over a stubbed layout
+KB_FEED_DRIVER = r"""
+const fs = require('fs'), page = fs.readFileSync(process.argv[2], 'utf8');
+const slice = (a, b) => { const i = page.indexOf(a); if (i < 0) throw Error(a); return page.slice(i, page.indexOf(b, i)) };
+const line = s => slice(s, '\n') + '\n';
+const on = {}, VVS = {height: 800, offsetTop: 0, scale: 1, addEventListener: (t, f) => on[t] = f};
+const CSS = {supports: () => true}, window = {CSS, visualViewport: VVS, scrollY: 0, scrollTo() {}};
+let clock = 5000, hidden = false, reduced = false, touch = true, glides = [], doc = 800, wide = 390, boxH = 27, extra = 0, after = [];
+Date.now = () => clock;
+const setTimeout = f => after.push(f), clearTimeout = () => {}, requestAnimationFrame = () => {};
+const matchMedia = () => ({matches: reduced});
+const getComputedStyle = el => el === ta ? {minHeight: '26px', lineHeight: '23.2px', paddingTop: '2px', paddingBottom: '2px'}
+  : {getPropertyValue: k => k === '--sab' ? '34px' : k === '--ease' ? ' ease-out' : '250ms'};
+const cls = () => ({toggle() {}, contains: () => false});
+let kbNow = () => 0;
+const kbOn = () => kbNow() > 0, mainH = () => kbNow() || doc - 34;
+const anim = who => (kf, o) => { const a = {who, by: parseFloat((kf[0].translate || kf[0].transform.replace('0px,', '')).match(/(-?[\d.]+)px/)[1]), o: [o.duration, o.easing], cancel() {}}; glides.push(a); return a };
+const ta = {get offsetHeight() { return boxH }, matches: () => true};
+const main = {get clientHeight() { return mainH() }, get clientWidth() { return wide }, style: {setProperty() {}}};
+const dockEl = {get offsetHeight() { return 142 + boxH + extra - (kbOn() ? 6 : 0) }, style: {}, animate: anim('dock'), getBoundingClientRect: () => ({top: main.clientHeight - dockEl.offsetHeight})};
+const ff = {style: {}, animate: anim('frame'), getBoundingClientRect: () => ({top: parseFloat((ff.style.transform || '(0').split('(')[1]) + parseFloat((ff.style.translate || '0 0').split(' ')[1])})};
+const els = {app: {style: {}, classList: cls()}, body: {style: {}, scrollTop: 0}, feedframe: ff, feed: {style: {}}, top: {offsetHeight: 52}};
+const $ = k => els[k], docOn = {};
+const document = {get hidden() { return hidden }, activeElement: null, documentElement: {get clientHeight() { return doc }}, addEventListener: (t, f) => (docOn[t] = docOn[t] || []).push(f),
+  querySelector: s => s === '.main' ? main : s === '.dockwrap' ? dockEl : s === '.notices' ? {offsetHeight: 0} : s === '#dock [data-in]' ? ta : null};
+const S = {view: 'talk', thread: 'c6', pin: true, sheet: ''}, TOUCH = () => touch, seeRoom = () => {}, seeBar = () => {}, toEnd = () => {};
+const MO = {fly: new Map()}, shiftOf = () => ({m42: 0}), FD = {frame: {}, shown: true, foot: {top: 40}, whole: false, off: 0, jump: false, held: '', t: 0, above: 0, last: 0, full: 0, wide: 0, doc: 0, short: 0}, CELL = 17;
+const feedScreen = () => ({cell: CELL, el: {getBoundingClientRect: () => ({top: 12})}, t: {buffer: {active: {type: 'alternate'}}}});
+eval(line('const SLIM_H=') + line('const KB_PAD=') + line('const FOOT_ROWS=') + slice('function feedSpot(', '/* B192') + slice('function moAnim(', 'const shiftOf=') + slice('function growGlide(', '/* B119') + line('const calm=') + line('const chatShown=')
+  + slice('function feedRoom(', '/* the bars and the box away') + slice('const VV=', 'function grow(') + `
+kbNow = () => kbH;
+// the frame's height, and from its last line to the box
+const at = () => { feedPlace(); return [parseInt(ff.style.height), Math.round(dockEl.getBoundingClientRect().top - (parseFloat(ff.style.transform.split('(')[1]) + 12 + (FD.whole ? FD.last : FD.short || FD.foot.top) * CELL))] };
+const kb = h => { document.activeElement = h ? ta : null; VVS.height = h || doc; glides = []; on.resize(); clock += 2000; glides.forEach(g => stay || g.onfinish && g.onfinish()); return [at(), glides.map(g => [g.who, g.by, ...g.o])] };
+const out = {};
+let stay = false;
+const trip = k => out[k] = [at(), kb(420), (boxH = 73, at()), (boxH = 27, at()), kb(380)[0], kb(0)];
+trip('rest'); FD.short = 6; trip('short'); FD.short = 0;
+FD.whole = true; FD.last = 31; trip('whole'); FD.last = 9; trip('asked'); FD.whole = false;
+at(); FD.jump = true; FD.t += 80; FD.off = 80; trip('up'); out.kept = FD.off; const t0 = FD.t; extra = 40; at(); out.chip = FD.t - t0; extra = 0; at(); FD.jump = false; FD.off = 0; at();
+const dk = {children: [], animate: anim('box')}, tb = {closest: k => k === '.dock' ? dk : {animate() {}}};
+glides = []; feedPlace(); boxH = 73; growGlide(tb, 46); out.grown = glides.map(g => [g.who, g.by, ...g.o]);
+reduced = true; glides = []; boxH = 27; growGlide(tb, -46); out.grownCalm = glides.length; reduced = false; at();
+stay = true; kb(420); out.room = els.feed.style.bottom; stay = false; kb(0); out.roomAfter = els.feed.style.bottom;
+// half way: from where it is on screen
+stay = true; kb(420); stay = false; ff.style.translate = '0 100px'; dockEl.getBoundingClientRect = () => ({top: 0}); kb(0); out.mid = glides.filter(g => g.who === 'frame').map(g => g.by);
+dockEl.getBoundingClientRect = () => ({top: main.clientHeight - dockEl.offsetHeight}); ff.style.translate = '';
+reduced = true; out.calm = kb(420)[1]; kb(0); reduced = false; hidden = true; out.hid = kb(420)[1]; kb(0); hidden = false;
+// rotation, the keyboard open; then closed
+kb(420); doc = 390; wide = 844; out.turned = kb(200)[0][0]; out.turnedBack = kb(0)[0][0]; doc = 900; wide = 1200; out.window = at()[0]; doc = 800; wide = 390; at();
+// a browser that shrinks the page itself, and a blur before it is back
+document.activeElement = ta; docOn.focusin.forEach(f => f({target: ta})); clock += 2000; doc = VVS.height = 450; on.resize(); out.shrunk = at();
+document.activeElement = null; docOn.focusout.forEach(f => f({target: ta})); out.left = at()[0]; clock += 2000; after.forEach(f => f()); out.real = at()[0];
+touch = false; document.activeElement = ta; doc = VVS.height = 300; out.desk = at()[0];
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_keyboard_feed_b214(tmp: Path) -> None:
+    """B214: the keyboard over a session never resizes it: its frame goes with the message box, its last line on the box,
+    and a rotation or a real window change still resizes."""
+    if not shutil.which('node'):
+        print('  (no node here: the session keyboard script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(KB_FEED_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs kbFit() over a session', r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    for k, high, gap in (('rest', 812, 0), ('short', 812, 0), ('whole', 545, 0), ('asked', 545, 0), ('up', 812, -80)):
+        here, opened, grown, back, taller, closed = got.get(k) or [None] * 6
+        eq([here, grown, back, taller], [[high, gap]] * 4, f'{k}: one size, the last line as far from the box, keyboard open, box grown')
+        eq((opened, closed), ([[high, gap], [['dock', 340, 250, 'ease-out'], ['frame', 340, 250, 'ease-out']]],
+                              [[high, gap], [['dock', -380, 250, 'ease-out'], ['frame', -380, 250, 'ease-out']]]), f'{k}: the frame goes with the box')
+    eq((got.get('grown'), got.get('grownCalm')), ([['frame', 46, 250, 'ease-out'], ['box', 46, 250, 'ease-out']], 0), 'a box that grew: the frame goes with it; none when calm')
+    eq(got.get('kept'), 80, 'scrolled up, as far past its rest as before')
+    eq(got.get('chip'), 0, 'scrolled up, a chip row that comes moves nothing')
+    eq((got.get('room'), got.get('roomAfter')), ('-340px', ''), 'its lines are drawn below the view while they come up')
+    eq(got.get('mid'), [-240], 'half way, it goes on from where it is on screen')
+    eq((got.get('calm'), got.get('hid')), ([], []), 'calm: no glide')
+    eq((got.get('turned'), got.get('turnedBack'), got.get('window')), (402, 402, 912), 'a rotation and a window change resize it')
+    eq((got.get('shrunk'), got.get('left'), got.get('real')), ([812, 0], 812, 462), 'a browser that shrinks the page: the same, until it is no keyboard')
+    eq(got.get('desk'), 312, 'on a desktop a short window is a short window')
 
 
 # B162: the mic's recognizers, as iOS ends them: a stop ends one only when the test says so (end), timers run on tick()
@@ -5443,8 +5528,8 @@ def test_session_controls_f170(tmp: Path) -> None:
     eq(got[8], {'t': -152, 'off': 0, 'far': 152, 'cut': 128}, 'at rest the words end on the box')
     eq(got[9]['t'], 0, 'scrolled down all the way, they end on the slim message box')
     eq(got[10], {'t': -232, 'off': 0, 'far': 232, 'cut': 128}, 'a box that grows moves the frame: its size stays')
-    eq((got[11]['t'], got[11]['far']), (60, 0), 'a short chat starts under the bar, with nothing to pull')
-    eq((got[12], got[13]), ({'t': -280, 'off': 0, 'far': 0, 'cut': 0}, {'t': 0, 'off': 0, 'far': 0, 'cut': 0}), 'nothing is cut while all shows')
+    eq((got[11]['t'], got[11]['far']), (508, 0), 'B214: a short chat ends on the box too, with nothing to pull')
+    eq((got[12], got[13]), ({'t': -280, 'off': 0, 'far': 0, 'cut': 0}, {'t': -280, 'off': 0, 'far': 0, 'cut': 0}), 'nothing is cut while all shows')
     eq([c['label'] for c in got[14]], ['Working', 'Plan', '1 shell'], 'only what runs')
     eq([c['label'] for c in got[15]], ['Bypass', '2 agents', 'Update'], 'what the screen says')
     eq(([c['label'] for c in got[16]], got[17], got[18]), (['Session'], '1m 12s', '1h 2m'), 'nothing known; a clock')
@@ -5659,6 +5744,6 @@ if __name__ == '__main__':
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_once_b161), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150),
-                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
+                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_row_buttons_f187), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_task_text_f85),
                            in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_motion_f147), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190)]))

@@ -58,7 +58,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible{outline:2px solid 
 a{color:var(--accent)}
 
 .edge{position:fixed;left:0;right:0;height:8px;background:var(--page);z-index:3;pointer-events:none} .edge-top{top:0} .edge-bottom{bottom:0}
-.app{position:relative;container-type:inline-size;height:100vh;height:100dvh;display:flex;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.app{--sab:env(safe-area-inset-bottom,0px);position:relative;container-type:inline-size;height:100vh;height:100dvh;display:flex;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 /* B160: the keyboard is open: kbFit() sets .app's top and height from visualViewport, and nothing pans the page */
 .app.kb{position:fixed;left:0;right:0;container-type:size;padding-bottom:0}
 .app.kb .dock{padding-bottom:8px} .app.kb .sheet{padding-bottom:12px;box-shadow:0 100px 0 var(--surface)} .app.kb .slash{max-height:min(320px,50cqh)}
@@ -616,14 +616,14 @@ function feedFoot(lines,dim,lit){
 }
 /* where the session's frame goes. o: main its room, bar and dock what stands over it, row the slim message box's, high the
    frame's own height, pad its terminal's, cell a line, rows, foot (feedFoot's; null: show all), short (its words end at
-   this row, with nothing above to scroll to; 0 when it is full), whole, off how far the reader has scrolled it down, hold:
+   this row, with nothing above to scroll to; 0 when it is full), whole, last (whole: the last row with words), off how far the reader has scrolled it down, hold:
    the shift to keep (scrolled up: what stands over it may change, its lines stay). t: its shift; off: that, past its rest;
    far: how far it can go; cut: how much of its bottom is hidden */
 const FOOT_ROWS=6;  // rows past the edge for the lines at the bottom, so more or fewer of them never resize the session
 function feedSpot(o){
-  if(o.whole||!o.foot)return{t:o.whole?0:o.main-o.dock-o.high,off:0,far:0,cut:0};
+  if(o.whole||!o.foot)return{t:o.main-o.dock-(o.whole&&o.last?Math.min(o.high,o.pad+o.last*o.cell):o.high),off:0,far:0,cut:0};
   const end=o.pad+o.foot.top*o.cell, words=o.short?o.pad+o.short*o.cell:end;
-  const rest=Math.min(o.bar,o.main-o.dock-words), low=o.short?rest:Math.max(rest,Math.min(o.bar,o.main-o.row-end));
+  const rest=o.main-o.dock-words, low=o.short?rest:Math.max(rest,Math.min(o.bar,o.main-o.row-end));
   const t=o.hold!=null?Math.min(o.hold,low):rest+Math.min(Math.max(o.off||0,0),low-rest);
   return{t,off:Math.max(0,t-rest),far:low-rest,cut:Math.max(0,o.high-end)};
 }
@@ -2429,7 +2429,8 @@ layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r
    transform, never by a resize: the bars come and go, the box grows, and the session's size stays. B192: the bars going or
    coming never moves it; only a scroll does (feedScroll), and the session's own going to its end. Whole (a menu, a
    question, unsent words, a look feedFoot does not know): it fits its room exactly, all of it shown. */
-Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',run:0,rest:0,slim:false,jump:false,typed:0,live:null,liveAt:0,raf:0,task:''});
+Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',above:0,last:0,run:0,rest:0,slim:false,jump:false,typed:0,full:0,wide:0,doc:0,live:null,liveAt:0,raf:0,task:''});
+const KB_PAD=6;  // .dock's bottom padding: 14px, and 8px in .app.kb
 const SLIM_H=56, FOOT_WAIT=400, TEXT_WAIT=1200, LIVE_EVERY=2000;
 const pageDark=()=>{const t=document.documentElement.dataset.theme;return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches};
 function feedLook(){return pageDark()?'dark':'light'}
@@ -2438,11 +2439,11 @@ matchMedia('(prefers-color-scheme:dark)').addEventListener('change',lookAgain);
 if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 /* does the session of a chat or slot work? The agent CLI's own status; until it is read, or with none, the feed's */
 const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
-function feedGone(){clearTimeout(FD.wait);Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',run:0,rest:0,slim:false,jump:false,live:null,liveAt:0});feedClass()}
+function feedGone(){clearTimeout(FD.wait);Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,live:null,liveAt:0});feedClass()}
 function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');if(!m||!row)return;
   m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);row.hidden=!FD.shown;
   const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;
-  if(!FD.shown){const f=$('feedframe').style;f.cssText=''}}
+  if(!FD.shown){const a=feedFly;feedFly=null;if(a)a.cancel();$('feed').style.bottom='';$('feedframe').style.cssText=''}}
 function feedShown(on){if(FD.shown!==on){FD.shown=on;if(!on){FD.slim=false;FD.off=0}}feedClass();if(on)requestAnimationFrame(feedPlace)}
 /* its socket is open: its screen is read at each draw */
 function feedUp(){
@@ -2458,6 +2459,7 @@ function feedSee(){
   const dim=(y,x)=>{const l=b.getLine(b.baseY+y), c=l&&l.getCell(x);return!!(c&&c.isDim())};
   const lit=(y,x)=>{const l=b.getLine(b.baseY+y), c=l&&l.getCell(x);return!!(c&&!c.isBgDefault())};
   if(!lines.some(l=>l))return;  // not drawn yet
+  FD.last=b.viewportY<b.baseY?t.rows:lines.findLastIndex(l=>l.trim())+1;
   const foot=feedFoot(lines,dim,lit), was=FD.foot;
   FD.foot=foot;
   let blank=0;if(foot)while(blank<foot.top&&!lines[foot.top-1-blank].trim())blank++;
@@ -2476,6 +2478,43 @@ function feedSee(){
   if(key(was)!==key(foot)){if(!was||!foot||was.work!==foot.work||was.shells!==foot.shells)liveLoad();render()}
 }
 function feedWhole(on){FD.whole=on;if(on){FD.slim=false;FD.off=0}feedClass();feedPlace();render()}
+/* B214: the view's height with the keyboard closed: the session's size comes from it, so a keyboard never resizes it.
+   A width that changed (rotation) counts again, with the keyboard open too; the bottom inset is off .app then */
+function feedRoom(main){
+  const w=main.clientWidth, h=main.clientHeight, doc=document.documentElement.clientHeight;
+  const kept=kbH?Math.abs(doc-FD.doc)<100:Date.now()<kbStill||TOUCH()&&typingIn(document.activeElement)&&h<FD.full-100;  // the last: a browser that shrinks the page itself
+  if(FD.full&&FD.wide===w&&kept)return FD.full;
+  FD.wide=w;FD.doc=doc;
+  return FD.full=kbH?h+doc-kbH-(parseFloat(getComputedStyle($('app')).getPropertyValue('--sab'))||0):h;
+}
+/* the dock's height with the keyboard closed and one line in the box */
+function dockRest(dock){
+  const ta=document.querySelector('#dock [data-in]');let more=0;
+  if(ta){const c=getComputedStyle(ta), px=k=>parseFloat(c[k])||0;more=Math.max(0,Math.round(ta.offsetHeight-Math.max(px('minHeight'),px('lineHeight')+px('paddingTop')+px('paddingBottom'))))}
+  return dock-more+(kbH?KB_PAD:0);
+}
+/* B214: the frame goes to its new place with the box, from `was`, its top on screen until now (feedTop). translate, so
+   a draw half way may still set its transform */
+let feedFly=null;
+const feedTop=()=>FD.shown&&FD.frame?$('feedframe').getBoundingClientRect().top:null;
+function feedGlide(was){
+  if(was==null)return;
+  const el=$('feedframe');if(feedFly){const a=feedFly;feedFly=null;a.cancel();el.style.translate='';$('feed').style.bottom=''}
+  feedPlace();
+  const d=was-el.getBoundingClientRect().top;if(Math.abs(d)<1||!el.animate||calm())return;
+  const css=getComputedStyle(document.documentElement), at=`0 ${d}px`, room=$('feed').style;
+  const a=feedFly=el.animate([{translate:at},{translate:'0 0'}],{duration:parseFloat(css.getPropertyValue('--dur-slow')),easing:css.getPropertyValue('--ease').trim()});
+  el.style.translate=at;room.bottom=d>0?-d+'px':'';  // it starts below its new room, so that is not cut off yet
+  const still=()=>{if(feedFly===a)el.style.translate=''};
+  requestAnimationFrame(()=>requestAnimationFrame(still));  // iOS draws one frame before the animation
+  a.onfinish=a.oncancel=()=>{if(feedFly===a){still();feedFly=null;room.bottom=''}};
+}
+/* the box grew or shrank: as .dock does it, over the glide for a keyboard that may still go on */
+let feedGrew=null;
+function feedGrow(d){
+  if(feedGrew)feedGrew.cancel();
+  feedGrew=moAnim($('feedframe'),[{translate:`0 ${d}px`},{translate:'0 0'}],{ease:'--ease',dur:'--dur-slow',composite:'add'});
+}
 /* what the frame's place is made of; null while there is none */
 function feedPlace(){
   const main=document.querySelector('.main'), box=$('feedframe');if(!FD.shown||!FD.frame||!main||!main.clientHeight)return;
@@ -2484,12 +2523,11 @@ function feedPlace(){
   if(!FD.slim||!FD.bar)FD.bar=top+say;
   const dock=document.querySelector('.dockwrap').offsetHeight, f=feedScreen();
   const cell=f?f.cell:17, pad=f?f.el.getBoundingClientRect().top:12;
-  const high=FD.whole?Math.max(60,main.clientHeight-FD.bar-dock):Math.round(main.clientHeight-SLIM_H+FOOT_ROWS*cell);
-  const size=[main.clientHeight,cell].join(), hold=FD.jump&&FD.held===size?FD.t:null;
-  const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,row:SLIM_H,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,off:FD.off,hold});
-  if(FD.whole)at.t=FD.bar;
-  else if(FD.foot===undefined)at.t=Math.min(FD.bar,main.clientHeight-dock-high+FOOT_ROWS*cell);  // not read yet
-  FD.far=at.far;FD.off=at.off;FD.t=at.t;FD.held=FD.whole||!FD.foot?'':size;
+  const full=feedRoom(main), high=FD.whole?Math.max(60,full-FD.bar-dockRest(dock)):Math.round(full-SLIM_H+FOOT_ROWS*cell);
+  const size=[full,cell].join(), above=main.clientHeight-dock+dockRest(dock), hold=FD.jump&&FD.held===size?FD.t+above-FD.above:null;  // scrolled up: where it was over the box; a chip or a file that comes moves nothing
+  const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,row:SLIM_H,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,hold});
+  if(!FD.whole&&FD.foot===undefined)at.t=Math.min(FD.bar,main.clientHeight-dock-high+FOOT_ROWS*cell);  // not read yet
+  FD.far=at.far;FD.off=at.off;FD.t=at.t;FD.above=above;FD.held=FD.whole||!FD.foot?'':size;
   const st=box.style, set=(k,v)=>{if(st[k]!==v)st[k]=v};
   set('inset','0 0 auto 0');set('height',high+'px');set('transform',`translateY(${Math.round(at.t)}px)`);
   const b=f&&f.t.buffer.active, away=b&&b.type==='normal'?(b.baseY-b.viewportY)*cell:0;
@@ -3135,7 +3173,7 @@ if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()})
 let noticeH=0, noticeAt=null;
 function noticeRoom(h){const d=h-noticeH, same=noticeAt===lastPlace;noticeH=h;noticeAt=lastPlace;if(d&&same&&!(chatShown()&&S.pin)&&$('body').scrollTop>0)$('body').scrollTop+=d}
 if(window.ResizeObserver)new ResizeObserver(()=>{seeRoom();noticeRoom(document.querySelector('.notices').offsetHeight);seeBar()}).observe(document.querySelector('.notices'));
-if(window.ResizeObserver){const o=new ResizeObserver(()=>{if(!chatShown()){if(FD.shown)feedPlace();return}if(S.pin)toEnd();else{seeRoom();seeBar()}});o.observe($('top'));o.observe($('dock'))}
+if(window.ResizeObserver){const o=new ResizeObserver(()=>{if(!chatShown()){if(FD.shown)feedPlace();return}if(S.pin)toEnd();else{seeRoom();seeBar()}});o.observe($('top'));o.observe($('dock'));new ResizeObserver(()=>{if(FD.shown)feedPlace()}).observe(document.querySelector('.main'))}
 /* B160: the page's own background, behind Safari's bar and the keyboard, is the view's */
 let edgeWait=0;
 function pageColor(chat){
@@ -3154,6 +3192,10 @@ function pageColor(chat){
 const VV=window.visualViewport, IOS=!!(window.CSS&&CSS.supports('-webkit-touch-callout','none')), KB_MS=900;
 let kbH=0;  // .app's height while the keyboard is open, 0 when it is closed
 let kbUntil=0, kbLoop=0;  // the keyboard is on its way in or out until then
+/* B214: and so it is on a touch device whose browser shrinks the page itself: the session keeps its size for as long */
+let kbStill=0, kbStillT=0;
+for(const t of ['focusin','focusout'])document.addEventListener(t,e=>{if(!TOUCH()||!typingIn(e.target))return;
+  kbStill=Date.now()+KB_MS;clearTimeout(kbStillT);kbStillT=setTimeout(()=>{if(FD.shown)feedPlace()},KB_MS+50)});
 function kbHeight(vv,full,typing){return vv&&typing&&Math.abs(vv.scale-1)<.02&&full-vv.height>100?Math.round(vv.height):0}
 const typingIn=el=>!!(el&&el.matches&&el.matches('textarea,input,select,[contenteditable]'));
 function kbFit(){
@@ -3169,7 +3211,7 @@ function kbFit(){
   if(!changed)return;
   if(pin)toEnd();
   if(h)kbReveal(el);
-  kbGlide(was,pin);
+  kbGlide(was,pin);feedGlide(was.feed);
 }
 function kbWatch(){
   kbUntil=Date.now()+KB_MS;
@@ -3179,12 +3221,12 @@ function kbWatch(){
 /* the message box, the chat's words and the sheet glide to their new place: transforms only, the layout is there at once */
 let kbAnims=[], kbUndo=null;
 function kbSpot(){
-  const dock=document.querySelector('.dockwrap'), was={dock:dock?dock.getBoundingClientRect().top:0,sheet:S.sheet?$('sheet').getBoundingClientRect().bottom:0};
+  const dock=document.querySelector('.dockwrap'), was={dock:dock?dock.getBoundingClientRect().top:0,sheet:S.sheet?$('sheet').getBoundingClientRect().bottom:0,feed:feedTop()};
   if(kbUndo)kbUndo();
   was.scroll=$('body').scrollTop;return was;
 }
 function kbGlide(was,pin){
-  if(!document.querySelector('.dockwrap')||matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  if(!document.querySelector('.dockwrap')||document.hidden||matchMedia('(prefers-reduced-motion:reduce)').matches)return;
   const dock=document.querySelector('.dockwrap'), b=$('body'), css=getComputedStyle(document.documentElement);
   const o={duration:parseFloat(css.getPropertyValue('--dur-slow')),easing:css.getPropertyValue('--ease').trim()};
   const go=(el,d)=>{if(Math.abs(d)<1)return;
@@ -3251,9 +3293,11 @@ function sendDraw(ta){
 }
 /* F147: a box that grew by d: at the foot of the view it slides up into its new height (and the chat with it), on Home what is under its words slides down */
 function growGlide(ta,d,drawn){
-  const dock=ta.closest('.dock'), box=ta.closest('.box'), go=(el,y)=>glideTo(el,0,y+(MO.fly.has(el)?shiftOf(el).m42:0),{ease:'--spring-soft'});
+  const dock=ta.closest('.dock'), box=ta.closest('.box'), go=(el,y)=>glideTo(el,0,y+(MO.fly.has(el)?shiftOf(el).m42:0),FD.shown?{ease:'--ease',dur:'--dur-slow'}:{ease:'--spring-soft'});
+  const was=dock?feedTop():null, from=dock&&MO.fly.has(dock)?shiftOf(dock).m42:0;if(was!=null)feedPlace();
   if(!box||!box.animate||calm())return;
-  if(dock){for(const el of dock.children)go(el,d);const b=$('body'), c=!drawn&&chatShown()&&S.pin&&b.firstElementChild;if(c){const at=b.scrollTop;toEnd();go(c,b.scrollTop-at)}return}  // in a redraw glide() moves the chat
+  if(was!=null)feedGrow(was-feedTop()+from);
+  if(dock){for(const el of FD.shown?[dock]:dock.children)go(el,d);const b=$('body'), c=!drawn&&chatShown()&&S.pin&&b.firstElementChild;if(c){const at=b.scrollTop;toEnd();go(c,b.scrollTop-at)}return}  // in a redraw glide() moves the chat
   for(let el=ta.closest('.inrow').nextElementSibling;el;el=el.nextElementSibling)go(el,-d);
   for(let el=box.nextElementSibling;el;el=el.nextElementSibling)if(el.getBoundingClientRect().top<innerHeight)go(el,-d);
 }
