@@ -34,8 +34,7 @@ from agent_runner.control import (control_argv, control_brief, control_env, cont
 from agent_runner.control_first import CONTROL_FIRST, type_first_later  # B147
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
     since_text, status_text, waiting_ok, as_event, events_file, read_events)
-from agent_runner.feed import (board_held, control_late_files, control_new,
-    FORWARD_FLAG, forward_late_files, read_ask_file, SID_RE)
+from agent_runner.feed import board_held, control_new, read_ask_file
 from agent_runner.loop import drop_session_env, finish, send_key
 
 
@@ -1015,16 +1014,11 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--hand', action='store_true', help=argparse.SUPPRESS)  # F53: the hook in settings.local.json
     ap.add_argument('--reopen', action='store_true', help=argparse.SUPPRESS)  # B121: resume cN after a shutdown
     ap.add_argument('--ask', default='', help=argparse.SUPPRESS)  # its first message: tests and older feeds (B72)
-    ap.add_argument('--ask-file', default='', help=argparse.SUPPRESS)  # B72: the forwarded message, from a file
-    ap.add_argument(FORWARD_FLAG, action='store_true', help='open another one (as --new) whose first message is '
-                    "the person's latest message in the runner feed, word for word, with its attachments (the "
-                    'feed hands requests on this way)')
-    ap.add_argument('--no-feed', action='store_true', help=argparse.SUPPRESS)  # B154: --ask is a page's or the TUI's
-    ap.add_argument('--from-feed', default='', help=argparse.SUPPRESS)  # B54: the project a --runner ask came from
+    ap.add_argument('--ask-file', default='', help=argparse.SUPPRESS)  # B72: the first message, from a file (control --new)
+    ap.add_argument('--no-feed', action='store_true', help=argparse.SUPPRESS)  # B154: the run page and the TUI pass it; no effect
     ap.add_argument('--file', '--image', dest='file', action='append', default=[], metavar='PATH',
                     help='a file or image the person attached to the first message (repeatable): the first message '
                     'names it and its path and says to Read or open it')
-    ap.add_argument('--feed-sid', default='', help=argparse.SUPPRESS)  # B57: wait for the handed-on message's files
     ap.add_argument('--title', default=None, metavar='SUMMARY', help='from inside control session N, once it has '
                     'read its first message: name it "<repo> · N · SUMMARY" for what it is for')
     ap.add_argument('--rename', nargs=2, default=None, metavar=('N', 'NAME'), help='the person\'s own name for '
@@ -1048,26 +1042,14 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if a.title is not None:
         env_n = os.environ.get(CONTROL_N_ENV, '')
         return control_set_title(a.n or (int(env_n) if env_n.isdigit() else 0), a.title)
-    if a.new or (a.forward and not a.feed_sid):
-        return control_new(a.n, ask=a.ask, images=a.file, forward=a.forward and not a.from_feed,
-                           handed=bool(a.from_feed) or a.no_feed, **({'wait': -1} if a.no_wait else {}))
+    if a.new:
+        return control_new(a.n, ask=a.ask, images=a.file, **({'wait': -1} if a.no_wait else {}))
     if a.ask_file:
         a.ask = read_ask_file(a.ask_file) or a.ask
-    if a.forward and a.feed_sid and SID_RE.fullmatch(a.feed_sid):
-        a.ask, got, done = forward_late_files(a.n or free_control_number(), a.feed_sid)
-        a.file = [*a.file, *(i for i in got if i not in a.file)]  # BUG1: a photo sent alone
-        a.feed_sid = '' if done else a.feed_sid
     n = a.n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {shown_cmd()} control starts another', file=sys.stderr)
         return 1
-    if a.feed_sid and a.ask and SID_RE.fullmatch(a.feed_sid):
-        print('waiting for the runner feed to record the message and its attachments…', flush=True)
-        try:  # hold number n while waiting, so another control --new does not take it
-            C.notes(f'control{n}.pid').write_text(f'{os.getpid()}', encoding='utf-8')
-        except OSError:
-            pass
-        a.ask, a.file = control_late_files(a.ask, a.file, a.feed_sid)
     control_held.look(n)  # B170: before an ended session N's pid file is written over
     sid, resume, argv = control_open(n, ask=a.ask, images=a.file, reopen=a.reopen)
     backend().trust(ROOT)
