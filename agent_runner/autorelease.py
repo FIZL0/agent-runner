@@ -11,6 +11,11 @@ from agent_runner import plan as P, plansync, state as S
 from agent_runner.state import EV_AUTO_RELEASE, EV_LANDED, EV_PART, MERGE
 
 
+def releases_on() -> bool:
+    """F193: `[run] releases` (Manage releases): does this project manage releases? On before `state.init`."""
+    return S.C is None or S.C.run.get('releases', True) is not False
+
+
 def auto_release_of(v) -> tuple[int, bool]:
     """`[run] auto_release` as (every: tasks landed that queue a release, 0 = not by count; idle: queue one when
     the run goes idle). Anything but a table ({ every = 10 }, { idle = true }, both) is off."""
@@ -56,11 +61,11 @@ AUTO_RELEASE_SEEN = [None]  # events.jsonl's and TODO.md's size and mtime at the
 
 def auto_release(branch: str, idle: bool = False) -> str:
     """Queue a release, as `plan add V` with no text does, when `every` tasks have landed since the last
-    release, or with `idle` (the run just went idle) when anything landed. Never while a release task is open.
+    release, or with `idle` (the run just went idle) when anything landed. Never while a release task is open, nor with `[run] releases` off (F193).
     Committed in the main checkout as `loop.watch_issues` commits its tasks. The id queued, or ''."""
     C, git, rel = S.C, S.git, S.plan_rel('TODO.md')
     every, on_idle = auto_release_of(C.run.get('auto_release', False))
-    if not every and not (idle and on_idle):
+    if not releases_on() or not every and not (idle and on_idle):
         return ''
     if not idle:  # the every-tick look: only after a landing, or a change to TODO.md (a release dropped)
         mark = []

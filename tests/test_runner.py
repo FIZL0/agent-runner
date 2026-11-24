@@ -5183,6 +5183,11 @@ def test_auto_release(repo: Path):
         eq((R.auto_release('main'), R.auto_release('main', idle=True), releases()), ('', '', []),
            'off: nothing queued, by count or on idle')
 
+        R.C.run.update(auto_release={'every': 3, 'idle': True}, releases=False)
+        eq((R.auto_release('main'), R.auto_release('main', idle=True), releases()), ('', '', []),
+           'F193: Manage releases off: nothing queued, by count or on idle')
+        R.C.run['releases'] = True
+
         R.C.run['auto_release'] = {'every': 3}
         evf.write_text('', encoding='utf-8')
         land('F901', 'F902')
@@ -5270,7 +5275,7 @@ def test_auto_release(repo: Path):
         check(R.auto_release('main').startswith('V'), 'a code change after the tag: every = 1 queues one')
         eq(R.auto_release_of({'every': True, 'idle': 'yes'}), (0, False), 'odd values are off')
     finally:
-        R.C.run['auto_release'] = False
+        R.C.run.update(auto_release=False, releases=True)
         R.AUTO_RELEASE_SEEN[0] = None
         subprocess.run(['git', '-C', str(repo), 'tag', '-d', 'v9.9.9'], capture_output=True)  # none if it failed early
         git(repo, 'reset', '-q', '--hard', head)

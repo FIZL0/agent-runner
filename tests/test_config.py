@@ -246,6 +246,22 @@ def test_trusted_networks(tmp: Path) -> None:
         check('[ui] trusted_networks must be' in said(bad), f'{bad} is no list of networks', said(bad))
 
 
+def test_releases_f193(tmp: Path) -> None:
+    from agent_runner import setting_words as W
+    repo = project(tmp)
+    eq(CF.Config(repo).run['releases'], True, 'on by default')
+    eq((CF.setting_type('run', 'releases'), W.name('run', 'releases')), ('switch', 'Manage releases'), 'a switch')
+    eq(W.order('run', 'releases') + 1, W.order('run', 'auto_release'), 'right above Release by itself')
+    (repo / 'runner.toml').write_text('[run]\nreleases = "no"\n')
+    try:
+        CF.Config(repo)
+        check(False, 'a word is refused')
+    except SystemExit as e:
+        check('[run] releases must be true or false' in str(e), 'a word is refused', e)
+    (repo / 'runner.toml').write_text('[run]\nreleases = false\n')
+    eq(CF.Config(repo).run['releases'], False, 'off')
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -256,4 +272,5 @@ def in_tmp(f):
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(f) for f in (test_one_key, test_line_ends, test_waits_for_a_merge, test_refused, test_push_fails,
-                                                 test_device_over_it, test_other_files, test_external_plan, test_trusted_networks)]))
+                                                 test_device_over_it, test_other_files, test_external_plan, test_trusted_networks,
+                                                 test_releases_f193)]))

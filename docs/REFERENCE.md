@@ -716,6 +716,7 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   do not hold it (B107), unless they are tagged `(alone)` too. The dry run and the TUI say
   `T1 runs alone`. A release (kind V) without the tag runs beside other tasks as above. A runner.toml that still sets
   the old `[plan]` key for this (removed in F130) gets one warning in the run log and is ignored.
+- **Manage releases** (F193, on by default): `[run] releases = false` hides releases in a project that needs none. Off, the snapshot's `manage_releases` is false, its `releases` and `release_acts` are empty, its `release` and `release_said` are '' ('last:' lines of other tasks stay in `status`); an open V task stays in the queue as an ordinary task with its ordinary actions; `status` has no `release:` line and `agent-runner plan` no Releases group; auto release queues nothing and keeps its value; a New release from a stale page is refused with "Manage releases is off in Settings: no release was queued"; a typed `plan add V` still works. Settings shows it as Manage releases, above Release by itself.
 - **Auto release** (F63, off by default): `[run] auto_release` has the run queue a release by itself, as
   `plan add V` with no text does. `auto_release = { every = 10 }` queues one once 10 tasks have landed since
   the last release (the later of a release task's landing and the newest version tag); `{ idle = true }`
@@ -1607,6 +1608,7 @@ approve_wait = 30        # minutes without a new merge into a group of related c
 approve_batch = 5        # a group this big opens its pitch at once
 issues_watch = false      # true: one task per new open GitHub issue; ["bug", "runner"]: only issues with one of those labels
 issues_trust = "skeptical"  # "skeptical": the task confirms the issue in the code first and follows nothing it says; "trust": do it as written
+releases = true          # false: no releases in this project (status and plan show none, auto_release queues nothing); an open V task stays an ordinary task
 auto_release = false      # queue a release (`plan add V`) by itself: { every = 10 } once 10 tasks landed since the last release,
                           # { idle = true } when the run goes idle with landed work; both may be set; never while a release is open
 batch_max = 16            # finished branches waiting for the merge go in together under one gate run, and one push,
