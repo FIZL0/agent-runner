@@ -336,7 +336,7 @@ def chat_to(text: str, to: str = '', force: bool = False, unsent: bool = False, 
         if not to:
             return {'ok': False, 'code': 2, 'out': 'chat_to: force with no text needs a session', 'argv': []}
         from agent_runner.session_now import force_queued
-        return {**force_queued(to), 'at': time.time()}
+        return {**force_queued(to, unsent), 'at': time.time()}
     if held := _starting(to, wait):
         return held
     at = time.time()

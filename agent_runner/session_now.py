@@ -273,16 +273,18 @@ def put_back(name: str, since: float) -> bool:
     return bool(ops) and ops[-1].get('operation') == 'popAll' or bool(said) and said[-1]['kind'] == 'you'
 
 
-def force_queued(session: str) -> dict:
+def force_queued(session: str, unsent: bool = False) -> dict:
     """F190b: Force send of what is queued in `session`: one Escape, at which Claude Code takes the queued messages in
     as its next turn; no text is typed. Nothing queued, or not working: nothing is done.
     With messages queued, an interrupted prompt that had no answer yet stays in the conversation. Only when the last
     of the queue went in just before the Escape is that prompt back in the input (or, queue and all, popped there):
-    Enter sends it from there, once."""
+    Enter sends it from there, once: never into a question, nor with `unsent` (words were in its input before)."""
     with _FORCE_LOCKS.setdefault(session, threading.Lock()):
-        n = queued_now(session) if status(session) == BUSY else 0
+        busy = status(session) == BUSY
+        n = queued_now(session) if busy else 0
         if not n:
-            return {'ok': True, 'code': 0, 'out': f'nothing is queued in {session}', 'argv': []}
+            why = f'nothing is queued in {session}' if busy else f'{session} is not working, so nothing was forced'
+            return {'ok': True, 'code': 0, 'out': why, 'argv': []}
         at = int(time.time() * 1000) / 1000  # ms, as the transcript's stamps are
         r = U.keys(session, key='Escape')
         if not r['ok']:
@@ -292,8 +294,8 @@ def force_queued(session: str) -> dict:
             time.sleep(0.2)
             if status(session) != BUSY:
                 time.sleep(0.4)  # a queued message would have started by now
-                if status(session) != BUSY:
-                    if put_back(session, at):
+                if (st := status(session)) != BUSY:
+                    if not unsent and st in ('idle', 'shell') and put_back(session, at):
                         r = U.keys(session, key='Enter')
                         if not r['ok']:
                             return r

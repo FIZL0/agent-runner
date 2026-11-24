@@ -136,7 +136,8 @@ class Queue:
     """A session with a transcript that answers Escape and Enter as Claude Code 2.1.331 does. `late`: what is queued
     goes in on its own just before the Escape; `pop`: an Escape pops the queue into the input."""
 
-    def __init__(self, f: Path, queue=(), status='busy', late=False, pop=False, stuck=False):
+    def __init__(self, f: Path, queue=(), status='busy', late=False, pop=False, stuck=False, then='idle'):
+        self.then = then  # its status once a `late` one is interrupted
         self.f, self.queue, self.status, self.late, self.pop, self.stuck = f, list(queue), status, late, pop, stuck
         self.got, self.input = [], []
         f.write_text('', encoding='utf-8')
@@ -157,7 +158,7 @@ class Queue:
             self.input, self.status = [], 'busy'
         elif key == 'Escape' and not self.stuck:
             if self.late:  # its turn has no answer yet: put back
-                self.input, self.status = list(self.queue), 'idle'
+                self.input, self.status = list(self.queue), self.then
                 self.take()
             elif self.pop:
                 self.input, self.status, self.queue = self.queue, 'idle', []
@@ -200,6 +201,10 @@ def test_force_queued(tmp: Path) -> None:
     with Queue(f, ['a'], late=True) as s:
         check(N.force_queued('c2')['ok'], 'taken in just before')
         eq((s.got, s.input, s.status), (['Escape', 'Enter'], [], 'busy'), 'put back unanswered: sent from the input, not lost')
+    for then, more in (('waiting', {}), ('idle', {'unsent': True})):
+        with Queue(f, ['a'], late=True, then=then) as s:
+            N.force_queued('c2', **more)
+            eq(s.got, ['Escape'], f'no Enter into a question, nor with words of the person in its input: {then} {more}')
     with Queue(f, ['a'], pop=True) as s:
         check(N.force_queued('c2')['ok'], 'popped into the input')
         eq((s.got, s.said('a'), s.input), (['Escape', 'Enter'], 1, []), 'sent from there, once')

@@ -163,7 +163,7 @@ def test_chat_force_queued(tmp: Path) -> None:
             mock.patch.object(U, 'send', return_value=done) as sent:
         before = time.time()
         r = U.act('chat_to', text='', to='c3', force=True, unsent=True)
-        eq((r['ok'], before <= r['at'], fq.call_args[0], fs.called, sent.called), (True, True, ('c3',), False, False),
+        eq((r['ok'], before <= r['at'], fq.call_args[0], fs.called, sent.called), (True, True, ('c3', True), False, False),
            'no text: the queue is forced, nothing typed')
         eq((U.act('chat_to', text='', force=True)['ok'], fq.call_count, sent.called), (False, 1, False), 'no session, no new chat')
         U.act('chat_to', text='hi', to='c3', force=True)
