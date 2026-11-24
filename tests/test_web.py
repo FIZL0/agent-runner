@@ -1617,6 +1617,7 @@ const fetch = () => Promise.resolve({json: () => Promise.resolve([{name: 'clear'
 eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
      + slice('let boxWas=', '\n}\n') + 'function growGlide(){}\n'
      + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n')
+     + slice("document.addEventListener('beforeinput',", '\n});\n')
      + slice("document.addEventListener('input',", ')}});\n') + `
 (async () => {
   await new Promise(r => setTimeout(r, 0));
@@ -1637,6 +1638,14 @@ eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + sli
     ta.value = '/cl'; slashShow(ta); o.pick = [press(ta, {}), ta.value];
     ta.value = '/clear'; slashShow(ta); o.full = press(ta, {});
     ta.value = '/cl'; slashShow(ta); o.pickIme = [press(ta, {keyCode: 229}), ta.value];
+    const brk = (v, more, key) => { ta.value = v; slashShow(ta); let p = false;
+      if (key) press(ta, key);
+      handlers.beforeinput(Object.assign({inputType: 'insertLineBreak', target: ta, preventDefault() { p = true }}, more));
+      return [p ? 'taken' : 'line', ta.value] };
+    ta.value = '/cl'; slashShow(ta); o.pickShift = [press(ta, {shiftKey: true}), ta.value];
+    o.brk229 = brk('/cl', {}, {keyCode: 229}); o.brkNoKey = brk('/cl', {}, {key: 'Unidentified'});
+    o.brkIme = brk('/cl', {isComposing: true}, {isComposing: true}); o.brkWord = brk('/cl', {inputType: 'insertText'});
+    o.brkFull = brk('/clear', {}, {keyCode: 229}); o.brkNone = brk('hi', {});
   }
   console.log(JSON.stringify(out));
 })();`);
@@ -1665,6 +1674,15 @@ def test_enter_b181(tmp: Path) -> None:
         eq(o.get('pick'), ['taken', '/clear '], f'{kind}: Enter picks in the slash menu, not sent')
         eq(o.get('full'), 'line' if touch else 'send', f'{kind}: Enter on a command typed in full')
         eq(o.get('pickIme'), ['line', '/cl'], f'{kind}: composing, Enter picks nothing')
+        # B188: a phone's Return may carry its keyboard's own Shift, or come as keyCode 229 or with no key name
+        picked = ['taken', '/clear '] if touch else ['line', '/cl']
+        eq(o.get('pickShift'), picked, f'{kind}: Enter with Shift in the slash menu')
+        eq(o.get('brk229'), picked, f'{kind}: a line break after a keyCode 229 keydown')
+        eq(o.get('brkNoKey'), picked, f'{kind}: a line break after a keydown with no key name')
+        eq(o.get('brkIme'), ['line', '/cl'], f'{kind}: composing, a line break picks nothing')
+        eq(o.get('brkWord'), ['line', '/cl'], f'{kind}: typing picks nothing')
+        eq(o.get('brkFull'), ['line', '/clear'], f'{kind}: a line break on a command typed in full')
+        eq(o.get('brkNone'), ['line', 'hi'], f'{kind}: a line break with no menu open')
 
 
 def test_interrupt_c1_b141(tmp: Path) -> None:
