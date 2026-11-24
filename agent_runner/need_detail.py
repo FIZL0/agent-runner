@@ -11,6 +11,7 @@ import json
 import os
 import platform
 import re
+import shlex
 from pathlib import Path
 
 from agent_runner import plan as P
@@ -309,6 +310,38 @@ def asks_file(tid: str) -> dict:
     return out
 
 
+def old_script_steps(tid: str) -> tuple[list[str], list[dict]]:
+    """C37a: the steps of an old <notes>/wizards/ID.sh (C37 removed the command that ran it), read as text and never
+    run: each `stage`, `say` and `step` line is a step, each address on it (or after `open_url`) its link. Only this
+    reader says 'wizard'. ([], []) without a readable script."""
+    if not re.fullmatch(r'[\w.-]+', tid or ''):
+        return [], []
+    try:
+        f = S.C.notes('wizards', f'{tid}.sh')
+        if not f.is_file() or f.stat().st_size > FILE_MAX:
+            return [], []
+        lines = f.read_text(encoding='utf-8').splitlines()
+    except (OSError, ValueError, AttributeError):
+        return [], []
+    start = next((i for i, x in enumerate(lines) if re.match(r'#\s*STAGES\b', x.lstrip())), -1)
+    steps = []
+    for x in lines[start + 1:]:
+        m = re.match(r'\s*(stage|say|step|open_url)\s+(.*)$', x)
+        if not m:
+            continue
+        try:
+            arg = shlex.split(m[2], comments=False)
+        except ValueError:
+            continue
+        text = ' '.join(arg[0].split()) if arg else ''
+        link = next((u for u in re.findall(r'https?://[^\s"\'<>)]+', text if m[1] != 'open_url' else m[2]) if is_link(u)), None)
+        if m[1] == 'open_url':
+            steps.append({'text': 'Open this', 'link': link} if link else None)
+        elif text:
+            steps.append({'text': text, **({'link': link} if link else {})})
+    return _steps([x for x in steps if x])
+
+
 def task_lines() -> dict[str, str]:
     """{id: its whole text in TODO.md}, read once for a list of items; {} when it cannot be read."""
     try:
@@ -330,6 +363,9 @@ def detail(label: str, tid: str, ask: str, title: str, text: str, short) -> dict
     d = asks_file(tid)
     pieces = split_ask(ask, label in ('CONFIRM', 'BLOCKED'))
     of = lambda kind: [s for k, p in pieces if k == kind and (s := shown(p))]  # noqa: E731
+    old = old_script_steps(tid) if label == 'BLOCKED' and not d.get('steps') else ([], [])
+    if old[0]:
+        d = {**d, 'steps': old[0], 'step_more': old[1]}
     steps, expect = d.get('steps') or of('do'), d.get('expect') or ([] if d.get('steps') else of('see'))
     shots = d.get('shots') or []
     shots = shots + [s for s in named_shots(text) if s['path'] not in {x['path'] for x in shots}]

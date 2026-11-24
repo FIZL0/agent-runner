@@ -1048,6 +1048,24 @@ def test_need_detail_f162(tmp: Path) -> None:
     eq(d3(), plain, 'and for one that is no text')
 
 
+def test_old_script_c37a(tmp: Path) -> None:
+    """C37a: a BLOCKED item with an old <notes>/wizards/ID.sh shows its steps and links, read as text, nothing run."""
+    from agent_runner import need_detail as N
+    repo = fake_run(tmp)
+    w = repo / '.runner' / 'wizards'
+    w.mkdir(parents=True, exist_ok=True)
+    mark = repo / 'ran'
+    (w / 'D3.sh').write_text(f'#!/bin/bash\nstage() {{ touch {mark}; }}\n# STAGES: author this section.\n'
+                             f'stage "Get the key"\nopen_url https://example.com/keys\nsay "Create a key, see https://example.com/help"\n'
+                             f'step "Copy it"\ntouch {mark}\n', encoding='utf-8')
+    d = N.detail('BLOCKED', 'D3', 'Give the key', 'T', '', U.ask_short)
+    eq(d['steps'], ['Get the key', 'Open this', 'Create a key, see https://example.com/help', 'Copy it'], 'its steps')
+    eq([m.get('link') for m in d['step_more']], [None, 'https://example.com/keys', 'https://example.com/help', None], 'its links')
+    check(not mark.exists(), 'nothing ran')
+    check(not any('cmd' in m for m in d['step_more']), 'no run line')
+    eq(N.detail('CONFIRM', 'D3', 'Check it', 'T', '', U.ask_short)['steps'], ['Check it'], 'only a BLOCKED item reads it')
+
+
 F399_ASK = {'summary': 'Give the link of Install Switch', 'steps': [
     {'text': "Add main's copy of Install Switch to Shortcuts", 'link': 'https://example.com/Install%20Switch.shortcut'}, 'Share > Copy iCloud Link'],
     'inputs': [{'key': 'icloud', 'label': 'iCloud link', 'kind': 'link', 'hint': 'It starts with https://www.icloud.com/shortcuts/',
@@ -1203,7 +1221,7 @@ def test_plan_facts_f150(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),
