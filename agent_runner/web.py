@@ -25,6 +25,8 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
     POST /tools?t=TOKEN          F169: {"op": …}: a device added, edited, tested, its secrets set (`devices.post`); only
                                  over https or loopback, and from this page
     GET  /task/ID?t=TOKEN        F85: task ID's whole text (`plan ID`), for its row folded open
+    GET  /why/ID?t=TOKEN         F162: why a Needs you item waits: its agent's last words (`ui_model.need_why`)
+    GET  /shot/DIR/FILE?t=TOKEN  F162: a Needs you item's picture, an image under <notes>/uploads or <notes>/asks
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
     GET  /speech?t=TOKEN         F158: the voices this machine can read Talk's replies with (`speech.voices`)
     POST /speech?t=TOKEN         F158: {"text", "voice"}: that text as a WAV clip (`speech.Speaker`)
@@ -54,9 +56,9 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, plat, session_frame, session_now, session_theme, speech, watch
+from agent_runner import devices, home_screen, need_detail, plat, session_frame, session_now, session_theme, speech, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -1007,6 +1009,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(speech.voices()))
         if path.startswith('/task/'):  # F85
             return self.send(200, json.dumps(U.task_text(path.split('/')[2]), ensure_ascii=False))
+        if path.startswith('/why/'):  # F162
+            return self.send(200, json.dumps(U.need_why(path.split('/')[2]), ensure_ascii=False))
+        if path.startswith('/shot/'):  # F162
+            return self.shot(unquote(path[len('/shot/'):]))
         if path.startswith('/diff/'):
             return self.send(200, json.dumps(slot_diff(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/concept/'):
@@ -1136,6 +1142,24 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('Content-Security-Policy', 'sandbox allow-scripts')
+        self.end_headers()
+        self.wfile.write(data)
+
+    def shot(self, src: str) -> None:
+        """F162: a Needs you item's picture ('uploads/a.png', 'asks/b.png'): images of those two folders only."""
+        f = need_detail.shot_file(src)
+        try:
+            data = f.read_bytes() if f else b''
+        except OSError:
+            data = b''
+        if not data:
+            return self.send(404, json.dumps({'ok': False, 'out': 'no such picture'}))
+        self.send_response(200)
+        self.send_header('Content-Type', need_detail.image_type(data[:16]))
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('X-Content-Type-Options', 'nosniff')
         self.end_headers()
         self.wfile.write(data)
 

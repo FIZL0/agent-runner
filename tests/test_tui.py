@@ -1832,6 +1832,20 @@ def test_short_ask_b152() -> None:
     check('D7 ' in lines[at[0] + 1], 'the next item is on the very next line', lines[at[0]:at[0] + 2])
 
 
+def test_need_detail_f162() -> None:
+    """F162: Needs you's main pane shows the steps, what to see and the pictures' paths, as the run page's popup."""
+    d = {'said': 'Check this', 'where': 'iPhone', 'title': 'The keyboard', 'summary': 'Open it', 'lead': ['On an iPhone'], 'steps': ['Open it', 'Close it'],
+         'expect': ['It glides'], 'notes': ['Reply yes/no'], 'shots': [{'src': 'uploads/a.png', 'path': '/n/uploads/a.png', 'caption': 'The band'}]}
+    p = page(dict(SNAP, needs=[dict(SNAP['needs'][0], detail=d)]))
+    p.key('4')
+    said = [l.strip() for l in (''.join(t for t, _ in x) for x in p.pane(80)[0])]
+    for want in ('D3 The keyboard', 'On an iPhone', 'What to do', '1. Open it', '2. Close it', 'What you should see', '- It glides',
+                 'Pictures', '/n/uploads/a.png', 'The band', 'Reply yes/no'):
+        check(want in said, f'the pane shows {want!r}', said)
+    check(any(l.startswith('Check this · iPhone') for l in said), 'and what is wanted, where', said)
+    check('Open it' in ''.join(t for t, _ in p.row(4, p.snap['needs'][0])), 'the row says what to do', p.row(4, p.snap['needs'][0]))
+
+
 def test_quick_ask_names_session_c32() -> None:
     """C32: a quick ask (and H) says the new session's name and selects its row, not 'c1 answers'."""
     c7 = {'name': 'c7', 'task': '', 'title': 'control session', 'minutes': None, 'state': 'live', 'files': [],
@@ -1910,7 +1924,7 @@ def test_release_row_f131() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_need_detail_f162, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

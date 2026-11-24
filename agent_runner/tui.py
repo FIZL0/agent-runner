@@ -507,7 +507,7 @@ class RunPage:
                     (f'{mins} {it.get("state", "")}', 'dim')]
         if n == 4:
             # B152: the short ask, one line; the full ask shows in the pane beside
-            short = ' '.join(str(it.get('ask_short') or it.get('title') or it.get('ask', '')).split())
+            short = ' '.join(str((it.get('detail') or {}).get('summary') or it.get('ask_short') or it.get('title') or it.get('ask', '')).split())
             return [(f'{it["id"]} ', 'yellow'), (short, 'fg'),
                     (f' {it.get("age", "")}', 'dim')]
         if it.get('new'):
@@ -641,8 +641,7 @@ class RunPage:
                 hint = 'e.g. also cover openmx'
             return out, self.input_lines(f'edit:{it["id"]}', width, hint), 0
         if tab == 'answer':
-            out = [L((f'{it["id"]} ', 'yellow'), (it.get('title', ''), 'fg')), L()] + \
-                text_lines(it.get('ask', ''), 'fg', width)
+            out = self.need_lines(it, width)
             if it.get('url'):
                 out += [L(), L((it['url'], 'blue'))]
             out += [L(), L(('Your reply goes to a new chat, which settles the item.', 'dim'))]
@@ -663,6 +662,35 @@ class RunPage:
             lines, anchor = self.preview_pane(it, width)
             return lines, self.input_lines(f'concept:{it["id"]}', width, 'say what to change'), anchor
         return [L(('nothing to show', 'dim'))], [], 0
+
+    def need_lines(self, it, width: int) -> list:
+        """F162: what a Needs you item says, as the run page's popup does: what is wanted and where, the steps, what
+        to see, the notes and the pictures' paths; its ask when it has no detail."""
+        L = lambda *segs: list(segs)  # noqa: E731
+        d = it.get('detail')
+        if not d:
+            return [L((f'{it["id"]} ', 'yellow'), (it.get('title', ''), 'fg')), L()] + \
+                text_lines(it.get('ask', ''), 'fg', width)
+        lab = d['said'] + (f' · {d["where"]}' if d.get('where') else '')
+        out = [L((f'{it["id"]} ', 'yellow'), (d['title'], 'fg')), L((lab, 'yellow'), (f'  {it.get("age", "")}', 'dim'))]
+        for x in d['lead']:
+            out += [L()] + text_lines(x, 'fg', width)
+        for head, xs, mark in (('What to do', d['steps'], lambda j: f'{j}. '),
+                               ('What you should see', d['expect'], lambda j: '- ')):
+            if xs:
+                out += [L(), L((head, 'dim'))]
+                for j, x in enumerate(xs, 1):
+                    out += text_lines(x, 'fg', width, mark(j), ' ' * len(mark(j)))
+        if d['shots']:
+            out += [L(), L(('Pictures', 'dim'))]
+            for s in d['shots']:
+                out += text_lines(s['path'], 'blue', width)
+                out += text_lines(s['caption'], 'dim', width) if s.get('caption') else []
+        if d['notes']:
+            out.append(L())
+            for x in d['notes']:
+                out += text_lines(x, 'dim', width)
+        return out
 
     def release_pane(self, width: int) -> list:
         L = lambda *segs: list(segs)  # noqa: E731
