@@ -29,6 +29,7 @@ from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_pl
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED, EV_CONTEXT)
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
+from agent_runner.file_split import queue_file_split
 from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
 from agent_runner.tools import take_end
@@ -1389,6 +1390,8 @@ class Run:
         if not task and passed and not self.cap_said and \
                 (t := pick(running, self.tried, self.branch)) and t[0] in passed:
             self.say_cap(w)  # F142: only the cap holds it: no provider in the chain is free for it
+        if not task and not held and not self.once:
+            queue_file_split(running, self.tried, self.branch)  # F200b: the slot's next pick takes what it queued
         if task:
             if unlogged(task[0], self.branch, self.model):  # F106e: its provider has no login: Needs you
                 plansync.release(C, task[0])

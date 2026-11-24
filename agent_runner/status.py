@@ -16,7 +16,7 @@ from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LA
 from agent_runner.state import EV_DRIFT
 from agent_runner.state import EV_DEVICE
 from agent_runner.state import EV_CONTEXT
-from agent_runner.state import EV_AUTO_RELEASE
+from agent_runner.state import EV_AUTO_RELEASE, EV_FILE_SPLIT
 from agent_runner.brief import has_sheet
 from agent_runner.land import wip_lines
 from agent_runner.land import no_gate_line
@@ -142,7 +142,7 @@ def taken_note(ids) -> str:
 
 # --- run events (F41): <notes>/events.jsonl, and run.log lines from before it ----------------------------
 
-LATELY = (EV_LANDED, EV_PART, EV_PARKED, EV_LEFT, EV_STOPPED, EV_IDLE, EV_AUTO_RELEASE)  # what `status` lists under "lately"
+LATELY = (EV_LANDED, EV_PART, EV_PARKED, EV_LEFT, EV_STOPPED, EV_IDLE, EV_AUTO_RELEASE, EV_FILE_SPLIT)  # what `status` lists under "lately"
 ENDS = (EV_LANDED, EV_PART, EV_PARKED, EV_LEFT, EV_NO_COMMITS, EV_DEFERRED, EV_DROPPED)  # a task a stopping run no longer waits for
 SAID = {  # event kind -> the phrase since, follow and status start its line with
     EV_LANDED: 'landed', EV_PART: 'part landed, rest stuck', EV_PARKED: 'stuck, not merged', EV_LEFT: 'needs you',
@@ -243,6 +243,8 @@ def since_event(item, titles: dict[str, str]) -> tuple[str, str, str] | None:
         return stamp, '', str(ev.get('text', '')).strip()
     if kind == EV_AUTO_RELEASE and tid:  # F63: 'queued V5 (auto_release: 10 landed)'
         return stamp, tid, f'queued {tid} (auto_release: {ev.get("why") or "?"})'
+    if kind == EV_FILE_SPLIT and tid:  # F200b: 'queued C9 to split a.py: 3 ready tasks wait for it'
+        return stamp, tid, f'queued {tid} to split {ev.get("file") or "?"}: {ev.get("waiters", 0)} ready tasks wait for it'
     if kind in (EV_DRIFT, EV_DEVICE):  # B45: 'needs you: Claude Code X changed Y; Z no longer works'; C27: 'needs you: box: CPU at 95°C'
         return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
     if kind == shared_tools.EV_TOOL:  # F168: 'needs you: Connect the iPhone 15 by USB: 2 tasks wait [tool-iphone15]'

@@ -153,6 +153,8 @@ DEFAULTS: dict = {
                                 # file the rest as a part (soft only: nothing is stopped); 0 = off
         'task_size': 10,        # a task bigger than this is split: its code files, plus 2 per numbered outcome, plus 1 per
                                 # 400 characters of text; `plan` says so and its session splits it first; 0 = off
+        'split_files': True,    # free slots that start nothing while 3 or more ready tasks wait for one file: the run queues
+                                # one critical (alone) task that splits it; false: off
         'task_tokens': 0,       # tokens (input, cache writes, output; not cache reads) one task's session may use; past
                                 # it the task stops at a clean point and is parked as wip/<ID>; 0 = no cap
         'task_usd': 0,          # the same in dollars at the API's list prices (a plan bills none); 0 = no cap
@@ -713,7 +715,7 @@ class Config:
             raise SystemExit(f'agent-runner: [run] agent = {self.run["agent"]!r}: {PI_GONE}')
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
-        for k in ('approve', 'approve_wait', 'approve_batch', 'releases'):  # F98, F193
+        for k in ('approve', 'approve_wait', 'approve_batch', 'releases', 'split_files'):  # F98, F193, F200b
             if problem := setting_problem('run', k, self.run[k]):
                 raise SystemExit(f'agent-runner: {problem}')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
