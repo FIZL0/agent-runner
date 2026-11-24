@@ -229,8 +229,12 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 
 ## Sound
 
-- Run speech plays only in the one audio element (`AU.el`), only after the person's tap has allowed it, never while the mic listens,
-  and one tap stops it. When the browser blocks it, the talk line says what to tap.
+- Run speech plays only in the one audio element (`AU.el`), only after the person's tap has allowed it, never while the mic listens.
+  When the browser blocks it, the talk line says what to tap.
+- One button stops the reading: the speaker (and the reply's own play button). The mic is never a stop for it; a press on the mic
+  cuts a reading and listens in that press.
+- Every reading must be watched with `soundWatch()`, since iOS can skip a sound's end event.
+- The browser's voice (`speechSynthesis`) is not called before `rec.start()` in a press (B132); run speech clips may be stopped before it.
 
 ## Before you finish
 

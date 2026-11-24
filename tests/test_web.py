@@ -2925,7 +2925,7 @@ eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run sp
  + page.slice(page.indexOf("document.addEventListener('visibilitychange',()=>{if(TK.ear)"), page.indexOf('/* F124: a swipe right anywhere'))
  + `const click = k => { const e = press(k), q = s => e.target.closest(s); ` + ['data-mic', 'data-spk'].map(k => line("  if(q('[" + k + "]'))").trim()).map(x => '(() => {' + x.replace(/\/\/ F93.*/, '') + '})();').join('') + ` };
 const shows = () => { talkDraw(); return [els.mic.innerHTML, els.mic['aria-label'], els.spk.innerHTML, els.spk['aria-label'], els.talkline.textContent, els.spkbox.hidden] };
-const over = () => { if (TK.ear) { mic().end() } hush(); TK.wait = null; TK.state = ''; TK.hold = false; TK.trail = null; order.length = us.length = said.length = sent.length = 0; plays = []; asked = []; ss.speaking = ss.pending = ss.paused = false };
+const over = () => { if (TK.ear) { mic().end() } hush(); TK.wait = null; TK.state = TK.note = ''; TK.hold = false; TK.trail = null; order.length = us.length = said.length = sent.length = 0; plays = []; asked = []; ss.speaking = ss.pending = ss.paused = false };
 (async () => {
   const out = {}; await settle(); const run = AU.got; AU.ok = true;
   for (const kind of ['own', 'run']) {
@@ -2969,7 +2969,7 @@ const over = () => { if (TK.ear) { mic().end() } hush(); TK.wait = null; TK.stat
   over(); TS.auto = true; lands('One here.'); us[0].onstart(); ss.speaking = true; document.hidden = true; fire('visibilitychange', {}); now += 60000; ss.speaking = false; document.hidden = false; fire('visibilitychange', {}); await look(2); out.shown = [TK.state, order.includes('start')];
   over(); lands('One here.'); us[0].onstart(); order.length = 0; await look(2); out.auto = [TK.state, order.join()]; TS.auto = false; over();
   // run speech: the clip's end, its error, a pause and a stand-still with no event
-  AU.got = run; const clip = async () => { over(); lands('One here. Two.'); await settle(); AU.el.currentTime = 0 };
+  AU.got = run; const clip = async () => { over(); lands('One sentence is here. Two.'); await settle(); AU.el.currentTime = 0 };
   await clip(); AU.el.ended = true; await look(); out.clipEnd = plays.length; AU.el.ended = true; await look(); out.allEnd = [TK.state, AU.holding];
   await clip(); AU.el.error = {code: 4}; await look(); out.clipErr = said.length; delete AU.el.error;
   await clip(); AU.el.paused = true; await look(2); out.clipPause = TK.state;
@@ -4066,6 +4066,6 @@ if __name__ == '__main__':
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_short_ask_b152),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
-                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_status_view_f124),
+                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
                            in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170)]))

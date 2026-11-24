@@ -296,7 +296,11 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
 
 - **Talk.** The first view in the sidebar, for running the run hands-free: tap the mic, speak, and the
   reply is read aloud (the browser's own speech recognition; the reading is run speech when an engine is installed, else the browser's own). The speaker button left of the
-  mic turns reading aloud on and off (while a reply is read, it stops it); the keyboard button swaps the mic for the
+  mic turns reading aloud on and off; while a reply is read it is the stop (stop icon, "Stop speaking"), and a tap ends that
+  reading, while replies still waiting keep their play buttons. The mic button keeps its mic icon and is never a stop: a press
+  on it while a reply is read cuts the sound at once and listens in that same press (Tap and Hold), and a reply cut that way
+  does not start again by itself. The line over the mic says "Speaking…" while a reply is read, and the typing mode's box row
+  shows the same stop. The keyboard button swaps the mic for the
   message box and the browser remembers which. Each reply has a play button. The gear opens Talk settings, kept per
   browser: read replies aloud, the voice (Kokoro af_heart by default; every Kokoro voice, Piper or the device's own), tap or hold to talk, and auto listen (listen
   again once a reply was read, until one silent turn). Talk has its own control session, titled Talk and reused while it is live, told to answer in short
@@ -311,7 +315,11 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   Windows %LOCALAPPDATA%\agent-runner\speech). It holds the engines' packages (venv) and their voice files. The worker
   that makes the clips ends after 10 idle minutes and starts again on the next one. Sound plays after a tap on the
   speaker (or a play button, or Send) has let the browser play it; if the browser blocks it, the talk line says to tap
-  the speaker. A reply is read in few clips: its first sentence alone, then about 200 letters, then 400 each. While a reply is read, a second element plays silence so a Bluetooth route stays open between clips; the audio session is play-and-record for the mic and playback once it ended (browsers with navigator.audioSession, iOS). A pause nobody asked for (a call, a route change) is undone once per reply, unless a mic listens; a second one ends the reply, and the lock screen's or the earbuds' pause stops it. A clip request with no answer is tried again twice (after 0.5 s and 2 s; once when none came in 25 s); what was fetched plays on, then the phone's voice reads the rest of that reply, so it is heard to its end, and a toast says "No connection to the run; reading with the phone's voice" (the next reply tries run speech again). An engine's own failure is not retried. With no engine installed, or when one fails, the browser's own speech reads.
+  the speaker, and the reply is held for that tap. While the mic listens or is held, no reply sound starts; a reply that lands
+  then plays by itself once the mic has ended (words sent or nothing heard) if read-aloud is on, several in order, and one that
+  lands while another is read waits for it. iOS can skip a sound's end event, so once a second while a reply is read the page
+  checks that sound is really playing (run speech, the browser's voice, and again when the page is shown) and clears the
+  speaking state when it is not: quiet for 2 checks (4 if it never began), no start within 10 s, or a clip paused or not moving. A reply is read in few clips: its first sentence alone, then about 200 letters, then 400 each. While a reply is read, a second element plays silence so a Bluetooth route stays open between clips; the audio session is play-and-record for the mic and playback once it ended (browsers with navigator.audioSession, iOS). A pause nobody asked for (a call, a route change) is undone once per reply, unless a mic listens; a second one ends the reply, and the lock screen's or the earbuds' pause stops it. A clip request with no answer is tried again twice (after 0.5 s and 2 s; once when none came in 25 s); what was fetched plays on, then the phone's voice reads the rest of that reply, so it is heard to its end, and a toast says "No connection to the run; reading with the phone's voice" (the next reply tries run speech again). An engine's own failure is not retried. With no engine installed, or when one fails, the browser's own speech reads.
 - **Sidebar.** New chat, Talk, Home (with the Needs you count), Status, Plan, Concepts, Tools and Settings. Chats are the
   control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
   and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (a pinned or a renamed one is left alone by the run; by hand any chat can go Quiet or be deleted). Double-click a chat's name (on a phone: its ⋯) to rename it; the name is yours, so the

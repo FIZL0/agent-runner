@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: Talk's stop for a reply is the speaker button, not the mic (B174). The speaker is the one stop while a reply is read; the mic never stops it, and a press on it cuts the reply and listens at once. A reply that lands while the mic listens, or while another is read, plays after that, in order, and a sound that never ends is cleared by a check, so Talk no longer says "Speaking…" over silence.
 - Added: devices (F169). The run app's Tools view adds the machines and test rigs agents reach over SSH or another way; a project says which it uses (Used here), and each one is a shared tool a task names in `needs:`. Secrets are write-only and kept on this machine (`### Devices` in docs/REFERENCE.md).
 - Changed: Settings' Release by itself (Auto release) is two controls, Every (Off, 5, 10, 20 tasks) and When idle, so both can be on; changing one keeps the other, and with both on a count release and an idle one never queue two for the same landed work (F174).
 - Changed: a setting saved for everyone is written to runner.toml at once (F173). It is committed alone on the shared branch and pushed as a plan edit is, and never queues a task. The Queued tag, the queued C task and its edit and drop are gone; a task Settings queued before still lands as a plain task.
