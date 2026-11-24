@@ -11,7 +11,9 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -1226,6 +1228,172 @@ def test_https_link_b130(tmp: Path) -> None:
     if shutil.which('node'):
         got = logic_js([['micProblem', False, True]])
         check('needs https' in got[0], 'B129: insecure context: the mic says it needs https', got[0])
+
+
+FAKE_TAILSCALE = r'''#!PYTHON
+import json, sys
+from pathlib import Path
+here, a = Path(__file__).parent, sys.argv[1:]
+d = json.loads((here / 'state.json').read_text())
+with open(here / 'calls', 'a') as f:
+    f.write(' '.join(a) + chr(10))
+if a == ['status', '--json']:
+    print(json.dumps({'BackendState': d['state'], 'Self': {'DNSName': 'box.tail.ts.net.'}, 'CertDomains': d['certs']}))
+elif a == ['serve', 'status', '--json']:
+    print(json.dumps(d['serve']))
+elif a[0] == 'serve' and d['refuse']:
+    sys.exit('Access denied: serve config denied')
+elif a[0] == 'serve' and (p := next(x for x in a if x.startswith('--https=')).split('=')[1]):
+    s = d['serve']
+    if a[-1] == 'off':
+        s['TCP'].pop(p), s['Web'].pop('box.tail.ts.net:' + p)
+    else:
+        s.setdefault('TCP', {})[p] = {'HTTPS': True}
+        s.setdefault('Web', {})['box.tail.ts.net:' + p] = {'Handlers': {'/': {'Proxy': a[-1]}}}
+    (here / 'state.json').write_text(json.dumps(d))
+'''
+
+
+def test_tailnet_https_f96(tmp: Path) -> None:
+    if os.name == 'nt':
+        return  # the fake is a script on PATH
+    fake_repo(tmp)
+    eq(CF.DEFAULTS['run']['web_https'], True, '[run] web_https is on by default')
+    real = os.environ['PATH']
+    bin_ = tmp / 'bin'
+    bin_.mkdir()
+    state, calls = bin_ / 'state.json', bin_ / 'calls'
+    (bin_ / 'tailscale').write_text(FAKE_TAILSCALE.replace('PYTHON', sys.executable), encoding='utf-8')
+    (bin_ / 'tailscale').chmod(0o755)
+
+    def fake(serve=None, **kw):
+        state.write_text(json.dumps({'state': 'Running', 'certs': ['box.tail.ts.net'], 'refuse': False,
+                                     'serve': serve or {}, **kw}), encoding='utf-8')
+        calls.write_text('', encoding='utf-8')
+
+    def web_rules():
+        return json.loads(state.read_text(encoding='utf-8'))['serve'].get('Web') or {}
+
+    def changes():
+        return [c for c in calls.read_text(encoding='utf-8').splitlines() if c.startswith('serve --')]
+
+    def free():
+        while True:
+            with socket.socket() as a, socket.socket() as b:
+                a.bind(('0.0.0.0', 0))
+                try:
+                    b.bind(('0.0.0.0', a.getsockname()[1] + 1))
+                    return a.getsockname()[1]
+                except (OSError, OverflowError):
+                    pass
+    port = free()
+    log: list[str] = []
+
+    def start(home=0, site=(), path='', **settings):
+        log.clear()
+        env = {'AGENT_RUNNER_NO_WEB': '', 'AGENT_RUNNER_NO_SERVE': '', 'PATH': path or f'{bin_}{os.pathsep}{real}'}
+        with mock.patch.dict(os.environ, env), mock.patch.object(W, 'home_port', lambda: home), \
+                mock.patch.dict(S.C.run, {'web': True, 'web_port': port, **settings}), \
+                mock.patch.object(W, 'site_urls', lambda root=None, https=None: list(site)):
+            return W.start_web()
+
+    with mock.patch.object(S, 'log', log.append), mock.patch.object(W, 'lan_ip', lambda: ''), \
+            mock.patch.object(S, 'run_up', return_value=True), \
+            mock.patch.object(W, 'HOME_LOOK', 999), \
+            mock.patch.dict(os.environ, {'PATH': f'{bin_}{os.pathsep}{real}', 'AGENT_RUNNER_NO_SERVE': ''}):
+        own = f'https://box.tail.ts.net:{port + 1}/?t={W.web_token()}'
+        made = {f'box.tail.ts.net:{port + 1}': {'Handlers': {'/': {'Proxy': f'http://127.0.0.1:{port}'}}}}
+        on = f'serve --bg --https={port + 1} http://127.0.0.1:{port}'
+        off = f'serve --https={port + 1} off'
+
+        other = {'TCP': {'9': {'HTTPS': True}}, 'Web': {'box.tail.ts.net:9': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:2'}}}}}
+        fake(other)
+        srv = start()
+        eq(changes(), [on], 'the run makes the rule')
+        check(log[-1].startswith(f'run page: {own} or http://'), 'the run log has the https address first', log)
+        with mock.patch.object(W, 'site_urls', lambda: []):
+            check(W.page_line().startswith(f'run page: {own} (or http://'), 'and so has status', W.page_line())
+        with mock.patch.object(W, 'site_urls', lambda: ['http://box:1/p/a/?t=H']):
+            eq(W.page_line(), f'run page: {own} (or http://box:1/p/a/?t=H)', "ahead of Runner Home's http one")
+        check(W.url_file().read_text(encoding='utf-8').startswith('http://'), 'web.url stays http')
+        srv.stop()
+        eq((changes()[1:], web_rules()), ([off], other['Web']), 'the stop turns it off, and no other rule')
+        check(not W.page_https.rule_file().exists(), 'nothing is left recorded')
+
+        fake()
+        srv = start()
+        srv.https = False  # a run that did not stop
+        srv.stop()
+        eq(web_rules(), made, 'a crash leaves the rule')
+        srv = start()
+        eq(changes(), [on], 'the next run takes it over')
+        srv.stop()
+        eq(web_rules(), {}, 'and turns it off')
+
+        fake()
+        srv = start()
+        srv.https = False
+        srv.stop()
+        with mock.patch.object(W.page_https, 'is_ours', wraps=W.page_https.is_ours) as ours:
+            eq(start(web=False), None, 'a run with no page')
+        check(ours.called and web_rules() == {}, 'turns off what the crashed one left', web_rules())
+
+        fake()
+        srv = start()
+        srv.https = False
+        srv.stop()
+        start(home=port).stop()
+        eq((web_rules(), W.page_https.made_rule()), (made, None), "Runner Home has that port by now: the rule is Home's")
+
+        fake()
+        srv = start()
+        changed = {'TCP': {str(port + 1): {'HTTPS': True}},
+                   'Web': {f'box.tail.ts.net:{port + 1}': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:1'}}}}}
+        fake(changed)
+        srv.stop()
+        eq((changes(), web_rules()), ([], changed['Web']), 'a rule someone changed meanwhile is left alone')
+
+        fake()
+        srv = start()
+        check(srv.go_private(), 'Runner Home was installed')
+        eq(web_rules(), {}, 'the run takes its rule with it')
+        srv.stop()
+
+        fake({'TCP': {'443': {'HTTPS': True}}, 'Web': {'box.tail.ts.net:443': {'Handlers': {'/': {'Proxy': f'http://127.0.0.1:{port}'}}}}})
+        srv = start()
+        check(f'https://box.tail.ts.net/?t={W.web_token()} or http' in log[-1], "the person's own rule is used", log)
+        srv.stop()
+        eq((changes(), len(web_rules())), ([], 1), 'and left alone')
+
+        fake()
+        start(home=port + 5).stop()
+        start(web_https=False).stop()
+        eq(changes(), [], "only Home opens it, or web_https = false: none made")
+
+        def http_only(why: str, **kw) -> None:
+            srv = start(**kw)
+            srv.stop()
+            said = [x for x in log if 'http only' in x]
+            check(len(said) == 1 and why in said[0], f'http only: {why}', log)
+            check('https://' not in log[-1] and 'run page: http://' in log[-1], 'the page is served over http', log)
+            check(not W.page_https.rule_file().exists() and off not in changes(), 'nothing to turn off', changes())
+        empty = tmp / 'empty'
+        empty.mkdir()
+        (empty / 'git').symlink_to(shutil.which('git'))
+        fake()
+        http_only('no tailscale here', path=str(empty))
+        fake(state='NeedsLogin')
+        http_only('not connected')
+        fake(certs=None)
+        http_only('HTTPS certificates are not enabled')
+        fake(refuse=True)
+        http_only('refused: Access denied: serve config denied')
+        fake(changed)
+        http_only('for something else')
+        eq(web_rules(), changed['Web'], 'a rule on the next port is left alone')
+        fake()
+        with socket.create_server(('127.0.0.1', port + 1)):
+            http_only('is taken')
 
 
 LISTEN_DRIVER = r"""
@@ -5179,7 +5347,7 @@ if __name__ == '__main__':
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_page_copy_publish), in_tmp(test_parked), in_tmp(test_shelved_f184),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_news_f149), in_tmp(test_login_banner_f126a),
-                           in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
+                           in_tmp(test_talk_f93), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),

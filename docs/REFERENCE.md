@@ -297,6 +297,8 @@ needs (made once per project in `.runner/web.token`), is in `status` and the run
 the run page: the same snapshot as `agent-runner ui` and most of its actions (not opening a slot), laid out for a phone (the sidebar becomes a
 drawer) and a desktop. It follows the browser's light or dark setting; `[ui] theme` is the terminal UI's only.
 
+The browser gives the microphone (Talk) only to https or localhost, so a run on every interface with Tailscale connected also gets an https address (the Tailnet address): it runs `tailscale serve --bg --https=<web_port+1> http://127.0.0.1:<web_port>` and prints `https://<host>.<tailnet>.ts.net:8771/?t=…` first in `status` and the run log. `[run] web_https = false` makes none. The rule is recorded in `.runner/web.serve`; the run turns it off at its stop, and the next start takes over or turns off a rule a crashed run left; rules the runner did not make are left alone. Behind Home the run makes none (Home has its own https). Without tailscale, when not connected, when HTTPS certificates are not enabled on the tailnet, when `web_port+1` is taken, or when serve is refused (e.g. it needs `sudo tailscale set --operator=$USER`), the run log says `run page: http only, <why>`. So `web_port`'s next port is used by default; another project's `web_port` should not be that port.
+
 - **Talk.** The first view in the sidebar, for running the run hands-free: tap the mic, speak, and the
   reply is read aloud (the browser's own speech recognition; the reading is run speech when an engine is installed, else the browser's own). The speaker button left of the
   mic turns reading aloud on and off; while a reply is read it is the stop (stop icon, "Stop speaking"), and a tap ends that
@@ -1552,6 +1554,7 @@ web = true                # the run app (see The run app), served by the run on 
                           # log; false: off
 web_port = 8770           # where the run app is served; a port set here stays open on every interface (unless it is
                           # Home's own port)
+web_https = true          # the run app's https address on Tailscale (see The run app), on web_port+1 through `tailscale serve`; false: none
 silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
 control = true            # the run opens no control session of its own; true: it reopens the ones a shutdown cut off and, with remote, keeps the control server up; false: neither (`agent-runner control` still works)
 control_idle = "3h"       # close idle control sessions (none is protected) once quiet this long, Claude spoke last, its last message does not end on a `DECIDE:` line (that one waits for `control_ask`), and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle

@@ -121,6 +121,7 @@ DEFAULTS: dict = {
         'web': True,            # the run page on the web, served by the run from this machine on web_port for the
                                 # LAN/Tailscale (its address, with the token it needs, in `status` and the run log)
         'web_port': 8770,       # where the run page is served (its ttyds take the next ports); with Home, only if set (F165)
+        'web_https': True,      # an https address for it on the tailnet, by Tailscale Serve on web_port + 1 (F96)
         'silent': False,        # phone pushes from the run's Remote Control sessions: true = none after each
                                 # one's start push (that one cannot be stopped), false = Claude Code's usual
         'control': True,        # the run reopens the control sessions a shutdown cut off and, with remote, keeps the
@@ -727,6 +728,8 @@ class Config:
             raise SystemExit(f"agent-runner: [run] silent must be true or false, not {self.run['silent']!r}")
         if not isinstance(self.run['web'], bool):
             raise SystemExit(f"agent-runner: [run] web must be true or false, not {self.run['web']!r}")
+        if not isinstance(self.run['web_https'], bool):
+            raise SystemExit(f"agent-runner: [run] web_https must be true or false, not {self.run['web_https']!r}")
         if not isinstance(self.run['web_port'], int) or isinstance(self.run['web_port'], bool) \
                 or not 0 < self.run['web_port'] < 65536:
             raise SystemExit(f"agent-runner: [run] web_port must be a port number, not {self.run['web_port']!r}")

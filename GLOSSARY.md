@@ -697,3 +697,10 @@ _Said_: trusted networks, my tailnet
 _On screen_: Networks with no key
 _In code_: trusted_networks, trust.py, home trust
 _Avoid_: whitelist, allowlist
+
+**Tailnet address**:
+The https address of a run's page on Tailscale, so a browser there gets the microphone for Talk
+_Said_: https on Tailscale
+_On screen_: run page link in status and the run log, Run page over https setting
+_In code_: page_https.py, [run] web_https, web.serve
+_Avoid_: serve URL, public link

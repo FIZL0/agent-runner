@@ -60,7 +60,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, login_hold, need_detail, plat, session_frame, session_now, session_theme, speech, trust, watch
+from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plat, session_frame, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -190,7 +190,10 @@ def shown_links(site: list[str], own: list[str], https=None) -> list[str]:
     own, https first, each without its key where the page's network is trusted (trust.shown)."""
     if site:
         from agent_runner.home import load_registry
-        return trust.shown(https_first(site, https), load_registry()['trusted_networks'])
+        got = trust.shown(https_first(site, https), load_registry()['trusted_networks'])
+        if own and not any(u.startswith('https://') for u in got):  # F96: the run's own https address, ahead of http
+            got = [u for u in shown_links([], own, https) if u.startswith('https://')] + got
+        return got
     return trust.shown(https_first(own, https), run_trusted())
 
 
@@ -1308,6 +1311,7 @@ class WebServer(ThreadingHTTPServer):
         super().__init__((bind, port), Handler)
         self.terms = Terminals(token, self.server_address[1], bind)
         self.moving = threading.Lock()
+        self.https = False  # F96: page_https made a Tailscale Serve rule for it
 
     def private(self) -> bool:
         return self.server_address[0] == LOCAL
@@ -1320,6 +1324,7 @@ class WebServer(ThreadingHTTPServer):
                 return False
             # the new one first: with no port to be had, the page stays where it is
             new = socket.create_server((LOCAL, 0))
+            self.https_off()  # F96: before Home can take the port, and the same https port with it
             self.shutdown()
             self.server_close()
             self.terms.close()
@@ -1329,9 +1334,15 @@ class WebServer(ThreadingHTTPServer):
             threading.Thread(target=self.serve_forever, name='run-page', daemon=True).start()
             return True
 
+    def https_off(self) -> None:
+        if self.https:
+            self.https = False
+            page_https.https_off()
+
     def stop(self) -> None:
         self.stopped.set()
         with self.moving:
+            self.https_off()
             self.shutdown()
             self.server_close()
             self.terms.close()
@@ -1432,6 +1443,7 @@ def start_web() -> WebServer | None:
     url_file().unlink(missing_ok=True)
     r = S.C.run
     if not r.get('web', True) or os.environ.get('AGENT_RUNNER_NO_WEB'):
+        page_https.left_over()
         return None
     from agent_runner.ui_model import settings_start
     settings_start()  # F166
@@ -1450,15 +1462,20 @@ def start_web() -> WebServer | None:
             srv = serve(web_token(), 0, LOCAL)
         except OSError as e2:
             S.log(f'run page: cannot serve it ({e2}); set [run] web_port, or web = false')
+            page_https.left_over()
             return None
         if why:
             S.log(f'run page: {why}, so only Runner Home opens it')
     urls = own_links(write_urls(srv))
+    if r.get('web_https', True) and not srv.private():  # F96
+        srv.https = page_https.https_on(srv.server_address[1])
+    else:
+        page_https.left_over()
     # B129: the run log names a Tailscale Serve https address first too (the mic needs https); web.url stays http.
     # B146: the device site's /p/KEY/ address first when one routes this project
     site = site_urls()
     shown = shown_links(site, urls)
-    shown += [x for x in (trust.shown(urls, run_trusted()) if site else []) if x not in shown]
+    shown += [x for x in (shown_links([], urls) if site else []) if x not in shown]
     closed = '' if shown else closed_line()
     S.log(f'run page: {" or ".join(shown) or closed}' +
           ('' if shutil.which('ttyd') else ' (ttyd is not installed, so a chat cannot show its session)'))

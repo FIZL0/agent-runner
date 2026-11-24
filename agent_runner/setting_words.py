@@ -63,6 +63,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.min_free_mem_gb': ('machine', 'Minimum free memory', "Below this, the run's biggest process is ended. 0: never."),
     'run.web': ('look', 'Run page', 'The run serves this page on your network. Off: no page, only the terminal.'),
     'run.web_port': ('look', 'Run page port', 'The port this page is on. With Runner Home, setting one keeps it open beside Home.'),
+    'run.web_https': ('look', 'Run page over https', 'An https address for this page on your tailnet, by Tailscale Serve on the next port. Talk needs https for the mic.'),
     'ui.trusted_networks': ('look', 'Networks with no key', 'A device on one of these networks opens this page without its key. Empty: the key is always needed.'),
     'ui.theme': ('look', 'Terminal colors', 'The colors of the terminal page and of a session on this page. Light suits a bright terminal.'),
     'run.auto_upgrade': ('look', 'Update by itself', 'A newer agent-runner is installed, and the run restarts on new code, between merges. Off: only when you press upgrade or restart.'),
@@ -145,7 +146,7 @@ _HOMES: dict[str, str] = {'git.land_edited': DEVICE, 'run.questionnaires': EVERY
 # shown only while its parent is on
 _PARENTS: dict[str, str] = {
     'run.approve_wait': 'run.approve', 'run.approve_batch': 'run.approve', 'run.issues_trust': 'run.issues_watch',
-    'run.review_min_lines': 'run.review', 'run.web_port': 'run.web',
+    'run.review_min_lines': 'run.review', 'run.web_port': 'run.web', 'run.web_https': 'run.web',
     'run.fix_ahead_max': 'run.fix_merges', 'models.review': 'run.review',
 }
 # a choice in words: value -> what its control says
