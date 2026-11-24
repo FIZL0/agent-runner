@@ -34,7 +34,7 @@ from agent_runner.control import (control_argv, control_brief, control_env, cont
 from agent_runner.control_first import CONTROL_FIRST, type_first_later  # B147
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
     since_text, status_text, waiting_ok, as_event, events_file, read_events)
-from agent_runner.feed import (board_held, control_late_files, control_new, control_new_runner,
+from agent_runner.feed import (board_held, control_late_files, control_new,
     FORWARD_FLAG, forward_late_files, read_ask_file, SID_RE)
 from agent_runner.loop import drop_session_env, finish, send_key
 
@@ -1019,8 +1019,6 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument(FORWARD_FLAG, action='store_true', help='open another one (as --new) whose first message is '
                     "the person's latest message in the runner feed, word for word, with its attachments (the "
                     'feed hands requests on this way)')
-    ap.add_argument('--runner', action='store_true', help='with --forward: open it in agent-runner\'s own checkout '
-                    'instead, labelled with this project (the feed hands asks about agent-runner itself on this way)')
     ap.add_argument('--no-feed', action='store_true', help=argparse.SUPPRESS)  # B154: --ask is a page's or the TUI's
     ap.add_argument('--from-feed', default='', help=argparse.SUPPRESS)  # B54: the project a --runner ask came from
     ap.add_argument('--file', '--image', dest='file', action='append', default=[], metavar='PATH',
@@ -1050,8 +1048,6 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if a.title is not None:
         env_n = os.environ.get(CONTROL_N_ENV, '')
         return control_set_title(a.n or (int(env_n) if env_n.isdigit() else 0), a.title)
-    if a.runner and a.forward and not a.feed_sid:
-        return control_new_runner(a.n, images=a.file)
     if a.new or (a.forward and not a.feed_sid):
         return control_new(a.n, ask=a.ask, images=a.file, forward=a.forward and not a.from_feed,
                            handed=bool(a.from_feed) or a.no_feed, **({'wait': -1} if a.no_wait else {}))

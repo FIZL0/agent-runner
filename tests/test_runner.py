@@ -6804,10 +6804,7 @@ def test_take_running_slot(repo: Path):
 
 
 def test_runner_route_b54(repo: Path):
-    """B54: the feed sends an ask about agent-runner itself to agent-runner's own control session, labelled with
-    the project, and a hand-off whose words share nothing with the waiting items carries none of them."""
-    import contextlib
-    import io
+    """B54: a hand-off whose words share nothing with the waiting items carries none of them."""
     item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags?', '', 'How should the site deploy')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
         eq(R.control_ask('update runner, when is release?'), 'update runner, when is release?',
@@ -6817,44 +6814,6 @@ def test_runner_route_b54(repo: Path):
         check('<runner-waiting>' in R.control_ask('deploy only on tags'), 'B54: an ask on the same subject carries it')
     eq(R.waiting_for_ask('fix the login page', '- R43: Deploy on every push?\n- B9: login page shows an error'),
        '- B9: login page shows an error', 'B54: only the related item of several')
-    # the route: the feed's message read here, opened in agent-runner's checkout with the label, no waiting block
-    other = repo.parent / 'agent-runner-co'
-    other.mkdir(exist_ok=True)
-    runs = []
-    done = lambda *a, **k: runs.append((a, k)) or R.sp.CompletedProcess(a, 0, 'control 3 is up: https://claude.ai/code/x\n', '')
-    out = io.StringIO()
-    with mock.patch.object(R, 'runner_checkout', lambda: other), mock.patch.object(R, 'feed_sid', lambda: 's'), \
-            mock.patch.object(R, 'feed_take', lambda sid, w: 'update runner, when is release?'), \
-            mock.patch.object(R, 'feed_wait', lambda *a, **k: (True, ['/tmp/p.png'], 0, '')), \
-            mock.patch.object(R.sp, 'run', done), contextlib.redirect_stdout(out):
-        rc = R.control_new_runner()
-    runs[:] = [r for r in runs if '--new' in r[0][0]]  # B106: not the hand-off log's git call for the notes path
-    cmd, kw = runs[0][0][0], runs[0][1]
-    ask = next(x for x in cmd if x.startswith('--ask='))
-    eq(rc, 0, 'B54: control --new --runner exits as the session it opened')
-    check(kw['cwd'] == str(other) and cmd[cmd.index('--from-feed') + 1] == R.ROOT.name and '--new' in cmd
-          and 'update runner, when is release?' in ask and f'from the {R.ROOT.name} runner feed' in ask
-          and '<runner-waiting>' not in ask and cmd[cmd.index('--file') + 1] == '/tmp/p.png'
-          and 'AGENT_RUNNER_REPO' not in kw['env'], 'B54: opened in agent-runner\'s checkout, labelled', cmd)
-    check(out.getvalue().startswith('agent-runner control 3 is up: https://claude.ai/code/x'),
-          'B54: the feed is told it went to agent-runner', out.getvalue())
-    runs.clear()
-    with mock.patch.object(R, 'runner_checkout', lambda: other), mock.patch.object(R, 'feed_sid', lambda: 's'), \
-            mock.patch.object(R, 'feed_take', lambda sid, w: None), mock.patch.object(R.sp, 'run', done), \
-            contextlib.redirect_stdout(io.StringIO()):
-        R.control_new_runner()
-    runs[:] = [r for r in runs if '--new' in r[0][0]]
-    check(runs and runs[0][1]['cwd'] == str(other) and any(R.feed_lost_note() in x for x in runs[0][0][0]),
-          'B54: an unreadable message still goes to agent-runner, which asks for it again', runs)
-    opened = []
-    with mock.patch.object(R, 'runner_checkout', lambda: R.ROOT), \
-            mock.patch.object(R, 'control_new', lambda *a, **k: opened.append(k) or 0):
-        R.control_new_runner()
-    eq(opened[0].get('forward'), True, 'B54: in agent-runner itself, a plain --forward')
-    from agent_runner.config import CLONE_ENTRY
-    if CLONE_ENTRY.exists():
-        found = R.runner_checkout()
-        check(found is not None and (found / R.RUNNER_REPO_MARK).is_file(), 'B54: the clone this runs from is found', found)
 
 
 def test_upgrade_cmd(repo: Path):

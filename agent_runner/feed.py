@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from agent_runner import plat
-from agent_runner.config import main_checkout, runner_cmd, shown_cmd
+from agent_runner.config import runner_cmd, shown_cmd
 from agent_runner.state import C, log, ROOT, run_up
 from agent_runner.slots import link_drift, remote_answer_drift
 from agent_runner.slots import marker_pid, remote_off_why, remote_on, REMOTE_URL, transcript
@@ -678,79 +678,6 @@ def control_new_hidden(n: int, cmd: list[str], name: str, wait: float = CONTROL_
         link_drift(f'control {n}', wait)
     print(f'control {n} is up in {where}, but showed no link in {wait:g} s: find "{name}" at {REMOTE_URL}')
     return 0
-
-
-# --- B54: the feed hands an ask about agent-runner itself to agent-runner's own control session ---------------
-
-RUNNER_REPO_MARK = Path('agent_runner', 'runner.py')  # what tells agent-runner's checkout from another repo
-
-
-def runner_checkout() -> Path | None:
-    """agent-runner's own main checkout: the clone this install runs from (its `run`), else the main checkout of a
-    worktree under agent-runner's `[run] home` (the `{repo}` in it read as agent-runner); None when neither is
-    one (an installed package with no runs of agent-runner on this machine)."""
-    from agent_runner.config import CLONE_ENTRY
-    cands = [CLONE_ENTRY.parent] if CLONE_ENTRY.exists() else []
-    for t in (os.environ.get('AGENT_RUNNER_HOME') or '', str(C.raw.get('run', {}).get('home') or ''), '~/runs/{repo}'):
-        if '{repo}' not in t:  # a home without {repo} is one project's own, not agent-runner's
-            continue
-        home = ROOT / Path(t.replace('{repo}', 'agent-runner')).expanduser()
-        if home.is_dir():
-            cands += [home / 'merge', *sorted(p for p in home.iterdir() if re.fullmatch(r's\d+', p.name))]
-    for c in cands:
-        if not c.is_dir():
-            continue
-        try:
-            root = main_checkout(c)
-        except (SystemExit, OSError):
-            continue
-        if (root / RUNNER_REPO_MARK).is_file():
-            return root
-    return None
-
-
-def runner_label(ask: str, repo: str) -> str:
-    """The handed-on ask as agent-runner's control session gets it: the person's words, then where they came from."""
-    return (f'{ask}\n\n(Handed on from the {repo} runner feed: the person asked this there, about agent-runner '
-            f'itself, not {repo}.)')
-
-
-def control_new_runner(n: int | None = None, images: list[str] | tuple = ()) -> int:
-    """`control --new --forward --runner`: the feed's latest person message (read as `--forward` does) opens a
-    control session in agent-runner's own checkout (`runner_checkout`), labelled with this project and carrying
-    none of this project's waiting items; in this project itself, or with no checkout found, a plain `--forward`."""
-    root = runner_checkout()
-    if root is None or root == ROOT:
-        if root is None:
-            print("agent-runner's own checkout was not found on this machine, so this opens here")
-        return control_new(n, images=images, forward=True)
-    sid = feed_sid()
-    took = feed_take_files(sid, FEED_LATE_WAIT, where='control --new --forward --runner') if sid else None
-    if took is None:  # still agent-runner's: its session asks the person to send it again
-        text, found, got, lost, version = feed_lost_note(), False, [], 0, ''
-    elif took[2]:  # BUG1: a photo sent alone: its files, or the note that they could not be read
-        text, found, got, lost, version = took[0], False, list(took[1]), 0, ''
-    else:
-        text = took[0]
-        found, got, lost, version = feed_wait(text, FEED_WAIT, sid, 'control --new --runner')
-    images = [str(Path(i).resolve()) for i in images]
-    images += [i for i in got if i not in images]
-    ask = runner_label(text, ROOT.name).strip()
-    if found and (note := image_drift_note(lost, version)):
-        ask = f'{ask}\n\n{note}'
-    env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER_REPO', 'AGENT_RUNNER_CONFIG', CONTROL_N_ENV)}
-    cmd = [*runner_cmd(), 'control', '--new', '--from-feed', ROOT.name, f'--ask={ask}',
-           *[x for i in images for x in ('--file', i)]]
-    try:
-        p = sp.run(cmd, cwd=str(root), env=env, capture_output=True, text=True, timeout=CONTROL_LINK_WAIT + 120)
-    except (OSError, sp.TimeoutExpired) as e:
-        print(f"agent-runner's control session did not open: {e}", file=sys.stderr)
-        return 1
-    if out := p.stdout.strip():
-        print(f'agent-runner {out}')
-    if err := p.stderr.strip():
-        print(f'agent-runner: {err}', file=sys.stderr)
-    return p.returncode
 
 
 def rc_sweep_stop() -> None:
