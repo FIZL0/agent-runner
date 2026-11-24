@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: Settings > Advanced > This machine: Claude Code program is now a picker of the Claude Code programs found on this machine (PATH, ~/.local/bin, ~/.claude/local, /opt/homebrew/bin, /usr/local/bin), each with its name, version and path; a pick saves at once. A kept wrong value stays listed, marked not found, with the reason, and Other path… takes a wrapper. Under it, Providers lists each provider's login, and says a provider is chosen per role in [models] (F405)
+
 ## 0.64.0 (2026-11-24)
 
 - Changed: at a terminal, bare `agent-runner` (the run picker) no longer starts a run when you pick one that is not up: picking a row always opens its launcher, the second screen. There `s` starts the run in the background (logged as started by picker), and the launcher then shows the run up with its link, or the error. No pick, and none of w, t, c or Enter, starts a run; a bare `agent-runner` without a terminal, `agent-runner run`, `--attach` and every Start control still do. Where there is no TUI (Windows, no tmux) the launcher has no `t`, shows the reason in a dim line, and Enter opens the run page (F402a)

@@ -183,6 +183,7 @@ function saveSetting(id,side){
 }
 function resetSetting(id,side){
   const k=settingOf(id);if(!k)return;
+  delete S.f[otherField(id,side)];
   if(side==='device')outbox('setting_reset',{table:k.table,key:k.key},{set:{id,applies:k.applies},say:`Reset ${k.name}`});
   else outbox('setting_project',{table:k.table,key:k.key,unset:true},{set:{id,applies:k.applies},say:`Reset ${k.name} for everyone`});
 }

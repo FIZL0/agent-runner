@@ -611,7 +611,7 @@ const I = {chev: '', x: ''}, card = t => `<div>${t}</div>`, emptyCard = card, ob
 const document = {querySelector: () => null, querySelectorAll: () => []}, render = () => {}, toast = t => { throw new Error(t) };
 let saved = [];
 const outbox = (n, a) => saved.push([n, a.key, a.value]);
-eval(logic + slice('const settingId=', 'function resetSetting(') + `
+eval(logic + slice('const settingId=', '/* the stepper:') + `
 const k = set.tables.find(t => t.table === 'run').keys.find(x => x.key === 'agent'), row = () => settingRow(settingOf('run.agent'), {}), out = {row: row()};
 const pick = (value, side, now) => pickAgent({value, dataset: {id: 'run.agent', setagent: side, ...(now ? {now: ''} : {})}});
 pick(AGENT_OTHER, 'device', true); out.other = row(); out.asked = saved.length;
@@ -619,6 +619,7 @@ S.f['setother:device:run.agent'] = ' /opt/wrap '; saveSetting('run.agent', 'devi
 out.kept = row();
 const was = [k.has_device, k.device]; k.has_device = true; k.device = '/opt/wrap'; row(); out.left = !('setother:device:run.agent' in S.f);
 [k.has_device, k.device] = was;
+pick(AGENT_OTHER, 'device', true); resetSetting('run.agent', 'device'); out.reset = !('setother:device:run.agent' in S.f); saved = [];
 pick('claude', 'device', true); out.picked = saved; saved = []; S.f = {};
 pick('claude', 'project', false); out.sheet = saved.length; saveSetting('run.agent', 'project'); out.sheetSaved = saved; S.f = {};
 setModels(); out.models = [...settingsHTML().matchAll(/data-k="set:([a-z.]+)/g)].map(m => m[1]);
@@ -690,6 +691,7 @@ def test_agent_picker_f405(tmp: Path) -> None:
             eq((o['asked'], o['wrap']), (0, [['setting_device', 'agent', '/opt/wrap']]), 'saved by Save only, as typed')
             check('value=" /opt/wrap "' in o['kept'], 'what is typed stays until it is what is kept')
             eq(o['left'], True, 'then the field goes')
+            eq(o['reset'], True, 'a reset takes the field too')
             eq(o['picked'], [['setting_device', 'agent', 'claude']], 'a pick saves at once')
             eq((o['sheet'], o['sheetSaved']), (0, [['setting_project', 'agent', 'claude']]), "in More… it waits for Save")
             check({'models.control', 'models.code', 'models.kinds', 'models.providers'} <= set(o['models'])
@@ -719,6 +721,9 @@ def test_agent_picker_f405(tmp: Path) -> None:
         eq((mine()['state'], mine()['cmd']), ('out', f'{CF.RUNNER} login mine'), 'a provider of its own, with no login')
         with mock.patch.dict(os.environ, {'MINE_KEY': 'SECRET-M'}):
             eq((mine()['state'], mine()['says'], mine()['cmd']), ('in', 'env MINE_KEY', ''), 'and with one')
+        local.write_text('[models.providers.mine]\nkey = "SECRET-K"\n', encoding='utf-8')
+        eq(settings()[1]['providers'][-1]['name'], '[models.providers]', 'providers that are not valid: said')
+        check('SECRET' not in json.dumps(settings()[1]['providers']), 'without what they hold')
         local.unlink()
         with mock.patch.object(shutil, 'which', lambda cmd, mode=1, path=None: None if cmd == 'claude' else real(cmd, mode, path)):
             k, d = settings()

@@ -76,14 +76,15 @@ def picks(root: Path, row: dict) -> list[dict]:
 def providers(table) -> list[dict]:
     """Each provider a role can name (`table`: [models.providers] as its file has it): {'name', 'state' ('in', 'out',
     'none': needs no login, 'unchecked'), 'says', 'cmd' (what logs it in)}."""
+    bad = []
     try:
         own = CF.model_providers(table)
-    except SystemExit:  # the run log says what is wrong with it
-        own = {}
+    except SystemExit:  # its words quote the table, which may hold a key: not shown
+        own, bad = {}, [{'name': '[models.providers]', 'state': 'unchecked', 'says': 'not valid, so its providers are not listed', 'cmd': ''}]
     creds, out = login.stored(), []
     for name in [*CF.PROVIDERS, *own]:
         ok, where = login.login_of(name, own, creds)
         state = 'unchecked' if name == 'claude' else 'out' if not ok else 'none' if where.startswith('needs none') else 'in'
         out.append({'name': name, 'state': state, 'says': where if ok else '',
                     'cmd': '' if ok else f'{CF.RUNNER} login {name}'})
-    return out
+    return out + bad
