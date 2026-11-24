@@ -167,15 +167,15 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   server have no number and are not covered; a message whose reply had begun before the limit is not held. Not tried
   against a real limit yet: it was checked against transcripts only (the real ones of 2026-11-22 were read).
 - **Items settled elsewhere**: a control session about a task or a Needs you item (its title starts with the id, or it was
-  opened from that item: the first message of the chat gives it; so does a concept it filed with `plan concept` or `plan restyle`,
-  the concept's id and its build task's id, a task it blocked with `plan block ID "DECIDE: …"`, or its own open question
-  the run filed under Needs you when closing it, which counts again if the chat is open again; these are kept per session id in
-  `<notes>/settled/<session id>.filed`, so another session that gets the same number is not it) is told, once per change, when a command settles or changes
+  opened from that item: the first message of the chat gives it; or it filed the item itself: a concept, with its build task, by
+  `plan concept`, a `plan block ID "DECIDE: …"`, or its own open question, which the run filed when it
+  closed the chat, once that is open again; kept per session id in `<notes>/settled/<session id>.filed`, so another
+  session that gets the same number is not it) is told, once per change, when a command settles or changes
   that item: plan drop, change, edit, confirm, approve, revise, shelve, unshelve, restore or unblock; a tick of an item under
   Needs you; `sheet`; pitch approve or no; or the run's undo. That holds whether the command runs from the run page, the TUI
   or a terminal. The run types one line into the session: `From the runner, not the person: R81 was dropped at 13:28 by c4:
   <reason>. Re-read it before asking the person anything for it.` (`by` names who ran the command, c4 or a slot's agent; the
-  reason is the one the command gave, if any). Not told: the session that ran the command, the chat that settles it itself, sessions that only mention the id,
+  reason is the one the command gave, if any). Not told: the session that ran the command, sessions that only mention the id,
   sessions ended or closed online, and conversations begun after the change. Each change leaves one event in
   `<notes>/settled/`, marked there before it is typed, so a restarted run does not type it twice. A session with a question
   dialog up, held messages or one just starting waits; a turn running queues the line in Claude Code. The line is not a

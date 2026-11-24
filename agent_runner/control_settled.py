@@ -331,7 +331,7 @@ def concept_builds(ids) -> dict[str, str]:
     for path in (state.C.todo, state.C.done):
         for l in P.lines(path):
             if (m := P.ITEM.match(l)) and (b := m.group(3).rstrip('.')) in ids:
-                if (k := P.FROM_CONCEPT.search(l)) and k[1] in ids:
+                if 'Build the option a person approves on concept ' in l and (k := P.FROM_CONCEPT.search(l)) and k[1] in ids:
                     out[k[1]] = b
     return out
 

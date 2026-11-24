@@ -3085,7 +3085,7 @@ def _p_block(a, x):
     if rest[0] == '--after' and len(rest) > 2:
         after, rest = [t for t in rest[1].split(',') if t], rest[2:]
     block(a.id, ' '.join(rest), after=after)
-    if ' '.join(rest).startswith('DECIDE:'):
+    if ' '.join(rest).lstrip().startswith('DECIDE: '):
         _filed_here(x.c, a.id)
     return x.say(f'blocked {a.id}')
 
@@ -3169,7 +3169,6 @@ def _p_restyle(a, x):
         return 2
     got = restyle(style, opts['page'], opts.get('from') or '', globs, ids, split('files'),
                   running=lambda t: run_on(x.c, t), todo=x.todo, done=x.done)
-    _filed_here(x.c, got['rid'], got['build'])
     RESTYLE_PARK[:] = [f'{t}\t{got["rid"]}\t{style}' for t in got['park']]
     said = [f'restyle {got["rid"]} filed (its build {got["build"]} waits for the OK on {opts["page"]})']
     if got['held']:
