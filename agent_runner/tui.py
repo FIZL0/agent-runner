@@ -565,7 +565,7 @@ class RunPage:
             return [self.row(n, it)]
         rel = it if it.get('placeholder') else it.get('release')
         if rel:  # F185: 'V5 Release · releasing now'; dimmed 'Next release · auto at 10 landed: 6/10'
-            text = f'{rel["id"]} {rel["title"]} · {rel["all"]}' if open_ and rel.get('all') and it.get('release') else rel['text']
+            text = f'{rel["id"]} {rel["title"]} · {rel["all"]}{rel.get("note", "")}' if open_ and rel.get('all') and it.get('release') else rel['text']
             colour = 'dim' if it.get('placeholder') else KIND_COLOUR.get('V', 'magenta')
             if open_ or len(text) <= width:
                 return wrap([(text, colour)], max(width, 4))
@@ -1212,6 +1212,8 @@ class RunPage:
             return
         lines = [self.row_lines(n, it, w - 4, on and i == cur) for i, it in enumerate(rows)]
         heads = [group_head(rows, i) if n == 3 else '' for i in range(len(rows))]  # F185
+        if inner < len(lines[cur]) + 1:  # no room for a heading over the selected row
+            heads = [''] * len(rows)
         lines = [([[(h, 'dim')]] if h else []) + l for h, l in zip(heads, lines)]
         top = cur
         used = len(lines[cur])

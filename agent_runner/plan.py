@@ -3066,7 +3066,7 @@ def _tool_waits(c, st_todo) -> dict[str, str]:
 
 
 def _releases(c, todo) -> tuple[list[str], set[str]]:
-    """F185: the index's Releases group, as `status` says them (`ui_model.release_rows`): (its lines, the ids of the
+    """F185: the index's Releases group, as `status` says them, every task named (`ui_model.release_rows`): (its lines, the ids of the
     open releases in it, which the index below then leaves out). ([], set()) for none, or when they do not read."""
     from agent_runner import state, ui_model as U
     try:
@@ -3076,15 +3076,16 @@ def _releases(c, todo) -> tuple[list[str], set[str]]:
             return [], set()
         ls = lines(todo)
         rows = U.release_rows(ls, U._state(state.run_up()))
-        claimed = plansync.claims(c)
+        claimed = {t: plansync.label(x) for t, x in plansync.claims(c).items()}
+        claimed |= _tool_waits(c, todo) | _split_waits(c, todo)
     except (OSError, SystemExit, ValueError):
         return [], set()
     if not rows:
         return [], set()
     shown = {r['id'] for r in rows if not r['placeholder']}
     box = {tid: b for _, b, tid, _, _ in iter_tasks(ls)}
-    out = [(f'[{box[r["id"]]}] ' if r['id'] in shown else '') + r['text'] + r['note']
-           + (f'  [{plansync.label(claimed[r["id"]])}]' if r['id'] in shown and r['id'] in claimed else '') for r in rows]
+    out = [(f'[{box[r["id"]]}] ' if r['id'] in shown else '') + (f'{r["id"]} {r["title"]} · {r["all"]}' if r['id'] else r['text']) + r['note']
+           + (f'  [{claimed[r["id"]]}]' if r['id'] in shown and r['id'] in claimed else '') for r in rows]
     return ['## Releases', *out, ''], shown
 
 
