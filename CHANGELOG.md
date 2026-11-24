@@ -5,6 +5,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - Added: `[git] no_push = true` (off by default) is a no-push policy: the runner pushes nothing, and every session it starts (task, repair, control, one-shot) makes `git push` fail in any repository with git's message, so `--no-verify`, `-c` and child processes do not get around it. Settings > Merging shows it as Never push. It is a guard, not a sandbox (docs/REFERENCE.md, ### No-push policy) (F400).
+- Added: `tools/windows_vm.sh --all` runs every `tests/test_*.py` of the worktree on the Windows VM, one `-- FILE: passed|failed, N.Ns` line per file and a last summary line (exit code of the first failing file; 2 when there is no VM). The Windows CI section of docs/REFERENCE.md now runs it before a merge instead of the GitHub ci workflow, which is disabled since 2026-11-24 (too many emails).
 
 ## 0.63.0 (2026-11-24)
 

@@ -149,6 +149,39 @@ def test_start_stop():
     has(vm.calls(), 'docker stop', 'and stops what it started')
 
 
+def test_all():
+    print('--all: every test file, its time, and a last line with the failed ones')
+    vm = Vm('false')
+    (vm.repo / 'tests/test_ok.py').write_text('print("ok")\n')
+    (vm.repo / 'tests/helper.py').write_text('print("not a test file")\n')
+    r = vm.run('--all')
+    eq(r.returncode, 0, 'all pass: exit 0')
+    eq([x for x in r.stdout.splitlines() if x.startswith('==')], ['== tests/test_ok.py', '== tests/test_windows.py'],
+       'every tests/test_*.py runs, uncommitted ones too, and nothing else')
+    has(r.stdout, r'^-- tests/test_ok\.py: passed, \d+\.\ds$', 'how long a file took')
+    eq(r.stdout.splitlines()[-1], 'windows_vm: all 2 files passed', 'the last line')
+
+    (vm.repo / 'tests/test_bad.py').write_text('import sys\nsys.exit(7)\n')
+    (vm.repo / 'tests/test_worse.py').write_text('import sys\nsys.exit(8)\n')
+    r = subprocess.run(vm.cmd('--all'), env=vm.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                       timeout=120)
+    eq(r.returncode, 7, "the first failing file's exit code")
+    has(r.stdout, r'^-- tests/test_bad\.py: failed, \d+\.\ds$', 'a failed file has its time too')
+    eq(r.stdout.splitlines()[-1], 'windows_vm: 2 of 4 files failed: tests/test_bad.py tests/test_worse.py',
+       'the last line names the failed files, after the stop of the VM')
+    vm.clean('--all')
+
+    r = vm.run('--all', 'tests/test_ok.py')
+    eq((r.returncode, len(r.stderr.splitlines())), (2, 1), '--all with a file: exit 2, one line')
+    r = vm.run('--all', WINDOWS_VM='other')
+    eq((r.returncode, r.stdout), (2, ''), '--all with no VM: exit 2, no last line')
+    (vm.repo / 'tests/test_bad.py').write_text('import os, pathlib, signal\n'
+                                               'os.kill(int(pathlib.Path("../pid").read_text()), signal.SIGKILL)\n')
+    r = vm.run('--all')
+    check(r.returncode not in (0, 2), 'a run cut off fails', str(r.returncode))
+    eq(r.stdout.splitlines()[-1], 'windows_vm: did not finish: see the output above', 'and its last line says so')
+
+
 def until(ok, what):
     end = time.monotonic() + 60
     while not ok() and time.monotonic() < end:
@@ -181,7 +214,7 @@ def main() -> int:
     if os.name == 'nt' or not shutil.which('flock'):
         print('skipped: windows_vm.sh runs on a Linux machine that has the VM')
         return 0
-    return report([test_missing, test_run, test_start_stop, test_lock_and_signal])
+    return report([test_missing, test_run, test_start_stop, test_all, test_lock_and_signal])
 
 
 if __name__ == '__main__':
