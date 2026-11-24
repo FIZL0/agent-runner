@@ -117,6 +117,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   rest, beside Stop. `/` lists every command: the run's, Claude Code's, the project's, the person's and the chat's skills.
   Scrolling up hides the chips, box and top bar, with a thin strip that says Working. The session takes the run's own
   Claude Code theme, filled from the page's light or dark.
+- Added: the run queues a file split by itself when free slots start nothing because 3 or more ready tasks wait for one file: one critical (alone) task splits that file and its test by area, with no behaviour change, then narrows the open tasks' files to match. Off with `[run] split_files = false` or Settings "Split busy files" (F200b).
 
 ## 0.62.0 (2026-11-23)
 

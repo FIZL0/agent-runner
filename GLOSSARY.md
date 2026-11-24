@@ -739,3 +739,10 @@ _Said_: a fold
 _On screen_: a chevron row
 _In code_: foldIn, .foldin, data-askfold
 _Avoid_: accordion, expander
+
+**File split**:
+A task the run queues by itself to divide a file that ready tasks wait for while slots are free
+_Said_: split the big file
+_On screen_: Split busy files
+_In code_: file_split.py, queue_file_split, [run] split_files, EV_FILE_SPLIT
+_Avoid_: split (for a task), refactor task

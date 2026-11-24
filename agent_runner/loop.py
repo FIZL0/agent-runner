@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import ci, gitops, plan as P, plansync, plat, shared_tools, stack, undo
+from agent_runner import ci, file_split, gitops, plan as P, plansync, plat, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -1385,7 +1385,7 @@ class Run:
         self.stall_said.discard('before_start')
         self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
         passed = FB.no_free(self.branch, self.model, held) if held else set()
-        task = pick(running, self.tried | passed, self.branch, claim=True)
+        task = pick(running, self.tried | passed, self.branch, claim=True) or file_split.no_task(self, held)  # F200b
         if not task and passed and not self.cap_said and \
                 (t := pick(running, self.tried, self.branch)) and t[0] in passed:
             self.say_cap(w)  # F142: only the cap holds it: no provider in the chain is free for it

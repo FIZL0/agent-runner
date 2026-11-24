@@ -80,6 +80,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.command_timeout': ('merge', 'Longest command', 'Seconds a test or command may take before it counts as failed. Too low fails slow tests.'),
     'git.push_merge': ('merge', 'Push each merge', 'The shared branch is pushed after each merge that passed. Off: you push.'),
     'run.review_min_lines': ('work', 'Smallest change to review', 'A change with fewer lines than this skips the review. Lower reviews more.'),
+    'run.split_files': ('work', 'Split busy files', 'When slots stand free because 3 tasks wait for one file, a task to split that file is queued. Off: they wait.'),
     'run.task_tokens': ('work', 'Token cap per task', 'A task that uses more tokens than this stops and is parked. 0: no cap.'),
     'run.task_usd': ('work', 'Dollar cap per task', 'A task that costs more than this at list price stops and is parked. 0: no cap.'),
     'run.context_warn': ('work', 'Warn about a full session', 'A session larger than this many thousand tokens is named in the log and told once to finish. Nothing stops. 0: never.'),
