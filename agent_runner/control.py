@@ -970,7 +970,8 @@ def control_live_numbers() -> list[int]:
 
 
 def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> str:
-    """File control session `n`'s open question under Needs you: a task blocked `DECIDE: <q> <link>`, committed
+    """File control session `n`'s open question under Needs you: a task blocked `DECIDE: <q> <link>` (the link
+    after the bracket of options `q` may end with, so its options are buttons: F181d), committed
     as `watch_ci` commits its tasks (MERGE free, TODO.md clean). Its id, or '' when it could not be filed now."""
     if not MERGE.acquire(blocking=False):
         return ''

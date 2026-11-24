@@ -3323,9 +3323,14 @@ DECIDE_LINE = re.compile(r'^[\s>*_`]*DECIDE:[\s*_`]*(.+?)[\s*_`]*$')  # F135: a 
 
 def decide_question(text: str) -> str:
     """F135: the question work waits on in Claude's last message `text`, '' for none: its last non-empty line
-    `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none)."""
+    `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none). F181d: a long
+    one is cut before the bracket of options (and any links) that ends it, which is kept for its buttons."""
     q = ' '.join(m[1].split()) if text.strip() and (m := DECIDE_LINE.match(text.strip().splitlines()[-1])) else ''
-    return q if len(q) <= 240 else q[:239].rsplit(' ', 1)[0] + '…'
+    if len(q) <= 240:
+        return q
+    end = m[0] if (m := re.search(r' \[[^\[\]]+ / [^\[\]]+\]\.?(?: https?://\S+)*$', q)) else ''
+    head, room = q[:len(q) - len(end)], max(239 - len(end), 100)  # a long bracket still leaves the question 100
+    return q if len(head) <= room else head[:room].rsplit(' ', 1)[0] + '…' + end
 
 
 if __name__ == '__main__':

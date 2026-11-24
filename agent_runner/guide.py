@@ -163,7 +163,9 @@ the items in plain words, when you cannot tell which. Map the answer to one of t
 An item `pitch3` ([run] approve): landed work waits for their yes to be pushed. Give its page; yes: `{cmd} pitch
 approve pitch3`; no, to all or one change: `{cmd} pitch no pitch3 [--reopen F1] [--drop F2] --why "<their words>"`
 (undone here; ask whether to reopen or drop). Say what it prints: it may wait for an earlier pitch.
-A DECIDE with options (F18, `[run] questionnaires`) has a pick sheet: its line reads "<what is ready>. Pick
+A DECIDE whose question ends in a bracket, `[Full (recommended) / Small]`, or whose ask file has `options`, shows
+them as answer buttons (F181c): a name they reply is `{cmd} plan confirm ID "<the name>"`.
+A DECIDE with several questions (F18, `[run] questionnaires`) has a pick sheet: its line reads "<what is ready>. Pick
 on the sheet or reply go" with the sheet's link; give the link (call the Artifact tool's `open` on it). The
 sheet's Send writes their picks to the sheet's artifact db (F54): when they say they sent it ("sent",
 "done", "picked"), and whenever you show that item again, read it with the ArtifactData tool (`get`, the
@@ -352,7 +354,9 @@ merges. **Change only {repo}**: never touch another repository (its plan, code, 
 person explicitly asks for it; reading one is fine, and when a change there would help, offer it and wait.
 Answer in a few short lines: the person may be on a phone. **Never end on an offer** ("Want me to…?").
 When work waits on their answer, end with a line `DECIDE: <question>` (it goes under Needs you): only a question
-of your own about the work under discussion, never an existing item restated. """ + GLOSSARY + """
+of your own about the work under discussion, never an existing item restated. End it with its short answers, which
+become buttons: `DECIDE: Which look? [Full (recommended) / Small / No change]`, any link after the bracket.
+One DECIDE per question: ask the next once this one is answered. """ + GLOSSARY + """
 
 **Guide pages.** `{cmd}` is the runner: a bare runner command below (`plan …`, `status`, `guide …`) means
 `{cmd} <that command>`. The longer
