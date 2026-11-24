@@ -2976,6 +2976,14 @@ const over = () => { if (TK.ear) { mic().end() } hush(); TK.wait = null; TK.stat
   await clip(); for (let i = 0; i < 15; i++) { AU.el.currentTime++; await look() } out.clipOn = TK.state; await look(12); out.clipStill = TK.state;
   // Safari refuses: held for the speaker's tap
   over(); TS.mic = 'hold'; fire('pointerdown', press('[data-mic]')); lands('Sixth reply.'); refuse = 'NotAllowedError'; fire('pointerup', press('[data-mic]')); mic().end(); await settle(); out.refused = [TK.state, TK.held];
+  lands('Seventh reply.'); refuse = null; await settle(); await look(2); out.heldWaits = [TK.held, TK.later.length];
+  click('[data-spk]'); await settle(); out.heldTap = [asked[asked.length - 1], TK.state, TK.later.length];
+  // a sound that ended by itself: the next waiting reply is read; a long first sentence with no start event goes on
+  asked = []; AU.el.paused = true; await look(2); await settle(); out.nextUp = [asked[0], TK.state]; TS.mic = 'tap';
+  AU.got = null; over(); lands('Word '.repeat(60)); ss.speaking = true; await look(40); out.longOn = TK.state;
+  over(); TS.auto = true; lands('One here.'); us[0].onstart(); ss.paused = true; order.length = 0; await look(2); out.pausedVoice = [TK.state, order.join()]; TS.auto = false;
+  // the page hidden under a held finger: the mic stops
+  over(); TS.mic = 'hold'; fire('pointerdown', press('[data-mic]')); document.hidden = true; fire('visibilitychange', {}); out.hidHold = [TK.hold, !!mic().stopped];
   console.log(JSON.stringify(out));
 })();`);
 """
@@ -3021,6 +3029,11 @@ def test_stop_speaking_b174(tmp: Path) -> None:
     eq(got.get('clipPause'), '', 'paused with no event')
     eq((got.get('clipOn'), got.get('clipStill')), ('speaking', ''), 'a clip that moves goes on, one that stands still ends')
     eq(got.get('refused'), ['', 'Sixth reply.'], 'Safari refuses it: held for the speaker')
+    eq((got.get('heldWaits'), got.get('heldTap')), (['Sixth reply.', 1], ['Sixth reply.', 'speaking', 1]), 'a later one waits behind it, in order')
+    eq(got.get('nextUp'), ['Seventh reply.', 'speaking'], 'a sound that ends by itself: the next waiting reply is read')
+    eq(got.get('longOn'), 'speaking', 'a long sentence with no start event is not cut')
+    eq(got.get('pausedVoice'), ['', 'cancel'], 'a paused voice is dropped, with no auto listen into it')
+    eq(got.get('hidHold'), [False, True], 'the page hidden under a held finger: the mic stops')
 
 
 def test_talk_settings_f124(tmp: Path) -> None:

@@ -883,38 +883,38 @@ const talkReads=()=>TK.state==='speaking'||!!TK.playing, talkRest=()=>TK.wait?'t
 function talkNext(){
   if(!TK.later||!TK.later.length)return;
   if(!TS.read){TK.later=[];return}
-  if(!(TK.ear||TK.hold||MIC.rec||MIC.next||talkReads()))speak(TK.later.shift());
+  if(!(TK.ear||TK.hold||MIC.rec||MIC.next||TK.held||talkReads()))speak(TK.later.shift());
 }
 /* B174: iOS can skip a sound's last event, so a look each second while a reply is read ends one that makes no sound.
    w: turn, the reply's TK.turn; own, the browser's voice reads; clip, the element that plays a clip; at, the last sign
-   of sound, and limit, how long without one is too long; begun, heard at all; hid, the page was hidden; end(e) */
+   of sound, and len, the letters the browser's voice is at; begun, heard at all; hid, the page was hidden; end(e) */
 const SOUND_LOOK=1000, SOUND_LIMIT=10000;
 function soundWatch(w){TK.watch=w;setTimeout(()=>soundCheck(w,true),SOUND_LOOK)}
 function soundCheck(w,more){
   if(TK.watch!==w||TK.turn!==w.turn||!talkReads())return;
   if(more)setTimeout(()=>soundCheck(w,true),SOUND_LOOK);
-  const late=Date.now()-w.at>w.limit, a=w.clip;
+  const ss=window.speechSynthesis, a=w.clip, late=Date.now()-w.at>SOUND_LIMIT+(w.own&&ss.speaking?200*w.len:0);
   if(w.own){
-    const ss=window.speechSynthesis, quiet=ss.paused||!(ss.speaking||ss.pending);
+    const quiet=ss.paused||!(ss.speaking||ss.pending);
     w.quiet=quiet?w.quiet+1:0;
     if(!late&&w.quiet<(w.begun?2:4))return;
     if(TK.trail)micLog(`sound: the browser's own voice ${w.begun?'ended, with no event':'never started'}`);
-    const ok=quiet&&w.begun&&!w.hid;  // read to its end: auto listen may follow, so no speechSynthesis call (B132)
+    const ok=quiet&&w.begun&&!w.hid&&!ss.paused;  // read to its end: auto listen may follow, so no speechSynthesis call (B132)
     if(!ok)ss.cancel();
     w.end(ok?null:{type:'error'});
   }else if(a){
     if(a.ended){if(a.onended)a.onended()}
     else if(a.error){if(a.onerror)a.onerror()}
-    else if(a.paused){if(++w.quiet>1){if(TK.trail)micLog('sound: the clip stays paused');hush()}}
+    else if(a.paused){if(++w.quiet>1){if(TK.trail)micLog('sound: the clip stays paused');hush(true)}}
     else if(a.currentTime!==w.spot){w.spot=a.currentTime;w.at=Date.now();w.quiet=0}
-    else if(late){if(TK.trail)micLog('sound: the clip stands still');hush()}
+    else if(late){if(TK.trail)micLog('sound: the clip stands still');hush(true)}
   }
 }
 /* the page was hidden, or shows again: look at once, with 3 s left for a sound that goes on */
 function soundSeen(hidden){
   const w=TK.watch;if(!w)return;
   if(hidden){w.hid=true;return}
-  w.at=Math.max(w.at,Date.now()-w.limit+3000);soundCheck(w);
+  w.at=Math.max(w.at,Date.now()-SOUND_LIMIT+3000);soundCheck(w);
 }
 /* B178: an error in plain words: a fetch with no answer is 'Load failed' in Safari, 'Failed to fetch' elsewhere */
 const plainErr=e=>e&&((e.name==='TypeError'&&/load failed|fetch|network|connection|offline|cancelled|hostname|timed out/i.test(e.message))||e.name==='NetworkError'||e.name==='AbortError')?'no connection':e&&e.name==='SyntaxError'?'its answer made no sense':String((e&&e.message)||e);
@@ -2640,12 +2640,12 @@ async function playClips(clips,voice,turn,end,fall,held){
         a.onpause=()=>{  // a call, a route change; the lock screen's pause goes to pauseKeys()
           if(a.ended||!on())return;
           log(`paused at ${(a.currentTime||0).toFixed(1)} s, not by the page`,true);
-          if(resumed)return hush();
+          if(resumed)return hush(true);
           resumed=true;
           setTimeout(()=>{if(!on()||!a.paused||a.ended)return;
-            if(MIC.rec||MIC.next||TK.ear)return hush();  // never into a mic that listens
+            if(MIC.rec||MIC.next||TK.ear)return hush(true);  // never into a mic that listens
             log('play again');soundAs('playback');routeHold();
-            const q=a.play();if(q)q.catch(e=>{if(!on())return;log(`play again refused: ${e.name}`);if(e.name==='NotAllowedError')no(e);else hush()})},PLAY_AGAIN)};
+            const q=a.play();if(q)q.catch(e=>{if(!on())return;log(`play again refused: ${e.name}`);if(e.name==='NotAllowedError')no(e);else hush(true)})},PLAY_AGAIN)};
         const p=a.play();if(p)p.then(()=>{AU.ok=true}).catch(e=>{if(e&&e.name==='AbortError')return;log(`play refused: ${e&&e.name}`,true);no(e)})});  // AbortError: a pause came first, onpause has it
       w.clip=null;log(`clip ${i+1} ended`);
     }catch(e){if(!on())return;routeFree();log(e&&e.name==='NotAllowedError'?'held for a tap':`clip ${i+1} and on: the browser's own voice`,true);
@@ -2827,11 +2827,11 @@ function speak(text,key){
     if(TK.state==='speaking')TK.state=talkRest();TK.playing='';render(true);
     if(TK.later.length)talkNext();
     else if(!key&&!TK.wait&&TS.auto&&(!e||e.type!=='error')&&S.view==='talk'&&!S.thread&&!talkTyping()){TK.again=true;listen()}};
-  const w={turn,own:!rv,clip:null,at:Date.now(),limit:SOUND_LIMIT,quiet:0,spot:-1,begun:false,hid:false,us:[],end:ended};  // B174; us: an utterance nobody holds can lose its end
-  const own=ps=>{w.own=true;w.clip=null;w.quiet=0;w.begun=false;w.at=Date.now();ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;w.us.push(u);
+  const w={turn,own:!rv,clip:null,at:Date.now(),len:0,quiet:0,spot:-1,begun:false,hid:false,us:[],end:ended};  // B174; us: an utterance nobody holds can lose its end
+  const own=ps=>{w.own=true;w.clip=null;w.quiet=0;w.begun=false;w.at=Date.now();w.len=ps[0].length;ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;w.us.push(u);
     const log=x=>{if(rv&&TK.turn===turn&&TK.trail)micLog("sound: the browser's own voice "+x)};  // B178
-    u.onstart=()=>{w.begun=true;w.quiet=0;w.at=Date.now();w.limit=SOUND_LIMIT+200*p.length;if(!i)log('started')};
-    u.onend=u.onerror=e=>{w.at=Date.now();w.limit=SOUND_LIMIT;if(i===ps.length-1){log(e&&e.type==='error'?'error '+e.error:'ended');ended(e)}};
+    u.onstart=()=>{w.begun=true;w.quiet=0;w.at=Date.now();w.len=p.length;if(!i)log('started')};
+    u.onend=u.onerror=e=>{w.at=Date.now();w.len=(ps[i+1]||'').length;if(i===ps.length-1){log(e&&e.type==='error'?'error '+e.error:'ended');ended(e)}};
     ss.speak(u)})};
   soundAs('playback');soundWatch(w);
   if(!rv)own(parts);
@@ -2847,8 +2847,8 @@ function speak(text,key){
   if(key)TK.playing=key;else TK.state='speaking';
   render(true);
 }
-/* the person stops the reading; replies still waiting keep their play buttons */
-function hush(){TK.playing='';TK.later=[];if(TK.state==='speaking')TK.state=talkRest();TK.turn=(TK.turn||0)+1;shush();render(true)}
+/* the reading stops: by the person (replies still waiting keep their play buttons), or, keep, by itself: the next is read */
+function hush(keep){TK.playing='';if(!keep)TK.later=[];if(TK.state==='speaking')TK.state=talkRest();TK.turn=(TK.turn||0)+1;shush();render(true);if(keep)talkNext()}
 /* a Talk reply's play button: reads that reply, or stops it */
 function playReply(k){
   if(TK.playing===k)return hush();
@@ -3271,7 +3271,7 @@ for(const t of ['pointerdown','pointerup','pointercancel','gotpointercapture','l
   micLog([t,e.pointerType,e.pointerId==null?'':'id '+e.pointerId,document.hidden?'page hidden':''].filter(Boolean).join(' '),t==='pointerdown'&&!TK.ear);
 },{capture:true,passive:true});
 document.addEventListener('visibilitychange',()=>{if(TK.ear)micLog(document.hidden?'page hidden':'page shown');
-  if(document.hidden)TK.hold=false;soundSeen(document.hidden);if(!document.hidden)talkNext()});  // B174
+  if(document.hidden)letGo('page hidden');soundSeen(document.hidden);if(!document.hidden)talkNext()});  // B174
 /* F124: hold to talk: the mic listens while it is held, and sends when it is let go */
 document.addEventListener('pointerdown',e=>{
   if(!(e.target.closest&&e.target.closest('[data-mic]'))||TS.mic!=='hold'||e.button>0)return;
