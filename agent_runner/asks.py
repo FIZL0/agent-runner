@@ -15,7 +15,7 @@ import subprocess as sp
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import plan as P, plansync
+from agent_runner import plan as P, plansync, plat
 from agent_runner import state as S
 from agent_runner.state import commit_plan, git, log, MERGE, plan_rel
 from agent_runner.sched import open_tasks, plan_text
@@ -73,6 +73,16 @@ def block_asks(branch: str) -> None:
             if C.plan_external:
                 hold.enter_context(plansync.locked(C))
                 plansync.pull(C, force=True)
+            else:  # B767: never beside a `plan confirm` of this ask; one under way: next tick (the loop never waits)
+                if not (lock := plat.lock(plansync._lock_path(C))):
+                    continue
+                hold.callback(lock.close)
+            try:  # answered while the lock was waited for
+                ask = json.loads(f.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(ask, dict) or ask.get('blocked'):
+                continue
             rel = plan_rel('TODO.md')
             if tid in open_tasks(branch):
                 if not C.plan_external and (git('status', '--porcelain', '--', rel).stdout.strip() or
@@ -89,6 +99,60 @@ def block_asks(branch: str) -> None:
         finally:
             hold.close()
             MERGE.release()
+
+
+def _pending(tid: str, todo: str | Path | None):
+    """B767: (the .ask file, its content) when task `tid` of the plan `todo` is parked by a `run ask` the run has not
+    blocked yet, else None. A slot's worktree or a scratch copy of TODO.md is not the plan a run blocks in."""
+    if not re.fullmatch(r'\w[\w.-]*', tid or ''):
+        return None
+    for c in _plans(todo):
+        try:
+            at = c.todo if c.plan_external else S.main_checkout(c.root) / os.path.relpath(c.todo, c.root)
+            if todo is not None and os.path.realpath(todo) != os.path.realpath(at):
+                continue
+            f = c.notes(f'{tid}.ask')
+            ask = json.loads(f.read_text(encoding='utf-8'))
+        except (OSError, ValueError, SystemExit):
+            continue
+        if isinstance(ask, dict) and not ask.get('blocked'):
+            return f, ask
+    return None
+
+
+def pending_ask(tid: str, todo: str | Path | None = None) -> str:
+    """The question of `tid`'s ask that is not blocked yet; '' for none."""
+    got = _pending(tid, todo)
+    return str(got[1].get('question') or 'a question with no text') if got else ''
+
+
+def settle_ask(tid: str, todo: str | Path | None = None) -> None:
+    """The person answered `tid`'s ask before the run marked it blocked: `block_asks` passes over it, and the run lets
+    the task start again (`answered_asks`), which resumes its session with the answer."""
+    if got := _pending(tid, todo):
+        f, ask = got
+        _rewrite(f, {**ask, 'blocked': True, 'answered': True})
+
+
+def _rewrite(f: Path, ask: dict) -> None:
+    """Replace `f` whole: the run and a `plan confirm` read it at any time."""
+    tmp = f.with_suffix('.ask-tmp')
+    tmp.write_text(json.dumps(ask), encoding='utf-8')
+    os.replace(tmp, f)
+
+
+def answered_asks() -> set[str]:
+    """Tasks whose ask was answered before its block (`settle_ask`), each said once: the run tries them again."""
+    out = set()
+    for f in C.notes().glob('*.ask'):
+        try:
+            ask = json.loads(f.read_text(encoding='utf-8'))
+            if ask.pop('answered', None):
+                _rewrite(f, ask)
+                out.add(f.stem)
+        except (OSError, ValueError, AttributeError):
+            continue
+    return out
 
 
 def unblocked_asks() -> set[str]:

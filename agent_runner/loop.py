@@ -33,7 +33,7 @@ from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
 from agent_runner.tools import take_end
 from agent_runner.login import retry_held, unlogged
-from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_asks
+from agent_runner.asks import answered_asks, block_asks, EV_FINISHED, park_asked, unblocked_asks
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
@@ -390,6 +390,8 @@ def tells(procs: dict, running: dict) -> None:
         n = next((m for m, t in running.items() if t[0] == tid), None)
         if n is None:
             tell_answer(tid, False, f'no slot runs {tid} now')
+            if req['how'] == 'tell':  # B767: kept, as its sender may no longer wait for the answer
+                log(f'{tid}: not told: {req["text"]}')
             continue
         hit = tagged.get(f's{n}')
         if not MUX.typed:
@@ -1441,6 +1443,7 @@ class Run:
         undo.tick(branch, self.merging)  # F98
         keep_claims(self.running, branch)
         block_asks(branch)  # F102: an ask whose block could not be committed when it was parked
+        self.tried -= answered_asks()  # B767: answered before that block: its session goes on
         take_keys()
         # an exit may have queued one
         self.waiting = {n: q for n, q in queued().items() if n in self.free_at and n <= self.slots}

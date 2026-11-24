@@ -46,7 +46,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  running it is told "Your task changed: WHAT" in its pane and works on; with
                                  --restart, or no live pane, it is stopped and starts again from the new text
     ./run plan tell <ID> TEXT    type TEXT into the pane of the slot running ID (queued for its next turn); no
-                                 plan edit; an error when no slot runs ID
+                                 plan edit; an error when no slot runs ID, with the question it asks the person and the
+                                 command that answers it, or the `note` to run
     ./run plan shelve <ID>       later: stays blocked, off Needs you; `unshelve <ID>` brings it back
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
@@ -1936,6 +1937,50 @@ def _ask(tid: str, todo) -> tuple[str, str, str, str, str, str, bool]:
                      f'does; another project\'s item is answered in its own control session')
 
 
+def _parked_ask(tid: str, todo) -> str:
+    """B767: the question task `tid`, open in `todo`, asked with `run ask` and that the run has not blocked yet
+    (`asks.block_asks`); '' for none."""
+    from agent_runner.asks import pending_ask  # here: asks imports this module
+    open_now = any(t.rstrip('.') == tid and box == ' ' for _, box, t, _, _ in iter_tasks(lines(todo)))
+    return pending_ask(tid, todo) if open_now else ''
+
+
+def _ask_or_parked(tid: str, todo) -> tuple[str, str, str, str, str, str, bool]:
+    """`_ask`, and (B767) a question asked with `run ask` whose block is not in the plan yet, as its block will read."""
+    try:
+        return _ask(tid, todo)
+    except SystemExit:
+        if not (q := _parked_ask(tid, todo)):
+            raise
+    what = URL.sub('', q.split(' — ')[0]) if URL.search(q) else q.split(' — ')[0]
+    return 'DECIDE', tid, '', ' '.join(what.split()).rstrip(' :,;'), '', '', False
+
+
+def _answer(tid: str, text: str, todo) -> None:
+    """Reopen `tid` with the person's answer noted. B767: an ask the run has not blocked yet is settled with it, so
+    `block_asks` never files it after."""
+    from agent_runner.asks import settle_ask
+    if _parked_ask(tid, todo):
+        note(tid, text, todo=todo)
+        _clear_ask(tid, todo)
+    else:
+        unblock(tid, text, todo=todo)
+    settle_ask(tid, todo)
+
+
+def _not_told(tid: str, text: str, todo) -> str:
+    """B767: what to run with a `tell` that reached no session: when `tid` asks the person, its question and the
+    commands that answer it (never run from here); else the note for its next attempt."""
+    said = shlex.quote(text)
+    try:
+        label, _, _, what, url, _, _ = _ask_or_parked(tid, todo)
+    except SystemExit:
+        return f' (`{PROG} note {tid} TEXT` notes it for the next attempt)'
+    return (f'. {tid} {"is stuck and waits on" if label == STUCK else "asks"} the person: {what}{f" {url}" if url else ""}\n'
+            f'Only if your text answers that: `{PROG} confirm {tid} {said}`, or, to have something else done: '
+            f'`{PROG} change {tid} {said}`')
+
+
 def project_in() -> str:
     """F33: ' in <project>' (the main checkout's name) for a message about this project only; '' outside a repo.
     confirm, change and shelve read only this project's plan, never another's (a person's call)."""
@@ -1950,7 +1995,7 @@ def confirm(tid: str, said: str = '', todo=None, done=None) -> str:
     """The person's yes ("it worked", or what they saw): a CONFIRM is ticked with it noted, a DECIDE or BLOCKED
     reopens with the answer noted (so a run picks it up), a concept is approved. Returns what happened."""
     todo, done = ensure(todo, done)
-    label, t, k, what, _, _, _ = _ask(tid, todo)
+    label, t, k, what, _, _, _ = _ask_or_parked(tid, todo)
     if label == 'CONCEPT':
         return f'approved: {approve(tid, said, todo=todo)} is open now, and a run starts it' + freed_line()
     if label == 'CONFIRM':
@@ -1960,7 +2005,7 @@ def confirm(tid: str, said: str = '', todo=None, done=None) -> str:
     if label == STUCK:  # B35
         unblock(t, f'you said, on stuck ({what}): {said or "try again"}', todo=todo)
         return f'{t} is open again with your answer noted, and a run starts it'
-    unblock(t, f'your answer ({label} {what}): {said or "done"}', todo=todo)
+    _answer(t, f'your answer ({label} {what}): {said or "done"}', todo)
     return f'{t} is open again with your answer noted, and a run starts it'
 
 
@@ -1968,7 +2013,7 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
     """'Do X instead': the task reopens with `instead` noted; a concept is sent back (`revise`)."""
     todo, done = ensure(todo, done)
     try:
-        label, t, k, what, _, _, _ = _ask(tid, todo)
+        label, t, k, what, _, _, _ = _ask_or_parked(tid, todo)
     except SystemExit:  # B19: an open task (one a slot may be running) takes a change too: noted, stays open
         ls = list(lines(todo))
         if tid not in open_ids(ls) or ls[_find(ls, tid)].lstrip().startswith('- [~]'):
@@ -1977,7 +2022,7 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
         return f'{tid} has your change noted'
     if label == 'CONCEPT':
         return f'{revise(tid, instead, todo=todo, done=done)} is open again with your changes noted'
-    unblock(t, f'you said, on {"stuck" if label == STUCK else label} {what}: do this instead: {instead}', todo=todo)
+    _answer(t, f'you said, on {"stuck" if label == STUCK else label} {what}: do this instead: {instead}', todo)
     return f'{t} is open again with your change noted, and a run starts it'
 
 
@@ -2993,7 +3038,7 @@ def _tell(c, argv: list[str]) -> int:
     told, said = tell(c, tid, text)
     if told is False:
         print(f'{PROG}: {said or f"{tid} is not running: no slot of a run here is on it"}'
-              + ('' if said else f' (`{PROG} note {tid} TEXT` notes it for the next attempt)'), file=sys.stderr)
+              + _not_told(tid, text, ensure()[0]), file=sys.stderr)
         return 1
     print(said)
     return 0
@@ -3052,6 +3097,8 @@ def _main(argv: list[str], c) -> int:
                 print(l)
         if said := (_split_waits(c, todo) | _tool_waits(c, todo)).get(argv[0]):
             print(f'{argv[0]} {said}')
+        if q := _parked_ask(argv[0], todo):  # B767
+            print(f'{argv[0]} asks the person (the run has not listed it yet): {q}')
     return 0
 
 
@@ -3217,7 +3264,7 @@ def _p_waiting(a, x):
 
 
 def _p_confirm(a, x):
-    t = _ask(a.id, x.todo)[1]  # a concept's build: approving it says when it is too big (F177)
+    t = _ask_or_parked(a.id, x.todo)[1]  # a concept's build: approving it says when it is too big (F177)
     return x.say(confirm(a.id, _text(a)) + big_note(t, x))
 
 

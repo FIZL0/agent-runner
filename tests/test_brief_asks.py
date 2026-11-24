@@ -153,6 +153,100 @@ def test_ask(root: Path) -> None:
     eq(there(f), (True, True), 'with its ask file')
 
 
+def parked(root: Path, what: str) -> tuple[str, Path]:
+    """A task whose session ran `run ask`, between park_asked and block_asks."""
+    tid = P.add('F', what, todo=R.C.todo)
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', f'plan {tid}')
+    git(root, 'branch', f'asked/{tid}')
+    mark = R.C.notes(f'{tid}.ask')
+    mark.write_text(json.dumps({'sid': 's', 'question': 'Which colour for the header, red or blue? https://x.test/p',
+                                'slot': 1, 'dirty': False, 'blocked': False}), encoding='utf-8')
+    return tid, mark
+
+
+def asks_of(tid: str) -> list:
+    return [a for a in P.asks(R.C.todo, all=True) if a[1] == tid]
+
+
+def test_tell(root: Path, env: dict) -> None:
+    print('B767: plan tell on a task no slot runs says what it asks, or how to note it')
+    todo = Path(R.C.todo)
+    tid, _ = parked(root, 'header colour')
+    before = todo.read_text(encoding='utf-8')
+    has(run(root, 'plan', tid, env=env).stdout, rf'{tid} asks the person .*Which colour', 'plan ID shows it')
+    r = run(root, 'plan', 'tell', tid, "it's red", env=env)
+    check(r.returncode == 1, 'asked, block not committed: it fails')
+    has(r.stderr, 'asks the person: Which colour for the header, red or blue', 'with the question')
+    said = re.escape(__import__('shlex').quote("it's red"))
+    has(r.stderr, rf'plan confirm {tid} {said}`', 'the exact confirm')
+    has(r.stderr, rf'plan change {tid} {said}`', 'the exact change')
+    check('plan note' not in r.stderr, 'no note: it would not answer the question')
+    eq(todo.read_text(encoding='utf-8'), before, 'nothing is answered')
+    A.block_asks('main')
+    check(asks_of(tid), 'now blocked')
+    r = run(root, 'plan', 'tell', tid, 'red', env=env)
+    has(r.stderr, rf'(?s)asks the person: Which colour.*plan confirm {tid} red`', 'blocked: the same')
+    eq(len(asks_of(tid)), 1, 'and still asked')
+    idle = P.add('F', 'an idle job', todo=todo)
+    r = run(root, 'plan', 'tell', idle, 'use a table', env=env)
+    has(r.stderr, rf"{idle} is not running.*plan note {idle} TEXT`", 'idle: the note')
+    check('confirm' not in r.stderr, 'and no answer')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'idle')
+
+
+def test_answer_parked(root: Path, env: dict) -> None:
+    print('B767: confirm and change between park_asked and block_asks settle the ask')
+    from agent_runner import slots
+    for verb, words, note in (('confirm', 'red', r'your answer \(DECIDE Which colour for the header, red or blue\?\): red'),
+                              ('change', 'use green', r'you said, on DECIDE Which colour .*: do this instead: use green')):
+        tid, mark = parked(root, f'{verb} the header')
+        f = put(root, tid)
+        eq(slots.asked(tid), {}, 'not answered: no slot resumes it')
+        r = run(root, 'plan', verb, tid, words, env=env)
+        check(r.returncode == 0, f'{verb} works before the block', r.stderr)
+        check(re.search(rf'- \[ \] \*\*{tid}\*\* .*{note}', Path(R.C.todo).read_text(encoding='utf-8')), 'open, with the answer noted')
+        eq(there(f), (False, False), 'its ask file is gone')
+        A.block_asks('main')
+        eq(asks_of(tid), [], 'block_asks never files it after')
+        check(words in P.last_answer(tid, todo=R.C.todo, about=slots.asked(tid).get('question', '')), 'its session gets the answer')
+        eq(slots.asked(tid).get('sid'), 's', 'the next start resumes the session')
+        eq((A.answered_asks(), A.answered_asks()), ({tid}, set()), 'the run tries it again, once')
+        eq(slots.asked(tid).get('sid'), 's', 'still to resume')
+        mark.unlink()
+    print('... and when the block is in the plan but not marked')
+    tid, mark = parked(root, 'half blocked')
+    P.block(tid, 'DECIDE: Which colour for the header, red or blue?', todo=R.C.todo, after=[], keep_ask=True)
+    check(run(root, 'plan', 'confirm', tid, 'blue', env=env).returncode == 0, 'confirmed')
+    A.block_asks('main')
+    eq(asks_of(tid), [], 'nothing is left under Needs you')
+    mark.unlink()
+    print('... a confirm under way holds the block')
+    from agent_runner import plat, plansync
+    tid, mark = parked(root, 'raced')
+    lock = plat.lock(plansync._lock_path(R.C))
+    A.block_asks('main')
+    eq(asks_of(tid), [], 'not blocked beside it')
+    lock.close()
+    A.block_asks('main')
+    eq(len(asks_of(tid)), 1, 'blocked on the next tick')
+    scratch = root.parent / 'other.md'
+    tid, mark = parked(root, 'a copy')
+    scratch.write_text(Path(R.C.todo).read_text(encoding='utf-8'), encoding='utf-8')
+    try:
+        P.confirm(tid, 'x', todo=scratch)
+        check(False, 'a scratch copy of the plan answers no ask')
+    except SystemExit:
+        check(True, 'a scratch copy of the plan answers no ask')
+
+
+def test_guides() -> None:
+    from agent_runner import guide
+    for text in (guide.control_topic('queue'), guide.topic('needs')):
+        has(text, r'(?s)decides something in a chat, re-read the tasks it is about.*Settle any that asks exactly that', 'the guide says it')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         t = Path(t).resolve()
@@ -162,6 +256,9 @@ def main() -> int:
         test_long_line(root, env)
         test_clear(root)
         test_ask(root)
+        test_tell(root, env)
+        test_answer_parked(root, env)
+        test_guides()
     return report([])
 
 

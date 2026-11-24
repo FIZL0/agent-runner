@@ -37,6 +37,10 @@ OWN_FILES = ('Put a new area in a module and a test file of its own, not in a bi
              'the project\'s rules or layout say otherwise: tasks on the same file wait for each other.')
 SPLIT_FILES = ('When you split work, make parts that name different files (`--files`, the test file too), so several '
                'slots can run them at once and they merge cleanly; `--after` between parts that must share one.')
+# B767: an answer given in a chat while a task's `run ask` was being parked was lost
+DECIDED = ('When the person decides something in a chat, re-read the tasks it is about (`{cmd} plan ID`, `{cmd} plan '
+           'waiting`): one may\nhave asked just then. Settle any that asks exactly that (`{cmd} plan confirm ID "<their words>"`, '
+           'or `{cmd} plan\nchange ID "<what to do>"`); leave one that asks anything else.')
 
 # B82: the person may be on Remote Control or the apps, where a `! <cmd>` line fails ("Shell commands are only
 # available in local sessions"). Claude Code's own system prompt suggests the ! prefix; this overrides it.
@@ -185,6 +189,8 @@ any reservation you made for it. A message starting "From the runner, not the pe
 chat about that item that it was settled: it is not the person's reply; re-read the item and do the same. A
 `DECIDE:` line you were waiting on that still stands ends your answer again, or it is never filed. This
 goes only for the item the chat is about; leave the others alone as your brief says.
+""" + DECIDED + """ That holds for
+an item of another chat too.
 """,
     'grill': """\
 # Grilling
@@ -532,7 +538,9 @@ you, to act on a task or when the person asks which one.
   ID "<what to say>"` (typed into its session). A small correction ("use a table, not a list"): `{cmd} plan change
   ID "<what to do>"` (noted in the plan and typed in; it works on). Once the command prints `told s1 (ID)` the
   agent has it: say so, without watching or hedging. Only "start it over" takes `plan change ID --restart "…"` (its work is thrown
-  away).
+  away). When `plan tell` fails it told nobody: it prints the question the task asks, with the commands that
+  answer it, or the `plan note` to run; run the one that fits what the person said.
+- """ + DECIDED.replace('\n', '\n  ') + """
 """,
     'settings': '# Settings\n\n' + SETTINGS,
 }
