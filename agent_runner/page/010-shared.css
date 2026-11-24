@@ -12,7 +12,7 @@
   --fs-xs:11px; --fs-s:12px; --fs-m:13px; --fs-n:14px; --fs-b:15px; --fs-l:17px; --fs-xl:30px;
   --r-xs:4px; --r-s:8px; --r-m:10px; --r-l:16px; --r-xl:20px; --r-full:99px;
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --tap:44px;
-  --dur-fast:150ms; --dur:200ms; --dur-slow:250ms; --ease:cubic-bezier(.2,.8,.2,1); --pulse:1.6s;
+  --dur-fast:150ms; --dur:200ms; --dur-slow:250ms; --dur-bars:400ms; --ease:cubic-bezier(.2,.8,.2,1); --pulse:1.6s;
   --dur-spring:450ms; --spring:cubic-bezier(.3,1.35,.5,1); --spring-soft:cubic-bezier(.2,.9,.25,1);
 }
 @supports (transition-timing-function:linear(0,1)){:root{  /* damping .7 (overshoots 4%) and 1 */
