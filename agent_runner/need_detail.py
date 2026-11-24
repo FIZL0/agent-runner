@@ -310,16 +310,21 @@ def _options(v) -> list[dict]:
     return sorted(out, key=lambda o: not o['rec'])
 
 
-def decide_options(tid: str, what: str) -> tuple[list[dict], str]:
-    """F181c: a DECIDE's options, and its question `what` (its link already off) without them: the ask file's
+def decide_options(tid: str, what: str, text: str = '') -> tuple[list[dict], str]:
+    """F181c: a DECIDE's options, and its question `what` (its first link already off) without them: the ask file's
     `options`, else the bracket that ends the question, 'Which look? [Full (recommended) / Small / No change]'. Never
-    from its prose; a malformed bracket stays in the question. An item with inputs has none: Done is its answer."""
+    from its prose; a malformed bracket, or one after a link (`text`, its task's
+    text, has the order), stays in the question. An item with inputs has none: Done is its answer."""
     d = asks_file(tid)
     if d.get('inputs'):
         return [], what
-    m = BRACKET.fullmatch(what.strip())
+    more = re.search(r'(?:\s+https?://\S+)*\s*$', what)  # a second link
+    m = BRACKET.fullmatch(what[:more.start()].strip())
+    said = ' '.join(text.rsplit('DECIDE: ', 1)[-1].split())
+    if m and text and 'http' in said.split(f'[{" ".join(m[2].split())}]')[0]:  # a link before it, or inside it
+        m = None
     found = _options([{'name': n} for n in re.split(r'\s+/\s+', f' {m[2]} ')]) if m else []
-    return d.get('options') or found, m[1] if m and found else what
+    return d.get('options') or found, m[1] + more[0].rstrip() if m and found else what
 
 
 def asks_file(tid: str) -> dict:

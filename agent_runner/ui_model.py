@@ -379,7 +379,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
     for label, tid, k, what, url, title, shelved, *_ in waiting:
         if shelved:
             continue
-        opts, what = need_detail.decide_options(tid, what) if label == 'DECIDE' else ([], what)  # F181c
+        opts, what = need_detail.decide_options(tid, what, texts.get(tid, '')) if label == 'DECIDE' else ([], what)  # F181c
         if label == 'CONCEPT':
             concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,

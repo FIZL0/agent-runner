@@ -1030,6 +1030,10 @@ def test_decide_options_f181c(tmp: Path) -> None:
                 '[A [x] / B]', '[A / -b]', '[A / ' + 'b' * 81 + ']', '[' + ' / '.join(f'o{j}' for j in range(13)) + ']', '[(recommended) / B]'):
         row = ask(f'Which one? {bad}')
         eq((said(row), row['what']), ([], f'Which one? {bad}'), f'{bad[:30]}: no buttons, and it stays in the question')
+    for late in (f'Which? {link} [A / B]', f'Which? [A {link} / B]'):
+        eq(said(ask(late)), [], f'{late}: a link before the bracket ends, no buttons')
+    row = ask(f'Which? [A / B] {link} https://example.com/b')
+    eq((said(row), row['what']), ([('A', 'A'), ('B', 'B')], 'Which? https://example.com/b'), 'two links after it')
     f = S.C.notes('uploads', 'x').parent.parent / 'asks' / 'D3.json'
     f.parent.mkdir(parents=True, exist_ok=True)
     opts = [{'name': 'Keep'}, {'name': 'Move [it] / all', 'rec': True}]
