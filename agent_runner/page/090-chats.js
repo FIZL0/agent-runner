@@ -243,7 +243,7 @@ function feedSee(){
   const ended=FD.jump&&!jump, left=!FD.jump&&jump;
   FD.jump=jump;
   if(ended)FD.off=0;  // at its end the last lines stand on the box
-  FD.top=FD.off>0&&FD.top||!jump&&!!foot&&(!!FD.short||feedGap(lines,foot.top))||!FD.slim&&!!FD.still&&feedRows(lines)===FD.still;  // once pulled, it stays till it is back
+  FD.top=FD.off>0&&FD.top||feedOldest(t)&&(!jump&&!!foot&&(!!FD.short||feedGap(lines,foot.top))||!FD.slim&&!!FD.still&&feedRows(lines)===FD.still);  // once pulled, it stays till it is back
   if(ended&&FD.slim)feedSlim(false);
   feedPlace();
   if(left&&FD.run<=-8)feedSlim(true);
@@ -254,6 +254,8 @@ function feedSee(){
 /* B766: the session has nothing older to scroll to when its first rows stay as they are after an upward scroll it got.
    feedStill ends a look */
 const STILL_ROWS=8, STILL_MS=800, feedRows=l=>l.slice(0,STILL_ROWS).join('\n');
+// the terminal itself has no line above the view (the agent CLI may have, when it takes the wheel)
+const feedOldest=t=>t.modes.mouseTrackingMode!=='none'||!t.buffer.active.viewportY;
 function feedStill(){clearTimeout(FD.stillT);FD.stillT=0;FD.rows=''}
 function feedStillLook(left,cell){
   if(left>=0)return feedStill();
@@ -263,7 +265,7 @@ function feedStillLook(left,cell){
   const n=FD.n;
   FD.stillT=setTimeout(()=>{
     const was=FD.rows, u=feedTerm();feedStill();
-    if(FD.n!==n||!u||!FD.drawn||FD.whole||FD.slim)return;
+    if(FD.n!==n||!u||!FD.drawn||FD.whole||FD.slim||!feedOldest(u))return;
     if(was===feedRows(feedLines(u))){FD.still=was;feedSee()}
   },STILL_MS);
 }
