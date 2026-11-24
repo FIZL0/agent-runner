@@ -16,7 +16,8 @@ from agent_runner import box_font, session_theme
 # Goes into ttyd's page, ahead of its own script. Focus: only a press in the frame with a mouse gives the terminal the
 # keyboard, never ttyd's own focus() on connect; on a touch device nothing does, so no keyboard opens. It tells the app
 # when its socket opens and closes, and hands it files dropped on it. F170: arLook(look) sets its colours (a themed
-# session's follow the page, light or dark), and a wheel step is the page's first (feedTake: its bars go and come).
+# session's follow the page, light or dark), and a wheel step is the page's first (feedTake: its bars go and come). B190:
+# so are a key and a paste (feedTyped: they go to its message box while the agent CLI's input is hidden).
 # The box font is loaded before xterm.js measures its glyphs (and, when it was late, they are measured again).
 HEAD = '''<meta name="referrer" content="no-referrer"><style>
 __FONT__:root{--ar-bg:__BG__} html,body{overscroll-behavior:none;touch-action:none;background:var(--ar-bg)!important}
@@ -39,6 +40,9 @@ if(LOOKS.light){try{look=parent.feedLook()}catch(e){look=matchMedia('(prefers-co
 document.fonts.load('13px ar-box','\\u2500').then(function(){var t=window.term;if(t)t.options.fontFamily+=',monospace'});
 addEventListener('wheel',function(e){var px=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?innerHeight:1);
 if(!e.ctrlKey&&e.isTrusted&&parent.feedTake&&parent.feedTake(px)){e.preventDefault();e.stopImmediatePropagation()}},{capture:true,passive:false});
+function ours(e,paste){try{if(parent.feedTyped&&parent.feedTyped(e,paste)){e.preventDefault();e.stopImmediatePropagation()}}catch(x){}}
+addEventListener('keydown',function(e){ours(e)},true);
+addEventListener('paste',function(e){var s=e.clipboardData&&e.clipboardData.getData('text/plain');if(s)ours(e,s)},true);
 addEventListener('dragover',function(e){e.preventDefault()});
 addEventListener('drop',function(e){e.preventDefault();var f=e.dataTransfer?Array.from(e.dataTransfer.files):[];if(f.length)tell({files:f})});
 })()</script>'''
