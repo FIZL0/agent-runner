@@ -211,7 +211,8 @@ def test_chat_and_terminal(tmp: Path) -> None:
             eq(U.terminal_mode(), 'install', 'C25: no ttyd: install ttyd (the built-in view is gone)')
     with mock.patch.object(plat, 'WINDOWS', True), mock.patch('shutil.which', side_effect=which({'ttyd'})):
         eq(U.terminal_mode(), 'ttyd', 'F114: Windows too: the real terminal, no feed mode')
-    with mock.patch.object(plat, 'WINDOWS', True), mock.patch('shutil.which', side_effect=which(set())):
+    with mock.patch.object(plat, 'WINDOWS', True), mock.patch('shutil.which', side_effect=which(set())), \
+            mock.patch.dict(os.environ, LOCALAPPDATA=''):  # B761: a ttyd that winget installed here is not looked at
         eq(U.terminal_mode(), 'install', 'and without ttyd, how to install it')
 
 

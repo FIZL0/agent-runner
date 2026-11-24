@@ -444,5 +444,30 @@ def test_once_b161(tmp: Path) -> None:
     eq((o.get('two'), o.get('project')), (True, [True, 'ar-outbox']), 'two messages go once each; a project has its own outbox')
 
 
+def test_install_command_b761(tmp: Path) -> None:
+    """B761: a chat without ttyd names one install command, this machine's, once; the list of all only where no package
+    manager is found. A ttyd that winget installed is found by a run that still has the PATH from before."""
+    real = W.ttyd_install_cmd
+    for tool, cmd in (('winget', 'winget install tsl0922.ttyd'), ('pacman', 'sudo pacman -S ttyd')):
+        with mock.patch.object(W, 'ttyd_install_cmd', lambda: real(lambda t: t == tool)):
+            r = W.terminal_fallback('c1')
+        eq((r['cmd'], r['out'].count(cmd), r['out'].count('install ttyd') + r['out'].count('tsl0922') + r['out'].count('pacman')),
+           (cmd, 1, 1), f'{tool}: its command, once, and no other')
+    with mock.patch.object(W, 'ttyd_install_cmd', return_value=''):
+        r = W.terminal_fallback('c1')
+    check(r['cmd'] == '' and r['out'].count(W.TTYD_INSTALL) == 1, 'no package manager found: the list', r)
+
+    winget = tmp / 'Microsoft' / 'WinGet'
+    link, package = winget / 'Links' / 'ttyd.exe', winget / 'Packages' / 'tsl0922.ttyd_x' / 'ttyd.exe'
+    with mock.patch('agent_runner.plat.WINDOWS', True), mock.patch('shutil.which', return_value=None), \
+            mock.patch.dict(os.environ, LOCALAPPDATA=str(tmp)):
+        eq((U.find_ttyd(), U.terminal_mode()), ('', 'install'), 'not installed')
+        for f in (package, link):
+            f.parent.mkdir(parents=True)
+            f.write_text('')
+            eq((U.find_ttyd(), U.terminal_mode()), (str(f), 'ttyd'), f"not on the run's PATH, in winget's {f.parent.name}")
+            eq(W.Terminals('t', 1, '').argv('login', '', 2)[0], str(f), 'and it is the one that is started')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_install_command_b761)]))

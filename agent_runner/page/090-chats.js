@@ -135,7 +135,7 @@ function feedHTML(n,bare){
   if(st==='starting')return `<div class="col feeds"><div class="msgs">${sentBubbles(n,t=>t)}${obBubbles(n)}${n[0]==='@'?'':`<div class="think">${LOGO()}${WAVE}Starting the chat…</div>`}</div></div>`;
   if(st==='loading')return `<div class="col feeds"><div class="think">${LOGO()}Loading…</div></div>`;
   let title='', words=i.out||'', btns=open;
-  if(st==='install'){title='The session cannot be shown here';if(S.snap.ttyd_install)words+=` On this machine: ${S.snap.ttyd_install}`}
+  if(st==='install')title='The session cannot be shown here';
   else if(st==='ended'){
     title='This chat has ended';
     words=i.resume?'Resume brings it back with everything said in it.':'';
@@ -146,7 +146,8 @@ function feedHTML(n,bare){
     words=cut?`Its session on ${tid} was cut off. Its work is kept.`:last.task&&last.title?`It last worked on “${last.title}”.`:'It shows here when a task starts.';
     if(cut)btns=`<button class="btn pri${ctlBusy('resume',tid)?' busy':''}" data-ctl="resume" data-tid="${esc(tid)}">Resume</button>`+open;
   }else title='There is no terminal to show';
-  const c=card(`<div class="q">${esc(title)}</div>${words?`<div class="small">${esc(words)}</div>`:''}${btns?`<div class="btns">${btns}</div>`:''}`,'',`data-k="feed:${esc(n)}" data-v="${st}"`);
+  const said=st==='install'&&i.cmd?esc(words).replace(esc(i.cmd),m=>`<code>${m}</code>`):esc(words);  // B761: the install command, as code
+  const c=card(`<div class="q">${esc(title)}</div>${words?`<div class="small">${said}</div>`:''}${btns?`<div class="btns">${btns}</div>`:''}`,'',`data-k="feed:${esc(n)}" data-v="${st}"`);
   return bare?c:`<div class="col feeds">${c}</div>`;
 }
 /* ttyd's terminal (xterm.js), once its page has made it; null before */

@@ -217,11 +217,24 @@ def concept_copy(cid: str) -> str:
         return ''
 
 
+def find_ttyd() -> str:
+    """B761: the ttyd to run, '' when there is none. A run that was up when winget installed it still has the PATH from
+    before, so winget's own folders are looked in too: Links, or the package's (no Links where Windows allows no links)."""
+    import shutil
+    from agent_runner import plat
+    if got := shutil.which('ttyd'):
+        return got
+    if not plat.WINDOWS or not (local := os.environ.get('LOCALAPPDATA')):
+        return ''
+    winget = Path(local, 'Microsoft', 'WinGet')
+    found = [winget / 'Links' / 'ttyd.exe', *winget.glob('Packages/tsl0922.ttyd_*/ttyd.exe')]
+    return next((str(p) for p in found if p.is_file()), '')
+
+
 def terminal_mode() -> str:
     """F74: how a page shows a session's terminal: 'ttyd' (installed: it serves `attach NAME`) or 'install' (no
     ttyd: the page says how to install it; C25). F114: on Windows too."""
-    import shutil
-    return 'ttyd' if shutil.which('ttyd') else 'install'
+    return 'ttyd' if find_ttyd() else 'install'
 
 
 def _no_pane(name: str) -> dict:

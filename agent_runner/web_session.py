@@ -16,15 +16,19 @@ def socket_of(name: str) -> str:
 
 
 def terminal_fallback(name: str) -> dict:
-    """F74: a chat without ttyd: how to install it (`mode` 'install'); the message box works meanwhile. F126b: the
-    login names its command, to be run by hand."""
+    """F74: a chat without ttyd: how to install it (`mode` 'install'); the message box works meanwhile. B761: `cmd` is
+    this machine's command, once in `out` (the page shows it as code); with none found, `out` lists them all. F126b:
+    the login names its command, to be run by hand."""
+    cmd = ttyd_install_cmd()
     if name == session_frame.LOGIN:
-        cmd = ttyd_install_cmd()
         return {'ok': False, 'mode': 'install', 'out':
                 f'ttyd is not installed, so the login cannot be shown here. Install it on {socket.gethostname()} (' +
-                (cmd or TTYD_INSTALL.split('(', 1)[1].split(')')[0]) +
+                (cmd or TTYD_INSTALL) +
                 f') and press Log in again, or run {watch.LOGIN_CMD} in a terminal there.'}
-    return {'ok': False, 'mode': 'install', 'out': TTYD_INSTALL + f' Until then, messages still reach {name}.'}
+    how = f'on {socket.gethostname()} ' + (f'with {cmd}' if cmd else f'({TTYD_INSTALL})')
+    return {'ok': False, 'mode': 'install', 'cmd': cmd, 'out':
+            f'ttyd is not installed, so a chat cannot show the session: install it {how} and open the chat again. '
+            f'Until then, messages still reach {name}.'}
 
 
 def session_live(name: str) -> bool:

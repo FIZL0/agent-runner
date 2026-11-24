@@ -68,7 +68,7 @@ class Terminals:
     def argv(self, name: str, sock: str, port: int) -> list[str]:
         from agent_runner.config import runner_cmd
         runs = session_frame.login_argv() if name == session_frame.LOGIN else [*runner_cmd(), 'attach', name]  # F126b
-        return ['ttyd', '-W', '-p', str(port), '-i', LOCAL, '-b', f'/t/{self.token}/{name}',
+        return [U.find_ttyd() or 'ttyd', '-W', '-p', str(port), '-i', LOCAL, '-b', f'/t/{self.token}/{name}',
                 *(['-w', self.cwd(name)] if plat.WINDOWS else []),  # ttyd's Windows build starts nothing without it
                 *session_frame.ttyd_options(session_frame.session_look()), *runs]
 
