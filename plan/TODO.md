@@ -40,3 +40,4 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 - [~] **R17** (follow-up, low) Check F170's chat controls on the iPhone 15 (its remote rig, ACCESS.md): the hidden bottom lines stay hidden with no flicker while the agent redraws, the bars go and come with the finger with no jump, the keyboard opens and closes cleanly, and box lines join in Safari | files: docs/STYLE.md | after: F170 BLOCKED: (after V5) BLOCKED: the run served to the phone is 0.62.0 without F170; release V5 and run agent-runner upgrade, then this reruns (asked 2026-11-23 18:28)
 
 ### Parked
+- [ ] **F191** (follow-up, later) Run page chats scroll smoothly: history drawn by the page, the live session at the bottom (split into parts) | files: agent_runner/web_page.html, tests/test_web.py
