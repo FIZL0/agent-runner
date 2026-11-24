@@ -43,7 +43,7 @@ function openSheet(name,arg){if(name==='talk')loadVoices();runStop($('sheet'));S
 function sheetOpener(){const b=sheetBack, id=b&&b.dataset&&b.dataset.needopen;
   return !b||b.isConnected||!id?b:[...document.querySelectorAll('[data-needopen]')].find(x=>x.dataset.needopen===id)}
 function closeSheet(){if(!S.sheet)return;runStop($('sheet'));S.sheet='';S.sure=null;render(true);const b=sheetOpener();if(b&&b.isConnected&&b.focus)b.focus({preventScroll:true});sheetBack=null}
-/* B222a: the sheet's markup; a Needs you popup with a field in use is patched around that field, which stays the same
+/* B222a: the sheet's markup; a Needs you sheet with a field in use is patched around that field, which stays the same
    element: a new one under the keyboard loses its autocorrect and the letters on their way */
 function sheetHTML(el,h){
   const a=document.activeElement, f=S.sheet==='need'&&a&&a!==el&&el.contains(a)&&a.dataset&&a.dataset.f;
