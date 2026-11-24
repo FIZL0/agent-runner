@@ -228,8 +228,7 @@ def write_state(running: dict) -> None:
                                    'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
                                    'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping(),
                                    'forced': FORCED[0], 'power': POWER, 'version': run_version(),
-                                   'agent_problem': agent_problem(C),  # B764b
-                                   'no_settings': bool(no_settings(C))}),  # F178
+                                   'agent_problem': agent_problem(C), 'no_settings': bool(no_settings(C))}),  # B764b, F178
                        encoding='utf-8')
         os.replace(tmp, C.notes('STATE'))
     except OSError:  # Windows: `status` has STATE open this instant; the next pass writes it
