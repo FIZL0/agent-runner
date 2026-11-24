@@ -786,7 +786,7 @@ class RunPage:
             out += lines
             if x['key'] == said.get('field'):
                 out += text_lines(said['out'], 'red', width, '  ', '  ')
-            elif x['hint']:
+            if x['hint'] and not (x['key'] == said.get('field') and x['hint'] in said['out']):
                 out += text_lines(x['hint'], 'dim', width, '  ', '  ')
             if on:
                 self.give_row = (top, len(out) - 1)
@@ -848,8 +848,8 @@ class RunPage:
         return True
 
     def give_typed(self, k: str) -> None:
-        """A key in an input's field. One line: Enter goes on to the next field, or out of the last; it never sends,
-        so pasted words with a line end in them do not."""
+        """A key in an input's field. One line: Enter stays in it, so the rest of pasted words with a line end in them is
+        no plain text in the next field (a secret's), no page key, and sends nothing."""
         it, box = self.sel(), self.typing
         boxes = [self.give_box(it, x) for x in self.give_inputs(it)] if self.giving() else []
         if k == 'ESC':
@@ -861,10 +861,7 @@ class RunPage:
         elif k in ('TAB', 'BTAB'):
             self.give_step(-1 if k == 'BTAB' else 1)
         elif k == 'ENTER':
-            if box == boxes[-1]:
-                self.typing = ''
-            else:
-                self.give_step(1)
+            self.msg, self.msg_ok = 'one line: Tab goes on, ^S is Done', True
         elif k == 'BS':
             self.set_text(box, self.text_of(box)[:-1])
         elif k == '^U':
@@ -1948,6 +1945,9 @@ class RunPage:
             pass
         elif self.panel == 3 and k in ('J', 'K') and tid and it.get('state') not in ('parked', 'shelved'):
             self.reorder(1 if k == 'J' else -1)
+        elif k == '^S' and self.giving():  # F175b: Done is drawn with the panel focused too
+            self.main = True
+            self.give()
         elif self.panel == 4 and k == 'a' and it is not None:
             self.set_tab('answer')
         elif self.panel == 5 and k == 'n':  # F87: a new concept, in its row's box

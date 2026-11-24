@@ -541,9 +541,9 @@ https or from this computer or the terminal UI:
 
 The TUI's Needs you pane (`agent-runner ui`) draws the same. An item with inputs has no plain answers and no reply box:
 its steps show the link and the command ("Run on <machine>"), one field per input (a secret as dots) with its hint under
-it (replaced by the refusal, in red, when refused), and one Done. Tab and Shift+Tab go over links, commands and fields.
+it (and the refusal, in red, when refused), and one Done. Tab and Shift+Tab go over links, commands and fields.
 Enter opens the link (here in the browser; over ssh it copies the link and shows it to Cmd-click), copies the command,
-or types in the field; Enter inside a field goes to the next field and never sends. Ctrl+S is Done from anywhere in the
+or types in the field; Enter inside a field stays in it and never sends. Ctrl+S is Done from anywhere in the
 pane: an input's `confirm` question is shown first, and Ctrl+S again sends, while any other key does not. The TUI counts
 as this computer, so it takes secrets. A typed secret is kept only in memory: it is forgotten once sent or when another
 item is selected, and is never in the drafts a restart hands on (an upgrade restart waits while one is typed).
