@@ -717,14 +717,7 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   open, nor with nothing landed since the last release: release tasks are not counted, and nothing counts when
   only the plan changed since the version tag. The run log and `status`'s lately say
   `queued V7 (auto_release: 10 landed)` or `(auto_release: idle)`.
-- **Release row** (F131): the run page and the TUI show the release as a row pinned at the end of the queue, and
-  J/K move no task past it. With `auto_release` on and no V queued, the row is dimmed and reads
-  `Next release · auto at 10 landed: 6/10` (` · when the run goes idle` added for `idle = true`, both when both
-  are set). A queued V reads `V5 Release · waits for 24 open ahead`, then `ready` when nothing is left before it,
-  `blocked` when it waits on a person, and `building` once a slot has it or it is merging. With `auto_release` off
-  and no V, there is no row. Enter on the dimmed row opens the release tab. `agent-runner status` says the same thing as
-  `release: <that row>` in place of `last: V5 waits for everything before it`, keeping its `not waiting on` notes;
-  once the release lands, `lately` reads `landed: Release 1.2.0 [V5]` and the count starts again at 0/N.
+- **Release row** (F131, F185): each open release is its own row, shown once, in a Releases group at the top of the plan view: the run page's Plan view above Queue, the TUI's queue panel (headings Releases and Queue), `agent-runner plan` (a `## Releases` group, its id not listed again below) and the claude.ai copy's queue box, which lists them first. A row reads `V17 Release · waits for 2: F1 one, F2 two` (the first 5 named, then `, and 3 more`; all of them in `agent-runner plan` and on an opened or selected row, which also says what it is not waiting on), `next` when nothing is left before it, `releasing now` when a slot has it or it is merging (listed first), or `blocked` when it waits on a person. No start time is shown. After the open ones comes the newest landed release, `V16 Release 0.62.0 · released 17:06` (the date too on another day). With `auto_release` on and no V queued, the dimmed `Next release · auto at 10 landed: 6/10` is there as before (` · when the run goes idle` added for `idle = true`, both when both are set). With `auto_release` off and no V open, the only row is the newest landed release, if any. Enter on the dimmed row opens the release tab. J and K do not move a release; it stays in Releases. `agent-runner status` has one `release:` line per release, the same words, in place of `last: V5 waits for everything before it`, keeping its `not waiting on` notes; once the release lands, `lately` reads `landed: Release 1.2.0 [V5]` and the count starts again at 0/N.
 - `plan add` also refuses (exit 3, nothing written) text that looks like an open task's work, naming it:
   `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
   is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,

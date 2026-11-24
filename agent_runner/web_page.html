@@ -664,7 +664,7 @@ function working(entries){
 /* a queued task's state, in plain words */
 function planWords(q,sessions){
   const s=(sessions||[]).find(x=>x.task===q.id);
-  if(q.release)return q.release.words;  // F131: the release row's words, as status says them
+  if(q.release)return q.release.words;  // F131, F185: its row's words, as status says them
   if(q.state==='running')return s?`${s.name} is on it${s.minutes!=null?` · ${s.minutes} min`:''}`:'Being worked on';
   if(q.state==='blocked')return 'Waits for you';
   if(q.state==='critical')return 'Goes first, as soon as a slot is free';
@@ -727,10 +727,11 @@ function controlClick(c,o){return c.confirm&&!(o&&o.sure===true)?{ask:true}:cont
 const taskControlsOn=s=>!!(s&&s.task_controls);  // C33: ui_model.task_controls_on, on the row
 /* B118: the Queue's two groups: [the queue a run works through, the Parked tasks it never starts] */
 const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.state==='parked')];
-/* F131: the Queue as shown: the queued tasks (the release task, which the snapshot moved last, among them), then
-   the release placeholder ('Next release · auto at 10 landed: 6/10') while [run] auto_release counts */
-const planQueue=snap=>{const r=snap&&snap.release_row;
-  return queueGroups(snap&&snap.queue)[0].concat(r&&r.placeholder?[r]:[])};
+/* F185: the Plan view's Releases group: each open release (its queue task, which carries its row as `release`), then the
+   rows that are no task (the auto release's count, the last one released); and the Queue under it, without them */
+const planReleases=snap=>{const q=(snap&&snap.queue)||[];
+  return ((snap&&snap.releases)||[]).map(r=>r.placeholder?r:q.find(x=>x.id===r.id)).filter(Boolean)};
+const planQueue=snap=>queueGroups(snap&&snap.queue)[0].filter(q=>!q.release);
 /* F87: a concept card's buttons, in order: one per option (pick: its index, rec: the recommended one, named
    without its '(recommended)'), then Chat, and View when it has a local copy or a page */
 const optionName=o=>o.name.replace(/\s*[(\[—–-]*\s*recommended\s*[)\]]?\s*$/i,'')||o.name;
@@ -1299,7 +1300,7 @@ function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploa
   :o.form?'Save or close the device form first. It is not kept over a refresh.'
   :o.secret?'Send or clear the secret first. It is not kept over a refresh.'
   :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
-if(typeof module!=='undefined')module.exports={giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,planReleases,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -2190,7 +2191,7 @@ function needReply(id){
 /* F85: a task's row: one line; a tap folds its whole text (plan ID) open in place */
 function taskRow(q,title){
   const open=!!S.taskOpen[q.id], t=S.tasks[q.id];
-  return `<button class="fold" data-task="${esc(q.id)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(q.id)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?(t&&t.text?`<pre class="tasktext" data-k="text:${esc(q.id)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>'):''}`;
+  return `<button class="fold" data-task="${esc(q.id)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(q.id)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(open&&q.release?(q.release.all||q.release.words)+(q.release.note||''):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?(t&&t.text?`<pre class="tasktext" data-k="text:${esc(q.id)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>'):''}`;
 }
 async function openTask(id){
   S.taskOpen[id]=!S.taskOpen[id];render(true);
@@ -2202,8 +2203,8 @@ async function openTask(id){
 function planCard(q){
   return card(`${taskRow(q,(q.release&&q.release.title)||q.title||q.id)}${S.taskOpen[q.id]?`<div class="btns"><button class="btn" data-about="plan:${esc(q.id)}">Chat</button>${actBtns(q.acts,q.id)}</div>${actSure(q.acts,q.id)}`:''}`,'',`data-k="task:${esc(q.id)}"`);
 }
-function nextReleaseCard(r){  // F131: no release queued yet: the auto release's count, dimmed, not a task
-  return card(`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc(r.words||'')}</span></div></div>`,'relph');
+function nextReleaseCard(r){  // F131, F185: a release that is no open task (the auto release's count, the last one released), dimmed
+  return card(`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc((r.id?r.id+' · ':'')+(r.words||''))}</span></div></div>`,'relph');
 }
 function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
   return card(`${taskRow(q,q.title||q.id)}
@@ -2558,7 +2559,7 @@ const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" dat
 const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`,'','data-k="noneed"')}`;
 function relCard(){const ws=working_(), rel=S.snap.release||'';
   const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait');
-  return obCards(x=>obActs(x,'release'))+card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${acts.map(controlOf).filter(Boolean).map((c,i)=>`<button class="btn ${i===0?'acc':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`,'','data-k="release"')}
+  return obCards(x=>obActs(x,'release'))+card(`<div class="row"><div class="grow"><b>Release</b>${(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')).split('\n').map(l=>`<div class="small">${esc(l.replace(/^release: /,''))}</div>`).join('')}</div></div><div class="btns">${acts.map(controlOf).filter(Boolean).map((c,i)=>`<button class="btn ${i===0?'acc':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`,'','data-k="release"')}
 /* F124: the Status view: one scroll in the TUI's order: needs you, the run (its slots and controls), usage, landed
    lately, the release, then the run log */
 const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};
@@ -2904,8 +2905,8 @@ async function toolClick(x){
   toolPost({op:tool,name,...(what?{what}:{}),...(fp?{fp}:{})},name);
 }
 function planHTML(){
-  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=planQueue(S.snap);
-  return `<div class="col"><div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join(''):emptyCard('The queue is empty.')}
+  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=planQueue(S.snap), rs=planReleases(S.snap);
+  return `<div class="col">${rs.length?`<div class="sec">Releases<span class="ln"></span></div>${rs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join('')}`:''}<div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(planCard).join(''):emptyCard('The queue is empty.')}
     ${obCards(x=>obActs(x,'queue'))}${pk.length||sh.length||shOb?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}${shOb}${sh.map(shelvedCard).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */

@@ -291,13 +291,20 @@ def buttons(*bs) -> list[tuple[str, str]]:
     return out
 
 
-def release_tail(snap: dict) -> list:
-    """F131: the queue panel's release placeholder, after the queued tasks and before '+ new task': the
-    snapshot's `release_row` while no release is queued and `[run] auto_release` counts ([] otherwise; a queued
-    release task is already the queue's last row, moved there by the snapshot)."""
-    row = snap.get('release_row')
-    return [dict(row, new=True, placeholder=True, id='release')] if isinstance(row, dict) and row.get('placeholder') \
-        else []
+def release_group(snap: dict) -> list:
+    """F185: the queue panel's Releases group, its first rows: each open release (its queue task, carrying its row
+    as `release`), then the rows that are no task (the auto release's count, the last one released)."""
+    queue = {t.get('id'): t for t in snap.get('queue') or []}
+    return [dict(r, new=True, placeholder=True, id='released' if r.get('id') else 'release') if r.get('placeholder')
+            else queue[r['id']] for r in snap.get('releases') or [] if r.get('placeholder') or r.get('id') in queue]
+
+
+def group_head(rows: list, i: int) -> str:
+    """The group name drawn above the queue panel's row `i` ('' for none): Releases and Queue, with any release."""
+    rel = [bool(isinstance(t, dict) and (t.get('placeholder') or t.get('release'))) for t in rows[:i + 1]]
+    if not rel or not (rows[0].get('placeholder') or rows[0].get('release')):
+        return ''
+    return 'Releases' if i == 0 else 'Queue' if not rel[i] and rel[i - 1] else ''
 
 
 def after_hint(after: str, queue: list) -> str:
@@ -369,7 +376,9 @@ class RunPage:
         rows = list(self.snap.get(key) or [])
         if key == 'concepts':
             return rows + [NEW_CONCEPT]
-        return rows + release_tail(self.snap) + [NEW_TASK] + list(self.snap.get('shelved') or []) \
+        rel = release_group(self.snap) if key == 'queue' else []
+        rows = [t for t in rows if not t.get('release')] if key == 'queue' else rows
+        return rel + rows + [NEW_TASK] + list(self.snap.get('shelved') or []) \
             if key == 'queue' else rows  # F184: the shelved tasks after the queue, which they are not in
 
     def empty_line(self, n: int) -> str:
@@ -395,7 +404,7 @@ class RunPage:
                 return ['info']
             return ['session', 'diff'] if it.get('task') and not is_control(it) else ['session']
         if n == 3:
-            if it.get('placeholder'):  # F131: the next release, not a task yet: the release tab
+            if it.get('placeholder'):  # F131, F185: a release that is no open task: the release tab
                 return ['release']
             if it.get('state') == 'shelved':  # F184
                 return ['info', 'chat edit']
@@ -555,8 +564,9 @@ class RunPage:
         if n != 3:
             return [self.row(n, it)]
         rel = it if it.get('placeholder') else it.get('release')
-        if rel:  # F131: the release row: 'V5 Release · building'; dimmed 'Next release · auto at 10 landed: 6/10'
-            text, colour = rel['text'], 'dim' if it.get('placeholder') else KIND_COLOUR.get('V', 'magenta')
+        if rel:  # F185: 'V5 Release · releasing now'; dimmed 'Next release · auto at 10 landed: 6/10'
+            text = f'{rel["id"]} {rel["title"]} · {rel["all"]}{rel.get("note", "")}' if open_ and rel.get('all') and it.get('release') else rel['text']
+            colour = 'dim' if it.get('placeholder') else KIND_COLOUR.get('V', 'magenta')
             if open_ or len(text) <= width:
                 return wrap([(text, colour)], max(width, 4))
             return [[(text[:max(width - 1, 0)] + '…', colour)]]
@@ -878,7 +888,8 @@ class RunPage:
     def release_pane(self, width: int) -> list:
         L = lambda *segs: list(segs)  # noqa: E731
         rel = self.snap.get('release') or ''
-        out = [L(('V ', 'magenta'), (rel or 'no release is queued', 'fg' if rel else 'dim')), L(),
+        out = [L(('V ', 'magenta'), (l, 'fg' if rel else 'dim'))
+               for l in (rel or 'no release is queued').splitlines()] + [L(),
                L(('A release waits for everything before it.', 'dim'))]
         running = [s for s in session_rows(self.snap) if s.get('task')]
         if running:
@@ -1180,7 +1191,8 @@ class RunPage:
 
     def heights(self, body: int) -> dict[int, int]:
         """Each panel's box height: SHORT rows (fewer when it has fewer) unfocused, the rest for the focused."""
-        hs = {n: min(max(len(self.items(n)), 1), SHORT) + 2 for n, _, _ in PANELS if n != self.panel}
+        heads = sum(bool(group_head(self.items(3), i)) for i in range(len(self.items(3))))  # F185
+        hs = {n: min(max(len(self.items(n)), 1), SHORT) + 2 + (heads if n == 3 else 0) for n, _, _ in PANELS if n != self.panel}
         hs[self.panel] = max(3, body - sum(hs.values()))
         return hs
 
@@ -1199,6 +1211,10 @@ class RunPage:
             self.put(win, y + 1, x + 2, [(self.empty_line(n), 'dim')], w - 4)
             return
         lines = [self.row_lines(n, it, w - 4, on and i == cur) for i, it in enumerate(rows)]
+        heads = [group_head(rows, i) if n == 3 else '' for i in range(len(rows))]  # F185
+        if inner < len(lines[cur]) + 1:  # no room for a heading over the selected row
+            heads = [''] * len(rows)
+        lines = [([[(h, 'dim')]] if h else []) + l for h, l in zip(heads, lines)]
         top = cur
         used = len(lines[cur])
         while top > 0 and used + len(lines[top - 1]) <= inner:
@@ -1207,10 +1223,10 @@ class RunPage:
         r = y + 1
         self._keys_on = on
         for i in range(top, len(rows)):
-            for segs in lines[i]:
+            for k, segs in enumerate(lines[i]):
                 if r >= y + 1 + inner:
                     return
-                ground = ('sel' if on else 'cur') if i == cur else ''
+                ground = ('sel' if on else 'cur') if i == cur and not (heads[i] and k == 0) else ''
                 if ground:
                     self.put(win, r, x + 1, [(' ' * (w - 2), '')], w - 2, ground=ground)
                 self.put(win, r, x + 2, segs, w - 4, ground=ground)
@@ -2001,10 +2017,10 @@ class RunPage:
         """F70: Shift+J / Shift+K: the selected queued task one place down / up (`plan move ID after|before
         <neighbour>`); the selection follows it."""
         if self.sel(3).get('release'):  # F131: pinned; and no task moves past it, or the release would not wait for it
-            self.msg, self.msg_ok = f'{self.sel(3)["id"]} stays at the end of the queue', True
+            self.msg, self.msg_ok = f'{self.sel(3)["id"]} stays in Releases', True
             return
         tasks = [t for t in self.items(3) if not t.get('new') and not t.get('release') and t.get('state') != 'shelved']
-        i = self.cur[3]
+        i = next(j for j, t in enumerate(tasks) if t['id'] == self.sel(3)['id'])
         if not 0 <= i + step < len(tasks):
             self.msg, self.msg_ok = f'{tasks[i]["id"]} is already {"last" if step > 0 else "first"}', True
             return
@@ -2012,7 +2028,7 @@ class RunPage:
         self.done(r)
         if r.get('ok'):  # the task's row in the queue read again, else the row it moved to
             ids = [t.get('id') for t in self.items(3)]
-            self.cur[3] = ids.index(tasks[i]['id']) if tasks[i]['id'] in ids else i + step
+            self.cur[3] = ids.index(tasks[i]['id']) if tasks[i]['id'] in ids else self.cur[3] + step
 
     def open_link(self, url: str, what: str) -> None:
         if not url:

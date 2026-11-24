@@ -427,8 +427,9 @@ blocked and "{needs}" items, counts of them included, though status prints them,
 unless they bear on what the person is discussing or the person asks. Write, compact enough for a phone:
 1. One headline first: `Lately: 11 landed, 1 stuck. Run up, idle, 3
    slots.` (or `No run is up.`), counting only what there is; then status's `merged … · … tasks left` line in
-   plain words, `11 merged in the last 24h, 23 tasks left.`, and, with a `release:` line, `Release
-   waits on 7 of 25 tasks.`
+   plain words, `11 merged in the last 24h, 23 tasks left.`, and, with an open release's `release:` line, `Release
+   waits for 7 tasks.` (the number after `waits for`; `next` when nothing is left before it; a `released …` line is the
+   last one that landed, past, not queued).
 2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **Running** (`F314 Retry flaky uploads, 12 min`), **Landed** (newest
    first, at most 5, then `…and 6 more`), **Stuck** (what stopped it, in a few words; never a blocked or "{needs}" item). Leave an empty group
    out. The group word lives in its heading only, not on each bullet.
@@ -461,8 +462,9 @@ you, to act on a task or when the person asks which one.
   back, each ID with its few words (a page only when they are too many to say).
 - "what is waiting on me?", "what needs me?": `{cmd} needs` (one `ID - what to do` line per item, then a count),
   not `status` or `plan waiting`: say its lines back, each ID with its few words.
-- "how close is release?", "how much is left?": answer from `{cmd} status`'s `release:` line (`release: waits on
-  7 of 25 tasks` means 7 still to land; with none, no release task is queued) and its `merged … · … tasks left`
+- "how close is release?", "how much is left?": answer from `{cmd} status`'s `release:` lines (`release: V5 Release · waits for 7: …`
+  means 7 still to land; `next` means nothing is left before it; a `released …` line is the last one that landed, not queued;
+  with no open release, no release task is queued) and its `merged … · … tasks left`
   line (`{cmd} status --window 2h` counts over another window), in everyday words, without task ids or slots.
 """,
     'watch': """\
