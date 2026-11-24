@@ -787,39 +787,33 @@ def test_parked(tmp: Path) -> None:
 
 def test_concepts_view(tmp: Path) -> None:
     """F87: the sidebar has Concepts (after Plan, with a count); its view lists the snapshot's concepts with their
-    buttons (an option each, Chat, New chat, View), says no concept waits when none does, and its + queues a new
-    concept as plan add K through /act; the Plan view no longer lists concepts."""
+    buttons (an option each, Chat, New chat, View), says no concept waits when none does, and its New concept button
+    opens a new chat (F183); the Plan view no longer lists concepts."""
     fake_repo(tmp)
     app = W.page_html().decode()
     for part in ("['plan','Plan'],['concepts','Concepts']", 'count={home:needs,concepts:cn}',
-                 'concepts:conceptsHTML', "concepts:'Concepts'", 'data-kadd aria-label="New concept"',
-                 'data-kform', 'newConceptReq(S.kText)', 'cs.map(conceptCard)'):
+                 'concepts:conceptsHTML', "concepts:'Concepts'", 'cs.map(conceptCard)'):
         check(part in app, f'the run app has {part}')
+    for gone in ('data-kadd', 'kform', '[data-kin]', 'newConceptReq', 'growKin', 'S.kOpen', 'S.kText', 'S.kSaid', 'x.kq'):
+        check(gone not in app, f'the inline new concept box is gone: {gone}')
     plan = app.split('function planHTML(){', 1)[1].split('\n}', 1)[0]
     check('concept' not in plan.lower(), 'the Plan view lists no concepts', plan)
-    token = W.web_token()
-    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
-    try:
-        code, out = post(f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}',
-                         {'name': 'plan_add', 'args': {'kind': 'K', 'text': 'a dark mode for the run app'}})
-    finally:
-        srv.stop()
-    eq(out.get('argv', [])[-4:], ['plan', 'add', 'K', 'a dark mode for the run app'], "+'s request is plan add K TEXT")
     if not shutil.which('node'):
         print('  (no node here: the Concepts view script test is skipped)')
         return
     c = {'id': 'K5', 'concept': 'K5', 'title': 'Lazy layout', 'copy': '/n/K5.html',
          'options': [{'name': 'A: tabs', 'rec': False}, {'name': 'B: drawer (recommended)', 'rec': True}]}
     got = logic_js([['conceptButtons', c], ['conceptButtons', {'id': 'K6', 'options': []}],
-                    ['newConceptReq', '  a dark mode  '], ['newConceptReq', '   '],
-                    ['queuedId', 'added K12 a dark mode'], ['queuedId', 'ok']])
+                    ['newPh', {'kind': 'newconcept'}], ['newPh', {'kind': 'new'}], ['newPh', {'kind': 'plan'}], ['newPh', None],
+                    ['compose', {'kind': 'newconcept'}, ' a dark mode ', ['/up/p.png']]])
     eq([b['label'] for b in got[0]], ['A: tabs', 'B: drawer', 'Chat', 'View'],
        "a concept's buttons: its options (no '(recommended)'), Chat, View")
     eq([b.get('rec', False) for b in got[0]], [False, True, False, False], 'the recommended option stands out')
     eq([b['label'] for b in got[1]], ['Chat'], 'no copy and no page: no options and no View')
-    eq(got[2], {'name': 'plan_add', 'args': {'kind': 'K', 'text': 'a dark mode'}}, '+ sends plan add K TEXT')
-    eq(got[3], None, 'an empty box sends nothing')
-    eq(got[4:], ['K12', ''], 'the queued id, from plan add\'s output')
+    eq(got[2:6], ['What should the concept show?', 'Describe the task in your own words', 'Write your first message',
+                  'Write your first message'], "a new chat view's placeholder")
+    check('box(agent?`Message ${threadTitle(n)}`:isNew(n)?newPh(S.ctx):' in app, 'its box shows it')
+    eq(got[6], 'Concept: a dark mode\n\nAttached: /up/p.png', "a new concept's first message")
     check("NO_CONCEPT='No concept waits for a pick.'" in app and '${NO_CONCEPT}' in app,
           'the empty state says no concept waits')
 
@@ -891,17 +885,17 @@ PAGE_PRINT = '/' + '*PAGE_PRINT*/'; out.raw = draw({page: 'bbb'})[0]; PAGE_PRINT
 out.noReload = reloads;
 // Refresh keeps what is written, or waits
 const go = () => { const n = reloads; said = []; newsRefresh(); return [reloads - n, said[0] || ''] };
-fresh({}, {'set:project:x': '5', setq: 'cap'}); S.kOpen = true; S.kText = 'a dark mode'; H.add = '/x'; S.ren = 'c2'; S.setOpen = {a: 1};
+fresh({}, {'set:project:x': '5', setq: 'cap'}); H.add = '/x'; S.ren = 'c2'; S.setOpen = {a: 1};
 S.atts = [{name: 'p.png', path: '/up/p.png', thumb: 'data:'}]; S.ob = [{cid: '1'}]; store.set('ob', JSON.stringify(S.ob));
 ta = {value: 'half a thought'}; store.set('d:home', ta.value);
 out.kept = go();
-fresh({}); takeTyped(); out.back = [S.f, S.kOpen, S.kText, H.add, S.ren, S.setOpen, S.atts]; out.once = tabStore.get(TYPED_KEY);
+fresh({}); takeTyped(); out.back = [S.f, H.add, S.ren, S.setOpen, S.atts]; out.once = tabStore.get(TYPED_KEY);
 fresh({}); ta = null; out.nothing = [go(), tabStore.get(TYPED_KEY)];
 fresh({}); S.atts = [{name: 'x'}]; out.uploading = go();
 fresh({}); TK.rec = {}; out.mic = go(); TK.rec = null; DK.rec = {}; out.dict = go(); DK.rec = null;
 fresh({}, {'dev:password': 'hunter2', setq: 'a'}); out.form = [go(), JSON.stringify(tabStore.m).includes('hunter2')];
 fresh({}); ta = {value: 'not kept'}; store.set('d:home', ''); out.unkept = go();
-dead = true; fresh({}); ta = null; S.kText = 'x'; out.dead = go(); fresh({}); S.ob = [{cid: '9'}]; out.deadOb = go();
+dead = true; fresh({}); ta = null; H.add = 'x'; out.dead = go(); fresh({}); S.ob = [{cid: '9'}]; out.deadOb = go();
 HOME_PAGE = true; fresh({}); S.later = []; out.home = [draw({page: 'bbb'})[1], draw({page: 'aaa', restart_needed: true})[1]];
 console.log(JSON.stringify(out));
 """
@@ -952,7 +946,7 @@ def test_news_f149(tmp: Path) -> None:
     eq(o['restartLater'], [True, False], 'Later holds for that code; newer code shows')
     eq(o['noReload'], 0, 'nothing of that reloads the page')
     eq(o['kept'], [1, ''], 'Refresh with a draft and an outbox reloads')
-    eq(o['back'], [{'set:project:x': '5', 'setq': 'cap'}, True, 'a dark mode', '/x', 'c2', {'a': 1},
+    eq(o['back'], [{'set:project:x': '5', 'setq': 'cap'}, '/x', 'c2', {'a': 1},
                    [{'name': 'p.png', 'path': '/up/p.png'}]], 'and what was written comes back')
     eq((o['once'], o['nothing']), ('', [[1, ''], '']), 'once; with nothing written nothing is kept')
     for k, word in (('uploading', 'uploading'), ('mic', 'mic'), ('dict', 'mic'), ('unkept', 'cannot keep'), ('dead', 'cannot keep'),
@@ -1364,7 +1358,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const handlers = {}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
 const DRAFT_KEY = k => k, boxKey = () => 'c1', grow = () => {}, esc = s => String(s), tq = p => p;
 const S = {thread: 'c1', sel: [], drawer: false};
-const TOUCH = () => false, busy = () => false, act = () => {}, selectedText = () => false, render = () => {}, newConcept = () => {};
+const TOUCH = () => false, busy = () => false, act = () => {}, selectedText = () => false, render = () => {};
 let sent = 0; const send = () => { sent++ };
 const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
 const ta = {value: '', blurred: 0, matches(s) { return s === '[data-in]' }, focus() {}, blur() { this.blurred++ },
@@ -1454,7 +1448,7 @@ const boxKey = () => S.thread || 'home';
 let BUSY = false, sent = 0, prevented = 0, TALK = '';
 const talkName = () => TALK, TOUCH = () => false;
 const busy = () => BUSY, act = (n, a) => { acts.push([n, a.session]) }, selectedText = () => false,
-      render = () => {}, newConcept = () => {}, send = () => { sent++ };
+      render = () => {}, send = () => { sent++ };
 const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
 const ta = {value: '', blurred: 0, selectionStart: 0, selectionEnd: 0, matches(s) { return s === '[data-in]' },
             focus() {}, blur() { this.blurred++ }, closest() { return null },
@@ -1590,17 +1584,16 @@ globalThis.matchMedia = q => ({matches: q === '(pointer:coarse)' && COARSE});
 const S = {thread: null, view: 'home', sel: [], atts: [], f: {}}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
 const DRAFT_KEY = k => k, boxKey = () => 'k', esc = s => String(s), tq = p => p, I = {}, HI = {i: null};
 const busy = () => false, act = () => {}, selectedText = () => false, render = () => {}, histKey = () => false;
-const send = () => log.push('send'), newConcept = () => log.push('concept');
+const send = () => log.push('send');
 const shownSession = () => '', sessWorks = busy, dictWhy = () => '', micWhy = () => '', DK = {};
-const card = h => h, obCards = () => '', conceptCard = () => '', emptyCard = () => '', NO_CONCEPT = '';
 const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
 const el = sel => ({value: '', style: {}, scrollHeight: 90, offsetHeight: 92, clientHeight: 90, matches(s) { return s === sel }, focus() {}, blur() {}, setSelectionRange() {}, closest() { return null }});
-const ta = el('[data-in]'), kin = el('[data-kin]');
+const ta = el('[data-in]');
 const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
                   querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
 const fetch = () => Promise.resolve({json: () => Promise.resolve([{name: 'clear', desc: ''}])});
 eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
-     + slice('function conceptsHTML(){', '\n}\n') + slice('function growKin(', '\n') + slice('function grow(', '\n')
+     + slice('function grow(', '\n')
      + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n')
      + slice("document.addEventListener('input',", ')}});\n') + `
 (async () => {
@@ -1618,9 +1611,6 @@ eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + sli
       S.thread = thread; S.view = view; ta.value = 'hi'; menu.hidden = true;
       o[n] = {keys: all(ta), hint: box('', '').includes('data-in enterkeyhint="enter"')};
     }
-    S.kOpen = true; S.snap = {}; kin.style = {};
-    handlers.input({target: kin});
-    o.concept = {keys: all(kin), hint: conceptsHTML().includes('data-kin enterkeyhint="enter"'), high: kin.style.height || ''};
     handlers.input({target: ta}); o.grown = ta.style.height;
     ta.value = '/cl'; slashShow(ta); o.pick = [press(ta, {}), ta.value];
     ta.value = '/clear'; slashShow(ta); o.full = press(ta, {});
@@ -1645,12 +1635,10 @@ def test_enter_b181(tmp: Path) -> None:
     ime = {'ime': 'line', 'imeSafari': 'line', 'imeCtrl': 'line'}
     for kind in ('fine', 'touch'):
         o, touch = got.get(kind, {}), kind == 'touch'
-        for name in ('chat', 'new', 'home', 'talk', 'concept'):
-            sent = 'concept' if name == 'concept' else 'send'
-            want = {'enter': 'line' if touch else sent, 'shift': 'line', 'ctrl': sent, 'cmd': sent, **ime}
+        for name in ('chat', 'new', 'home', 'talk'):
+            want = {'enter': 'line' if touch else 'send', 'shift': 'line', 'ctrl': 'send', 'cmd': 'send', **ime}
             eq(o.get(name, {}).get('keys'), want, f'{kind}, {name}: what Enter does')
             eq(o.get(name, {}).get('hint'), touch, f"{kind}, {name}: the keyboard's key says enter only on touch")
-        eq(o.get('concept', {}).get('high'), '92px' if touch else '', f'{kind}: the new concept box grows on touch')
         eq(o.get('grown'), '90px', f'{kind}: the message box grows')
         eq(o.get('pick'), ['taken', '/clear '], f'{kind}: Enter picks in the slash menu, not sent')
         eq(o.get('full'), 'line' if touch else 'send', f'{kind}: Enter on a command typed in full')
@@ -1910,7 +1898,7 @@ def test_outbox_f137(tmp: Path) -> None:
     eq(once.run('', lambda: {'ok': True}), {'ok': True}, 'no cid: it just runs')
     page = W.PAGE.read_text(encoding='utf-8')
     for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid})", "addEventListener('online',()=>drain())",
-                 'id="obbar"', 'id="obpop"', 'obChatRows()', 'obBubbles(n)', 'obCards(x=>x.concept||x.kq)',
+                 'id="obbar"', 'id="obpop"', 'obChatRows()', 'obBubbles(n)', 'obCards(x=>x.concept)',
                  "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to,..."):
         check(part in page, f'the page has {part}')
     send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
@@ -2121,20 +2109,20 @@ const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [{id: 'F1', t
   settingOf: v => v === 'ui.x' ? {table: 'ui', key: 'x', name: 'A setting'} : null,
   outbox: (name, args, o) => { log.acts.push([name, args]); const it = {cid: 'k' + log.acts.length, name, args, ...o}; env.S.ob.push(it); return it },
   chats: () => [], kbFocus: () => { log.focus++ }, setTimeout: () => 0, fetch: p => { log.fetched.push(p); return Promise.reject(0) }, tq: p => p,
-  card: h => h, esc: t => String(t), starting: () => false, Date, Math,
+  card: h => h, emptyCard: h => h, esc: t => String(t), starting: () => false, Date, Math,
   render: () => { log.draws++; env.keepPlace(); ta.value = kept['ar-draft:' + env.boxKey()] || '' }};
 const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
 env.env = env;
-const names = ['about', 'send', 'open', 'goView', 'keepPlace', 'takePlace', 'boxKey', 'shownSession', 'threadTitle', 'feedHTML', 'box', 'keptCheck', 'feedLoad'];
+const names = ['about', 'send', 'open', 'goView', 'keepPlace', 'takePlace', 'boxKey', 'shownSession', 'threadTitle', 'feedHTML', 'box', 'keptCheck', 'feedLoad', 'homeHTML', 'conceptsHTML'];
 new Function('known', 'env', 'with (known) {' + logic + line('const DRAFT_KEY=') + line('const boxKey=') + line('const shownSession=') + line('const sessionOf=')
   + line('const isAgent=') + line('const threadTitle=') + grab('function box(') + line('const feedNow=') + grab('async function feedLoad(') + grab('function feedHTML(')
   + grab('async function loadFeed(') + line('function keepPlace(') + grab('function takePlace(') + grab('function keptCheck(')
   + line('function open(') + line('function goView(') + grab('async function send(') + line('function newChat(') + line("  S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open(")
-  + grab('function about(') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
+  + grab('function about(') + grab('function homeHTML(') + grab('function conceptsHTML(') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
 const type = t => { ta.value = t; env.store.set('ar-draft:' + env.boxKey(), t) };
 const S = env.S, out = {press: []};
 (async () => {
-  for (const [view, a] of [['plan', 'plan:F1'], ['concepts', 'concept:0'], ['settings', 'setting:ui.x'], ['home', 'new']]) {
+  for (const [view, a] of [['plan', 'plan:F1'], ['concepts', 'concept:0'], ['settings', 'setting:ui.x'], ['home', 'new'], ['home', 'newconcept'], ['concepts', 'newconcept']]) {
     env.goView(view); log.focus = 0; env.about(a);
     out.press.push([S.view, S.thread, env.threadTitle(S.thread), log.focus]);
   }
@@ -2148,10 +2136,17 @@ const S = env.S, out = {press: []};
   // a reload opens it again, with no focus
   const was = S.ctx; S.ctx = null; S.thread = null; S.view = 'home'; log.focus = 0; env.takePlace(); env.keptCheck();
   out.reload = [S.view, S.thread, JSON.stringify(S.ctx) === JSON.stringify(was), log.focus];
-  type('make it first'); await env.send(); out.sent = [log.acts, S.thread, S.ctx, S.view, env.boxKey(), Object.keys(kept).filter(k => k.startsWith('ar-draft:'))];
+  type('make it first'); await env.send(); out.sent = [[...log.acts], S.thread, S.ctx, S.view, env.boxKey(), Object.keys(kept).filter(k => k.startsWith('ar-draft:'))];
   type('and more'); await env.send(); out.then = log.acts[1];
   env.goView('concepts'); env.about('concept:0'); type('hm'); env.open('c1'); out.left = [S.thread, S.ctx];
   type('hello'); await env.send(); out.c1 = log.acts[2];
+  // F183: a new concept, its buttons, its draft and its first message
+  env.working_ = env.upNext = () => []; const cs = S.snap.concepts;
+  out.buttons = [env.homeHTML(), env.conceptsHTML(), (S.snap.concepts = [], env.conceptsHTML())]; S.snap.concepts = cs;
+  env.goView('concepts'); env.about('newconcept'); type('a dark mo'); env.goView('home'); env.about('newconcept'); out.kdraft = ta.value;
+  S.ctx = null; S.thread = null; env.takePlace(); env.keptCheck(); out.kreload = [S.view, S.thread, S.ctx];
+  const n = log.acts.length; type('a dark mode'); await env.send();
+  out.ksent = [log.acts.slice(n), S.ctx, S.view, env.threadTitle(S.thread), Object.keys(kept).filter(k => k.includes('newconcept'))];
   console.log(JSON.stringify(out)); process.exit(0);
 })();
 """
@@ -2173,7 +2168,8 @@ def test_new_chat_view_f172(tmp: Path) -> None:
         return
     o = json.loads(r.stdout)
     eq(o['press'], [['plan', '+plan:F1', 'F1 Board page', 1], ['concepts', '+concept:K5', 'Lazy layout', 1],
-                    ['settings', '+setting:[ui] x', 'A setting', 1], ['home', '+new', 'Add a task', 1]],
+                    ['settings', '+setting:[ui] x', 'A setting', 1], ['home', '+new', 'Add a task', 1],
+                    ['home', '+newconcept', 'New concept', 1], ['concepts', '+newconcept', 'New concept', 1]],
        'a press opens the view over the one it was pressed in, titled, its box focused in the tap')
     eq(o['bad'], [[None, None]] * 3, 'a thing that is gone opens nothing')
     check('F1 Board page' in o['body'] and 'starts with your first message' in o['body'], 'it is empty and says so', o['body'])
@@ -2184,12 +2180,23 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     eq(o['reload'], ['plan', '+plan:F1', True, 0], 'a reload keeps it open, without focus')
     ask = 'About F1 (Board page): make it first'
     eq(o['sent'][1:], ['@k1', None, 'plan', '@k1', []], 'the first send: its draft is gone, and Back is still Plan')
-    # log.acts is one list, printed at the end: every action of the whole test
-    eq([a for a in o['sent'][0] if a[0] == 'new_control'], [['new_control', {'ask': ask, 'wait': False}]],
+    eq(o['sent'][0], [['new_control', {'ask': ask, 'wait': False}]],
        'the first send calls new_control once, with the About text')
     eq(o['then'], ['chat_to', {'text': 'and more', 'to': '@k1'}], 'the next message goes to that chat')
     eq(o['left'], ['c1', None], 'another chat opened over it is that chat')
     eq(o['c1'], ['chat_to', {'text': 'hello', 'to': 'c1'}], 'and a message there goes there')
+    home, some, none = o['buttons']
+    check('<span class="chips"><button class="chip" data-about="new">' in home
+          and 'Add a task</button><button class="chip" data-about="newconcept">' in home and 'New concept</button></span>' in home,
+          "F183: Home has New concept beside Add a task, the two on one row when a phone's width wraps the chips", home)
+    check('.chips{display:flex;gap:8px;flex-wrap:wrap' in page, "the chips wrap to a phone's width")
+    for what, h in (('concepts', some), ('none', none)):
+        check('<button class="btn acc" data-about="newconcept">' in h and 'New concept</button>' in h, f'{what}: the button', h)
+    check('No concept waits' in none and 'No concept waits' not in some, 'the empty state stays', none)
+    eq(o['kdraft'], 'a dark mo', 'the draft is kept, from Concepts to Home')
+    eq(o['kreload'], ['home', '+newconcept', {'kind': 'newconcept', 'label': 'New concept'}], 'a reload keeps the view')
+    eq(o['ksent'], [[['new_control', {'ask': 'Concept: a dark mode', 'wait': False}]], None, 'home', 'New concept', []],
+       'the first message starts a control session with Concept: …')
 
 
 NEED_DRIVER = r"""

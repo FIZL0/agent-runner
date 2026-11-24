@@ -393,14 +393,14 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
 - **Message box.** On a computer Enter sends and Shift+Enter starts a new line; on a touch phone or tablet Enter starts a new line and only Send (or Force send, or Ctrl/Cmd+Enter on a hardware keyboard) sends. A composing input method never sends. Each chat keeps its own draft. Messages that never landed are listed in the Outbox popup as not delivered, with Retry and Discard. Attachments are uploaded to the run (`POST /upload`), kept under
   `.runner/uploads` (`<notes>/uploads`, git-ignored with the rest of the notes folder), and handed to the
   session as paths on this machine. On a computer, a file dropped on the session is attached the same way.
-- **New chat view.** Chat on a plan task, a concept or a setting ("Ask a chat to change it"), and Add a task open an
+- **New chat view.** Chat on a plan task, a concept or a setting ("Ask a chat to change it"), Add a task, and New concept open an
   empty chat at once, over the view pressed in, titled with what it is about, its box focused. It says "The chat starts
   with your first message." Nothing is sent until the first message, which starts the session once (`new_control`,
-  with the About text). Leaving it unsent leaves no session; its draft is kept per thing. Back or Esc returns to the
+  with the About text, or with "Concept: " for New concept). Leaving it unsent leaves no session; its draft is kept per thing. Back or Esc returns to the
   view. A reload reopens it without focus, and it has no session keys or interrupt.
 - **Plan.** The queue in plain words (a row folds open to `plan ID`'s text, with Chat), and Add a task. Tasks are not
   edited here directly: ask in a chat. A task that waits for a shared tool reads `waits for iPhone 15, held by F389, 12 min` on its row (### Shared tools).
-- **Concepts.** Each concept with a button per option (taken from its page's headings, by `ui_model.concept_options`; `ui_model.concept_page` builds the page), plus Chat, New chat and View.
+- **Concepts.** Each concept with a button per option (taken from its page's headings, by `ui_model.concept_options`; `ui_model.concept_page` builds the page), plus Chat, New chat and View. The New concept button (also on Home, beside Add a task) opens an empty New chat view for a new concept.
 
 How the app looks, moves and speaks is in [STYLE.md](STYLE.md); a change to it follows those rules.
 

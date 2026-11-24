@@ -140,7 +140,6 @@ a{color:var(--accent)}
 .greet .logo{width:30px;height:30px;font-size:var(--fs-b)}
 .sec{font-size:var(--fs-m);color:var(--muted);margin-top:10px;display:flex;align-items:center;gap:8px}
 .sec .ln{flex:1;height:1px;background:var(--line)}
-.kform{display:grid;gap:8px} .kform textarea{width:100%;border:1px solid var(--line);border-radius:var(--r-m);padding:8px 10px;font:16px/1.35 var(--sans);background:var(--bg);color:var(--fg);resize:vertical}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);padding:14px 16px;display:grid;gap:10px;min-width:0}
 .card.tap{cursor:pointer} .card.tap:hover{border-color:var(--line2)}
 .card.need{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
@@ -617,6 +616,7 @@ function compose(ctx,text,paths){
   text=String(text||'').trim();
   let msg=text;
   if(ctx&&ctx.kind==='new')msg=`Add a task: ${text}`;
+  else if(ctx&&ctx.kind==='newconcept')msg=`Concept: ${text}`;  // F183: guide concepts: the options page in that chat
   else if(ctx&&ctx.kind==='plan')msg=`About ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
   else if(ctx&&ctx.kind==='concept')msg=`About concept ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
   else if(ctx&&ctx.kind==='setting')msg=`Change the setting ${ctx.id} (${ctx.title}) in the project file: ${text}`;
@@ -628,7 +628,9 @@ function compose(ctx,text,paths){
    session that gets it as its first message; F176: with no chat open (Home) too; else chat_to the open chat */
 function sendReq(ctx,to,msg){return ctx||!to?{name:'new_control',args:{ask:msg}}:{name:'chat_to',args:{text:msg,to}}}
 /* F172: the new chat view of a card's Chat, before its first message: its name in S.thread ('+plan:F1'; no session has it) */
-const ctxKey=ctx=>'+'+(ctx.kind==='new'?'new':ctx.kind+':'+ctx.id);
+const ctxKey=ctx=>'+'+(ctx.kind==='new'||ctx.kind==='newconcept'?ctx.kind:ctx.kind+':'+ctx.id);
+/* its message box's placeholder */
+const newPh=ctx=>({new:'Describe the task in your own words',newconcept:'What should the concept show?'})[ctx&&ctx.kind]||'Write your first message';
 const isNew=n=>String(n||'')[0]==='+';
 /* the usage line of the status lines ('usage: session 40%, week 12%'), '' for none */
 const usageOf=status=>((status||[]).find(l=>/^usage: /.test(l))||'').replace(/^usage: /,'');
@@ -675,10 +677,6 @@ function conceptButtons(c){
   return bs;
 }
 const NO_CONCEPT='No concept waits for a pick.';
-/* F87: the Concepts view's +: what the concept is about, queued as a K task (plan add K TEXT); null when empty */
-function newConceptReq(text){const t=String(text||'').trim();return t?{name:'plan_add',args:{kind:'K',text:t}}:null}
-/* the id plan add gave the new task, from its output ('' when it names none) */
-const queuedId=out=>((String(out||'').match(/\bK\d+[a-z]?\b/)||[''])[0]);
 /* F93: Talk. The sidebar's views, Talk first; its control session: the one this browser remembers while it is
    live, else a live chat titled Talk, else '' (the next send opens one) */
 const NAV=[['talk','Talk'],['home','Home'],['status','Status'],['plan','Plan'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']];
@@ -1203,7 +1201,7 @@ function pageNews(s,mine,later){
 function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploading?'Wait for the attachments to finish uploading.'
   :o.form?'Save or close the device form first. It is not kept over a refresh.'
   :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
-if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,answerArgs,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,answerArgs,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1404,7 +1402,6 @@ function obDone(it,j){
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
   else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&j.gone))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&it.name==='answer')delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
-  else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
   else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
@@ -2084,7 +2081,7 @@ const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<1
 function homeHTML(){
   const ws=working_(), nx=upNext().slice(0,3);
   return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
-    <div class="chips"><button class="chip" data-view="talk">${I.talk}Talk</button><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><button class="chip" data-about="new">${I.plus}Add a task</button></div>
+    <div class="chips"><button class="chip" data-view="talk">${I.talk}Talk</button><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><span class="chips"><button class="chip" data-about="new">${I.plus}Add a task</button><button class="chip" data-about="newconcept">${I.plus}New concept</button></span></div>
     ${needsSec()}
     <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:emptyCard(S.snap.up===false?'No run is up.':'No agent is working right now.')}
     <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):emptyCard('The queue is empty.')}
@@ -2435,16 +2432,9 @@ function planHTML(){
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
 function conceptsHTML(){
   const cs=S.snap.concepts||[];
-  const form=S.kOpen?card(`<form class="kform" data-kform><div class="small">What is the concept about? It is queued as a K task; its options page shows here once it is up.</div>
-    <textarea rows="3" data-kin${enterHint()} aria-label="What the concept is about" placeholder="e.g. a dark mode for the run app"></textarea>
-    <div class="btns"><button class="btn acc">Queue it</button><button type="button" class="btn" data-kcancel>Cancel</button></div></form>`):'';
-  return `<div class="col"><div class="sec">Concepts<span class="ln"></span><button class="shadd" data-kadd aria-label="New concept" title="New concept">${I.plus}</button></div>
-    ${form}${obCards(x=>x.concept||x.kq)}${S.kSaid?`<div class="small">${esc(S.kSaid)}</div>`:''}${cs.length?cs.map(conceptCard).join(''):emptyCard(`${NO_CONCEPT}`)}</div>`;
-}
-function newConcept(){  // F137: shown as queuing at once; obDone says its id once plan add answers
-  const req=newConceptReq(S.kText);if(!req)return;
-  S.kOpen=false;S.kText='';S.kSaid='';
-  outbox(req.name,req.args,{kq:true,say:`New concept: “${req.args.text}”`});
+  return `<div class="col"><div><button class="btn acc" data-about="newconcept">${I.plus}New concept</button></div>
+    <div class="sec">Concepts<span class="ln"></span></div>
+    ${obCards(x=>x.concept)}${cs.length?cs.map(conceptCard).join(''):emptyCard(`${NO_CONCEPT}`)}</div>`;
 }
 /* F83: where each view was scrolled to (S.at), whether Talk follows its newest words (S.pin) */
 let lastPlace=null;
@@ -2492,12 +2482,11 @@ function render(force){
   let h='',dock='';
   feedDraw(n);  // F114
   if(n){const agent=isAgent(n);h=$('body').hidden?'':feedHTML(n);
-    dock=(isNew(n)?'':sessRow(n)+keysRow())+box(agent?`Message ${threadTitle(n)}`:isNew(n)?S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':'Write your first message':`Reply to ${threadTitle(n)}`,
+    dock=(isNew(n)?'':sessRow(n)+keysRow())+box(agent?`Message ${threadTitle(n)}`:isNew(n)?newPh(S.ctx):`Reply to ${threadTitle(n)}`,
       (agent?'Goes straight to this agent, between its steps. ':'')+keysLine())}  // B120: the keys, from BOX_KEYS
   else if(S.view==='talk')h=talkHTML();
   else h={home:homeHTML,status:statusHTML,plan:planHTML,concepts:conceptsHTML,tools:toolsHTML,settings:settingsHTML,projects:projectsHTML}[S.view]();
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;
-  const kta=document.querySelector('[data-kin]'), kfocused=kta&&document.activeElement===kta;
   const main=document.querySelector('.main');  // F115: a chat looks like the terminal
   main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';main.classList.toggle('see',chatShown());pageColor(chatOn);
   if(moved){body._h=null;dockEl._h=null}
@@ -2514,7 +2503,6 @@ function render(force){
   const nta=document.querySelector('[data-in]');
   if(nta){const v=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));if(nta.value!==v)nta.value=v;grow(nta);if(focused&&nta!==ta){nta.focus({preventScroll:true});if(sel)nta.setSelectionRange(sel[0],sel[1])}if(focused)slashShow(nta)}  // B119: the menu stays open; B120: so does a recalled message
   const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(H.addFocus){np.focus({preventScroll:true});kbReveal(np)}}  // F134
-  const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';growKin(nk);if(S.kFocus){kbFocus(nk);kbReveal(nk)}else if(kfocused)nk.focus({preventScroll:true});S.kFocus=false}  // F87: the new concept box keeps its words
   if(drew)keep();
   if(moved){
     const follow=lastPlace&&(lastPlace.startsWith('t:@')&&n||lastPlace.startsWith('t:+')&&n&&n[0]==='@');  // a starting chat got its name, a new one started: the same chat
@@ -2636,7 +2624,6 @@ if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
   if(IOS){document.addEventListener('touchstart',kbTapStart,{passive:true});document.addEventListener('touchcancel',()=>{KT=null},{passive:true});
     document.addEventListener('touchend',kbTapEnd,{passive:false})}}
 /* B181: the new concept box grows with its lines on touch; a computer's keeps its drag handle */
-function growKin(ta){if(TOUCH()){grow(ta);ta.style.height=Math.min(ta.scrollHeight+ta.offsetHeight-ta.clientHeight,160)+'px'}}
 function grow(ta){ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
 /* B119: the slash command menu. SL.cmds the session's commands from /commands (null until they come, then
    SLASH_FALLBACK's list stands in), SL.items the rows shown, SL.i the highlighted one */
@@ -3071,7 +3058,7 @@ const devTyped=()=>Object.keys(S.f).some(k=>k.startsWith('dev:'));
 function keepTyped(){
   const f=Object.fromEntries(Object.entries(S.f).filter(([k])=>!k.startsWith('dev:')));
   const atts=S.atts.filter(a=>a.path).map(a=>({name:a.name,path:a.path}));
-  const some=Object.keys(f).length||atts.length||S.kOpen||S.kText||H.add||S.ren, text=some?JSON.stringify({f,atts,kOpen:!!S.kOpen,kText:S.kText||'',add:H.add,ren:S.ren,setOpen:S.setOpen}):'';
+  const some=Object.keys(f).length||atts.length||H.add||S.ren, text=some?JSON.stringify({f,atts,add:H.add,ren:S.ren,setOpen:S.setOpen}):'';
   tabStore.set(TYPED_KEY,text);
   const ta=document.querySelector('[data-in]');
   return tabStore.get(TYPED_KEY)===text&&(!ta||!ta.value||HI.i!==null||store.get(DRAFT_KEY(boxKey()))===ta.value)
@@ -3081,7 +3068,7 @@ function takeTyped(){
   let k=null;try{k=JSON.parse(tabStore.get(TYPED_KEY)||'null')}catch(e){}
   tabStore.set(TYPED_KEY,'');
   if(!k||typeof k!=='object')return;
-  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?k.atts:[];S.kOpen=!!k.kOpen;S.kText=k.kText||'';H.add=k.add||'';S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};
+  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?k.atts:[];H.add=k.add||'';S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};
 }
 function newsRefresh(){
   const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:S.atts.some(a=>!a.path&&!a.err),form:devTyped(),unkept:!keepTyped()});
@@ -3161,7 +3148,7 @@ function placeLoad(){if(S.thread)loadFeed(S.thread);if(S.view==='tools')loadTool
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
 function open(n){const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;if(!isNew(n))S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet)setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
-function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;S.kSaid='';render(true);if(S.view==='settings')loadSettings();if(S.view==='tools')loadTools()}
+function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);if(S.view==='settings')loadSettings();if(S.view==='tools')loadTools()}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
   if(S.atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
@@ -3188,6 +3175,7 @@ function newChat(name,args,say,ask){const known=chats().map(c=>c.name), it=outbo
 function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
   if(a==='new')S.ctx={kind:'new',label:'Add a task'};
+  else if(a==='newconcept')S.ctx={kind:'newconcept',label:'New concept'};
   else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept}}
   else if(k==='setting'){const x=settingOf(v);if(!x)return;S.ctx={kind:'setting',id:`[${x.table}] ${x.key}`,title:x.name,label:x.name}}
   else if(k==='plan'){const q=S.snap.queue.find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
@@ -3307,8 +3295,6 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-shot]')){S.askShot=+x.dataset.shot;render(true);$('sheet').scrollTop=0;return}
   if(q('[data-shotclose]')){S.askShot=-1;render(true);return}
   if(x=q('[data-reply]')){needReply(x.dataset.reply);return}
-  if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
-  if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
   if(x=q('[data-quick]')){S.ctx=null;const t=x.textContent.trim();  // B139: a new chat
     newChat('quick_ask',{key:x.dataset.quick},t,t);return}
@@ -3322,7 +3308,7 @@ document.addEventListener('click',async e=>{
 document.addEventListener('submit',e=>{e.preventDefault();
   if(e.target.matches('[data-padd]')){const v=H.add.trim();if(v){H.add='';homePost('add',{path:v})}return}  // F134
   if(e.target.matches('[data-renform]'))return saveRename();  // F129
-  if(e.target.matches('[data-kform]'))newConcept();else send()});
+  send()});
 /* F124, F97: a switch or a select acts at once; a setting's on its row saves at once too */
 document.addEventListener('change',e=>{
   const t=e.target, ts=t.dataset&&t.dataset.ts, f=(t.dataset&&t.dataset.f)||'';
@@ -3355,10 +3341,6 @@ document.addEventListener('keydown',e=>{
     e.preventDefault();const [,side,...id]=e.target.dataset.f.split(':');S.f[e.target.dataset.f]=e.target.value;saveSetting(id.join(':'),side);return}
   if(e.target.matches&&e.target.matches('[data-f^="askre:"]')&&e.key==='Enter'){  // F162: Enter sends a reply; beside answers the note waits for one
     const n=needOf(S.sheetArg);if(n&&needReplies(n)&&!composing(e)){e.preventDefault();needReply(n.id)}return}
-  if(e.target.matches&&e.target.matches('[data-kin]')){  // F87: Enter queues the concept (B181: a new line on touch), Esc closes the box
-    if(e.key==='Enter'&&boxEnter(e,TOUCH())==='send'){e.preventDefault();newConcept();return}
-    if(e.key==='Escape'){e.preventDefault();S.kOpen=false;render(true);return}
-    return}
   if(e.target.matches&&e.target.matches('[data-in]')){
     if(slashOpen()&&!composing(e)){  // B119: arrows move, Enter or Tab picks, Esc closes the menu and stays in the box
       if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();SL.i=slashMove(SL.i,SL.items.length,e.key);slashShow(e.target);return}
@@ -3377,7 +3359,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true)}if(e.target.matches('[data-kin]')){S.kText=e.target.value;growKin(e.target)}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true)}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
