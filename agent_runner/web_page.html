@@ -3146,6 +3146,8 @@ function slashShow(ta){
   m.innerHTML=SL.items.map((c,j)=>`<button type="button" role="option" class="${j===SL.i?'on':''}" aria-selected="${j===SL.i}" data-slashpick="${j}"><b>/${esc(c.name)}</b><span>${esc(c.desc||'')}</span></button>`).join('');
   const on=m.querySelector('.on');if(on&&on.scrollIntoView)on.scrollIntoView({block:'nearest'});
 }
+/* B188: Enter picks the highlighted command, unless it is typed in full already */
+const slashPicks=ta=>{const c=SL.items[SL.i];return !!c&&ta.value.trim()!=='/'+c.name};
 const slashOpen=()=>{const m=document.querySelector('[data-slash]');return !!(m&&!m.hidden&&SL.items.length)};
 function slashClose(){SL.items=[];SL.i=0;const m=document.querySelector('[data-slash]');if(m){m.hidden=true;m.innerHTML=''}}
 function slashTake(j){
@@ -3885,8 +3887,8 @@ document.addEventListener('keydown',e=>{
     if(slashOpen()&&!composing(e)){  // B119: arrows move, Enter or Tab picks, Esc closes the menu and stays in the box
       if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();SL.i=slashMove(SL.i,SL.items.length,e.key);slashShow(e.target);return}
       if(e.key==='Escape'){e.preventDefault();slashClose();return}
-      const c=SL.items[SL.i];
-      if(e.key==='Tab'||(e.key==='Enter'&&!e.shiftKey&&c&&e.target.value.trim()!=='/'+c.name)){e.preventDefault();slashTake(SL.i);return}
+      /* B188: on touch Shift does not count: a phone's keyboard that has shifted itself for a capital may send Return with it */
+      if(e.key==='Tab'||(e.key==='Enter'&&(!e.shiftKey||TOUCH())&&slashPicks(e.target))){e.preventDefault();slashTake(SL.i);return}
       if(e.key==='Enter')slashClose();  // the command is typed in full: Enter sends it (B181: a new line on touch)
     }
     if(e.key==='Enter'&&boxEnter(e,TOUCH())==='send'){e.preventDefault();send();return}
@@ -3898,6 +3900,11 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.drawer){S.drawer=false;render();return}
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){viewGo(()=>{S.thread=null;S.ctx=null;render(true)},S.thread);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
+});
+/* B188: a soft keyboard's Return whose keydown did not say Enter (keyCode 229, or no key name) picks at the line break
+   itself; an input method that takes its words makes none */
+document.addEventListener('beforeinput',e=>{
+  if((e.inputType==='insertLineBreak'||e.inputType==='insertParagraph')&&!e.isComposing&&TOUCH()&&e.target.matches&&e.target.matches('[data-in]')&&slashOpen()&&slashPicks(e.target)){e.preventDefault();slashTake(SL.i)}
 });
 document.addEventListener('input',e=>{if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
