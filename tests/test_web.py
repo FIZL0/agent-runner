@@ -319,7 +319,7 @@ def test_start(tmp: Path) -> None:
         check(any(url in str(c) for c in lg.call_args_list), 'the run log has the address', lg.call_args_list)
         with mock.patch.object(S, 'run_up', return_value=True):
             eq(W.page_line(), f'run page: {url} (or {by_ip})', 'status prints it while the run is up')
-        eq(U.SEND[0], U.to_c1, "the run's chat goes through ui_model.to_c1, which finds c1 by its tag")
+        eq(U.SEND[0], U.to_new, "the run's chat goes through ui_model.to_new, a new chat each")
         eq(srv.server_address[0], '0.0.0.0', 'F165: no Home: on every interface')
     finally:
         srv.stop()
@@ -554,9 +554,9 @@ def test_logic(tmp: Path) -> None:
        'the About line names the task; an attachment goes as its path')
     eq(got[15], 'Attached: /r/.runner/uploads/a.png, /r/.runner/uploads/b.txt', 'attachments alone')
     eq(got[16], 'About R6 (Windows status), which needs me: what do I check?',
-       "a Needs you item's Chat talks about it with c1, not as its answer")
+       "a Needs you item's Chat talks about it, not as its answer")
     eq(got[17], 'session 40%, week 12%', 'the usage line for the sidebar')
-    eq(got[18:21], ['Project chat', 'Site deploy', 'Chat 7'], 'chats by their titles, c1 the project chat')
+    eq(got[18:21], ['Chat 1', 'Site deploy', 'Chat 7'], 'chats by their titles, c1 as any other')
     eq(got[21], 'Waits for V5 Release', "B115: an after shows the id and its short title (the model's after_title)")
 
 
@@ -969,9 +969,9 @@ def test_talk_f93(tmp: Path) -> None:
 
 
 def test_delete_chats_f118(tmp: Path) -> None:
-    """F118: the page's delete_chats reaches control.end_control for each named chat and refuses c1; each chat
-    row but c1 has a delete button, a delete is sent only once Undo is past, and chatPick picks as Ctrl/Cmd+click
-    (toggle) and Shift+click (a range from the last clicked) do, never c1."""
+    """F118: the page's delete_chats reaches control.end_control for each named chat; each chat
+    row has a delete button, a delete is sent only once Undo is past, and chatPick picks as Ctrl/Cmd+click
+    (toggle) and Shift+click (a range from the last clicked) do."""
     from agent_runner import control as CT
     fake_repo(tmp)
     page = W.page_html().decode()
@@ -987,7 +987,7 @@ def test_delete_chats_f118(tmp: Path) -> None:
             eq((code, out.get('ok'), out.get('deleted'), ended), (200, True, ['c4'], [4, 7]),
                'each named chat is ended; one already gone is said so')
             code, out = post(url, {'name': 'delete_chats', 'args': {'names': ['c1']}})
-            eq((out.get('ok'), ended), (False, [4, 7]), 'c1 cannot be deleted: nothing ended')
+            eq((out.get('ok'), ended), (True, [4, 7, 1]), 'c1 is a chat like any other')
     finally:
         srv.stop()
     if not shutil.which('node'):
@@ -1002,8 +1002,8 @@ def test_delete_chats_f118(tmp: Path) -> None:
     eq(got[1], {'sel': ['c4', 'c9'], 'last': 'c9'}, 'and another, in list order')
     eq(got[2], {'sel': ['c9'], 'last': 'c4'}, 'and again takes it out')
     eq(got[3], {'sel': ['c4', 'c6', 'c9'], 'last': 'c4'}, 'Shift+click picks the range from the last clicked')
-    eq(got[4]['sel'], ['c3', 'c4', 'c6'], 'a range up to c1 leaves c1 out')
-    eq(got[5]['sel'], ['c3'], 'c1 is never picked')
+    eq(got[4]['sel'], ['c1', 'c3', 'c4', 'c6'], 'a range up to c1')
+    eq(got[5]['sel'], ['c1', 'c3'], 'c1 is picked as any other')
     eq(got[6], {'sel': [], 'last': 'c6'}, 'a plain click drops the pick')
     eq(got[7], {'sel': ['c6'], 'last': 'c6'}, 'Shift+click with nothing clicked before picks that one')
 
@@ -1429,14 +1429,14 @@ eval(logic + slice('const HIST_KEY=', 'return true;\n}\n') + slice('const SL={',
   out.escIdle = [key('Escape'), acts.length, ta.blurred, S.thread];
   store.v['ar-hist:c4'] = 'not json'; S.thread = 'c4'; at('');
   out.bad = [key('ArrowUp'), ta.value];
-  // B142: Esc in the box interrupts the shown session too: c1 on Home, the Talk session in the Talk view
+  // B142: Esc in the box interrupts the shown session too: none on Home, the Talk session in the Talk view
   S.thread = null; S.view = 'home'; BUSY = true; acts.length = 0; at('x');
   out.homeEsc = [key('Escape'), acts.slice()];
   acts.length = 0; S.view = 'talk'; TALK = 'c7';
   out.talkEsc = [key('Escape'), acts.slice()];
   acts.length = 0; S.view = 'home'; BUSY = false; const blurs = ta.blurred;
   out.homeEscIdle = [key('Escape'), acts.length, ta.blurred - blurs];
-  // B141: on Home (no chat open) Ctrl+C and Stop interrupt c1 while it works; in the Talk view the Talk session
+  // B141: on Home (no chat open) Ctrl+C and Stop interrupt nothing (F176); in the Talk view the Talk session
   S.thread = null; S.view = 'home'; BUSY = true; acts.length = 0;
   const ctrlC = () => key('c', {ctrlKey: true});
   out.homeCtrlC = [ctrlC(), acts.slice()];
@@ -1502,15 +1502,14 @@ def test_composer_keys_b120(tmp: Path) -> None:
     eq(got.get('escBusy'), [True, [['interrupt', 'c1']], 0, 'c1'], 'Esc interrupts the working chat and stays in it')
     eq(got.get('escIdle'), [True, 1, 1, 'c1'], 'Esc in an idle chat leaves the box, sends nothing, does not go back')
     eq(got.get('bad'), [False, ''], 'a broken stored history is read as none')
-    eq(got.get('homeEsc'), [True, [['interrupt', 'c1']]], 'B142: Esc on Home interrupts a working c1')
+    eq(got.get('homeEsc'), [True, []], 'B142, F176: Esc on Home interrupts nothing')
     eq(got.get('talkEsc'), [True, [['interrupt', 'c7']]], 'B142: in the Talk view, the Talk session')
-    eq(got.get('homeEscIdle'), [True, 0, 1], 'B142: with c1 idle, Esc on Home leaves the box')
-    # B141: with no chat open the page shows c1, and Ctrl+C and Stop interrupt it while it works
-    eq(got.get('homeCtrlC'), [True, [['interrupt', 'c1']]], 'Ctrl+C with no chat open interrupts a working c1')
-    eq(got.get('homeStop'), [['interrupt', 'c1']], 'Stop with no chat open interrupts c1')
+    eq(got.get('homeEscIdle'), [True, 0, 1], 'B142: Esc on Home leaves the box')
+    eq(got.get('homeCtrlC'), [False, []], 'F176: Ctrl+C with no chat open is the browser\'s')
+    eq(got.get('homeStop'), [], 'Stop with no chat open interrupts nothing')
     eq(got.get('talkCtrlC'), [True, [['interrupt', 'c7']]], 'in the Talk view Ctrl+C interrupts the Talk session')
     eq(got.get('talkNone'), [False, []], 'a Talk view with no Talk session yet interrupts nothing')
-    eq(got.get('homeIdle'), [False, []], 'an idle c1 leaves Ctrl+C to the browser')
+    eq(got.get('homeIdle'), [False, []], 'no chat open leaves Ctrl+C to the browser')
     check('data-stop="${esc(shownNow)}"' in page, "the box's Stop names the shown session")
 
 
@@ -2007,8 +2006,8 @@ def test_sent_b154(tmp: Path) -> None:
 
 def test_card_chat_b139(tmp: Path) -> None:
     """B139: a run page button that starts a chat (Add a task, a card's Chat, a quick ask, Take) starts a fresh
-    control session (`control --new --ask`) instead of sending to c1 with its whole history; typing in the c1
-    chat box with no card context still goes to c1."""
+    control session (`control --new --ask`) instead of sending to one with its whole history; typing in an open
+    chat's box with no card context goes to that chat (F176: on Home to a new one)."""
     fake_repo(tmp)
 
     def no_send(t):
@@ -2031,13 +2030,13 @@ def test_card_chat_b139(tmp: Path) -> None:
         return
     got = logic_js([['sendReq', {'kind': 'need', 'id': 'R6'}, 'c1', 'About R6, which needs me: hi'],
                     ['sendReq', {'kind': 'new'}, 'c1', 'Add a task: dark mode'],
-                    ['sendReq', None, 'c1', 'hello'], ['sendReq', None, 'c6', 'hi c6']])
+                    ['sendReq', None, '', 'hello'], ['sendReq', None, 'c6', 'hi c6']])
     eq(got[:2], [{'name': 'new_control', 'args': {'ask': 'About R6, which needs me: hi'}},
                  {'name': 'new_control', 'args': {'ask': 'Add a task: dark mode'}}],
        'a send with S.ctx set calls new_control, not chat_to c1')
-    eq(got[2:], [{'name': 'chat_to', 'args': {'text': 'hello', 'to': 'c1'}},
+    eq(got[2:], [{'name': 'new_control', 'args': {'ask': 'hello'}},
                  {'name': 'chat_to', 'args': {'text': 'hi c6', 'to': 'c6'}}],
-       'with no card context the box still goes to its chat (c1 by default)')
+       'with no card context the box goes to its chat, on Home to a new one (F176)')
 
 
 NEW_VIEW_DRIVER = r"""
@@ -3110,12 +3109,12 @@ def test_chats_f128(tmp: Path) -> None:
                     ['needsReply', row('c2', needs_reply=True), now],
                     ['chatName', {'name': 'c1', 'title': 'Base', 'renamed': True}], ['chatName', {'name': 'c1', 'title': 'Base'}]])
     names = lambda g: ([x['name'] for x in g['top']], [x['name'] for x in g['quiet']])  # noqa: E731
-    eq(names(got[0]), (['c1', 'c3', 'c4', 'c5', 'c6', 'c8', 'c9'], ['c2', 'c7']),
-       'quiet last: not c1, one that needs a reply (c3, c9 unread), a renamed, a fresh, a pinned or a new one')
+    eq(names(got[0]), (['c3', 'c4', 'c5', 'c6', 'c8', 'c9'], ['c1', 'c2', 'c7']),
+       'quiet last: not one that needs a reply (c3, c9 unread), a renamed, a fresh, a pinned or a new one')
     eq(names(got[1])[1], [], 'chat_quiet off: none')
     check('c2' in names(got[2])[0], 'the open chat stays up')
     eq(got[3:7], [False, True, False, True], 'a badge: unread since it spoke, or an open question; not while it works')
-    eq(got[7:], ['Base', 'Project chat'], 'c1 shows the name the person gave it')
+    eq(got[7:], ['Base', 'Base'], 'c1 shows its title as any other')
 
 
 def test_needs_drop_chat_f110(tmp: Path) -> None:
@@ -3805,7 +3804,7 @@ def test_session_proxy_f114(tmp: Path) -> None:
             with mock.patch('agent_runner.control_reopen.reopen_control', return_value='x') as ro:
                 out = post(f'{base}/act?t={token}', {'name': 'resume_chat', 'args': {'chat': 'c6'}})[1]
             eq((out['ok'], ro.call_args[0]), (True, (6, 'sid')), 'resume_chat reopens its conversation')
-        check(not U.act('resume_chat', chat='c1')['ok'] and not U.act('resume_chat', chat='../x')['ok'], 'not c1, not a path')
+        check(not U.act('resume_chat', chat='s1')['ok'] and not U.act('resume_chat', chat='../x')['ok'], 'not a slot, not a path')
         with mock.patch.object(W, 'session_live', return_value=True), mock.patch.object(W, 'headless', return_value=True):
             check('headless' in W.no_session('s2')['out'], 'a headless slot says so')
     finally:

@@ -423,8 +423,10 @@ def test_navigation() -> None:
         p.key('ENTER')
         p.key('4' if n != '4' else '3')
         eq((p.panel, p.main), (4 if n != '4' else 3, False), f'1-5 work from panel {n}\'s main pane')
-    p.key('c')
-    eq((p.panel, p.sel()['name'], p.tab()[0], p.typing), (2, 'c1', 'session', ''), 'c: c1\'s session, no typing')
+    started = []
+    with mock.patch.object(p, 'new_chat', lambda: started.append(1)):
+        p.key('c')
+    eq((started, p.typing), ([1], ''), 'c: a new chat (F176), as n in Sessions')
     p.key('ESC')
     p.key('2')
     p.cur[2] = 3
@@ -904,7 +906,7 @@ def test_actions() -> None:
     eq(sent, ['change B2: also cover openmx', 'new task: show usage too',
               'D7: port 8770', 'concept K5 ("Lazy layout"): go with Option B',
               'concept K5 ("Lazy layout"): smaller'],
-       'chat edits, answers (a button, a reply), the concept pick and its change go to c1')
+       'chat edits, answers (a button, a reply), the concept pick and its change go to a new chat')
     eq(calls, [('new_control', True), ('quick_ask', 'since'), ('quick_ask', 'usage'), ('open_session', 's1'),
                ('new_control', False)],
        'H starts a new control session (B139); o, the quick asks and n run F74\'s actions (n without waiting)')
@@ -1575,8 +1577,8 @@ def test_side_keys_in_box_f113() -> None:
 
 def test_d_drops_f116() -> None:
     """F116: d drops the selected row in panels 2-5 (with the panels focused): a slot's task, a queued task, a
-    Needs you item, a concept; on cN (N > 1) it closes the control session (`control.close_from_tui`, logged as
-    'control N: closed from the TUI'); on c1 it does nothing but say so. The bottom line shows d where it works."""
+    Needs you item, a concept; on cN it closes the control session (`control.close_from_tui`, logged as
+    'control N: closed from the TUI'). The bottom line shows d where it works."""
     from agent_runner import control as K
     ran, ended, logged = [], [], []
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
@@ -1584,11 +1586,6 @@ def test_d_drops_f116() -> None:
             mock.patch.object(K, 'log', logged.append):
         p = page()
         p.key('2')
-        p.cur[2] = 0  # c1
-        eq('d' in [s for s, c in p.footer() if c == 'hkey'], False, 'c1: no d on the bottom line')
-        p.key('d')
-        eq((ended, ran, p.msg_ok), ([], [], False), 'd on c1 keeps it')
-        check('kept session' in p.msg, 'd on c1 says it is the run\'s kept session', p.msg)
         p.cur[2] = 1  # c6
         check(('d', 'close') in p.hint_keys(), 'c6: d close on the bottom line', p.hint_keys())
         p.key('d')
@@ -1633,11 +1630,10 @@ def test_d_drops_f116() -> None:
         p.key('1')
         p.key('d')
         eq((ran, ended), ([], [6]), 'Status has nothing to drop')
-    eq(K.close_from_tui(1)['ok'], False, 'close_from_tui never closes c1')
 
 
 def test_rename_f129() -> None:
-    """F129: r on a cN row (c1 too) takes the person's own name on the bottom line and runs control --rename N NAME."""
+    """F129: r on a cN row takes the person's own name on the bottom line and runs control --rename N NAME."""
     ran = []
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 6 is renamed'))[1]]):
         for at, n in ((0, '1'), (1, '6')):
@@ -1716,7 +1712,7 @@ def no_send(text):
 def test_answer_direct_b138() -> None:
     """B138: a Needs you button runs the plan command itself, never an AI session (SEND fails if called): Yes on
     a CONFIRM is plan confirm, No is plan change "No: the check failed", a DECIDE's pick is plan confirm, a
-    block's done is plan confirm; the words typed in a reply box still go to c1."""
+    block's done is plan confirm; the words typed in a reply box go to a new chat."""
     answer_repo()
     ran = []
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
@@ -1738,7 +1734,7 @@ def test_answer_direct_b138() -> None:
         with mock.patch('agent_runner.brief.has_sheet', lambda tid: tid == 'F2'):
             U.answer('F2', 'go')
     eq(sent, ['F2 (pick a database): SQLite, it is one file', 'F2 (pick a database): go'],
-       'typed words go to c1, a sheet\'s typed go too')
+       'typed words go to a new chat, a sheet\'s typed go too')
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
             mock.patch.object(U, 'SEND', [no_send]), \
             mock.patch('agent_runner.brief.has_sheet', lambda tid: tid == 'F2'):

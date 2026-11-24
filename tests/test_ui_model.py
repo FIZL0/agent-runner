@@ -75,11 +75,10 @@ def test_snapshot(tmp: Path) -> None:
 
     eq(snap['slots'], 3, "the run's slot count")
     names = [s['name'] for s in snap['sessions']]
-    eq(names, ['c1', 's1', 's2', 's3'], 'c1, then every slot of the 3-slot run in order, the idle s3 too')
-    eq(snap['sessions'][3], {'name': 's3', 'task': '', 'title': '', 'minutes': None, 'state': 'idle',
+    eq(names, ['s1', 's2', 's3'], 'every slot of the 3-slot run in order, the idle s3 too')
+    eq(snap['sessions'][2], {'name': 's3', 'task': '', 'title': '', 'minutes': None, 'state': 'idle',
                              'files': [], 'link': '', 'terminal': '', 'task_controls': False}, 'an idle slot: no task, state idle')
-    eq(snap['sessions'][0]['state'], 'off', 'no c1 runs in a fake run')
-    s1, s2 = snap['sessions'][1], snap['sessions'][2]
+    s1, s2 = snap['sessions'][0], snap['sessions'][1]
     eq((s1['task'], s1['title'], s1['minutes'], s1['state'], s1['files']),
        ('F1', 'Board page for the run', 14, 'running', ['a.py', 'tests/test_a.py']), 'slot 1 row')
     eq(s1['link'], 'https://claude.ai/code/session_1', 'session link')
@@ -106,7 +105,7 @@ def test_snapshot(tmp: Path) -> None:
 
     down = U.snapshot(up=False, now=NOW, links={})
     eq(down['status'][0], 'no run is up', 'no run: said so')
-    eq([s['name'] for s in down['sessions']], ['c1'], 'no run: only c1')
+    eq([s['name'] for s in down['sessions']], [], 'no run and no chat: no rows')
     eq(down['slots'], 0, 'no run: no slots')
 
 
@@ -119,16 +118,16 @@ def test_idle_slots(tmp: Path) -> None:
     snap = U.snapshot(up=True, now=NOW, links={})
     eq(snap['slots'], 3, 'slots from STATE')
     eq([(s['name'], s['task'], s['state']) for s in snap['sessions']],
-       [('c1', '', 'off'), ('s1', '', 'idle'), ('s2', 'F1', 'running'), ('s3', '', 'idle')],
+       [('s1', '', 'idle'), ('s2', 'F1', 'running'), ('s3', '', 'idle')],
        'every slot listed, the idle ones with state idle')
     S.C.notes('STATE').write_text(json.dumps({'slots': 1, 'running': {'1': 'F1', '3': 'B2'}}), encoding='utf-8')
-    eq([s['name'] for s in U.snapshot(up=True, now=NOW, links={})['sessions']], ['c1', 's1', 's3'],
+    eq([s['name'] for s in U.snapshot(up=True, now=NOW, links={})['sessions']], ['s1', 's3'],
        'a slot past the count still on its task stays listed; no idle s2 past the count')
     S.C.notes('STATE').write_text(json.dumps({'state': '2 slots', 'running': {}}), encoding='utf-8')
     eq(U.snapshot(up=True, now=NOW, links={})['slots'], 2, 'a STATE without slots: the count from its state line')
     S.C.notes('STATE').unlink()
     snap = U.snapshot(up=True, now=NOW, links={})
-    eq((snap['slots'], [s['state'] for s in snap['sessions']]), (3, ['off', 'idle', 'idle', 'idle']),
+    eq((snap['slots'], [s['state'] for s in snap['sessions']]), (3, ['idle', 'idle', 'idle']),
        'the run starting, no STATE yet: [run] slots, all idle')
 
 
@@ -167,7 +166,7 @@ def test_actions(tmp: Path) -> None:
         U.act('chat', text='how is it going?')
         U.act('answer', tid='D3', text='the lazy one')
         U.act('take', tid='F1')
-        eq(sent, ['how is it going?', 'D3 (Write the guide): the lazy one'], 'chat and answers go to c1')
+        eq(sent, ['how is it going?', 'D3 (Write the guide): the lazy one'], 'chat and answers go through SEND')
         eq(ran[-1], ['control', '--new', '--ask', 'do F1 here', '--no-feed'], 'B139: take starts a new control session, not c1')
         eq(U.act('nope')['ok'], False, 'an unknown action is an error result')
         eq(U.act('drop', tid='B2')['code'], 2, 'a missing argument is an error result')
@@ -272,28 +271,25 @@ def test_real_command(tmp: Path) -> None:
        'a shelved item leaves Needs you')
 
 
-def test_to_c1_hidden(tmp: Path) -> None:
-    """B111/C26: to_c1 types into a live c1 through its hidden shim (`control.control_type`); with none, a new
-    control session gets the message."""
+def test_to_new(tmp: Path) -> None:
+    """F176: a prompt starts a new control session, also while an older runner's c1 is live."""
     from unittest import mock
     from agent_runner import control as K
     fake_run(tmp)
     typed = []
     with mock.patch.object(K, 'control_live', return_value=4242), \
             mock.patch.object(K, 'control_type', side_effect=lambda n, t: (typed.append((n, t)), True)[1]):
-        r = U.to_c1('how is it going?')
-    eq(r['out'], 'sent to c1', 'c1 got it')
-    eq(typed, [(1, 'how is it going?')], 'typed into c1')
-    ran = []
-    with mock.patch.object(K, 'control_live', return_value=0), \
-            mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
-        U.to_c1('hello')
-    eq(ran, [['control', '--new', '--ask', 'hello', '--no-feed']], 'no c1: a new control session takes it')
+        ran = []
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+            U.to_new('hello')
+            U.to_new('again')
+    eq(typed, [], 'nothing is typed into a chat')
+    eq(ran, [['control', '--new', '--no-wait', '--ask', t, '--no-feed'] for t in ('hello', 'again')], 'each its own')
 
 
 def test_control_titles(tmp: Path) -> None:
     """C26: the live control sessions, titled from the names kept in state (controlN.title), never from a
-    window: c1, every other live cN, then s1..s3 from STATE."""
+    window: every live cN, then s1..s3 from STATE."""
     import subprocess as sp
     repo = fake_run(tmp)
     S.C.notes('STATE').write_text(json.dumps({'state': '3 slots', 'running': {'2': 'F1'}, 'since': {},
@@ -318,7 +314,7 @@ def test_control_titles(tmp: Path) -> None:
         live.wait()
     eq([(s['name'], s['state']) for s in snap['sessions']],
        [('c1', 'live'), ('c3', 'live'), ('c4', 'live'), ('c6', 'live'), ('c7', 'live'), ('c9', 'live'),
-        ('s1', 'idle'), ('s2', 'running'), ('s3', 'idle')], 'c1, each cN, then s1-s3')
+        ('s1', 'idle'), ('s2', 'running'), ('s3', 'idle')], 'each cN, then s1-s3')
     eq(snap['sessions'][0]['title'], 'Install IPAs row + wider', 'c1 titled from state')
     eq(snap['sessions_note'], '', 'no note')
 
@@ -466,16 +462,15 @@ def test_chat_at_b154(tmp: Path) -> None:
         eq((n['name'], n['ask']), ('c3', 'theme ideas'), 'a new chat says what it was asked')
         check(before <= n['at'] <= time.time(), 'and when', n)
         U.act('quick_ask', key='needs'), U.act('concept_chat', cid='K5')
-        with mock.patch('agent_runner.control.control_live', return_value=0):
-            r = U.act('chat_to', text='hi', to='c1')
-        eq((r['name'], before <= r['at']), ('c3', True), 'c1 off: the new chat that took the message')
+        r = U.act('chat_to', text='hi')
+        eq((r['name'], before <= r['at']), ('c3', True), 'no chat named: the new chat that took the message')
         eq([a[-1] for a in ran], ['--no-feed'] * 4, 'every ask from a page or the TUI skips the feed lookup')
     finally:
         U.RUN[0] = real
 
 
 def test_chat_and_terminal(tmp: Path) -> None:
-    """F74: chat to any control session (c1 through SEND, cN typed in through its shim's FIFO), interrupt
+    """F74: chat to any control session (none named: SEND; cN typed in through its shim's FIFO), interrupt
     (Escape typed in), a new control session's link, the quick asks to c1, and the terminal view: ttyd,
     install ttyd, or (Windows) the feed only."""
     from unittest import mock
@@ -491,7 +486,7 @@ def test_chat_and_terminal(tmp: Path) -> None:
                 mock.patch.object(plat, 'WINDOWS', False), \
                 mock.patch.object(slots, 'send_fifo', side_effect=lambda p, t: (typed.append((p.name, t)), True)[1]), \
                 mock.patch.object(slots, 'send_fifo_raw', side_effect=lambda p, b: (raw.append((p.name, b)), True)[1]):
-            eq(U.act('chat_to', text='hi c1')['out'], 'sent to c1', 'c1 gets it the way chat does')
+            eq(U.act('chat_to', text='hi c1')['out'], 'sent to c1', 'no chat named: the way chat does')
             eq(U.act('chat_to', text='how is R43?', to='c6')['out'], 'sent to c6', 'c6 too')
             r = U.act('chat_to', text='hello', to='c9')
             eq(U.act('interrupt', session='c6')['out'], 'interrupted c6', 'interrupt c6')
@@ -500,7 +495,7 @@ def test_chat_and_terminal(tmp: Path) -> None:
             eq(U.act('keys', session='s2', text='x')['ok'], False, "C25: 'keys' is no action: no page types into a session")
         check(not hasattr(U, 'capture') and not hasattr(U, 'CAPTURE_EVERY'),
               'C25: the built-in view\'s capture went with it')
-        eq(sent, ['hi c1'], 'c1 through SEND')
+        eq(sent, ['hi c1'], 'through SEND')
         eq(typed, [('control6.in', 'how is R43?')], 'c6 typed in through its FIFO')
         check(not r['ok'] and 'is not up' in r['out'], 'a session that is not up says so', r)
         eq(raw, [('control6.in', b'\x1b'), ('slot2.in', b'yes\r')], 'Escape into c6; text then Enter into s2')
@@ -647,7 +642,7 @@ def test_hidden_send(tmp: Path) -> None:
 
 def test_delete_chats(tmp: Path) -> None:
     """F118: delete_chats ends each named control session (its process, controlN.pid and .title go, so it leaves
-    the chat list and no run start reopens it) and refuses c1, the Project chat, whole."""
+    the chat list and no run start reopens it), an older runner's c1 too (F176)."""
     import subprocess as sp
     fake_run(tmp)
     procs = {n: sp.Popen(['sleep', '60']) for n in (1, 3, 4)}
@@ -657,9 +652,6 @@ def test_delete_chats(tmp: Path) -> None:
             S.C.notes(f'control{n}.title').write_text(f'proj · {n} · chat {n}\n', encoding='utf-8')
         with mock.patch('agent_runner.control.control_live', lambda n: procs[n].pid if n in procs and
                         procs[n].poll() is None and S.C.notes(f'control{n}.pid').exists() else 0):
-            r = U.act('delete_chats', names=['c1', 'c3'])
-            eq((r['ok'], 'Project chat' in r['out']), (False, True), 'c1 in the list: refused')
-            check(procs[3].poll() is None and S.C.notes('control3.pid').exists(), 'and nothing was ended')
             eq(U.act('delete_chats', names=[])['ok'], False, 'no names: refused')
             eq(U.act('delete_chats', names=['s2'])['ok'], False, 'a slot is not a chat')
             r = U.act('delete_chats', names=['c3', 'c9'])
@@ -669,6 +661,7 @@ def test_delete_chats(tmp: Path) -> None:
                   'its pid file and title are gone')
             eq(sorted(U.control_titles()), [1, 4], 'the chat list keeps c1 and c4')
             check(procs[1].poll() is None and procs[4].poll() is None, 'the others still run')
+            eq(U.act('delete_chats', names=['c1'])['deleted'], ['c1'], 'c1 is a chat like any other')
     finally:
         for p in procs.values():
             p.kill()
@@ -874,7 +867,7 @@ if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command),
-                         in_tmp(test_to_c1_hidden), in_tmp(test_control_titles),
+                         in_tmp(test_to_new), in_tmp(test_control_titles),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154),
                          in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),

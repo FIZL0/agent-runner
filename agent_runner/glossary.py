@@ -316,7 +316,7 @@ itself, so it is the one file you change here. Never ask the person about it: wr
 """
 
 SEED = """\
-**Start the glossary now.** {file} does not exist yet: before anything else (in c1, right after the summary), run
+**Start the glossary now.** {file} does not exist yet: once you have answered the person's first message, run
 `{cmd} glossary scan` (UI strings, modules, public functions, routes) and pick the 10-20 terms the person and the
 app use most. Write them, with the Write tool, as a JSON list to a file in your scratchpad (never in this
 checkout): `[{{"term": "Board", "said": "the list", "ui": "Board", "code": "render_board(), board.py", "means":
@@ -357,7 +357,7 @@ def fit(text: str, who: str, cmd: str, c=None) -> str:
 # B98: the control brief carries a pointer; the paragraph above is `guide glossary`'s page
 POINTER = ("**The glossary ({file}).** Keep it with `{cmd} glossary`, unasked: when the person uses a word for a "
            "thing that is not in it, or says \"forget X\", read `guide glossary` first.")
-SEED_POINTER = ("{file} does not exist yet: before anything else (in c1, right after the summary), read `guide "
+SEED_POINTER = ("{file} does not exist yet: once you have answered the first message, read `guide "
                 "glossary` and start it.")
 
 

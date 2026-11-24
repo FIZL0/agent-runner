@@ -30,7 +30,7 @@ from agent_runner.watch import breaking, installed_version, last_session, queue_
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_argv, control_brief, control_env, control_give, control_hook_input,
     control_link, control_live, control_mark_ask, CONTROL_N_ENV, control_name, control_open, control_session_start,
-    control_set_title, control_sid, free_control_number, RUNNER_STARTED_ENV)
+    control_set_title, control_sid, FIRST_CONTROL, free_control_number, RUNNER_STARTED_ENV)
 from agent_runner.control_first import CONTROL_FIRST, type_first_later  # B147
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
     since_text, status_text, waiting_ok, as_event, events_file, read_events)
@@ -643,9 +643,7 @@ def started_note(slots: int, where: str) -> str:
              f'    {shown_cmd()} attach     {attach}',
              f'    {shown_cmd()} stop       finish the running tasks, then end it (--force: now)']
     if C.run['control']:
-        beside = 'c1 runs beside the run: attach c1' + (' (terminal only; the apps start control sessions from '
-                                                        'the control server)' if remote_on() else '')
-        lines.append(f'    {shown_cmd()} control    a control session in this terminal ({beside})')
+        lines.append(f'    {shown_cmd()} control    a new control session in this terminal')
     if remote_on():
         lines.append(f'    {REMOTE_URL}  the control sessions, from any device or the Claude apps')
     elif remote_slots_on():
@@ -1011,21 +1009,18 @@ def attach_listed(argv: list[str]) -> int:
 
 
 def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
-    """`agent-runner control [N]`: a control session in this terminal, in the main checkout. No N: c1 (the kept
-    session, resumed) when it is not running, else the next free number."""
+    """`agent-runner control [N]`: a new control session in this terminal, in the main checkout, as number N (the
+    first free one by default)."""
     drop_session_env()
     ap = argparse.ArgumentParser(prog=prog, description='A control session here: ask it for status, pause, '
                                  'slots, stop; it files asks with plan add and does do-it-now work with take.')
-    ap.add_argument('n', nargs='?', type=int, help='its number (1 resumes the kept session); default the first free')
+    ap.add_argument('n', nargs='?', type=int, help='its number (2 and up); default the first free')
     ap.add_argument('--new', action='store_true', help='open another one without taking focus (a hidden terminal: '
                     'attach cN shows it; Windows: a hidden console) and print its claude.ai/code link')
     ap.add_argument('--no-wait', action='store_true', help='with --new: return once it starts, without waiting '
                     'for its claude.ai/code link (the terminal UI reads the link from state later)')
     ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
     ap.add_argument('--hand', action='store_true', help=argparse.SUPPRESS)  # F53: the hook in settings.local.json
-    ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn
-    ap.add_argument('--local', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: not in the apps
-    ap.add_argument('--new-run', action='store_true', help=argparse.SUPPRESS)  # F27: c1 of a new run (not a restart)
     ap.add_argument('--reopen', action='store_true', help=argparse.SUPPRESS)  # B121: resume cN after a shutdown
     ap.add_argument('--ask', default='', help=argparse.SUPPRESS)  # its first message: tests and older feeds (B72)
     ap.add_argument('--ask-file', default='', help=argparse.SUPPRESS)  # B72: the forwarded message, from a file
@@ -1058,6 +1053,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
             sys.stdout.flush()
             control_session_start(int(env_n), control_hook_input())
         return 0
+    if a.n is not None and a.n < FIRST_CONTROL and a.title is None and not a.reopen:  # F176: any free one
+        a.n = None
     if a.title is not None:
         env_n = os.environ.get(CONTROL_N_ENV, '')
         return control_set_title(a.n or (int(env_n) if env_n.isdigit() else 0), a.title)
@@ -1084,8 +1081,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
             pass
         a.ask, a.file = control_late_files(a.ask, a.file, a.feed_sid)
     control_held.look(n)  # B170: before an ended session N's pid file is written over
-    sid, resume, argv = control_open(n, ask=a.ask, images=a.file, new_run=a.new_run, blank=a.blank, local=a.local,
-                                  reopen=a.reopen)
+    sid, resume, argv = control_open(n, ask=a.ask, images=a.file, reopen=a.reopen)
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')

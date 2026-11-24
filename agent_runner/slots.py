@@ -505,8 +505,7 @@ def slot_session_name(name: str, cwd: Path | None) -> str:
 
 
 def one_session() -> bool:
-    """F68 `[run] remote_slots = 'open'` (the default): the Claude apps list one entry per project, c1, the project's
-    chat. A slot starts off Remote Control and goes on it only when a person opens it from the run page
+    """F68 `[run] remote_slots = 'open'` (the default): the Claude apps list the chats and the runner feed. A slot starts off Remote Control and goes on it only when a person opens it from the run page
     (`slot_open`); the run keeps a claude.ai copy of the run page (page_copy.py). 'always': as before."""
     return C.run['remote_slots'] != 'always'
 

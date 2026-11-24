@@ -69,8 +69,8 @@ An agent session in the main checkout through which the person reports on, steer
 _Avoid_: control window, coordinator, chat
 
 **c1**:
-The control session the run opens beside it when it starts, and keeps.
-_Avoid_: control 1, main session, first control session
+Number 1, the project chat older versions kept beside the run; retired (F176): numbers start at 2, and an older c1 is a chat like any other.
+_Avoid_: control 1, main session, first control session, project chat
 
 **Runner feed**:
 The lean session in the Claude apps that reposts what lands and what needs the person, and hands any other ask to a control session.
@@ -114,9 +114,9 @@ _In code_: plan.restyle, plan.hold, plan.release_held, loop.restyles, plan resty
 _Avoid_: redesign, retheme
 
 **Hidden control session**:
-A control session with no window, as every run starts them (attach cN shows it); what it prints goes to its log
+A control session with no window, as every control session starts (attach cN shows it); what it prints goes to its log
 _Said_: control session in the background
-_On screen_: c1 is up in a hidden terminal
+_On screen_: c2 is up in a hidden terminal
 _In code_: hidden_control, control_new_hidden, controlN.log
 _Avoid_: headless control, background control
 
@@ -127,13 +127,7 @@ _On screen_: B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k
 _In code_: context_warn, context_over, EV_CONTEXT, cost.filled
 _Avoid_: context limit, hard limit
 
-**Fresh c1**:
-c1 starting a new session instead of resuming the kept one, on a new run when the kept one last stood over the context warning; a restart always resumes
-_Said_: fresh control session
-_On screen_: c1 starts a fresh session
-_In code_: control_sid(new_run=), CONTROL_FRESH, run_restart, control_bloated, --new-run
-_Avoid_: reset c1, new c1
-
+**Exact-repeat command**:
 **Exact-repeat command**:
 the same shell line run again, word for word, in one session; its later results stay in context beside the first
 _Said_: repeated command
@@ -191,7 +185,7 @@ _In code_: theme.py, [ui] theme, THEMES
 _Avoid_: skin, colour scheme, palette
 
 **Run page copy**:
-The run page published on claude.ai by c1, read-only, for when the machine running the run cannot be reached
+The run page published on claude.ai by the run, read-only, linking each chat, for when the machine running the run cannot be reached
 _Said_: claude.ai copy
 _On screen_: run page copy
 _In code_: page_copy_html, page_copy_tick, run-page-copy.html
@@ -240,7 +234,7 @@ _In code_: session_theme.py, session_look, frame_look, arLook
 _Avoid_: session look, terminal theme, skin
 
 **Quick ask**:
-One of the Status chat's ready-made questions to c1, sent with one key or tap
+One of the Status page's ready-made questions, sent in a new control session with one key or tap
 _Said_: quick asks, presets
 _On screen_: since last look, since yesterday, what needs me, usage
 _In code_: QUICK_ASKS, quick_ask
@@ -261,7 +255,7 @@ _In code_: editHTML, plan_change, plan_add
 _Avoid_: form, inline edit
 
 **Chat edit**:
-Saying in your own words what to change about a task, or what a new task is, for c1 to write into the plan
+Saying in your own words what to change about a task, or what a new task is, for a control session to write into the plan
 _Said_: chat edit
 _On screen_: chat edit
 _In code_: data-form=chatedit

@@ -438,7 +438,7 @@ def test_auto_clean():
     cut = folder('a2222222-2222-2222-2222-222222222222', 25, f.tmp / 'claude-1000' / V.slug(f.home / 's2'))
     fresh = folder('b2222222-2222-2222-2222-222222222222', 0.5, f.tmp / 'claude-1000' / V.slug(f.home / 's1'))
     write(f.p.notes / 'slot2.log', f'=== 2026-01-01T00:00:00 X session {cut.name} m\n')
-    write(f.p.notes / 'control.sid', sids['c1'] + '\n')
+    write(f.p.notes / 'control.sid', sids['c1'] + '\n')  # F176: an older runner's kept c1 is not resumed
     write(f.p.notes / 'control4.pid', f'77 {sids["c4"]}')
     write(f.p.notes / 'control5.sid', sids['c5'])  # closed on purpose: no pid file
     write(f.p.notes / 'remote' / 'feed.sid', sids['feed'] + '\n./run\n')
@@ -498,8 +498,8 @@ def test_auto_clean():
         check(not [i for i in foot['clean'] if i['kind'] == 'tmp'], 'and leaves the list')
 
         v.refresh_footprint([f.p], now)
-    eq(before - there(), {'reused', 'h25', 'c5'}, 'gone: quiet 25 h, a reused pid\'s, a closed control session\'s; '
-       'kept: open, quiet 23 h, c1, cN with a pid file, the feed, queued to resume, waiting for an answer')
+    eq(before - there(), {'reused', 'h25', 'c5', 'c1'}, 'gone: quiet 25 h, a reused pid\'s, an older runner\'s c1, a closed control session\'s; '
+       'kept: open, quiet 23 h, cN with a pid file, the feed, queued to resume, waiting for an answer')
     check(far.exists() and (far / 'x.bin').exists(), 'nothing behind a symlink goes')
     check(f.other.exists(), 'nor another project\'s')
     check((f.home / 's1').is_dir() and 'wip/B1' in git(f.root, 'branch', '--list', 'wip/*'), 'worktrees and wip/ stay')

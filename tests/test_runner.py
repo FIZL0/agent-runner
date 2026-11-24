@@ -1102,7 +1102,7 @@ def test_control_server_old_agent(repo: Path, tmp: Path):
                        encoding='utf-8')
     for f in (old, new):
         f.chmod(0o755)
-    R._SERVER_SETTINGS.clear()
+    R._SERVER_HELP.clear()
     with mock.patch.dict(R.C.run, {'agent': str(new)}):
         check('--settings' in R.control_server_argv(), 'one whose help lists --settings gets the control settings')
     said, started = [], []
@@ -1131,7 +1131,7 @@ def test_control_server_old_agent(repo: Path, tmp: Path):
     with open(err, 'a', encoding='utf-8') as fh:
         fh.write("\x1b[31merror: unknown option '--settings'\x1b[0m\n\n")
     eq(R.server_last_error(err, since), "error: unknown option '--settings'", 'its last stderr line since it started')
-    R._SERVER_SETTINGS.clear()
+    R._SERVER_HELP.clear()
 
 
 def test_hand_hook(tmp: Path):
@@ -1367,23 +1367,15 @@ def test_control(repo: Path):
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, R.control_brief()), '`control --brief` (the hook) prints it')
 
-    c1 = R.control_argv(1, 'sid-1', resume=False)
-    eq(c1[0], R.plat.exe(R.C.run['agent']), 'the agent')
+    eq(R.control_argv(1, 'sid-1', resume=False)[1:3], ['--session-id', 'sid-1'], 'F176: number 1 opens with no summary')
     watch = f'{R.C.command} since --follow --needs-you'
-    check('summary' in c1[1] and f'{R.C.command} status' in c1[1]
-          and f'{R.C.command} since' not in c1[1].replace(watch, ''),
-          'control 1 opens with a status-only summary: no since')
-    from agent_runner.guide import CONTROL_START_WATCH
-    check(watch in c1[1] and 'Monitor' in c1[1] and watch in CONTROL_START_WATCH.format(cmd=R.C.command),
-          'CONTROL_START names the needs-you watch, under the Monitor tool', c1[1])
     check(watch in brief and 'PushNotification' in brief and 'first turn' in brief,
           'the brief: every control session starts the needs-you watch on its first turn and pushes each line')
     from agent_runner.guide import RUNNER_START
     rs = RUNNER_START.format(cmd=R.C.command, repo='x')
     check('timeout_ms 1800000' in brief and 're-arm it silently' in brief and 'with no text at all' in brief
-          and 'timeout_ms 1800000' in c1[1] and 'timeout_ms 1800000' in rs and 'say nothing at all' in rs,
+          and 'timeout_ms 1800000' in rs and 'say nothing at all' in rs,
           'the needs-you watch and the feed start at timeout_ms 1800000 and re-arm silently on an empty expiry')
-    eq(c1[2:4], ['--session-id', 'sid-1'], 'control 1: the prompt, then its session')
     # B47: a handed-on ask carries what waits under Needs you, so a reply to it is answered, not just queued
     item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags?', '', 'How should the site deploy')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
@@ -1410,7 +1402,7 @@ def test_control(repo: Path):
     argv = R.control_argv(2, 'sid-2', resume=False)
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
     eq(argv[1], '--session-id', 'a --new session has no first message: blank until the person types')
-    check('blank' in brief and 'not `since`' in brief, 'the brief: later sessions start blank, the opening runs no since')
+    check('with a summary (`guide summary`) only when they ask' in brief, 'F176: the brief: no opening summary')
     check('never touch another repository' in ' '.join(brief.split()) and 'explicitly asks' in brief,
           'B50: the brief: no change to another repository unless the person explicitly asks')
     mark = R.since_mark_file()
@@ -1428,27 +1420,27 @@ def test_control(repo: Path):
         argv = R.control_argv(3, 'sid-3', resume=True)
     eq(argv[-2:], ['--remote-control', f'{R.ROOT.name} · control 3'], 'with [run] remote it is on Remote Control')
     check('--resume' in argv, 'resume continues the session')
-    with mock.patch.dict(R.C.run, {'remote': True}), mock.patch.object(R, 'server_takes_settings', lambda e: True):
+    with mock.patch.dict(R.C.run, {'remote': True}), mock.patch.object(R, 'server_can', lambda e, *f: True):
         sv = R.control_server_argv()
     eq(sv[1:], ['remote-control', '--spawn', 'same-dir', '--name', f'{R.ROOT.name} · control',
-                '--permission-mode', 'bypassPermissions', '--settings', str(f)],
+                '--permission-mode', 'bypassPermissions', '--no-create-session-in-dir', '--settings', str(f)],
        'the control server: claude remote-control in the main checkout, with the control settings')
-    with mock.patch.object(R, 'server_takes_settings', lambda e: True):
+    with mock.patch.object(R, 'server_can', lambda e, *f: True):
         check(not R.server_stale(None) and not R.server_stale([*sv, '']), 'an adopted server with these flags stays')
         check(R.server_stale([sv[0], 'remote-control', '--spawn', 'same-dir', '--settings', str(f)]),
               'one started with other flags is restarted')
 
     sid, resume = R.control_sid(1)
-    eq(((repo / '.runner/control.sid').read_text().strip(), resume), (sid, False), 'c1 keeps a new session id')
+    eq(((repo / '.runner/control1.sid').read_text().strip(), resume), (sid, False), 'it keeps a new session id')
     with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: '/x.jsonl'):
-        eq(R.control_sid(1), (sid, True), 'and resumes it while its transcript is there')
-        check(R.control_sid(2)[0] != sid and not R.control_sid(2)[1], 'any other control session starts fresh')
-    eq(R.control_number(), 1, 'no control session running: the first is c1')
+        check(R.control_sid(1)[0] != sid and not R.control_sid(1)[1], 'F176: and starts another one next time')
+        check(R.control_sid(2)[0] != sid and not R.control_sid(2)[1], 'as any control session')
+    eq(R.control_number(), 2, 'no control session running: the first is c2')
     p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'control'])
     try:
         (repo / '.runner/control1.pid').write_text(f'{p.pid} {sid}')
         eq(R.control_live(1), p.pid, 'c1 runs')
-        eq(R.control_number(), 2, 'so the next is c2')
+        eq(R.control_number(), 2, 'the next is c2')
     finally:
         p.kill()
         p.wait()
@@ -1464,7 +1456,6 @@ def test_control(repo: Path):
         eq([a for a in R.plat.cmdline(q.pid) or [] if a][-2:],['--session-id', 'other'], "B87: plat.cmdline reads another process's argv (Windows too)")
         eq(R.control_live(1), 0, 'a pid now held by another process is not a session')
         (repo / '.runner/control1.pid').write_text(f'{os.getpid()} {sid}')
-        eq(R.control_number(), 1, 'c1 free: the first is c1')
         p2 = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'control'])
         try:
             (repo / '.runner/control1.pid').write_text(f'{p2.pid} {sid}')
@@ -1483,17 +1474,13 @@ def test_control(repo: Path):
     with mock.patch.object(R.plat, 'WINDOWS', False), mock.patch.object(R, 'remote_on', lambda: False), \
             mock.patch.object(R, 'hidden_control', lambda n, cmd, wait=None: calls.append((n, cmd)) or (4242, '')):
         R.start_control()
-        check(len(calls) == 1 and calls[0][0] == 1 and calls[0][1][calls[0][1].index('control') + 1] == '1',
-              'C26: c1 starts hidden (control 1 in a shim), on every run', calls)
-        check('c1 is up in a hidden terminal' in R.C.notes('run.log').read_text()
-              and 'attach c1' in R.C.notes('run.log').read_text(), "c1's log line says attach c1 shows it")
-        calls.clear()
+        eq(calls, [], 'F176: a run opens no control session')
         with mock.patch.dict(R.C.run, {'control': False}):
             R.start_control()
         eq(calls, [], '[run] control = false: none')
         note = R.started_note(2, 'here')
-        check('c1 runs beside the run: attach c1' in note and R.REMOTE_URL not in note,
-              'remote off: started_note points at c1', note)
+        check('a new control session' in note and 'c1' not in note and R.REMOTE_URL not in note,
+              'remote off: started_note says how to open one', note)
     started = []
 
     real_thread = R.threading.Thread
@@ -1516,18 +1503,10 @@ def test_control(repo: Path):
             mock.patch.object(R, 'remote_on', lambda: True), mock.patch.object(R.threading, 'Thread', FakeThread):
         R.start_control()
         R.start_control_server()
-        check(len(calls) == 1 and calls[0][1][-2:] == ['--blank', '--local'],
-              'remote on: c1 starts hidden too, blank (free till you type) and local (not in the apps)', calls)
+        eq(calls, [], 'remote on: a run opens none either')
         eq(started, ['control-server'], 'remote on: the control server thread starts')
         note = R.started_note(2, 'here')
-        check('attach c1' in note and 'terminal only' in note and 'control server' in note and R.REMOTE_URL in note,
-              'remote on: started_note points at c1 (terminal only) and the control server', note)
-    with mock.patch.object(R, 'remote_on', lambda: True):
-        argv = R.control_argv(1, 'sid', False, blank=True, local=True)
-        check(not any('summary' in a for a in argv) and '--remote-control' not in argv,
-              'the c1 the run opens has no first message, and no --remote-control: the server is the one app entry', argv)
-        check('--remote-control' in R.control_argv(1, 'sid', False, blank=True), 'c1 by hand without --local is on it')
-        check(any('summary' in a for a in R.control_argv(1, 'sid', False)), 'c1 by hand still opens with the summary')
+        check('c1' not in note and R.REMOTE_URL in note, 'remote on: started_note points at claude.ai/code', note)
 
     skills = R.control_skills_dir()
     eq(skills, repo / '.runner' / 'control-skills', 'the control skills sit under <notes>, not in the repo files')
@@ -2177,9 +2156,8 @@ def test_short_titles_and_since(repo: Path):
                'the feed: Haiku, Bash, Monitor and PushNotification only, dontAsk, "<repo> · runner" on Remote Control')
             eq(json.loads(opt('--settings')), {'autoMemoryEnabled': False}, 'the feed loads no auto memory')
             check('PushNotification' in opt('--system-prompt'), 'and pushes what needs the person')
-            brief, opening = R.control_brief(), R.control_argv(1, 'sid', False)[1]
-            check('start no needs-you watch' in brief and '--needs-you' not in opening,
-                  'with the feed, control sessions start no needs-you watch', (brief[:80], opening))
+            brief = R.control_brief()
+            check('start no needs-you watch' in brief, 'with the feed, control sessions start no needs-you watch', brief[:80])
             check(opt('--allowedTools') == f'Bash({R.C.command} *)' and opt('--setting-sources') == ''
                   and '--strict-mcp-config' in fa, 'Bash only for the runner command; no settings or MCP', fa)
             check('control --new --forward' in opt('--system-prompt') and '--ask' not in opt('--system-prompt')
@@ -2191,8 +2169,7 @@ def test_short_titles_and_since(repo: Path):
         with mock.patch.object(R, 'remote_on', lambda: False):
             check(R.board_command().endswith(f'since --board --run-pid {os.getpid()}'),
                   'and the free text feed with it off', R.board_command())
-            check('since --follow --needs-you`, once' in R.control_brief()
-                  and '--needs-you' in R.control_argv(1, 'sid', False)[1],
+            check('since --follow --needs-you`, once' in R.control_brief(),
                   'without the feed, control sessions keep their own needs-you watch')
         ask = [('DECIDE', 'B9', '', 'Postgres or SQLite?', 'https://x.invalid/b9', 'Fix the flicker', False)]
         full, _ = R.follow_lines('=== 2026-11-19T14:35:00 B9: merged, blocked', titles, now, waiting=ask)
@@ -2230,9 +2207,6 @@ def test_short_titles_and_since(repo: Path):
             check('`./kit status`' in brief and './kit plan confirm' in brief and f'{R.RUNNER} ' not in brief,
                   'B93: the control brief names [run] command', brief[:200])
             with mock.patch.object(R, 'feed_on', lambda: False):
-                opening = R.control_argv(1, 'sid', False)[1]
-                check('`./kit status`' in opening and './kit since --follow --needs-you' in opening
-                      and f'{R.RUNNER} ' not in opening, 'B93: the control opening names [run] command', opening)
                 wb = R.control_brief()
                 check('./kit since' in wb and f'{R.RUNNER} ' not in wb, 'B93: and so does its needs-you watch')
             check('`./kit plan confirm' in R.ask_waiting_block('- R1 x'), 'B93: a handed-on ask settles by ./kit')
@@ -6197,12 +6171,12 @@ def test_closed_online_controls(repo: Path):
                 mock.patch.object(R.plat, 'terminate', ended.append), \
                 mock.patch.object(R, 'log'):
             eq(R.control_number(), 6, 'before: every number up to 5 is held')
-            eq(R.end_closed_controls(force=True), [2, 4], 'the archived and the deleted one are ended')
-            eq(sorted(ended), [9102, 9104], 'their processes ended (their hidden shims with them); c1, the open one '
+            eq(R.end_closed_controls(force=True), [1, 2, 4], 'the archived and the deleted ones are ended, c1 too (F176)')
+            eq(sorted(ended), [9101, 9102, 9104], 'their processes ended (their hidden shims with them); the open one '
                'and the one in use left running')
-            check(all(not (notes / f'control{n}.{x}').exists() for n in (2, 4) for x in ('pid', 'title')),
+            check(all(not (notes / f'control{n}.{x}').exists() for n in (1, 2, 4) for x in ('pid', 'title')),
                   'their controlN.pid and controlN.title removed')
-            check(all((notes / f'control{n}.pid').exists() for n in (1, 3, 5)), 'the others keep theirs')
+            check(all((notes / f'control{n}.pid').exists() for n in (3, 5)), 'the others keep theirs')
             eq(R.control_number(), 2, 'control_number() hands out 2 again')
             eq(R.end_closed_controls(), [], 'within CONTROL_CLOSE_EVERY: no second look')
             (notes / 'control2.pid').write_text('9102 s2', encoding='utf-8')
@@ -6386,7 +6360,7 @@ def test_close_idle_controls(repo: Path):
     with mock.patch.dict(R.C.run, {'control_idle': '4h'}):
         eq(R.control_verdict(R.control_state(done), R.control_cfg(), now)[0], 'keep', '[run] control_idle = 4h keeps it')
 
-    # close_controls end to end: c1 never looked at, sessions 2-7 by their transcripts
+    # close_controls end to end: sessions 1-6 by their transcripts
     rows = {'s1': done, 's2': done, 's3': ask, 's4': person, 's5': recent, 's6': bg}
     notes = R.C.notes()
     notes.mkdir(parents=True, exist_ok=True)
@@ -6400,13 +6374,13 @@ def test_close_idle_controls(repo: Path):
             mock.patch.object(R, 'file_control_ask', lambda n, sid, q, link, branch='': filed.append((n, sid, q, link)) or 'F99'), \
             mock.patch.object(R, 'log'), mock.patch.object(R, 'note'):
         got = R.close_controls(force=True)
-        eq(sorted(got), [(2, 'closed', 'idle 209 min'), (3, 'asked', 'F99')], 'done -> closed, question -> filed + closed',
+        eq(sorted(got), [(1, 'closed', 'idle 209 min'), (2, 'closed', 'idle 209 min'), (3, 'asked', 'F99')], 'done -> closed, question -> filed + closed',
            )
-        eq(sorted(ended), [9002, 9003], 'their processes ended, c1 and the rest left running')
+        eq(sorted(ended), [9001, 9002, 9003], 'their processes ended, the rest left running')
         eq(filed, [(3, 's3', 'pause T8 too?', '')], 'the question filed, with the session (no link here)')
         check(not (notes / 'control2.pid').exists() and not (notes / 'control3.pid').exists()
-              and all((notes / f'control{n}.pid').exists() for n in (1, 4, 5, 6)),
-              'their pid files removed; c1, person last, recent and busy ones kept')
+              and all((notes / f'control{n}.pid').exists() for n in (4, 5, 6)),
+              'their pid files removed; person last, recent and busy ones kept')
         ended.clear()
         with mock.patch.dict(R.C.run, {'control_idle': False, 'control_ask': False}):
             eq(R.close_controls(force=True), [], 'C14: control_idle and control_ask false close nothing')
@@ -6501,7 +6475,7 @@ def test_close_control_tiers(repo: Path):
        'F57: control_ask = false: a talked session\'s question is never filed')
     eq(v(talked(4 * H), c={**cf, 'talked': 0.0})[0], 'close', 'no talked tier: control_idle')
 
-    # close_controls end to end: the one-ask mark, and c1 never closed whatever its transcript says
+    # close_controls end to end: the one-ask mark; c1 is closed as any other (F176)
     notes = R.C.notes()
     notes.mkdir(parents=True, exist_ok=True)
     rows = {'s1': queued(6 * M), 's2': queued(6 * M), 's3': queued(6 * M), 's4': talked(13 * H), 's5': talked(11 * H)}
@@ -6518,9 +6492,9 @@ def test_close_control_tiers(repo: Path):
                 mock.patch.object(R.plat, 'terminate', ended.append), \
                 mock.patch.object(R, 'log'), mock.patch.object(R, 'note'):
             got = R.close_controls(force=True, now=now)
-        eq(sorted(got), [(2, 'closed', 'idle 6 min (one ask, queued)'), (4, 'closed', 'idle 780 min (talked)')],
+        eq(sorted(got), [(1, 'closed', 'idle 6 min (one ask, queued)'), (2, 'closed', 'idle 6 min (one ask, queued)'), (4, 'closed', 'idle 780 min (talked)')],
            'the marked one-ask session and the talked one past 12 h closed')
-        eq(sorted(ended), [9102, 9104], 'c1 never closed, the stale mark and the 11 h talk kept')
+        eq(sorted(ended), [9101, 9102, 9104], 'the stale mark and the 11 h talk kept')
         check(R.control_one_ask(2, 's2') and not R.control_one_ask(3, 's3'), 'the mark names its conversation')
     finally:
         for n in range(1, 6):
@@ -6696,20 +6670,18 @@ def test_control_status_rules(repo: Path):
 
 def test_control_leaves_needs_alone():
     """F151: control sessions leave blocked and Needs you items alone; the needs topic and the feed keep theirs."""
-    from agent_runner.guide import CONTROL, CONTROL_FEED_WATCH, CONTROL_START, CONTROL_TOPICS, RUNNER_BRIEF, topic
+    from agent_runner.guide import CONTROL, CONTROL_FEED_WATCH, CONTROL_TOPICS, RUNNER_BRIEF, topic
     flat = lambda t: ' '.join(t.split())
     brief = flat(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_FEED_WATCH.format(repo='r'),
                                 needs='Needs you', answer=''))
     summary = flat(CONTROL_TOPICS['summary'].format(cmd='./run', needs='Needs you'))
-    start = flat(CONTROL_START.format(cmd='./run', watch_start=''))
-    for name, t in (('brief', brief), ('summary topic', summary), ('start prompt', start)):
+    for name, t in (('brief', brief), ('summary topic', summary)):
         check('Nothing needs you' not in t and 'first line' not in t and '**Needs you**' not in t
               and 'waiting concept page' not in t and 'each concept page' not in t,
               f'the {name} orders no needs-you first line, group or pages', t)
     check('**Leave blocked and "Needs you" items alone**' in brief and 'never mention, list, count or ask about them' in brief
           and 'unless they bear on what the person is discussing or the person asks' in brief, 'the brief has the rule', brief)
     check('Leave out blocked and "Needs you" items' in summary and '(2 blocked)' not in summary, 'and the summary topic', summary)
-    check('nothing about blocked items or ones that need me unless I ask' in start, 'and the start prompt', start)
     check('only a question of your own about the work under discussion, never an existing item restated' in brief,
           'a DECIDE line restates no item', brief)
     concepts = flat(topic('concepts', './run'))
@@ -7486,7 +7458,7 @@ def test_hidden_run_lands(tmp: Path):
     here = os.getcwd()
     os.chdir(repo)
     watchdog = threading.Timer(300, lambda: R.ask_stop('test watchdog', force=True))  # never a hung suite
-    c1 = []  # F59: the hidden run starts c1 hidden; never a real control session from the suite
+    c1 = []  # the control sessions the run opened
     try:
         watchdog.start()
         with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: c1.append(n) or (0, 'test')), \
@@ -7496,7 +7468,7 @@ def test_hidden_run_lands(tmp: Path):
             R.C.run['agent'] = str(agent)
             eq(R.run(['once'], 'run'), 0, 'the run ends after its one task')
             eq(type(R.MUX).__name__, 'HiddenMux', 'the slots ran hidden')
-            eq(c1, [1], 'and the run tried to open c1 hidden (F59)')
+            eq(c1, [], 'and the run opened no control session (F176)')
     finally:
         watchdog.cancel()
         os.chdir(here)
@@ -7729,7 +7701,7 @@ def done_test_f178(tmp: Path):
 
 
 def test_hidden_control_f59(repo: Path, tmp: Path):
-    print('F59/C26: a run opens c1 and control --new in a pty with no window, and keeps the runner feed hidden')
+    print('F59/C26: control --new opens in a pty with no window, and the run keeps the runner feed hidden')
     if R.plat.WINDOWS:
         return
     import contextlib
@@ -7749,15 +7721,12 @@ def test_hidden_control_f59(repo: Path, tmp: Path):
                 Ctl.mark_board()
                 check(not Ctl.feed_on(), 'Windows: no runner feed, so control sessions keep their own needs-you watch')
             Ctl.mark_board()
-        # c1 in a hidden run: through the pty shim, not skipped
+        # F176: a run start opens no control session
         got = []
         with mock.patch.object(Ctl, 'hidden_control', lambda n, c, wait=None: got.append((n, c)) or (4242, '')), \
                 mock.patch.object(Ctl, 'control_live', lambda n: 0), mock.patch.dict(R.C.run, {'control': True}):
             Ctl.start_control()
-        eq(got and got[0][0], 1, 'a run starts c1 hidden')
-        check(got and got[0][1][-1] in ('1', '--local', '--new-run'), 'with the control command line', got)
-        has(R.C.notes('run.log').read_text(encoding='utf-8'), r'c1 is up in a hidden terminal \(.*attach c1 shows it; '
-            r'its output in .*control1\.log', 'and says how to attach it and where its output goes')
+        eq(got, [], 'a run starts none')
         # the real shim: a terminal, the control environment, its log, a typed line, its marker gone at the end
         with mock.patch.dict(os.environ, {'AGENT_RUNNER_SLOT': '3'}):
             pid, why = Ctl.hidden_control(7, cmd)
@@ -8060,34 +8029,12 @@ def test_context_warn_f25(repo: Path):
 
 
 def test_control_fresh_f27(repo: Path):
-    print('F27: a new run starts a bloated c1 fresh; a restart always resumes it')
+    print('F27: what counts as a restart of the last run')
     R.init(repo)
     from agent_runner import control as Ctl
-    sidf, evf, statef = (repo / '.runner' / n for n in ('control.sid', 'events.jsonl', 'STATE'))
-    kept = {f: f.read_bytes() if f.exists() else None for f in (sidf, evf, statef)}
+    evf, statef = (repo / '.runner' / n for n in ('events.jsonl', 'STATE'))
+    kept = {f: f.read_bytes() if f.exists() else None for f in (evf, statef)}
     try:
-        sidf.write_text('old-sid\n', encoding='utf-8')
-        ctx = {'old-sid': [20000, 230000, 160400]}  # its last context: 160k, over the default 150k
-        with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: '/x.jsonl'), \
-                mock.patch('agent_runner.watch.usage', lambda s: (3, ctx.get(s, []), [])), \
-                mock.patch.object(Ctl, 'log', lambda *a, **k: None):
-            eq(Ctl.control_sid(1), ('old-sid', True), 'over budget on a restart (no --new-run): resumes')
-            eq(Ctl.CONTROL_FRESH[0], '', 'and says nothing')
-            ctx['old-sid'] = [20000, 230000, 149000]
-            eq(Ctl.control_sid(1, new_run=True), ('old-sid', True), 'under budget on a new run: resumes')
-            with mock.patch.dict(R.C.run, {'context_warn': 0}):
-                ctx['old-sid'] = [20000, 230000, 160400]
-                eq(Ctl.control_sid(1, new_run=True), ('old-sid', True), 'context_warn 0: always resumes')
-            sid, resume = Ctl.control_sid(1, new_run=True)
-            check(sid != 'old-sid' and not resume, 'over budget on a new run: a new session id', sid)
-            eq(sidf.read_text().strip(), sid, 'written to control.sid')
-            check('160k' in Ctl.CONTROL_FRESH[0] and 'fresh' in Ctl.CONTROL_FRESH[0], 'and one line says why',
-                  Ctl.CONTROL_FRESH[0])
-            argv = Ctl.control_argv(1, sid, resume=False)
-            check(argv[1].startswith('Say first, in one line: "c1 starts a fresh session'), 'the opening says it first',
-                  argv[1])
-            check(not Ctl.control_sid(2, new_run=True)[1] and Ctl.CONTROL_FRESH[0] == '', 'other sessions: unchanged')
-
         now = R.dt.datetime(2026, 11, 20, 15, 0, 0).timestamp()
 
         def events(*recs):

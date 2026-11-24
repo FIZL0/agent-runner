@@ -280,12 +280,12 @@ def claude_update(cmd: str) -> dict:
 
 
 def restart_chat(chat: str) -> dict:
-    """Restart an idle chat (c2 and up): its Claude Code ends and its conversation comes up again under its number, with
+    """Restart an idle chat: its Claude Code ends and its conversation comes up again under its number, with
     the version and look there are now."""
     from agent_runner import control as K, control_reopen
     m = re.fullmatch(r'c(\d+)', str(chat))
-    if not m or chat == 'c1':
-        return _fail(f'restart_chat: a chat (c2 and up), not {chat!r}', 2)
+    if not m:
+        return _fail(f'restart_chat: a chat, not {chat!r}', 2)
     n, rec = int(m[1]), record(chat)
     if rec.get('status') != 'idle':
         return _fail(f'{chat} has work going on: restart it once it is done')
