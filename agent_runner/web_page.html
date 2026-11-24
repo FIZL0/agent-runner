@@ -578,6 +578,11 @@ const TALK_SET={read:true,voice:'',mic:'tap',auto:false};
 function talkSetParse(text){let o;try{o=JSON.parse(text||'{}')}catch(e){o={}}
   if(!o||typeof o!=='object')o={};
   return{read:o.read!==false,voice:typeof o.voice==='string'?o.voice:'',mic:o.mic==='hold'?'hold':'tap',auto:o.auto===true}}
+/* B162: how the mic works here. On iOS a hold heard nothing (the mic on for 4 s, no sound, no words; why is not known),
+   so there Hold to talk works as a tap, which starts on the click */
+const iosLike=nav=>/iPhone|iPad|iPod/.test((nav&&nav.userAgent)||'')||(/Macintosh/.test((nav&&nav.userAgent)||'')&&nav.maxTouchPoints>1);
+const micMode=(mic,nav)=>mic==='hold'&&!iosLike(nav)?'hold':'tap';
+const MIC_NOHOLD='Hold to talk does not work on an iPhone or iPad yet: tap to start, tap again to send.';
 const pickVoice=(voices,name)=>name?(voices||[]).find(v=>v.name===name)||null:null;
 /* B134: where a feed ends at a send, so what comes after it is found in a later feed even once the feed is capped and
    its indexes move: the last entry's own id, else (a transcript without ids) all its entries */
@@ -1456,7 +1461,7 @@ const SHEETS={
     return `<h2>Talk settings</h2>
       <label class="it setrow"><span class="grow">Read replies aloud</span><input type="checkbox" role="switch" class="sw" data-ts="read" ${t.read?'checked':''}></label>
       <label class="it setrow"><span class="grow">Voice</span><select class="fld" data-ts="voice"><option value="">System voice</option>${vs.map(v=>`<option value="${esc(v.name)}" ${t.voice===v.name?'selected':''}>${esc(v.name)}${v.lang?` (${esc(v.lang)})`:''}</option>`).join('')}</select></label>
-      <label class="it setrow"><span class="grow">Mic</span><select class="fld" data-ts="mic"><option value="tap" ${t.mic==='tap'?'selected':''}>Tap to start and stop</option><option value="hold" ${t.mic==='hold'?'selected':''}>Hold to talk</option></select></label>
+      <label class="it setrow"><span class="grow">Mic${t.mic==='hold'&&micMode(t.mic,navigator)==='tap'?`<span class="small" style="display:block">${MIC_NOHOLD}</span>`:''}</span><select class="fld" data-ts="mic"><option value="tap" ${t.mic==='tap'?'selected':''}>Tap to start and stop</option><option value="hold" ${t.mic==='hold'?'selected':''}>Hold to talk</option></select></label>
       <label class="it setrow"><span class="grow">Auto listen<span class="small" style="display:block">Listens again once a reply was read; stops after one silent turn.</span></span><input type="checkbox" role="switch" class="sw" data-ts="auto" ${t.auto?'checked':''}></label>
       <div class="btns"><button class="btn" data-closesheet>Done</button></div>`;
   },
@@ -1852,10 +1857,10 @@ function talkHTML(){
 const talkMic=()=>`<div class="talkline" id="talkline" role="status"></div><button type="button" class="btn" id="micrep" data-micreport hidden>Copy mic report</button><div class="talkrow"><button type="button" class="spk" id="spk" data-spk></button><button type="button" class="mic" id="mic" data-mic></button><button type="button" class="kbd" data-talkmode="type" aria-label="Type instead" title="Type instead">${I.keys}</button></div>`;
 const talkFoot=()=>{const why=micWhy();return why?esc(why):keysLine()};
 function talkDraw(){
-  const why=micWhy(), st=TK.state, hold=TS.mic==='hold', mic=$('mic'), spk=$('spk'), line=$('talkline');
+  const why=micWhy(), st=TK.state, hold=micMode(TS.mic,navigator)==='hold', mic=$('mic'), spk=$('spk'), line=$('talkline');
   $('dock').classList.toggle('typing',talkTyping());
   if(!mic)return;
-  line.textContent=why||(st==='listening'?(TK.heard||(TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…')):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop.':(TK.note||(hold?'Hold to talk':'Tap to talk')));
+  line.textContent=why||(st==='listening'?(TK.heard||(TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…')):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop.':(TK.note||(hold?'Hold to talk':TS.mic==='hold'?MIC_NOHOLD:'Tap to talk')));
   $('micrep').hidden=!!why||!!st||!TK.report;
   const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking':hold?'Hold to talk':'Talk');
   mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':st==='speaking'?' speaking':'');mic.disabled=!!why;
@@ -1927,7 +1932,7 @@ function listen(){
   if(TK.state==='speaking'||TK.playing){if(TK.state==='speaking')TK.state='';TK.playing='';TK.note='';TK.turn=(TK.turn||0)+1;if(window.speechSynthesis)speechSynthesis.cancel();render(true);return}
   TK.note=TK.report='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   /* B162: the listen: its tries, the words so far, and whether the person ended it (stopped) or held the mic again */
-  const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:'',err:'',ms:null,stopped:false,more:false,on:false,msg:''};
+  const t=TK.ear={mode:again?'auto':micMode(TS.mic,navigator),tries:0,words:'',err:'',ms:null,stopped:false,more:false,on:false,msg:''};
   if(!TK.trail||TK.trail.used)micLog('listen',true);  // a press began it already
   TK.trail.used=true;t.trail=TK.trail;micLog(`listen ${t.mode}${MIC.rec?', waits for the last one to end':''}`);
   TK.state='listening';TK.heard='';render(true);
@@ -1968,7 +1973,7 @@ function earEnd(t){
   TK.ear=null;TK.heard='';if(TK.state==='listening')TK.state='';
   if(t.words)return talkSend(t.words);
   if(t.tries&&!(t.mode==='auto'&&(!t.err||t.err==='no-speech')))TK.report=t.trail;  // the Copy mic report button
-  TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.on,t.msg):'';
+  TK.note=t.mode==='auto'&&t.err!=='aborted'?(micMode(TS.mic,navigator)==='hold'?'Hold to talk':'Tap to talk'):t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.on,t.msg):'';
   render(true);
 }
 /* the person ends the listen: the recognizer gives its last words, or a start still waiting is off */
@@ -1983,7 +1988,7 @@ function micStop(by){
 async function micCopy(){
   if(!TK.report)return;
   let au='';try{au=navigator.audioSession?`${navigator.audioSession.type}, ${navigator.audioSession.state||''}`:'none'}catch(e){}
-  const text=micReport(TK.report,['Mic report',TK.note,`mic ${TS.mic}, version ${RUN_VERSION}, audio session ${au}, media session ${navigator.mediaSession?navigator.mediaSession.playbackState:''}`,navigator.userAgent]);
+  const text=micReport(TK.report,['Mic report',TK.note,`mic ${TS.mic}${micMode(TS.mic,navigator)===TS.mic?'':', works as '+micMode(TS.mic,navigator)}, version ${RUN_VERSION}, audio session ${au}, media session ${navigator.mediaSession?navigator.mediaSession.playbackState:''}`,navigator.userAgent]);
   try{await navigator.clipboard.writeText(text);toast('Mic report copied: paste it into your reply')}
   catch(e){S.out={title:'Mic report',text};openSheet('out')}
 }
@@ -2124,7 +2129,7 @@ document.addEventListener('click',async e=>{
   }
   if(x=q('[data-viewsw]')){try{localStorage.setItem(VIEW_KEY,x.dataset.viewsw)}catch(err){}return}  // F81: the link goes on
   if(q('[data-micreport]'))return micCopy();
-  if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(TS.mic==='hold'&&TK.state!=='speaking'&&!TK.playing&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
+  if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(micMode(TS.mic,navigator)==='hold'&&TK.state!=='speaking'&&!TK.playing&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
   if(q('[data-spk]')){if(TK.state==='speaking'||TK.playing)return hush();talkSet('read',!TS.read);return}
   if(x=q('[data-talkmode]'))return talkMode(x.dataset.talkmode);
   if(x=q('[data-speak]'))return playReply(x.dataset.speak);
@@ -2297,7 +2302,7 @@ for(const t of ['pointerdown','pointerup','pointercancel','gotpointercapture','l
 document.addEventListener('visibilitychange',()=>{if(TK.ear)micLog(document.hidden?'page hidden':'page shown')});
 /* F124: hold to talk: the mic listens while it is held, and sends when it is let go */
 document.addEventListener('pointerdown',e=>{
-  if(!(e.target.closest&&e.target.closest('[data-mic]'))||TS.mic!=='hold'||TK.state==='speaking'||TK.playing||e.button>0)return;
+  if(!(e.target.closest&&e.target.closest('[data-mic]'))||micMode(TS.mic,navigator)!=='hold'||TK.state==='speaking'||TK.playing||e.button>0)return;
   TK.hold=true;TK.holdId=e.pointerId;
   try{e.target.closest('[data-mic]').setPointerCapture(e.pointerId)}catch(err){}  // B162: a finger that drifts off it still holds it
   if(TK.state!=='listening')listen();  // auto listen is on already: letting go sends it
