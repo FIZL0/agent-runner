@@ -108,7 +108,8 @@ def cmd_finish(argv: list[str]) -> int:
 def cmd_ask(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog='run ask', description='Ask the person a question only they can answer: the '
                                  'task is parked under Needs you, and their answer resumes this session.')
-    ap.add_argument('question', help='the question, in plain words, with what you recommend')
+    ap.add_argument('question', help='the question, one short sentence in plain words, with what '
+                    'you recommend; longer goes in <notes>/asks/ID.json')
     a = ap.parse_args(argv)
     q = ' '.join(a.question.split())
     if not q:

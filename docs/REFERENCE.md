@@ -524,6 +524,14 @@ absolute path inside one of those two folders. A picture is png, jpg, gif or web
 `GET /shot/uploads/…` or `/shot/asks/…` and never from anywhere else; a picture under `<notes>/uploads` that the task's
 line names shows too. The TUI's Needs you pane shows the same steps, expected list and picture paths.
 
+The file is optional, and the brief asks for it only for length: a CONFIRM, DECIDE or BLOCKED line, and a `run ask`
+question, stays one short sentence (about 100 characters at most), and the rest goes in `<notes>/asks/ID.json` with
+pictures under `<notes>/asks/ID/`. A `done --blocked` line over 200 characters that waits on a person and has no ask
+file is not refused: it says so once, names the file, and blocks. The file and its pictures are removed when the item
+is answered (confirm, change, unblock), the task is ticked or dropped, it blocks again (any block but `done --blocked`
+and `run ask`, which may have written it), or a new session starts on the task. A block that waits on a task first and
+then returns to the person keeps the file.
+
 ### Approve to push
 
 Off by default: a merge is pushed as soon as it is tested (`[git] push_merge`). With `[run] approve = true`, and a push

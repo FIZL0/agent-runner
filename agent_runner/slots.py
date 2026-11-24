@@ -863,6 +863,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
             shared_tools.resumed(tid, wait)
             return p
         log(f'slot {n}: {tid}\'s waiting session cannot be resumed; a new one starts on the work it left')
+    P._clear_ask(tid, C.todo)  # F156: open again, so an ask file still there is an old ask's
     sid = str(uuid.uuid4())
     prompt = prompt_for(tid, n, slots, d, branch, model)  # F132: the harness loop's brief has no subagents
     logfile, since = slot_header(n, f'{tid} session {sid}')

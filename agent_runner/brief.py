@@ -36,8 +36,8 @@ progress), commit what is solid and run `{runner} done <ID> "<msg>" --blocked "<
 it>"`, then stop. If all it waits on is another task landing (its code is not on the main branch yet), add \
 `--after <ID>[,<ID>]`, and the run reopens it the moment those merge. If it waits on a person, start WHY with \
 what you ask of them: `CONFIRM: <what to check by hand>`, `DECIDE: <the question or choice>` or `BLOCKED: \
-<the access, login or fix only a person can make>`, then one short line, and the link if there is one; it \
-lists under Needs you until they answer. `CONFIRM:` is only for a check by hand you cannot do yourself, never \
+<the access, login or fix only a person can make>`, then one short sentence, at most about 100 characters, and the link if there is one; the rest \
+goes in the ask file (under "What you ask of a person"). It lists under Needs you until they answer. `CONFIRM:` is only for a check by hand you cannot do yourself, never \
 to have a finished task marked done: run `done` without `--blocked` for that. Before a `BLOCKED:` on access, check what this machine already has \
 and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `ssh -T`, and \
 ~/.claude/ACCESS.md if it exists; the `BLOCKED:` line then names the exact command that failed and its error \
@@ -45,13 +45,13 @@ and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `s
 
 Once `done` has run (or `done --blocked`), run `{runner} finish "<one line: what you did>"` and stop: it \
 records the summary and ends this session at once. If you hit a question only a person can answer and the work \
-should go on afterwards with what you know now, run `{runner} ask "<the question, with what you recommend>"` and \
-stop: the task is parked under Needs you with your worktree as it is, and the person's answer comes back as the \
+should go on afterwards with what you know now, run `{runner} ask "<the question, with what you recommend, one short sentence>"` \
+(the rest in the ask file) and stop: the task is parked under Needs you with your worktree as it is, and the person's answer comes back as the \
 next message of this same session. Your AskUserQuestion tool is off; `ask` is the only way to ask. To show \
 the person a page (a concept's options, a report), run `{runner} publish-page <the HTML file>`: the run page \
 shows it, and it prints the page's claude.ai URL.
 
-""" + VERIFY + """
+""" + VERIFY + """ What you do hand over, write in short steps (under "What you ask of a person").
 
 A usage limit is not being stuck: the session waits for the reset and carries on, so do not block the task.
 
@@ -220,6 +220,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
     elif wizards_on():
         prompt = f'{prompt.rstrip()}\n\n' + WIZARD_PROMPT.format(
             runner=C.command, tid=tid, template=WIZARD_TEMPLATE, path=C.notes('wizards', f'{tid}.sh'))
+    prompt = f'{prompt.rstrip()}\n\n' + ASKS_PROMPT.format(path=C.notes('asks', f'{tid}.json'),
+                                                        shots=C.notes('asks', tid))  # F156
     if questionnaires_on() and not P.concept(tid):  # F18
         prompt = f'{prompt.rstrip()}\n\n' + SHEET_PROMPT.format(
             runner=C.command, tid=tid, path=C.notes('sheets', f'{tid}.json'))
@@ -320,6 +322,18 @@ class _Keep(dict):
 # (`plan confirm`). `[run] wizards = false` turns it off: no brief paragraph, no run line.
 
 WIZARD_TEMPLATE = Path(__file__).with_name('wizard_template.sh')
+
+# F156: what an agent asks of a person, in short steps: <notes>/asks/<ID>.json, read by need_detail (F162)
+ASKS_PROMPT = """\
+What you ask of a person (a CONFIRM, DECIDE or BLOCKED, or `ask`) is read in Needs you, often on a phone. The line is \
+one short sentence, at most about 100 characters. When there is more to say, write it first to the ask file {path}, as \
+JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place>, "steps": [<what to do>, …], \
+"expect": [<what they should see>, …], "shots": [{{"file": <a picture's path>, "caption": <what it shows>}}]}}; leave out \
+what you do not need. One action per step, in words the person sees on screen, no file names or code (the command that failed and its error, \
+when too long for the line, go in the commit message). When the \
+check or choice is about how something looks, take screenshots: small ones, put under {shots}/, with no secrets or \
+tokens in them. The file is optional, and it is gone once they answer, so write a new one for each ask."""
+
 
 WIZARD_PROMPT = """\
 When you block with `BLOCKED:` because of steps only a person can take (a login, a certificate or signing key, \
