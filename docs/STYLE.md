@@ -315,6 +315,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - A tap's focus on a text box in iOS is made by `kbFocus()`: `preventScroll`, and the box see-through for two frames, so
   Safari does not pan; the caret goes to the end (a second tap places it). A box a script
   focused without a keyboard is blurred first. Every scripted `focus()` of a box passes `preventScroll:true`, with `kbReveal()` where it must come into view.
+- On touch, opening a chat never focuses its box, nor does the chat a first message starts; focus left in a text field is dropped (`open()`), so the keyboard goes and the box sits at the foot. Only a tap on the box, + Task or a card's Chat brings it. A starting chat that gets its name keeps its focus. A desktop pointer focuses the box on open.
 - `.app` keeps full height until the visual viewport changes, and gets it back at once on blur.
 - For 900ms (`KB_MS`) after a field is entered or left, `kbFit()` runs each frame on iOS, as events come late and in any
   order, and follows Safari's pan so the header stays on screen.
