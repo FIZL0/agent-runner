@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import http.client
 import io
 import json
@@ -510,6 +511,95 @@ def test_other_kind() -> None:
     op('remove', name='rig')
 
 
+PAGE_DRIVER = r"""
+const src = require('fs').readFileSync(process.argv[2], 'utf8'), cut = (a, b) => src.slice(src.indexOf(a), src.indexOf(b, src.indexOf(a)));
+const line = a => cut(a, '\n') + '\n', S = {toolBusy: '', toolSaid: {}, tools: {secure: true, tools: []}, sure: null}, calls = [];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';'), I = {ext: ''}, render = () => {}, tq = x => x;
+const viewGo = f => f(), goView = v => { calls.push('view ' + v); S.view = v }, closeSheet = () => { calls.push('close'); S.sheet = '' };
+let answer; const toolPost = async (b, n) => { calls.push(b); S.toolSaid = {[n]: {ok: answer.ok, out: answer.out}}; return answer };
+const f = new Function('S', 'esc', 'I', 'card', 'render', 'tq', 'viewGo', 'goView', 'closeSheet', 'toolPost',
+  cut('const toolSaid=', 'function toolHostKey') + cut('function toolHostKey', 'function toolsHTML') + cut('async function toolClick', '\n}\n')
+  + '\n}; return {toolCard, needDevices, toolClick}')(S, esc, I, h => h, render, tq, viewGo, goView, closeSheet, toolPost);
+const btns = h => [...h.matchAll(/<(button|a) class="btn([^"]*)"([^>]*)>([^<]*)</g)].map(m => [m[4].trim(), m[2].includes('pri') ? 'pri' : '',
+  / disabled/.test(m[3]) ? 'off' : '', m[1] === 'a' ? (m[3].match(/href="([^"]*)" target="_blank"/) || [])[1] : '']);
+const dev = (run, page = 'http://rig.local:8080') => ({name: 'rig', label: 'rig', source: 'device', kind: 'other', reach: 'x', used: true, page, run, secrets: {}});
+const st = (state, lines = []) => ({state, lines});
+const page = t => { const h = f.toolCard(t); return [btns(h).filter(b => /^(Start|Use|Stop)/.test(b[0])), (h.match(/data-k="pagestate:rig" data-v="([^"]*)"/) || [])[1], (h.match(/<pre[^>]*>([^<]*)/) || [])[1]] };
+(async () => {
+  const out = {}, all = () => ({stopped: page(dev(st('stopped'))), running: page(dev(st('running'))), failed: page(dev(st('failed', ['one', '<two>']))), plain: page(dev(null)), none: page(dev(null, ''))});
+  out.rw = all(); S.tools.secure = false; out.ro = all(); S.tools.secure = true;
+  S.toolBusy = 'start:rig:'; out.busy = /btn pri busy" data-tool="start"/.test(f.toolCard(dev(st('stopped')))); S.toolBusy = '';
+  out.odd = page(dev(null, 'javascript:1'))[0];
+  out.need = ['running', '', 'stopped', 'failed'].map(state => btns(f.needDevices({devices: [{name: 'rig', page: 'http://rig.local:8080', state}]}))[0]);
+  out.old = f.needDevices({});
+  const press = async (tool, a) => { answer = a; await f.toolClick({dataset: {tool, name: 'rig'}}); return JSON.stringify(S.toolSaid) };
+  out.said = [await press('start', {ok: true, state: 'running', out: 'x'}), await press('start', {ok: false, state: 'failed', out: 'x'}),
+    await press('stop', {ok: false, out: 'it did not stop'}), await press('start', {ok: false, state: 'stopped', out: 'ended at once'})];
+  S.sheet = 'need'; await f.toolClick({dataset: {tool: 'show', name: 'rig'}}); out.show = [calls, S.toolGo, S.view];
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_page_buttons(tmp: Path) -> None:
+    print("F408: the buttons of a device's web page, in its card and on a Needs you item")
+    if not shutil.which('node'):
+        print('  (no node here: skipped)')
+        return
+    (tmp / 'page.js').write_text(PAGE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'page.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the cards', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o, url = json.loads(r.stdout), 'http://rig.local:8080'
+    start, use, stop = ['Start', 'pri', '', ''], ['Use', 'pri', '', url], ['Stop', '', '', '']
+    failed = 'one\n&#60;two&#62;'
+    eq(o['rw'], {'stopped': [[start], 'stopped', None], 'running': [[use, stop], 'running', None],
+                 'failed': [[start], 'failed', failed], 'plain': [[use], '', None], 'none': [[], None, None]}, 'each state')
+    start[2] = stop[2] = 'off'
+    eq(o['ro'], {'stopped': [[start], 'stopped', None], 'running': [[use, stop], 'running', None],
+                 'failed': [[start], 'failed', failed], 'plain': [[use], '', None], 'none': [[], None, None]}, 'read only: Use still works')
+    check(o['busy'], 'a press shows it is sending')
+    eq(o['odd'], [], 'only an http or https address is a link')
+    go = ['Open rig in Tools', '', '', '']
+    eq(o['need'], [['Use rig', '', '', url]] * 2 + [go] * 2, 'Needs you: Use, or the way to its card')
+    eq(o['old'], '', 'none from a run without it')
+    eq(o['said'][:2], ['{}', '{}'], 'the state says it, not words that go stale')
+    check('did not stop' in o['said'][2] and 'ended at once' in o['said'][3], 'what the state does not say stays', o['said'])
+    eq(o['show'], [[{'op': 'start', 'name': 'rig'}] * 2 + [{'op': 'stop', 'name': 'rig'}, {'op': 'start', 'name': 'rig'}, 'close',
+                                                          'view tools'], 'rig', 'tools'], 'it closes the sheet and goes there')
+
+
+def test_need_pages(repo: Path) -> None:
+    print("F408: a Needs you row has the web pages of the devices its task needs")
+    todo = repo / 'plan/TODO.md'
+    keep = todo.read_text(encoding='utf-8')
+
+    def devs(tid: str):
+        return U.needs_rows([('CONFIRM', tid, '', 'ok?', '', 'T', False)], datetime.datetime.now())[0][0].get('devices')
+    op('save', name='rig', kind='other', reach='git x', page='http://rig.local:8080', start='sleep 60')
+    op('save', name='plain', kind='other', reach='git x', page='http://plain.local')
+    op('save', name='bare', kind='other', reach='git x')
+    for n in ('rig', 'plain', 'bare'):
+        op('use', name=n, on=True)
+    try:
+        todo.write_text(keep + '- [~] **T4** x | files: d.py | needs: rig, plain, bare, phone BLOCKED: CONFIRM: ok?\n  more words\n'
+                        '- [~] **T5** y | files: e.py BLOCKED: CONFIRM: ok?\n', encoding='utf-8')
+        plain = {'name': 'plain', 'page': 'http://plain.local', 'state': ''}
+        eq(devs('T4'), [{'name': 'rig', 'page': 'http://rig.local:8080', 'state': 'stopped'}, plain], 'those with a page')
+        eq(devs('T5'), None, 'none needed')
+        check(op('start', name='rig')['ok'], 'started')
+        eq(devs('T4')[0]['state'], 'running', 'its state follows')
+        op('stop', name='rig')
+        eq(devs('T4')[0]['state'], 'stopped', 'and stopped again')
+        op('use', name='rig', on=False)
+        eq(devs('T4'), [plain], 'not one this project does not use')
+    finally:
+        todo.write_text(keep, encoding='utf-8')
+        for n in ('rig', 'plain', 'bare'):
+            op('remove', name=n)
+
+
 def main() -> int:
     if not POSIX:
         print('skipped: a stored secret is not used on Windows')
@@ -524,7 +614,8 @@ def main() -> int:
         R.init(repo)
         seen = []
         have = shutil.which('ssh-agent') and shutil.which('ssh-keygen')
-        tests = [test_hostile, lambda: test_folder(tmp), test_channel, test_redactor, test_other_kind]
+        tests = [test_hostile, lambda: test_folder(tmp), test_channel, test_redactor, test_other_kind,
+                 lambda: test_page_buttons(tmp), lambda: test_need_pages(repo)]
         if have:
             tests += [lambda: test_secrets(tmp), lambda: seen.append(test_server()), lambda: seen.append(test_connect(tmp)),
                       lambda: test_needs(repo, other, tmp), lambda: test_lease(repo, tmp), lambda: test_keyring(tmp),
