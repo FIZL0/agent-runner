@@ -149,7 +149,7 @@ const VOICES = {voices: [{id: 'kokoro:af_heart', name: 'af_heart', lang: 'Americ
 const fetch = async (p, o) => { if (!o) return {ok: true, json: async () => VOICES};
   asked.push(JSON.parse(o.body)); return {ok: status === 200, status, blob: async () => new Blob(['x']), json: async () => ({out: 'it broke'})} };
 const navigator = {language: 'en-US'}, toast = t => notes.push(t), render = () => {}, voices = () => [];
-const MIC = {rec: null, next: null}, S = {view: 'talk', thread: null, sheet: ''}, TK = {state: '', playing: '', note: '', held: '', ear: null, unlocked: true};
+const MIC = {rec: null, next: null}, S = {view: 'talk', thread: null, sheet: ''}, TK = {state: '', playing: '', note: '', held: '', later: [], ear: null, unlocked: true};
 let TS;
 const listen = () => { listens++ }, talkSet = (k, v) => { TS[k] = v }, micWhy = () => '', store = {get: () => ''}, TM_KEY = 'tm';
 const tick = () => new Promise(r => setTimeout(r, 5));
