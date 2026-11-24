@@ -10,7 +10,8 @@ from pathlib import Path
 
 NAME = 'agent-runner'
 SETTING = f'custom:{NAME}'
-CALM = {'spinnerTipsEnabled': False, 'prefersReducedMotion': True}
+# bashEditDiffEnabled (F188): no diff under a Bash command that changed a file; Edit's and Write's own stay
+CALM = {'spinnerTipsEnabled': False, 'prefersReducedMotion': True, 'bashEditDiffEnabled': False}
 
 # role: (slot for a dark terminal, slot for a light one, the page's dark colour, its light colour). A slot's own colour
 # is close to the role's, so a terminal outside the page reads well too. No slot is in both columns for two roles.
