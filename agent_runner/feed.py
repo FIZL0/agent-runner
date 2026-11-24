@@ -1,18 +1,21 @@
-"""Ending the runner feed an older version started (B195), and opening a new control session (`control --new`)."""
+"""Ending the runner feed an older version started (B195), opening a new control session (`control --new`), and a
+one-shot on the harness loop (`harness_once`, F406e)."""
 
 from __future__ import annotations
 
 import json
 import os
 import re
+import subprocess as sp
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from agent_runner import plat
 from agent_runner.config import runner_cmd, shown_cmd
 from agent_runner.state import C, log, ROOT, run_up
-from agent_runner.slots import link_drift, remote_answer_drift
+from agent_runner.slots import HARNESS, link_drift, on_harness, remote_answer_drift
 from agent_runner.slots import marker_pid, remote_off_why, remote_on, REMOTE_URL
 from agent_runner.control import (control_env, CONTROL_LINK_WAIT, control_live, control_name,
     claim_control_number, control_unclaim, hidden_control, hidden_control_log,
@@ -90,6 +93,39 @@ def feed_forget_session() -> None:
 def feed_model() -> str:
     """F101: `[models] feed` (haiku by default): what publishes the run page's claude.ai copy (page_copy.py)."""
     return (C.raw.get('models') or {}).get('feed') or 'haiku'
+
+
+def feed_on_harness() -> bool:
+    """F406e: `[models] feed` is another provider's: its one-shot runs on the harness loop, which cannot publish to
+    claude.ai."""
+    return on_harness(feed_model())
+
+
+def harness_once(model: str, prompt: str, cwd: Path, timeout: float, tools: str = 'read') -> tuple[str, str]:
+    """F406e: one answer of a fresh harness loop session on `model`, given only `prompt` and `tools` (names, a comma
+    between two): (its last words, why it failed). One of the two is ''. Never raises."""
+    sid = str(uuid.uuid4())
+    pf = C.notes(f'once-{sid}.prompt')
+    env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER_SLOT', 'AGENT_RUNNER')}  # no slot's session
+    try:
+        pf.write_text(prompt, encoding='utf-8')
+        argv = HARNESS.argv('', pf, sid, [*HARNESS.flags(sid, model, 0, False, True), '--tools', tools])
+        r = sp.run(argv, cwd=str(cwd), env=env, stdin=sp.DEVNULL, capture_output=True, text=True, encoding='utf-8',
+                   errors='replace', timeout=timeout)
+    except (OSError, sp.SubprocessError) as e:
+        return '', f'the one-shot on {model} did not run: {e}'
+    finally:
+        pf.unlink(missing_ok=True)
+    said = ''
+    if r.returncode == 0 and (f := HARNESS.find_transcript(sid)):
+        for line in Path(f).read_text(encoding='utf-8').splitlines():
+            e = json.loads(line)
+            if e.get('type') == 'assistant':
+                said = '\n'.join(b.get('text') or '' for b in e['message']['content'] if b.get('type') == 'text').strip()
+    if said:
+        return said, ''
+    end = ' '.join(f'{r.stderr or ""} {r.stdout or ""}'.split())[-300:]
+    return '', f'the one-shot on {model} gave no answer (exit {r.returncode}): {end}'
 
 
 def feed_sid_file() -> str:

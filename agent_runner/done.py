@@ -403,7 +403,7 @@ def gate_limit(a, cwd: Path) -> str | None:
 
 def artifact_refusal(a) -> str | None:
     """Why `done` refuses these arguments, or None: a concept task finishes only with the page it published."""
-    if a.artifact and not re.match(r'https?://\S+$', a.artifact):
+    if a.artifact and not re.match(r'https?://\S+$', a.artifact) and a.artifact != f'/concept/{a.id}':  # F406e: local page
         return f'{PROG}: --artifact takes the page\'s URL (https://…), not {a.artifact!r}'
     if plan.concept(a.id) and not a.artifact and not a.blocked:
         return (f'{PROG}: {a.id} is a concept task: it builds nothing, it publishes a page of options. Publish it '
