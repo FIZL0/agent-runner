@@ -679,7 +679,7 @@ def lately_events(log_lines: list, titles: dict[str, str]) -> list[tuple[str, st
 
 
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
-                waiting=None, progress: str = '', wips=None) -> str:
+                waiting=None, progress: str = '', wips=None, login: str = '') -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
     run's state, `progress` (`progress_line`, `release_line`), each slot's task, title and minutes, what is
     merging, the last few merged / blocked / parked, and usage."""
@@ -687,6 +687,8 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     if nogate := no_gate_line():  # up or not: the next run merges untested too
         out.append(nogate)
+    if login:  # F126: `watch.claude_login_line`
+        out.append(login)
     from agent_runner.control_held import lines as held_lines  # B170; here: control imports much of the runner
     out += held_lines()
     if unpushed := pitch.waiting_line():  # F98

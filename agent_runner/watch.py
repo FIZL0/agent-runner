@@ -23,7 +23,7 @@ from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POW
     SLOTS_DIR, stopped_by, stopping)
 from agent_runner.sched import open_tasks
 from agent_runner.slots import entries, GB, marker_pid, MUX, sids, slot_env, SLOTS, tmp_roots, transcript
-from agent_runner.slots import claude_drift
+from agent_runner.slots import claude_drift, remote_off_why
 
 
 def state_line() -> str:
@@ -502,6 +502,60 @@ def account_usage() -> dict | None:
         _account[1] = None
     _account[0] = time.time()
     return _account[1]
+
+
+LOGIN_CMD = 'claude auth login'  # F126: what renews the Claude login
+LOGIN_WARN = 3 * 86400  # s before its end that the Claude login is warned about
+
+
+def own_claude_login(agent: str = 'claude') -> bool:
+    """F126: do sessions run on the claude.ai login Claude Code keeps on this machine? Not with another agent, an
+    API key or token, another provider or base URL, or an apiKeyHelper: there is no login to renew then."""
+    from agent_runner.config import user_settings_file
+    if agent != 'claude' or os.environ.get('CLAUDE_CODE_OAUTH_TOKEN') or remote_off_why(dialog=False):
+        return False
+    try:
+        return not json.loads(user_settings_file().read_text(encoding='utf-8')).get('apiKeyHelper')
+    except (OSError, ValueError, AttributeError):
+        return True
+
+
+def claude_login(now: float | None = None, path: Path | None = None, agent: str = 'claude') -> str:
+    """F126: what to say about the Claude login when it ends in under 3 days, has ended, or is missing; '' when it
+    is fine or cannot be told. Read from Claude Code's credentials file (`path`): refreshTokenExpiresAt, not
+    expiresAt, which is the access token's and renewed by itself. On macOS the login is in the Keychain, so a
+    missing file says nothing; a login with no refreshTokenExpiresAt (an older Claude Code's) neither."""
+    if not own_claude_login(agent):
+        return ''
+    path = path or Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / '.credentials.json'
+    missing = '' if sys.platform == 'darwin' else 'No Claude login: log in'
+    try:
+        oauth = json.loads(path.read_text(encoding='utf-8'))['claudeAiOauth']
+        has_token = bool(oauth.get('refreshToken'))
+    except FileNotFoundError:
+        return missing
+    except OSError:  # there, but not readable now
+        return ''
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return missing
+    if not has_token:
+        return missing
+    ends = oauth.get('refreshTokenExpiresAt')
+    if not isinstance(ends, (int, float)) or isinstance(ends, bool):
+        return ''
+    left = ends / 1000 - (time.time() if now is None else now)
+    if left <= 0:
+        return 'Claude login has expired: log in again'
+    if left >= LOGIN_WARN:
+        return ''
+    n, unit = (int(left // 86400), 'day') if left >= 86400 else (int(left // 3600), 'hour')
+    return f'Claude login expires in {f"{n} {unit}" + ("s" if n != 1 else "") if n else "under 1 hour"}: log in again'
+
+
+def claude_login_line() -> str:
+    """F126: `claude_login` and the command that renews it, as `status` and the TUI say it; '' when it is fine."""
+    said = claude_login(agent=C.run['agent'])
+    return f'{said} ({LOGIN_CMD})' if said else ''
 
 
 def usage_pct(name: str) -> float | None:

@@ -558,6 +558,9 @@ def status_rows(up: bool, st: dict, progress: str) -> list[str]:
             out.append(line)
     except Exception:  # noqa: BLE001
         pass
+    from agent_runner.watch import claude_login_line
+    if login := claude_login_line():  # F126
+        out.append(login)
     if unpushed := unpushed_line():
         out.append(unpushed)
     out += [l for l in progress.splitlines() if l]

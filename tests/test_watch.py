@@ -10,9 +10,12 @@ UV_TOOL_DIR put it.
 """
 from __future__ import annotations
 
+import json
+import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from _check import check, eq, report
 
@@ -65,5 +68,67 @@ def test_breaking() -> None:
     eq(W.auto_upgrade_due('0.61.0', '0.60.0', '0.60.0', False, ''), True, 'auto upgrade from 0.60 onto 0.61')
 
 
+def test_claude_login() -> None:
+    """F126: an ending, ended or missing Claude login, from a fake credentials file."""
+    from agent_runner import status as R, tui as T, ui_model as U
+    now, day = 1_800_000_000.0, 86400
+    off = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN',
+           'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
+    with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': d}), \
+            mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(W, 'C', mock.Mock(run={'agent': 'claude'})):
+        for k in off:
+            os.environ.pop(k, None)
+        f = Path(d) / '.credentials.json'
+
+        def given(left: float | None, **kw) -> str:
+            o = {'accessToken': 'a', 'refreshToken': 'r', 'expiresAt': (now - day) * 1000, **kw}
+            if left is not None:
+                o['refreshTokenExpiresAt'] = int((now + left) * 1000)
+            f.write_text(json.dumps({'claudeAiOauth': o}), encoding='utf-8')
+            return W.claude_login(now)
+
+        none = 'No Claude login: log in'
+        eq(W.claude_login(now), none, 'no file')
+        eq(given(7 * day), '', 'far away, the access token past: nothing')
+        eq(given(3 * day), '', '3 days: not under 3 days')
+        eq(given(3 * day - 1), 'Claude login expires in 2 days: log in again', 'under 3 days')
+        eq(given(1.5 * day), 'Claude login expires in 1 day: log in again', 'one day')
+        eq(given(5 * 3600), 'Claude login expires in 5 hours: log in again', 'hours')
+        eq(given(60), 'Claude login expires in under 1 hour: log in again', 'minutes')
+        eq(given(0), 'Claude login has expired: log in again', 'now')
+        eq(given(-day), 'Claude login has expired: log in again', 'past')
+        eq(given(None), '', 'no refreshTokenExpiresAt: cannot tell')
+        eq(given(7 * day, refreshToken=''), none, 'no token')
+        for bad in ('{}', 'null', 'no json', '{"claudeAiOauth": null}'):
+            f.write_text(bad, encoding='utf-8')
+            eq(W.claude_login(now), none, f'missing: {bad}')
+        with mock.patch.object(sys, 'platform', 'darwin'):
+            f.unlink()
+            eq(W.claude_login(now), '', 'macOS: in the Keychain')
+
+        given(-day)
+        for k in ('ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'):
+            with mock.patch.dict(os.environ, {k: 'x'}):
+                eq(W.claude_login(now), '', f'{k}: no login to renew')
+        eq(W.claude_login(now, agent='other'), '', 'another agent')
+        (Path(d) / 'settings.json').write_text('{"apiKeyHelper": "key"}', encoding='utf-8')
+        eq(W.claude_login(now), '', 'an apiKeyHelper')
+        (Path(d) / 'settings.json').unlink()
+
+        with mock.patch.object(W.time, 'time', lambda: now):
+            line = W.claude_login_line()
+            eq(line, 'Claude login has expired: log in again (claude auth login)', 'the line names the command')
+            with mock.patch.object(U, 'no_settings', lambda **kw: ''), \
+                    mock.patch.object(U, 'unpushed_line', lambda: ''):
+                check(line in U.status_rows(False, {}, ''), 'the TUI status pane has it')
+                eq(T.RunPage.row(None, 1, line)[0][1], 'yellow', 'as a warning')
+                given(7 * day)
+                check(not any('login' in x for x in U.status_rows(False, {}, '')), 'far away: no line')
+            eq(W.claude_login_line(), '', 'far away: nothing for status')
+        with mock.patch.object(R, 'no_gate_line', lambda: ''), mock.patch.object(R.pitch, 'waiting_line', lambda: ''), \
+                mock.patch('agent_runner.control_held.lines', lambda: []):
+            eq(R.status_text(False, {}, [], {}, 0.0, login=line), f'no run is up\n{line}', 'status has it')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_by_file, test_breaking]))
+    sys.exit(report([test_by_file, test_breaking, test_claude_login]))

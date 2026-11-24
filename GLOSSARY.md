@@ -683,3 +683,10 @@ _Said_: what the person has to give
 _On screen_: one field on a Needs you item
 _In code_: inputs, need_give, input_wrong, asks/ID.env
 _Avoid_: form field, parameter
+
+**Claude login**:
+the claude.ai sign-in on a machine that its Claude Code sessions run on; it ends after a while and a person renews it
+_Said_: Claude login, log in again
+_On screen_: Claude login
+_In code_: watch.claude_login, watch.LOGIN_CMD
+_Avoid_: credentials, token, auth

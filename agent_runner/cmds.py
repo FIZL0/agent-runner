@@ -328,7 +328,9 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
+    from agent_runner.watch import claude_login_line
     print(status_text(up, st, read_events(), P.titles(C.done, C.todo),time.time(), waiting=waiting_ok(), wips=wip_main_info(),
+                      login=claude_login_line(),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     from agent_runner.web import page_line
     if said := page_line():  # F66: the run page's address, with its token
