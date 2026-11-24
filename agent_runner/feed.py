@@ -15,6 +15,7 @@ from pathlib import Path
 from agent_runner import plat
 from agent_runner.config import runner_cmd, shown_cmd
 from agent_runner.state import C, log, ROOT, run_up
+from agent_runner.sched import agent_held
 from agent_runner.slots import HARNESS, link_drift, on_harness, remote_answer_drift
 from agent_runner.slots import marker_pid, remote_off_why, remote_on, REMOTE_URL
 from agent_runner.control import (control_env, CONTROL_LINK_WAIT, control_live, control_name,
@@ -186,6 +187,9 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     Prints its claude.ai/code link once its log shows it, so the session that ran it can answer with a link.
     Its first message is `ask`, handed to `control N` in a file (`control_ask_file`), with `images` (files) named
     in it."""
+    if bad := agent_held():  # B764c
+        print(f'no control session started: {bad}', file=sys.stderr)
+        return 1
     if not n:  # B131: claimed until it is up, so an ask that arrives meanwhile gets the next number
         n = claim_control_number()
         try:

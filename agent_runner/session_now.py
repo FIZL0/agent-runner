@@ -292,6 +292,8 @@ def restart_chat(chat: str) -> dict:
     sid = str(rec.get('sessionId') or '') or K.control_kept_sid(n)
     if not sid or not K.transcript(sid):
         return _fail(f'{chat} has nothing said in it to restart with')
+    if bad := K.agent_held():  # B764c: ended now, it could not come up again
+        return _fail(f'{chat} was not restarted: {bad}')
     K.control_keep_sid(n, sid)
     plat.terminate(int(rec['pid']))
     end = time.monotonic() + 15

@@ -4669,7 +4669,7 @@ def test_limit_resumes(repo: Path, tmp: Path):
     sleep = R.time.sleep
     R.HiddenMux, R.time.sleep = Mux, lambda s: sleep(min(s, 0.05))
     R.transcript = lambda sid: ts.get(sid)
-    R.C.run['agent'] = 'fake'
+    R.C.run['agent'] = sys.executable  # a program that is there, and not claude
     here = os.getcwd()
     os.chdir(repo)
     try:
@@ -4731,7 +4731,7 @@ def test_limit_falls_back(repo: Path, tmp: Path):
     sleep = R.time.sleep
     R.HiddenMux, R.time.sleep = Mux, lambda s: sleep(min(s, 0.05))
     R.transcript = lambda sid: ts.get(sid)
-    R.C.run['agent'] = 'fake'
+    R.C.run['agent'] = sys.executable  # a program that is there, and not claude
     here = os.getcwd()
     os.chdir(repo)
     try:

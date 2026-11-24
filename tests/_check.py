@@ -44,6 +44,13 @@ _mem = TMP_ROOT / 'meminfo'  # B184: no suite waits for the real machine's memor
 _mem.mkdir()
 (_mem / 'meminfo').write_text('MemTotal: 33554432 kB\nMemAvailable: 16777216 kB\n')
 os.environ['AGENT_RUNNER_MEMINFO_DIR'] = str(_mem)
+if not shutil.which('claude'):  # B764c: a machine without Claude Code (CI): the default [run] agent must be there
+    _bin = TMP_ROOT / 'claude-bin'
+    _bin.mkdir()
+    for _name, _text in (('claude', '#!/bin/sh\nexit 127\n'), ('claude.cmd', '@exit /b 127\r\n')):
+        (_bin / _name).write_text(_text, encoding='utf-8')
+        (_bin / _name).chmod(0o755)
+    os.environ['PATH'] += os.pathsep + str(_bin)
 _SUITE_PID = os.getpid()
 
 

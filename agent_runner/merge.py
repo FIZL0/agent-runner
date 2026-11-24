@@ -16,16 +16,15 @@ import threading
 import time
 import uuid
 from pathlib import Path
-
 from contextlib import ExitStack
 
 from agent_runner import pitch, plan as P, plat, plansync, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
+from agent_runner.sched import agent_held, AgentHeld
 from agent_runner.strays import drop_strays, new_empty
-from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
-from agent_runner.state import commit_plan, EV_LANDED, EV_LEFT, EV_PART
+from agent_runner.state import (C, clean, commit_plan, EV_LANDED, EV_LEFT, EV_PART, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR)
 from agent_runner.slots import (backend, entries, env_vars, merge_env, MUX, slot_env, trim, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
 from agent_runner.land import (announce_release, BROKEN, flaky, land, land_tick, published, push_landed,
@@ -492,7 +491,9 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
 def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str, keep: dict | None = None,
           fork: str = '') -> tuple[int | None, str]:
     """`fix_session` under a `head` line in fixer.log: (its exit code, ''), or why it did not run to its end
-    (code 0 when there is no agent command, None when it timed out)."""
+    (code 0 when there is no agent command, None when it timed out). B764c: AgentHeld while [run] agent is wrong."""
+    if bad := agent_held():
+        raise AgentHeld(bad)
     with open(C.notes('fixer.log'), 'a', encoding='utf-8') as fh:
         fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {head}\n')
         fh.flush()
@@ -1307,7 +1308,7 @@ def batch_build(t: BatchTurn):
                 git('merge', '--abort', cwd=d)
                 continue
             if files and not joined(files, x, d):
-                if not t.batch_fixes:
+                if not t.batch_fixes or agent_held():  # B764c: no session for a rider now, and it holds nobody else
                     git('merge', '--abort', cwd=d)
                     continue  # it waits for its own turn, where a fix session can take the conflict
                 # a fix session takes the conflict here, so the rider shares this gate run
@@ -1398,7 +1399,7 @@ def batch_test(t: BatchTurn):
         return BATCH_RETRY
     if riders and names:
         git('checkout', '-q', '--detach', t.merged, cwd=d)  # blame left it on the base
-    if riders and not t.batch_repaired and C.run['repair_merges']:
+    if riders and not t.batch_repaired and C.run['repair_merges'] and not agent_held():
         t.batch_repaired = True
         not_fixed, still, fixes = repair_retest(tid, branch, d, base, t.merged, riders)
         if not not_fixed and not still:

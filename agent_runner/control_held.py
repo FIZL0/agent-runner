@@ -560,7 +560,8 @@ def step(rec: dict, now: float) -> None:
     if t := rec.get('typed'):
         seen = w['held_at'] >= t['at'] - 5
         if live and pid == t['pid']:
-            if not seen and rec.get('reopened') and now - t['at'] > HELD_LOST and w['last_at'] < t['at']:
+            if not seen and rec.get('reopened') and now - t['at'] > HELD_LOST and w['last_at'] < t['at'] \
+                    and not K.agent_held():
                 # the session the runner started never took it (a dialog, say): start it again
                 plat.terminate(pid)
                 rec.pop('typed')
@@ -611,6 +612,8 @@ def step_ended(rec: dict, now: float) -> None:
         return stays(rec, 'its session has ended, and [run] control is off')
     if now - rec.get('reopened', 0) < max(HELD_SETTLE) or (K.control_taken(n) and K.control_kept_sid(n) == sid):
         return stays(rec, 'its session is starting')
+    if bad := K.agent_held():  # B764c
+        return stays(rec, bad)
     rec['tries'] = rec.get('tries', 0) + 1 if rec.get('reopened') else rec.get('tries', 0)
     if rec['tries'] >= HELD_TRIES:
         return stays(rec, stuck='its session does not come up')

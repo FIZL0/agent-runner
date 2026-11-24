@@ -29,6 +29,7 @@ from pathlib import Path
 from agent_runner import plat
 from agent_runner.control import control_env
 from agent_runner.feed import feed_model, feed_on_harness, harness_once  # F101: [models] feed; the one-shot only publishes a file it is handed
+from agent_runner.sched import agent_held
 from agent_runner.slots import one_session, remote_on
 from agent_runner.state import C, log, ROOT
 
@@ -179,7 +180,11 @@ def page_copy_said(r) -> str:
 
 def page_copy_publish(path: Path, url: str, icon: str = 'dashboard') -> str:
     """Run the one-shot (`page_copy_argv`; `harness_once` for another provider's feed model) and return the URL it
-    published to, '' when it did not. Raises OSError when the agent cannot be started at all."""
+    published to, '' when it did not. Raises OSError when the agent cannot be started at all. B764c: none is started
+    while [run] agent is wrong."""
+    if bad := agent_held():
+        log(f'run page copy: not published: {bad}')
+        return ''
     if feed_on_harness():  # F406e: no claude.ai page from there, whatever it says: the local copy stands
         said, why = harness_once(feed_model(), page_copy_ask(path, url, icon) + ' With no Artifact tool, publish it '
                                  'nowhere: answer "local copy".', path.parent, PAGE_COPY_TIMEOUT)
@@ -241,7 +246,7 @@ def page_copy_tick(now: float | None = None, snap: dict | None = None, publish=N
     now = time.time() if now is None else now
     try:
         if (PAGE_COPY_OFF[0] or not (one_session() and remote_on())
-                or now - PAGE_COPY_AT[0] < PAGE_COPY_EVERY):
+                or now - PAGE_COPY_AT[0] < PAGE_COPY_EVERY or agent_held()):  # B764c
             return False
         if snap is None:
             from agent_runner import ui_model

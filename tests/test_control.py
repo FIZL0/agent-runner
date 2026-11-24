@@ -1444,6 +1444,63 @@ def test_decide_options_f181d():
     eq(len(P.decide_question('DECIDE: ' + 'word ' * 100)) <= 240, True, 'no bracket: cut as before')
 
 
+def test_wrong_agent_b764c():
+    print('B764c: while [run] agent is wrong a new control session is refused with the reason, and none is reopened')
+    from agent_runner import cmds, config as CF, control_held as H, control_reopen as CR, feed, runner as R, session_now as SN, web as W
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-agent-'))
+    git(d, 'init', '-q')
+    (d / 'my-claude').write_text('#!/bin/sh\n', encoding='utf-8')
+    (d / 'my-claude').chmod(0o755)
+    local = d / 'runner.local.toml'
+    local.write_text("[run]\nagent = 'my-claude'\nremote = false\n", encoding='utf-8')
+    CF._cfg.cache_clear()
+    R.init(d)
+    started, reopened = [], []
+
+    def ask(fn) -> tuple[int, str]:
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(err):
+            return fn(), err.getvalue()
+
+    with mock.patch.object(feed, 'hidden_control', lambda n, cmd: started.append(n) or (1, '')), \
+            mock.patch.object(K, 'hidden_control', lambda n, cmd: started.append(n) or (1, '')), \
+            mock.patch.object(cmds, 'init', lambda *a: None), mock.patch.object(cmds, 'control_open', lambda *a, **k: started.append(a)), \
+            mock.patch.object(W, 'session_live', lambda n: False), mock.patch.object(W, 'resumable', lambda n: 'sid'), \
+            mock.patch.object(CR, 'reopen_controls', lambda: reopened.append(1)):
+        local.write_text("[run]\nagent = 'nosuchagent'\nremote = false\n", encoding='utf-8')
+        for name, fn in (('--new', lambda: feed.control_new(ask='hi')), ('control N', lambda: cmds.cmd_control(['3']))):
+            code, said = ask(fn)
+            check(code == 1 and "[run] agent = 'nosuchagent' is not on this machine: install it" in said, f'{name} is refused, with why', said)
+        check('install it' in W.resume_chat('c3')['out'], 'so is Resume on an ended chat')
+        with mock.patch.object(SN, 'record', lambda c: {'status': 'idle', 'sessionId': 'sid', 'pid': 1}), \
+                mock.patch.object(K, 'transcript', lambda s: '/x'), mock.patch.object(SN.plat, 'terminate') as end:
+            got = SN.restart_chat('c3')
+        check('install it' in got['out'] and not got['ok'] and not end.called, 'Restart too, and the chat goes on', got)
+        eq(CR.reopen_control(3, 'sid'), '', 'nothing reopens one')
+        stayed = []
+        with mock.patch.object(H, 'stays', lambda rec, why='', stuck='': stayed.append(why)), \
+                mock.patch('agent_runner.watch.live_session', lambda sid: False), mock.patch.object(K, 'control_taken', lambda n: False):
+            rec = {'n': 3, 'sid': 'sid', 'reopened': 1.0, 'tries': 1}
+            H.step_ended(rec, time.time())
+        check('install it' in stayed[0] and rec['tries'] == 1, 'an ended one with held messages waits, and it is no try', stayed)
+        K.start_control()
+        K.reopen_when_right()
+        eq((started, reopened), ([], []), 'those a shutdown cut off wait too')
+        off, popped = K.threading.Event(), []
+        with mock.patch.object(K, 'control_server_live', lambda: 0), mock.patch.object(K, 'rc_record'), \
+                mock.patch.object(K, 'control_server_argv', lambda: popped.append('asked') or ['true', '--settings']), mock.patch('atexit.register'), \
+                mock.patch.object(K, 'backend'), mock.patch.object(off, 'wait', lambda s: off.set()):
+            K.keep_control_server(off)
+        eq(popped, [], 'the control server does not start')
+        local.write_text("[run]\nagent = 'my-claude'\nremote = false\n", encoding='utf-8')
+        K.reopen_when_right()
+        K.reopen_when_right()
+        eq(reopened, [1], 'fixed: they come back, once')
+        code, said = ask(lambda: feed.control_new(ask='hi', wait=-1))
+        eq((code, len(started)), (0, 1), 'and a new one starts')
+    CF._cfg.cache_clear()
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
@@ -1452,4 +1509,4 @@ if __name__ == '__main__':
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once,
                              test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing,
-                             test_settled_rule_in_guide, test_decide_options_f181d]))
+                             test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c]))

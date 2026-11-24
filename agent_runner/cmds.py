@@ -21,7 +21,7 @@ from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
 from agent_runner.brief import has_sheet, prompt_for
-from agent_runner.sched import ahead, open_tasks
+from agent_runner.sched import agent_held, ahead, open_tasks
 from agent_runner.slots import (backend, claude_json, entries, logged, marker_pid, MUX, PRESENCE_ENV, quiet_file,
     remote_off_why, remote_on, remote_slots_on, REMOTE_URL, silent, transcript, worktree)
 from agent_runner.attach import attach_session, session_socket
@@ -988,6 +988,9 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if a.ask_file:
         a.ask = read_ask_file(a.ask_file) or a.ask
     no_push.require(C, ROOT)
+    if bad := agent_held():  # B764c
+        print(f'no control session started: {bad}', file=sys.stderr)
+        return 1
     n = a.n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {shown_cmd()} control starts another', file=sys.stderr)

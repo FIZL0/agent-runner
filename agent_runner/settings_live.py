@@ -7,6 +7,7 @@ import threading
 import time
 
 from agent_runner import config, slots, state as S
+from agent_runner.sched import agent_held
 
 SETTINGS_SEEN: list = []  # `settings_print` as last read, taken or refused
 
@@ -14,7 +15,7 @@ SETTINGS_SEEN: list = []  # `settings_print` as last read, taken or refused
 def start() -> dict:
     """As the run starts, on the settings it has read: what later changes are told by. Its [run] table."""
     from agent_runner import ui_model
-    SETTINGS_SEEN[:] = [config.settings_print(S.ROOT)]
+    SETTINGS_SEEN[:], AGENT_REFUSED[0] = [config.settings_print(S.ROOT)], False
     ui_model.settings_start()  # what the Settings page's `waits` compares with
     return S.C.run
 
@@ -61,16 +62,17 @@ def read_settings(before=lambda: None, once: bool = False) -> dict:
     if not SETTINGS_SEEN or S.LANDING.locked():  # a merge is moving the checkout: its files may be half written
         return {}
     now = config.settings_print(S.ROOT)
-    if now == SETTINGS_SEEN[0]:
+    if now == SETTINGS_SEEN[0] and not (AGENT_REFUSED[0] and not agent_held()):
         return {}
     time.sleep(SETTINGS_STILL)  # a save by hand or a git checkout may be under way: the next tick looks again
     if config.settings_print(S.ROOT) != now or S.LANDING.locked():
         return {}
-    SETTINGS_SEEN[0] = now
+    SETTINGS_SEEN[0], AGENT_REFUSED[0] = now, False
     told = list(S.C.warnings)
     try:
         new, changed, waits = config.read_again(S.C)
     except ValueError as e:
+        AGENT_REFUSED[0] = bool(agent_held())
         S.log(f'settings: changed, but not taken, so the run keeps the ones it has: {e}')
         return {}
     if not changed and not waits and not config._WAITING and new.given == S.C.given:
@@ -92,6 +94,7 @@ def read_settings(before=lambda: None, once: bool = False) -> dict:
     return changed
 
 
+AGENT_REFUSED = [False]  # B764c: not taken while [run] agent is wrong: read again once its program is installed
 SETTINGS_STILL = 0.2  # s the changed files must hold still
 
 
