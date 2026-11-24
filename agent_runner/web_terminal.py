@@ -56,21 +56,35 @@ class Terminals:
     it, and the address is as secret as the page's. C26: it runs `attach NAME` for each browser, a client of the
     session's own socket (F88) like any other; the session has the smallest of its clients' sizes (`attach.Viewers`)."""
 
-    def __init__(self, token: str, port: int, bind: str):
+    def __init__(self, token: str, port: int, bind: str, root: Path | None = None, logins=None):
         self.token, self.port, self.bind = token, port, LOCAL
         self.procs: dict[str, tuple[sp.Popen, int, str]] = {}
         self.lock = threading.Lock()
         self.login = login_hold.LoginHold()  # F126b
+        self.root = root  # F406a: the project Runner Home serves logins for; None: the run's own
+        self.logins = logins or provider_login.Logins(lambda: S.C.providers if S.C else {})
 
     def cwd(self, name: str) -> str:
+        if provider_login.is_login(name) and self.root:
+            return str(self.root)
         return str(Path.home() if name == session_frame.LOGIN else S.ROOT)  # F126b: Home has no project
 
     def argv(self, name: str, sock: str, port: int) -> list[str]:
         from agent_runner.config import runner_cmd
-        runs = session_frame.login_argv() if name == session_frame.LOGIN else [*runner_cmd(), 'attach', name]  # F126b
+        runs = provider_login.argv(name, self.logins.providers()) if provider_login.is_login(name) else \
+            session_frame.login_argv() if name == session_frame.LOGIN else [*runner_cmd(), 'attach', name]  # F126b
         return [U.find_ttyd() or 'ttyd', '-W', '-p', str(port), '-i', LOCAL, '-b', f'/t/{self.token}/{name}',
                 *(['-w', self.cwd(name)] if plat.WINDOWS else []),  # ttyd's Windows build starts nothing without it
                 *session_frame.ttyd_options(session_frame.session_look()), *runs]
+
+    def hold(self, name: str) -> login_hold.LoginHold:
+        return self.login if name == session_frame.LOGIN else self.logins.get(name)[0].hold
+
+    def env(self, name: str) -> dict:
+        return self.logins.env(name) if provider_login.is_login(name) else dict(os.environ)
+
+    def login_live(self) -> bool:
+        return self.login.live() or self.logins.live()
 
     def ended(self, name: str, port: int, err: str) -> str:
         # F165: a port nobody opens is never named; ttyd's own error has it
@@ -78,7 +92,7 @@ class Terminals:
 
     def open(self, name: str) -> dict:
         """Where the page finds session `name`: {'ok', 'port' (the page's own), 'path'}, or why not."""
-        if name == session_frame.LOGIN:  # F126b
+        if name == session_frame.LOGIN or provider_login.is_login(name):  # F126b
             got = self.ttyd(name)
             return got if not got['ok'] else {'ok': True, 'port': self.port, 'path': f'/t/{self.token}/{name}/'}
         sock = socket_of(name)
@@ -93,7 +107,12 @@ class Terminals:
 
     def ttyd(self, name: str, sock: str = '') -> dict:
         """The port session `name`'s ttyd listens on, started when it is not up: {'ok', 'port'} or {'ok', 'out'}."""
-        sock = sock or (name if name == session_frame.LOGIN else socket_of(name))  # F126b: the login has no socket
+        if login := provider_login.is_login(name):  # F406a
+            if why := provider_login.parse(name, self.logins.providers())[2]:
+                return {'ok': False, 'mode': 'none', 'live': False, 'out': why}
+            if (old := self.logins.get(name)[1]) and (was := self.procs.pop(old, None)) and was[0].poll() is None:
+                was[0].terminate()
+        sock = sock or (name if login or name == session_frame.LOGIN else socket_of(name))  # F126b: the login has no socket
         with self.lock:
             p = self.procs.get(name)
             if p and p[0].poll() is None and (p[2] == sock or not sock):
@@ -109,7 +128,7 @@ class Terminals:
             kw = {'creationflags': plat.CREATE_NO_WINDOW} if plat.WINDOWS else {'start_new_session': True}
             try:
                 proc = sp.Popen(self.argv(name, sock, port), cwd=self.cwd(name), stdin=sp.DEVNULL, stdout=sp.DEVNULL,
-                                stderr=err, env={**os.environ, 'AGENT_RUNNER_WEB': '1'}, **kw)
+                                stderr=err, env={**self.env(name), 'AGENT_RUNNER_WEB': '1'}, **kw)
             except OSError as e:
                 err.close()
                 return {'ok': False, 'mode': 'none', 'live': True, 'out': f'ttyd for {name} did not start: {e}'}
@@ -133,6 +152,7 @@ class Terminals:
 
     def close(self) -> None:
         self.login.close()
+        self.logins.close()
         for proc, _, _ in list(self.procs.values()):
             if proc.poll() is None:
                 proc.terminate()

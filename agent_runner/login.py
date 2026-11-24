@@ -30,6 +30,8 @@ PI_IDS = {'copilot': 'github-copilot', 'codex': 'openai-codex', 'gemini': 'googl
 ENV_KEYS = {'gemini': 'GEMINI_API_KEY'}
 HOW = {'copilot': 'GitHub device code', 'codex': 'ChatGPT sign-in', 'gemini': 'Gemini API key'}
 HARNESS_JS = Path(__file__).with_name('harness.mjs')
+# F406a: the file a login in the run app's terminal leaves how it ended in (provider_login.Login)
+RESULT_ENV = 'AGENT_RUNNER_LOGIN_RESULT'
 # a block's why starts so: `park_unlogged` writes it, a login reopens it
 WHY_HEAD = 'BLOCKED: `{cmd} login {provider}`'
 
@@ -67,6 +69,11 @@ def named(c) -> list[str]:
     return out + [p for p in c.providers if p not in out]
 
 
+def needs_none(provider: str, providers: dict) -> bool:
+    custom = providers.get(provider)
+    return provider in LOCAL_NONE or bool(custom and not custom.get('key_env'))
+
+
 def login_of(provider: str, providers: dict, creds: dict | None = None,
              env: dict | None = None) -> tuple[bool, str]:
     """(has a login, where it is kept) for `provider`; never the secret itself."""
@@ -75,7 +82,7 @@ def login_of(provider: str, providers: dict, creds: dict | None = None,
     if provider == 'claude':
         return True, "Claude Code's own login (claude /login), not checked here"
     custom = providers.get(provider)
-    if provider in LOCAL_NONE or (custom and not custom.get('key_env')):
+    if needs_none(provider, providers):
         return True, 'needs none (a local model)'
     pid = provider if custom else PI_IDS.get(provider, provider)
     if isinstance(c := creds.get(pid), dict) and c:
@@ -260,7 +267,25 @@ def list_lines(c) -> list[str]:
     return out
 
 
+def told(path: str, ok: bool, said: str, reopened: list[str] = ()) -> None:
+    """F406a: how this login ended, for the page that shows its terminal; never the secret."""
+    if not path:
+        return
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        with open(fd, 'w', encoding='utf-8') as f:
+            json.dump({'ok': ok, 'said': said, 'reopened': list(reopened)}, f)
+    except OSError:
+        pass
+
+
+def reopen_here(provider: str, c) -> list[str]:
+    """`reopen_for` in the project `c`; nothing outside one (the plan's tool would make its files)."""
+    return reopen_for(provider) if c and Path(c.todo).exists() else []
+
+
 def main(argv: list[str]) -> int:
+    result = os.environ.pop(RESULT_ENV, '')
     ap = argparse.ArgumentParser(prog=f'{RUNNER} login', description=(
         'The provider logins the harness loop runs on. With no provider: each provider [models] names and '
         'whether it has a login (and where it is kept, never the secret). With one: add its login through '
@@ -268,9 +293,15 @@ def main(argv: list[str]) -> int:
     ap.add_argument('provider', nargs='?', help='copilot, codex, gemini, or one of [models.providers]')
     ap.add_argument('--enterprise', metavar='DOMAIN', default=None,
                     help='copilot: your GitHub Enterprise domain (company.ghe.com); "" for github.com. Asked when left out')
+    ap.add_argument('--reopen', action='store_true', help=argparse.SUPPRESS)  # F406a: logged in elsewhere, by Home
     a = ap.parse_args(argv)
     from agent_runner.config import cfg
-    c = cfg()
+    try:
+        c = cfg()
+    except SystemExit:
+        if not result:
+            raise
+        c = None  # F406a: Runner Home's own terminal has no project: the built-in providers
     if not a.provider:
         print('\n'.join(list_lines(c)))
         return 0
@@ -278,12 +309,19 @@ def main(argv: list[str]) -> int:
     if name == 'claude':
         print("claude runs as Claude Code, on Claude Code's own login: `claude /login`.")
         return 0
-    custom = c.providers.get(name)
+    providers = c.providers if c else {}
+    custom = providers.get(name)
     if name not in PROVIDERS and not custom:
-        print(f'{RUNNER} login: no provider {name}: use one of {", ".join([*PROVIDERS, *c.providers])}, '
+        told(result, False, f'No such provider: use one of {", ".join([*PROVIDERS, *providers])}')
+        print(f'{RUNNER} login: no provider {name}: use one of {", ".join([*PROVIDERS, *providers])}, '
               f'or define it in [models.providers.{name}]', file=sys.stderr)
         return 2
-    if name in LOCAL_NONE or (custom and not custom.get('key_env')):
+    if a.reopen:
+        if login_of(name, providers)[0] and (back := reopen_here(name, c)):
+            print(f'reopened {", ".join(back)}, blocked until {name} had a login')
+        return 0
+    if needs_none(name, providers):
+        told(result, True, f'{name} needs no login')
         print(f'{name} is a local provider: it needs no login.')
         return 0
     enterprise = a.enterprise
@@ -298,9 +336,12 @@ def main(argv: list[str]) -> int:
     print(f'{name}: {HOW.get(name, "API key, kept for " + (custom or {}).get("key_env", name))}')
     ok, where = harness_login(name, custom, enterprise)
     if not ok:
+        told(result, False, where)
         print(f'{RUNNER} login {name}: {where}', file=sys.stderr)
         return 1
     print(f'{name}: logged in; kept in {where}')
-    if back := reopen_for(name):
+    told(result, True, f'{name} is logged in')  # before the plan is touched, which may fail
+    if back := reopen_here(name, c):
+        told(result, True, f'{name} is logged in', back)
         print(f'reopened {", ".join(back)}, blocked until {name} had a login')
     return 0
