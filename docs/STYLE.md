@@ -198,7 +198,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   `leave()` closes a copy of it that goes with its button. `sheetMoves()` does the same in the sheet with its edges
   (`shotEdges()`). It works with a field in use too, since a press asked for it. Without a press (a refresh) the Lists
   rule holds. A chat row's buttons (three dots, touch) slide in and out (`rowExpand`, `rowActsOut`), and the session's
-  key row slides in while the frame follows (`keysToggle`). Instant under `calm()`.
+  key row slides in and out while the frame follows (`keysToggle`). Instant under `calm()`.
 - **Drawer and sheet.** They open and close on `--spring-soft`. A sheet that takes another's place moves its edges from
   there and its words fade in (`sheetOver()`); its scroll is at the top at once. Released by a finger, they go on from where they are
   with the finger's speed (`springRun()`, frames from `springFrames()`). A finger can catch one mid-way, and a flick

@@ -157,7 +157,7 @@ const glideKey=el=>el.dataset.k||'sec:'+el.textContent.replace(/\d+/g,'');
 function glideSpot(box){
   if(!S.live||!box.animate||calm()||!folding()&&box.contains(document.activeElement)&&document.activeElement.matches('[data-f]'))return null;
   const e=box.getBoundingClientRect(), m=new Map();
-  for(const el of box.querySelectorAll(GLIDES)){const k=glideKey(el), r=el.getBoundingClientRect();if(!m.has(k))m.set(k,{el,r,on:r.bottom>e.top&&r.top<e.bottom})}
+  for(const el of box.querySelectorAll(GLIDES)){const k=glideKey(el), r=el.getBoundingClientRect();if(!m.has(k))m.set(k,{el,r,h:el._edge?shotSeen(el).bottom-r.top:r.height,on:r.bottom>e.top&&r.top<e.bottom})}
   return m;
 }
 function glide(scroller,root,was){
@@ -172,11 +172,11 @@ function glide(scroller,root,was){
     const x=d[0]-up[0], y=d[1]-up[1], far=Math.abs(y)>e.height||Math.abs(x)>e.width;
     by.set(n.el,far?up:d);
     if(!far&&(Math.abs(x)>=1||Math.abs(y)>=1))glideTo(n.el,x,y,o);
-    if(o&&w&&n.el.matches('.card'))foldEdge(n.el,w.r.height,n.r.height);
+    if(o&&w&&n.el.matches('.card'))foldEdge(n.el,w.h,n.r.height);
   }
   const left=[...was].filter(([k,w])=>w.on&&!now.has(k)&&w.el.matches(LEAVES)&&!w.el.closest('.msgs')).map(x=>x[1]);
   const tops=left.filter(w=>!left.some(o=>o!==w&&o.el.contains(w.el)));
-  if(tops.length>8)return;
+  if(tops.length>8&&!o)return;
   for(const w of tops){
     const q=w.el.matches('.foldin')&&[w.el.previousElementSibling,w.el.parentElement.closest(GLIDES)].map(x=>x&&now.get(glideKey(x))).find(Boolean);
     leave(scroller,w,e,q&&by.get(q.el));  // what closes goes with its button
@@ -185,9 +185,11 @@ function glide(scroller,root,was){
 /* a card that a fold made taller or shorter: its lower edge moves there; a clip, with room kept for what it lost */
 function foldEdge(el,was,now){
   const d=now-was, round=getComputedStyle(el).borderRadius||'0px', at=y=>({clipPath:`inset(0px 0px ${y}px 0px round ${round})`});if(Math.abs(d)<1)return;
-  const a=moAnim(el,d>0?[at(d),at(0)]:[at(0),at(-d)],FOLD_MO);if(!a||d>0)return;
+  const a=moAnim(el,d>0?[at(d),at(0)]:[at(0),at(-d)],FOLD_MO);if(!a)return;
+  el._edge=true;  // a redraw half way goes on from the edge as seen
+  const end=()=>{el._edge=false;el.style.paddingBottom=el.style.marginBottom=''};
+  a.onfinish=a.oncancel=end;if(d>0)return;
   el.style.paddingBottom=parseFloat(getComputedStyle(el).paddingBottom)-d+'px';el.style.marginBottom=d+'px';
-  a.onfinish=a.oncancel=()=>{el.style.paddingBottom=el.style.marginBottom=''};
 }
 /* a copy of what left, without its data, ids and typed words: it is gone, only its picture goes on */
 function leave(box,w,e,by){

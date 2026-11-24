@@ -207,7 +207,7 @@ async function askLoad(id){
   const one=async(path,key)=>{let got;
     try{const j=await (await fetch(tq(path+encodeURIComponent(id)))).json();got=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read')}}
     catch(e){got={err:'Could not reach the run page'}}
-    S[key]={...(S[key]||{}),[id]:got};if(S.sheetArg===id&&S.askFold[key==='askWhy'?'why':'task'])MO.folded=Date.now();render(true)};
+    S[key]={...(S[key]||{}),[id]:got};if(S.sheet==='need'&&S.sheetArg===id&&S.askFold[key==='askWhy'?'why':'task'])MO.folded=Date.now();render(true)};
   await Promise.all([one('why/','askWhy'),one('task/','askText')]);
 }
 function needOpen(id){if(!needOf(id))return;shotEnd();S.askShot=-1;S.askFold={};S.giveSaid={};openSheet('need',id);askLoad(id)}

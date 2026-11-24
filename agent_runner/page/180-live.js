@@ -165,10 +165,16 @@ async function upload(file){
 
 /* F189b: the key row opens or closes over the message box: what stands above it goes to its new place, the session's frame with it */
 function keysToggle(){
-  const d=$('dock'), h=d.offsetHeight, was=feedTop();S.keys=!S.keys;render(true);
+  const d=$('dock'), h=d.offsetHeight, was=feedTop(), old=d.querySelector('.keys'), r=old&&old.getBoundingClientRect();S.keys=!S.keys;render(true);
   const by=d.offsetHeight-h, row=d.querySelector('.schips'), keys=d.querySelector('.keys');if(!by||calm())return;
   if(row)glideTo(row,0,by,FOLD_MO);
   if(S.keys&&keys)moAnim(keys,[{transform:`translateY(${by}px)`,opacity:0},{transform:'none',opacity:1}],FOLD_MO);
+  if(!S.keys&&old){  // a copy goes down behind the box and fades
+    const g=old.cloneNode(true), e=d.getBoundingClientRect();g.classList.add('gone0');g.setAttribute('aria-hidden','true');g.inert=true;
+    for(const x of g.querySelectorAll('*'))for(const k of Object.keys(x.dataset))delete x.dataset[k];
+    Object.assign(g.style,{left:r.left-e.left+'px',top:r.top-e.top+'px',width:r.width+'px'});d.prepend(g);
+    const a=moAnim(g,[{transform:'none',opacity:1},{transform:`translateY(${-by}px)`,opacity:0}],{...FOLD_MO,fill:'forwards'});a.onfinish=a.oncancel=()=>g.remove();
+  }
   if(was!=null){feedPlace();feedGrow(was-feedTop())}
 }
 let tapped={n:'',at:0};
