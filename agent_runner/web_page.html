@@ -1796,8 +1796,8 @@ function holdUp(){
   const up=s&&groupChats([s]).top.length?n:'';
   if(up!==S.up)tabStore.set(UP_KEY,S.up=up);
 }
-/* F128: when the person last opened each chat (its last activity then, per browser); the first visit takes all as read */
-const SEEN_KEY='ar-seen';
+/* F128: when the person last opened each chat (its last activity then, per browser; B205: and project); the first visit takes all as read */
+const SEEN_KEY='ar-seen'+(HKEY?':'+HKEY:'');
 S.seen=(()=>{try{const o=JSON.parse(store.get(SEEN_KEY)||'null');return o&&typeof o==='object'?o:null}catch(e){return null}})();
 function markSeen(){
   holdUp();  // B193

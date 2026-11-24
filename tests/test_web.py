@@ -4333,7 +4333,7 @@ def test_chats_f128(tmp: Path) -> None:
     page = W.page_html().decode()
     for part in ("count={home:needs,concepts:cn}", 'due=needs||cn;S.menuDot=!!due', "${S.menuDot?'<span class=\"bdot\"></span>':''}",
                  'title="needs your reply"', "quiet?' quiet':''", '<div class="qline">Quiet</div>', 'data-renform',
-                 "outbox('rename_chat',{chat:n,title}", "SEEN_KEY='ar-seen'", 'data-rowmenu=', '.crow.quiet .thread{color:'):
+                 "outbox('rename_chat',{chat:n,title}", "SEEN_KEY='ar-seen'+(HKEY?':'+HKEY:'')", 'data-rowmenu=', '.crow.quiet .thread{color:'):
         check(part in page, f'the page has {part}')
     ran, token = [], W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
@@ -4374,16 +4374,16 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace
 const now = Date.now() / 1000, old = now - 50000;
 const map = (m = {}) => ({m, get: k => m[k] || '', set: (k, v) => { m[k] = v }});
 /* one load of the page: its Chats code over the tab's and the browser's storage; look() is a draw's part of it */
-function load(tab, store, thread = null) {
-  return new Function('tabStore', 'store', 'now', 'thread', `
-const HKEY = 'a', document = {hidden: false, title: ''}, talkName = () => '';
+function load(tab, store, thread = null, hkey = 'a') {
+  return new Function('tabStore', 'store', 'now', 'thread', 'HKEY', `
+const document = {hidden: false, title: ''}, talkName = () => '';
 const S = {snap: {sessions: [], chat_quiet: 21600}, thread, view: 'home'};
 ` + logic + slice('const chatPins=', 'const chatNames=') + slice('/* B193: S.up', 'const replyDue=') + line('const groupChats=') + line('const shownChats=') + `
 const names = g => [g.top.map(x => x.name).join(' '), g.quiet.map(x => x.name).join(' ')];
-return {S, look(n) { if (n !== undefined) S.thread = n; markSeen(); return names(shownChats()) }};`)(tab, store, now, thread);
+return {S, look(n) { if (n !== undefined) S.thread = n; markSeen(); return names(shownChats()) }};`)(tab, store, now, thread, hkey);
 }
 const c = (name, o) => ({name, last: 'claude', at: old, needs_reply: false, ...o});
-const seen = o => map({'ar-seen': JSON.stringify(o)});
+const seen = o => map({'ar-seen:a': JSON.stringify(o)});
 const rows = () => [c('c1'), c('c2'), c('c3'), c('c4', {at: now - 60})];
 const out = {}, tab = map(), store = seen({c1: old, c2: old, c4: now - 60});
 let p = load(tab, store); p.S.snap.sessions = rows();
@@ -4397,6 +4397,12 @@ p = load(tab, store, 'c3'); p.look(); p.S.snap.sessions = rows(); out.unreadRelo
 out.closed = p.look(null);
 p = load(tab, store, 'c1'); p.S.snap.sessions = rows(); p.S.snap.chat_pins = ['c1']; out.pinned = p.look();
 const t2 = map(); p = load(t2, map(), 'c1'); p.S.snap.sessions = rows(); p.look(); out.first = p.look();   // a first visit
+const all = map(); out.by = [];   // B205: two projects and the run's own page, one localStorage
+for (const [k, at] of [['a', old], ['b', old + 5], ['', old + 9]]) {
+  p = load(map(), all, null, k); p.S.snap.sessions = [c('c1', {at})]; out.by.push(p.look()) }
+p = load(map(), all, null, 'b'); p.S.snap.sessions = [c('c1', {at: now})]; p.look('c1');   // b's c1 opened again
+p = load(map(), all, null, 'a'); p.S.snap.sessions = [c('c1')]; out.still = p.look();
+out.kept = Object.fromEntries(Object.entries(all.m).map(([k, v]) => [k, JSON.parse(v).c1 === {'ar-seen:a': old, 'ar-seen:b': now, 'ar-seen': old + 9}[k]]));
 console.log(JSON.stringify(out));
 """
 
@@ -4422,6 +4428,9 @@ def test_quiet_stays_b193(tmp: Path) -> None:
     eq(o['closed'], ['c4', 'c1 c2 c3'], 'it goes Quiet once closed')
     eq(o['pinned'], ['c1 c4', 'c2 c3'], 'an open quiet chat comes up when pinned')
     eq(o['first'], ['c4', 'c1 c2 c3'], 'a first visit takes all as read')
+    eq(o['by'], [['', 'c1']] * 3, "B205: each project's first visit takes its chats as read")
+    eq(o['still'], ['', 'c1'], "opening another project's c1 leaves this one read")
+    eq(o['kept'], {'ar-seen:a': True, 'ar-seen:b': True, 'ar-seen': True}, 'the record is kept by project')
 
 
 def test_needs_drop_chat_f110(tmp: Path) -> None:
