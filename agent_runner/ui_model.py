@@ -21,6 +21,8 @@ copy, and the actions they share.
     concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
               of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none)
     log       the run log's last lines
+    manage_releases  F193: `[run] releases`; False: `releases` and `release_acts` are empty, `release` and
+              `release_said` '', and an open V task is an ordinary row of `queue`
     release   the release lines, one per release ('' for none)
     releases  F185: the Releases group, one row each (`release_rows`): the open V tasks (also moved last in
               `queue`, each with `release`: its row), or a placeholder while `[run] auto_release` counts, then
@@ -126,9 +128,14 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
         elif tid in tool_waits:  # B184: memory; B196: its author's split
             out[-1]['tool_wait'] = tool_waits[tid]
-        if P.release(tid):  # F186: one that started cannot be dropped from its row
+        if P.release(tid) and releases_on():  # F186: one that started cannot be dropped from its row
             out[-1]['started'] = release_started(tid, st or {})
     return out
+
+
+def releases_on() -> bool:
+    from agent_runner import autorelease
+    return autorelease.releases_on()
 
 
 def release_started(tid: str, st: dict) -> bool:
@@ -248,7 +255,9 @@ def release_rows(ls: list[str], st: dict | None = None, landed: int | None = Non
     open and `[run] auto_release` on, a placeholder 'Next release · auto at 10 landed: 6/10 · when the run goes
     idle' (F131; `landed`: tasks landed since the last release, counted when None); last, the newest release
     that landed (`last_release`). `text` is a whole row, `note` what it does not wait on; `placeholder` True for a
-    row that is no open task."""
+    row that is no open task. [] with `[run] releases` off (F193)."""
+    if not releases_on():
+        return []
     st = st or {}
     rows = release_tasks(ls, st)
     if not rows and (ph := auto_release_row(ls, landed)):
@@ -826,7 +835,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     login = claude_login_line()  # F126a
     titles = P.titles(S.C.done, S.C.todo, width=200)
     releases = release_rows(ls, st, now=now)  # F185
-    release = release_line(ls, st, releases)
+    release, manage = release_line(ls, st, releases), releases_on()  # F193: off, `release` has the 'last:' lines alone
     try:
         progress = progress_line(now=dt.datetime.fromtimestamp(now))
     except Exception:  # noqa: BLE001 - a git hiccup costs the progress line, not the snapshot
@@ -857,9 +866,9 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release, tools_line(tools)) if x), login),
             'tools': tools, 'tool_names': project_tools(),
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
-            'queue': queue, 'releases': releases, 'release_acts': [c['key'] for c in RUN_CONTROLS
-                                                                   if c['where'] == 'release'],
-            'shelved': shelved, 'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
+            'queue': queue, 'manage_releases': manage, 'releases': releases,
+            'release_acts': [c['key'] for c in RUN_CONTROLS if c['where'] == 'release' and manage],
+            'shelved': shelved, 'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release if manage else '',
             'release_said': rel_ask['said'] if rel_ask else '',
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(rel_ask),
             'no_settings': no_settings(st=st if up else None),  # F178
@@ -1194,7 +1203,7 @@ RUN_CONTROLS = (
     {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
      'fits': lambda r: not r.get('started'),
-     'confirm_of': lambda r: f'Drop {r["id"]}? It leaves the plan, and nothing is released.' if P.release(r['id']) else '',
+     'confirm_of': lambda r: f'Drop {r["id"]}? It leaves the plan, and nothing is released.' if P.release(r['id']) and releases_on() else '',
      'confirm': 'It leaves the plan, and a slot running it is stopped. Drop it?'},
     # F184: a shelved task's, in the Parked group; never Unpark, which would not reopen it
     {'key': 'shelved_back', 'label': 'Bring back', 'argv': ('plan', 'unshelve', '{id}'), 'tui': 'U', 'where': 'shelved',
@@ -1392,6 +1401,8 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
             return answer(tid, (row.get('picks') or {}).get(said, said), button=True, note=note)  # F181b: a pick sheet's
     if c and c.get('fn'):
         return ROW_FNS[c['fn']](tid, wait)
+    if c and c['where'] == 'release' and not releases_on():  # F193: a page from before it was turned off
+        return {'ok': False, 'code': 1, 'out': 'Manage releases is off in Settings: no release was queued', 'argv': []}
     try:
         argv = control_argv(key, n, tid, why, pri)
     except ValueError as e:

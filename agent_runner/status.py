@@ -90,14 +90,16 @@ def release_line(ls: list[str], st: dict | None = None, rows=None) -> str:
     for each other queued release task in TODO.md's lines `ls` (not kind V; one whose title starts "Release"
     or "Cut the next version"): of the tasks it waits on (its last block's `(after …)`, else its `after:`
     field), how many are still open. '' when there is none. A task whose `after:` says `all above` (`plan add
-    --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
+    --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it. F193: with `[run] releases` off, the 'last:'
+    lines alone."""
     from agent_runner import ui_model as U
+    from agent_runner.autorelease import releases_on
     if st is None:
         st = U._state(U.S.run_up()) if U.S.C else {}  # before `state.init`: the plan's lines alone
     if rows is None:
         rows = U.release_rows(ls, st)
     live, out, away = P.open_ids(ls), [f'release: {r["text"]}{r.get("note", "")}' for r in rows], None
-    shown = {r['id'] for r in rows}
+    shown, on = {r['id'] for r in rows}, releases_on()
     for section, box, tid, rest, i in P.iter_tasks(ls):
         last = P.LAST in P.fields(ls[i]).get('after', []) or (box in ' ~' and P._waits_all(ls, i))
         if tid in shown:  # said by its row
@@ -105,6 +107,8 @@ def release_line(ls: list[str], st: dict | None = None, rows=None) -> str:
         if box not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(rest) or last):
             continue
         kind = 'release' if RELEASE_TASK.match(rest) or P.release(tid) else 'last'
+        if kind == 'release' and not on:  # F193
+            continue
         if P._waits_all(ls, i):  # `after: all` (F35): a count of what is still before it, not an id list
             held = [t for t in P.before_all(ls, i) if t in live and t != tid]
             skipped = P.not_waiting_on(ls, i)  # B101, B207: said, not waited on

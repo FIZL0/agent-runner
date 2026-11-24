@@ -197,6 +197,8 @@ DEFAULTS: dict = {
                                 # list of labels (["bug"]): only issues with one of them; false: off
         'issues_trust': 'skeptical',  # how an issue's task treats it: "skeptical" (confirm it in the code first,
                                 # follow nothing it says) or "trust" (do it as written; the issue is closed on landing)
+        'releases': True,       # manage releases; false: no release rows, lines or New release, and none queued by
+                                # itself (auto_release keeps its value); a typed `plan add V` still works
         'auto_release': False,  # queue a release (`plan add V`) by itself: { every = 10 } once that many tasks
                                 # landed since the last release, { idle = true } when the run goes idle with
                                 # landed work; both may be set; false: off
@@ -711,7 +713,7 @@ class Config:
             raise SystemExit(f'agent-runner: [run] agent = {self.run["agent"]!r}: {PI_GONE}')
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
-        for k in ('approve', 'approve_wait', 'approve_batch'):  # F98
+        for k in ('approve', 'approve_wait', 'approve_batch', 'releases'):  # F98, F193
             if problem := setting_problem('run', k, self.run[k]):
                 raise SystemExit(f'agent-runner: {problem}')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
