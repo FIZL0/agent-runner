@@ -751,13 +751,13 @@ words in a note on the task (after ` — `, not in its title), its next merge la
     --last` writes, filing the task at the end of Next) is no list: the run resolves it on every pick to each
     task above it in its own section that is not done, ones added later included, so a release waits for the
     whole section without a list going stale. Tasks blocked on a person don't hold it until they reopen;
-    nor does a task whose unfinished `after:` chain reaches one blocked on a person, shelved, or in Parked or Stretch, through a `(split into …)` task's unfinished subtasks too (B207, B209);
+    nor does a task whose unfinished `after:` chain reaches one blocked on a person, shelved, or in Parked or Stretch, through a split task's unfinished subtasks too (B207, B209);
     Follow-ups never do. `plan reopen`, `plan waiting` and `status` say what it still waits on.
     `after: all` (`plan add/edit/block --after all`, any kind) waits for **everything before it**: each open
     or blocked task above it in TODO.md, in any section, resolved afresh on every pick, so a task queued above
     it later holds it too. Parked (`--pri later`) and Stretch tasks and shelved ones don't count, or it would
     never run; nor does a task whose unfinished `after:` chain reaches one blocked on a person, shelved, or in
-    Parked or Stretch, through a `(split into …)` task's unfinished subtasks too (B207, B209). On a block it reads `BLOCKED: (after all) why`, and `plan reopen` frees it once nothing is left
+    Parked or Stretch, through a split task's unfinished subtasks too (B207, B209). On a block it reads `BLOCKED: (after all) why`, and `plan reopen` frees it once nothing is left
     before it. `plan ID`, `plan reopen` and `plan waiting` show it as `T5 waits for everything before
     it (12 open)`, not an id list; `status` does too for a task that is not a release (a queued release shows
     its row instead, see Auto release).

@@ -101,7 +101,8 @@ That marker is no list to keep up: the run resolves it on every pick to each tas
 that is not done (open or blocked), tasks added above it later included, so it starts once the section has
 drained. Tasks blocked on a person (CONFIRM, DECIDE, BLOCKED, a concept's OK) or shelved do not hold it until they
 reopen, nor do tasks whose `after:` (or `BLOCKED: (after X)`) leads to one of those or to a shelved, Parked or Stretch
-one, through any number of tasks, or `(split into …)` tasks with such a subtask; other sections (Follow-ups) never do. `status`, `plan ID`, `reopen` and `waiting` say what it
+one, through any number of tasks, or split tasks with such a subtask;
+other sections (Follow-ups) never do. `status`, `plan ID`, `reopen` and `waiting` say what it
 still waits on and what it does not.
 
 **A task that waits for everything before it** takes `--after all` (`add`, `edit`, `block`; any kind): `after:
@@ -110,7 +111,8 @@ open or blocked task above it in TODO.md, in any section, tasks queued above it 
 starts do not hold it, or it would never run: Parked (`--pri later`) and Stretch sections, shelved tasks, and
 tasks blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK) until they reopen, and tasks
 that cannot be done before one of these is answered or brought back: their `after:` or `BLOCKED: (after X)`, or an
-open subtask of a `(split into …)` one, leads to it, through any number of tasks. A task that can still run holds it. `status`, `plan ID`, `reopen` and
+open subtask of a split one, leads to it, through any number of tasks. A task that can still run holds it. `status`, `plan ID`,
+`reopen` and
 `waiting` say 'T5 waits for everything before it (12 open); not waiting on: R6 (needs you), R9 (after R6)'.
 
 **A release is kind V** (F38): `add V` files it at the end of Next, no `--after` or `--files` needed, and with
@@ -507,7 +509,7 @@ def _on_person(ls: list[str], i: int) -> bool:
 def above(ls: list[str], i: int) -> list[str]:
     """What `after: all above` on the task at ls[i] stands for, read afresh each time: the top-level tasks above
     it in its own section (back to the nearest heading) that are not done, open or blocked, in order. A task
-    blocked on a person (`asks`) does not hold it, nor one that waits on such a task (`_stuck_on`, B207): a release
+    blocked on a person (`asks`) does not hold it, nor one stuck on such a task (`_stuck_on`, B207, B209): a release
     does not wait on a Windows check nobody has done; once the person answers and it reopens, it holds it again.
     Other sections (Follow-ups) never count."""
     return _above(ls, i)[0]
@@ -558,11 +560,22 @@ def _named_after(ls: list[str], i: int) -> list[str]:
 
 
 def _held_by(ls: list[str], i: int, where: dict[str, int]) -> list[str]:
-    """What the task at ls[i] cannot be done before: `_named_after`, and a `(split into …)` parent's unfinished
-    subtasks (B209). Only a parent that says it was split, as `_close_parents`: any other may be the work its own
-    session is on."""
-    kids = subtasks(ITEM.match(ls[i]).group(3).rstrip('.'), ls[i], where) if SPLIT.search(ls[i]) else ()
+    """What the task at ls[i] cannot be done before: `_named_after`, and a split parent's unfinished subtasks
+    (B209), as `sched.tasks` holds it for them. Not one without `(split into …)` that has an attempt of its own:
+    its session is on it, or it goes before them (`sched.parents_first`)."""
+    tid = ITEM.match(ls[i]).group(3).rstrip('.')
+    kids = subtasks(tid, ls[i], where)
+    if kids and not SPLIT.search(ls[i]) and _attempted(tid):
+        kids = set()
     return _named_after(ls, i) + sorted(kids, key=where.get)
+
+
+def _attempted(tid: str) -> bool:
+    """Has `tid` a branch, here or pushed by another machine: task/<ID> (running or to merge) or wip/<ID>."""
+    from agent_runner import state  # here: state imports this module
+    root = state.C.root if state.C else '.'
+    return bool(git('for-each-ref', '--format=%(refname)', *(f'{at}/{b}' for at in ('refs/heads', 'refs/remotes/*')
+                    for b in (f'task/{tid}', f'wip/{tid}', f'wip/{tid}-*')), cwd=root).stdout.strip())
 
 
 def _stuck_on(ls: list[str], i: int, where: dict[str, int], never: set[int]) -> list[str]:
@@ -600,8 +613,8 @@ def before_all(ls: list[str], i: int) -> list[str]:
     """What `after: all` on the task at ls[i] stands for, read afresh each time (F35): every top-level task above
     it in TODO.md, in any section, that is not done (open or blocked), in order. Tasks a run never starts do not
     hold it, or it would never run: those in Parked (`--pri later`) and Stretch sections, shelved ones, and those
-    blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK: B101), and those that wait on
-    a shelved, person-blocked, Parked or Stretch one, or whose subtask does (`_stuck_on`, B207, B209). `not_waiting_on` lists them; once the person answers and
+    blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK: B101), and those stuck on one
+    of these (`_stuck_on`, B207, B209). `not_waiting_on` lists them; once the person answers and
     such a task reopens, it holds it again."""
     return _before_all(ls, i)[0]
 

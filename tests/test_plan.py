@@ -1205,9 +1205,32 @@ def test_after_all_skips_never_started():
            ([], '; not waiting on: X2 (needs you), P1 (after X2)'), f'{after}: a subtask by its list')
         eq(said(whole, part, after=after), (['P1', 'P1a'], ''), f'{after}: a split that can run holds')
         eq(said(whole, part + ' | after: P1', after=after), (['P1', 'P1a'], ''), f'{after}: a cycle ends')
-        eq(said('- [ ] **P1** the importer', ask, after=after), (['P1'], '; not waiting on: P1b (needs you)'),
-           f'{after}: not `(split into …)`: left to its own session')
+        had = plan._attempted
+        try:
+            for tried in (False, True):
+                plan._attempted = lambda tid: tried
+                eq(said('- [ ] **P1** the importer', ask, after=after), (
+                    (['P1'], '; not waiting on: P1b (needs you)') if tried else
+                    ([], '; not waiting on: P1b (needs you), P1 (after P1b)')),
+                   f'{after}: a parent without `(split into …)`, ' + ('tried: it can land' if tried else 'not tried'))
+        finally:
+            plan._attempted = had
         eq(said(whole, ask.replace('[~]', '[x]'), after=after), (['P1'], ''), f'{after}: the subtask is done')
+    from types import SimpleNamespace
+    from agent_runner import state
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'x')
+        had, state.C = state.C, SimpleNamespace(root=root)
+        try:
+            check(not plan._attempted('P1'), 'no branch: not tried')
+            for ref in ('refs/heads/task/P1', 'refs/heads/wip/P1-2', 'refs/remotes/origin/wip/P1'):
+                git(root, 'update-ref', ref, 'HEAD')
+                check(plan._attempted('P1') and not plan._attempted('P'), f'{ref}: tried')
+                git(root, 'update-ref', '-d', ref)
+        finally:
+            state.C = had
 
 
 def test_release_kind():
