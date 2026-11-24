@@ -1103,7 +1103,7 @@ const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf
 const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
 const log = {acts: [], fetched: [], focus: 0, draws: 0}, kept = {}, ta = {value: ''}, tab = {};
-const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [{id: 'F1', title: 'Board page'}], concepts: [{id: 'K5', concept: 'K5', title: 'Lazy layout'}]},
+const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [{id: 'F1', title: 'Board page'}], concepts: [{id: 'K5', concept: 'K5', title: 'Lazy layout', lead: "This chat is about concept K5 'Lazy layout': its page https://claude.ai/artifact/k5.", acts: ['concept_chat', 'concept_drop']}]},
     view: 'home', thread: null, ctx: null, atts: {}, ob: [], sel: [], feeds: {}, sent: {}},
   HI: {i: null}, DK: {}, I: {}, HOME_PAGE: false, HB: '', location: {hash: ''}, PLACE_KEY: 'p', placeWas: '', CHATS_OF: '', FD: {}, TOUCH: () => false,
   store: {get: k => kept[k] || '', set: (k, v) => { if (v) kept[k] = v; else delete kept[k] }},
@@ -1116,12 +1116,12 @@ const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [{id: 'F1', t
   render: () => { log.draws++; env.keepPlace(); ta.value = kept['ar-draft:' + env.boxKey()] || '' }};
 const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
 env.env = env;
-const names = ['about', 'send', 'open', 'goView', 'keepPlace', 'takePlace', 'boxKey', 'shownSession', 'threadTitle', 'feedHTML', 'box', 'keptCheck', 'feedLoad', 'homeHTML', 'conceptsHTML', 'upload', 'attsMove'];
+const names = ['about', 'send', 'open', 'goView', 'keepPlace', 'takePlace', 'boxKey', 'shownSession', 'threadTitle', 'feedHTML', 'box', 'keptCheck', 'feedLoad', 'homeHTML', 'conceptsHTML', 'conceptCard', 'upload', 'attsMove'];
 new Function('known', 'env', 'with (known) {' + logic + line('const DRAFT_KEY=') + line('const boxKey=') + line('const shownSession=') + line('const sessionOf=')
   + line('const isAgent=') + line('const threadTitle=') + grab('function box(') + line('const feedNow=') + grab('async function feedLoad(') + grab('function feedHTML(')
   + grab('async function loadFeed(') + line('function keepPlace(') + grab('function takePlace(') + grab('function keptCheck(')
   + line('function open(') + line('function goView(') + grab('async function send(') + 'function viewGo(go){go()}' + line('function newChat(') + line("  S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open(")
-  + grab('function about(') + grab('async function upload(') + grab('function homeHTML(') + grab('function conceptsHTML(') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
+  + grab('function about(') + grab('async function upload(') + grab('function homeHTML(') + grab('function conceptsHTML(') + grab('function conceptCard(') + line('const actBtns=') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
 const type = t => { ta.value = t; env.store.set('ar-draft:' + env.boxKey(), t) };
 const S = env.S, out = {press: []};
 (async () => {
@@ -1150,6 +1150,15 @@ const S = env.S, out = {press: []};
   S.ctx = null; S.thread = null; env.takePlace(); env.keptCheck(); out.kreload = [S.view, S.thread, S.ctx];
   const n = log.acts.length; type('a dark mode'); await env.send();
   out.ksent = [log.acts.slice(n), S.ctx, S.view, env.threadTitle(S.thread), Object.keys(kept).filter(k => k.includes('newconcept'))];
+  // B219a: a concept card's one Chat: nothing until the first message, which holds its link and the words
+  env.controlOf = k => ({key: k, label: k === 'concept_chat' ? 'New chat' : 'Drop'}); env.ctlBusy = () => false;
+  out.kcard = env.conceptCard(S.snap.concepts[0], 0); env.controlOf = () => null;
+  let k = log.acts.length; const fetched = log.fetched.length;
+  env.goView('concepts'); env.about('concept:0'); type('make it wider'); env.goView('home');
+  out.kleft = [log.acts.length - k, log.fetched.length - fetched, S.thread, S.ctx];
+  env.goView('concepts'); env.about('concept:0'); S.ctx = null; S.thread = null; env.takePlace(); env.keptCheck();
+  out.kopen = [log.acts.length - k, ta.value]; delete S.ctx.lead; await env.send();  // a view kept from an older page has no lead
+  out.kfirst = [log.acts.slice(k), S.ctx, S.view, env.threadTitle(S.thread)];
   // B182: attachments per box
   const seen = () => ['a.png', 'b.txt'].filter(x => env.box('x').includes(x)), go = n => { env.open(n); return seen() };
   let answer; env.fetch = p => p.startsWith('upload') ? new Promise(r => { answer = j => r({json: async () => j}) }) : Promise.reject(0);
@@ -1234,6 +1243,13 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     eq(o['kreload'], ['home', '+newconcept', {'kind': 'newconcept', 'label': 'New concept'}], 'a reload keeps the view')
     eq(o['ksent'], [[['new_control', {'ask': 'Concept: a dark mode', 'wait': False}]], None, 'home', 'New concept', []],
        'the first message starts a control session with Concept: …')
+    check(o['kcard'].count('<button') == 2 and 'data-about="concept:0">Chat<' in o['kcard'] and 'data-ctl="concept_drop"' in o['kcard']
+          and 'New chat' not in o['kcard'] and 'concept_chat' not in o['kcard'], 'B219a: a concept card has one Chat', o['kcard'])
+    eq(o['kleft'], [0, 0, None, None], 'B219a: Chat left unsent posts nothing and leaves no session')
+    eq(o['kopen'], [0, 'make it wider'], 'pressed again, and after a reload: nothing sent, the draft is there')
+    eq(o['kfirst'], [[['new_control', {'ask': "This chat is about concept K5 'Lazy layout': its page https://claude.ai/artifact/k5."
+                                               '\n\nmake it wider', 'wait': False}]], None, 'concepts', 'Lazy layout'],
+       'the first message starts one session, with what it is about and the words')
     eq(o['atts'], {'at': ['a.png'], 'away': [], 'landed': [], 'sent2': ['only words'], 'home': [], 'talk': [], 'fresh': [],
                    'back': [['b.txt'], ['a.png']], 'sent1': ['look\n\nAttached: /up/a.png'], 'after': [[], ['b.txt']],
                    'moved': [[], ['b.txt']], 'talkBack': ['c1', [], ['a.png']], 'removed': [[], ['b.txt']]},

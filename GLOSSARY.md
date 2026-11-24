@@ -363,7 +363,7 @@ _Avoid_: run buttons, admin controls
 **Concept chat**:
 A new control session about one concept, told which concept and its page, to change that page and build nothing until a plain go
 _Said_: chat about it
-_On screen_: N chat about it; New chat
+_On screen_: N chat about it; Chat
 _In code_: concept_chat, concept_chat_text
 _Avoid_: concept session
 

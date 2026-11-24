@@ -103,6 +103,8 @@ def test_snapshot(tmp: Path) -> None:
     check(needs['D3']['ask'], 'an ask in plain words', needs['D3'])
     eq(snap['concepts'], [{'id': 'F4', 'concept': 'K5', 'title': 'lazy layout',
                            'url': 'https://claude.ai/artifact/k5', 'copy': '',
+                           'lead': U.concept_chat_text({'concept': 'K5', 'title': 'lazy layout',
+                                                        'url': 'https://claude.ai/artifact/k5'}),
                            'acts': ['concept_chat', 'concept_drop']}], 'concept with its page link')
     eq(snap['log'], [f'=== 2026-11-21T10:{i:02d}:00 line {i}' for i in range(25, 30)], 'run log tail')
     rel, = snap['releases']
@@ -801,8 +803,7 @@ def test_concept_copy(tmp: Path) -> None:
 
 def test_concept_chat(tmp: Path) -> None:
     """F86: `concept_chat` starts a new control session (control --new --ask) whose first message names the
-    concept, its page link and local copy, and says to follow guide concepts; the run page's Concepts card has
-    its button."""
+    concept, its page link and local copy, and says to follow guide concepts."""
     from types import SimpleNamespace
     from agent_runner import done as D
     repo = fake_run(tmp)

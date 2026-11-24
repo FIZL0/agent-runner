@@ -127,6 +127,7 @@ async function send(){
     histAdd(key,text);HI.i=null;store.set(DRAFT_KEY(key),'');if(ta)ta.value='';delete S.atts[key];
     if(!await talkSend(compose(null,text,paths))){if(!store.get(DRAFT_KEY(key)))store.set(DRAFT_KEY(key),text);if(atts.length)S.atts[key]=[...atts,...(S.atts[key]||[])];render(true)}return}
   const ctx=S.ctx, to=S.thread||'';
+  if(ctx&&ctx.kind==='concept'){const c=(S.snap.concepts||[]).find(x=>(x.concept||x.id)===ctx.id);if(c&&c.lead)ctx.lead=c.lead}  // B219a: its page as it is now, not as a kept view has it
   const msg=compose(ctx,text,paths);
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
@@ -146,7 +147,7 @@ function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
   if(a==='new')S.ctx={kind:'new',label:'Add a task'};
   else if(a==='newconcept')S.ctx={kind:'newconcept',label:'New concept'};
-  else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept}}
+  else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept,lead:c.lead}}
   else if(k==='setting'){const x=settingOf(v);if(!x)return;S.ctx={kind:'setting',id:`[${x.table}] ${x.key}`,title:x.name,label:x.name}}
   else if(k==='plan'){const q=S.snap.queue.concat(S.snap.shelved||[]).find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
   else return;
@@ -253,7 +254,7 @@ document.addEventListener('click',async e=>{
     if(c.needs==='n'&&!/^\d+$/.test(n))return toast('Type how many slots first',true);
     S.sure=null;S.f.slotsn='';
     if(c.chat){const n=c.where==='need'&&(S.snap.needs||[]).find(x=>x.id===tid);  // B139, C35: it asks a new chat
-      newChat(rq.name,rq.args,`${c.label} ${tid}`,n?needChatAsk(n):c.where==='concept'?'':`do ${tid} here`);return}
+      newChat(rq.name,rq.args,`${c.label} ${tid}`,n?needChatAsk(n):`do ${tid} here`);return}
     if(S.sheet)closeSheet();
     outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:need?`${tid} · answered “${text}”`:c.label+(tid?` ${tid}`:''),...(c.where==='need'?{need:tid}:c.where==='concept'?{concept:tid}:c.where==='shelved'?{shelved:tid}:{})});return}  // F124: through the outbox
   if(x=q('[data-pitchopen]')){const n=S.snap.needs[+x.dataset.pitchopen];if(!n)return;  // F98
