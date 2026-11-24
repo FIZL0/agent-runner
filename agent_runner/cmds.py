@@ -992,22 +992,16 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if bad := agent_held():  # B764c
         print(f'no control session started: {bad}', file=sys.stderr)
         return 1
-    if a.resume:  # F406f
-        if not (n := control_harness.resume_number(a.resume)):
-            return 1
-        a.n, a.reopen = n, True
+    if a.resume and not control_harness.resume_into(a):  # F406f
+        return 1
     n = a.n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {shown_cmd()} control starts another', file=sys.stderr)
         return 1
     control_held.look(n)  # B170: before an ended session N's pid file is written over
     sid, resume, argv = control_open(n, ask=a.ask, images=a.file, reopen=a.reopen)
-    if control_harness.harness_control():  # F406f: no folder question; it needs Node
-        if not shutil.which('node'):
-            print(f'control {n}: Node.js is not on PATH; a control session on {control_harness.model()} needs it', file=sys.stderr)
-            return 1
-    else:
-        backend().trust(ROOT)
+    if not control_harness.ready(n):
+        return 1
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
     env = control_env()

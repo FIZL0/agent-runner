@@ -41,7 +41,6 @@ def control_cmd() -> str:
 
 def control_brief(harness: bool = False) -> str:
     """What every control session is told, through its SessionStart hook (`control --brief` prints it).
-    F406f: `harness`, as the system text of one on the harness loop: fitted to it (`guide.harness_fit`), any length.
     B98: kept under BRIEF_MAX chars: Claude Code shows a model only a 2KB preview of SessionStart output over
     ~10KB, so the core rules are inline and the long ones behind `guide <topic>` (guide.CONTROL_TOPICS); the
     glossary's and the wording's paragraphs are pointers too (glossary.brief_fit, voice.brief_fit)."""
@@ -52,12 +51,11 @@ def control_brief(harness: bool = False) -> str:
     cf = P.needs_cfg()  # B27: the heading's words
     answer = CONTROL_ANSWER.format(cmd=cmd)
     from agent_runner import glossary  # F22: the glossary paragraph (and the seed ask), or none when it is off
-    from agent_runner.guide import grill_fit  # F20: the grilling line fitted to [run] grill
+    from agent_runner.guide import grill_fit, harness_fit  # F20: the grilling line fitted to [run] grill
     from agent_runner import voice  # F21: the person's wording, read fresh by every session's brief
     core = grill_fit(glossary.brief_fit(CONTROL.format(repo=ROOT.name, cmd=cmd, log=logf,
                                                        needs=cf['heading'], answer=answer), cmd, C), cmd, C)
-    if harness:
-        from agent_runner.guide import harness_fit
+    if harness:  # F406f: the system text of one on the harness loop, any length
         return voice.brief_fit(harness_fit(core, cmd), cmd, C)
     out = voice.brief_fit(core, cmd, C)
     if len(out) >= BRIEF_MAX:  # B104: a long [run] command (Windows: python.exe and the run path) first
@@ -322,9 +320,7 @@ def control_set_title(n: int, summary: str) -> int:
         print(f'control {n} keeps the name the person gave it')
         return 0
     control_give(n, name)
-    if control_harness.harness_chat(n):
-        print(f'control {n} is named "{name}" on the run page and in the TUI')
-    elif control_type(n, f'/rename {name}'):
+    if control_harness.rename(n, name, control_type):
         print(f'control {n} is renamed "{name}" when this turn ends')
     else:
         print(f'control {n} is named "{name}" on the run page and in the TUI (it runs in a terminal of its own, '

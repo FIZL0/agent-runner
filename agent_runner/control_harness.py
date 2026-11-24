@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess as sp
 import sys
 from pathlib import Path
@@ -26,9 +27,34 @@ def harness_control() -> bool:
     return slots.on_harness(K.control_model())
 
 
-def model() -> str:
-    from agent_runner import control as K
-    return K.control_model()
+def ready(n: int) -> bool:
+    """Control session `n` can start: Claude Code is told to trust the main checkout, the harness loop has Node."""
+    from agent_runner import control as K, slots
+    if not harness_control():
+        slots.backend().trust(state.ROOT)
+    elif not shutil.which('node'):
+        print(f'control {n}: Node.js is not on PATH; a control session on {K.control_model()} needs it', file=sys.stderr)
+        return False
+    return True
+
+
+def remote_off_line(why) -> str:
+    """The run log's line on why Remote Control is off ('' when `[run] remote = false` asked for that)."""
+    v = state.C.run['remote']
+    if v and harness_control():
+        return "remote control off: [models] control is another provider's"
+    return f'remote control off: {why()}; [run] remote = true forces it' if v == 'auto' else ''
+
+
+def rename(n: int, name: str, typed) -> bool:
+    """`typed(n, '/rename …')`, or for a chat on the harness loop, which takes no /rename, False: it has its name in state."""
+    return not harness_chat(n) and typed(n, f'/rename {name}')
+
+
+def resume_into(a) -> bool:
+    """`control --resume SID`: its arguments `a`, made `control N --reopen`; False when it cannot go on."""
+    a.n, a.reopen = resume_number(a.resume), True
+    return bool(a.n)
 
 
 def harness_session(sid: str) -> bool:
