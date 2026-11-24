@@ -39,6 +39,7 @@ import fnmatch
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 from functools import partial
@@ -222,6 +223,9 @@ def record(a, c) -> int:
     if g('add', '-A').returncode:
         print('git add failed', file=sys.stderr)
         return untick()
+    if (own := own_output(cwd)) and g('reset', '-q', '--', *(f':(top,literal){f}' for f in own)).returncode:
+        print(f'git reset failed on {", ".join(own)}', file=sys.stderr)
+        return untick()
     if not g('diff', '--cached', '--quiet').returncode:
         print('nothing to commit (the tick was already committed?)')
         if not a.no_test and not getattr(a, 'docs', False):
@@ -241,6 +245,31 @@ def record(a, c) -> int:
     print(g('log', '-1', '--oneline').stdout.strip())
     push_task(c)
     return finished(c, a)
+
+
+def own_output(cwd: Path) -> list[str]:
+    """B224: the staged files this command's own stdout or stderr goes to (`run done … > done.log 2>&1`): never part
+    of the work. Paths from the top of the worktree."""
+    ids = set()
+    for fd in (1, 2):
+        try:
+            st = os.fstat(fd)
+        except OSError:  # closed
+            continue
+        if stat.S_ISREG(st.st_mode) and st.st_ino:  # no inode: a file system that cannot say which file it is
+            ids.add((st.st_dev, st.st_ino))
+    if not ids:
+        return []
+    top = Path(git('rev-parse', '--show-toplevel', cwd=cwd).stdout.strip())
+    out = []
+    for f in git('diff', '--cached', '--name-only', '--no-renames', '-z', cwd=cwd).stdout.split('\0'):
+        try:
+            st = os.stat(top / f, follow_symlinks=False) if f else None
+        except (OSError, ValueError):  # deleted, or a name this system cannot hold
+            continue
+        if st and (st.st_dev, st.st_ino) in ids:
+            out.append(f)
+    return out
 
 
 def mark_tested(tid: str, c) -> None:

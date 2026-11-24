@@ -535,6 +535,31 @@ def test_done(repo: Path, tmp: Path):
         'block records only the id still open: T1 was ticked first')
 
 
+def test_done_own_output_b224(tmp: Path):
+    print("B224: done leaves the file its own output goes to out of the commit")
+    (tmp / 'b224').mkdir()
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_HOME': str(tmp / 'b224' / 'home')}):
+        repo = make_repo(tmp / 'b224')
+        R.init(repo)
+        d = task_branch(repo, 1, 'T5')
+        (d / 'd.py').write_text('# work\n', encoding='utf-8')
+        (d / 'other.log').write_text('', encoding='utf-8')
+        log = d / 'done [1].log'
+        with log.open('w') as out:
+            rc = subprocess.run([sys.executable, str(ROOT / 'run'), 'done', 'T5', 'T5: work'], cwd=d, stdout=out,
+                                stderr=subprocess.STDOUT).returncode
+        eq(rc, 0, 'done passes: ' + log.read_text())
+        files = git(d, 'show', '--name-only', '--format=', 'HEAD').splitlines()
+        check('d.py' in files and 'other.log' in files, 'the work is in the commit, an unrelated empty file too', files)
+        eq([f for f in files if 'done [1]' in f], [], 'the log is not')
+        has(log.read_text(), r'ticked T5', 'and it is left with the output')
+        from agent_runner import done as D
+        with log.open() as f, mock.patch.object(D.os, 'fstat', return_value=mock.Mock(st_mode=0o100644, st_ino=0, st_dev=0)):
+            eq(D.own_output(d), [], 'no inode (a file system that has none): nothing is left out')
+        with mock.patch.object(D.os, 'fstat', side_effect=OSError):
+            eq(D.own_output(d), [], 'nor with the output closed')
+
+
 def test_gate_limit_b186(tmp: Path):
     print("B186: at done's gate limit, changed content gets one more gate and a CONFIRM block waits for it")
     (tmp / 'b186').mkdir()
@@ -4287,6 +4312,22 @@ def test_research_findings_only(repo: Path):
                   'R7: findings')
         eq(R.merge('R7', 'main'), None, 'a findings-only research diff merges')
         check((repo / 'docs/research/parser.md').exists(), 'and its findings land')
+        stray = {'docs/research/lexer.md': 'fine\n', 'docs/research/empty.md': '', 'done out.log': ''}
+        commit_on(repo, 'T224', {'kept.log': ''}, 'T224: not research')
+        eq(R.merge('T224', 'main'), None, 'a task that is not research merges')
+        check((repo / 'kept.log').exists(), 'its empty file too (B224)')
+        commit_on(repo, 'R10', stray, 'R10: findings and a stray log')
+        eq(R.research_code('R10', 'main'), [], 'a new empty file beside findings is no code (B224)')
+        eq(R.merge('R10', 'main'), None, 'and the findings merge without asking')
+        check((repo / 'docs/research/lexer.md').exists() and (repo / 'docs/research/empty.md').exists(),
+              'findings land, an empty one too')
+        check(not (repo / 'done out.log').exists(), 'the stray file does not')
+        eq(git(repo, 'branch', '--list', 'task/R10'), '', 'and its branch is gone')
+        commit_on(repo, 'R11', {'__init__.py': '', 'r11.py': '# fixed\n'}, 'R11: real code')
+        eq(sorted(R.research_code('R11', 'main')), ['__init__.py', 'r11.py'], 'beside real code an empty file is code')
+        has(R.research_held('R11', 'main') or '', r'__init__\.py, r11\.py', 'and it still asks')
+        commit_on(repo, 'R12', {'a.py': ''}, 'R12: emptied a file')
+        eq(R.research_code('R12', 'main'), ['a.py'], 'a file it emptied is code')
         commit_on(repo, 'R8', {'docs/research/printer.md': 'b.py drops\n', 'r8.py': '# fixed\n'}, 'R8: and a fix')
         why = R.merge('R8', 'main') or ''
         has(why, r'research changes no product.*r8\.py', 'a research diff that touches code does not merge')
@@ -4358,7 +4399,7 @@ def test_research_findings_only(repo: Path):
             R.C.raw['plan'].pop('kinds', None)
         else:
             R.C.raw['plan']['kinds'] = saved_kinds
-        for b in ('task/R6', 'task/R7', 'task/R8', 'task/R9'):
+        for b in ('task/R6', 'task/R7', 'task/R8', 'task/R9', 'task/R10', 'task/R11', 'task/R12', 'task/T224'):
             if git(repo, 'branch', '--list', b):
                 git(repo, 'branch', '-D', b)
         if (repo / rel).read_text(encoding='utf-8') != before:
@@ -8244,7 +8285,7 @@ def main() -> int:
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
-                       lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp), lambda: test_done_test_f178(tmp), lambda: test_gate_limit_b186(tmp),
+                       lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp), lambda: test_done_test_f178(tmp), lambda: test_gate_limit_b186(tmp), lambda: test_done_own_output_b224(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
                        lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), lambda: test_stream_spend_keeps_terminal_turns_b151(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo), lambda: test_start_on_merge_f198(tmp)])

@@ -26,6 +26,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
 3. **Finish.** The session ends with `agent-runner done <ID> "msg"`. That runs the test gate, ticks the task
    (`[x]`, and the line moves to DONE.md), commits, and pushes `task/<ID>`. If the gate fails, nothing is
    ticked or committed. A session that's stuck runs `done --blocked "why"` instead.
+   A file its own output goes to (`done … > done.log 2>&1`) is left out of the commit.
    Failed gates are counted per task (a pass or a block resets the count), each with a hash of
    the worktree's content (uncommitted and untracked files too, not ignored ones). After three, `done` runs one more gate only if
    that changed since the last failure; unchanged, it refuses without running, and a changed one that fails
@@ -673,6 +674,10 @@ brief has the agent put a line `asked for: "<their exact words>"` (three or more
 message, and the merge checks that those words stand in the task's request (its line or long form, unless an
 agent filed it as a follow-up), a person's change or answer, or a `plan tell` (kept in `<notes>/told/<ID>.txt`).
 An unmatched quote is ignored and the person is asked.
+At the merge, a file the branch adds that is empty (0 bytes) and is not findings does not count as code: a commit on
+top takes it off the branch before the merge, so the findings land without it and the person is not asked. When the
+diff has real code too, the empty files count with it and the question is asked as before; an existing file emptied is
+still code. Tasks that are not research are unchanged.
 
 ## The task list
 

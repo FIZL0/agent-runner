@@ -780,6 +780,8 @@ def merge_rank(tid: str, crit: bool) -> int:
 def merge_tries(tid: str, branch: str) -> str | None:
     """`merge`'s three tries."""
     yields, tries = True, -1
+    if tid not in LANDED and tid not in WAITING:  # else a merge of it as it is may be gated already
+        drop_strays(tid, branch)
     while (tries := tries + 1) < 3:
         if tid not in LANDED and (why := fix_ahead(tid, branch)):
             return why
@@ -875,12 +877,47 @@ def forget(tid: str) -> None:
 
 def research_code(tid: str, branch: str) -> list[str]:
     """F36: the files task/<tid> changes beyond its findings (`brief.findings_globs`, the list its brief names)
-    when `tid` is a research task; [] for any other task or a findings-only diff."""
+    when `tid` is a research task; [] for any other task or a findings-only diff. Files that are new and empty
+    (`new_empty`) count only beside real code (B224)."""
     if not research_task(tid):
         return []
     globs = findings_globs()
     files = git('diff', '--name-only', '--no-renames', f'{branch}...task/{tid}').stdout.split()
-    return [f for f in files if not docs_only([f], globs)]
+    code = [f for f in files if not docs_only([f], globs)]
+    return code if set(code) - set(new_empty(tid, branch)) else []
+
+
+def new_empty(tid: str, branch: str) -> list[str]:
+    """B224: the files task/<tid> adds with nothing in them."""
+    empty = git('hash-object', '-t', 'blob', '--stdin', input='').stdout.strip()
+    parts = git('diff', '--raw', '-z', '--no-abbrev', '--no-renames', f'{branch}...task/{tid}').stdout.split('\0')
+    return [f for meta, f in zip(parts[::2], parts[1::2]) if (m := meta.split())[4] == 'A' and m[3] == empty]
+
+
+def drop_strays(tid: str, branch: str) -> None:
+    """B224: the new empty files beyond its findings that a research task committed (a log the shell had just made,
+    say) come off task/<tid> in a commit on top, unless real code is beside them (`research_code`). Before it waits
+    for the lock, so every merge built of it, a rider's too, is without them."""
+    if not research_task(tid) or research_code(tid, branch):
+        return
+    globs = findings_globs()
+    if not (strays := [f for f in new_empty(tid, branch) if not docs_only([f], globs)]):
+        return
+    old = git('rev-parse', f'refs/heads/task/{tid}').stdout.strip()
+    idx = C.notes(f'strays.{tid}.index')
+    env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
+    try:
+        tree = '' if git('read-tree', old, env=env).returncode or \
+            git('update-index', '--force-remove', '--', *strays, env=env).returncode else \
+            git('write-tree', env=env).stdout.strip()
+    finally:
+        idx.unlink(missing_ok=True)
+    said = f'dropped {", ".join(strays)}: new and empty, no part of the findings'
+    new = tree and git('commit-tree', tree, '-p', old, '-m', f'{tid}: {said}').stdout.strip()
+    if not new or git('update-ref', f'refs/heads/task/{tid}', new, old).returncode:
+        log(f'{tid}: could not drop {", ".join(strays)} (new and empty); it lands with the findings')
+        return
+    log(f'{tid}: {said}')
 
 
 def research_says(tid: str, branch: str, title: str) -> str:
