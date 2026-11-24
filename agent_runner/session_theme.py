@@ -38,7 +38,9 @@ ROLES = {
 # F182: the code in a diff, which Claude Code (2.1.331) draws in colours of its own that no theme names, by the theme's
 # base. Role: (slots with a dark base, with a light one, the page's dark colour, its light colour). Only the slots of the
 # base in use are filled: with a dark base nothing else of Claude Code's is drawn in 231, with a light one 231 is only
-# other programs' white, which stays white. A slot `ROLES` has (125, 97, 242, 246) is not here.
+# other programs' white, which stays white. With a dark base, other programs' white on
+# a strong colour (231 on 160, 25 or 64) still shows light on a light page: minimumContrastRatio turns the dark text back
+# (seen in Chromium). A slot `ROLES` has (125, 97, 242, 246) keeps its role's colour, and that ratio lifts it on a row.
 CODE = {
     'plain': ((231,), (236,), '#f3f1ea', '#141413'),
     'keyword': ((197, 218), (), '#f7c6d6', '#8a2f5b'),
