@@ -13,6 +13,8 @@
 <script>
 /* F134: true on Runner Home's own page (home.home_page): the All projects view, no run behind it */
 const HOME_PAGE=/*HOME_PAGE*/false;
+/* F149: the fingerprint of this page, from the process that served it (web.PAGE_PRINT) */
+const PAGE_PRINT='/*PAGE_PRINT*/';
 </script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap">
 <style>
@@ -253,6 +255,9 @@ a{color:var(--accent)}
 /* B160: in a chat they have a row of their own, off the text (noticeRoom keeps the text where it is) */
 .main.term .notices{height:auto;background:var(--bg)} .main.term .notices .obbar{padding-bottom:4px}
 .offline{font-size:var(--fs-s);color:var(--warn);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-full);padding:2px 12px;box-shadow:0 2px 10px var(--lift)}
+/* F149: a new version of the page, or newer code a person must restart the run for */
+.news{display:grid;gap:var(--s2);justify-items:center;margin:var(--s1) var(--s3) 0;max-width:min(420px,calc(100% - 24px));background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l);padding:var(--s2) var(--s3);font-size:var(--fs-m);box-shadow:0 2px 10px var(--lift)}
+.news .btns{justify-content:center}
 /* F137: the outbox's pill, its popup and the stand-ins */
 .obbar{display:flex;justify-content:center;padding:4px 12px 0;max-width:100%}
 .obpill{display:inline-flex;align-items:center;gap:8px;border:1px dashed var(--line2);background:var(--surface);color:var(--muted);border-radius:var(--r-full);padding:4px 12px;font:inherit;font-size:var(--fs-s);cursor:pointer;max-width:100%}
@@ -420,7 +425,8 @@ a{color:var(--accent)}
     <section class="main">
       <div class="top" id="top"></div>
       <div class="notices"><div class="offline" id="offline" role="status" hidden>Lost the run page's connection: trying again…</div>
-      <div class="obbar" id="obbar" hidden></div></div>
+      <div class="obbar" id="obbar" hidden></div>
+      <div class="news" id="news" role="status" hidden></div></div>
       <div class="body" id="body"></div>
       <div class="feed" id="feed" hidden><div id="feedframe"></div><div class="feedtouch" id="feedtouch"></div><div class="feedsay" id="feedsay" role="status" hidden></div></div>
       <div class="dockwrap"><div class="dock" id="dock"></div><button type="button" class="strip" id="strip" data-strip aria-label="Show the message box" hidden></button></div>
@@ -1134,7 +1140,20 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+/* F149: the popup for an answer of the run (or Home): {kind: 'refresh', key}, the page it serves is not this one;
+   {kind: 'restart', key}, newer code waits for a person to restart the run; else null. later: the keys put off. The
+   page never reloads by itself. */
+function pageNews(s,mine,later){
+  const l=[];
+  if(mine&&s.page&&s.page!==mine)l.push({kind:'refresh',key:'page:'+s.page});
+  if(s.restart_needed)l.push({kind:'restart',key:'restart:'+s.restart_needed});
+  return l.find(x=>!later.includes(x.key))||null;
+}
+/* why Refresh waits: o says what a refresh would lose. '' : nothing */
+function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploading?'Wait for the attachments to finish uploading.'
+  :o.form?'Save or close the device form first. It is not kept over a refresh.'
+  :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
+if(typeof module!=='undefined')module.exports={pageNews,refreshHold,boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1518,7 +1537,8 @@ function projectsHTML(){
 async function loadProjects(){
   if(!HB||H.busy)return;
   try{const d=await (await fetch(tq(HB+'projects'))).json();
-    if(d.ok){H.projects=d.projects||[];H.machine=d.machine||'';H.err='';
+    if(d.ok){if(HOME_PAGE){S.snap.page=d.page;S.snap.restart_needed=d.restart_needed}  // F149
+      H.projects=d.projects||[];H.machine=d.machine||'';H.err='';
       if(HOME_PAGE)document.title=(H.machine?H.machine+' · ':'')+'Runner Home'}else H.err=d.out||''}
   catch(e){}
   render();
@@ -2363,6 +2383,7 @@ function render(force){
   const put=keepScroll(body), had=keysIn(body), hadTop=keysIn($('top')), keep=keepFields(body);
   if(moved&&lastPlace)S.at[lastPlace]=body.scrollTop;
   obDraw();  // F137
+  newsDraw();  // F149
   side();sheetDraw();
   if(HOME_PAGE){  // F134: Home's own page has only All projects
     S.view='projects';S.thread=null;
@@ -2935,14 +2956,46 @@ async function micCopy(){
 }
 
 /* --- live data --------------------------------------------------------------------------------------------- */
-/* F90: the run's version from the first snapshot that has one; a later, different one (the run restarted on an
-   upgrade) reloads the page for its new HTML and JS. None (an older run): nothing. */
-let RUN_VERSION='';
-function followVersion(v){if(!v)return false;if(!RUN_VERSION){RUN_VERSION=v;return false}
-  if(v!==RUN_VERSION){location.reload();return true}return false}
+let RUN_VERSION='';  // F90
+/* F149: the popup over the view when the run serves another page than this one, or needs a restart (pageNews). Refresh
+   keeps what is written: boxes and the outbox are kept as they are typed, the rest by keepTyped(). */
+const LATER_KEY='ar-later', TYPED_KEY='ar-typed:'+(HKEY||document.title);
+S.later=tabStore.get(LATER_KEY).split(' ').filter(Boolean);
+const newsNow=()=>pageNews(S.snap,PAGE_PRINT.startsWith('/*')?'':PAGE_PRINT,S.later);
+function newsHTML(x){
+  const later=`<button class="btn" data-newslater="${esc(x.key)}">Later</button>`;
+  if(x.kind==='refresh')return `<div>A new version of this page is ready</div><div class="btns"><button class="btn acc" data-newsrefresh>Refresh</button>${later}</div>`;
+  if(HOME_PAGE)return `<div>A new version is ready. Restart Runner Home to use it.</div><div class="btns">${later}</div>`;
+  const rc=controlOf('restart');
+  return `<div>A new version is ready. ${rc?'Restart the run to use it.':'Stop the run and start it again to use it.'}</div>${rc&&S.sure==='restart'?ctlSure(rc):`<div class="btns">${rc?`<button class="btn acc${ctlBusy('restart')?' busy':''}" data-ctl="restart">Restart the run</button>`:''}${later}</div>`}`;
+}
+function newsDraw(){const x=newsNow(), el=$('news');el.hidden=!x;setHTML(el,x?newsHTML(x):'')}
+function newsLater(key){S.later=[...S.later.filter(k=>k!==key),key].slice(-20);tabStore.set(LATER_KEY,S.later.join(' '));S.sure=null;render(true)}
+const devTyped=()=>Object.keys(S.f).some(k=>k.startsWith('dev:'));
+/* the words no store has yet, for the page that comes next; false when this browser keeps nothing */
+function keepTyped(){
+  const f=Object.fromEntries(Object.entries(S.f).filter(([k])=>!k.startsWith('dev:')));
+  const atts=S.atts.filter(a=>a.path).map(a=>({name:a.name,path:a.path}));
+  const some=Object.keys(f).length||atts.length||S.kOpen||S.kText||H.add||S.ren, text=some?JSON.stringify({f,atts,kOpen:!!S.kOpen,kText:S.kText||'',add:H.add,ren:S.ren,setOpen:S.setOpen}):'';
+  tabStore.set(TYPED_KEY,text);
+  const ta=document.querySelector('[data-in]');
+  return tabStore.get(TYPED_KEY)===text&&(!ta||!ta.value||HI.i!==null||store.get(DRAFT_KEY(boxKey()))===ta.value)
+    &&(!S.ob.length||store.get(OB_KEY)===JSON.stringify(S.ob));
+}
+function takeTyped(){
+  let k=null;try{k=JSON.parse(tabStore.get(TYPED_KEY)||'null')}catch(e){}
+  tabStore.set(TYPED_KEY,'');
+  if(!k||typeof k!=='object')return;
+  S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?k.atts:[];S.kOpen=!!k.kOpen;S.kText=k.kText||'';H.add=k.add||'';S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};
+}
+function newsRefresh(){
+  const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:S.atts.some(a=>!a.path&&!a.err),form:devTyped(),unkept:!keepTyped()});
+  if(said)return toast(said,true);
+  location.reload();
+}
 function takeSnap(s){
   if(!s||s.error){if(s&&s.error)toast(s.error,true);return}
-  if(followVersion(s.version))return;
+  if(s.version)RUN_VERSION=s.version;
   const booted=!!s.boot&&s.boot!==S.snap.boot;
   S.snap={...S.snap,...s};
   if(!HOME_PAGE)document.title=pageTitle(S.snap.project);  // B153
@@ -3061,6 +3114,8 @@ document.addEventListener('click',async e=>{
   const q=s=>e.target.closest(s);let x;
   if(S.undo&&!q('[data-undo]'))finalDelete();  // F118: any other click makes the delete final
   if(x=q('[data-feedkey]')){feedKey(x.dataset.feedkey);return}  // F114
+  if(q('[data-newsrefresh]')){newsRefresh();return}  // F149
+  if(x=q('[data-newslater]')){newsLater(x.dataset.newslater);return}
   if(q('[data-feedkeys]')){S.keys=!S.keys;render(true);return}
   if(q('[data-feedtext]')){feedText();return}
   if(x=q('[data-feedcopy]')){const pre=$('feedtext'), pick=()=>{const r=document.createRange();r.selectNodeContents(pre);const g=getSelection();g.removeAllRanges();g.addRange(r)};
@@ -3340,6 +3395,7 @@ document.addEventListener('touchcancel',()=>swipeEnd(false),{passive:true});
 addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pending delete final
 
 takePlace();  // B177: before the first draw
+takeTyped();  // F149
 render(true);
 if(HOME_PAGE){  // F134: Home's own page: no run behind it, only Home's projects and devices
   loadProjects();loadDevices();setInterval(loadProjects,5000);setInterval(loadDevices,30000);

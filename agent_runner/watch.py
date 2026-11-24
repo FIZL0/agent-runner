@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import cost, plat, shared_tools
+from agent_runner import cost, gitops, plat, shared_tools
 from agent_runner.config import finished_mark, runner_cmd
 from agent_runner.tools import ended
 from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING,
@@ -548,7 +548,8 @@ def update_notice() -> None:
         how = 'nothing, [run] auto_upgrade does it once no merge runs' if AUTO_UPGRADE[0] and \
             not plat.WINDOWS and not breaking(__version__, latest) else 'type u + Enter in the run view' if READING[0] else \
             f'run `{" ".join(upgrade_argv()[:3]) if upgrade_argv()[0] != "git" else "git pull"}`'
-        then = ('the run restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, latest)
+        own = AUTO_UPGRADE[0] or READING[0]  # F149: off, only an upgrade asked of the run restarts it
+        then = ('the run restarts on it by itself' if own and not plat.WINDOWS and not breaking(__version__, latest)
                 else 'then read CHANGELOG.md and restart the run')
         banner(f'agent-runner {latest} is out', f'this run is {__version__}. To upgrade: {how}; {then}.', '42')
 
@@ -604,6 +605,7 @@ def upgrade() -> bool:
         return False
     from agent_runner import __version__
     new = installed_version()
+    UPGRADED[0] = bool(new and new != __version__ and not breaking(__version__, new))
     log(f'upgraded to {new}; the run restarts on it' if new and new != __version__ else
         f'already the latest ({__version__})')
     return True
@@ -647,6 +649,8 @@ def auto_upgrade(merging: bool) -> threading.Thread | None:
 
 
 _upgrade_seen: str | None = None
+UPGRADED = [False]  # F149: this run installed the version on disk itself (`u`, auto_upgrade): it restarts on it
+RESTART_NEEDED = ['']  # F149: which newer code only a person restarts the run on ('': none); the page says so
 RESTART = [False]  # F97: the `restart` key was sent: the next tick with no merge going restarts the run
 
 
@@ -673,11 +677,99 @@ def restart_if_upgraded() -> None:
                 f'by itself; read CHANGELOG.md, then restart the run')
         _upgrade_seen = new
         return
+    if not AUTO_UPGRADE[0] and not UPGRADED[0]:  # F149: nothing restarts by itself
+        if _upgrade_seen != new:
+            log(f'agent-runner {new} is installed (this run is {__version__}): restart the run to use it '
+                f'([run] auto_upgrade is off)')
+        _upgrade_seen = new
+        return
     if _upgrade_seen != new:
         _upgrade_seen = new  # once more next tick, then restart
         return
     log(f'agent-runner {new} is installed (this run is {__version__}); restarting on it, keeping {state_line()}')
     restart_run()
+
+
+CODE_EVERY = 30  # s between looks at the checkout's main
+CODE_QUIET = 600  # s main's agent_runner code holds still before the run restarts on it: one restart per batch
+CODE_LONGEST = 3600  # s after the first change, the run restarts even while main still moves
+CODE = {'on': None, 'seen': None, 'first': 0.0, 'last': 0.0, 'looked': 0.0,
+        'held': False, 'person': ''}  # trees started on and last seen; when; a restart held by a merge; the tree a person restarts for
+
+
+def code_tree(root: str | Path) -> str | None:
+    """F149: the committed agent_runner code (its git tree) of the source checkout `root`; None when it is not one."""
+    if not (Path(root) / '.git').exists():
+        return None
+    try:
+        return gitops.git('rev-parse', '-q', '--verify', 'HEAD:agent_runner', cwd=root, timeout=20).stdout.strip() or None
+    except (OSError, sp.TimeoutExpired):
+        return None
+
+
+def code_on_main(root: str | Path) -> bool:
+    """F149: `root` is on its main branch, with no edits to agent_runner's code under way."""
+    try:
+        on = gitops.git('symbolic-ref', '-q', '--short', 'HEAD', cwd=root, timeout=20).stdout.strip()
+        if on not in ('main', 'master'):
+            return False
+        st = gitops.git('--no-optional-locks', 'status', '--porcelain', '-uno', '--',
+                        'agent_runner', cwd=root, timeout=20)
+        return not st.returncode and not st.stdout.strip()
+    except (OSError, sp.TimeoutExpired):
+        return False
+
+
+def code_start(auto: bool) -> None:
+    """F149: as the run starts: [run] auto_upgrade, and the code it runs."""
+    AUTO_UPGRADE[0] = auto
+    CODE.update(on=code_tree(Path(__file__).resolve().parents[1]), seen=None, first=0.0, last=0.0, looked=0.0, held=False, person='')
+    RESTART_NEEDED[0] = ''
+
+
+def code_settled(first: float, last: float, now: float) -> bool:
+    """F149: changed code (first and last change seen) is one batch now: main held still, or moved long enough."""
+    return bool(first) and (now - last >= CODE_QUIET or now - first >= CODE_LONGEST)
+
+
+def code_restart(settled: bool, auto: bool, merging: bool, current: str, installed: str | None,
+                 windows: bool = False) -> str:
+    """F149: what changed code on main asks for now: 'restart', 'person' (only a person restarts the run on it:
+    auto_upgrade is off, a breaking version, Windows), or '' (nothing, or not yet)."""
+    if not settled:
+        return ''
+    if not auto or windows or not installed or breaking(current, installed):
+        return 'person'
+    return '' if merging else 'restart'
+
+
+def watch_code(merging: bool, now: float | None = None) -> None:
+    """F149: the run loop's tick: restart a run from a source checkout once its code changed on main, in batches
+    and between merges; else note for the run page that a person must (`RESTART_NEEDED`)."""
+    from agent_runner import __version__
+    now = time.time() if now is None else now
+    wait = CODE['held']  # settled, but a merge was under way: look again on every tick
+    if now - CODE['looked'] < CODE_EVERY and (merging or not wait):
+        return
+    CODE['looked'] = now
+    root, installed = Path(__file__).resolve().parents[1], installed_version()
+    tree = code_tree(root) if CODE['on'] else None
+    if tree and code_on_main(root):  # elsewhere, or edits under way: what was last seen still holds
+        if tree == CODE['on']:
+            CODE.update(seen=None, first=0.0)
+        elif tree != CODE['seen']:
+            CODE.update(seen=tree, first=CODE['first'] or now, last=now)
+        settled = code_settled(CODE['first'], CODE['last'], now)
+        what = code_restart(settled, AUTO_UPGRADE[0], merging, __version__, installed, plat.WINDOWS)
+        CODE['held'] = settled and not what
+        if what == 'restart':
+            log(f"agent-runner's code changed on main; restarting on it, keeping {state_line()}")
+            return restart_run()
+        if what == 'person' or not CODE['first']:
+            CODE['person'] = tree if what else ''
+    newer = installed if installed and installed != __version__ and (
+        plat.WINDOWS or breaking(__version__, installed) or not AUTO_UPGRADE[0]) else ''
+    RESTART_NEEDED[0] = '' if UPGRADED[0] and not plat.WINDOWS else '-'.join(x for x in (newer, CODE['person']) if x)
 
 
 def ask_restart() -> None:

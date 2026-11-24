@@ -280,7 +280,7 @@ has no exec, a detached helper waits for the old Home to exit and starts the sch
 bring it back. It does so only when the scheduled task runs Home (`pythonw.exe`): a `home serve` typed in a terminal,
 or a Home run with `python.exe` because there is no `pythonw.exe`, does not restart itself. Windows Home writes its
 output to `home.log` in Home's config folder. A Home started before this needs one restart by hand; unlike a run, it
-also restarts across a breaking version.
+also restarts across a breaking version. Home has no `auto_upgrade` setting. Its page (`/projects`) shows the same popup, from `page` and `restart_needed`: where Home cannot restart itself, "A new version is ready. Restart Runner Home to use it." with Later.
 
 ### The run app
 
@@ -332,6 +332,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   page opens on Home.
 - **State.** Every page's top bar has the run's state: Running, Paused, Stopping, Caps forced or Not up. A tap on it
   opens Status.
+- **New version.** The page never reloads by itself. When the run serves another page than the open one (the snapshot's `page` is the page's fingerprint, `PAGE_PRINT`), a popup (`newsDraw()`) says "A new version of this page is ready" with Refresh and Later; Later holds for that page in this tab. Refresh keeps drafts, the outbox, setting fields, attachments and the concept box, and waits, saying why, while the mic listens, an attachment uploads, a device form is open or the browser cannot keep what is written. When a person must restart the run on newer code (`restart_needed`: `[run] auto_upgrade` off, a breaking version, Windows), the popup says "A new version is ready. Restart the run to use it." with Restart the run (asks first) and Later; on Windows there is no control, so stop the run and start it again. A run from a source checkout (a clone with `.git` beside `agent_runner/`) with `[run] auto_upgrade` on restarts itself between merges once main's `agent_runner` code has held still: it looks every 30 s and waits 10 min (at most 1 h after the first change), so one restart covers a batch. It keeps its slots and adopts its sessions. It does not while the checkout is on another branch than main or master, or has uncommitted edits to `agent_runner`; never for a breaking version, never on Windows, and not while stopping.
 - **Status.** One scroll in `agent-runner ui`'s order: Needs you, the run with its slots and controls, usage, what
   landed lately, the release, and the run log with the Since asks. The Run card has the everyday controls (slots,
   pause, stop); More… opens the rest in a sheet, each with its key in `agent-runner ui`: Stop (stop now, suspend, shut
@@ -1095,7 +1096,7 @@ The other keys, listed by `?` + Enter (and printed when the run starts), ruled o
 | key | what it does |
 |---|---|
 | `p` | pause: no new tasks, and the run stays up; `p` again goes on |
-| `u` | upgrade agent-runner now (`uv tool upgrade`, `pipx upgrade`, or a pull in a clone); the run restarts on the new version as with any upgrade. `[run] auto_upgrade` (on by default) presses it for you: when the update check (at the start, then every 6 h) sees a newer release, the run upgrades once no merge is under way, logs it, and restarts on the new version keeping what the keys set; never across a major version, nor on Windows. It works the same in a run started in a terminal (`agent-runner run`) and in the background (bare `agent-runner`) |
+| `u` | upgrade agent-runner now (`uv tool upgrade`, `pipx upgrade`, or a pull in a clone); the run restarts on the new version as with any upgrade. `[run] auto_upgrade` (on by default) presses it for you: when the update check (at the start, then every 6 h) sees a newer release, the run upgrades once no merge is under way, logs it, and restarts on the new version keeping what the keys set; never across a major version, nor on Windows, and with it off nothing restarts by itself. It works the same in a run started in a terminal (`agent-runner run`) and in the background (bare `agent-runner`) |
 | `f` | force: start tasks past the session and weekly usage caps, as `--force`; `f` again: the caps hold |
 | `+` / `-` | one slot more / fewer; a slot taken away finishes its running task first |
 | `slots N` | N slots (`+N`, `-N`: that many more or fewer) |
@@ -1500,7 +1501,7 @@ silent = false            # phone pushes from those sessions after each one's st
 control = true            # the run opens no control session of its own; true: it reopens the ones a shutdown cut off and, with remote, keeps the control server up; false: neither (`agent-runner control` still works)
 control_idle = "3h"       # close idle control sessions (none is protected) once quiet this long, Claude spoke last, its last message does not end on a `DECIDE:` line (that one waits for `control_ask`), and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle
 control_ask = "2h"        # a last message ending on a line `DECIDE: <question>` (the brief asks the session for one only when work waits on the answer): after this long it is filed under Needs you as a DECIDE item (an F task with the question + the session link; answering it reopens the task for a run to carry on), then closed; false: such a session stays open and nothing is filed
-auto_upgrade = true       # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it (false: only `u` or `agent-runner upgrade`)
+auto_upgrade = true       # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it, and a source checkout restarts on changed agent_runner code (false: nothing restarts by itself, not even on an installed version; `u`, `agent-runner upgrade` and Restart the run still do)
 install_skill = true      # keep the `agent-runner guide` skill in ~/.claude/skills and the user-level SessionStart hook (the control brief in a runner repo's main checkout) in Claude Code's user settings, from every agent-runner command, for sessions a person starts; false: neither is written
 rules_pointer = true      # a run adds one line to the rules file (`rules`, else AGENTS.md or CLAUDE.md, never created) pointing every session at the agent-runner skill, committed on its own; never into a file with uncommitted edits or mid-merge; false: never
 wizards = true            # an agent blocking with BLOCKED: (a login, a certificate, a secret) also writes a bash wizard to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it; false: no wizards

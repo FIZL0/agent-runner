@@ -38,6 +38,7 @@ AGENT_RUNNER_HOME_CONFIG) holds the projects added by hand, scanned ones hidden 
 from __future__ import annotations
 
 import concurrent.futures as cf
+import hashlib
 import hmac
 import http.client
 import json
@@ -430,7 +431,9 @@ class HomeHandler(BaseHTTPRequestHandler):
                                                          self.body() if method == 'POST' else b'')
             return self.send(code, out, ctype)
         if method == 'GET' and path == '/projects':
-            return self.send(200, {'ok': True, 'machine': socket.gethostname(), 'projects': self.server.rows()})
+            from agent_runner.web import PAGE_PRINT
+            return self.send(200, {'ok': True, 'machine': socket.gethostname(), 'projects': self.server.rows(),
+                                   'page': PAGE_PRINT, 'restart_needed': self.server.restart_needed()})  # F149
         if method == 'POST' and path in ('/act', '/add', '/remove'):
             try:
                 req = json.loads(self.body() or b'{}')
@@ -625,6 +628,7 @@ class HomeServer(ThreadingHTTPServer):
                  link=run_link, roots=projects, vitals=None, stamp=None):
         self.stamp = stamp  # B165: package_stamp, or None: never restarts by itself
         self.started_on = self.seen = stamp() if stamp else None
+        self.package = package_stamp()  # F149: the files it started on, also when it never restarts by itself
         self.looked, self.due, self.restart = time.monotonic(), False, False
         self.open_lock, self.open = threading.Lock(), 0  # requests being answered, terminal tunnels included
         self.streams: dict = {}  # of those, the runs' event streams: {handler: its socket to the run}
@@ -659,6 +663,12 @@ class HomeServer(ThreadingHTTPServer):
     def leave(self) -> None:
         with self.open_lock:
             self.open -= 1
+
+    def restart_needed(self) -> str:
+        """F149: the package's files changed and this Home does not restart on them by itself: which files
+        ('': none), so its page says so."""
+        now = None if self.stamp else package_stamp()
+        return '' if now in (None, self.package) else hashlib.sha256(repr(now).encode()).hexdigest()[:12]
 
     def restart_due(self) -> bool:
         """B165: the package's files are not the ones this server started on, and were the same on two looks, so a

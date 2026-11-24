@@ -40,10 +40,9 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars
 from agent_runner.slots import budget_mark, budgets, SPENT
 from agent_runner import fallback as FB
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
-from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, context_over, cut_off,
-    drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded,
-    resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
-    stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, weekly)
+from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
+    end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
+    START_TRIES, state_line, stats, stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, watch_code, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
 from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main, no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
@@ -1084,7 +1083,7 @@ def run(argv: list[str], prog: str) -> int:
     if srv := start_web():  # F66: the run page on this machine ([run] web), its address in the run log
         PAGE.append(srv)  # B144: the stop closes it before it says `run stopped`
 
-    AUTO_UPGRADE[0] = bool(r['auto_upgrade'])
+    code_start(bool(r['auto_upgrade']))  # F149
     threading.Thread(target=update_watch, daemon=True).start()
     for w in C.warnings:
         log(w)
@@ -1425,6 +1424,7 @@ class Run:
         self.merging = [t for t in self.merging if t.is_alive()]
         if not stopping():
             auto_upgrade(bool(self.merging))
+            watch_code(bool(self.merging))  # F149
         if not self.merging and not stopping():
             restart_if_upgraded()
         watch_ci(branch)

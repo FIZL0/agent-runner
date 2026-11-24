@@ -5864,6 +5864,100 @@ def test_restart_if_upgraded():
         R.log, R._upgrade_seen = real_log, None
 
 
+def test_code_restart(tmp):
+    """F149: a run from a source checkout restarts once its agent_runner code changed on main, in batches."""
+    from agent_runner import watch as WA
+    v = '0.60.0'
+    r = R.code_restart
+    eq(r(True, True, False, v, v), 'restart', 'on, no merge: restart')
+    eq(r(True, False, False, v, v), 'person', 'off: only a person')
+    eq(r(True, True, False, v, '1.0.0'), 'person', 'a breaking version: only a person')
+    eq(r(True, True, False, v, None), 'person', 'a version that cannot be read: only a person')
+    eq(r(True, True, False, v, v, windows=True), 'person', 'Windows: only a person')
+    eq(r(True, True, True, v, v), '', 'merging: not yet')
+    eq(r(False, False, False, v, v), '', 'not settled: nothing')
+    s = R.code_settled
+    eq([s(0, 0, 9e9), s(1, 1, 600), s(1, 1, 601), s(1, 3590, 3600), s(1, 3590, 3601)],
+       [False, False, True, False, True], 'a batch: main held still 10 min, or moved for an hour')
+    co = tmp / 'co'
+    (co / 'agent_runner').mkdir(parents=True)
+    eq(R.code_tree(co), None, 'not a checkout: nothing to watch')
+
+    def land(text, name='agent_runner/watch.py'):
+        (co / name).write_text(text, encoding='utf-8')
+        git(co, 'add', '-A')
+        git(co, 'commit', '-qm', text)
+    git(co, 'init', '-q', '-b', 'main')
+    git(co, 'config', 'user.email', 't@t')
+    git(co, 'config', 'user.name', 't')
+    land('one')
+    execs, said, real = [], [], (R.log, WA.AUTO_UPGRADE[0], dict(WA.CODE))
+    R.log = WA.log = said.append
+    from agent_runner import __version__
+    try:
+        with mock.patch.object(WA, '__file__', str(co / 'agent_runner' / 'watch.py')), \
+                mock.patch.object(WA.os, 'execv', lambda *a: execs.append(a)), \
+                mock.patch.object(WA.plat, 'WINDOWS', False), \
+                mock.patch.object(WA, 'installed_version', lambda: __version__), \
+                mock.patch.object(WA, 'restart_run', lambda: execs.append(1)):
+            WA.code_start(True)
+
+            def at(now, merging=False):
+                WA.watch_code(merging, now)
+                return len(execs), bool(WA.RESTART_NEEDED[0])
+            eq(at(1000), (0, False), 'the code it started on')
+            land('docs', 'README.md')
+            eq(at(2000), (0, False), 'a commit outside agent_runner changes nothing')
+            eq(at(3000), (0, False), 'nor later')
+            land('two')
+            eq(at(4000), (0, False), 'changed: wait for the batch')
+            land('three')
+            eq(at(4590), (0, False), 'changed again')
+            eq(at(4700), (0, False), 'not settled yet')
+            eq(at(5200, True), (0, False), 'settled, but merging')
+            (co / 'agent_runner' / 'watch.py').write_text('half', encoding='utf-8')
+            eq(at(5260), (0, False), 'edits under way in the checkout: wait')
+            git(co, 'checkout', '-q', '--', '.')
+            git(co, 'checkout', '-q', '-b', 'side')
+            eq(at(5320), (0, False), 'not on main: wait')
+            git(co, 'checkout', '-q', 'main')
+            eq(at(5360, True), (0, False), 'merging again')
+            eq(at(5362), (1, False), 'the tick after the merge: one restart for both commits')
+            has(said[-1], 'code changed on main; restarting', 'logged')
+            execs.clear()
+            WA.code_start(False)
+            land('four')
+            eq([at(9000), at(9700)], [(0, False), (0, True)], 'off: the page says a restart is needed; none happens')
+            git(co, 'checkout', '-q', 'side')
+            eq(at(9750), (0, True), 'the checkout leaves main: the restart is still needed')
+            git(co, 'checkout', '-q', 'main')
+            land('three')
+            eq(at(9800), (0, False), 'taken back on main: nothing to restart for')
+            with mock.patch.object(WA, 'installed_version', lambda: '9999.0.0'):
+                WA.AUTO_UPGRADE[0] = True
+                land('five')
+                eq([at(20000), at(21000)], [(0, True), (0, True)], 'a breaking version waits for a person')
+            WA._upgrade_seen = None
+            with mock.patch.object(WA, 'installed_version',
+                                   lambda: '.'.join(__version__.split('.')[:2]) + '.999'):
+                WA.AUTO_UPGRADE[0] = False
+                for _ in range(3):
+                    WA.restart_if_upgraded()
+                eq(len(execs), 0, 'off: a version installed beside the run does not restart it either')
+                has(said[-1], 'auto_upgrade is off', 'it is said')
+                eq(at(22000), (0, True), 'and shown on the page')
+                WA.UPGRADED[0] = True
+                eq(at(22100)[1], False, 'after u the run restarts by itself')
+                WA.restart_if_upgraded()
+                eq(len(execs), 1, 'off, after u: it restarts')
+    finally:
+        R.log, WA.AUTO_UPGRADE[0] = real[0], real[1]
+        WA.log = real[0]
+        WA.CODE.update(real[2])
+        WA.RESTART_NEEDED[0], WA.UPGRADED[0] = '', False
+        WA._upgrade_seen = None
+
+
 def test_auto_upgrade():
     import agent_runner
     due = R.auto_upgrade_due
@@ -8544,7 +8638,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo), lambda: test_research_findings_only(repo),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_limit_falls_back(repo, tmp), lambda: test_cap_told(repo, tmp), lambda: test_usage_cap_falls_back_f142(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), lambda: test_issues_watch(repo), lambda: test_auto_release(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), lambda: test_issues_watch(repo), lambda: test_auto_release(repo), test_update_notice, test_restart_if_upgraded, lambda: test_code_restart(tmp), test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_short_name_hints(repo), test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),
                        lambda: test_board_follows_run(repo, tmp),

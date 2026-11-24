@@ -64,7 +64,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.web': ('look', 'Run page', 'The run serves this page on your network. Off: no page, only the terminal.'),
     'run.web_port': ('look', 'Run page port', 'The port this page is on. With Runner Home, setting one keeps it open beside Home.'),
     'ui.theme': ('look', 'Terminal colors', 'The colors of the terminal page and of a session on this page. Light suits a bright terminal.'),
-    'run.auto_upgrade': ('look', 'Update by itself', 'A newer agent-runner is installed between merges. Off: only when you press upgrade.'),
+    'run.auto_upgrade': ('look', 'Update by itself', 'A newer agent-runner is installed, and the run restarts on new code, between merges. Off: only when you press upgrade or restart.'),
     'run.install_skill': ('look', 'Guide for your own sessions', 'Keeps the agent-runner guide where sessions you start find it. Off: they do not know the run.'),
     'run.agent': ('look', 'Claude Code program', 'The program that runs a session. Change it only for a wrapper around Claude Code.'),
     'run.engine': ('look', 'How a slot runs', 'Terminal: a session you can attach to. Stream: no terminal and no Claude apps.'),

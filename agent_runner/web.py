@@ -39,6 +39,7 @@ log with the page's address. Standard library only; ttyd is optional (a chat say
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import html
 import json
@@ -55,7 +56,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from agent_runner import devices, home_screen, plat, session_frame, session_now, session_theme, speech
+from agent_runner import devices, home_screen, plat, session_frame, session_now, session_theme, speech, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -63,6 +64,7 @@ PAGE = Path(__file__).with_name('web_page.html')
 # B164: the page as it was when this process loaded its code: an update on disk while the run is up must not
 # serve a page that asks for routes and actions this run does not have. A restart serves the new one.
 PAGE_TEXT = PAGE.read_text(encoding='utf-8')
+PAGE_PRINT = hashlib.sha256(PAGE_TEXT.encode('utf-8')).hexdigest()[:12]  # F149: which page this process serves
 BOOT = secrets.token_hex(4)  # B164: this process, so the page knows when the run restarted
 TICK = 2.0  # s between snapshots the events stream compares
 PING = 15.0  # s of no change before the stream sends a keep-alive comment
@@ -668,7 +670,7 @@ def page_html(home: bool = False) -> bytes:
     """F79: the run app. Its light and dark looks follow the browser's setting (`[ui] theme` is the terminal
     UI's). F134: `home`
     is Runner Home's own page (HOME_PAGE): the All projects view and the project switcher, no run behind it."""
-    page = PAGE_TEXT
+    page = PAGE_TEXT.replace('/*PAGE_PRINT*/', PAGE_PRINT, 1)
     if home:
         page = page.replace('/*HOME_PAGE*/false', 'true', 1).replace(
             '<title>agent-runner</title>', '<title>Runner Home</title>', 1)
@@ -698,6 +700,7 @@ def ttyd_install_cmd(which=shutil.which) -> str:
 def with_extras(snap: dict) -> dict:
     """F79: what the run app shows beyond the snapshot: this machine's name, and each concept's options."""
     snap['machine'], snap['boot'] = socket.gethostname(), BOOT
+    snap['page'], snap['restart_needed'] = PAGE_PRINT, watch.RESTART_NEEDED[0]  # F149
     snap['session_look'] = session_frame.session_look()  # F114: the ground of a session's colours
     if snap.get('terminal_mode') == 'install':
         snap['ttyd_install'] = ttyd_install_cmd()  # B120: the page's one line on how to get it
