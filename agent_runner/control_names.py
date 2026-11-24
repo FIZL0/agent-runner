@@ -52,7 +52,10 @@ def control_rename(number: str, name: str) -> int:
         person_name_file(n).write_text(json.dumps({'name': name, 'was': was}) + '\n', encoding='utf-8')
     except OSError:
         pass
-    if K.control_type(n, f'/rename {name}'):
+    from agent_runner.control_harness import harness_chat
+    if harness_chat(n):  # F406f: it takes no /rename
+        print(f'control {n} is named "{name}" on the run page and in the TUI')
+    elif K.control_type(n, f'/rename {name}'):
         print(f'control {n} is renamed "{name}"')
     else:
         print(f'control {n} is named "{name}" on the run page and in the TUI (it runs in a terminal of its own, so '

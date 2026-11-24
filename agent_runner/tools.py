@@ -236,12 +236,18 @@ def fence(tool: str, tool_input: dict, cwd: str | Path, worktree: str | Path | N
 def fence_hook(argv: list[str]) -> int:
     """The PreToolUse hook: `fence ROOT SLOTS_DIR NOTES PUSH` (PUSH 1 or 0), the tool call as JSON on stdin; prints
     Claude Code's deny decision when `fence` refuses the call. Always exits 0: a broken hook must not stop work."""
-    if len(argv) != 4 or not os.environ.get('AGENT_RUNNER'):
+    control = argv[4:] == ['control']  # F406f: a control session on the harness loop
+    if not control and (len(argv) != 4 or not os.environ.get('AGENT_RUNNER')):
         return 0
     try:
         ev = json.load(sys.stdin)
-        why = fence(ev.get('tool_name', ''), ev.get('tool_input') or {}, ev.get('cwd') or os.getcwd(),
-                    os.environ.get('AGENT_RUNNER_WORKTREE'), argv[0], argv[1], argv[2], argv[3] == '1')
+        if control:
+            from agent_runner.control_harness import fence as control_fence
+            why = control_fence(ev.get('tool_name', ''), ev.get('tool_input') or {}, ev.get('cwd') or os.getcwd(),
+                                argv[0], argv[1], argv[2], argv[3] == '1')
+        else:
+            why = fence(ev.get('tool_name', ''), ev.get('tool_input') or {}, ev.get('cwd') or os.getcwd(),
+                        os.environ.get('AGENT_RUNNER_WORKTREE'), argv[0], argv[1], argv[2], argv[3] == '1')
     except Exception:
         return 0
     if why:

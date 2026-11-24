@@ -1840,8 +1840,8 @@ An unknown provider prefix is refused at start.
 in the [harness loop](#the-harness-loop).
 
 Task sessions (`[models] code`, `[models.kinds]`, a task's own `plan add --model`, `run --model`), fix sessions
-(`[models] fix`), and `review`, `docs` and `feed` can name another provider. Only `control` runs as Claude Code
-itself (Remote Control's control sessions), so another provider there is refused at start, saying why.
+(`[models] fix`), and `review`, `docs`, `feed` and `control` can name another provider. A control session on one runs on the harness
+loop in chat mode (see [Control sessions](#the-harness-loop)).
 
 ### Fallback chain
 
@@ -1930,7 +1930,18 @@ user message.
 
 Ending: at finish or ask; or after `idle` seconds at the end of a turn with nothing told; a fix session (`--once`)
 ends with its first answer. A transient model error is tried 3 more times. A lasting one ends the session with an
-API-error entry, which the run resumes as it would Claude's. With `[models] fallback` set, a quota or usage-limit error switches the session to the chain's next model instead (see Fallback chain).
+API-error entry, which the run resumes as it would Claude's. With `[models] fallback` set, a quota or usage-limit error switches the session to the chain's next model instead (see Fallback chain). A control session (chat mode) is not ended by a failed model call: it is shown and the session waits (see Control sessions).
+
+Control sessions: `control N` on a `[models] control` of another provider starts `harness.mjs --chat`: many turns, waiting for
+the person between them, the control brief as its system text, rewritten at every start. Tools: bash, read, edit, write,
+publish_page. Escape (or the run app's Stop) interrupts a turn; Ctrl-C at the prompt, Ctrl-D, /exit or a closed terminal ends
+it. A failed model call is shown and the session waits. No budgets. Its title is set by `control --title` in state only
+(no /rename typed). A Claude session cannot be resumed on the harness loop, nor a harness one under Claude Code: a reopen
+after a shutdown passes it by. `control --resume SID` goes on by session id. The git fence is `run fence … control`, asked
+before every tool call: no push, no commit or merge in the main checkout, no edit of tracked files; ignored files (like
+runner.local.toml, the notes dir and `take` worktrees) may be edited. publish_page in a chat gets the id `chat1<hash>`, one
+per session and name. No Remote Control, so no control server, push, Artifact or Monitor; pages go through publish-page,
+and `plan concept --page` takes `/concept/ID` for one with no claude.ai link.
 
 Transcript: `<notes>/harness-sessions/<session id>.jsonl`, in Claude Code's entry shape (type user/assistant, content
 blocks text/tool_use/tool_result, usage in Claude's keys), so status, spend, the exit line's stats and resume read it
