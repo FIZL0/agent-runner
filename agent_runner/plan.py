@@ -381,6 +381,7 @@ def tick(tid: str, todo=None, done=None, plan_dir=None) -> int:
                          f'(`{PROG} newid`) before ticking, or the other is archived with it')
     _mark(ls, _find(ls, tid), 'x')
     _write(todo, ls)
+    _clear_ask(tid, todo)
     own = long_form(plan_dir, tid)
     if os.path.exists(own):
         _write(own, [re.sub(rf'^(\s*)- \[[ ~]\] \*\*{re.escape(tid)}\b', rf'\1- [x] **{tid}', l)
@@ -594,12 +595,13 @@ def last_lines(todo=None) -> list[str]:
             for t, ids in last_waits(todo)]
 
 
-def block(tid: str, why: str, todo=None, after=None) -> None:
+def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> None:
     """[~] plus "BLOCKED: why". The why must say what would unblock it, or the next session just re-reads it.
 
     `after` is the tasks it waits on; `reopen` unblocks it once they are all done. Left as None it is read
     off `why`: every task id named there that is still open, other than this task and its own subtasks.
     Pass [] for a block that waits on no task (a human, a tool, a capture).
+    `keep_ask`: the agent may have written this block's ask file (F156); any other block takes an old one away.
     """
     todo, _ = ensure(todo)
     ls = list(lines(todo))
@@ -612,6 +614,7 @@ def block(tid: str, why: str, todo=None, after=None) -> None:
         after = [t for t in dict.fromkeys(TASK_ID.findall(why))
                  if t in live and t != tid and not t.startswith(tid)]
     if after and not asking(why) and (kept := _last_ask(ls, i)):  # B60: it waits on X, then on the person again
+        keep_ask = True  # the same ask comes back, its ask file with it
         why = f'{kept} — {why}'
     if not after and not ASKED.search(why):  # B35: it waits on no task, so it lists under Needs you, with an age
         why = f'{why} (asked {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")})'
@@ -619,6 +622,13 @@ def block(tid: str, why: str, todo=None, after=None) -> None:
     end = i + len(_item_block(ls, i)) - 1
     ls[end] += ' BLOCKED: ' + (f'(after {", ".join(after)}) ' if after else '') + why
     _write(todo, ls)
+    if not keep_ask:
+        _clear_ask(tid, todo)
+
+
+def _clear_ask(tid: str, todo) -> None:
+    from agent_runner.asks import clear_ask  # here: asks imports this module
+    clear_ask(tid, todo)
 
 
 def reopen(todo=None) -> list[tuple[str, list[str]]]:
@@ -655,6 +665,7 @@ def unblock(tid: str, note: str = '', todo=None) -> None:
     end = i + len(_item_block(ls, i)) - 1
     ls[end] = (_unblocked(ls[end]) if end == i else ls[end].split(' BLOCKED: ')[0]) + (f' — {note}' if note else '')
     _write(todo, ls)
+    _clear_ask(tid, todo)
 
 
 def _place(ls: list[str], where: str, ref: str | None) -> int:

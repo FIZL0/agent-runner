@@ -44,7 +44,7 @@ import tempfile
 from functools import partial
 from pathlib import Path
 
-from agent_runner import plan, plansync, shared_tools
+from agent_runner import asks, plan, plansync, shared_tools
 from agent_runner.config import cfg, finished_mark
 from agent_runner.gitops import git, missing_remote, push, shared_branch, shared_name, shell
 
@@ -195,8 +195,11 @@ def record(a, c) -> int:
         else:
             plan.note(a.id, f'page: {a.artifact}')
     if a.blocked:
-        plan.block(a.id, a.blocked, after=None if a.after is None else [t for t in a.after.split(',') if t])
+        plan.block(a.id, a.blocked, after=None if a.after is None else [t for t in a.after.split(',') if t],
+                   keep_ask=True)
         print(f'blocked {a.id}')
+        if said := asks.long_line(a.id, a.blocked, c):  # F156
+            print(f'note: {said}')
     elif again:
         print(f'{a.id} is already ticked')
     elif later:

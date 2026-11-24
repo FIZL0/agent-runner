@@ -1,10 +1,17 @@
 """F102: the run's side of `run ask`: park the session that asked, and block its task under Needs you. The answer
-resumes that session (`slots.answer_ask`); the agent's side is `tools.cmd_ask`."""
+resumes that session (`slots.answer_ask`); the agent's side is `tools.cmd_ask`.
+
+F156: also the ask file, <notes>/asks/ID.json (`need_detail` reads it), and its pictures in <notes>/asks/ID/: where
+it is, its clean-up (`clear_ask`), and the note for a long line that has none (`long_line`)."""
 
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
 from contextlib import ExitStack
+from pathlib import Path
 
 from agent_runner import plan as P, plansync
 from agent_runner import state as S
@@ -69,7 +76,7 @@ def block_asks(branch: str) -> None:
                                             git('branch', '--show-current').stdout.strip() != branch):
                     continue
                 P.block(tid, f'DECIDE: {ask.get("question", "")} (asked with `run ask`: your answer resumes its '
-                        f'session)', todo=S.ROOT / rel, after=[])
+                        f'session)', todo=S.ROOT / rel, after=[], keep_ask=True)
                 if not commit_plan(f'Plan: block {tid}, asked the person', rel):
                     if not C.plan_external:
                         git('checkout', '-q', '--', rel)
@@ -91,3 +98,56 @@ def unblocked_asks() -> set[str]:
         except (OSError, ValueError, AttributeError):
             continue
     return out
+
+
+LINE_MAX = 200  # a longer ask line with no ask file gets `long_line`'s note
+
+
+def ask_file(tid: str, c=None) -> Path:
+    """<notes>/asks/ID.json in the main checkout, whichever worktree this runs in."""
+    return (c or S.cfg()).notes('asks', f'{tid}.json')
+
+
+def _plans(todo: str | Path | None):
+    """The configs whose plan `todo` is (None: the plan of the folder this runs in). A scratch copy of a TODO.md is
+    no project's plan, so a change to it touches no ask file."""
+    found = []
+    for get in (lambda: S.cfg(), lambda: S.C):
+        try:
+            c = get()
+            rel = os.path.relpath(c.todo, c.root)
+            ours = {os.path.realpath(c.todo), os.path.realpath(S.main_checkout(c.root) / rel)}
+            if todo is None or os.path.realpath(todo) in ours:
+                found.append(c)
+        except (OSError, ValueError, AttributeError, SystemExit):
+            continue
+    return found
+
+
+def clear_ask(tid: str, todo: str | Path | None = None) -> None:
+    """Take task `tid`'s ask file and its pictures away: its item was answered, dropped or blocks again, and an old
+    one must never stand in for a new ask."""
+    if not re.fullmatch(r'\w[\w.-]*', tid or ''):
+        return
+    for c in _plans(todo):
+        try:
+            d = c.notes('x').parent / 'asks'
+            (d / f'{tid}.json').unlink(missing_ok=True)
+            pics = d / tid
+            if pics.is_symlink():
+                pics.unlink()
+            elif pics.is_dir():
+                shutil.rmtree(pics, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def long_line(tid: str, why: str, c=None) -> str:
+    """What `done --blocked` says about an ask line too long to read in Needs you, with no ask file; '' else."""
+    if len(why) <= LINE_MAX or not any(a[1] == tid for a in P.asks((c or S.cfg()).todo)):
+        return ''
+    f = ask_file(tid, c)
+    return '' if f.is_file() else (
+        f'the line is {len(why)} characters, hard to read in Needs you, and it has no ask file. Blocked all the same; '
+        f'write the steps to {f} now as {{"summary", "where", "steps": [...], "expect": [...], "shots": [{{"file", '
+        f'"caption"}}]}} and Needs you shows those (no need to block again)')
