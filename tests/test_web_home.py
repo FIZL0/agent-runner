@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import gzip
 import json
 import os
 import re
@@ -962,5 +963,77 @@ def test_pull_refresh_f401(tmp: Path) -> None:
     eq(got['logic'], [70, 0, 0, True], 'the threshold, and the spinner resists')
 
 
+def test_page_gzip_b769a(tmp: Path) -> None:
+    """B769a: the run app's page is compressed once and answered 304 to a browser that kept it, with the key only, direct,
+    through Home and on Home's own pages; everything else stays no-store, and /events comes as it is sent."""
+    from agent_runner import home as H
+    from agent_runner import session_frame as F
+    repo = fake_repo(tmp)
+    snaps = [{'n': 1}]
+    srv = W.serve('RT', 0, '127.0.0.1', snap=lambda: snaps[0])
+    link = [(srv.server_address[1], 'RT')]
+    hs = H.serve_home('HT', 0, '127.0.0.1', rows=lambda: [], roots=lambda: [repo], vitals=mock.Mock())
+    hs.link, hs.project = (lambda root: link[0]), (lambda key: repo)
+    run, home = (f'http://127.0.0.1:{x.server_address[1]}' for x in (srv, hs))
+
+    def ask(url: str, **hd):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={k.replace('_', '-'): v for k, v in hd.items()}), timeout=10) as r:
+                return r.status, r.headers, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers, e.read()
+
+    def page(at: str, key: str, want: bytes, what: str) -> str:
+        made.clear()
+        F._gz_app.clear()
+        code, hd, body = ask(f'{at}?t={key}')
+        eq((code, hd['Content-Encoding'], body == want), (200, None, True), f'{what}: plain without Accept-Encoding')
+        eq(ask(f'{at}?t={key}', Accept_Encoding='br, gzip;q=0')[1]['Content-Encoding'], None, f'{what}: plain when gzip is refused')
+        for _ in range(2):
+            code, hd, body = ask(f'{at}?t={key}', Accept_Encoding='gzip, deflate')
+            eq((code, hd['Content-Encoding'], hd['Content-Length'], gzip.decompress(body) == want), (200, 'gzip', str(len(body)), True), f'{what}: compressed')
+            check(len(body) < len(want) * .5, f'{what}: under half the size', (len(body), len(want)))
+        eq(len(made), 1, f'{what}: compressed once')
+        eq((hd['Cache-Control'], hd['Vary'], hd['Referrer-Policy']), ('private, no-cache', 'Accept-Encoding', 'no-referrer'), f'{what}: kept, asked each time')
+        tag = hd['ETag']
+        for match in (tag, 'W/' + tag, f'"x", {tag}'):
+            code, hd, body = ask(f'{at}?t={key}', If_None_Match=match, Accept_Encoding='gzip')
+            eq((code, body, hd['ETag'], hd['Cache-Control']), (304, b'', tag, 'private, no-cache'), f'{what}: 304 for {match}')
+        eq(ask(f'{at}?t={key}', If_None_Match='"old"')[0], 200, f'{what}: another version is sent')
+        for q in ('?t=wrong', ''):
+            code, hd, body = ask(at + q, If_None_Match=tag, Accept_Encoding='gzip')
+            eq((code, hd['ETag'], hd['Cache-Control']), (403, None, 'no-store'), f'{what}: a matching ETag does not stand in for the key ({q})')
+        return tag
+
+    def first_event(at: str, key: str) -> None:
+        with urllib.request.urlopen(urllib.request.Request(f'{at}events?t={key}', headers={'Accept-Encoding': 'gzip'}), timeout=10) as r:
+            eq((r.headers['Content-Encoding'], r.headers['Cache-Control']), (None, 'no-store'), 'events: never compressed or kept')
+            eq(json.loads(r.readline()[6:])['n'], 1, 'the first event comes while the stream is open')
+            r.readline()
+            snaps[0] = {'n': 2}
+            eq(json.loads(r.readline()[6:])['n'], 2, 'and the next when it changes')
+            snaps[0] = {'n': 1}
+        srv.snaps.at = 0.0
+    real, made = gzip.compress, []
+    try:
+        with mock.patch.object(F.gzip, 'compress', lambda *a: made.append(1) or real(*a)):
+            mine, homes = W.page_html(), H.home_page()
+            run_tag = page(f'{run}/', 'RT', mine, 'the run')
+            eq(page(f'{home}/p/proj/', 'HT', mine, 'through Home'), run_tag, 'the same page, the same ETag')
+            home_tag = page(f'{home}/', 'HT', homes, 'Home')
+            link[0] = None
+            eq(page(f'{home}/p/proj/', 'HT', homes, 'a project with no run up'), home_tag, "Home's page")
+            eq(ask(f'{home}/p/proj/?t=HT', If_None_Match=run_tag)[0], 200, "the run's page is not taken for it")
+            link[0] = (srv.server_address[1], 'RT')
+        for url in (f'{run}/snapshot?t=RT', f'{home}/p/proj/snapshot?t=HT', f'{home}/projects?t=HT', f'{run}/manifest.webmanifest?t=RT'):
+            code, hd, _ = ask(url, Accept_Encoding='gzip')
+            eq((code, hd['Cache-Control'], hd['ETag'], hd['Content-Encoding']), (200, 'no-store', None, None), f'{url.split("?")[0]}: no-store')
+        first_event(f'{run}/', 'RT')
+        first_event(f'{home}/p/proj/', 'HT')
+    finally:
+        hs.stop()
+        srv.stop()
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a)]))

@@ -64,7 +64,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from agent_runner import devices, home_screen, trust
-from agent_runner.session_frame import tunnel
+from agent_runner.session_frame import send_app, tunnel
 
 PORT = 8770
 SERVICE = 'agent-runner-home'  # the systemd unit's and the scheduled task's name
@@ -506,7 +506,7 @@ class HomeHandler(BaseHTTPRequestHandler):
         if method == 'GET' and (png := home_screen.icon_at(path)):
             return self.send(200, png, 'image/png')
         if method == 'GET' and path in ('/', '/index.html'):
-            return self.send(200, home_page(), 'text/html; charset=utf-8')
+            return send_app(self, home_page())  # B769a
         if path in ('/device', '/devices') or path.startswith(('/dev/', '/vitals/')):  # F95: Device Vitals
             code, out, ctype = self.server.vitals.handle(method, path, parse_qs(urlsplit(self.path).query),
                                                          self.body() if method == 'POST' else b'')
@@ -614,7 +614,7 @@ class HomeHandler(BaseHTTPRequestHandler):
     def off_page(self) -> None:
         """F150: /p/KEY/ while no run serves it: Home's page showing that project, which turns into its run app once
         the run is up."""
-        self.send(200, home_page(), 'text/html; charset=utf-8')
+        send_app(self, home_page())
 
     def pick(self, key: str) -> None:
         """F167: /p/KEY/pick is a pick link (web.pick): a concept page holds it, so it carries no token of Home's or
