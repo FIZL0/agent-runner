@@ -1157,12 +1157,14 @@ function obNext(box,tab,live,now){const t=now||Date.now(), held=[];
   return null;
 }
 /* B158: the run answered 'hold' to item cid (its chat does not take input yet): tried again in a moment, until
-   HOLD_MS, when it fails with the run's words */
-const HOLD_MS=120000, HOLD_STEP=1500;
+   OB_HOLD_MS, when it fails with the run's words, and the next ones to that chat with it, so none goes before it.
+   A page that slept (no try for HOLD_GAP) counts anew */
+const OB_HOLD_MS=120000, HOLD_STEP=1500, HOLD_GAP=90000;
 function obHold(box,cid,r,now){
-  const it=(box||[]).find(x=>x.cid===cid);
-  if(it&&it.heldAt&&now-it.heldAt>HOLD_MS)return obSettle(box,cid,{ok:false,out:r&&r.out});
-  return(box||[]).map(x=>x.cid===cid?{...x,heldAt:x.heldAt||now,until:now+HOLD_STEP}:x);
+  const l=box||[], it=l.find(x=>x.cid===cid);if(!it)return l;
+  const since=it.heldAt&&now-it.until<HOLD_GAP?it.heldAt:now;
+  if(now-since>OB_HOLD_MS)return l.filter((x,i)=>i>=l.indexOf(it)&&x.state==='sending'&&x.name==='chat_to'&&obTo(x)===obTo(it)).reduce((b,x)=>obSettle(b,x.cid,{ok:false,out:r&&r.out}),l);
+  return l.map(x=>x.cid===cid?{...x,heldAt:since,until:now+HOLD_STEP}:x);
 }
 /* a starting chat (placeholder '@cid') got its name: its messages go there */
 function obName(box,ph,name){return(box||[]).map(x=>obTo(x)===ph?{...x,args:{...x.args,to:name}}:x)}

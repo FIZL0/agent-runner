@@ -2337,9 +2337,11 @@ const shows = (n, t) => talkConvo(n).includes(t);
   out.held = [posts.map(p => p.args.text || p.name), S.ob.map(x => [x.args.text, x.state, obState(x)])];
   skew += 5000; await drain(); await settle();
   out.after = [posts.map(p => p.args.text || p.name), S.ob.length, S.sent.c3.pending.map(p => p.text)];
-  answers = [{ok: false, hold: true, out: 'c3 is still starting'}, {ok: false, hold: true, out: 'c3 is still starting'}];
-  outbox('chat_to', {text: 'never', to: 'c3'}, {text: 'never', say: 'never'});
-  await settle(); clearTimeout(OB.timer); skew += 200000; await drain(); await settle(); clearTimeout(OB.timer);
+  answers = Array(5).fill({ok: false, hold: true, out: 'c3 is still starting'});
+  for (const t of ['never', 'nor this']) outbox('chat_to', {text: t, to: 'c3'}, {text: t, say: t});
+  await settle(); clearTimeout(OB.timer);
+  skew += 200000; await drain(); clearTimeout(OB.timer); out.slept = S.ob.map(x => x.state);
+  for (let i = 0; i < 2; i++) { skew += 70000; await drain(); clearTimeout(OB.timer) }
   out.never = [S.ob.map(x => [x.state, x.err]), said.includes('Not sent: never')];
   console.log(JSON.stringify(out));
   process.exit(0);
@@ -2398,7 +2400,9 @@ def test_sent_b154(tmp: Path) -> None:
     eq(o.get('held'), [['one', 'answer'], [['one', 'sending', wait], ['two', 'sending', 'sending…']]],
        'B158: a held message holds the next to its chat, not other actions')
     eq(o.get('after'), [['one', 'answer', 'one', 'two'], 0, ['one', 'two']], 'then both go, in order')
-    eq(o.get('never'), [[['failed', 'c3 is still starting']], True], 'a chat that never takes input: failed, with Retry')
+    eq(o.get('slept'), ['sending', 'sending'], 'a page that slept counts anew')
+    eq(o.get('never'), [[['failed', 'c3 is still starting']] * 2, True],
+       'a chat that never takes input: failed, with Retry, and the next one does not go before it')
     eq(o.get('lost'), [['c3', 'yes']], 'F114: and the outbox lists it')
     eq(o.get('late'), 0, 'one that lands after all leaves')
 

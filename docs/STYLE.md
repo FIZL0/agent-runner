@@ -98,7 +98,7 @@ Every list and view has all four, drawn the same way:
 
 Every action the person takes goes through `outbox()`: the page draws the result at once as a stand-in, keeps the
 action until the run answers, and sends it again after a lost connection. A card that was answered folds away at
-once; its stand-in shows in the same place. A failure brings Retry, Edit or Discard. `act()` is only for what has
+once; its stand-in shows in the same place. A failure brings Retry, Edit or Discard. A message to a chat still starting stays pending, and the Outbox says it waits for the chat to start. `act()` is only for what has
 nothing to draw (an interrupt, an order kept) and for Talk, which draws the person's words itself.
 
 Home's own actions (start, pause, slots, stop) go through `homeAct()`, an outbox of their own shared by every page of
