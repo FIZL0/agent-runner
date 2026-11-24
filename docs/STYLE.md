@@ -325,7 +325,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 
 - Run speech plays only in the one audio element (`AU.el`), only after the person's tap has allowed it, never while the mic listens.
   The mic's own press counts as that tap: silence is played only after the press has stopped the recognizer (Hold's release, Tap's second tap).
-  The first press of a Tap only loads the element (`load()`, no playback), after `rec.start()`.
+  The press that starts the mic only loads the elements (`load()`, no playback), after `rec.start()`.
   When the browser blocks it, the talk line says what to tap.
 - One button stops the reading: the speaker (and the reply's own play button). The mic is never a stop for it; a press on the mic
   cuts a reading and listens in that press.
