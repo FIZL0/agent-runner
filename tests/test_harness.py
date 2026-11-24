@@ -385,7 +385,8 @@ def test_no_pi(env: Env):
 
 # F406b: a GitHub Enterprise Server in front of Pi's real login package, loaded before the harness (node --import):
 # every fetch is logged; corp.ghe.com and its subdomains answer, any other host fails. Its token names a proxy
-# off the domain, as the package follows on its own.
+# off the domain, as the package follows on its own. With GHE_RACE, another session refreshes the token (that file's
+# auth.json) just as this one takes the lock to refresh it.
 GHE = r"""
 import fs from 'node:fs';
 const json = (o) => new Response(JSON.stringify(o), { headers: { 'content-type': 'application/json' } });
@@ -408,6 +409,14 @@ globalThis.fetch = async (input, init) => {
     { headers: { 'content-type': 'text/event-stream' } });
   return new Response('not found', { status: 404 });
 };
+if (process.env.GHE_RACE) {
+  const mkdir = fs.mkdirSync;
+  fs.mkdirSync = (dir, ...rest) => {
+    const made = mkdir(dir, ...rest);
+    if (String(dir).endsWith('auth.json.lock')) fs.copyFileSync(process.env.GHE_RACE, String(dir).slice(0, -5));
+    return made;
+  };
+}
 """
 
 
@@ -475,6 +484,14 @@ def test_enterprise(tmp: Path):
            f'the refresh, the model list and the call ask only the domain {what}')
         check(cred()['expires'] > time.time() * 1000 and cred()['enterpriseUrl'] == 'corp.ghe.com',
               'the refreshed login keeps the domain', cred())
+    fresh = auth.read_text(encoding='utf-8')  # B771: a second refresh finds the first one's fresh token
+    race = tmp / 'ghe-race.json'
+    race.write_text(fresh, encoding='utf-8')
+    auth.write_text(json.dumps({'github-copilot': {**cred(), 'expires': 1}}), encoding='utf-8')
+    p = session(model, GHE_RACE=str(race))
+    check('hello from corp' in p.stdout, "the session answers on the other session's token", p.stdout + p.stderr)
+    eq(seen(), [f'{copilot}/chat/completions'], 'and does not refresh again')
+    eq(auth.read_text(encoding='utf-8'), fresh, 'and the login is still there')
     login('corp.ghe.com', GHE_PROXY='proxy.corp.ghe.com')
     check('api.corp.ghe.com/models' in seen(), "a token's own address on the domain is kept")
     p = session(other)
