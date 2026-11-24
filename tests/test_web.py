@@ -1439,7 +1439,7 @@ const S = {view: 'talk', thread: null}, document = {hidden: false};
 const el = {}, $ = k => el[k] = el[k] || {classList: {toggle() {}}, setAttribute() {}, removeAttribute() {}, textContent: '', className: ''};
 const setHTML = () => true, talkTyping = () => false, talkDock = () => (talkDraw(), $('talkline').textContent);
 let TS = {read: true, voice: '', mic: 'tap', auto: false};
-eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpeech(') + grab('function talkDraw(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function earEnd(') + grab('function micStop(') + `
+eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpeech(') + grab('function talkDraw(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function micSent(') + grab('function earEnd(') + grab('function micStop(') + `
   Date.now = () => 1000;
   listen();
   const before = rec.started;
@@ -1447,7 +1447,7 @@ eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpee
   const said = talkDock();
   listen();
   const cleared = talkDock();
-  rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hello'}], {isFinal: true})]}); rec.onend();
+  rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hello'}], {isFinal: true})]}); listen(); rec.onend();
   TK.state = 'speaking'; rec = null; spoke = 0;
   listen();
   const stopped = {state: TK.state, before: rec.started, cancelled: spoke};
@@ -3569,7 +3569,7 @@ const feedOf = n => S.feeds[n].entries, talkName = () => 'c5', micWhy = () => ''
 const talkDraw = () => {}, talkSend = t => sent.push(t), talkTyping = () => false, voices = () => speechSynthesis.getVoices();
 eval(logic + `
 let TS = talkSetParse('');
-` + grab('function speak(') + line('function hush(') + grab('function playReply(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function earEnd(') + grab('function micStop(')
+` + grab('function speak(') + line('function hush(') + grab('function playReply(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function micSent(') + grab('function earEnd(') + grab('function micStop(')
   + page.slice(page.indexOf('/* F124: hold to talk'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {defaults: TS, parsed: talkSetParse('{"read":false,"voice":"Ava","mic":"hold","auto":true}'), junk: talkSetParse('nope')};
 const mic = {target: {closest: s => s === '[data-mic]' ? {} : null}, button: 0};
@@ -3931,8 +3931,11 @@ fire('pointerdown', when); hears(['kept', false]); { const S0 = SR; SR = class {
 TS.mic = 'tap'; starts = 0; listen(); hears(['so do a', true]); now += 3000; last().end(); cut.pause = [starts, sent.length, TK.state, says()];
 now += 1500; hears(['full one', false]); tick(2000); cut.goesOn = [sent.length, !!last().stopped]; hears(['full one', true]); last().end(); cut.again = [starts, sent.length];
 now += 2000; tick(2000); cut.silence = !!last().stopped; last().end(); cut.pauseSent = [sent.splice(0), TK.state, ended(), starts];
-// speech begun in the wait holds the send; with no words it ends at the recognizer's end
-listen(); hears(['so', true]); last().end(); last().onspeechstart(); now += 2000; tick(2000); cut.speech = [!!last().stopped, sent.length]; now += 1000; last().fail('no-speech'); cut.speechEnd = [sent.splice(0), ended()];
+// speech begun in the wait makes it longer, once
+starts = 0; listen(); hears(['so', true]); last().end(); now += 1500; last().onspeechstart(); now += 1000; last().fail('no-speech'); cut.speech = [starts, sent.length];
+last().onspeechstart(); now += 1100; last().fail('no-speech'); cut.speechEnd = [starts, sent.splice(0), ended()];
+// results that come back empty unsay nothing
+listen(); hears(['so do', false]); hears(['', false]); last().onresult({resultIndex: 0, results: []}); listen(); last().end(); cut.empty = sent.splice(0);
 // the wait's recognizer ends early, as iOS does: on again until the wait is over, and no longer
 starts = 0; listen(); hears(['so', true]); now += 3000; last().end(); now += 300; last().fail('aborted', 'No speech detected'); tick(250); cut.early = [starts, sent.length];
 now += 400; last().fail('aborted'); tick(250); cut.failed = [starts, sent.length]; now += 1300; last().end(); cut.over = [starts, sent.splice(0)];
@@ -4030,7 +4033,8 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(b.get('none'), [['kept'], '', 'sent 4 letters, ended by no recognizer'], 'no recognizer: the words so far go out')
     eq((b.get('pause'), b.get('goesOn'), b.get('again')), ([2, 0, 'listening', 'so do a'], [0, False], [3, 0]), 'Tap: a pause listens on')
     eq((b.get('silence'), b.get('pauseSent')), (True, [['so do a full one'], '', 'sent 16 letters, ended by a pause', 3]), 'and a silence of 2 s sends one message')
-    eq((b.get('speech'), b.get('speechEnd')), ([False, 0], [['so'], 'sent 2 letters, ended by error no-speech']), 'speech begun in the wait is heard out')
+    eq((b.get('speech'), b.get('speechEnd')), ([3, 0], [3, ['so'], 'sent 2 letters, ended by error no-speech']), 'speech begun in the wait makes it longer, once')
+    eq(b.get('empty'), ['so do'], 'empty results unsay nothing')
     eq((b.get('early'), b.get('failed'), b.get('over')), ([3, 0], [4, 0], [4, ['so']]), 'a recognizer that ends early does not end the wait, nor outlast it')
     eq(b.get('between'), [['so'], ''], 'nor does one that is about to start')
     eq((b.get('tap'), b.get('tapWait'), b.get('once')), ([0, ['so']], [['so'], 'sent 2 letters, ended by a tap'], 0), 'a tap sends at once, and once')
