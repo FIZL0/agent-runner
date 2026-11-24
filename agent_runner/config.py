@@ -247,6 +247,8 @@ DEFAULTS: dict = {
                                 # (the terminal's own 16 colours and background), light
         'chat_quiet': '6h',     # a chat that needs no reply, with nothing said in it for this long, is grayed at the
                                 # bottom of the run app's Chats (never a pinned or a renamed one); false: off
+        'trusted_networks': [],  # CIDRs (or 'tailnet') whose clients open the run's own page without its key;
+                                # [] = the key always. Through Runner Home its own list counts (`home trust`)
     },
     'models': {
         'code': 'opus',         # a task's own session when its kind has no model below
@@ -734,6 +736,8 @@ class Config:
                              f"{self.raw['ui']['theme']!r}")
         if problem := setting_problem('ui', 'chat_quiet', self.raw['ui']['chat_quiet']):  # F128
             raise SystemExit(f'agent-runner: {problem}')
+        if problem := setting_problem('ui', 'trusted_networks', self.raw['ui']['trusted_networks']):  # F136
+            raise SystemExit(f'agent-runner: {problem}')
         if problem := tools_problem(self.run['tools']):  # F168
             raise SystemExit(f'agent-runner: {problem}')
         self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
@@ -954,6 +958,10 @@ def setting_problem(table: str, key: str, v) -> str:
         return f'{where} must be {kind}{" or false" if "off" in also else ""}, not {v!r}'
     if (table, key) == ('run', 'tools') and (problem := tools_problem(v)):  # F168
         return problem
+    if (table, key) == ('ui', 'trusted_networks'):  # F136
+        from agent_runner.trust import network_problem
+        if problem := next((p for x in v if (p := network_problem(x))), ''):
+            return f'{where}: {problem}'
     if num and v < 0:
         return f'{where} cannot be below 0, not {v!r}'
     if (table, key) == ('run', 'slots') and v < 1:

@@ -690,3 +690,10 @@ _Said_: Claude login, log in again
 _On screen_: Claude login
 _In code_: watch.claude_login, watch.LOGIN_CMD
 _Avoid_: credentials, token, auth
+
+**Trusted network**:
+a network whose devices open Runner Home or a run's page without its key
+_Said_: trusted networks, my tailnet
+_On screen_: Networks with no key
+_In code_: trusted_networks, trust.py, home trust
+_Avoid_: whitelist, allowlist

@@ -272,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         from agent_runner import runner
         return runner.cmd_background(rest)
     if cmd == 'home' and rest[:1] and rest[0] in ('install', 'uninstall', 'status', 'list', 'serve', 'add',
-                                                  'remove', 'peer', 'peers'):  # F94: Runner Home, every project on one page
+                                                  'remove', 'peer', 'peers', 'trust'):  # F94: Runner Home, every project on one page
         from agent_runner import home
         return home.main(rest)
     if cmd == 'home':  # one answer for every script: never rebuild these paths by hand

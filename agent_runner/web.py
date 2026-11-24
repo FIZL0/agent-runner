@@ -60,7 +60,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, need_detail, plat, session_frame, session_now, session_theme, speech, watch
+from agent_runner import devices, home_screen, need_detail, plat, session_frame, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -180,6 +180,20 @@ def closed_line() -> str:
     return why_closed(S.C.root)
 
 
+def run_trusted() -> list[str]:
+    """F136: the networks this run's own page opens to without its key."""
+    return S.C.raw['ui'].get('trusted_networks') or [] if S.C else []
+
+
+def shown_links(site: list[str], own: list[str], https=None) -> list[str]:
+    """F136: the page's addresses as they are printed: Runner Home's (`site`) when it routes the run, else the run's
+    own, https first, each without its key where the page's network is trusted (trust.shown)."""
+    if site:
+        from agent_runner.home import load_registry
+        return trust.shown(https_first(site, https), load_registry()['trusted_networks'])
+    return trust.shown(https_first(own, https), run_trusted())
+
+
 def https_first(urls: list[str], https=None) -> list[str]:
     """`urls` with the Tailscale Serve https addresses for the first one's port ahead of them, at its path
     (/p/KEY/ through the device site, B146) and with its token (B130: Safari's mic needs https)."""
@@ -200,7 +214,7 @@ def page_line(site=None) -> str:
     which Home reads its port from."""
     try:
         if S.run_up() and (us := url_file().read_text(encoding='utf-8').split()):
-            us = https_first((site or site_urls)() or own_links(us))
+            us = shown_links((site or site_urls)(), own_links(us))
             if not us:
                 return f'run page: {closed_line()}'
             return f'run page: {us[0]}' + (f' (or {us[1]})' if len(us) > 1 else '')
@@ -976,14 +990,25 @@ def save_upload(name: str, data: bytes) -> dict:
 class Handler(BaseHTTPRequestHandler):
     server: 'WebServer'
     protocol_version = 'HTTP/1.1'
+    keyless = False  # F136: this request came in by its network
 
     def log_message(self, *a) -> None:  # the run log is not an access log
         pass
 
     def allowed(self) -> bool:
         q = parse_qs(urlsplit(self.path).query)
-        got = (q.get('t') or [''])[0]
-        return bool(got) and hmac.compare_digest(got.encode(), self.server.token.encode())
+        return self.key_ok((q.get('t') or [''])[0])
+
+    def key_ok(self, got: str) -> bool:
+        """The run page's key, or, F136, a client on one of `[ui] trusted_networks`."""
+        key = bool(got) and hmac.compare_digest(got.encode(), self.server.token.encode())
+        self.keyless = not key and trust.lets_in(run_trusted(), self.command, self.client_address[0], self.headers)
+        return key or self.keyless
+
+    def end_headers(self) -> None:
+        if self.keyless:  # F136: with no key, only its own pages may frame it
+            self.send_header('X-Frame-Options', 'SAMEORIGIN')
+        super().end_headers()
 
     def send(self, code: int, body: bytes | str, ctype: str = 'application/json; charset=utf-8') -> None:
         data = body.encode('utf-8') if isinstance(body, str) else body
@@ -1096,9 +1121,10 @@ class Handler(BaseHTTPRequestHandler):
         """F114: /t/TOKEN/NAME/REST, session NAME's own terminal (ttyd's page and calls under its path, its WebSocket).
         The token rides in the path, since ttyd's page drops the query."""
         bits = path.split('/', 4)  # ['', 't', TOKEN, NAME, REST]
-        if len(bits) < 5 or not hmac.compare_digest(bits[2].encode(), self.server.token.encode()):
+        if len(bits) < 5 or not self.key_ok(bits[2]):
             return self.refuse()
         name = bits[3]
+        path = f'/t/{self.server.token}/{name}/{bits[4]}'  # the ttyd's own path, whatever key this one had (F136)
         if not re.fullmatch(r'[cs]\d+', name):
             return self.send(404, json.dumps({'ok': False, 'out': f'no such session: {name}'}))
         got = self.server.terms.ttyd(name)
@@ -1358,7 +1384,7 @@ class HomeWatch:
             self.missed = 0
             if self.said:
                 self.said = ''
-                S.log(f'run page: {" or ".join(https_first(urls))}')
+                S.log(f'run page: {" or ".join(shown_links(urls, []))}')
             return
         self.missed += 1
         if self.missed >= 2 and (why := why_closed(S.C.root)) != self.said:
@@ -1410,8 +1436,9 @@ def start_web() -> WebServer | None:
     urls = own_links(write_urls(srv))
     # B129: the run log names a Tailscale Serve https address first too (the mic needs https); web.url stays http.
     # B146: the device site's /p/KEY/ address first when one routes this project
-    shown = https_first(site_urls() or urls)
-    shown += [x for x in urls if x not in shown]
+    site = site_urls()
+    shown = shown_links(site, urls)
+    shown += [x for x in (trust.shown(urls, run_trusted()) if site else []) if x not in shown]
     closed = '' if shown else closed_line()
     S.log(f'run page: {" or ".join(shown) or closed}' +
           ('' if shutil.which('ttyd') else ' (ttyd is not installed, so a chat cannot show its session)'))

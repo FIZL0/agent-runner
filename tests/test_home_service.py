@@ -24,6 +24,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from _check import check, eq, git, has, report, run
+from _trust import asked, trusted_checks
 
 from agent_runner import home as H  # noqa: E402
 from agent_runner import state as S  # noqa: E402
@@ -1112,10 +1113,75 @@ def test_one_address(tmp: Path) -> None:
                 s.stop()
 
 
+def test_trusted_networks(tmp: Path) -> None:
+    print('F136: Home without its key on a trusted network; the key always by default')
+    eq(H.load_registry()['trusted_networks'], [], 'none by default')
+
+    def trusted(nets: list) -> None:
+        H.save_registry({**H.load_registry(), 'trusted_networks': nets})
+    fake = ThreadingHTTPServer(('127.0.0.1', 0), FakeRun)
+    threading.Thread(target=fake.serve_forever, daemon=True).start()
+    srv = H.serve_home('HT', 0, '127.0.0.1', roots=lambda: [tmp / 'alpha'], rows=lambda: [],
+                       link=lambda r: (fake.server_address[1], 'RUNTOKEN'))
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    ts = '100.101.1.2'
+    try:
+        trusted_checks(srv, base, trusted, '/projects', 'HT')
+        eq(asked(f'{base}/p/alpha/t//s1/', ts, srv), 403, 'a session with no key')
+        trusted([H.trust.TAILNET])
+        eq(asked(f'{base}/p/alpha/snapshot', ts, srv), 200, 'a run through Home')
+        req = urllib.request.Request(f'{base}/p/alpha/snapshot?t=&n=2', headers={'X-Forwarded-For': ts})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            eq(json.loads(r.read())['path'], '/snapshot?t=RUNTOKEN&n=2', "Home fills the run's own key")
+        check(asked(f'{base}/p/alpha/t//s1/', ts, srv) != 403, 'a session through Home')
+    finally:
+        srv.stop()
+        fake.shutdown()
+        fake.server_close()
+    trusted([])
+
+    def home(*a: str):
+        return run(tmp, 'home', 'trust', *a, env={**os.environ, 'AGENT_RUNNER_HOME_CONFIG': str(tmp / 'cfg')})
+    eq([home('add', 'tailnet').returncode, home('add', '192.168.1.0/24').returncode, home('add', 'tailnet').returncode],
+       [0, 0, 0], 'home trust add')
+    eq(H.load_registry()['trusted_networks'], ['192.168.1.0/24', 'tailnet'], 'each is listed once')
+    bad = home('add', '100.64.0.1/10')
+    eq(bad.returncode, 1, 'a bad CIDR is refused')
+    has(bad.stderr, r"'100\.64\.0\.1/10' is not a network", 'and named')
+    eq([home('remove', '192.168.1.0/24').returncode, home('remove', '10.0.0.0/8').returncode, home('add').returncode],
+       [0, 1, 2], 'home trust remove; one not listed; no network')
+    H.mark_installed(True)
+    eq(H.load_registry()['trusted_networks'], ['tailnet'], 'kept when Home saves its settings')
+
+    addr = {'box.tail1.ts.net': ['100.101.1.1', 'fd7a:115c:a1e0::1'], 'both': ['100.101.1.1', '192.168.1.5']}
+    look = mock.Mock(side_effect=lambda h, p: [(0, 0, 0, '', (a, 0)) for a in addr[h]] if h in addr else (_ for _ in ()).throw(OSError()))
+    urls = ['https://box.tail1.ts.net:8771/?t=k', 'http://both:8770/p/a/?t=k', 'http://gone:8770/?t=k',
+            'http://100.101.1.1:8770/p/a/?t=k#tools', 'http://192.168.1.5:8770/?t=k']
+    eq(H.trust.shown(urls, ['tailnet'], look), ['https://box.tail1.ts.net:8771/', *urls[1:3],
+                                                'http://100.101.1.1:8770/p/a/#tools', urls[4]],
+       'a link drops its key only when all its addresses are trusted')
+    eq(H.trust.shown(urls, [], look), urls, 'no trusted networks: every link keeps it')
+    token = H.home_token()
+    with mock.patch.object(W, 'lan_ip', lambda: '192.168.1.5'), mock.patch.object(H.trust.socket, 'getaddrinfo', look), \
+            mock.patch.object(H, 'qr_text', lambda text: f'QR[{text}]'), \
+            mock.patch.object(Path, 'home', lambda: tmp / 'home'):
+        said: list[str] = []
+        H.status('linux', out=said.append, https=fake_tailscale(SERVE_STATUS), on=True, up=True)
+        lines = [s.strip() for s in '\n'.join(said).splitlines()]
+        check('https://box.tail1.ts.net:8771/' in lines and f'http://192.168.1.5:8770/?t={token}' in lines, 'home status', lines)
+        check('Trusted networks, no key needed: tailnet' in lines, 'home status lists them', lines)
+        said = []
+        H.install('linux', call=lambda c: (0, ''), out=said.append, check=lambda p: True, https=fake_tailscale(SERVE_STATUS))
+        check('QR[https://box.tail1.ts.net:8771/]' in said, 'the QR code', said)
+        site = [f'https://box.tail1.ts.net:8771/p/a/?t={token}', f'http://192.168.1.5:8770/p/a/?t={token}']
+        eq(W.shown_links(site, [], https=lambda p, t: []), ['https://box.tail1.ts.net:8771/p/a/', site[1]],
+           "status names a run by Home's trusted networks when Home routes it")
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
                            in_tmp(test_terminal_tab), in_tmp(test_restart_on_upgrade), in_tmp(test_restart_waits),
                            in_tmp(test_restart_on_windows),
                            in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
                            in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link),
-                           in_tmp(test_one_address)]))
+                           in_tmp(test_one_address), in_tmp(test_trusted_networks)]))

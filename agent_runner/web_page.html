@@ -1221,7 +1221,7 @@ const manifestLink=(base,key,t)=>(base||'./')+'manifest.webmanifest?'+(base&&key
    page of this app, opened in place), '' (another site: outside) */
 function appLink(href,origin,root){
   let u;try{u=new URL(href)}catch(e){return''}
-  if(u.origin!==origin||!u.pathname.startsWith(root)||!u.searchParams.get('t'))return'';
+  if(u.origin!==origin||!u.pathname.startsWith(root)||!u.searchParams.has('t'))return'';  // F136: an empty key on a trusted network
   return /\/concept\/[^/]+$/.test(u.pathname)?'concept':'go';
 }
 /* B153: Runner Home's link for the project name top-left: through Home, its own base; on the run's own page,
