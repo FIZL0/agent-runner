@@ -689,7 +689,8 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   `plan block`, `done`). A box edited by hand is how a task ends up done in one file and open in the
   other.
 - `**ID**` is any token (`P12`, `bug-3`, `S41`). `plan add PREFIX` picks the next free one. `P13a` is a
-  subtask of `P13`, and P13 and P13a are *family*, so they never run at the same time.
+  part of `P13`, and P13 and P13a are *family*, so they never run at the same time. Two parts (P13a, P13b)
+  run side by side when both name `files:` that do not meet and neither is `after:` the other; a part with no `files:` waits for every other part, and they for it.
 - The prefix says the kind of work. `[plan] kinds` names each letter (`B = "bug"`, `N = "netplay"`, …);
   the prompt lists them so an agent picks the right one, `plan kinds` prints them, and `plan add` refuses
   a letter the table lacks. With no table, the generic `B F T D R C K V` (bug, feature, tests and tooling,
@@ -795,7 +796,7 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
   task (the same merge driver as in a repository), other `*.md` as `union`.
 - **Claims: two people can run at once.** The moment a run picks a task, it
   pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task and treat it as
-  running there: a task sharing its files, its ordered section or its family waits for it. The claim
+  running there: a task sharing its files or its ordered section waits for it, and so does its family (a task and its own part always; two parts only as the Picking rule says). The claim
   holds the line's files and, refreshed as the session works, every file it has touched, so a task whose
   line lists too few is still kept clear (a whole-directory glob on its line, `dir/**`, holds only another such
   glob, as under Picking). Two that claim one task at once conflict on push, and the later
@@ -882,7 +883,7 @@ Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task 
 
 | to make B wait for A | do this | what happens |
 |---|---|---|
-| B is part of A's work | `plan add A12 "…"` gives `A12a`, then `A12b` | one family (A12, A12a, A12b) never runs two tasks at once, so they go one at a time, top to bottom |
+| B is part of A's work | `plan add A12 "…"` gives `A12a`, then `A12b` | a task and its part never run at once; parts A12a and A12b run side by side if both name `files:` that do not meet and neither is `--after` the other, else they wait for each other; use `--after` between parts that need order |
 | B needs A merged first | `plan block B3 --after A12 "why"` | B3 stays `[~]` until A12 is done, then the run reopens it |
 | a list that must go in order | a section heading saying *in this order* or *one at a time* | one task from it runs at a time |
 
@@ -906,7 +907,7 @@ push from outside the run has put that ahead (fetched at most once a minute).
 | `[~]` blocked, and split parents (a task with open subtasks) | the subtasks are the work |
 | the open subtasks of a task with a `wip/<ID>` branch (not `(split into ...)`, not in Stretch or Parked, and not waiting on one of them, directly or down the chain) | the parked attempt's first part is what they build on, so the task goes first (B185); they wait until it lands, also while it is tried this run or blocked |
 | an open id in `after:`, for **any** id listed | every listed dependency must be done |
-| a sibling of a running task (same family) | P13 and P13a edit the same thing |
+| a part of a running split task (same family), when their `files:` meet or one names none; a task and its own part always | the parts edit the same thing, or one could touch anything |
 | a task in a section whose heading says *in this order* or *one at a time*, while another task from that section runs | an ordered section runs one task at a time |
 | `### Stretch`, `### Parked` | never unattended |
 | tried this run | one attempt per run: if it failed, a human looks next |
@@ -1272,7 +1273,7 @@ first gate in merge2 builds from cold, and merge2 has a build directory of its o
 A task that clashes with finished tasks only by files, and only with ones that are all in one merge under way
 (the one under test, or a merge built ahead on it whose own gate has not failed), starts at once on top of
 that merge in its own worktree, instead of waiting for the gate (F198). Not for an `(alone)` task, a release,
-a sibling, a task in an ordered section, an `after:` wait, a task resuming after `run ask` or a shared-tool
+a part held back by the sibling rule (a part that clashes with a sibling), a task in an ordered section, an `after:` wait, a task resuming after `run ask` or a shared-tool
 wait, or one that also clashes with a running task. A finished task not yet in any merge still holds its
 files. Which merge it started on is in `<notes>/<ID>.stacked`, which survives a restart; its brief says so
 and which diff is its own. It lands only after that merge is on main: when it finishes it waits (log: "S2:

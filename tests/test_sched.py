@@ -31,7 +31,7 @@ def make_repo(tmp: Path) -> Path:
                                        '- [ ] **T2** two | files: a.py\n'
                                        '- [ ] **T3** three | files: c.py\n'
                                        '- [ ] **L4a** four | files: d.py\n'
-                                       '- [ ] **L4b** five | files: e.py\n', encoding='utf-8')
+                                       '- [ ] **L4b** five\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
     (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
@@ -63,7 +63,8 @@ def test_explain(repo: Path):
     eq(S.holds(h.todo[1], {'T3'}, h), ('clash', h.busy[0]), 'holds names the busy task it clashes with')
     eq(S.holds(h.todo[3], {'T3'}, h), None, 'and None for a free one')
     eq(S.choose(h, {'T3'}, 'main')[0], 'L4a', 'choose takes the first free one')
-    eq(S.choose(S.held({1: h.todo[3]}, 'main'), {'T1', 'T2', 'T3'}, 'main'), None, "L4a's sibling waits for it")
+    eq(S.choose(S.held({1: h.todo[3]}, 'main'), {'T1', 'T2', 'T3'}, 'main'), None,
+       "L4a's sibling, naming no files, waits for it")
     out: dict = {}
     eq(R.pick(running, {'T3'}, 'main', why=out), None, 'pick with why picks nothing')
     eq(out, why, 'and fills in what explain gives')
@@ -340,6 +341,54 @@ def test_split_hold(tmp: Path):
     eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'F1', 'and at once when the hold has ended')
 
 
+def test_split_side_by_side(tmp: Path):
+    print('F199: parts of a split task run side by side when their files do not meet')
+    repo = tmp / 'parts'
+    repo.mkdir()
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan').mkdir()
+    (repo / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n'
+                                       '- [ ] **P5** all of it (split into P5a, P5b, P5c, P5d, P5e, P5f)\n'
+                                       '- [ ] **P5a** one | files: a.py, S.md\n'
+                                       '- [ ] **P5b** two | files: b.py, S.md\n'
+                                       '- [ ] **P5c** shares | files: a.py, c.py\n'
+                                       '- [ ] **P5d** no files\n'
+                                       '- [ ] **P5e** waits | files: e.py | after: P5a\n'
+                                       '- [ ] **P5f** six | files: f.py\n', encoding='utf-8')
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
+                                      'shared_files = ["S.md"]\n', encoding='utf-8')
+    (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    R.init(repo)
+    todo = {t[0]: t for t in S.tasks('main')}
+    check('P5e' not in todo, 'a part after: an open one is not up')
+    a = S.choose(S.held({}, 'main'), set(), 'main')
+    eq(a[0], 'P5a', 'the first part starts')
+    sib = ('waiting for a sibling', 'P5a')
+    why = S.explain({1: a}, set(), 'main')
+    eq((why['P5b'], why['P5c'], why['P5d']), (('free', ''), sib, sib),
+       'a disjoint part is free; one on its file and one naming no files wait')
+    eq(S.choose(S.held({1: a}, 'main'), set(), 'main')[0], 'P5b', 'and it starts beside it')
+    d = todo['P5d']
+    eq(S.explain({1: d}, set(), 'main')['P5a'], ('waiting for a sibling', 'P5d'), 'nothing starts beside one naming none')
+    e = ('P5e', 'Next', {'e.py'}, {'P5a'})
+    eq((S.clash(a, e, set()), S.clash(e, a, set())), (True, True), 'an after: pair stays apart, either way round')
+    f = todo['P5f']
+    eq((S.clash(a, f, set()), S.clash(f, a, set())), (False, False), 'disjoint parts do not clash, either way round')
+    for kin in (('P5', 'Next', {'z.py'}, set()), ('P5a1', 'Next', {'z.py'}, set())):
+        eq((S.clash(a, kin, set()), S.clash(kin, a, set())), (True, True), f'a task and its own part stay apart: {kin[0]}')
+    eq(S.clash(f, ('P5x', '', {'t.py'}, set(), set()), set()), True, 'a busy line naming none waits, whatever it touched')
+    git(repo, 'checkout', '-q', '-b', 'task/P5a')
+    (repo / 'a.py').write_text('1\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'P5a')
+    git(repo, 'checkout', '-q', 'main')
+    why = S.explain({}, set(), 'main')
+    eq((why['P5b'], why['P5c'], why['P5d']), (('free', ''), sib, sib), 'the same while it waits to merge')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
@@ -348,7 +397,7 @@ def main() -> int:
                        lambda: test_release_taken(Path(tmp)), lambda: test_release_beside(Path(tmp)),
                        lambda: test_alone(Path(tmp)), lambda: test_critical_first(Path(tmp)),
                        lambda: test_split_parent_first(Path(tmp)),
-                       lambda: test_split_hold(Path(tmp))])
+                       lambda: test_split_hold(Path(tmp)), lambda: test_split_side_by_side(Path(tmp))])
 
 
 if __name__ == '__main__':

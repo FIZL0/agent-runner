@@ -24,7 +24,8 @@ docs/REFERENCE.md describes each mechanism. In short:
   - the Stretch and Parked sections, anything tried this run (until its line is edited), and branches waiting to be merged,
   - a task parked twice (wip/<ID>, wip/<ID>-2): the run blocks it on a person instead (`block_parked`).
 
-  Siblings never run together. An ordered section runs one task at a time. Two tasks never run on the same
+  Parts of a split task run together only when their `files:` do not meet and neither waits for the other
+  (a part naming none waits), and never beside the task they are parts of. An ordered section runs one task at a time. Two tasks never run on the same
   files: a line's `| files:` and, for a task running, the files it has touched; a finished one waiting to merge
   holds only the files it changed, and once in a merge under way not even those: the task starts on top of that
   merge (F198, `stack.py`). A whole-directory glob (`dir/**`) is a guess, not a lock: it meets only
