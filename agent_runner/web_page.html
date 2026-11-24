@@ -1759,7 +1759,7 @@ function landedLine(p){const l=p.landed||[], n=p.landed_n||l.length;return n?`<d
 function projectCard(p){
   const off=projectGroup(p)==='off', words=projectWords(p), tasks=p.running||[], name=`<a class="pname grow ell" href="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}">${esc(p.name||p.key)}</a>`;
   const warn=p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:'';
-  return card(`<div class="row"><span class="pdot ${esc(p.state||'off')}"></span>${name}${off?`<span class="small">${esc(words)}</span>`:''}${mainBtn(p)}${dotsBtn(p)}</div>${off?'':
+  return card(`<div class="row"><span class="pdot ${esc(p.state||'off')}"></span>${name}${off&&p.left?`<span class="small">${esc(words)}</span>`:''}${mainBtn(p)}${dotsBtn(p)}</div>${off?'':
     `${tasks.length?`<div class="ptasks">${tasks.map(id=>`<div class="ell" title="${esc(id)}">${esc((p.titles||{})[id]||id)}</div>`).join('')}</div>`:''}<div class="small">${esc(words)}</div>${landedLine(p)}`}${warn}${hobOf(p.key)}`,
     `pcard tap${off?' off':''}`,`data-pgo="${esc(projectHref(p.key))}" data-pkey="${esc(p.key)}" data-k="proj:${esc(p.key)}" data-v="${esc(projectState(p))}"`);
 }
@@ -1771,7 +1771,7 @@ function deviceCard(d){const v=d.verdict||{};
     'tap',`data-pgo="${esc(tq(HB+'device?id='+encodeURIComponent(d.id)))}"`);
 }
 const ASKS_SHOWN=3;
-const homeErr=()=>H.err?card(`<div class="small v-bad">${esc(H.err)}</div><div class="btns"><button class="btn" data-pload>Retry</button></div>`):'';
+const homeErr=()=>H.err?card(`<div class="small"><span class="v-bad">${esc(H.err)}</span></div><div class="btns"><button class="btn" data-pload>Retry</button></div>`):'';
 function devicesHTML(){const ds=H.devices;
   return `<div class="col">${homeErr()}<div class="sec">Devices<span class="ln"></span></div>${ds===null?emptyCard('Loading…'):ds.length?ds.map(deviceCard).join(''):emptyCard('No devices')}</div>`}
 function projectsHTML(){
@@ -2451,7 +2451,7 @@ SHEETS.project=()=>{
     if(b.step!=null)return `<div class="it setrow"><span>Slots</span><span class="step"><button class="btn" data-pact="slots" data-parg="${b.step-1}" data-pkey="${k}" aria-label="One slot less" ${b.step<2?'disabled':''}>−</button><b>${b.step}</b><button class="btn" data-pact="slots" data-parg="${b.step+1}" data-pkey="${k}" aria-label="One slot more" ${b.step>98?'disabled':''}>+</button></span></div>`;
     return S.sure===`proj:${b.label}:${p.key}`?sureHTML(b.sure,b.label.toLowerCase(),at):`<button class="it${b.sure?' bad':''}" ${at}>${b.label}${b.sure?'…':''}</button>`}).join('')}`;
 };
-SHEETS.addproject=()=>`<h2>Add a project</h2><form data-padd style="display:grid;gap:var(--s3)"><label class="small">Its folder on ${esc(H.machine||'this machine')}<input class="fld" data-f="padd" value="${esc(S.f.padd||'')}" placeholder="~/repos/myproject" autocomplete="off" autocapitalize="off" spellcheck="false"></label>${H.said?`<div class="small v-bad">${esc(H.said)}</div>`:''}<div class="btns"><button class="btn pri${H.adding?' busy':''}">Add</button><button type="button" class="btn" data-closesheet>Cancel</button></div></form>`;
+SHEETS.addproject=()=>`<h2>Add a project</h2><form data-padd style="display:grid;gap:var(--s3)"><label class="small">Its folder on ${esc(H.machine||'this machine')}<input class="fld" data-f="padd" value="${esc(S.f.padd||'')}" placeholder="~/repos/myproject" autocomplete="off" autocapitalize="off" spellcheck="false"></label>${H.said?`<div class="small"><span class="v-bad">${esc(H.said)}</span></div>`:''}<div class="btns"><button class="btn pri${H.adding?' busy':''}">Add</button><button type="button" class="btn" data-closesheet>Cancel</button></div></form>`;
 /* --- F97: Settings ------------------------------------------------------------------------------------------- */
 async function loadSettings(){
   // B164: only a whole answer is kept: an error (a run without this route) leaves the settings already there
