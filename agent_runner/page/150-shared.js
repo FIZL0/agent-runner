@@ -30,7 +30,7 @@ function plusSlot(){
 /* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, and the view's + (F150) */
 function topHTML(){
   const n=S.thread, p=runPill(S.snap), x=n&&sessionOf(n);
-  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}${x&&!isAgent(n)?`<button type="button" class="title" data-ren="${esc(n)}" title="Rename"><span class="tt">${esc(threadTitle(n))}</span></button>`:`<div class="title">${n?`<span class="tt">${esc(threadTitle(n))}</span>`:{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',tools:'Tools',settings:'Settings',projects:H.tab==='devices'?'Devices':'Overview'}[S.view]}</div>`}${p.text&&!atAll()?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-roll data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${plusBtn()}`;
+  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}${x&&!isAgent(n)?`<button type="button" class="title" data-chats aria-haspopup="dialog" title="Switch chat"><span class="tt">${esc(threadTitle(n))}</span>${I.chev}</button>`:`<div class="title">${n?`<span class="tt">${esc(threadTitle(n))}</span>`:{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',tools:'Tools',settings:'Settings',projects:H.tab==='devices'?'Devices':'Overview'}[S.view]}</div>`}${p.text&&!atAll()?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-roll data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${plusBtn()}`;
 }
 function render(force){
   keepPlace();  // B177
@@ -61,7 +61,7 @@ function render(force){
   let h='',dock='';
   feedDraw(n);  // F114
   if(n){const agent=isAgent(n);h=$('body').hidden?'':feedHTML(n);
-    dock=(isNew(n)?'':sessRow(n)+keysRow())+box(agent?`Message ${threadTitle(n)}`:isNew(n)?newPh(S.ctx):`Reply to ${threadTitle(n)}`,
+    dock=(isNew(n)?'':feedEnd(n)+sessRow(n)+keysRow())+box(agent?`Message ${threadTitle(n)}`:isNew(n)?newPh(S.ctx):`Reply to ${threadTitle(n)}`,
       (agent?'Goes straight to this agent, between its steps. ':'')+keysLine())}  // B120: the keys, from BOX_KEYS
   else if(S.view==='talk')h=talkHTML();
   else h={home:homeHTML,status:statusHTML,plan:planHTML,concepts:conceptsHTML,tools:toolsHTML,settings:settingsHTML,projects:projectsHTML}[S.view]();
@@ -86,7 +86,7 @@ function render(force){
   if(moved){
     const follow=lastPlace&&(lastPlace.startsWith('t:@')&&n||lastPlace.startsWith('t:+')&&n&&n[0]==='@');  // a starting chat got its name, a new one started: the same chat
     if(chatShown())toEnd();else{body.scrollTop=S.at[place]||0}
-    if(S.live&&lastPlace&&!follow){const was=lastPlace.startsWith('t:');if(n||was)viewSlide(n?'in':'out');else viewIn(body)}
+    if(S.live&&lastPlace&&!follow){const was=lastPlace.startsWith('t:');if(n&&was){}else if(n||was)viewSlide(n?'in':'out');else viewIn(body)}  // F206: from chat to chat at once
     if(n)sentFrom(body,had);
     freshWords(body);
   }else if(drew){

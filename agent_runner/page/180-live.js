@@ -202,7 +202,8 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-restart]')){const n=x.dataset.restart;closeSheet();outbox('restart_chat',{chat:n},{res:n,say:`Restart ${threadTitle(n)}`});return}
   if(x=q('[data-sheet]')){openSheet(x.dataset.sheet);return}
   if(x=q('[data-rowmenu]')){rowExpand(x.dataset.rowmenu);return}
-  if(x=q('[data-ren]')){startRename(x.dataset.ren);return}
+  if(q('[data-chats]')){openSheet('chats');chatsLoad();return}  // F206
+  if(x=q('[data-ren]')){if(S.sheet)closeSheet();startRename(x.dataset.ren);return}
   if(x=q('[data-fix]')){S.fixOpen=S.fixOpen===x.dataset.fix?'':x.dataset.fix;S.sure=null;render(true);return}
   if(x=q('[data-slashpick]')){slashTake(+x.dataset.slashpick);return}  // B119
   if(q('[data-obopen]')){S.obOpen=true;obDraw();return}  // F137: the outbox's pill opens its popup

@@ -100,9 +100,10 @@ def attach_console(s, name: str) -> int:
     finally:
         s.close()
         try:
-            if shown:
+            if shown and not os.environ.get('AGENT_RUNNER_WEB'):
                 os.write(1, TERM_RESET)
-            os.write(1, f'\r\n[{why[0]}]\r\n'.encode())
+            if not os.environ.get('AGENT_RUNNER_WEB'):  # F206
+                os.write(1, f'\r\n[{why[0]}]\r\n'.encode())
         except OSError:  # its output is gone: its modes are put back all the same
             pass
         if shown:

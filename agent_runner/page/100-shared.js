@@ -38,6 +38,7 @@ Object.assign(SHEETS,{
     return `<h2>Update the agent CLI</h2>${cmd&&cmd!=='…'?`<div class="small">This runs on ${esc(S.snap.machine||'the machine of the run')}:</div><pre class="out">${esc(cmd)}</pre><div class="btns"><button class="btn pri${busyUp?' busy':''}" data-update="${esc(cmd)}">Update</button></div>`:'<div class="small">Its command does not fit the window: turn the phone, or use a wider one.</div>'}<div class="small">Open chats keep their version until they restart.</div>${own?`<div class="btns"><button class="btn" data-restart="${esc(FD.n)}"${sessIdle()?'':' disabled'}>Restart chat</button></div>${sessIdle()?'':'<div class="small">It can restart once it has nothing running.</div>'}`:''}`},
 });
 SHEETS.need=needSheet;  // F162
+SHEETS.chats=chatsSheet;  // F206
 /* F189b: a sheet took the place of another: its edges go on from where that one's were, and its words fade in */
 function sheetOver(el,box){
   shotEnd();const r=el.getBoundingClientRect();shotEdges(el,r.top-box.top,box.bottom-r.bottom);
