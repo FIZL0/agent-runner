@@ -43,6 +43,8 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from agent_runner.build_output import held_files, held_key, held_names
+
 GB = 1024 ** 3
 EVERY = 30.0             # s between samples
 KEEP = 24 * 3600         # s of samples History keeps
@@ -929,7 +931,8 @@ def clean_plan(trees, temps, wips, live: set[str] | None, now: float, written=ne
         tmp       an ended session's temp folder (`session_ended`), a runner worktree's or a main checkout's; the
                   regular footprint walk removes these by itself (`auto_clean`)
         worktree  a runner worktree whose HEAD is merged into the project's main branch, with nothing
-                  uncommitted, that no process works in, of a project whose run is off (a run up may start a
+                  uncommitted, listed unticked when it holds git-ignored files that are no build output or link
+                  (`held_files`; they are named, and the id is of that list of them), that no process works in, of a project whose run is off (a run up may start a
                   task in any of its worktrees at any moment; the next run makes a removed one again)
         wip       a wip/ branch: listed unticked, removed only when the person ticks it"""
     merged = merged or worktree_merged
@@ -947,8 +950,14 @@ def clean_plan(trees, temps, wips, live: set[str] | None, now: float, written=ne
             continue
         if not merged(p, d):
             continue
-        out.append({'id': 'worktree:' + str(d), 'kind': 'worktree', 'path': str(d), 'size': n, 'ask': False,
-                    'root': str(p.root), 'why': f'worktree merged into {p.main}, nothing uncommitted'})
+        if (held := held_files(d)) is None:
+            continue
+        why, kind = 'nothing uncommitted, nothing ignored but build output and links', 'worktree'
+        if held:  # an id of its own: a tick given before it held these does not count
+            why = f'holds files git ignores, deleted with it: {held_names(held)}'
+            kind += '+' + held_key(held)
+        out.append({'id': f'{kind}:{d}', 'kind': 'worktree', 'path': str(d), 'size': n, 'ask': bool(held),
+                    'root': str(p.root), 'held': held_key(held), 'why': f'worktree merged into {p.main}, {why}'})
     for w in wips:
         out.append({'id': f'wip:{w["root"]}:{w["branch"]}', 'kind': 'wip', 'path': w['branch'], 'size': 0,
                     'ask': True, 'root': w['root'], 'why': f'{w["project"]}: parked work; remove only if you are sure'})
@@ -1026,7 +1035,7 @@ def worktree_merged(p: Project, d: Path) -> bool:
 def clean(chosen: list[str], plan: list[dict], rm=shutil.rmtree, call=sp.run) -> dict:
     """Remove what the person chose from a freshly made Clean list: anything not on it is refused, so a stale
     or forged id removes nothing. A temp folder is deleted, a worktree goes with `git worktree remove` (which
-    refuses one with changes), a wip/ branch with `git branch -D`. {'ok', 'out', 'freed', 'removed'}."""
+    refuses one with changes; not when its held files changed since the list), a wip/ branch with `git branch -D`. {'ok', 'out', 'freed', 'removed'}."""
     by_id = {i['id']: i for i in plan}
     said, freed, removed = [], 0, []
     for cid in chosen:
@@ -1038,6 +1047,9 @@ def clean(chosen: list[str], plan: list[dict], rm=shutil.rmtree, call=sp.run) ->
             if item['kind'] == 'tmp':
                 rm(item['path'])
                 ok = True
+            elif item['kind'] == 'worktree' and held_key(held_files(Path(item['path']))) != item.get('held', ''):
+                said.append(f'not removed (no longer safe: its ignored files changed): {item["path"]}')
+                ok = False
             elif item['kind'] == 'worktree':
                 r = call(['git', 'worktree', 'remove', item['path']], cwd=item['root'], capture_output=True,
                          text=True, timeout=120)
