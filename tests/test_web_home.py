@@ -1,0 +1,739 @@
+"""The run page, home area (agent_runner/page/*-home.*): split from test_web.py (C41b), tests unchanged.
+
+    python3 tests/test_web_home.py
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from unittest import mock
+
+from _check import check, eq, git, report
+from _trust import asked, trusted_checks
+
+from agent_runner import config as CF  # noqa: E402
+from agent_runner import state as S  # noqa: E402
+from agent_runner import ui_model as U  # noqa: E402
+from agent_runner import web as W  # noqa: E402
+from _web import TODO, fake_repo, get, post, LOGIC_DRIVER, logic_js, in_tmp  # noqa: E402
+
+
+LOGIN_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = s => page.slice(page.indexOf(s), page.indexOf('\n', page.indexOf(s)));
+let HOME_PAGE = false, all = false, H, S;
+const el = {}, $ = () => el, atAll = () => all, I = {alert: '!'}, esc = s => s, setHTML = (e, h) => { e.h = h };
+eval(line('function loginDraw('));
+const draw = (run, home) => { S = {snap: {claude_login: run}}; H = {login: home}; loginDraw(); return [el.hidden, el.h] };
+const out = {run: draw('R', 'H'), fine: draw('', 'H'), old: draw(undefined, '')};
+all = true; out.all = draw('R', 'H'); out.allFine = draw('R', '');
+all = false; HOME_PAGE = true; out.home = draw(undefined, 'H'); out.homeFine = draw(undefined, '');
+let closed = 0; const closeSheet = () => { closed++; S.sheet = '' }, toast = () => {};
+S = {sheet: 'login', snap: {}}; H = {login: 'H'}; loginDraw(); out.open = closed; H.login = ''; loginDraw(); out.closed = [closed, el.hidden];
+console.log(JSON.stringify(out));
+"""
+
+
+def test_login_banner_f126a(tmp: Path) -> None:
+    """F126a: a Claude login that is ending, has ended or is missing is one banner on the run page and on Home, from a
+    fake credentials file; none when it is far away, so a new login clears it."""
+    from agent_runner import home as H
+    repo, day, cfg = fake_repo(tmp), 86400, tmp / 'cfg'
+    other = tmp / 'other'
+    for d in (cfg, other):
+        d.mkdir()
+    (other / 'runner.toml').write_text('[run]\nagent = "otheragent"\n', encoding='utf-8')
+    cred, roots = cfg / '.credentials.json', [other, repo]
+
+    def login(left: float) -> None:
+        cred.write_text(json.dumps({'claudeAiOauth': {'refreshToken': 'r', 'refreshTokenExpiresAt':
+                                                      int((time.time() + left) * 1000)}}), encoding='utf-8')
+    again = 'log in again (claude auth login)'
+    off = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN',
+           'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
+    srv = H.serve_home('HT', 0, '127.0.0.1', rows=lambda: [], roots=lambda: roots, vitals=mock.Mock())
+    try:
+        with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(cfg)}), mock.patch('sys.platform', 'linux'):
+            for k in off:
+                os.environ.pop(k, None)
+
+            def said() -> tuple[str, str]:
+                got = json.loads(get(f'http://127.0.0.1:{srv.server_address[1]}/projects?t=HT')[1])
+                return U.snapshot(up=False, links={}, windows={})['claude_login'], got['claude_login']
+            none = 'No Claude login: log in (claude auth login)'
+            eq(said(), (none, none), 'missing: on both pages')
+            login(2.5 * day)
+            eq(said(), (f'Claude login expires in 2 days: {again}',) * 2, 'under 3 days')
+            login(-day)
+            eq(said(), (f'Claude login has expired: {again}',) * 2, 'past')
+            roots.remove(repo)
+            eq(said()[1], '', 'no project on this machine runs claude: none on Home')
+            roots.append(repo)
+            login(9 * day)
+            eq(said(), ('', ''), 'far away, so after a new login: none')
+    finally:
+        srv.stop()
+    page = W.PAGE.read_text(encoding='utf-8')
+    eq((page.count('id="login"'), page.split('function render(')[1].split('\nfunction ')[0].count('loginDraw()')), (1, 1),
+       'one banner, drawn with every view')
+    if not shutil.which('node'):
+        print('  (no node here: the banner script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(LOGIN_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the banner', r.stderr[-1500:])
+    if r.returncode:
+        return
+    again = '</span><button class="btn" data-login>Log in again</button>'  # F126b
+    o, gone = json.loads(r.stdout), [True, '']
+    eq((o['open'], o['closed']), (0, [1, True]), 'F126b: renewed: the banner goes and its sheet closes')
+    eq((o['run'], o['fine'], o['old']), ([False, '!<span>R' + again], gone, gone), "the run page: the run's words, or none")
+    eq((o['all'], o['allFine'], o['home'], o['homeFine']), ([False, '!<span>H' + again], gone, [False, '!<span>H' + again], gone),
+       "All projects and Home: Home's words, or none")
+
+
+NEED_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const needs = JSON.parse(process.argv[3]);
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const el = {h: '', cls: new Set(), focus() {}, scrollTop: 0, querySelectorAll: () => [], classList: {toggle: (c, on) => on ? el.cls.add(c) : el.cls.delete(c)}};
+const sent = [], handlers = {}, fetched = [];
+const env = {S: {snap: {needs, controls: JSON.parse(process.argv[4])}, f: {}, sheet: '', askShot: -1, askFold: {}, ob: []}, I: {ext: '', chev: ''}, SHEETS: {}, sheetBack: null,
+  $: () => el, esc: t => env.E(t), setHTML: (n, h) => { el.h = h; return false }, keepScroll: () => () => {}, keepFields: () => () => {},
+  document: {activeElement: null, addEventListener: (t, f) => { (handlers[t] = handlers[t] || []).push(f) }}, card: (h, c, a) => `<div class="card" ${a}>${h}</div>`,
+  actSure: () => '', tq: p => p + '?t=T', toast: t => sent.push(['toast', t]), composing: () => false, HOME_PAGE: false,
+  fetch: async p => { fetched.push(p); return {json: async () => ({ok: true, text: env.mute && p.startsWith('why/') ? '' : 'A task | files: <a>\nBLOCKED: CONFIRM'})} },
+  render: () => env.sheetDraw(), outbox: (n, a, o) => { sent.push([n, a]); env.S.snap.needs = env.S.snap.needs.filter(x => x.id !== o.need); env.sheetDraw() }};
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+env.env = env;
+new Function('known', 'env', 'with (known) {' + logic + 'env.E=E_;' + line('const controlOf=') + line('const ctlBusy=') + slice('const actBtns=', 'const actSure=') + slice('function needBtns(', '/* F85: a task') + 'env.needOf=needOf;'
+  + line('SHEETS.need=') + line('function openSheet(') + slice('function sheetOpener(', 'function sheetDraw(') + slice('function sheetDraw(', '/* --- F97') + 'env.sheetDraw=sheetDraw;env.card0=needCard;env.closeSheet=closeSheet;'
+  + slice("document.addEventListener('click',async e=>{", "document.addEventListener('submit'")
+  + slice("document.addEventListener('keydown',e=>{\n", "document.addEventListener('input',") + '}')(known, env);
+const press = (sel, dataset = {}, inSheet = true) => handlers.click.forEach(f => f({target: {closest: s => s === sel ? {dataset, closest: () => inSheet, hasAttribute: () => false} : null}}));
+const esc = () => handlers.keydown.forEach(f => f({key: 'Escape', preventDefault() {}, target: {closest: () => null, matches: () => false}}));
+const S = env.S, out = {}, ans = (ctl, tid, inSheet) => press('[data-ctl]', {ctl, tid}, inSheet);
+(async () => {
+  const wait = () => new Promise(r => setTimeout(r, 10));
+  out.card = env.card0(needs[0], 0);
+  press('[data-needopen]', {needopen: 'B160'}, false); await wait();
+  out.opened = [S.sheet, S.sheetArg, el.cls.has('open'), el.cls.has('dlg')]; out.fetched = [...fetched].sort(); out.html = el.h;
+  press('[data-askfold]', {askfold: 'task'}); out.text = el.h;
+  press('[data-shot]', {shot: '0'}); out.big = el.h; esc(); out.esc1 = [S.sheet, S.askShot]; esc(); out.esc2 = S.sheet;
+  ans('need_answer1', 'F2', false); out.buttons = [S.sheet, sent.length];
+  press('[data-needopen]', {needopen: 'B160'}, false);
+  S.f['askre:B160'] = ' still grey '; ans('need_no', 'B160'); out.closed = S.sheet;
+  press('[data-needopen]', {needopen: 'D7'}, false); out.reply = el.h;
+  press('[data-reply]', {reply: 'D7'}); S.f['askre:D7'] = '8770'; press('[data-reply]', {reply: 'D7'}); out.sent = sent;
+  S.f['askre:D8'] = ''; press('[data-needopen]', {needopen: 'D8'}, false); out.opts = el.h; out.optsCard = env.card0(needs[3], 3);
+  S.f['askre:D8'] = ' dark too '; ans('need_answer1', 'D8'); out.opt = sent.slice(-1); sent.length -= 1;
+  press('[data-needopen]', {needopen: 'D9'}, false); out.sheet = el.h; out.sheetCard = env.card0(needs[4], 4);
+  ans('need_answer1', 'D9'); out.go = sent.slice(-1); sent.length -= 1;
+  const pitch = {id: 'pitch1', label: 'PITCH', ask: 'Approve 1 change', options: ['Approve', 'Not this: drop'], acts: ['need_answer1', 'need_answer2', 'need_chat'], labels: {need_answer1: 'Approve', need_answer2: 'Not this: drop'}, changes: [{id: 'F1', title: 'a'}]};
+  const no = {pitchno: '0', how: 'reopen', tid: 'F1'};
+  env.mute = true; S.snap.needs = needs; S.askWhy = {}; press('[data-needopen]', {needopen: 'D7'}, false); await wait(); out.mute = el.h;
+  const focused = [], node = (id, on) => ({dataset: {needopen: id}, isConnected: on, focus: () => focused.push(id + on)});
+  env.document.querySelectorAll = () => [node('F2', true), node('D7', true)];
+  env.sheetBack = node('D7', false); env.closeSheet(); out.focused = focused;
+  S.snap.needs = [pitch]; S.f['askre:pitch1'] = ' nice '; press('[data-needopen]', {needopen: 'pitch1'}, false);
+  out.pitchHtml = el.h; ans('need_answer1', 'pitch1'); S.snap.needs = [pitch]; press('[data-pitchno]', no);
+  handlers.click.forEach(f => f({target: {closest: s => s === '[data-pitchno]' ? {dataset: no, closest: () => true, hasAttribute: () => true} : null}}));
+  out.pitch = sent.slice(-2); sent.length -= 2; S.snap.needs = needs.slice(-1);
+  press('[data-needopen]', {needopen: 'tool-x'}, false); out.tool = el.h; S.snap.needs = []; env.render(); out.left = S.sheet;
+  console.log(JSON.stringify(out)); process.exit(0);
+})();
+"""
+
+
+def test_need_popup_f162(tmp: Path) -> None:
+    """F162: a Needs you card is short, and a press on its words opens the popup with its steps, what to see, pictures
+    and answers, all escaped; its buttons do not; an answer (with the reply box's words) closes it, and so does an item
+    that leaves Needs you. Esc closes the picture, then the popup."""
+    if not shutil.which('node'):
+        print('  (no node here: the popup script test is skipped)')
+        return
+    d = {'said': 'Check this', 'where': 'iPhone, Safari', 'title': 'Keyboard <b>', 'summary': 'Run `x` <i>', 'lead': ['On an iPhone'],
+         'steps': ['Tap <script>', 'Close it'], 'expect': ['No grey "band"'], 'notes': ['Reply yes/no'],
+         'shots': [{'src': 'uploads/a b.png', 'path': '/x', 'caption': '"><img onerror=1>'}]}
+    none = {k: [] for k in ('lead', 'expect', 'notes', 'shots')}
+    needs = [{'id': 'B160', 'label': 'CONFIRM', 'ask': 'a', 'age': '20m', 'url': 'https://claude.ai/x', 'detail': d,
+              'answers': [{'label': 'Yes', 'value': 'Yes'}, {'label': 'No', 'value': 'No'}]},
+             {'id': 'F2', 'label': 'BLOCKED', 'ask': 'Log in', 'answers': [{'label': 'Done', 'value': 'Done'}]},
+             {'id': 'D7', 'label': 'DECIDE', 'ask': 'Which port?', 'detail': {**none, 'said': 'Choose', 'where': '', 'title': 'Port', 'summary': 'p', 'steps': ['Which port?']}, 'answers': []},
+             {'id': 'D8', 'label': 'DECIDE', 'ask': 'Which look?', 'options': (opts := [{'name': 'Full', 'rec': True}, {'name': 'No <change>', 'rec': False}]),
+              'answers': U.need_answers({'label': 'DECIDE', 'options': opts})},
+             {'id': 'D9', 'label': 'DECIDE', 'ask': 'Pick a layout', 'url': 'https://claude.ai/y', 'picks': {U.SHEET_GO_LABEL: 'go', 'Tabs': 'D9 picks: lay=a'},
+              'options': (easy := [{'name': U.SHEET_GO_LABEL, 'rec': False}, {'name': 'Tabs', 'rec': True}]),
+              'answers': U.need_answers({'label': 'DECIDE', 'options': easy})},
+             {'id': 'tool-x', 'label': 'TOOL', 'ask': 'Connect it', 'answers': []}]
+    for n in needs:  # F180: as the snapshot carries them
+        n.update(acts=U.row_acts('need', n), labels=U.row_labels('need', n))
+    (tmp / 'driver.js').write_text(NEED_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps(needs), json.dumps(U.controls())], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node presses the card', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    card = o['card']
+    check('Check this · iPhone, Safari' in card and 'Keyboard &lt;b&gt;' in card and '<code>x</code> &lt;i&gt;' in card
+          and '2 steps · B160 · 20m' in card, 'the card: what is wanted and where, the title, what to do', card)
+    check('Close it' not in card and card.index('</button>') < card.index('data-ctl="need_yes"'), 'no steps on it, and its buttons are not inside its words', card)
+    eq(o['opened'], ['need', 'B160', True, True], 'a press on its words opens the popup')
+    eq(o['fetched'], ['task/B160?t=T', 'why/B160?t=T'], 'which asks for why it waits and the whole task')
+    h = o['html']
+    parts = ['Keyboard &lt;b&gt;', 'Check this', '20m', 'On an iPhone', '<ol><li>Tap &lt;script&gt;</li><li>Close it</li></ol>',
+             '<ul><li>No grey &quot;band&quot;</li></ul>', 'src="shot/uploads/a%20b.png?t=T"', 'Its page', 'Why it waits',
+             'Full task', 'data-f="askre:B160"', 'class="btn pri" data-ctl="need_yes" data-tid="B160">Yes<', 'class="btn" data-ctl="need_no" data-tid="B160">No<', '>Later<', '>Open ']
+    at = [h.find(x) for x in parts]
+    check(-1 not in at and at == sorted(at), 'the popup, in order', list(zip(parts, at)))
+    check('<script>' not in h and '<img onerror' not in h and '&quot;&gt;&lt;img onerror=1&gt;' in h, 'all of it escaped', h)
+    check('<p>| files: &lt;a&gt;</p><p>BLOCKED: CONFIRM</p>' in o['text'] and '<pre' not in o['text'], 'the task text in paragraphs', o['text'])
+    check('data-shotclose' in o['big'] and 'What to do' not in o['big'] and 'data-ctl="need_yes"' in o['big'], 'a picture opens in it, the answers stay', o['big'])
+    eq((o['esc1'], o['esc2']), (['need', -1], ''), 'Esc closes the picture, then the popup')
+    eq(o['buttons'], ['', 1], 'a button of the card answers and opens nothing')
+    eq(o['closed'], '', 'an answer closes it')
+    check('Full task' in o['mute'] and 'Why it waits' not in o['mute'], 'F162a2: no words of the agent, no Why it waits', o['mute'])
+    eq(o['focused'], ['D7true'], 'F162a2: closing gives focus back to its card, drawn again since')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('.sheet.open:not(.drag){transition:transform var(--dur-spring) var(--spring-soft)}' in page and 'visible at once' in page,
+          'F162a2: an opening sheet is visible at once, or it cannot take focus')
+    check('data-reply="D7"' in o['reply'], 'an ask with no answers has Reply', o['reply'])
+    eq(o['sent'], [['run_control', {'key': 'need_answer1', 'tid': 'F2', 'text': 'Done'}],
+                   ['run_control', {'key': 'need_no', 'tid': 'B160', 'text': 'No', 'note': 'still grey'}],
+                   ['toast', 'Write your reply first'], ['answer', {'tid': 'D7', 'text': '8770'}]],
+       "what is sent: the reply box's words go with the answer")
+    want = 'class="btn pri" data-ctl="need_answer1" data-tid="D8">Full (recommended)</button><button class="btn" data-ctl="need_answer2" data-tid="D8">No &lt;change&gt;</button>'
+    check(want in o['opts'] and want in o['optsCard'] and 'data-reply="D8"' in o['opts'], "F181c: a DECIDE's options are buttons, the recommended marked, Reply stays", o['opts'])
+    eq(o['opt'], [['run_control', {'key': 'need_answer1', 'tid': 'D8', 'text': 'Full', 'note': 'dark too'}]], 'one sends the bare name and the note')
+    want = 'class="btn pri" data-ctl="need_answer1" data-tid="D9">Go with the recommended picks</button><button class="btn" data-ctl="need_answer2" data-tid="D9">Tabs (recommended)</button>'
+    check(want in o['sheet'] and want in o['sheetCard'] and 'data-reply="D9"' in o['sheet'], "F181b: a pick sheet's easy answers are buttons", o['sheet'])
+    eq(o['go'], [['run_control', {'key': 'need_answer1', 'tid': 'D9', 'text': 'Go with the recommended picks'}]], 'a press opens no chat')
+    check('>Approve<' in o['pitchHtml'] and 'need_answer2' not in o['pitchHtml'] and '>Chat<' in o['pitchHtml'], 'a pitch draws Approve alone', o['pitchHtml'])
+    eq(o['pitch'], [['run_control', {'key': 'need_answer1', 'tid': 'pitch1', 'text': 'Approve', 'note': 'nice'}],
+                    ['pitch_no', {'pid': 'pitch1', 'how': 'reopen', 'tid': 'F1', 'confirm': True, 'why': 'nice'}]],
+       "F162a: a pitch's answers carry the words too")
+    check('askfoot' not in o['tool'] and 'data-askfold' not in o['tool'], 'a missing tool has nothing to answer, and no task', o['tool'])
+    eq(o['left'], '', 'it closes when the item leaves Needs you')
+
+
+GIVE_DRIVER = NEED_DRIVER.split("  out.card = env.card0")[0].replace("  + slice(\"document.addEventListener('click'", "  + line(\"document.addEventListener('input',\") + slice(\"document.addEventListener('click'") + r"""
+  const answers = JSON.parse(process.argv[5]), posts = [];
+  env.sureHTML = new Function('esc', line('const sureHTML=') + 'return sureHTML')(env.E); env.kbReveal = () => {}; env.window = {isSecureContext: true}; env.KEEP = k => S.f[k];
+  el.querySelector = () => null;
+  const nodes = ['give:F399:link', 'givesec:F399:tok'].map(f => ({dataset: {f}, value: 'x', remove() { this.gone = true }}));
+  el.querySelectorAll = s => s.startsWith('[data-f') ? nodes : [];
+  env.fetch = async (p, o) => { if (!o) return {json: async () => ({ok: true, text: 't'})}; posts.push([p, JSON.parse(o.body), env.S.giving]); return {json: async () => answers.shift()} };
+  const type = (k, v) => { S.f[k] = v };
+  const type2 = (f, v) => handlers.input.forEach(h => h({target: {dataset: {f}, value: v, matches: s => s === '[data-f]'}}));
+  const done = async sure => { press2(sure); await wait() };
+  const press2 = sure => handlers.click.forEach(f => f({target: {closest: s => s === '[data-give]' ? {dataset: {give: 'F399'}, hasAttribute: () => sure} : null}}));
+  out.card = env.card0(needs[0], 0); out.other = env.card0(needs[1], 1);
+  press('[data-needopen]', {needopen: 'F399'}, false); await wait(); out.html = el.h;
+  env.window.isSecureContext = false; env.render(); out.http = el.h; env.window.isSecureContext = true;
+  type('give:F399:link', 'https://evil.example'); type('givesec:F399:tok', 'hunter2');
+  await done(false); out.refused = [el.h, {...S.f}];
+  await done(false); out.asked = [el.h, {...S.f}];
+  S.sure = 'give:F399'; type2('give:F399:link', 'https://evil.example'); out.edited = S.sure; await done(true); out.sent = [S.sheet, {...S.f}, nodes.map(n => [n.value, !!n.gone]), S.snap.needs.map(n => n.id)];
+  out.posts = posts; out.acts = sent;
+  S.snap.needs = needs; nodes[1].value = 'x'; press('[data-needopen]', {needopen: 'F399'}, false);
+  type('give:F399:link', 'kept'); type('givesec:F399:tok', 'hunter2'); env.closeSheet(); out.closed = [{...S.f}, nodes[1].value];
+  console.log(JSON.stringify(out)); process.exit(0);
+})();
+"""
+
+
+def give_row() -> dict:
+    """F175a: a Needs you row as iFizBox F399 asks: two steps, a link with a match and a question, and a secret."""
+    d = {'said': 'Waits on you', 'title': 'Shortcuts', 'where': '', 'summary': 's', 'lead': [], 'expect': ['It is listed'], 'notes': [], 'shots': [],
+         'steps': ["Add main's copy of Install Switch to Shortcuts", 'Share > Copy iCloud Link', 'Run this'],
+         'step_more': [{'link': 'https://www.icloud.com/shortcuts/a?b="c'}, {}, {'cmd': 'echo "<b>"', 'on': 'mini'}],
+         'inputs': [{'key': 'link', 'label': 'iCloud link', 'kind': 'link', 'hint': 'h', 'match': '', 'confirm': 'Publish?', 'env': ''},
+                    {'key': 'tok', 'label': 'To<ken', 'kind': 'secret', 'hint': '', 'match': '', 'confirm': '', 'env': 'TOK'}]}
+    return {'id': 'F399', 'label': 'BLOCKED', 'ask': 'a', 'detail': d, 'answers': [{'label': 'Done', 'value': 'Done'}]}
+
+
+def test_need_give_page_f175a(tmp: Path) -> None:
+    """F175a: the popup draws an item's steps, fields and Done, with no plain answers; what it sends, a refusal, a
+    question first, and what is left on the page afterwards."""
+    if not shutil.which('node'):
+        print('  (no node here: the popup script test is skipped)')
+        return
+    plain = {'id': 'F2', 'label': 'BLOCKED', 'ask': 'Log in', 'answers': [{'label': 'Done', 'value': 'Done'}]}
+    needs = [give_row(), plain]
+    for n in needs:
+        n.update(acts=U.row_acts('need', n), labels=U.row_labels('need', n))
+    answers = [{'ok': False, 'field': 'link', 'out': 'iCloud link: paste <it>'}, {'ok': False, 'code': 3, 'confirm': 'Publish?', 'out': 'Publish?'},
+               {'ok': True, 'gone': 'F399', 'said': 'F399 has what you gave'}]
+    (tmp / 'give.js').write_text(GIVE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'give.js'), str(W.PAGE), json.dumps(needs), json.dumps(U.controls()), json.dumps(answers)],
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node presses Done', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    h = o['html']
+    check('need_answer1' not in o['card'] and 'need_answer1' in o['other'], 'no plain answers on its card; an item without inputs keeps them', o['card'])
+    parts = ['Install Switch', 'href="https://www.icloud.com/shortcuts/a?b=&quot;c" target="_blank"', '>Open</a>', 'Share &gt; Copy iCloud Link', 'Run on mini',
+             '<code>echo &quot;&lt;b&gt;&quot;</code>', '>Copy</button>', 'iCloud link', 'data-f="give:F399:link"', 'To&lt;ken',
+             'data-f="givesec:F399:tok" type="password"', 'data-give="F399" >Done<']
+    at = [h.find(x) for x in parts]
+    check(-1 not in at and at == sorted(at), 'steps with Open and Copy, then a field each, then Done', list(zip(parts, at)))
+    check('need_answer1' not in h and 'askre:' not in h and h.count('data-give=') == 1, 'one Done, no plain answer', h)
+    check('plain http' in o['http'] and 'givesec' not in o['http'] and 'data-give="F399" disabled' in o['http'], 'over http: no secret field, and why', o['http'])
+    vals = {'link': 'https://evil.example', 'tok': 'hunter2'}
+    h, f = o['refused']
+    check('iCloud link: paste &lt;it&gt;' in h and h.index('data-f="give:F399:link"') < h.index('paste &lt;it') < h.index('To&lt;ken') and 'aria-invalid' in h,
+          'a refusal shows at its field', h)
+    eq(f, {'give:F399:link': vals['link'], 'givesec:F399:tok': vals['tok']}, 'and keeps what was typed')
+    h, f2 = o['asked']
+    check('Publish?' in h and 'data-give="F399" data-sure' in h and '>Done<' not in h and f2 == f, 'asked first', h)
+    eq([x[:2] for x in o['posts']], [['give?t=T', {'tid': 'F399', 'values': vals, 'confirm': c}] for c in (False, False, True)], 'what is sent, and where')
+    eq(o['posts'][0][2], 'F399', 'and it shows that it is sending')
+    check('hunter2' not in json.dumps([o['refused'][0], o['asked'][0], o['html']]), 'a secret is never in the markup')
+    eq(o['sent'], ['', {}, [['', True], ['', True]], ['F2']], 'sent: the popup closes, its fields and their values are gone')
+    eq(o['acts'], [['toast', 'F399 has what you gave']], 'nothing went through the outbox')
+    eq(o['edited'], None, 'a field changed under the question: Done asks again')
+    eq(o['closed'], [{'give:F399:link': 'kept'}, ''], 'closing forgets a secret, not a link')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("!k.startsWith('givesec:')" in page[page.index('function keepTyped'):page.index('function takeTyped')]
+          and "secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')" in page, 'a refresh keeps no secret and waits for it')
+    from agent_runner import page_copy
+    copy = page_copy.page_copy_html({'needs': needs})
+    check('F399' in copy and '<input' not in copy and 'ken' not in copy, 'the claude.ai copy has no field', copy)
+
+
+def test_give_route_f175a(tmp: Path) -> None:
+    """F175a: POST /give: the token, and a secret only over https or this machine, whatever the page says; a failed
+    match says its hint, a question is asked first; nothing the run keeps or shows but its own file has the secret."""
+    import shlex
+    import urllib.request as ur
+    from agent_runner import home as H, plan as P
+    from agent_runner.status import waiting_ok
+    repo = fake_repo(tmp)
+    asks = repo / '.runner' / 'asks'
+    asks.mkdir(parents=True, exist_ok=True)
+    token, secret, url = W.web_token(), 'hunter2-sentinel', 'https://www.icloud.com/shortcuts/abc'
+    ask = lambda tid, *xs: (P.block(tid, 'BLOCKED: give it', todo=S.C.todo),  # noqa: E731
+                            (asks / f'{tid}.json').write_text(json.dumps({'steps': ['Do it'], 'inputs': list(xs)}), encoding='utf-8'))
+    ask('F1', {'key': 'link', 'label': 'iCloud link', 'kind': 'link', 'match': r'https://www\.icloud\.com/shortcuts/\S+', 'hint': 'paste the iCloud link',
+               'confirm': 'Publish this?'})
+    tokin = [{'key': 'tok', 'label': 'Token', 'kind': 'secret', 'env': 'TOK'}]
+    ask('B2', *tokin)
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'needs': U.needs_rows(waiting_ok(), dt.datetime.now())[0]})
+    port = srv.server_address[1]
+    hs = H.serve_home('home-tok', 0, '127.0.0.1', rows=lambda *a: [])
+    hs.link, hs.project = (lambda root: (port, token)), (lambda key: repo)
+    hp = hs.server_address[1]
+    said = []
+
+    def give(body, p=port, path=None, **hd) -> tuple[int, dict]:
+        hd = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{p}', **hd}
+        req = ur.Request(f'http://127.0.0.1:{p}' + (path or f'/give?t={token}'), data=json.dumps(body).encode(), headers=hd, method='POST')
+        try:
+            with ur.urlopen(req, timeout=20) as r:
+                got = r.status, r.read()
+        except urllib.error.HTTPError as e:
+            got = e.code, e.read()
+        said.append(got[1].decode())
+        return got[0], json.loads(got[1])
+    far = {'Host': 'box:8770', 'Origin': 'http://box:8770'}  # as a page opened over plain http by name
+    ts = {'Host': 'box.ts.net', 'Origin': 'https://box.ts.net', 'X-Forwarded-Proto': 'https', 'X-Forwarded-For': '100.1.2.3'}
+    tok = {'tid': 'B2', 'values': {'tok': secret}}
+    home = '/p/proj/give?t=home-tok'
+    try:
+        eq(give({'tid': 'F1', 'values': {'link': url}}, path='/give')[0], 403, 'only with the token')
+        eq(give(tok, Origin='http://evil.example')[0], 403, 'not from another page')
+        eq(give(tok, **{'Content-Type': 'text/plain'})[0], 400, 'JSON only')
+        for bad in ([], {'tid': 5, 'values': {}}, {'tid': 'F1', 'values': [secret]}, {'tid': 'F1'}):
+            eq(give(bad)[0], 400, f'bad request: {bad}')
+        line = S.C.todo.read_text(encoding='utf-8')
+        for body, p, path, hd in ((tok, port, None, far), ({**tok, 'secure': True}, port, None, far), (tok, port, None, {**ts, 'X-Forwarded-Proto': 'http'}),
+                                  (tok, hp, home, far), ({**tok, 'secure': True}, hp, home, {**far, 'X-Runner-Channel': 'ok'})):
+            code, r = give(body, p, path, **hd)
+            check((code, r['ok'], r.get('field')) == (200, False, 'tok') and 'plain http' in r['out'], 'plain http: a secret is refused, and why', (hd, r))
+        check(not (asks / 'B2.env').exists() and S.C.todo.read_text(encoding='utf-8') == line, 'nothing was kept or sent')
+        r = give({'tid': 'F1', 'values': {'link': 'https://evil.example'}, 'confirm': True}, **far)[1]
+        check((r['ok'], r['field']) == (False, 'link') and 'paste the iCloud link' in r['out'], 'a failed match says the hint at its field', r)
+        for c in (False, 'true', 1):
+            r = give({'tid': 'F1', 'values': {'link': url}, 'confirm': c}, **far)[1]
+            eq((r['code'], r['confirm']), (3, 'Publish this?'), f'asked first ({c!r})')
+        check(S.C.todo.read_text(encoding='utf-8') == line, 'nothing was sent yet')
+        r = give({'tid': 'F1', 'values': {'link': url}, 'confirm': True}, **far)[1]
+        check(r['ok'] and r['gone'] == 'F1' and url in S.C.todo.read_text(encoding='utf-8'), 'a link goes over http too', r)
+        for p, path, hd in ((port, None, {}), (port, None, ts), (hp, home, ts), (hp, home, {})):
+            ask('B2', *tokin)
+            (asks / 'B2.env').unlink(missing_ok=True)
+            r = give(tok, p, path, **hd)[1]
+            check(r['ok'] and shlex.split((asks / 'B2.env').read_text(encoding='utf-8')) == [f'TOK={secret}'], 'https or this machine: kept', (hd, r))
+        ask('B2', *tokin)
+        with mock.patch.object(U, 'need_give', mock.Mock(side_effect=RuntimeError(secret))):
+            check('RuntimeError' in give(tok)[1]['out'], 'an error says its kind alone')
+        with mock.patch.object(W.Handler, 'log_message') as log:
+            said.append(get(f'http://127.0.0.1:{port}/snapshot?t={token}')[1].decode())
+            check(secret not in str(log.mock_calls), 'nor in a log')
+    finally:
+        hs.stop()
+        srv.stop()
+    check(not any(secret in x for x in said), 'no answer and no snapshot holds the secret')
+    check('"inputs"' in said[-1], 'the snapshot asks for it', said[-1][:500])
+    for f in repo.rglob('*'):
+        if f.is_file() and f.name != 'B2.env':
+            check(secret.encode() not in f.read_bytes(), f'nor does {f.name}')
+
+
+def test_need_note_f162(tmp: Path) -> None:
+    """F162: the words beside a button's answer reach the plan with it."""
+    from agent_runner import plan as P
+    fake_repo(tmp)
+    P.block('F1', 'CONFIRM: check the board loads', todo=S.C.todo)
+    P.block('B2', 'DECIDE: ship it, yes or no?', todo=S.C.todo)
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, ''))[1]]):
+        U.act('answer', tid='F1', text='Yes', button=True, note='on  wifi')
+        U.act('answer', tid='F1', text='No', button=True, note='still grey')
+        U.act('answer', tid='F1', text='No', button=True, note=' ')
+        U.act('answer', tid='B2', text='Yes', button=True, note='on Monday')
+    eq(ran, [['plan', 'confirm', 'F1', 'Yes: on wifi'], ['plan', 'change', 'F1', 'No: still grey'],
+             ['plan', 'change', 'F1', 'No: the check failed'], ['plan', 'confirm', 'B2', 'Yes: on Monday']], 'the note goes with it')
+
+
+def test_pitch_note_f162a(tmp: Path) -> None:
+    """F162a: the words beside a pitch's answer are kept: Approve's go to a new chat, once it is approved; Not this's
+    are its --why; if the chat does not start, the toast says the words."""
+    fake_repo(tmp)
+    ran, sent, code, ok = [], [], [0], [True]
+    send = lambda t: (sent.append(t), {'ok': ok[0], 'code': 0, 'out': 'no session', 'argv': []})[1]  # noqa: E731
+    with mock.patch.object(U, 'need_label', lambda tid: 'PITCH'), mock.patch.object(U, 'SEND', [send]), \
+            mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (code[0], 'pushed'))[1]]):
+        r = U.act('answer', tid='pitch1', text='Approve', button=True, note='- watch  the menu')
+        U.act('answer', tid='pitch1', text='Not F1: drop', button=True, note='too slow')
+        U.act('pitch_no', pid='pitch1', how='reopen', tid='F1', confirm=True, why='too  slow')
+        U.act('answer', tid='pitch1', text='Approve', button=True)
+        code[0] = 1
+        U.act('answer', tid='pitch1', text='Approve', button=True, note='not yet')
+        code[0], ok[0] = 0, False
+        bad = U.act('answer', tid='pitch1', text='Approve', button=True, note='hold on')
+    eq((r['said'], r['gone'], sent), ('pushed', 'pitch1', ['pitch1: approved. - watch the menu', 'pitch1: approved. hold on']),
+       "Approve's words go to a chat, only once it is approved")
+    eq(ran[:4], [['pitch', 'approve', 'pitch1'], ['pitch', 'no', 'pitch1', '--drop', 'F1', '--why=too slow'],
+                 ['pitch', 'no', 'pitch1', '--reopen', 'F1', '--why=too slow'], ['pitch', 'approve', 'pitch1']], "Not this's are its why")
+    check(bad['gone'] == 'pitch1' and 'hold on' in bad['said'], 'a chat that does not start: the words are said', bad)
+
+
+def test_shot_f162(tmp: Path) -> None:
+    """F162: a Needs you item's pictures are served only with the token, only images, only from <notes>/uploads and
+    <notes>/asks, with no way out by .. or a symlink; /why gives the agent's last words."""
+    repo = fake_repo(tmp)
+    notes = repo / '.runner'
+    (notes / 'uploads').mkdir(parents=True, exist_ok=True)
+    (notes / 'asks').mkdir(parents=True, exist_ok=True)
+    png = b'\x89PNG\r\n\x1a\nfake picture'
+    for f in ('uploads/a b.png', 'asks/b.png', 'secret.png'):
+        (notes / f).write_bytes(png)
+    (notes / 'uploads' / 'fake.png').write_bytes(b'not a picture at all')
+    (notes / 'uploads' / 'x.svg').write_text('<svg onload="1"/>')
+    (notes / 'asks' / 'B1.json').write_text('{}')
+    linked = True
+    try:
+        (notes / 'uploads' / 'out.png').symlink_to(notes / 'secret.png')
+        (notes / 'asks' / 'dir').symlink_to(notes, target_is_directory=True)
+    except OSError:
+        linked = False
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        for f in ('uploads/a%20b.png', 'asks/b.png'):
+            eq(get(f'{base}/shot/{f}?t={token}'), (200, png), f'{f} is served')
+            eq(get(f'{base}/shot/{f}')[0], 403, 'only with the token')
+        bad = ['uploads/../secret.png', 'uploads/%2e%2e/secret.png', 'uploads/..%2fsecret.png', 'asks/..%5csecret.png',
+               'secret.png', 'uploads/', 'uploads/no.png', 'uploads/fake.png', 'uploads/x.svg', 'asks/B1.json', 'concepts/a.png',
+               'uploads/%2fetc/passwd', 'uploads/%00.png', 'uploads/..%2fasks/b.png']
+        for f in bad + (['uploads/out.png', 'asks/dir/secret.png'] if linked else []):
+            eq(get(f'{base}/shot/{f}?t={token}')[0], 404, f'{f} is refused')
+        why = json.loads(get(f'{base}/why/F1?t={token}')[1])
+        eq((why['ok'], why['text']), (True, ''), 'why it waits: no session, so no words (Full task has the task lines)')
+        with mock.patch.object(U, 'agent_said', lambda tid: f'{tid} needs a phone'):
+            eq(json.loads(get(f'{base}/why/F1?t={token}')[1])['text'], 'F1 needs a phone', "a session's last words")
+        eq(json.loads(get(f'{base}/why/--x?t={token}')[1])['ok'], False, 'a task id only')
+        eq(get(f'{base}/why/F1')[0], 403, 'only with the token')
+    finally:
+        srv.stop()
+
+
+def test_home_switcher_f134(tmp: Path) -> None:
+    """F134: through Runner Home (/p/KEY/) the sidebar opens with a project switcher: every Home project from
+    Home's /projects, running/idle/off and its needs-you count, each a link to /p/KEY/?t=TOKEN on the same Home
+    address; Home's own page is the same app in Home mode (HOME_PAGE), with All projects and Devices."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("fetch(tq(HB+'projects'))" in page, "the switcher reads Home's /projects, with the page's token")
+    check('sideShow(`${allRow()}' in page and 'data-up' in page, 'F150: the sidebar starts with All projects when Home is around')
+    check('projects:projectsHTML' in page, 'and the run app has an All projects view')
+    run_page = W.page_html().decode()
+    home_page = W.page_html(home=True).decode()
+    check('const HOME_PAGE=/*HOME_PAGE*/false;' in run_page and 'const HOME_PAGE=true;' in home_page and
+          '<title>Runner Home</title>' in home_page, "Home's page is the run app with HOME_PAGE on", home_page[:600])
+    if not shutil.which('node'):
+        print('  (no node here: the switcher script test is skipped)')
+        return
+    ps = [{'key': 'alpha', 'name': 'alpha', 'state': 'running', 'paused': False, 'needs': 2},
+          {'key': 'beta two', 'name': 'beta two', 'state': 'idle', 'paused': True, 'needs': 0},
+          {'key': 'gamma', 'name': 'gamma', 'state': 'off', 'needs': None}]
+    got = logic_js([['switcherRows', ps, 'alpha', '/', 'HT&1'],
+                    ['homeBase', '/p/alpha/', False], ['homeBase', '/', True], ['homeBase', '/', False],
+                    ['homeKey', '/p/beta%20two/'], ['homeKey', '/'],
+                    ['projectMain', {'state': 'off'}], ['projectMain', {'state': 'off', 'starting': True}],
+                    ['projectMain', {'state': 'idle', 'page': 'p/a/'}],
+                    ['projectMore', {'name': 'a', 'state': 'off'}], ['projectMore', {'name': 'a', 'state': 'running', 'slots': 2}],
+                    ['projectWords', {'state': 'idle', 'paused': True, 'slots': 1, 'running': [], 'left': 3}],
+                    ['projectOrder', [{'key': k, 'state': s, 'paused': z} for k, s, z in
+                                      (('off2', 'off', False), ('Off1', 'off', False), ('paused', 'running', True),
+                                       ('Idle', 'idle', False), ('b', 'running', False), ('A', 'running', False))]],
+                    ['switcherRows', ps, 'alpha', '/', 'T', 'plan'],
+                    ['oneProject', ps], ['oneProject', ps[:1]], ['oneProject', None], ['needsOf', ps], ['needsOf', ps, 'alpha'],
+                    ['projectAsks', [{'key': 'z', 'name': 'z', 'state': 'off', 'asks': ['F2 - check - it']},
+                                     {'key': 'a', 'name': 'a', 'state': 'idle', 'asks': ['K1 - pick one']}]],
+                    ['snapKept', {'home': {'t': 'TOKEN'}, 'boot': 'b', 'at': 'now', 'page': 'p', 'version': '1', 'queue': [1]}],
+                    ['homeBase', '/p/alpha/', True], ['placeOf', '{}', '#need-F162a2', True, []], ['placeOf', '{}', '#need-', True, []]])
+    up = {'key': 'a', 'state': 'running', 'slots': 2}
+    act = lambda n, arg='', st='sending', key='a': {'name': n, 'state': st, 'args': {'project': key, 'arg': arg}}
+    now = logic_js([['projectNow', {'key': 'a', 'state': 'off'}, [act('start')]], ['projectNow', up, [act('pause'), act('slots', '5')]],
+                    ['projectNow', up, [act('pause', st='failed'), act('stop', key='b')]], ['projectNow', up, [act('stop')]],
+                    ['projectNow', {**up, 'paused': True}, [act('resume')]]])
+    eq([now[0].get('starting'), (now[1]['paused'], now[1]['slots']), now[2], now[3]['stopping'], now[4]['paused']],
+       [True, (True, 5), up, True, False], 'F150: an action on its way shows at once; one that failed, or of another project, does not')
+    eq([(r['key'], r['said'], r['needs'], r['href'], r['on']) for r in got[0]],
+       [('alpha', 'running', 2, '/p/alpha/?t=HT%261', True), ('beta two', 'paused', 0, '/p/beta%20two/?t=HT%261', False),
+        ('gamma', 'off', 0, '/p/gamma/?t=HT%261', False)],
+       "the switcher lists Home's projects with their state and needs-you count, each linking /p/KEY/?t=TOKEN")
+    eq(got[1:6], ['/', '/', '', 'beta two', ''],
+       "Home's address from the page's path: /p/KEY/ through Home, / on Home's own page, none on a run's own port")
+    eq([got[6]['label'], got[7]['label'], got[8]['label']], ['Start run', 'Starting…', 'Open'], "a card's one main button")
+    eq([b['label'] for b in got[9]], ['Unlist'], 'the rest is in its … sheet')
+    eq([(b['label'], b.get('a'), bool(b.get('sure'))) for b in got[10]],
+       [('Pause', 'pause', False), ('Slots', None, False), ('Stop', 'stop', True), ('Unlist', None, True)], 'Stop and Unlist ask first')
+    eq(got[11], 'paused · 0 of 1 slot · 3 queued', 'the words under a project')
+    eq([r['key'] for r in got[12]], ['A', 'b', 'Idle', 'paused', 'Off1', 'off2'], 'F150: running, idle or paused, off; by name in each')
+    eq([r['href'] for r in got[13]][0], '/p/alpha/?t=T#plan', 'switching keeps the tab')
+    eq(got[14:19], [False, True, False, 2, 0], "All projects' row hides with one project; its count is the others'")
+    eq([(a['key'], a['id'], a['what']) for a in got[19]], [('a', 'K1', 'Pick one'), ('z', 'F2', 'Check - it')], 'what needs you, over all projects')
+    eq(got[20], {'queue': [1]}, 'the snapshot kept for the next visit holds no token and nothing of one run or version')
+    eq(got[21], '/', "Home's page at /p/KEY/ (a project that is off) knows where Home is")
+    eq((got[22], got[23]['link']), ({'v': 'home', 't': '', 'link': True, 'need': 'F162a2'}, False), 'a link to an item of Needs you')
+
+
+HOME_ACT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const i = page.indexOf("/* --- F150: Home's actions"), src = page.slice(i, page.indexOf('/* --- F150: Runner Home in the app', i));
+const m = {}, store = {get: k => m[k] || '', set: (k, v) => { if (v) m[k] = v; else delete m[k] }};
+let cids = 0, posts = [], answer = null, said = [];
+const open = () => {
+  const S = {}, H = {begun: {}, turn: 0, projects: [{key: 'a', state: 'running', slots: 2}, {key: 'b', state: 'off'}]};
+  const api = new Function('S', 'H', 'store', 'fetch', logic + `
+    const HB='/', tq=p=>p, newCid=()=>'k'+nextCid(), render=()=>{}, obDraw=()=>{}, toast=t=>said.push(t), loadProjects=()=>{}, addEventListener=()=>{}, setTimeout=f=>{later.push(f)}, clearTimeout=()=>{};
+    ` + src + ';return {homeAct,homeDrain,homeRetry,homeHas}').bind(null);
+  return {S, H, ...api(S, H, store, async (u, o) => { const b = JSON.parse(o.body); posts.push(b); const j = await answer(b); if (j === 'lost') throw new Error('lost'); return {status: 200, json: async () => j} })};
+};
+global.nextCid = () => ++cids; global.said = said; global.later = [];
+const settle = async () => { for (let n = 0; n < 8; n++) await new Promise(r => setImmediate(r)) };
+(async () => {
+  const out = {}, hold = {};
+  // a slow start holds up no other project, and the next page follows it with the same cid
+  answer = b => b.name === 'start' ? new Promise(r => hold.start = r) : {ok: true, out: 'paused'};
+  let p = open(); p.homeAct('b', 'start', '', 'Start run · b'); p.homeAct('a', 'pause', '', 'Pause · a'); await settle();
+  out.slow = [posts.map(x => [x.project, x.name, x.cid]), p.S.hob.map(x => x.name), p.H.projects[0].paused];
+  answer = () => ({ok: true, out: 'started'}); posts = [];
+  let q = open(); out.kept = q.S.hob.map(x => x.name); q.homeDrain(); await settle();
+  out.follows = [posts.map(x => x.cid), q.S.hob.length, !!q.H.begun.b, m['ar-outbox:@home'] || ''];
+  // a refusal stays with Retry, under a new cid; a lost connection is sent again with the same one
+  answer = () => ({ok: false, out: 'no'}); posts = []; q.homeAct('a', 'slots', '3', '3 slots · a'); await settle();
+  out.failed = q.S.hob.map(x => [x.state, x.err]); const bad = q.S.hob[0].cid;
+  answer = () => 'lost'; q.homeRetry(bad); await settle(); out.lost = q.S.hob.map(x => x.state);
+  answer = () => ({ok: true, out: '3 slots'}); later.pop()(); await settle();
+  out.again = [posts.length, posts[1].cid === posts[2].cid, posts[0].cid !== posts[1].cid, q.S.hob.length, q.H.projects[0].slots];
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_home_actions_f150(tmp: Path) -> None:
+    """F150: start, pause, slots and stop go through Home's own outbox, followed over a switch to another project."""
+    if not shutil.which('node'):
+        print('  (no node here: the Home actions script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(HOME_ACT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, encoding='utf-8')
+    eq(r.returncode, 0, 'node runs the Home actions')
+    if r.returncode:
+        print(r.stderr)
+        return
+    o = json.loads(r.stdout)
+    eq(o['slow'], [[['b', 'start', 'k1'], ['a', 'pause', 'k2']], ['start'], True], 'a slow start holds up no other project')
+    eq((o['kept'], o['follows']), (['start'], [['k1'], 0, True, '']), 'the next page follows it, with the same id')
+    eq((o['failed'], o['lost']), ([['failed', 'no']], ['sending']), 'a refusal stays, a lost connection waits')
+    eq(o['again'], [3, True, True, 0, 3], 'and is sent again: the same id after a lost connection, a new one on Retry')
+
+
+def test_home_screen_b179(tmp: Path) -> None:
+    """B179: the run app on a phone's Home Screen: a manifest whose scope holds every project, behind the token, and
+    no link inside the app that opens a new tab there."""
+    fake_repo(tmp)
+    srv = W.serve('TOK', 0, '127.0.0.1')
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        for path in ('/manifest.webmanifest', '/icon-180.png'):
+            eq((get(f'{base}{path}')[0], get(f'{base}{path}?t=WRONG')[0]), (403, 403), f'{path} needs the token')
+        with urllib.request.urlopen(f'{base}/manifest.webmanifest?t=TOK', timeout=10) as r:
+            m = json.loads(r.read())
+            eq((r.headers['Content-Type'], r.headers['Cache-Control']),
+               ('application/manifest+json; charset=utf-8', 'no-store'), 'the manifest, never stored')
+        eq((m['name'], m['scope'], m['start_url'], m['display']), (S.project(), './', './?t=TOK', 'standalone'),
+           "a run's own address: its own root, back in with the token")
+        check('theme_color' not in m, 'no one colour for both themes')
+        code, png = get(f'{base}/icon-180.png?t=TOK')
+        eq((code, png[:8], int.from_bytes(png[16:20], 'big')), (200, b'\x89PNG\r\n\x1a\n', 180), 'the icon is a PNG')
+        eq(get(f'{base}/icon-999.png?t=TOK')[0], 404, 'only the sizes it has')
+    finally:
+        srv.stop()
+    for what, home in (('run page', False), ("Home's page", True)):
+        page = W.page_html(home=home).decode()
+        for tag in ('name="apple-mobile-web-app-capable" content="yes"',
+                    'name="apple-mobile-web-app-status-bar-style" content="default"', 'viewport-fit=cover'):
+            check(tag in page, f'the {what} has {tag}')
+        check("add('manifest',manifestLink(HB,HKEY,T))" in page and "add('apple-touch-icon'" in page,
+              f'the {what} links its manifest and icon')
+        links = re.findall(r'<a class="(?:prow|btn|pname|brand)[^>]*(?:projectLink|projectHref|r\.href|esc\(href\))[^>]*>', page)
+        check(len(links) >= 4, f'the {what} has the list, Overview and project card links', links)
+        for a in links:
+            check('_blank' not in a, f'{what}: a link between projects opens no tab', a)
+    if not shutil.which('node'):
+        print('  (no node here: the Home Screen script test is skipped)')
+        return
+    o = 'https://h.ts.net:8771'
+    eq(logic_js([['manifestLink', '/', 'beta two', 'T&1'], ['manifestLink', '/', '', 'T'], ['manifestLink', '', 'x', 'T'],
+                 ['appLink', o + '/p/a/?t=T', o, '/'], ['appLink', o + '/p/a/concept/K1?t=T', o, '/'],
+                 ['appLink', 'https://claude.ai/x?t=T', o, '/'], ['appLink', 'http://h.ts.net:8770/?t=T', o, '/'],
+                 ['appLink', o + '/other/?t=T', o, '/home/'], ['appLink', o + '/p/a/', o, '/'], ['appLink', o + '/p/a/?t=', o, '/'], ['appLink', '', o, '/']]),
+       ['/manifest.webmanifest?p=beta%20two&t=T%261', '/manifest.webmanifest?t=T', './manifest.webmanifest?t=T',
+        'go', 'concept', '', '', '', '', 'go', ''],
+       "the manifest at Home's root; the app's own pages stay in it, other sites open outside")
+
+
+def test_project_name_b153(tmp: Path) -> None:
+    """B153: the run page shows the project's name, not agent-runner: the window title ('proj · runner'), the
+    top-left (a link to Runner Home), the logo's letter and a chat's lead label."""
+    fake_repo(tmp)
+    run_page = W.page_html().decode()
+    check('<title>proj · runner</title>' in run_page, 'the served title is the project first', run_page[:400])
+    check("document.title=pageTitle(S.snap.project)" in run_page, 'and the snapshot keeps it')
+    check('if(!HB||oneProject(H.projects))return brand();' in run_page and '<b>agent-runner</b>' not in run_page,
+          'the top-left is the project name (brand), not agent-runner')
+    check('class="logo">ar<' not in run_page and "'agent-runner')}</div>" not in run_page,
+          'no ar logo, no agent-runner lead label')
+    with mock.patch.object(W, 'home_port', lambda: 0):
+        eq(W.home_address(), {}, 'Home not installed: no Home link')
+    cfg = tmp / 'cfg'
+    cfg.mkdir()
+    (cfg / 'home.token').write_text('HT\n')
+    from agent_runner import home as HM
+    with mock.patch.object(W, 'home_port', lambda: 8770), mock.patch.object(HM, 'config_dir', lambda: cfg):
+        eq(W.home_address(), {'port': 8770, 't': 'HT'}, "Home's port and token for the link")
+        eq(W.with_extras({})['home'], {'port': 8770, 't': 'HT'}, 'in the run page snapshot')
+    if not shutil.which('node'):
+        print('  (no node here: the Home link script test is skipped)')
+        return
+    home = {'port': 8770, 't': 'H&T'}
+    got = logic_js([['homeHref', '', 'RT', home, {'protocol': 'http:', 'hostname': 'box'}],
+                    ['homeHref', '', 'RT', home, {'protocol': 'https:', 'hostname': 'box.ts.net'}],
+                    ['homeHref', '/', 'RT', home, {'protocol': 'http:', 'hostname': 'box'}],
+                    ['homeHref', '', 'RT', {}, {'protocol': 'http:', 'hostname': 'box'}],
+                    ['pageTitle', 'ifizbox'], ['pageTitle', '']])
+    eq(got[:4], ['http://box:8770/?t=H%26T', 'http://box.ts.net:8770/?t=H%26T', '/?t=RT', ''],
+       "the top-left name links to Runner Home: its port and token on the page's host (over http, also from https); "
+       "through Home, Home's own base; none while Home is not installed")
+    eq(got[4:], ['ifizbox · runner', 'agent-runner'], 'the window title: the project first')
+
+
+def test_status_view_f124(tmp: Path) -> None:
+    """F124 (F120-F122): Status in place of Activity and Agents, its sections in the TUI's order, the state pill, the
+    Run card and the More… sheet from the one list of controls, and the swipe that follows the finger."""
+    page = W.page_html().decode()
+    body = page.split('function statusHTML(){', 1)[1].split('\n}\n', 1)[0]
+    at = [body.find(x) for x in ('needsSec()', '>Run<', '>Usage<', '>Landed lately<', '>Release<', '>Run log<')]
+    check(all(i >= 0 for i in at) and at == sorted(at), 'Needs you, Run, Usage, Landed lately, Release, Run log', at)
+    check('data-quick="since"' in body and 'data-quick="yesterday"' in body, 'the Since chips stay')
+    for gone in ('agentsHTML', 'activityHTML', "['agents','Agents']", "['activity','Activity']"):
+        check(gone not in page, f'no {gone}: one Status view')
+    for part in ('data-sheet="run"', 'id="sheet"', 'role="dialog"', 'data-k="pill"', 'cardControls(S.snap)',
+                 'controlGroups(S.snap)', "outbox(rq.name,rq.args,{ctl:"):
+        check(part in page, f'the page has {part}')
+    for ev in ('touchstart', 'touchmove', 'touchend', 'touchcancel'):
+        check(f"document.addEventListener('{ev}'" in page, f'{ev} is handled')
+    swipe = page.split('/* F124: a swipe right anywhere', 1)[1].split("addEventListener('pagehide'", 1)[0]
+    check(swipe.count('preventDefault') == 1 and swipe.count('{passive:true}') == 3 and swipe.count('{passive:false}') == 1,
+          'only its touchmove is not passive (B167)')
+    for part in ('input,textarea,select', 'sideways(el)', 'translateX(', 'swipeOpens('):
+        check(part in swipe, f'the swipe has {part}')
+    if not shutil.which('node'):
+        print('  (no node here: the Status script test is skipped)')
+        return
+    with mock.patch('agent_runner.plat.WINDOWS', False):
+        cs = U.controls()
+    with mock.patch('agent_runner.plat.WINDOWS', True):  # B163: no re-exec there, so no restart
+        win = U.controls()
+    fix2 = {'resume': [], 'unclaim': [{'id': 'F1', 'label': 'x'}] * 2, 'wip': []}
+    snap = lambda up_, run, fix: {'up': up_, 'controls': cs, 'run': run, 'fixups': fix,  # noqa: E731
+                                  **U.controls_shown(up_, run, fix)}
+    with mock.patch('agent_runner.plat.WINDOWS', False):
+        up = snap(True, {}, fix2)
+        paused, none_up, nofix, forced = (snap(True, {'paused': True, 'stopping': True}, fix2), snap(False, {}, fix2),
+                                          snap(True, {}, {}), snap(True, {'forced': True, 'stopping': True}, fix2))
+    with mock.patch('agent_runner.plat.WINDOWS', True):
+        winup = {**snap(True, {}, fix2), 'controls': win}
+    got = logic_js([['viewOf', 'agents'], ['viewOf', 'activity'], ['viewOf', 'plan'],
+                    ['runPill', {'up': True, 'run': {'state': 'Caps forced'}}], ['runPill', {'up': False}],
+                    ['cardControls', up], ['cardControls', paused],
+                    ['cardControls', none_up], ['controlGroups', up], ['controlGroups', nofix],
+                    ['controlGroups', forced],
+                    ['swipeTakes', 4, 3, False], ['swipeTakes', 40, 5, False], ['swipeTakes', -40, 5, False],
+                    ['swipeTakes', -40, 5, True], ['swipeTakes', 40, 60, False],
+                    ['swipeOpens', 100, 0, 280, False], ['swipeOpens', 180, 0, 280, False],
+                    ['swipeOpens', 60, 0.8, 280, False], ['swipeOpens', -60, -0.8, 280, True],
+                    ['swipeOpens', -60, 0, 280, True], ['atEnd', {'scrollHeight': 500, 'scrollTop': 400, 'clientHeight': 100}],
+                    ['atEnd', {'scrollHeight': 500, 'scrollTop': 300, 'clientHeight': 100}],
+                    ['controlGroups', winup]])
+    eq(got[:3], ['status', 'status', 'plan'], 'the old views land on Status')
+    eq(got[3:5], [{'text': 'Caps forced', 'cls': 'warn'}, {'text': 'Not up', 'cls': ''}], "the pill's words")
+    eq(got[5], ['slot_remove', 'slot_add', 'pause', 'stop'], "the card's everyday buttons")
+    eq(got[6], ['slot_remove', 'slot_add', 'go_on', 'stop_undo'], 'paused and stopping: what undoes it')
+    eq(got[7], ['start'], 'no run: Start the run')
+    for groups, more, on in ((got[8], ['restart'], ''), (got[23], [], ' (Windows)')):
+        keys = [(g['group'], [i['c']['key'] for i in g['items']]) for g in groups]
+        eq(keys, [('Stop', ['stop', 'stop_now', 'suspend', 'shutdown']), ('Run', ['slots_set', 'force', 'upgrade', *more]),
+                  ('Fix up', ['unclaim'])], f'the sheet: Stop, Run and Fix up, what there is to fix only{on}')
+    eq(got[8][2]['items'][0]['label'], 'Release stale claims (2)', 'with its count')
+    eq([g['group'] for g in got[9]], ['Stop', 'Run'], 'nothing to fix: no Fix up')
+    eq([i['c']['key'] for i in got[10][0]['items']], ['stop_now', 'suspend', 'shutdown'], 'stopping already: no Stop')
+    check('caps_on' in [i['c']['key'] for i in got[10][1]['items']], 'caps forced: Caps back on')
+    eq(got[11:16], ['wait', 'drag', '', 'drag', ''], 'right opens, left closes, a mostly vertical move does neither')
+    eq(got[16:21], [False, True, True, False, True], 'it settles by how far and how fast')
+    eq(got[21:23], [True, False], 'at the end, or not')
+
+
+if __name__ == '__main__':
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124)]))

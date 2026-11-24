@@ -1,8 +1,9 @@
 # Style rules
 
 How the run app (`agent_runner/web_page.html` and its parts in `agent_runner/page/`, CSS and script files named by area, in the order they are joined by the server into one page (an area has several where its code sits among another's: moving it would change the cascade or the order scripts run); Runner Home's page too) looks, moves and speaks. Every change to it
-follows these rules, and a change that needs a new rule writes it here in the same commit. `tests/test_web.py`
-(`test_style_f83`) checks the ones a machine can check. The words for things are in [GLOSSARY.md](../GLOSSARY.md);
+follows these rules, and a change that needs a new rule writes it here in the same commit. The page's tests are one file per area,
+`tests/test_web_<area>.py`, matching the parts (helpers shared by them are in `tests/_web.py`, which the gate does not
+run as a suite); `test_style_f83` in `tests/test_web_shared.py` checks the ones a machine can check. The words for things are in [GLOSSARY.md](../GLOSSARY.md);
 what the app does is in [REFERENCE.md](REFERENCE.md#the-run-app).
 
 The terminal UI has its own colours (`theme.py`), but shares the words, the order of things, and the one list of run
@@ -327,4 +328,4 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 4. Scroll half way down, wait for a refresh: nothing moved.
 5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up takes the chips and top bar away over the text and shrinks the box to the slim message box, and scrolling down brings them back; no line moves when they go or come back.
 6. A changed motion is watched as a recording or frame strip at 390px, not only stills.
-7. `python3 tests/test_web.py`.
+7. `python3 tests/test_web_<area>.py` for each area the change touched (all of `tests/test_web_*.py` for a shared one).

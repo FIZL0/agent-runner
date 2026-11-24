@@ -22,7 +22,7 @@ from agent_runner import session_frame as SF
 from agent_runner import state as S
 from agent_runner import ui_model as U
 from agent_runner import web as W
-from test_web import asked, fake_repo, get
+from _web import asked, fake_repo, get
 
 tmp = Path(tempfile.mkdtemp(prefix='agent-runner-login-'))
 os.environ['AGENT_RUNNER_HOME_CONFIG'] = str(tmp / 'hc')

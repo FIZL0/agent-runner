@@ -1,0 +1,417 @@
+"""The run page, plan area (agent_runner/page/*-plan.*): split from test_web.py (C41b), tests unchanged.
+
+    python3 tests/test_web_plan.py
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from unittest import mock
+
+from _check import check, eq, git, report
+from _trust import asked, trusted_checks
+
+from agent_runner import config as CF  # noqa: E402
+from agent_runner import state as S  # noqa: E402
+from agent_runner import ui_model as U  # noqa: E402
+from agent_runner import web as W  # noqa: E402
+from _web import TODO, fake_repo, get, post, LOGIC_DRIVER, logic_js, in_tmp  # noqa: E402
+
+
+def test_real_action(tmp: Path) -> None:
+    """One action through the real runner: plan add lands in TODO.md."""
+    repo = fake_repo(tmp)
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    try:
+        code, out = post(f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}', {
+            'name': 'plan_add', 'args': {'kind': 'F', 'text': 'Run page shows usage', 'files': 'web.py'}})
+        check(out.get('ok'), 'the real plan add ran', out)
+        check('Run page shows usage' in (repo / 'plan' / 'TODO.md').read_text(encoding='utf-8'),
+              'and the task is in TODO.md')
+    finally:
+        srv.stop()
+
+
+def test_run_controls(tmp: Path) -> None:
+    """F82: the run controls on the web: the page builds each control's request from the snapshot's one list
+    (ui_model.RUN_CONTROLS), the server runs its runner command, and stop now runs only with the page's own
+    confirm (no browser dialog)."""
+    fake_repo(tmp)
+    page = W.PAGE.read_text(encoding='utf-8')
+    for part in ('controlsCard()', 'Run controls', 'data-ctl=', 'data-tid=', 'data-sure', 'data-unsure',
+                 'data-slots-n', 'controlReq(c,'):
+        check(part in page, f'the page has {part}')
+    for gone in ('confirm(', 'alert(', 'prompt('):
+        check(gone not in page, f'the page uses no {gone}) dialog')
+    want = {'slot_add': ['slots', '+1'], 'slot_remove': ['slots', '-1'], 'slots_set': ['slots', '4'],
+            'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
+            'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
+            'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY],
+            'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x'],  # C26
+            'restart': ['key', 'restart'], 'start': [], 'resume': ['resume', 'F1'],  # F124
+            'unclaim': ['plan', 'unclaim', 'F1'], 'wip_show': ['wip', 'show', 'main-checkout-1'],
+            'wip_restore': ['wip', 'restore', 'main-checkout-1'], 'wip_drop': ['wip', 'drop', 'main-checkout-1']}
+    tid = lambda c: 'main-checkout-1' if c['fix'] == 'wip' else 'F1'  # noqa: E731
+    cs = [c for c in U.controls() if c['where'] in ('run', 'task')]  # C34: the row actions: test_row_actions
+    if shutil.which('node'):
+        reqs = logic_js([['controlReq', c, {'n': ' 4', 'tid': tid(c), 'sure': True}] for c in cs] +
+                        [['controlReq', U.run_control_of('stop_now') | {'needs': '', 'confirm': U.STOP_NOW_ASK},
+                          {'tid': 'F1'}]])
+    else:
+        print('  (no node here: the page requests are built in Python instead)')
+        reqs = [{'name': 'run_control', 'args': {'key': c['key'], **({'n': '4'} if c['needs'] == 'n' else {}),
+                                                  **({'tid': tid(c)} if c['needs'] in ('id', 'pick') else {}),
+                                                  **({'confirm': True} if c['confirm'] else {})}} for c in cs] + \
+            [{'name': 'run_control', 'args': {'key': 'stop_now'}}]
+    if shutil.which('node'):
+        stop_now = next(c for c in cs if c['key'] == 'stop_now')
+        got = logic_js([['controlClick', stop_now, {}], ['controlClick', stop_now, {'sure': 'yes'}],
+                        ['controlClick', stop_now, {'sure': True}],
+                        ['controlClick', next(c for c in cs if c['key'] == 'stop'), {}],
+                        *[['taskControlsOn', {**r, 'task_controls': U.task_controls_on(r)}] for r in (
+                            {'name': 's1', 'task': 'F1', 'state': 'running'},
+                            {'name': 's2', 'task': 'B2', 'state': 'merging'}, {'name': 's3', 'task': ''})]])
+        eq(got[:4], [{'ask': True}, {'ask': True},
+                     {'name': 'run_control', 'args': {'key': 'stop_now', 'confirm': True}},
+                     {'name': 'run_control', 'args': {'key': 'stop'}}],
+           "Stop now's button asks in the page first; only its Yes sends it, confirmed; Stop goes at once")
+        eq(got[4:], [True, False, False], "a slot's Take back and Drop show while it works, not while it lands")
+    ran, sent = [], []
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    try:
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'sent to the run'))[1]]), \
+                mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0,
+                                                                                 'out': 'sent', 'argv': []})[1]]):
+            for c, rq in zip(cs, reqs):
+                ran.clear()
+                code, out = post(url, rq)
+                if c['key'] == 'task_take':
+                    eq((out.get('ok'), sent, ran), (True, [], [['control', '--new', '--ask', 'do F1 here', '--no-feed']]),
+                       'B139: Take back asks a new control session "do F1 here", not c1')
+                else:
+                    eq((code, out.get('ok'), ran), (200, True, [want[c['key']]]),
+                       f'{c["label"]} runs {" ".join(want[c["key"]])}')
+            ran.clear()
+            code, out = post(url, reqs[-1])
+            eq((out.get('ok'), ran, out.get('confirm')), (False, [], U.STOP_NOW_ASK),
+               "stop now without the page's confirm runs nothing and returns the question")
+    finally:
+        srv.stop()
+
+
+def test_row_actions(tmp: Path) -> None:
+    """C34: the page draws a Queue row's actions and the release tab's from the snapshot's `acts` and sends each
+    as one run_control request through the one data-ctl handler; the server runs it (replaces the per-button
+    Unpark and Release tests)."""
+    fake_repo(tmp)
+    page = W.PAGE.read_text(encoding='utf-8')
+    for part in ('actBtns(q.acts,q.id)', 'actSure(q.acts,q.id)', 'S.snap.release_acts', 'if(c.chat){',
+                 'ansBtns(n)', 'restBtns(n)', 'actSure(n.acts,n.id)', 'actBtns(c.acts,c.id)', 'actSure(c.acts,c.id)'):
+        check(part in page, f'the page has {part}')
+    for gone in ('data-unpark', "outbox('unpark'", 'data-rel=', "outbox('release'", 'data-later=', 'data-needdrop=',
+                 'data-needchat=', 'data-cchat=', "outbox('shelve'", "outbox('need_drop'", 'data-ans=', 'answerArgs'):  # F180
+        check(gone not in page, f'the page has no {gone}: one handler')
+    cs = [c for c in U.controls() if c['where'] in ('queue', 'shelved', 'release', 'need', 'concept')]
+    opts = [f'Option {j}' for j in range(1, U.ANSWER_MAX + 1)]
+    text = lambda c: c['label'].replace('Answer', 'Option') if c['answer'] else ''  # noqa: E731
+    eq(len(cs), 15 + U.ANSWER_MAX, 'the row actions the page draws (C35: Needs you and Concepts too)')
+    if shutil.which('node'):
+        reqs = logic_js([['controlReq', c, {'tid': 'F83', 'sure': True, 'text': text(c), 'note': ' '}] for c in cs])
+    else:
+        print('  (no node here: the page requests are built in Python instead)')
+        reqs = [{'name': 'run_control', 'args': {'key': c['key'], **({'text': text(c)} if c['answer'] else {}), **({'tid': 'F83'} if c['needs'] == 'id' else {}),
+                                                  **({'confirm': True} if c['confirm'] else {})}} for c in cs]
+    ran = []
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    try:
+        chat = lambda tid, wait: U.call(['control', '--new', tid])  # noqa: E731
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+                mock.patch.dict(U.ROW_FNS, {'need_chat': chat, 'concept_chat': chat}), \
+                mock.patch.object(U, 'need_label', lambda tid: 'CONFIRM'), \
+                mock.patch.object(U, 'row_of', lambda where, tid: {'id': tid, 'pri': 'normal', 'state': 'parked', 'ask': 'Look',
+                                                                   'label': 'CONFIRM', 'concept': tid, 'options': opts}):
+            for c, rq in zip(cs, reqs):
+                ran.clear()
+                code, out = post(url, rq)
+                # the stand-in row is parked: priority does not fit; its answers are options: not Yes and No
+                fits = c['key'] not in ('queue_priority', 'need_yes', 'need_no')
+                eq((code, out.get('ok')), (200, fits), f'{c["label"]} sent from the page: {"runs" if fits else "refused"}')
+                eq(bool(ran), fits, f'{c["label"]}: its command ran or not, as the row allows')
+    finally:
+        srv.stop()
+
+
+def test_start(tmp: Path) -> None:
+    fake_repo(tmp)
+    eq(CF.DEFAULTS['run']['web'], True, '[run] web is on by default')
+    eq(CF.DEFAULTS['run']['web_port'], 8770, 'on port 8770')
+    with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.dict(S.C.run, {'web': False}):
+        eq(W.start_web(), None, '[run] web = false serves nothing')
+    eq(W.page_line(), '', 'and status prints no address')
+    with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: '10.0.0.5'), \
+            mock.patch.dict(S.C.run, {'web': True, 'web_port': 0}), mock.patch.object(S, 'log') as lg:
+        srv = W.start_web()
+    try:
+        check(srv is not None, 'web = true serves the page')
+        url, by_ip = W.url_file().read_text(encoding='utf-8').split()
+        tail = f':{srv.server_address[1]}/?t={W.web_token()}'
+        check(url.endswith(tail), 'its address carries the token', url)
+        eq(by_ip, f'http://10.0.0.5{tail}', 'and its LAN address, for a phone that cannot resolve the hostname')
+        check(any(url in str(c) for c in lg.call_args_list), 'the run log has the address', lg.call_args_list)
+        with mock.patch.object(S, 'run_up', return_value=True):
+            eq(W.page_line(), f'run page: {url} (or {by_ip})', 'status prints it while the run is up')
+        eq(U.SEND[0], U.to_new, "the run's chat goes through ui_model.to_new, a new chat each")
+        eq(srv.server_address[0], '0.0.0.0', 'F165: no Home: on every interface')
+    finally:
+        srv.stop()
+    # F165: with Home installed it is on 127.0.0.1, and nothing shown names its port
+    with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'home_port', lambda: 8770), \
+            mock.patch.object(W, 'site_urls', lambda root=None: ['http://box:8770/p/proj/?t=HT']), \
+            mock.patch.object(W, 'tailscale_https_urls', lambda port, t: []), mock.patch.object(S, 'log') as lg:
+        srv = W.start_web()
+        try:
+            own = srv.server_address[1]
+            eq((srv.server_address[0], srv.terms.bind), ('127.0.0.1', '127.0.0.1'), 'Home installed: 127.0.0.1 only')
+            logged = ' '.join(str(c) for c in lg.call_args_list)
+            check('http://box:8770/p/proj/?t=HT' in logged and str(own) not in logged, "the run log has Home's link only", logged)
+            with mock.patch.object(S, 'run_up', return_value=True):
+                eq(W.page_line(), 'run page: http://box:8770/p/proj/?t=HT', 'and so has status')
+        finally:
+            srv.stop()
+
+
+def test_diff(tmp: Path) -> None:
+    """F75: /diff/s1 is slot s1's work so far against the shared branch, committed or not."""
+    repo = fake_repo(tmp)
+    home = tmp / 'runs'
+    home.mkdir()
+    git(repo, 'worktree', 'add', '-q', '--detach', str(home / 's1'), 'HEAD')
+    (home / 's1' / 'a.py').write_text('x = 1\n', encoding='utf-8')
+    git(home / 's1', 'add', 'a.py')
+    git(home / 's1', 'commit', '-qm', 'a')
+    (home / 's1' / 'b.py').write_text('y = 2\n', encoding='utf-8')
+    git(home / 's1', 'add', 'b.py')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        with mock.patch.object(S, 'SLOTS_DIR', home):
+            r = json.loads(get(f'{base}/diff/s1?t={token}')[1])
+            check(r['ok'] and '+x = 1' in r['text'] and '+y = 2' in r['text'], 'the diff has the commit and the staged file', r)
+            r = json.loads(get(f'{base}/diff/s2?t={token}')[1])
+            check(not r['ok'] and 'no worktree' in r['out'], 'a slot with no worktree says so', r)
+            r = json.loads(get(f'{base}/diff/c1?t={token}')[1])
+            check(not r['ok'] and 'not a slot' in r['out'], 'a control session has no diff', r)
+        eq(get(f'{base}/diff/s1')[0], 403, 'and only with the token')
+    finally:
+        srv.stop()
+
+
+PARKED_TODO = TODO + """
+### Parked
+- [ ] **F83** Big future work for a person to schedule | files: p.py
+"""
+
+
+def test_parked(tmp: Path) -> None:
+    """B118: a parked task (level later, TODO.md's Parked section) is in its own Parked group on the run app and
+    never says Ready, and Unpark (plan edit ID --pri normal) moves it out of Parked."""
+    repo = fake_repo(tmp)
+    todo = repo / 'plan' / 'TODO.md'
+    todo.write_text(PARKED_TODO, encoding='utf-8')
+    q = {t['id']: t for t in U.queue_rows(todo.read_text(encoding='utf-8').splitlines())}
+    eq(q['F83']['state'], 'parked', 'the model gives a task under Parked state parked')
+    app = W.page_html().decode()
+    for part in ('<div class="sec">Parked<span class="ln"></span></div>', "Parked: a run won't start it",
+                 '${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button>',
+                 "q.state!=='running'&&q.state!=='parked'"):
+        check(part in app, f'the run app has {part}')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    try:
+        code, out = post(f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}',
+                         {'name': 'run_control', 'args': {'key': 'queue_unpark', 'tid': 'F83'}})
+    finally:
+        srv.stop()
+    check(code == 200 and out.get('ok'), 'the unpark act ran plan edit', out)
+    eq(out.get('argv', [])[-4:], ['edit', 'F83', '--pri', 'normal'], 'unpark is plan edit ID --pri normal')
+    after = todo.read_text(encoding='utf-8')
+    parked = after.split('### Parked', 1)[1] if '### Parked' in after else ''
+    check('F83' in after and 'F83' not in parked, 'F83 is out of Parked', after)
+    q = {t['id']: t for t in U.queue_rows(after.splitlines())}
+    eq((q['F83']['state'], q['F83']['pri']), ('ready', 'normal'), 'and is ready, at level normal')
+    eq(U.run_control('queue_unpark', tid='not an id')['ok'], False, 'unpark takes a queued task only')
+    if not shutil.which('node'):
+        print('  (no node here: the Parked group script test is skipped)')
+        return
+    rows = [{'id': 'F83', 'state': 'parked'}, {'id': 'F1', 'state': 'ready'}, {'id': 'B2', 'state': 'after'}]
+    got = logic_js([['planWords', {'id': 'F83', 'state': 'parked'}, []], ['queueGroups', rows]])
+    eq(got[0], "Parked: a run won't start it", 'a parked row says so on the run app')
+    check('Ready' not in got[0], 'and never Ready')
+    eq([[r['id'] for r in g] for g in got[1]], [['F1', 'B2'], ['F83']], 'the Queue, then the Parked group')
+
+
+def test_shelved_f184(tmp: Path) -> None:
+    """F184: the Plan view's Parked group lists the shelved tasks after the parked ones, also when there are only
+    shelved ones; a press keeps its card off and shows the stand-in there."""
+    fake_repo(tmp)
+    app = W.page_html().decode()
+    for part in ('pk.length||sh.length||shOb', "${pk.map(parkedCard).join('')}${shOb}${sh.map(shelvedCard).join('')}",
+                 '${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>'
+                 '${actSure(q.acts,q.id)}', 'S.snap.queue.concat(S.snap.shelved||[])', "obHidden(S.ob,'shelved')",
+                 'if(S.gone)delete S.gone[it.shelved]', "c.confirm.split('{id}').join(tid||'')"):
+        check(part in app, f'the run app has {part}')
+    if not shutil.which('node'):
+        print('  (no node here: the shelved script test is skipped)')
+        return
+    got = logic_js([['planWords', {'id': 'D3', 'state': 'shelved'}, []]])
+    eq(got, ['Shelved until you bring it back'], 'a shelved row says so')
+
+
+def test_concepts_view(tmp: Path) -> None:
+    """F87: the sidebar has Concepts (after Plan, with a count); its view lists the snapshot's concepts with their
+    buttons (an option each, Chat, New chat, View), says no concept waits when none does, and its New concept button
+    opens a new chat (F183); the Plan view no longer lists concepts."""
+    fake_repo(tmp)
+    app = W.page_html().decode()
+    for part in ("['plan','Plan'],['concepts','Concepts']", 'count={home:needs,concepts:cn}',
+                 'concepts:conceptsHTML', "concepts:'Concepts'", 'cs.map(conceptCard)'):
+        check(part in app, f'the run app has {part}')
+    for gone in ('data-kadd', 'kform', '[data-kin]', 'newConceptReq', 'growKin', 'S.kOpen', 'S.kText', 'S.kSaid', 'x.kq'):
+        check(gone not in app, f'the inline new concept box is gone: {gone}')
+    plan = app.split('function planHTML(){', 1)[1].split('\n}', 1)[0]
+    check('concept' not in plan.lower(), 'the Plan view lists no concepts', plan)
+    if not shutil.which('node'):
+        print('  (no node here: the Concepts view script test is skipped)')
+        return
+    c = {'id': 'K5', 'concept': 'K5', 'title': 'Lazy layout', 'copy': '/n/K5.html',
+         'options': [{'name': 'A: tabs', 'rec': False}, {'name': 'B: drawer (recommended)', 'rec': True}]}
+    got = logic_js([['conceptButtons', c], ['conceptButtons', {'id': 'K6', 'options': []}],
+                    ['newPh', {'kind': 'newconcept'}], ['newPh', {'kind': 'new'}], ['newPh', {'kind': 'plan'}], ['newPh', None],
+                    ['compose', {'kind': 'newconcept'}, ' a dark mode ', ['/up/p.png']]])
+    eq([b['label'] for b in got[0]], ['A: tabs', 'B: drawer', 'Chat', 'View'],
+       "a concept's buttons: its options (no '(recommended)'), Chat, View")
+    eq([b.get('rec', False) for b in got[0]], [False, True, False, False], 'the recommended option stands out')
+    eq([b['label'] for b in got[1]], ['Chat'], 'no copy and no page: no options and no View')
+    eq(got[2:6], ['What should the concept show?', 'Describe the task in your own words', 'Write your first message',
+                  'Write your first message'], "a new chat view's placeholder")
+    check('box(agent?`Message ${threadTitle(n)}`:isNew(n)?newPh(S.ctx):' in app, 'its box shows it')
+    eq(got[6], 'Concept: a dark mode\n\nAttached: /up/p.png', "a new concept's first message")
+    check("NO_CONCEPT='No concept waits for a pick.'" in app and '${NO_CONCEPT}' in app,
+          'the empty state says no concept waits')
+
+
+def test_release_row_f131(tmp: Path) -> None:
+    """F131, F185: the Plan view's Releases group, above the Queue: each open release once, in its row's words, then the
+    dimmed rows that are no task."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('rs=planReleases(S.snap)' in page and 'rs.map(q=>q.placeholder?nextReleaseCard(q):releaseCard(q))' in page
+          and '.card.relph{opacity' in page, 'the Plan view draws planReleases, a placeholder dimmed')
+    if not shutil.which('node'):
+        print('  (no node here: the release row script test is skipped)')
+        return
+    task, parked = {'id': 'F1', 'state': 'ready'}, {'id': 'F9', 'state': 'parked'}
+    ph = {'id': '', 'title': 'Next release', 'words': 'auto at 10 landed: 6/10', 'placeholder': True}
+    done = {'id': 'V4', 'title': 'Release 1.2.0', 'words': 'released 10:00', 'placeholder': True}
+    row = lambda t, w: {'id': t, 'title': 'Release', 'words': w, 'placeholder': False}  # noqa: E731
+    r5, r6 = row('V5', 'releasing now'), row('V6', 'waits for 1: V5 Release')
+    v5, v6 = {'id': 'V5', 'state': 'running s2 6m', 'release': r5}, {'id': 'V6', 'state': 'after', 'release': r6}
+    two = {'queue': [task, parked, v6, v5], 'releases': [r5, r6, done]}
+    got = logic_js([['planReleases', {'queue': [task], 'releases': []}], ['planReleases', {'queue': [task]}],
+                    ['planReleases', {'queue': [task], 'releases': [ph]}],
+                    ['planReleases', {'queue': [task, v5], 'releases': [r5]}],
+                    ['planReleases', two], ['planQueue', two], ['planWords', v5, []]])
+    eq(got, [[], [], [ph], [v5], [v5, v6, done], [task], 'releasing now'],
+       'none, none from an older run, auto, one running, two; the Queue without them (Parked is its own group)')
+
+
+RELEASE_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1);
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
+const [controls, v5, v6] = JSON.parse(process.argv[3]);
+const S = {ob: [], taskOpen: {}, sure: null, snap: {controls, queue: [v5, v6], releases: [v5.release, v6.release], release_acts: ['release_wait', 'release_now'], release_said: 'V6 is already queued'}};
+const working_ = () => [{}], cutsOff = () => '', taskRow = q => q.id, obCards = () => '', toast = () => {}, obChange = f => { S.ob = f(S.ob) }, obDrop = (b, c) => b.filter(x => x.cid !== c);
+globalThis.fetch = async () => { throw 0 };
+const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue='].map(line).join('')
+  + slice('const queueGroups=', '/* F185') + slice('const planReleases=', 'const planQueue=') + grab('function planCard(') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
+  + grab('function controlReq(') + line('function controlClick(');
+new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + `
+  const out = {rel: relCard(), v5: releaseCard(env.v5), v6: releaseCard(env.v6)};
+  S.sure = 'release_wait'; out.sure = newReleaseCard();
+  S.sure = 'queue_drop:V6'; out.drop = releaseCard(env.v6); out.relDrop = relCard();
+  out.click = [controlClick(controlOf('release_wait'), {}), controlClick(controlOf('release_wait'), {sure: true})];
+  for (const c of controlsOf('release')) { c.confirm = ''; c.seen = '' }
+  S.sure = null; S.ob = [{cid: 'a'}];
+  obDone({cid: 'a', ctl: 'release_now:', name: 'run_control', args: {}}, {ok: false, confirm: 'V7 is already queued. Queue another release?', seen: 'V7'});
+  out.stale = [S.ob, S.sure, newReleaseCard(), controlClick(controlOf('release_now'), {sure: true})];
+  console.log(JSON.stringify(out))}`)({S, working_, cutsOff, taskRow, obCards, toast, obChange, obDrop, v5, v6, tq: p => p, takeSnap: () => {}});
+"""
+
+
+def test_new_drop_release_f186(tmp: Path) -> None:
+    """F186: New release says which release is open and asks before another; Drop stands on a release that has not
+    started, not on one that runs; a release the page had not heard of is asked about, not failed."""
+    if not shutil.which('node'):
+        print('  (no node here: the New release script test is skipped)')
+        return
+    ask, drop = 'V6 is already queued. Queue another release?', 'Drop V6? It leaves the plan, and nothing is released.'
+    row = lambda t, w: {'id': t, 'title': 'Release', 'words': w, 'placeholder': False}  # noqa: E731
+    v5 = {'id': 'V5', 'acts': ['queue_take'], 'release': row('V5', 'releasing now')}
+    v6 = {'id': 'V6', 'acts': ['queue_take', 'queue_drop'], 'asks': {'queue_drop': drop}, 'release': row('V6', 'next')}
+    (tmp / 'driver.js').write_text(RELEASE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps([U.controls({'ask': ask, 'seen': 'V6'}), v5, v6])],
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
+    o = json.loads(r.stdout)
+    check('New release' in o['rel'] and 'V6 is already queued.' in o['rel'] and 'V5 · releasing now' in o['rel'], 'says so and shows it', o['rel'])
+    eq((o['rel'].count('data-ctl="queue_drop"'), 'data-tid="V6"' in o['rel'], 'data-tid="V5"' in o['rel']), (1, True, False), 'Drop on V6 only')
+    check('queue_drop' not in o['v5'] and 'queue_drop' in o['v6'], "the Plan view's cards: the same", o['v5'])
+    check(ask in o['sure'] and 'data-sure' in o['sure'], 'New release asks in place', o['sure'])
+    check(all(drop in o[k] for k in ('drop', 'relDrop')), 'Drop asks in its own words', o['drop'])
+    eq(o['click'], [{'ask': True}, {'name': 'run_control', 'args': {'key': 'release_wait', 'confirm': True, 'text': 'V6'}}],
+       'a press asks; its Yes names the open release')
+    eq(o['stale'][:2], [[], 'release_now'], 'one just queued elsewhere: the press asks, with nothing failed')
+    check('V7 is already queued' in o['stale'][2], 'about it', o['stale'][2])
+    eq(o['stale'][3]['args'], {'key': 'release_now', 'confirm': True, 'text': 'V7'}, 'and its Yes names it')
+
+
+def test_task_text_f85(tmp: Path) -> None:
+    """F85: a queue row folds open to the task's whole text (plan ID)."""
+    fake_repo(tmp)
+    page = W.page_html().decode()
+    for part in ('data-task="${esc(q.id)}" aria-expanded="${open}"', "fetch(tq('task/'", '<pre class="tasktext"', "planCard(q,rel)"):
+        check(part in page, f'the page has {part}')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        code, body = get(f'{base}/task/B2?t={token}')
+        got = json.loads(body)
+        check(code == 200 and got['ok'] and 'Fix the merge retry' in got['text'] and 'after: F1' in got['text'], 'its whole text', got)
+        eq(json.loads(get(f'{base}/task/--x?t={token}')[1])['ok'], False, 'a task id only')
+        eq(get(f'{base}/task/B2')[0], 403, 'and only with the token')
+    finally:
+        srv.stop()
+
+
+if __name__ == '__main__':
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_task_text_f85)]))
