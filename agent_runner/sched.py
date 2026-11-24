@@ -133,9 +133,22 @@ def ahead(branch: str) -> list[str]:
 
 
 def family(tid: str) -> str:
-    """L3a, L3b, L3 -> L3; A11k4 -> A11. Siblings share it and never run side by side."""
+    """L3a, L3b, L3 -> L3; A11k4 -> A11. Which of one family may run side by side: `kin_clash`."""
     m = re.match(r'[A-Za-z]*\d*', tid)
     return m.group() if m else tid
+
+
+def kin_clash(t: tuple, b: tuple, shared: set[str]) -> bool:
+    """F199: `t` and busy `b` are of one family and may not run side by side. Parts of one split task may, when
+    both lines name `files:` (a busy tuple's `b[5]`: `b[4]` is empty for a finished task) that do not meet, and
+    neither waits for the other. A task and its own part (P13 and P13a) never do."""
+    if family(t[0]) != family(b[0]):
+        return False
+    if t[0] == b[0] or P.child(t[0], b[0]) or P.child(b[0], t[0]):
+        return True
+    if not t[2] or not b[5 if len(b) > 5 else 4 if len(b) > 4 else 2]:
+        return True
+    return b[0] in t[3] or t[0] in b[3] or bool(file_overlap(t[2], b, shared))
 
 
 def ordered(section: str) -> bool:
@@ -166,8 +179,8 @@ def file_overlap(files, b: tuple, shared: set) -> set[str]:
 
 
 def clash(t: tuple, b: tuple, shared: set[str], alone: frozenset = frozenset()) -> bool:
-    """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings,
-    a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V)
+    """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings
+    that must stay apart (`kin_clash`), a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V)
     clashes like any other task: it starts once what it waits for (`after:`) has landed, beside running tasks,
     and tasks start beside it; while it is busy the merge holds every other merge (`merge.hold_for_release`,
     F99), so it still releases exactly what was on the shared branch when it started. A task tagged `(alone)`
@@ -175,7 +188,7 @@ def clash(t: tuple, b: tuple, shared: set[str], alone: frozenset = frozenset()) 
     when nothing else runs or waits to merge, and nothing starts beside it; `holds` then lets it pass over a task
     taken by hand or claimed by another runner (`passes`, B107): only this run's tasks hold it."""
     tid, section, files, _ = t
-    if family(tid) == family(b[0]):
+    if kin_clash(t, b, shared):
         return True
     if tid in alone or b[0] in alone:  # F130: it runs alone
         return True
@@ -184,7 +197,7 @@ def clash(t: tuple, b: tuple, shared: set[str], alone: frozenset = frozenset()) 
 
 def clash_why(t: tuple, b: tuple, shared: set, alone: frozenset = frozenset()) -> tuple[str, str]:
     """Why `clash(t, b)`: (the kind of wait, what holds it), for the dry run."""
-    if family(t[0]) == family(b[0]):
+    if kin_clash(t, b, shared):
         return 'waiting for a sibling', b[0]
     if t[0] in alone:
         return 'runs alone', f'{b[0]} is running or waiting to merge in this run'
@@ -213,7 +226,7 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
 
     `claim` (a run about to start it): with a remote to share claims through, the task is claimed and the claim pushed first;
     one another runner has, or got just now, is passed over for the next. Another runner's live claim counts
-    as a task running here, so its files, ordered section and family wait for it too. A task parked
+    as a task running here, so what clashes with it waits for it too. A task parked
     PARK_LIMIT times is blocked on a person first (`block_parked`), here, not inside `choose`.
 
     `why` (the dry run): pick nothing, and fill it with every open task's reason instead (`explain`), as
@@ -273,7 +286,8 @@ def held(running: dict, branch: str) -> Held:
                    **{t[0]: t for t in running.values()}}.items():
         files = touched(tid, branch, slots.get(tid))
         done_ = tid in mine and tid not in busy_ids and tid not in live and files  # finished, not running
-        busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3], set() if done_ else set(t[2])))
+        busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3], set() if done_ else set(t[2]),
+                     set(t[2])))  # F199: what its line names, finished or not
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
     parked = parked_attempts() if todo else {}
     return Held(todo, busy, busy_ids, mine, finished, parked, shared, away, frozenset(live),

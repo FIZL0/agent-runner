@@ -130,7 +130,7 @@ main moves and is pushed; the slot picks its next task
 
 1. **Pick.** A free slot reads `plan/TODO.md` from the top and takes the first task that may start. A task
    waits while it is blocked, while a task in its `after:` is not done, while it shares `files:` with a
-   task that is running or not merged yet, or while another task of its family is running.
+   task that is running or not merged yet, or while a task of its family is running (a task and its own part always; two parts only when their `files:` meet or one names none).
 2. **Work.** The slot gets a worktree on branch `task/<ID>` and a hidden terminal (a pseudo-terminal with no window; on
    Windows a ConPTY pseudo-console, or a console that starts hidden before 1809). The agent starts from a short brief:
    the task's line, its long form, the files it names, and its newest journal entry.
@@ -189,7 +189,7 @@ machine to it from the start, run with `--shutdown` or `--suspend`.
   BLOCKED text and fields kept (`--files`/`--after`/`--test`/`--pri` change those); `plan note` only adds.
 - `files:` lets two tasks run side by side when they don't overlap, and puts those files in the brief.
   `after:` holds a task until every id listed is done. Prose is never parsed for either.
-- `P13a` is a subtask of `P13`: a family never runs two tasks at once.
+- `P13a` is a part of `P13`: a task and its own part never run at once. Two parts run side by side when both name `files:` that do not meet and neither is `after:` the other.
 - A long description goes in `plan/tasks/<ID>.md`, which the brief uses in place of the line.
 
 To make one task wait for another, say it in a way the runner reads:

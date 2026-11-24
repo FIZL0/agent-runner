@@ -44,7 +44,7 @@ TODO = """# TODO
 - [ ] **T5** the logger | files: d.py, CHANGELOG.md
 - [ ] **T4** the report | files: e.py | after: T1, T5
 - [ ] **L3a** half of it | files: f.py
-- [ ] **L3b** the other half | files: g.py
+- [ ] **L3b** the other half | files: f.py
 
 ### Stretch
 
@@ -117,7 +117,7 @@ def test_picking(repo: Path):
     print('run: which task a free slot may take')
     R.init(repo)
     eq((R.family('L3a'), R.family('L3b'), R.family('M8f4')), ('L3', 'L3', 'M8'),
-       'siblings share a family, so they never run side by side')
+       'siblings share a family')
     ids = [t[0] for t in R.tasks('main')]
     eq(ids[0], 'T1', 'the first startable task is the first line of the backlog')
     check('S1' not in ids, 'Stretch is never offered to a run')

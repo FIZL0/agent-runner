@@ -75,8 +75,9 @@ given a `--pri` (and every follow-up a running agent files, which is `normal` un
 
 `@ WHERE` still overrides the place (the tag stays).
 
-**Subtask or fresh id.** `add B646 …` makes B646a, which never runs beside B646 or its other subtasks: use it
-only when the work can't start before its parent lands (it needs the parent's code, data or verdict). Work that
+**Subtask or fresh id.** `add B646 …` makes B646a, which never runs beside B646, and beside its other subtasks only
+when both name `files:` that do not meet and neither is `after:` the other (F199): use it for a part of B646's work,
+or work that can't start before it lands (it needs the parent's code, data or verdict). Work that
 merely shares a topic, or came out of that task, gets a fresh letter (`add B …`) so a run starts it in parallel;
 `add` notes this whenever it hands out a subtask id.
 
@@ -856,7 +857,7 @@ def move(tid: str, where: str, ref: str | None = None, todo=None) -> None:
 
 def next_id(prefix: str, paths=None, taken=()) -> str:
     """The next free id with this prefix, counting DONE.md too: ids are permanent and never reused. A task's own id
-    gives its next subtask (P17 -> P17a, P17a -> P17a1), which the runner keeps from running beside its family.
+    gives its next subtask (P17 -> P17a, P17a -> P17a1), which never runs beside its parent (`sched.kin_clash`).
     `taken`: more ids in use (those `reserved` holds)."""
     if paths is None:
         paths = list(ensure())
@@ -3249,8 +3250,9 @@ def _p_add(a, x):
     msg = f'added {tid}' + (f' ({pri})' if pri else '') + (' (alone: nothing starts beside it)' if solo else '')
     if fam and family_end(kind):  # B196: the parent is split now
         end_split_hold(kind)
-    if fam:  # a subtask queues behind its family: only right when it needs the parent's code, data or verdict
-        print(f'{PROG}: note: {tid} never runs beside {kind}\'s family; if it could start now, add it '
+    if fam:  # a subtask waits for its parent, and for the other parts it shares files with or that name none (F199)
+        print(f'{PROG}: note: {tid} never runs beside {kind}, and beside its other subtasks only when both name '
+              f'`files:` that do not meet; if it is not part of {kind}, add it '
               f'with a fresh letter instead (`{PROG} add {re.match(r"[A-Za-z]+", kind).group()} …`)',
               file=sys.stderr)
     if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
