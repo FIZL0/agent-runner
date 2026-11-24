@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: the run page serves a session's whole history as data, `GET /history/NAME` (F191a), for a chat or a slot. It is read from the session's transcript in pages: the newest first, `&before=MARK` for older and `&since=MARK` for new. Tool calls are folded with their results, and diffs are shown as Claude Code shows them. It has the same access as `/feed`. Nothing on the page draws it yet.
+
 ## 0.63.0 (2026-11-24)
 
 - Changed: while a critical `(alone)` task is ready and only this run's running or merging tasks hold it, the run starts only critical tasks (non-alone critical ones still start) until the running tasks have ended and merged; then the alone task takes its turn. Before, normal tasks kept starting, also on top of a merge under way (F198), so the slots never emptied and a file split (F200b) started only when the tasks it was for were done. A non-critical `(alone)` task still holds no start. No hold when a task in the way will not end by itself (a taken-by-hand or other runner's alone task, one waiting for a usage reset, a merge held by edits in the main checkout or crashed, the branch of a closed task), or when the alone task is tried this run, parked too often, being split, or its shared tool is missing. The dry run says `C1 runs alone next` (F208).
