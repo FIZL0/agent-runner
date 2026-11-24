@@ -1,8 +1,8 @@
 """F160: control sessions learn when the item they are about is settled elsewhere.
 
 A chat about a task or a Needs you item (its title starts with the id, or it was opened from that item: the first
-message `need_chat`, `concept_chat` or an answer gives it) is told, in one typed line (`line`), when that item is dropped,
-changed, confirmed, shelved, restored or otherwise settled by someone else. Two halves:
+message `need_chat`, `concept_chat` or an answer gives it; or it filed that concept or DECIDE itself: `filed`) is
+told, in one typed line (`line`), when that item is dropped, changed, confirmed, shelved, restored or otherwise settled by someone else. Two halves:
 
 - the command that settles it leaves one event in `<notes>/settled/<ns>-<pid>.json` (`record`): `plan` (`noting`, so also
   the run page, the TUI and `sheet`, which run it), `pitch`, and the run's own undo;
@@ -93,6 +93,27 @@ def record(c, ids, what: str, reason: str = '', who: dict | None = None, at: flo
         pass
 
 
+def filed(c, ids, who: dict | None = None) -> None:
+    """F209a: the control session `who` (this command's own: `author`) filed the items `ids` (a concept and its build,
+    a DECIDE), so it is about them. Kept by session id: a number is handed out again. Nothing without one, and
+    it never stops the command that filed them."""
+    try:
+        who = author(c) if who is None else who
+        if sid := who['sid']:
+            f = filed_file(c, sid)
+            save(f, {'n': who['n'], 'sid': sid, 'ids': list(dict.fromkeys([*filed_ids(c, sid), *(x for x in ids if x)]))})
+    except (OSError, AttributeError):
+        pass
+
+
+def filed_file(c, sid: str) -> Path:
+    return folder(c) / f'{sid}.filed'
+
+
+def filed_ids(c, sid: str) -> list[str]:
+    return read_json(filed_file(c, sid), {}).get('ids', []) if sid else []
+
+
 def noting(c, a, todo, run):
     """Run plan subcommand `a` (`run`: its exit code) and record what it settled."""
     if a.cmd not in VERBS or a.cmd == 'edit' and a.rest[:1] == ['--pri'] and len(a.rest) == 2:  # only its place
@@ -171,12 +192,14 @@ def title_id(title: str, project: str) -> str:
 
 
 def about(n: int, sid: str, f: dict) -> set[str]:
-    """The items control session `n` is about: what its title starts with, and what it was opened from."""
+    """The items control session `n` is about: what its title starts with, what it was opened from, and
+    the concepts and DECIDEs it filed itself (`filed`)."""
     from agent_runner import control as K, state
     from agent_runner.control_names import person_name
     title = person_name(n, f.get('title', '')) or (f.get('title', '') if K.control_renamed({'title': f.get('title', '')}, n)
                                                    else K.control_given(n))
-    return {x for x in (title_id(title, state.ROOT.name), f.get('opened', '')) if x}
+    return {x for x in (title_id(title, state.ROOT.name), f.get('opened', ''),
+                        *filed_ids(state.C, sid)) if x}
 
 
 def live() -> list[tuple[int, str, dict, set[str]]]:
@@ -288,14 +311,29 @@ def look_left(d: Path, now: float) -> None:
                     left[i] = min(at, left.get(i, at))
                 else:
                     waits.setdefault(sid, {})[i] = at
+    kin = concept_builds(left)
     for i, at in left.items():
+        if i in kin:  # told once, as its build's
+            continue
         what, reason = outcome(i)
         by = d / f'{i}.by'
         who = read_json(by, {}) if what == 'landed' else {}
         by.unlink(missing_ok=True)
-        record(state.C, [i], what, reason, who=who or {'by': '', 'n': 0, 'sid': ''}, at=at)
+        record(state.C, [i, *(k for k in kin if kin[k] == i)], what, reason, who=who or {'by': '', 'n': 0, 'sid': ''}, at=at)
     if waits != was:
         save(d / 'waits.json', waits)
+
+
+def concept_builds(ids) -> dict[str, str]:
+    """{a concept: its build task} of those of `ids` that both are in it: a chat can be about both (F209a)."""
+    from agent_runner import plan as P, state
+    out = {}
+    for path in (state.C.todo, state.C.done):
+        for l in P.lines(path):
+            if (m := P.ITEM.match(l)) and (b := m.group(3).rstrip('.')) in ids:
+                if (k := P.FROM_CONCEPT.search(l)) and k[1] in ids:
+                    out[k[1]] = b
+    return out
 
 
 def outcome(tid: str) -> tuple[str, str]:

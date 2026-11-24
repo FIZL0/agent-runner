@@ -3085,6 +3085,8 @@ def _p_block(a, x):
     if rest[0] == '--after' and len(rest) > 2:
         after, rest = [t for t in rest[1].split(',') if t], rest[2:]
     block(a.id, ' '.join(rest), after=after)
+    if ' '.join(rest).startswith('DECIDE:'):
+        _filed_here(x.c, a.id)
     return x.say(f'blocked {a.id}')
 
 
@@ -3109,6 +3111,12 @@ def _p_approve(a, x):
     return x.say(f'approved: {bid} is open now, and a run starts it' + freed_line() + big_note(bid, x))
 
 
+def _filed_here(c, *ids):
+    """F209a: the control session this command runs in filed `ids`, so it is about them."""
+    from agent_runner import control_settled
+    control_settled.filed(c, ids)
+
+
 def _p_concept(a, x):
     """`plan concept "TITLE" --page URL [--files A,B]` (F108): file a concept page shown inline, waiting for an OK."""
     words, opts, it = [], {}, iter(a.rest)
@@ -3124,6 +3132,7 @@ def _p_concept(a, x):
         return 2
     files = [f for f in re.split(r'[,\s]+', opts.get('files') or '') if f] or None
     kid, bid = concept_shown(title, page, files, todo=x.todo, done=x.done)
+    _filed_here(x.c, kid, bid)
     head = f'concept {kid} filed, done' if kid != bid else f'{bid} filed'
     return x.say(f'{head}: its build {bid} waits for the OK on {page}; the pick goes through '
                  f'`{PROG} approve {kid} "<option>"` or `{PROG} revise {kid} "<what to change>"`')
@@ -3160,6 +3169,7 @@ def _p_restyle(a, x):
         return 2
     got = restyle(style, opts['page'], opts.get('from') or '', globs, ids, split('files'),
                   running=lambda t: run_on(x.c, t), todo=x.todo, done=x.done)
+    _filed_here(x.c, got['rid'], got['build'])
     RESTYLE_PARK[:] = [f'{t}\t{got["rid"]}\t{style}' for t in got['park']]
     said = [f'restyle {got["rid"]} filed (its build {got["build"]} waits for the OK on {opts["page"]})']
     if got['held']:
