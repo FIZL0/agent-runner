@@ -1938,6 +1938,23 @@ def test_need_detail_f162() -> None:
     check('Open it' in ''.join(t for t, _ in p.row(4, p.snap['needs'][0])), 'the row says what to do', p.row(4, p.snap['needs'][0]))
 
 
+def test_need_question_b223b() -> None:
+    """B223b: a DECIDE's pane is its question, its task's title under it and its background, with What to do only for
+    the steps of its ask file."""
+    from agent_runner import need_detail as N
+    ask = 'The port is taken. Both work. Which port do we use?'
+    d = N.detail('DECIDE', 'D3', ask, 'On the 15 Pro with Tailscale selected as the VPN, check the port', '', U.ask_short)
+    row = dict(SNAP['needs'][0], label='DECIDE', detail=d)
+    said = lambda row, w=80: [''.join(t for t, _ in x).rstrip() for x in page(SNAP).need_lines(row, w)]  # noqa: E731
+    lines = said(row)
+    eq((lines[0], lines[1]), ('D3 Which port do we use?', d['title']), 'the question, then the title')
+    check(lines[2].startswith('Choose') and lines[4] == 'The port is taken. Both work.', 'then its background', lines)
+    check('What to do' not in lines, 'no steps', lines)
+    eq(said(row, 20)[:2], ['D3 Which port do we', '   use?'], 'a long question wraps whole')
+    check('What to do' in said(dict(row, detail=dict(d, steps=['Open it']))), 'the ask file\'s steps show')
+    eq(said(dict(row, detail=dict(d, title='D3')))[1][:6], 'Choose', 'no title of its own: none')
+
+
 F399_ASK = {'summary': 'Give the link of Install Switch', 'steps': [
     {'text': "Add main's copy of Install Switch to Shortcuts", 'link': 'https://example.com/Install%20Switch.shortcut'},
     'Share > Copy iCloud Link'],

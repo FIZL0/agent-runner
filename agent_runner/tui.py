@@ -709,15 +709,22 @@ class RunPage:
         return [L(('nothing to show', 'dim'))], [], 0
 
     def need_lines(self, it, width: int) -> list:
-        """F162: what a Needs you item says, as the run page's popup does: what is wanted and where, the steps, what
-        to see, the notes and the pictures' paths; its ask when it has no detail."""
+        """F162: what a Needs you item says, as the run page's popup does: its heading, what is wanted and where, the
+        background, the steps, what to see, the notes and the pictures' paths; its ask when it has no detail."""
         L = lambda *segs: list(segs)  # noqa: E731
         d = it.get('detail')
         if not d:
             return [L((f'{it["id"]} ', 'yellow'), (it.get('title', ''), 'fg')), L()] + \
                 text_lines(it.get('ask', ''), 'fg', width)
         lab = d['said'] + (f' · {d["where"]}' if d.get('where') else '')
-        out = [L((f'{it["id"]} ', 'yellow'), (d['title'], 'fg')), L((lab, 'yellow'), (f'  {it.get("age", "")}', 'dim'))]
+        if q := d.get('question'):  # B223b: a DECIDE's heading, its task's title under it
+            tid = it['id'] + ' '
+            out = text_lines(q, 'fg', width, tid, ' ' * len(tid), 'yellow')
+            if d['title'] not in (it['id'], q):
+                out += text_lines(d['title'], 'dim', width)
+        else:
+            out = [L((f'{it["id"]} ', 'yellow'), (d['title'], 'fg'))]
+        out.append(L((lab, 'yellow'), (f'  {it.get("age", "")}', 'dim')))
         for x in d['lead']:
             out += [L()] + text_lines(x, 'fg', width)
         for head, xs, mark in (('What to do', d['steps'], lambda j: f'{j}. '),
