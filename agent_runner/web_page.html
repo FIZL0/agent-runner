@@ -266,7 +266,8 @@ a{color:var(--accent)}
 .main.term .over{height:auto} .main.term .notices{background:var(--bg)} .main.term .notices .obbar{padding-bottom:4px}
 /* F126a: the login banner: it stays until a new login, so it has its own row and covers nothing */
 .login{justify-self:stretch;display:flex;justify-content:center;align-items:center;gap:var(--s2);padding:var(--s2) var(--s4);padding-left:max(var(--s4),env(safe-area-inset-left,0px));padding-right:max(var(--s4),env(safe-area-inset-right,0px));font-size:var(--fs-m);color:var(--fg);background:color-mix(in srgb,var(--warn) 14%,var(--bg));border-block:1px solid color-mix(in srgb,var(--warn) 45%,var(--line))}
-.login svg{width:16px;height:16px;flex:none;color:var(--warn)} .login span{min-width:0;overflow-wrap:anywhere}
+.login svg{width:16px;height:16px;flex:none;color:var(--warn)} .login span{min-width:0;overflow-wrap:anywhere} .login .btn{flex:none}
+.loginterm{height:180px;border-radius:var(--r-m);overflow:hidden;background:var(--feed);margin-top:var(--s2)} .loginterm iframe{width:100%;height:100%;border:0;display:block} #logincode{display:grid;gap:var(--s2)} #logincode[hidden],.loginterm[hidden]{display:none}
 .offline{font-size:var(--fs-s);color:var(--warn);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-full);padding:2px 12px;box-shadow:0 2px 10px var(--lift)}
 /* F149: a new version of the page, or newer code a person must restart the run for */
 .news{display:grid;gap:var(--s2);justify-items:center;margin:var(--s1) var(--s3) 0;max-width:min(420px,calc(100% - 24px));background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l);padding:var(--s2) var(--s3);font-size:var(--fs-m);box-shadow:0 2px 10px var(--lift)}
@@ -2632,7 +2633,56 @@ function sheetDraw(){
   if(S.sheet&&SHEETS[S.sheet]){const put=keepScroll(el), f=keepFields(el);if(setHTML(el,'<div class="grab"></div>'+SHEETS[S.sheet]())){f();put()}}  // closing, it keeps its words while it slides
   if(S.sheet!=='device'&&S.sheet!=='devsecrets')toolForget();  // F169: a typed secret goes with its sheet
   giveForget(S.sheet==='need'?S.sheetArg:'');  // F175a
+  if(S.sheet!=='login'&&LG.frame)loginLeave();  // F126b
   el.classList.toggle('open',!!S.sheet);$('sheetscrim').classList.toggle('on',!!S.sheet);
+}
+/* --- F126b: Log in again: the terminal that renews the login, in a sheet. Its page is ttyd's; the link it prints and the
+   code it asks for are the sheet's own, as a phone can press no link and paste nothing in a terminal. The frame and the
+   lines under it are put there by script, so a redraw never takes them */
+const LG={frame:null,up:false,ended:false,base:'',timer:0,url:'',turn:0};
+SHEETS.login=()=>`<h2>Log in again</h2><div class="small" id="loginsay" role="status"></div><div class="btns" id="loginbtns"></div>
+  <form data-logincode id="logincode" hidden><label class="small">2. The code the sign-in page gives you<input class="fld" id="logininput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></label><div class="btns"><button class="btn">Send code</button></div></form>
+  <div class="loginterm" id="loginterm" hidden></div>`;
+function loginOpen(){LG.base=HOME_PAGE||atAll()?HB:'';LG.ended=false;LG.url='';openSheet('login');loginLoad()}
+function loginLeave(){LG.turn++;clearTimeout(LG.timer);LG.up=false;if(LG.frame){LG.frame.remove();LG.frame=null}const i=$('logininput');if(i)i.value=''}
+function loginSay(words){
+  if(!$('loginsay'))return;
+  setHTML($('loginsay'),esc(words));
+  setHTML($('loginbtns'),LG.ended?'<button class="btn pri" data-login>Start again</button>':LG.url?`<a class="btn pri" href="${esc(LG.url)}" target="_blank" rel="noopener">1. Open the sign-in page ${I.ext}</a>`:'');
+  $('logincode').hidden=LG.ended||!LG.url;$('loginterm').hidden=!LG.frame;
+}
+async function loginLoad(){
+  const turn=++LG.turn;clearTimeout(LG.timer);if(LG.frame)LG.frame.remove();LG.frame=null;LG.up=false;loginSay('Connecting…');
+  let i;try{i=await (await fetch(tq(LG.base+'terminal/login'))).json()}catch(e){i=null}
+  if(turn!==LG.turn||S.sheet!=='login')return;
+  if(!i){loginSay('The page could not be reached. Trying again…');LG.timer=setTimeout(loginLoad,3000);return}
+  if(!i.ok)return loginSay(i.out||'The login could not be opened.');
+  const f=document.createElement('iframe');f.title='Login';f.allow='clipboard-read; clipboard-write';f.src=LG.base+`t/${encodeURIComponent(T)}/login/?fontSize=12`;
+  LG.frame=f;$('loginterm').appendChild(f);loginSay('Connecting…');
+}
+/* the link it printed, off its screen: a line it wrapped is one again */
+function loginLook(){
+  let t;try{t=LG.frame.contentWindow.term}catch(e){}
+  if(t){const b=t.buffer.active;let all='';
+    for(let y=0;y<b.length;y++){const l=b.getLine(y);if(l)all+=(l.isWrapped?'':'\n')+l.translateToString(true)}
+    LG.url=loginLink(all)||LG.url}
+  loginSay(LG.url?'Open the sign-in page, then paste its code here.':'Starting…');
+}
+const loginLink=s=>(String(s).match(/https:\/\/[^\s]+/)||[''])[0];
+setInterval(()=>{if(S.sheet==='login'&&LG.up)loginLook()},700);
+addEventListener('message',e=>{
+  const d=e.data;if(e.origin!==location.origin||!d||!LG.frame||e.source!==LG.frame.contentWindow||d.session!=='login'||!d.state)return;
+  LG.up=d.state==='up';clearTimeout(LG.timer);
+  if(LG.up)return loginLook();
+  if(d.code===4001){LG.ended=true;loginSay('The login command has ended.');if(HB)loadProjects()}
+  else LG.timer=setTimeout(loginLoad,1500);  // only the connection: the login waits (login_hold.py)
+});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.sheet==='login'&&!LG.up&&!LG.ended)loginLoad()});
+function loginCode(){
+  const i=$('logininput'), c=i.value.trim();let t;try{t=LG.up&&LG.frame.contentWindow.term}catch(e){}
+  if(!c)return;
+  if(!t)return toast('The login is not connected yet',true);
+  i.value='';t.input(c,true);setTimeout(()=>t.input('\r',true),150);
 }
 /* F150: a project's …, and + Project */
 SHEETS.project=()=>{
@@ -3572,7 +3622,7 @@ function newsHTML(x){
 }
 function newsDraw(){const x=newsNow(), el=$('news');el.hidden=!x;setHTML(el,x?newsHTML(x):'')}
 /* F126a: the run's own words on its pages, Home's on Home and All projects */
-function loginDraw(){const t=HOME_PAGE||atAll()?H.login:S.snap.claude_login, el=$('login');el.hidden=!t;setHTML(el,t?`${I.alert}<span>${esc(t)}</span>`:'')}
+function loginDraw(){const t=HOME_PAGE||atAll()?H.login:S.snap.claude_login, el=$('login'), was=!el.hidden;el.hidden=!t;setHTML(el,t?`${I.alert}<span>${esc(t)}</span><button class="btn" data-login>Log in again</button>`:'');if(!t&&was&&S.sheet==='login'){closeSheet();toast('The login is renewed')}}
 function newsLater(key){S.later=[...S.later.filter(k=>k!==key),key].slice(-20);tabStore.set(LATER_KEY,S.later.join(' '));S.sure=null;render(true)}
 const devTyped=()=>Object.keys(S.f).some(k=>k.startsWith('dev:'));
 /* the words no store has yet, for the page that comes next; false when this browser keeps nothing */
@@ -3726,6 +3776,7 @@ document.addEventListener('click',async e=>{
   if(q('[data-newsrefresh]')){newsRefresh();return}  // F149
   if(x=q('[data-newslater]')){newsLater(x.dataset.newslater);return}
   if(q('[data-feedkeys]')){S.keys=!S.keys;render(true);return}
+  if(q('[data-login]')){loginOpen();return}  // F126b
   if(q('[data-feedtext]')){feedText();return}
   if(x=q('[data-feedcopy]')){const pre=$('feedtext'), pick=()=>{const r=document.createRange();r.selectNodeContents(pre);const g=getSelection();g.removeAllRanges();g.addRange(r)};
     try{await navigator.clipboard.writeText(S.feedText||'');toast('Copied')}catch(err){pick();toast('Selected: copy it with your own Copy')}return}
@@ -3848,6 +3899,7 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('submit',e=>{e.preventDefault();
   if(e.target.matches('[data-padd]'))return addProject();  // F150
+  if(e.target.matches('[data-logincode]'))return loginCode();  // F126b
   if(e.target.matches('[data-renform]'))return saveRename();  // F129
   send()});
 /* F124, F97: a switch or a select acts at once; a setting's on its row saves at once too */

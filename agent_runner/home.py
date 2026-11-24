@@ -30,6 +30,8 @@ Home's /p/KEY/ (B146, site_links), so one device address switches between runner
     GET  /p/KEY/pick?id=&o=&k=   F167: a pick link, routed to that run with no token: its one-use code is the check
     ANY  /p/KEY/t/TOKEN/NAME/... F107: session NAME's terminal tab, the run's ttyd for it (WebSocket included);
                                  the token is in the path, since ttyd's page drops the query
+    GET  /terminal/login, /t/TOKEN/login/...  F126b: the terminal that renews this machine's Claude login (ttyd on
+                                 watch.LOGIN_CMD), with no run up too; never without the key
     GET  /devices?t=TOKEN        F95: Device Vitals, this machine and each peer Home's (vitals.py), and their
                                  alerts (Needs you); /device?id=ID the vitals page; /vitals/device this
                                  machine's; /vitals/clean Clean; /dev/ID/... the same on device ID
@@ -432,6 +434,8 @@ class HomeHandler(BaseHTTPRequestHandler):
         """F107: a run's terminal tab is /p/KEY/t/TOKEN/NAME/...: ttyd's page asks for its token and its socket
         by paths under its own, without the query, so the token rides in the path (as on the run's own ttyd)."""
         parts = urlsplit(self.path).path.split('/')  # ['', 'p', KEY, 't', TOKEN, NAME, ...]
+        if parts[1] == 't' and len(parts) > 4:  # F126b: Home's own terminal, /t/TOKEN/login/...
+            return parts[2]
         return parts[4] if len(parts) > 5 and parts[1] == 'p' and parts[3] == 't' else ''
 
     def send(self, code: int, body: bytes | str | dict, ctype: str = 'application/json; charset=utf-8') -> None:
@@ -463,6 +467,12 @@ class HomeHandler(BaseHTTPRequestHandler):
                                    '`agent-runner home status` prints (…/?t=TOKEN)'})
         if method == 'GET' and path.endswith('/' + home_screen.MANIFEST):  # B179
             return self.manifest(path)
+        if login := re.fullmatch(r'(?:/p/[^/]+)?/+(?:terminal/+login|t/[^/]*/+login)(/.*)?', path):  # F126b
+            if self.keyless:  # with the key only, also on a trusted network
+                return self.send(403, {'ok': False, 'out': 'Logging in needs the key: open the link '
+                                       '`agent-runner home status` prints (…/?t=TOKEN)'})
+            if not path.startswith('/p/'):  # works with no run up
+                return self.login(method, path, (login[1] or '/')[1:])
         if path == '/p' or path.startswith('/p/'):
             return self.proxy(method)
         if method == 'GET' and (png := home_screen.icon_at(path)):
@@ -497,6 +507,15 @@ class HomeHandler(BaseHTTPRequestHandler):
             return self.send(200, self.server.act_once(str(req.get('cid') or ''), root, str(req.get('name') or ''),
                                                        str(req.get('arg') or '')))
         self.send(404, {'ok': False, 'out': f'no such page: {path}'})
+
+    def login(self, method: str, path: str, rest: str) -> None:
+        """F126b: the Claude login's terminal, Home's own: /terminal/login says where it is, /t/TOKEN/login/ serves it."""
+        if method != 'GET':
+            return self.send(404, {'ok': False, 'out': f'no such page: {path}'})
+        if path.startswith('/terminal/'):
+            return self.send(200, self.server.terms().open('login'))
+        from agent_runner.session_frame import login_frame
+        login_frame(self, self.server.terms(), rest)
 
     def manifest(self, path: str) -> None:
         """B179: Home's root is the app's scope; `p` names the project whose run app the icon opens on. Under /p/KEY/
@@ -686,6 +705,7 @@ class HomeServer(ThreadingHTTPServer):
         self.token, self._rows, self._act, self._link, self._roots = token, rows, act, link, roots
         self.acts: dict[str, cf.Future] = {}  # F150: a page's actions by cid, so one sent again is not run again
         self.acts_lock = threading.Lock()
+        self._terms = None  # F126b
         self.vitals = vitals or home_vitals(self)
         if self.vitals.act is None:
             self.vitals.act = self.act_key  # the vitals page's + slot runs this Home's buttons
@@ -703,6 +723,18 @@ class HomeServer(ThreadingHTTPServer):
         """F126a: the banner about this machine's Claude login, '' for none."""
         from agent_runner.vitals import login_banner
         return login_banner(self._roots())
+
+    def terms(self):
+        """F126b: Home's own terminals (web.Terminals): the Claude login's, with no run behind it."""
+        from agent_runner.web import Terminals
+        with self.acts_lock:
+            self._terms = self._terms or Terminals(self.token, self.server_address[1], '127.0.0.1')
+            return self._terms
+
+    def server_close(self) -> None:
+        super().server_close()
+        if getattr(self, '_terms', None):
+            self._terms.close()
 
     def project(self, key: str) -> Path | None:
         return keys(self._roots()).get(key)
@@ -763,6 +795,8 @@ class HomeServer(ThreadingHTTPServer):
         day, so with only those left they are ended first; each page connects again by itself."""
         super().service_actions()
         if self.restart or not self.restart_due():
+            return
+        if self._terms and self._terms.login.live():  # F126b: its person is on the sign-in page
             return
         with self.open_lock:
             self.restart = self.open == 0

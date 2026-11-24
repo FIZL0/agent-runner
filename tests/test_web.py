@@ -1066,9 +1066,10 @@ def test_login_banner_f126a(tmp: Path) -> None:
     check(r.returncode == 0, 'node draws the banner', r.stderr[-1500:])
     if r.returncode:
         return
+    again = '</span><button class="btn" data-login>Log in again</button>'  # F126b
     o, gone = json.loads(r.stdout), [True, '']
-    eq((o['run'], o['fine'], o['old']), ([False, '!<span>R</span>'], gone, gone), "the run page: the run's words, or none")
-    eq((o['all'], o['allFine'], o['home'], o['homeFine']), ([False, '!<span>H</span>'], gone, [False, '!<span>H</span>'], gone),
+    eq((o['run'], o['fine'], o['old']), ([False, '!<span>R' + again], gone, gone), "the run page: the run's words, or none")
+    eq((o['all'], o['allFine'], o['home'], o['homeFine']), ([False, '!<span>H' + again], gone, [False, '!<span>H' + again], gone),
        "All projects and Home: Home's words, or none")
 
 

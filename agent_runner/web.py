@@ -60,7 +60,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, need_detail, plat, session_frame, session_now, session_theme, speech, trust, watch
+from agent_runner import devices, home_screen, login_hold, need_detail,plat, session_frame, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -402,7 +402,14 @@ def socket_of(name: str) -> str:
 
 
 def terminal_fallback(name: str) -> dict:
-    """F74: a chat without ttyd: how to install it (`mode` 'install'); the message box works meanwhile."""
+    """F74: a chat without ttyd: how to install it (`mode` 'install'); the message box works meanwhile. F126b: the
+    login names its command, to be run by hand."""
+    if name == session_frame.LOGIN:
+        cmd = ttyd_install_cmd()
+        return {'ok': False, 'mode': 'install', 'out':
+                f'ttyd is not installed, so the login cannot be shown here. Install it on {socket.gethostname()} (' +
+                (cmd or TTYD_INSTALL.split('(', 1)[1].split(')')[0]) +
+                f') and press Log in again, or run {watch.LOGIN_CMD} in a terminal there.'}
     return {'ok': False, 'mode': 'install', 'out': TTYD_INSTALL + f' Until then, messages still reach {name}.'}
 
 
@@ -630,12 +637,17 @@ class Terminals:
         self.token, self.port, self.bind = token, port, LOCAL
         self.procs: dict[str, tuple[sp.Popen, int, str]] = {}
         self.lock = threading.Lock()
+        self.login = login_hold.LoginHold()  # F126b
+
+    def cwd(self, name: str) -> str:
+        return str(Path.home() if name == session_frame.LOGIN else S.ROOT)  # F126b: Home has no project
 
     def argv(self, name: str, sock: str, port: int) -> list[str]:
         from agent_runner.config import runner_cmd
+        runs = session_frame.login_argv() if name == session_frame.LOGIN else [*runner_cmd(), 'attach', name]  # F126b
         return ['ttyd', '-W', '-p', str(port), '-i', LOCAL, '-b', f'/t/{self.token}/{name}',
-                *(['-w', str(S.ROOT)] if plat.WINDOWS else []),  # ttyd's Windows build starts nothing without it
-                *session_frame.ttyd_options(session_frame.session_look()), *runner_cmd(), 'attach', name]
+                *(['-w', self.cwd(name)] if plat.WINDOWS else []),  # ttyd's Windows build starts nothing without it
+                *session_frame.ttyd_options(session_frame.session_look()), *runs]
 
     def ended(self, name: str, port: int, err: str) -> str:
         # F165: a port nobody opens is never named; ttyd's own error has it
@@ -643,6 +655,9 @@ class Terminals:
 
     def open(self, name: str) -> dict:
         """Where the page finds session `name`: {'ok', 'port' (the page's own), 'path'}, or why not."""
+        if name == session_frame.LOGIN:  # F126b
+            got = self.ttyd(name)
+            return got if not got['ok'] else {'ok': True, 'port': self.port, 'path': f'/t/{self.token}/{name}/'}
         sock = socket_of(name)
         if U.terminal_mode() == 'install':  # an ended one says that it ended: ttyd would not bring it back
             return terminal_fallback(name) if sock or session_live(name) else no_session(name)
@@ -655,7 +670,7 @@ class Terminals:
 
     def ttyd(self, name: str, sock: str = '') -> dict:
         """The port session `name`'s ttyd listens on, started when it is not up: {'ok', 'port'} or {'ok', 'out'}."""
-        sock = sock or socket_of(name)
+        sock = sock or (name if name == session_frame.LOGIN else socket_of(name))  # F126b: the login has no socket
         with self.lock:
             p = self.procs.get(name)
             if p and p[0].poll() is None and (p[2] == sock or not sock):
@@ -670,7 +685,7 @@ class Terminals:
             err = tempfile.TemporaryFile()  # not a pipe: nobody reads it while ttyd runs
             kw = {'creationflags': plat.CREATE_NO_WINDOW} if plat.WINDOWS else {'start_new_session': True}
             try:
-                proc = sp.Popen(self.argv(name, sock, port), cwd=str(S.ROOT), stdin=sp.DEVNULL, stdout=sp.DEVNULL,
+                proc = sp.Popen(self.argv(name, sock, port), cwd=self.cwd(name), stdin=sp.DEVNULL, stdout=sp.DEVNULL,
                                 stderr=err, env={**os.environ, 'AGENT_RUNNER_WEB': '1'}, **kw)
             except OSError as e:
                 err.close()
@@ -694,7 +709,8 @@ class Terminals:
             return {'ok': True, 'port': port}
 
     def close(self) -> None:
-        for proc, _, _ in self.procs.values():
+        self.login.close()
+        for proc, _, _ in list(self.procs.values()):
             if proc.poll() is None:
                 proc.terminate()
 
@@ -1055,6 +1071,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith('/live/'):  # F170
             return self.send(200, json.dumps(session_now.live(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/terminal/'):
+            if self.keyless and path.split('/')[2] == session_frame.LOGIN:  # F126b
+                return self.refuse()
             return self.send(200, json.dumps(self.server.terms.open(path.split('/')[2])))
         if path.startswith('/feed/'):
             return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
@@ -1124,6 +1142,8 @@ class Handler(BaseHTTPRequestHandler):
         if len(bits) < 5 or not self.key_ok(bits[2]):
             return self.refuse()
         name = bits[3]
+        if name == session_frame.LOGIN:  # F126b: with the key only, also on a trusted network; its query goes nowhere
+            return self.refuse() if self.keyless else session_frame.login_frame(self, self.server.terms, bits[4])
         path = f'/t/{self.server.token}/{name}/{bits[4]}'  # the ttyd's own path, whatever key this one had (F136)
         if not re.fullmatch(r'[cs]\d+', name):
             return self.send(404, json.dumps({'ok': False, 'out': f'no such session: {name}'}))

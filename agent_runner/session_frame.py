@@ -5,13 +5,14 @@ its scrolling, its focus). ttyd itself listens on 127.0.0.1. `frame` answers one
 """
 from __future__ import annotations
 
+import html
 import http.client
 import json
 import socket
 import threading
 from pathlib import Path
 
-from agent_runner import box_font, session_theme
+from agent_runner import box_font, plat, session_theme
 
 # Goes into ttyd's page, ahead of its own script. Focus: only a press in the frame with a mouse gives the terminal the
 # keyboard, never ttyd's own focus() on connect; on a touch device nothing does, so no keyboard opens. It tells the app
@@ -31,7 +32,7 @@ addEventListener('blur',function(){pressed=false});
 function tell(m){parent.postMessage(Object.assign({session:__NAME__},m),location.origin)}
 var W=window.WebSocket;
 window.WebSocket=class extends W{constructor(u,p){super(u,p);
-this.addEventListener('open',function(){tell({state:'up'})});this.addEventListener('close',function(){tell({state:'down'})});
+this.addEventListener('open',function(){tell({state:'up'})});this.addEventListener('close',function(e){tell({state:'down',code:e.code})});
 var n=0;this.addEventListener('message',function(){if(n++<4)setTimeout(window.arLook,0)})}};
 var LOOKS=__LOOKS__, look=__LOOK__;
 window.arLook=function(to){if(to)look=to;var t=window.term, c=LOOKS[look];if(!c)return;
@@ -39,7 +40,7 @@ document.documentElement.style.setProperty('--ar-bg',c.background);if(t)t.option
 if(LOOKS.light){try{look=parent.feedLook()}catch(e){look=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}window.arLook()}
 document.fonts.load('13px ar-box','\\u2500').then(function(){var t=window.term;if(t)t.options.fontFamily+=',monospace'});
 addEventListener('wheel',function(e){var px=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?innerHeight:1);
-if(!e.ctrlKey&&e.isTrusted&&parent.feedTake&&parent.feedTake(px)){e.preventDefault();e.stopImmediatePropagation()}},{capture:true,passive:false});
+if(__NAME__!=='login'&&!e.ctrlKey&&e.isTrusted&&parent.feedTake&&parent.feedTake(px)){e.preventDefault();e.stopImmediatePropagation()}},{capture:true,passive:false});
 function ours(e,paste){try{if(parent.feedTyped&&parent.feedTyped(e,paste)){e.preventDefault();e.stopImmediatePropagation()}}catch(x){}}
 addEventListener('keydown',function(e){ours(e)},true);
 addEventListener('paste',function(e){var s=e.clipboardData&&e.clipboardData.getData('text/plain');if(s)ours(e,s)},true);
@@ -95,6 +96,27 @@ def with_head(page: bytes, name: str, look: str) -> bytes:
     i = page.find(b'<head>')
     at = i + len(b'<head>') if i >= 0 else 0
     return page[:at] + head.encode() + page[at:]
+
+
+LOGIN = 'login'  # F126b: the terminal that runs watch.LOGIN_CMD and nothing else
+
+
+def login_argv() -> list[str]:
+    """F126b: what the login's ttyd runs: the fixed command, never a word of a request. The terminal ends with it."""
+    from agent_runner.watch import LOGIN_CMD
+    cmd, *rest = LOGIN_CMD.split()
+    return ['-t', 'disableReconnect=true', plat.exe(cmd), *rest]
+
+
+def login_frame(handler, terms, path: str) -> None:
+    """F126b: answer `handler`'s request for the login's terminal of `terms` (web.Terminals), at `path` under it."""
+    got = terms.ttyd(LOGIN)
+    if not got['ok']:
+        return handler.send(502, f'<pre>{html.escape(got["out"])}</pre>', 'text/html; charset=utf-8')
+    target = f'/t/{terms.token}/{LOGIN}/{path}'
+    if 'websocket' in handler.headers.get('Upgrade', '').lower():
+        return terms.login.serve(handler, got['port'], target)
+    frame(handler, got['port'], target, LOGIN, session_look())
 
 
 def frame(handler, port: int, target: str, name: str, look: str) -> None:
