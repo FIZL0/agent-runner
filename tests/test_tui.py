@@ -849,6 +849,10 @@ def test_actions() -> None:
         for c in 'port 8770':
             p.key(c)
         p.key('ENTER')
+        eq([n['id'] for n in p.snap['needs'] if n['id'] == 'D7'], [], 'F181a: the DECIDE answered by words is gone at once')
+        p.snap = SNAP
+        p.key('j')
+        p.key('j')
         p.key('L')
         p.key('5')
         p.key('ENTER')
@@ -899,13 +903,14 @@ def test_actions() -> None:
              ['plan', 'move', 'Q1', 'after', 'B2'],
              ['plan', 'confirm', 'D3', 'Yes'],
              ['plan', 'approve', 'F4', 'A + B · recommended'],
+             ['plan', 'confirm', 'D7', 'port 8770'],
              ['plan', 'shelve', 'D7'],
              ['plan', 'add', 'V'],
              ['plan', 'add', 'V', '--now']], 'p, D, J, L and the release buttons run their plan commands')
     eq(sent, ['change B2: also cover openmx', 'new task: show usage too',
-              'D7: port 8770', 'concept K5 ("Lazy layout"): go with Option B',
+              'concept K5 ("Lazy layout"): go with Option B',
               'concept K5 ("Lazy layout"): smaller'],
-       'chat edits, answers (a button, a reply), the concept pick and its change go to a new chat')
+       'chat edits, the concept pick and its change go to a new chat')
     eq(calls, [('new_control', True), ('quick_ask', 'since'), ('quick_ask', 'usage'), ('open_session', 's1'),
                ('new_control', False)],
        'H starts a new control session (B139); o, the quick asks and n run F74\'s actions (n without waiting)')
@@ -1712,7 +1717,7 @@ def no_send(text):
 def test_answer_direct_b138() -> None:
     """B138: a Needs you button runs the plan command itself, never an AI session (SEND fails if called): Yes on
     a CONFIRM is plan confirm, No is plan change "No: the check failed", a DECIDE's pick is plan confirm, a
-    block's done is plan confirm; the words typed in a reply box go to a new chat."""
+    block's done is plan confirm; typed words go to a new chat, a DECIDE's are its answer (F181a)."""
     answer_repo()
     ran = []
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
@@ -1730,11 +1735,10 @@ def test_answer_direct_b138() -> None:
             mock.patch.object(U, 'SEND', [lambda t: (sent.append(t), {'ok': True, 'out': 'sent to c1'})[1]]):
         r = U.answer('F1', 'Yes', button=True)
         eq((r['ok'], r['out'], 'gone' in r), (False, 'plan: no such task', False), 'a failure says why; the item stays')
+        U.answer('F1', 'it came late')
         U.answer('F2', 'SQLite, it is one file')
-        with mock.patch('agent_runner.brief.has_sheet', lambda tid: tid == 'F2'):
-            U.answer('F2', 'go')
-    eq(sent, ['F2 (pick a database): SQLite, it is one file', 'F2 (pick a database): go'],
-       'typed words go to a new chat, a sheet\'s typed go too')
+    eq(sent, ['F1 (push notices): it came late'], "a CONFIRM's typed words go to a new chat, a DECIDE's do not")
+    eq(ran[-1], ['plan', 'confirm', 'F2', 'SQLite, it is one file'], "a DECIDE's typed words are its answer")
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
             mock.patch.object(U, 'SEND', [no_send]), \
             mock.patch('agent_runner.brief.has_sheet', lambda tid: tid == 'F2'):
