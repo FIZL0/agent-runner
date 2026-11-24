@@ -86,7 +86,7 @@ Bare `agent-runner` starts the run where no terminal shows it and returns within
 (`plat.spawn_detached`: `agent-runner run`, its output in `.runner/background.out`), its slots hidden (see above). The
 launch waits for the run's start line in `run.log`, then prints the slot count and the commands: `status`, `attach`,
 `stop`, and claude.ai/code with `[run] remote`. If the run fails within that time, it prints the end of its output. If a
-run is already up it says so and starts nothing. `agent-runner run 3` is the same run in the foreground of this
+run is already up it says so and starts nothing. In a folder that is not set up, a bare `agent-runner` (and the run picker) names `agent-runner demo` in one line (F194c). `agent-runner run 3` is the same run in the foreground of this
 terminal, its log printed there and its keys read from it. On Windows each slot gets a ConPTY pseudo-console with no
 window (before 1809, a console that starts hidden, `STARTUPINFO.wShowWindow = SW_HIDE`); either way the agent has a TTY.
 
@@ -427,7 +427,7 @@ terminal socket says so with its link (o open, y copy; Enter opens the link). On
 (Ctrl-b d there) says so, and Enter (⏎ show it beside) shows it again. `agent-runner ui` always runs inside tmux: started
 outside it, it re-execs itself in the project's tmux session (named for the folder, or a new window in it); without
 tmux, or on Windows, it refuses with exit 2 (the install line, or the run page's link). Ctrl-f makes the session
-full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link; `c` (anywhere) starts a new chat, and `d` closes any control session.
+full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link; `c` (anywhere) starts a new chat, and `d` closes any control session. In the example project the walkthrough shows here too: the same seven steps as the page, worded for keys, with `<` back, `>` next and `/` to skip it and show it again; where you are is kept in the project's `.runner/walk.json`, and a step focuses and marks its panel.
 - **Tools.** The devices and shared tools: add, edit or remove a device, Used here per project, Test connection, and
   its secrets (### Devices). The shared tools of runner.toml show here too, and are edited there.
 

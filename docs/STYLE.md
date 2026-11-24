@@ -90,7 +90,10 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   the keyboard is open. A 2px `--accent` ring (`[data-walkat]`) is on the real thing it points at. Back, Next and Skip
   (Done on the last) stand in it; Show me when the page is on another view. A press goes to the step's view with the
   thing on screen, and glides within one view; a redraw or a reload never moves the page for it. Home's offer of the
-  example project is `exampleOffer()`.
+  example project is `exampleOffer()`. Its words are in `WALK_STEPS` (`page/084-walk.logic.js`, read by `walk.py`), the one list the page
+  (`084-walk.logic.js`) and the terminal UI share: each step has the page's words and the keys' words, and each view shows
+  only its own. The TUI draws it as a 'Walkthrough' box above the bottom line, keys as buttons, with ◂ after the pointed
+  panel's name; on a small screen only the focused panel shows with it.
 - **Badge** (`.n`): a count of what waits on the person, never of anything else. **Dot** (`.bdot`): something
   waits, no count. **Pill** (`.pill`): a state in a word or two. Same words on every page: Running, Paused,
   Stopping, Caps forced, Not up.
