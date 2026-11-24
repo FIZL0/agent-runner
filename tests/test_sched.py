@@ -15,7 +15,7 @@ from pathlib import Path
 
 from _check import check, eq, git, report
 
-from agent_runner import config as CF, runner as R  # noqa: E402
+from agent_runner import config as CF, plan as P, runner as R  # noqa: E402
 from agent_runner import sched as S  # noqa: E402
 
 CF.FIXED['merge_ahead'] = False  # F166: no merge built beside a gate here
@@ -305,6 +305,41 @@ def test_split_parent_first(tmp: Path):
     eq(ids(todo), ['F2', 'F20'], "another machine's parked attempt counts")
 
 
+def test_split_hold(tmp: Path):
+    print('B196: no run starts a task its author is splitting')
+    repo = tmp / 'hold'
+    repo.mkdir()
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan').mkdir()
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
+    (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+
+    def plan(by: str) -> None:
+        (repo / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n'
+                                           f'- [ ] **F1** (follow-up, critical) big | files: a.py{by}\n', encoding='utf-8')
+        git(repo, 'add', '-A')
+        git(repo, 'commit', '-qm', 'plan', '--allow-empty')
+    now = S.time.time()
+    plan(f' | split-by: {P.split_stamp(now)}')
+    R.init(repo)
+    h = S.held({}, 'main')
+    eq(S.holds(h.todo[0], set(), h), ('split', None), 'held, even a critical one')
+    eq(S.choose(h, set(), 'main'), None, 'nothing starts')
+    eq(S.explain({}, set(), 'main').get('F1'), ('waiting to be split', 'starts in 5 min if it is not'), 'the dry run says why')
+    check(S.splitting(set(), 'main') and not S.splitting({'F1'}, 'main'), 'the run is not idle meanwhile')
+    S.SLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    git(repo, 'worktree', 'add', '-q', '-b', 'task/F1', str(S.SLOTS_DIR / 'take-F1'))
+    eq(S.explain({}, set(), 'main').get('F1'), ('running', 'taken by hand (`take`)'), 'a take starts it now')
+    check(not S.splitting(set(), 'main'), 'and it waits for nothing')
+    git(repo, 'worktree', 'remove', str(S.SLOTS_DIR / 'take-F1'))
+    git(repo, 'branch', '-D', 'task/F1')
+    plan(f' | split-by: {P.split_stamp(now - P.SPLIT_HOLD - 1)}')
+    eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'F1', 'after 5 minutes a run starts it')
+    plan('')
+    eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'F1', 'and at once when the hold has ended')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
@@ -312,7 +347,8 @@ def main() -> int:
         return report([lambda: test_explain(repo), lambda: test_parked(repo),
                        lambda: test_release_taken(Path(tmp)), lambda: test_release_beside(Path(tmp)),
                        lambda: test_alone(Path(tmp)), lambda: test_critical_first(Path(tmp)),
-                       lambda: test_split_parent_first(Path(tmp))])
+                       lambda: test_split_parent_first(Path(tmp)),
+                       lambda: test_split_hold(Path(tmp))])
 
 
 if __name__ == '__main__':

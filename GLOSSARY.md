@@ -656,3 +656,10 @@ _Said_: asks file
 _On screen_: the steps, what to see and pictures on a Needs you card and popup
 _In code_: asks/ID.json, asks.ask_file, clear_ask, ASKS_PROMPT
 _Avoid_: notes file, ask json, brief
+
+**Split hold**:
+The time before which a task too big for one session does not start, set by `plan add` so its author can file the parts first; it ends early once a first part is filed, the task is split or brought under the size, or it is moved to the top.
+_Said_: picked up as you were making it
+_On screen_: waits to be split, starts in 4 min if it is not
+_In code_: SPLIT_HOLD, split-by, split_left, split_waits, splitting
+_Avoid_: grace period, cooldown

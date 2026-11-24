@@ -108,7 +108,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     live = {tid for _, box, tid, _, _ in tasks if box in ' ~'}
     landed = {tid for _, box, tid, _, _ in tasks if box not in ' ~'} | done_ids()
     where = slot_of(st or {}, time.time() if now is None else now)
-    tool_waits, tool_names = tool_wait_words(ls, st, now), project_tools()
+    tool_waits, tool_names = split_wait_words(ls, st, now) | tool_wait_words(ls, st, now), project_tools()
     for section, box, tid, rest, i in tasks:
         if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
             continue
@@ -122,7 +122,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
                     'state': queue_state(tid, pri, after, live, where, box == '~', tid in tool_waits)})
         if tool_names:  # F168
             out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
-        elif tid in tool_waits:  # B184: memory
+        elif tid in tool_waits:  # B184: memory; B196: its author's split
             out[-1]['tool_wait'] = tool_waits[tid]
     return out
 
@@ -200,6 +200,15 @@ def tool_wait_words(ls: list[str], st: dict | None, now: float | None = None) ->
     from agent_runner import shared_tools
     try:
         return shared_tools.wait_words(ls, st or {}, now)
+    except Exception:  # noqa: BLE001 - costs the words, not the snapshot
+        return {}
+
+
+def split_wait_words(ls: list[str], st: dict | None, now: float | None = None) -> dict[str, str]:
+    """B196: {task: 'waits to be split, starts in 4 min if it is not'}; not one running or taken by hand."""
+    from agent_runner import sched
+    try:
+        return P.split_waits(ls, now, {*sched.taken(), *((st or {}).get('running') or {}).values()})
     except Exception:  # noqa: BLE001 - costs the words, not the snapshot
         return {}
 

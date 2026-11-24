@@ -6,18 +6,20 @@ message to a session past [run] context_warn.
 """
 from __future__ import annotations
 
+import calendar
 import contextlib
 import io
 import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest import mock
 
 from _check import check, eq, git, has, report, run
 
-from agent_runner import brief, config, guide, plan as P, runner as R, sched, watch
+from agent_runner import brief, config, guide, plan as P, runner as R, sched, status, ui_model, watch
 
 SMALL = 'The retry stops after three tries and says why; check: test_retry | files: app/retry.py, tests/test_retry.py'
 # the shape of iFizBox's F392, which reached 483k: its 21 files, its six numbered changes and about its length
@@ -81,6 +83,77 @@ def test_plan_says():
         plan(root, env, 'edit', 'F2', 'Rows as buttons (split into F2a)')
         eq(P.too_big('F2', mock.Mock(run={'task_size': 1}), todo), '',
            'a task split into parts is not too big')
+
+
+def test_split_hold():
+    print('B196: a task too big for one session is held 5 minutes for its author to split it')
+    with tempfile.TemporaryDirectory() as t:
+        root, env = make(Path(t))
+        todo = root / 'plan' / 'TODO.md'
+
+        def line(tid: str) -> str:
+            return next(l for l in todo.read_text(encoding='utf-8').splitlines() if f'**{tid}**' in l)
+
+        def held(tid: str) -> bool:
+            return P.split_left(line(tid)) > 0
+        plan(root, env, 'add', 'F', SMALL)
+        check('split-by' not in line('F1'), 'a small task is not held')
+        plan(root, env, 'add', 'F', F392)
+        left = P.split_left(line('F2'))
+        check(280 < left <= 300, 'held 5 minutes from the add', left)
+        end = calendar.timegm(time.strptime(P.fields(line('F2'))['split-by'][0], '%Y-%m-%dT%H:%M:%SZ'))
+        eq((P.split_left(line('F2'), end - 1), P.split_left(line('F2'), end)), (1, 0), 'and no longer')
+        eq(P.split_left(line('F2'), end - 3600), 0, 'a clock an hour off never holds it for an hour')
+        has(plan(root, env, 'F2'), r'F2 waits to be split, starts in \d min', 'plan ID says why it waits')
+        has(run(root, 'plan', env=env).stdout, r'F2  \[waits to be split', 'and the list')
+        R.init(root)
+        st = {'running': {}}
+        has('\n'.join(status.tool_lines(st)), r'F2 waits to be split', 'and status')
+        eq({r['id']: r['state'] for r in ui_model.queue_rows(P.lines(todo), st)}['F2'], 'tool', 'and the queue row')
+        eq(status.tool_lines({'running': {'1': 'F2'}}), [], 'not once it runs')
+        old = P.fields(line('F2'))['split-by']
+        plan(root, env, 'edit', 'F2', F392 + ', web/app/more.js')
+        eq(P.fields(line('F2')).get('split-by'), old, 'an edit that leaves it too big keeps the hold, as it was')
+        plan(root, env, 'edit', 'F2', SMALL)
+        check(not held('F2') and 'split-by' not in line('F2'), 'one that makes it small ends it')
+        plan(root, env, 'add', 'F', F392, '--force')
+        plan(root, env, 'add', 'F3', 'the first rows', '--files', 'web/app/a.js')
+        check(not held('F3'), 'its first part filed ends it')
+        check(not held('F3a'), 'and the part is not held')
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'plan', '--allow-empty')
+        ids = [t[0] for t in sched.tasks('main')]
+        check('F3' not in ids and 'F3a' in ids, 'the part may start at once, its parent not before it', ids)
+        plan(root, env, 'add', 'F', F392, '--force')
+        plan(root, env, 'edit', 'F4', 'Rows as buttons (split into F9a)')
+        check(not held('F4'), 'an edit to (split into …) ends it')
+        plan(root, env, 'add', 'F', F392, '--force')
+        plan(root, env, 'move', 'F5', 'bottom')
+        check(held('F5'), 'another move keeps it')
+        plan(root, env, 'move', 'F5', 'top')
+        check(not held('F5'), 'move top ends it')
+        check(run(root, 'plan', 'add', 'F', SMALL, '--split-by', 'x', env=env).returncode != 0, 'no flag sets it')
+        plan(root, env, 'add', 'F', F392, '--force', '--after', 'F1')
+        check(held('F6') and 'F6' not in P.split_waits(P.lines(todo)), 'one that waits for a task says that instead')
+        plan(root, env, 'add', 'F', SMALL + ' | split-by: 2099-01-01T00:00:00Z', '--force')
+        check('split-by' not in line('F7'), 'nor does the text')
+        plan(root, env, 'add', 'F', F392, '--force')
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'plan', '--allow-empty')
+        eq(sched.explain({}, set(), 'main')['F8'][0], 'waiting to be split', 'the run holds it')
+        p = run(root, 'take', 'F8', env=env)
+        eq(p.returncode, 0, 'a take starts it now')
+        eq(sched.explain({}, set(), 'main')['F8'], ('running', 'taken by hand (`take`)'), 'and the run knows')
+        check('F8' not in P._split_waits(R.C, todo), 'and nothing says it waits')
+        # a run's own agent, in its slot's worktree
+        wt = Path(t) / 'wt'
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'plan', '--allow-empty')
+        git(root, 'worktree', 'add', '-q', '-b', 'task/F1', str(wt))
+        p = run(wt, 'plan', 'add', 'B', F392, '--force', env={**env, 'AGENT_RUNNER_REPO': str(wt), 'AGENT_RUNNER': '1'})
+        has(p.stdout, 'B1 is too big', "a run's agent files one")
+        mine = [l for f in (todo, wt / 'plan' / 'TODO.md') for l in P.lines(f) if '**B1**' in l]
+        check(mine and P.split_left(mine[0]) > 0, 'held the same', mine)
 
 
 def test_off():
@@ -183,4 +256,4 @@ def test_one_message():
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_rule, test_plan_says, test_off, test_brief, test_split_flow, test_one_message]))
+    raise SystemExit(report([test_rule, test_plan_says, test_split_hold, test_off, test_brief, test_split_flow, test_one_message]))
