@@ -116,14 +116,15 @@ function goProject(r){if(r.on)atAll()?goDown():0;else openProject(r.key,r.href)}
 /* B769b: a pressed project is marked as opening at once, until its page comes. A load that fails without leaving this page
    says so only where there is a Navigation API, so the mark also goes after OPEN_MS; navigateerror of a load that a newer
    press replaced comes while that press starts its own */
-const OPEN_MS=20000, OP={timer:0,going:false};
+const OPEN_MS=20000, OP={timer:0,going:false,said:''};
 function openProject(key,href){
-  clearTimeout(OP.timer);H.opening=key;OP.timer=setTimeout(openingEnd,OPEN_MS);
+  openingHush();clearTimeout(OP.timer);H.opening=key;OP.timer=setTimeout(openingEnd,OPEN_MS);
   render(true);
-  if(!openingSeen()){const p=projectOf(key);toast(`Opening ${p&&p.name||key}…`)}
+  if(!openingSeen()){const p=projectOf(key);toast(OP.said=`Opening ${p&&p.name||key}…`);clearTimeout(toast.h)}  // it stays as long as the mark
   OP.going=true;try{location.href=href}finally{setTimeout(()=>{OP.going=false},0)}
 }
-function openingEnd(){clearTimeout(OP.timer);if(!H.opening)return;H.opening='';render(true)}
+function openingHush(){if(OP.said&&$('toast').textContent===OP.said)$('toast').hidden=true;OP.said=''}
+function openingEnd(){clearTimeout(OP.timer);openingHush();if(!H.opening)return;H.opening='';render(true)}
 /* the mark is on screen: a number key also opens a project from where no row or card of it shows */
 const openingSeen=()=>[...document.querySelectorAll('.opening')].some(el=>{const b=el.getBoundingClientRect();return b.width>0&&b.right>0&&b.left<innerWidth&&b.bottom>0&&b.top<innerHeight});
 const OPENING='<span class="livedot"></span> Opening…';
