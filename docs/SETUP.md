@@ -109,7 +109,7 @@ lab      ✓ needs none (a local model)
 by the harness loop into `~/.cache/agent-runner`):
 
 - **copilot** shows a GitHub device code: open the URL it prints and enter the code. It first asks
-  "GitHub Enterprise domain (blank for github.com)"; `--enterprise company.ghe.com` answers that, and
+  "GitHub Enterprise domain (blank for github.com)"; `--enterprise company.ghe.com` answers that (the domain may also be written `https://company.ghe.com/`, trimmed to the host), and
   `--enterprise ""` means github.com.
 - **codex** signs in with ChatGPT, in a browser page.
 - **gemini** asks for a Gemini API key (hidden input). `GEMINI_API_KEY` in the environment counts as its login.
