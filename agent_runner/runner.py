@@ -59,7 +59,7 @@ C3 split this file by responsibility; each module imports only the ones before i
     merge    the merge worktree: fix and repair sessions, the merge gate, merges ahead, merge_batch
     control  control sessions, closing idle ones, the control server, Remote Control processes
     status   status, since, follow, Needs you lines
-    feed     the runner feed and its hidden session, handing a feed message on
+    feed     ending an older version's runner feed, handing a feed message on, opening a control session
     loop     the run: keys, halts and tells, CI, finish, the loop (cmd_run)
     cmds     the other commands: take, resume, key, upgrade, status, since, needs, wizard, sheet, stop,
              control, background and attach

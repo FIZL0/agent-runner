@@ -91,7 +91,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'models.code': ('roles', 'Other tasks', 'The model for a task whose kind has none. Every kind has one, so this rarely changes anything.'),
     'models.fix': ('roles', 'Conflict fixes', 'The model that resolves conflicts and repairs merges. A cheaper one fails more often.'),
     'models.docs': ('roles', 'Docs helper', 'The model that writes docs and changelog lines for a task. Off: the task writes them itself.'),
-    'models.feed': ('roles', 'Run news', 'The model that words the runner feed. It is short work, so a cheap one does it.'),
+    'models.feed': ('roles', 'Run page copy', 'The model that publishes the run page copy on claude.ai. It is short work, so a cheap one does it.'),
     'models.fallback': ('roles', 'When a limit is reached', 'Other models a task goes on with at a limit, in order. Empty: it waits for the reset.'),
     'models.local': ('roles', 'Allow local models', 'Lets a role name a model that runs on your own network. Off: such a name is refused.'),
     # the project file, read only here

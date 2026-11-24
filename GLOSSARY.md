@@ -73,11 +73,11 @@ Number 1, the project chat older versions kept beside the run; retired (F176): n
 _Avoid_: control 1, main session, first control session, project chat
 
 **Runner feed**:
-The lean session in the Claude apps that reposts what lands and what needs the person, and hands any other ask to a control session.
+The lean session in the Claude apps that reposted what lands and what needs the person; retired (B195): a run starts none and ends an older one, so nothing pushes to the phone unasked.
 _Avoid_: feed session, bot
 
 **Board**:
-The hidden session that holds the runner feed; with no runner feed there is none, and the run page shows what lands (`attach board` opens agent-runner ui).
+The hidden session that held the runner feed; retired (B195): a run starts none and ends an older one. The run page shows what lands (`attach board` still opens agent-runner ui).
 _Avoid_: dashboard, status window
 
 **Remote**:
@@ -390,7 +390,7 @@ _In code_: run_view.py, run_view, view_key, keys_help(view=True), attach run
 _Avoid_: runner pane, runner window, console
 
 **Model role**:
-A type of work the runner picks a model for: a task's session, the spec review, a fix, docs edits, control sessions, the feed
+A type of work the runner picks a model for: a task's session, the spec review, a fix, docs edits, control sessions, the run page copy
 _Said_: type of work
 _On screen_: [models] code, review, fix, docs, control, feed
 _In code_: [models], Config.models, resolve_models, subagents

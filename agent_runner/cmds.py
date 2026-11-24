@@ -34,7 +34,7 @@ from agent_runner.control import (control_argv, control_brief, control_env, cont
 from agent_runner.control_first import CONTROL_FIRST, type_first_later  # B147
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
     since_text, status_text, waiting_ok, as_event, events_file, read_events)
-from agent_runner.feed import (board, board_feed, board_held, control_late_files, control_new, control_new_runner,
+from agent_runner.feed import (board_held, control_late_files, control_new, control_new_runner,
     FORWARD_FLAG, forward_late_files, read_ask_file, SID_RE)
 from agent_runner.loop import drop_session_env, finish, send_key
 
@@ -355,23 +355,11 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
                          'waiting on your answer), and the last-look mark stays put')
     ap.add_argument('--keep-mark', action='store_true',
                     help='with --follow: leave the last-look mark where it is, and print nothing while the run '
-                         'is idle, or paused or stopping with nothing running (the runner feed)')
-    ap.add_argument('--board', action='store_true',
-                    help="the board window's feed: a header, the last 6 hours, then --follow; the last-look mark "
-                         "stays put, and no tokens are used")
-    ap.add_argument('--feed', action='store_true',
-                    help='with --board: run the runner feed (the Haiku session on Remote Control) instead, and end '
-                         'it with --run-pid')
-    ap.add_argument('--run-pid', type=int, default=0, metavar='PID',
-                    help='with --board: the run that opened it; the board ends once that process has')
+                         'is idle, or paused or stopping with nothing running')
     a = ap.parse_args(argv)
     init()
     if a.needs_you and not a.follow:
         ap.error('--needs-you goes with --follow')
-    if (a.feed or a.run_pid) and not a.board:
-        ap.error('--feed and --run-pid go with --board')
-    if a.board:
-        return board_feed(a.run_pid) if a.feed else board(a.run_pid)
     if a.follow:
         return follow(needs_you=a.needs_you, mark=not a.keep_mark, hold=board_held if a.keep_mark else None)
     f = since_mark_file()
@@ -805,7 +793,7 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     if which == 'runner':
         from agent_runner.run_view import run_view
         return run_view()
-    if which in ('feed', 'board'):  # C26: the runner feed has no terminal to show; the TUI shows what lands
+    if which in ('feed', 'board'):  # B195: no run has one any more; the TUI shows what lands
         from agent_runner.tui import main as tui_main
         return tui_main([])
     if said := hidden_attach(which):

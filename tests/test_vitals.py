@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """F95: Device Vitals in Runner Home. The headroom maths, the collectors on fixture /proc and /sys trees (and
 macOS, Windows and nvidia-smi output), the day of samples, Clean's safe list, the threshold alerts and their
-push to a runner feed, and Home's vitals calls (this machine and a peer Home).
+the event they write, and Home's vitals calls (this machine and a peer Home).
 
     python3 tests/test_vitals.py      (temp folders, servers on free local ports)
 """
@@ -559,7 +559,7 @@ def test_alerts():
 
 
 def test_push():
-    print('an alert goes to each running project\'s runner feed as a needs-you line')
+    print('an alert goes to each running project\'s events as a needs-you line')
     t = tmpdir()
     up, off = t / 'up', t / 'off'
     for r in (up, off):

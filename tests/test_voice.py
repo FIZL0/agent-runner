@@ -1,5 +1,5 @@
 """F21: the person's wording: a global voice file and a project one, kept by `agent-runner voice`, carried by every
-control session's brief and the runner feed's system prompt; `[run] voice` moves the global file and `[run]
+control session's brief; `[run] voice` moves the global file and `[run]
 voice_learn` (ask | off) fits the brief."""
 from __future__ import annotations
 
@@ -102,15 +102,7 @@ check(s.startswith('the slot brief') and '- call it an agent, not a slot' in s a
       'for the commit message status and since show', s)
 check('- shorter' in voice.slot('the slot brief', cfg(repo())), 'another repo: the global lines')
 
-print('the feed prompt carries the wording')
-rb = guide.RUNNER_BRIEF.format(cmd='agent-runner', repo='demo', answer='')
-f = voice.feed(rb, c)
-check(f.startswith(rb.rstrip()) and '- call it an agent, not a slot' in f and '- shorter' not in f,
-      'the feed system prompt ends with the wording in effect')
-check('- shorter' in voice.feed(rb, cfg(repo())), 'another repo: the global wording')
-check('repeated exactly' in f, 'monitor lines still repeat exactly')
 GLOBAL.unlink()
-eq(voice.feed(rb, cfg(repo())), rb, 'no wording: the feed prompt is unchanged')
 eq(voice.slot('x', cfg(repo())), 'x', "no wording: the task agents' brief is unchanged")
 
 print('config: the defaults are documented')
@@ -121,7 +113,7 @@ check('off' in default_docs()['run']['voice_learn'], 'its comment names the mode
 for v, want in [('ask', 'ask'), ('off', 'off'), (False, 'off'), ('OFF', 'off'), ('nonsense', 'ask')]:
     eq(voice.learn_mode(cfg(d, voice_learn=v)), want, f'voice_learn = {v!r}')
 
-print('the real commands: voice, control --brief and the feed argv')
+print('the real commands: voice and control --brief')
 d2 = repo()
 r = run(d2, 'voice', 'add', 'say agent, not slot')
 check(r.returncode == 0 and 'added to' in r.stdout, '`voice add` writes the global file', r.stderr)
@@ -140,12 +132,8 @@ check("The person's wording" in b and 'Learned' not in b, 'voice_learn = "off" i
 r = run(d2, 'voice', 'forget', 'task ids')
 check('removed from' in r.stdout, '`voice forget` removes it', r.stdout)
 
-from agent_runner import feed as F, runner as R  # noqa: E402
+from agent_runner import runner as R  # noqa: E402
 R.init(d2)
-with mock.patch.object(F, 'remote_on', lambda: True, create=True), mock.patch.dict(R.C.run, {'agent': 'claude'}):
-    fa = R.feed_argv()
-system = fa[fa.index('--system-prompt') + 1]
-check('- say agent, not slot' in system, 'the feed is started with the wording in its system prompt', system[-300:])
 env = {**os.environ, 'AGENT_RUNNER_REPO': str(d2)}
 env.pop('AGENT_RUNNER', None)
 check(run(d2, 'plan', 'add', 'F', 'add a thing | files: a.py', env=env).returncode == 0, 'a task to brief')

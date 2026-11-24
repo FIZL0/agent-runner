@@ -1,5 +1,5 @@
-"""B91: the runner feed resumes its kept session only while the runner command it may run is the same; a session
-kept from before (another command, or none named: from before B91) gives way to a fresh one."""
+"""B195: a run starts no board and no runner feed, and ends one an older version left; the hand-off of a feed's
+message to a control session."""
 from __future__ import annotations
 
 import os
@@ -25,39 +25,86 @@ def repo() -> Path:
     return d
 
 
-def test_feed_sid_keeps_command():
-    print('B91: feed.sid keeps the runner command beside the session id, and a changed command starts afresh')
+def test_run_ends_old_feed():
+    print("B195: a run's start ends the feed and board an older version left, also one started by this very run "
+          'before it restarted in place, and forgets its session; a pid that is no board is left alone')
+    import subprocess
+    import sys
+    import threading
+    import time
     R.init(repo())
-    f = R.C.notes(R.REMOTE_DIR, R.FEED_SID)
-    f.unlink(missing_ok=True)
+    me = os.getpid()
+    for over in ('this run', 'an earlier run'):
+        feed = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        board = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'since', '--board', '--feed'])
+        for p in (feed, board):  # reaped when they end: a zombie counts as ended anyway
+            threading.Thread(target=p.wait, daemon=True).start()
+        gone = subprocess.Popen([sys.executable, '-c', 'pass'])
+        gone.wait()
+        try:
+            R.rc_record('feed', 'demo · runner', feed.pid, me if over == 'this run' else gone.pid, SID)
+            R.C.notes(R.REMOTE_DIR, R.FEED_SID).write_text(f'{SID}\nagent-runner\n', encoding='utf-8')
+            R.C.notes('board.live').write_text(str(board.pid), encoding='utf-8')
+            for f in ('board.log', 'board.job', 'no-board'):
+                R.C.notes(f).write_text('{}', encoding='utf-8')
+            R.feed.BOARD_WAIT, was = 1, R.feed.BOARD_WAIT
+            try:
+                R.rc_sweep_start()
+                end = time.monotonic() + 30
+                while any(t.name == 'remote-sweep' for t in threading.enumerate()) and time.monotonic() < end:
+                    time.sleep(0.05)
+            finally:
+                R.feed.BOARD_WAIT = was
+            check(not R.plat.alive(feed.pid), f"{over}: the feed is ended (its teardown archives its entry)")
+            if sys.platform.startswith('linux'):  # macOS: no command line to tell; it ends once its feed has
+                check(not R.plat.alive(board.pid), f'{over}: the board is ended')
+            eq([r for r in R.rc_records() if r['kind'] == 'feed'], [], f'{over}: its record is dropped')
+            eq(R.feed_sid_parts(), ('', ''), f'{over}: its session is forgotten')
+            eq(sorted(f.name for f in R.C.notes().glob('*board*')), [], f'{over}: its files are gone')
+        finally:
+            for p in (feed, board):
+                if p.poll() is None:
+                    p.kill()
+    stranger = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    try:
+        R.C.notes('board.live').write_text(str(stranger.pid), encoding='utf-8')  # its pid reused after a reboot
+        R.feed.end_board()
+        check(R.plat.alive(stranger.pid), 'a process that is no board is not touched')
+        check(not R.C.notes('board.live').exists(), 'the stale marker goes')
+    finally:
+        stranger.kill()
+        stranger.wait()
 
-    sid, resume = R.feed_session('agent-runner')
-    check(R.SID_RE.fullmatch(sid) and not resume, 'none kept: a new session', (sid, resume))
-    eq(f.read_text(encoding='utf-8'), f'{sid}\nagent-runner\n', 'the id and the command are kept')
-    eq(R.feed_sid_file(), sid, 'feed_sid_file still reads just the id')
-    eq(R.feed_sid(), sid, 'and so does feed_sid')
 
-    eq(R.feed_session('agent-runner'), (sid, True), 'the same command resumes the same session')
-
-    sid2, resume = R.feed_session('/new/agent-runner')
-    check(sid2 != sid and not resume, 'another command starts a fresh session', (sid2, resume))
-    eq(f.read_text(encoding='utf-8'), f'{sid2}\n/new/agent-runner\n', 'and keeps the new command')
-
-    f.write_text(SID + '\n', encoding='utf-8')  # from before B91: the feed of a pre-B71 run allowed only ./kit
-    eq(R.feed_sid_file(), SID, 'an old one-line feed.sid is still read for hand-offs')
-    sid3, resume = R.feed_session('agent-runner')
-    check(sid3 != SID and not resume, 'but a session kept without a command is not resumed', (sid3, resume))
-
-    f.write_text('garbage\nagent-runner\n', encoding='utf-8')
-    sid4, resume = R.feed_session('agent-runner')
-    check(sid4 != 'garbage' and not resume, 'a kept id that is no session id starts afresh', (sid4, resume))
-
-    eq(R.feed_session()[1], False, 'the default command is RUNNER, not the test one')
-    eq(f.read_text(encoding='utf-8').splitlines()[1], R.RUNNER, 'so RUNNER is what is kept by default')
-    eq(R.feed_session(), (R.feed_sid_file(), True), 'and resumed by default')
-
-    R.feed_forget_session()
-    eq(R.feed_sid_parts(), ('', ''), 'a real stop forgets both')
+def test_no_feed_starts():
+    print('B195: nothing starts a board or a feed, on any OS; control sessions start no watch and name no feed')
+    import contextlib
+    import io
+    from unittest import mock
+    from agent_runner import cmds, control as K, guide, loop
+    R.init(repo())
+    for gone in ('start_board', 'keep_board', 'board_feed', 'feed_argv'):
+        check(not hasattr(R, gone) and not hasattr(loop, gone), f'{gone} is gone')
+    started = []
+    for win in (False, True):
+        with mock.patch.object(K, 'remote_on', lambda: True), mock.patch.object(R.plat, 'WINDOWS', win), \
+                mock.patch.object(K, 'hidden_shim', lambda *a, **k: started.append(a) or (1, '')):
+            K.start_control()
+            brief = K.control_brief()
+        check('runner feed' not in brief and 'needs-you watch' not in brief and '--needs-you' not in brief
+              and 'start no watch on them unasked' in brief, f'the brief (Windows {win}) starts no watch', brief)
+        check('guide watch' in brief, 'and "notify me when" is still a guide page')
+    eq(started, [], 'a run start opens no hidden session of its own')
+    page = guide.CONTROL_TOPICS['watch']
+    check('"notify me when X"' in page and 'since --follow' in page and '--needs-you' in page,
+          '"notify me when" works on ask')
+    for flag in ('--board', '--feed'):
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                rc = cmds.cmd_since([flag])
+            except SystemExit as e:
+                rc = e.code
+        eq(rc, 2, f'since {flag} is gone')
 
 
 def test_photo_alone_forwarded():
@@ -240,16 +287,6 @@ def test_page_ask_skips_feed_b154():
     check(looked and cmd[cmd.index('--feed-sid') + 1] == SID, 'a feed hand-off still looks, and control N waits', cmd)
 
 
-def test_brief_names_photos():
-    print('BUG1: the feed brief hands every photo or file on, never asks about it')
-    from agent_runner.guide import RUNNER_BRIEF
-    rb = RUNNER_BRIEF.format(cmd='run', repo='r', answer='')
-    line = next((ln for ln in rb.split('\n- ') if 'photo' in ln), '')
-    check('always hand it on' in line and 'control --new --forward' in line and 'never ask' in line,
-          'photos are always handed on with control --new --forward', line)
-
-
 if __name__ == '__main__':
-    raise SystemExit(report([test_feed_sid_keeps_command, test_photo_alone_forwarded, test_queued_message_forwarded,
-                                test_page_ask_skips_feed_b154,
-                                test_brief_names_photos]))
+    raise SystemExit(report([test_run_ends_old_feed, test_no_feed_starts, test_photo_alone_forwarded,
+                             test_queued_message_forwarded, test_page_ask_skips_feed_b154]))

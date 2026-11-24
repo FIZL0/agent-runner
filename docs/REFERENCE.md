@@ -55,7 +55,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
 
 ### Terminals, and Windows
 
-Every session the run starts (each slot, each control session, the runner feed) runs hidden: a terminal with no
+Every session the run starts (each slot, each control session) runs hidden: a terminal with no
 window, the same way on every OS (0.60.0 removed tmux and `[run] mux`; a leftover `mux` key is ignored with one
 warning). You watch and steer it through `agent-runner attach` (the run view), `attach sN` (the session's own terminal),
 `agent-runner ui` and the run page, Remote Control (claude.ai/code and the Claude apps, with `[run] remote_slots`),
@@ -129,7 +129,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   Numbers start at 2 (`FIRST_CONTROL`). 1 was the kept session's and is retired, so a c1 an older runner left running is a
   chat like any other: it lists, idles closed, can be deleted, renamed and resumed.
 - **Every prompt opens one**: the run app's Home box, a Status quick ask, Say what to change (a chat edit), a concept
-  change, a typed reply under Needs you (not a DECIDE's, see below) and the runner feed's hand-on each open a new control session
+  change, a typed reply under Needs you (not a DECIDE's, see below) each open a new control session
   (`control --new --ask`), named for its ask (its first words; `control --title` sets another name). From the run app and
   `agent-runner ui` it starts without waiting for its link. A message in an open chat goes to that chat. In the run app no
   chat is protected: any can be deleted or go Quiet.
@@ -195,18 +195,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   "what is blocked?"); the run page and `agent-runner ui` show them. A status starts with its headline, and a
   `DECIDE:` line is only a question of the session's own, never an existing item restated. A reply that answers an
   item still settles it.
-- **Needs you, unasked**: the one exception to leaving blocked and Needs you items alone. With no runner feed, every
-  control session starts the Monitor tool on `agent-runner since --follow --needs-you` on its first turn (a control session's
-  opening names it; a blank session starts it before answering your first message). It prints only what
-  needs you: the run held (`STOPPED`: uncommitted edits or
-  a mid-merge in the main checkout, staged changes, a usage cap), a task left for a human, one that looks
-  stalled, and a task waiting on your answer (`CONFIRM:`/`DECIDE:`/`BLOCKED:`, a concept page waiting for your
-  OK). On each line the session posts one plain bullet, what is held and the one thing to do, and sends it
-  with PushNotification so a phone hears it: the run's terminal and `notify-send` are seen by
-  nobody when the run is driven from the web or a phone. The watch starts with `timeout_ms 1800000` (the
-  Monitor tool's cap); when it times out with nothing printed the session starts it again silently, with no
-  "still watching" line, so a quiet run posts nothing. With the runner feed, no control session starts this watch:
-  the feed's own Monitor pushes what needs you.
+- **Needs you, unasked**: no control session starts a watch on its own. The run page, `agent-runner ui` and `status` show what needs you (a run held, a task left for a human, a task waiting on your answer, a device alert, a pitch), and nothing pushes it to a phone unasked. When a person asks ("notify me when something needs me", `guide watch`), the session runs `agent-runner since --follow --needs-you` under the Monitor tool and posts each line as one plain bullet, sent with PushNotification so a phone hears it. The watch starts with `timeout_ms 1800000` (the Monitor tool's cap); when it times out with nothing printed the session starts it again silently, with no "still watching" line, so a quiet run posts nothing.
 - **Following**: say "follow" (or "live", "/follow") and the session runs `agent-runner since --follow` under
   the Monitor tool and posts each line it prints as a bullet; "stop following" ends it (see [status and
   since](#status-and-since)). It is the full feed, so the needs-you watch stops while it runs and starts again
@@ -498,7 +487,7 @@ A block whose why starts with a caps label waits on a person, not a task: `CONFI
 hand and say what you saw), `DECIDE:` (answer a question or a choice), `BLOCKED:` (access, a login, or a fix
 only a person can make). An agent files one with `done R1 "msg" --blocked "CONFIRM: watch a phone for a push
 when a task lands"`; such a block never takes an `(after …)`. It lists under Needs you beside the
-concept pages, and takes one of three answers (the control session or the runner feed maps what the person
+concept pages, and takes one of three answers (a control session maps what the person
 says to the item's id, a reply that names no item, "yes", "B", "later", included, and asks which one when it
 cannot tell):
 
@@ -551,8 +540,7 @@ with no new merge into it, or at once when it reaches `approve_batch` tasks.
 A pitch is a page for the person, rendered from what each task's agent wrote in `.runner/pitches/<ID>.json`: what it
 does, why, how to try it, the risk, and before and after when they help. In a slot, `done` refuses without the first
 four. It also names the commits that would go out with it and are no task's change (one made by hand, a repair,
-what was unpushed when `approve` was turned on). The page is published to claude.ai by a one-shot and shown at `/concept/pitchN`. It is a Needs you item, and the
-runner feed pushes it to the phone.
+what was unpushed when `approve` was turned on). The page is published to claude.ai by a one-shot and shown at `/concept/pitchN`. It is a Needs you item; nothing pushes it to the phone unasked.
 
 Approve (the button, or `agent-runner pitch approve pitch1`) pushes exactly up to the pitch's last tested merge.
 Merges that landed in one gate run share that commit. If an earlier merge is not approved yet, the approval says which
@@ -1380,14 +1368,13 @@ agent-runner control [N]               a new control session in this terminal, b
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --no-wait   the same, returning once it starts ("control N is starting in a hidden terminal"),
                                        without waiting for its claude.ai/code link
-agent-runner control --new --forward   the same, with the person's latest runner-feed message as its first
-                                       message, read word for word from the feed's transcript (never retyped
-                                       in a shell), and the files or images attached to it named with their
-                                       paths; the runner feed hands requests on this way
+agent-runner control --new --forward   the same, with the person's latest message to an older version's runner feed
+                                       as its first message, read word for word from that feed's transcript (never
+                                       retyped in a shell), and the files or images attached to it named with their
+                                       paths; no run calls it now, since a run starts no feed
   … --forward --runner                 the same, opened in agent-runner's own checkout (the clone it runs from,
-                                       or a worktree under its [run] home) and labelled with this project: the
-                                       feed hands asks about agent-runner itself (updates, releases, its bugs)
-                                       on this way
+                                       or a worktree under its [run] home) and labelled with this project; the older
+                                       feed handed asks about agent-runner itself (updates, releases, its bugs) on this way
 agent-runner pitch [approve|no PITCH]  landed work that waits for a yes to be pushed (### Approve to push): approve
                                        it, or undo it with `no`
 agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck since the last look (or WHEN:
@@ -1506,7 +1493,7 @@ review = "opus"           # the `review` subagent the spec review before done ru
 fix = "opus"              # merge-conflict fix and repair sessions
 docs = "haiku"            # the `docs` subagent: CHANGELOG, docs, README, journal and plan-text edits; false: none
 control = "opus"          # control sessions (c2, c3, …)
-feed = "haiku"            # the runner feed, and the one-shot that publishes the run page's claude.ai copy
+feed = "haiku"            # the run page's claude.ai copy (the one-shot that publishes it)
 kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonnet", C = "sonnet", R = "sonnet" }
                           # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
 local = false             # allow a local provider (ollama, or a provider url on localhost or a private address); see Model providers
@@ -1542,7 +1529,7 @@ rules_pointer = true      # a run adds one line to the rules file (`rules`, else
 wizards = true            # an agent blocking with BLOCKED: (a login, a certificate, a secret) also writes a bash wizard to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it; false: no wizards
 questionnaires = true     # a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a page made with `agent-runner sheet <ID>`); Needs you shows one line and its link; false: a plain DECIDE
 grill = "ask"             # control sessions ask rounds of numbered questions before queueing: "ask" = when the person says grill me / poke holes; "big" = also on big vague asks; "off"
-voice = ""                # the person's wording file (`agent-runner voice`), read by control sessions, the runner feed and task agents; "" = ~/.config/agent-runner/voice.md (a .runner/voice.md with lines overrides it for this project)
+voice = ""                # the person's wording file (`agent-runner voice`), read by control sessions and task agents; "" = ~/.config/agent-runner/voice.md (a .runner/voice.md with lines overrides it for this project)
 voice_learn = "ask"       # "ask": a session that had to say something again offers one wording line to add; "off": lines are added only when the person says so
 review = true             # before done, a fresh subagent reads the diff against the task's brief (spec only: missing, unasked, wrong); the commit ends "review: …"; false: no review
 review_min_lines = 50     # a diff smaller than this (changed lines) skips the review, unless the task has a long form (plan/tasks/<ID>.md)
@@ -1664,7 +1651,7 @@ in the [harness loop](#the-harness-loop).
 
 Only task sessions (`[models] code`, `[models.kinds]`, a task's own `plan add --model`, `run --model`) and fix
 sessions (`[models] fix`) can name another provider. `review`, `docs`, `control` and `feed` run as Claude Code
-itself (its subagents, Remote Control control sessions, the feed's one-shot), so another provider there is refused
+itself (its subagents, Remote Control control sessions, the run page copy's one-shot), so another provider there is refused
 at start, saying why.
 
 ### Fallback chain

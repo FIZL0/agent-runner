@@ -113,7 +113,6 @@ def test_db():
     has(G.topic('needs'), r'ArtifactData tool \(`get`, the\s+sheet\'s url, collection `picks`',
         'the needs guide (C2: the control brief points at it) reads the db')
     has(G.CONTROL, r'`\{cmd\} guide needs`', 'and the control brief points at it')
-    has(G.FEED_ANSWER, r'ArtifactData tool \(`get`, the sheet\'s url, collection `picks`', 'and so does the feed rule')
     has(R.SHEET_PROMPT, re.escape('capabilities {{"db": {{}}}}'), 'the slot brief says to publish with the db')
 
 

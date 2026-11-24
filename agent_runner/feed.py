@@ -1,4 +1,4 @@
-"""The board and the runner feed, and handing a feed message on to a new control session."""
+"""Ending the runner feed an older version started (B195), and handing a feed message on to a new control session."""
 
 from __future__ import annotations
 
@@ -6,51 +6,59 @@ import datetime as dt
 import json
 import os
 import re
-import signal
 import subprocess as sp
 import sys
-import threading
 import time
-import uuid
 from pathlib import Path
 
-from agent_runner import plan as P, plat
-from agent_runner.config import RUNNER, main_checkout, runner_cmd, shown_cmd
+from agent_runner import plat
+from agent_runner.config import main_checkout, runner_cmd, shown_cmd
 from agent_runner.state import C, log, ROOT, run_up
 from agent_runner.slots import link_drift, remote_answer_drift
 from agent_runner.slots import marker_pid, remote_off_why, remote_on, REMOTE_URL, transcript
-from agent_runner.land import wip_main_info
 from agent_runner.control import (control_env, CONTROL_LINK_WAIT, control_live, CONTROL_N_ENV, control_name,
-    claim_control_number, control_unclaim, feed_on, free_control_number, hidden_control, hidden_control_log, hidden_shim, message_text,
-    person_message, RC_ENDING, rc_forget, rc_record, rc_records, rc_sweep, REMOTE_DIR, SESSION_LINK)
-from agent_runner.status import follow, read_events, since_text, waiting_ok
+    claim_control_number, control_unclaim, free_control_number, hidden_control, hidden_control_log, message_text,
+    person_message, rc_records, rc_sweep, REMOTE_DIR, SESSION_LINK)
 
 
-BOARD_EVERY = 30  # s between the run's checks that the board is still up
+BOARD_WAIT = 10  # s an older version's board gets to end: by itself once its feed has, then on SIGTERM
+BOARD_FILES = ('live', 'exit', 'job', 'log', 'shim', 'in', 'sock')  # <notes>/board.*: what it left
 
 
-def board_header() -> str:
-    """The board's top lines: it only shows, and where to steer the run from."""
-    where = (f'claude.ai/code: "{ROOT.name} · control" opens a control session' if remote_on() else
-             f'{shown_cmd()} control')
-    return (f'{ROOT.name} board: what lands and what needs you, no tokens used. Steer from a control session:\n'
-            f'    {where}\n' + '-' * 78)
+def board_up() -> int:
+    """B195: the pid of an older version's board (`since --board`, named in <notes>/board.live) that still runs,
+    else 0. Its command line must say so: after a reboot the pid can be anyone's, and where the OS does not show it
+    (macOS) the board is left to end by itself, as it does once its feed has."""
+    pid = marker_pid(C.notes('board.live'))
+    return pid if pid and plat.alive(pid) and '--board' in (plat.cmdline(pid) or ()) else 0
 
 
-def board(run_pid: int = 0) -> int:
-    """`since --board`: the header, the last 6 hours, then the feed; the since mark is left for the person.
-    With `run_pid` (the run that opened it) it ends once that process has, however the run ended."""
-    print(board_header())
-    now = dt.datetime.now().replace(microsecond=0)
-    print(since_text(read_events(), now - dt.timedelta(hours=6), P.titles(C.done, C.todo), now, waiting=waiting_ok(),
-                     wips=wip_main_info())[0], flush=True)
-    return follow(mark=False, end=(lambda: not plat.alive(run_pid)) if run_pid else None)
+def end_board() -> None:
+    """B195: a run keeps no board and no runner feed. End the board an older version started (its feed was ended
+    first, `rc_sweep`, so its entry in the apps is archived), and drop what they left in the notes."""
+    end = time.monotonic() + BOARD_WAIT
+    while board_up() and time.monotonic() < end:
+        time.sleep(0.25)
+    if pid := board_up():
+        plat.terminate(pid)
+        end = time.monotonic() + BOARD_WAIT
+        while board_up() and time.monotonic() < end:
+            time.sleep(0.25)
+    feed_forget_session()
+    if pid := board_up():
+        log(f'board: an older version\'s (pid {pid}) did not end; left running, the next start ends it')
+        return
+    for f in (*(f'board.{x}' for x in BOARD_FILES), 'no-board'):
+        try:
+            C.notes(f).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def board_held() -> bool:
-    """Does the runner feed hold its lines (B13)? While the run is idle, or paused or stopping with nothing
-    running or merging, nothing more lands until the run starts something or a task is added: the feed then
-    prints nothing, so its Haiku session takes no turn and pushes nothing. No run up: nothing to hold for."""
+    """`since --follow --keep-mark`: hold its lines (B13)? While the run is idle, or paused or stopping with nothing
+    running or merging, nothing more lands until the run starts something or a task is added. No run up: nothing
+    to hold for."""
     try:
         st = json.loads(C.notes('STATE').read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -62,80 +70,8 @@ def board_held() -> bool:
     return held and run_up()  # STATE first: the lock is only probed when STATE would hold (a stale one, too)
 
 
-BOARD_POLL = 2.0  # s between the board guard's looks at the run
-BOARD_TERM = 10  # s the feed gets to end on SIGTERM before it is killed
-
-
-def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
-    """`since --board --feed`: the runner feed (`feed_argv`) as a child, ended once the run that opened it
-    (`run_pid`) has: a plain stop once its tasks are done, a force stop, or a crash. The feed then goes
-    offline in the apps and the board ends. The feed ending on its own ends this too (`keep_board`
-    opens it again while the run is up). Ctrl-C is the feed's own (it asks before it exits)."""
-    sid, resume = feed_session(feed_cmd()) if run_pid else ('', False)  # B15: the run's feed carries on its one session
-    try:
-        proc = sp.Popen([*feed_argv(), *feed_session_args(sid, resume)])
-    except OSError as e:
-        print(f'board: could not start the runner feed: {e}', file=sys.stderr)
-        return 1
-    t0 = time.monotonic()
-    # B12: one by hand is not the run's
-    rec = rc_record('feed', feed_name(), proc.pid, run_pid, sid) if run_pid else None
-    killed = False
-    try:
-        old = signal.signal(signal.SIGINT, signal.SIG_IGN)  # after the spawn: the child keeps its own Ctrl-C
-    except ValueError:  # not the main thread (tests)
-        old = None
-    try:
-        while True:
-            try:
-                rc = proc.wait(timeout=poll)
-                if resume and rc and time.monotonic() - t0 < FEED_RESUME_FAIL:
-                    feed_forget_session()  # its transcript is gone, say: the next start is a fresh session
-                    print(f'board: the runner feed could not resume session {sid} (exit {rc}); the next start '
-                          f'opens a new one', file=sys.stderr)
-                return rc
-            except sp.TimeoutExpired:
-                pass
-            if run_pid and not plat.alive(run_pid):
-                proc.terminate()
-                try:
-                    proc.wait(timeout=BOARD_TERM)
-                except sp.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
-                    killed = True
-                return 0
-    finally:
-        rc_forget(rec, killed=killed)
-        if old is not None:
-            signal.signal(signal.SIGINT, old)
-
-
-FEED_SID = 'feed.sid'  # <notes>/remote/feed.sid: the runner feed's Claude session id, kept until a real stop
-FEED_RESUME_FAIL = 15  # s: a resumed feed failing sooner than this could not resume; the next start is fresh
+FEED_SID = 'feed.sid'  # <notes>/remote/feed.sid: the session id an older version's runner feed kept
 SID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-
-
-def feed_session(cmd: str = '') -> tuple[str, bool]:
-    """(session id, resume) for the run's runner feed (B15). The id is kept in <notes>/remote/ from the feed's
-    first start until a real stop (`rc_sweep_stop`), so any restart that is not one (an upgrade's, a board
-    ended and started again, the feed exiting, a crashed run started again) resumes the same Claude session:
-    its history and its app entry carry on. None kept yet: a new id, recorded, and a fresh session.
-    B91: the runner command the feed may run (`cmd`, default RUNNER) is kept on the line after the id; a kept
-    session whose command differs (or that names none: one from before B91, which may still say only
-    `./kit` is allowed, from before B71) is not resumed, so the feed's history never contradicts its rules."""
-    cmd = cmd or RUNNER
-    f = C.notes(REMOTE_DIR, FEED_SID)
-    sid, kept = feed_sid_parts()
-    if SID_RE.fullmatch(sid) and kept == cmd:
-        return sid, True
-    sid = str(uuid.uuid4())
-    try:
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(f'{sid}\n{cmd}\n', encoding='utf-8')
-    except OSError:
-        pass
-    return sid, False
 
 
 def feed_sid_parts() -> tuple[str, str]:
@@ -148,92 +84,14 @@ def feed_sid_parts() -> tuple[str, str]:
     return lines[0], lines[1]
 
 
-def feed_session_args(sid: str, resume: bool) -> list[str]:
-    """The agent flags that start the feed's session `sid`, or resume it."""
-    return ['--resume', sid] if resume and sid else ['--session-id', sid] if sid else []
-
-
 def feed_forget_session() -> None:
-    """A real stop (or a resume that failed): the next feed starts a fresh session."""
+    """B195: forget the session id an older version's runner feed kept."""
     C.notes(REMOTE_DIR, FEED_SID).unlink(missing_ok=True)
 
 
 def feed_model() -> str:
-    """F101: `[models] feed` (haiku by default): the feed only echoes lines and runs one command."""
+    """F101: `[models] feed` (haiku by default): what publishes the run page's claude.ai copy (page_copy.py)."""
     return (C.raw.get('models') or {}).get('feed') or 'haiku'
-
-
-def feed_name() -> str:
-    return f'{ROOT.name} · runner'
-
-
-def feed_cmd() -> str:
-    """B92: the command the runner feed's prompt names: `[run] command` (e.g. openmx's `./kit`, which forwards
-    every runner command once it has loaded the kit's settings), else the runner. The run's own output and hints
-    say that command, so the feed copies it; the bare runner in a wrapped repo would skip the kit's config."""
-    return C.command
-
-
-def feed_allowed_bash() -> list[str]:
-    """B92: the Bash rules the feed's dontAsk allows: `[run] command` and the runner itself when they differ,
-    so neither one a line or hint names is refused."""
-    return list(dict.fromkeys(f'Bash({c} *)' for c in (feed_cmd(), RUNNER)))
-
-
-def feed_argv() -> list[str]:
-    """With `[run] remote`: the runner feed, a lean Claude session on Remote Control as "<repo> · runner" that
-    posts what lands (Monitor on `since --follow --keep-mark`), runs status/pause/stop/slots, and hands anything
-    else to a new control session; the one watch that pushes what needs the person (PushNotification), so
-    control sessions start none. Haiku; Bash (only the runner's command, dontAsk refuses the rest), Monitor;
-    its own short system prompt instead of Claude Code's, no settings sources or MCP servers: ~6k tokens a turn.
-    `board_feed` adds the session flags: one session from the run's first start to a real stop (`feed_session`)."""
-    from agent_runner.guide import FEED_ANSWER, RUNNER_BRIEF, RUNNER_START
-    cmd = feed_cmd()
-    cf = P.needs_cfg()  # B27: a reply to an item under Needs you is mapped to its id and answered here
-    answer = FEED_ANSWER.format(cmd=cmd, needs=cf['heading'])
-    from agent_runner import voice  # F21: the person's wording, in the prompt: the feed has no file tools
-    system = voice.feed(RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name, answer=answer), C)
-    return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
-            '--model', feed_model(), '--system-prompt', system,
-            '--tools', 'Bash,Monitor,PushNotification', '--permission-mode', 'dontAsk',
-            '--allowedTools', *feed_allowed_bash(), 'Monitor', 'PushNotification', '--strict-mcp-config',
-            '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),  # ~6k tokens a turn
-            '--remote-control', feed_name()]
-
-
-def board_argv() -> list[str]:
-    """What the board runs: the runner feed with `[run] remote` (in the apps too), else the free text feed;
-    either one ends once this run's process has (B13)."""
-    return [*runner_cmd(), 'since', '--board', *(['--feed'] if feed_on() else []), '--run-pid', str(os.getpid())]
-
-
-def board_command() -> str:
-    """`board_argv` as one command line, for the log and the tests."""
-    return plat.command_text(board_argv())
-
-
-def keep_board() -> None:
-    """C26: keep the board, a hidden session (`hidden_shim` 'board': `<notes>/board.live`, its output in
-    board.log), up while the run is: started again when it ends. It ends with the run (its `--run-pid`), and
-    the next run starts its own; none once the run is ending."""
-    said = False
-    while True:
-        pid = marker_pid(C.notes('board.live'))
-        if not (pid and plat.alive(pid)) and not RC_ENDING[0]:
-            pid, why = hidden_shim('board', board_argv())
-            if not said or not pid:
-                log(f'board: the runner feed is up, "{feed_name()}" in the apps too (its output in '
-                    f'{C.notes("board.log")})' if pid else f'board: the runner feed could not start: {why}')
-            said = True
-        time.sleep(BOARD_EVERY)
-
-
-def start_board() -> None:
-    """The runner feed, a hidden session, with `[run] remote`: the feed must be there however the run was
-    started. C22: no board without the feed (the text board is gone: `agent-runner ui` and the run page show
-    what lands). Not on Windows (`feed_on`)."""
-    if feed_on():
-        threading.Thread(target=keep_board, name='board', daemon=True).start()
 
 
 def feed_files() -> list[str]:
@@ -896,8 +754,7 @@ def control_new_runner(n: int | None = None, images: list[str] | tuple = ()) -> 
 
 
 def rc_sweep_stop() -> None:
-    """The run's stop: end its feed and control server now and wait for their teardown, so their entries are
-    archived before the run exits (and before a suspend or power-off)."""
-    RC_ENDING[0] = True
-    feed_forget_session()  # B15: a real stop ends the feed's session; any other restart resumes it
+    """The run's stop: end its control server (and an older version's feed, if one is left) now and wait for their
+    teardown, so their entries are archived before the run exits (and before a suspend or power-off)."""
+    feed_forget_session()
     rc_sweep(os.getpid(), stopping=True)

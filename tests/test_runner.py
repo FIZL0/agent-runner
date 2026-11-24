@@ -1448,14 +1448,8 @@ def test_control(repo: Path):
     eq((r.returncode, r.stdout), (0, R.control_brief()), '`control --brief` (the hook) prints it')
 
     eq(R.control_argv(1, 'sid-1', resume=False)[1:3], ['--session-id', 'sid-1'], 'F176: number 1 opens with no summary')
-    watch = f'{R.C.command} since --follow --needs-you'
-    check(watch in brief and 'PushNotification' in brief and 'first turn' in brief,
-          'the brief: every control session starts the needs-you watch on its first turn and pushes each line')
-    from agent_runner.guide import RUNNER_START
-    rs = RUNNER_START.format(cmd=R.C.command, repo='x')
-    check('timeout_ms 1800000' in brief and 're-arm it silently' in brief and 'with no text at all' in brief
-          and 'timeout_ms 1800000' in rs and 'say nothing at all' in rs,
-          'the needs-you watch and the feed start at timeout_ms 1800000 and re-arm silently on an empty expiry')
+    check('start no watch on them unasked' in R.control_brief() and 'first turn' not in R.control_brief(),
+          'B195: no control session starts a needs-you watch of its own')
     # B47: a handed-on ask carries what waits under Needs you, so a reply to it is answered, not just queued
     item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags?', '', 'How should the site deploy')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
@@ -2208,7 +2202,7 @@ def test_short_titles_and_since(repo: Path):
         eq(R.since_mark_file().read_text(encoding='utf-8').strip(), later2, 'the needs-you watch leaves the mark')
         eq(run(repo, 'since', '--needs-you').returncode, 2, '--needs-you without --follow is refused')
 
-        # the board: a header pointing at control sessions, a feed, and the mark left for the person
+        # --keep-mark: the mark is left for the person
         later4 = (R.dt.datetime.fromisoformat(later3) + R.dt.timedelta(seconds=5)).isoformat()
         def add3():
             with notes.open('a', encoding='utf-8') as fh:
@@ -2217,78 +2211,22 @@ def test_short_titles_and_since(repo: Path):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             R.follow(poll=0.1, until=time.monotonic() + 2, mark=False)
-        check('landed: F5' in out.getvalue(), 'the board feed prints what lands', out.getvalue())
+        check('landed: F5' in out.getvalue(), 'it prints what lands', out.getvalue())
         eq(R.since_mark_file().read_text(encoding='utf-8').strip(), later2, 'and leaves the mark')
-        check(f'{R.RUNNER} control' in R.board_header() or 'claude.ai/code' in R.board_header(),
-              'its header says where to steer from', R.board_header())
-        argv = R.board_argv()
-        check('since' in argv and '--board' in argv and argv[-2] == '--run-pid',
-              'C26: the board runs since --board in a hidden session, ended with this run', argv)
-
-        # the runner feed: with [run] remote the board is a lean Haiku session in the apps too (C26: a hidden
-        # session on Linux and macOS; Windows has no board, and no feed)
-        with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}), \
-                mock.patch.object(R.plat, 'WINDOWS', False):
-            fa = R.feed_argv()
-            opt = lambda k: fa[fa.index(k) + 1]
-            eq((opt('--model'), opt('--tools'), opt('--permission-mode'), opt('--remote-control')),
-               ('haiku', 'Bash,Monitor,PushNotification', 'dontAsk', f'{R.ROOT.name} · runner'),
-               'the feed: Haiku, Bash, Monitor and PushNotification only, dontAsk, "<repo> · runner" on Remote Control')
-            eq(json.loads(opt('--settings')), {'autoMemoryEnabled': False}, 'the feed loads no auto memory')
-            check('PushNotification' in opt('--system-prompt'), 'and pushes what needs the person')
-            brief = R.control_brief()
-            check('start no needs-you watch' in brief, 'with the feed, control sessions start no needs-you watch', brief[:80])
-            check(opt('--allowedTools') == f'Bash({R.C.command} *)' and opt('--setting-sources') == ''
-                  and '--strict-mcp-config' in fa, 'Bash only for the runner command; no settings or MCP', fa)
-            check('control --new --forward' in opt('--system-prompt') and '--ask' not in opt('--system-prompt')
-                  and 'since --follow --keep-mark' in fa[1],
-                  'it hands other asks to a control session and follows without moving the mark', fa)
-            bc = R.board_command()
-            check(bc.endswith(f'since --board --feed --run-pid {os.getpid()}'),
-                  'the board runs the feed with remote on, ended with this run', bc)
-        with mock.patch.object(R, 'remote_on', lambda: False):
-            check(R.board_command().endswith(f'since --board --run-pid {os.getpid()}'),
-                  'and the free text feed with it off', R.board_command())
-            check('since --follow --needs-you`, once' in R.control_brief(),
-                  'without the feed, control sessions keep their own needs-you watch')
         ask = [('DECIDE', 'B9', '', 'Postgres or SQLite?', 'https://x.invalid/b9', 'Fix the flicker', False)]
         full, _ = R.follow_lines('=== 2026-11-19T14:35:00 B9: merged, blocked', titles, now, waiting=ask)
         check(any('needs you: Postgres or SQLite? - reply with your answer [B9]' in l for l in full),
               'the full feed carries the asks too, in plain words (B27)', full)
         check(not any('DECIDE' in l for l in full), 'B27: no caps label in the feed', full)
-        with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}):
-            fa = R.feed_argv()
-            sp_ = fa[fa.index('--system-prompt') + 1]
-            check(f'{R.C.command} plan confirm ID "<their words>"' in sp_ and f'{R.C.command} plan shelve ID' in sp_
-                  and '"Needs you"' in sp_ and 'plan answer' not in sp_ and 'ask which one they mean' in sp_,
-                  'C5: the feed maps a reply under Needs you to its id, and asks when it cannot tell', sp_)
         # B71: a project's [run] command may wrap only part of the runner (openmx's ./kit: run/stop/plan/done)
         with mock.patch.object(R, 'remote_on', lambda: True), \
                 mock.patch.dict(R.C.run, {'agent': 'claude', 'command': './kit'}):
             eq(R.C.command, './kit', 'B71: the test sets a wrapper command')
-            fa = R.feed_argv()
-            opt = lambda k: fa[fa.index(k) + 1]
-            # B92: ./kit now forwards every runner command, and the run's lines and hints say ./kit: the feed
-            # names it and may run both it and the runner (dontAsk refused ./kit, so nothing reached a control)
-            sp_ = opt('--system-prompt')
-            check('`./kit since --follow --keep-mark`' in fa[1], 'B92: the feed Monitors [run] command', fa[1])
-            check('`./kit control --new --forward`' in sp_ and './kit plan confirm ID' in sp_
-                  and f'{R.RUNNER} control' not in sp_, 'B92: the feed system prompt names [run] command', sp_)
-            allowed = fa[fa.index('--allowedTools') + 1:fa.index('--strict-mcp-config')]
-            eq(allowed, ['Bash(./kit *)', f'Bash({R.RUNNER} *)', 'Monitor', 'PushNotification'],
-               'B92: the feed may run both ./kit and the runner')
-            handoff = re.search(r'run `([^`]*) control --new --forward`, exactly that, with nothing added', sp_)
-            check(handoff and f'Bash({handoff.group(1)} *)' in allowed,
-                  'B92: the hand-off command in the prompt is one dontAsk allows', (handoff and handoff.group(1), allowed))
-            eq(R.feed_cmd(), './kit', 'B92: the feed session is kept per [run] command (B91)')
-            # B93: control sessions name [run] command too, as the feed does: the bare runner skips the kit's config
+            # B93: control sessions name [run] command: the bare runner skips the kit's config
             eq(R.control_cmd(), './kit', 'B93: a control session names [run] command')
             brief = R.control_brief()
             check('`./kit status`' in brief and './kit plan confirm' in brief and f'{R.RUNNER} ' not in brief,
                   'B93: the control brief names [run] command', brief[:200])
-            with mock.patch.object(R, 'feed_on', lambda: False):
-                wb = R.control_brief()
-                check('./kit since' in wb and f'{R.RUNNER} ' not in wb, 'B93: and so does its needs-you watch')
             check('`./kit plan confirm' in R.ask_waiting_block('- R1 x'), 'B93: a handed-on ask settles by ./kit')
             skills = R.control_skills_dir() / '.claude' / 'skills'
             ctl = (skills / 'control' / 'SKILL.md').read_text(encoding='utf-8')
@@ -2296,31 +2234,6 @@ def test_short_titles_and_since(repo: Path):
             check('./kit control --new' in ctl and f'{R.RUNNER} ' not in ctl and './kit since' in since
                   and f'{R.RUNNER} ' not in since, 'B93: the /control and /since skills call [run] command', since)
         R.control_skills_dir()  # the skills back to the runner for the checks after this
-        started = []
-        real_thread = R.threading.Thread
-
-        def board_thread(target=None, args=(), **k):
-            if isinstance(getattr(target, '__self__', None), subprocess.Popen):  # Windows reads output in threads
-                return real_thread(target=target, args=args, **k)
-            return mock.Mock(start=lambda: started.append(args))
-        with mock.patch.object(R.threading, 'Thread', board_thread):
-            with mock.patch.object(R, 'feed_on', lambda: False):
-                R.start_board()
-            eq(started, [], 'C22: no board without the runner feed (agent-runner ui replaces it)')
-            with mock.patch.object(R, 'feed_on', lambda: True):
-                R.start_board()
-        eq(started, [()], 'C26: the runner feed starts in every run (a hidden session), however it was started')
-        shimmed = []
-        with mock.patch.object(R, 'hidden_shim', lambda stem, cmd, wait=None: shimmed.append((stem, cmd)) or (4242, '')), \
-                mock.patch.object(R, 'marker_pid', lambda m: 0), mock.patch.object(R, 'feed_on', lambda: True), \
-                mock.patch.object(R.feed, 'RC_ENDING', [False]), \
-                mock.patch.object(R.time, 'sleep', side_effect=StopIteration):
-            try:
-                R.keep_board()
-            except StopIteration:
-                pass
-        check(len(shimmed) == 1 and shimmed[0][0] == 'board' and '--feed' in shimmed[0][1],
-              'keep_board starts the board hidden, its feed in it', shimmed)
         ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
         check(ca[1].startswith('fix the login flicker'), 'control --ask: the handed-on request is its first message')
         ca = R.control_argv(3, 'sid', False, ask='why is this red?', images=['/t/a.png', '/t/b b.png'])
@@ -2350,12 +2263,6 @@ def test_short_titles_and_since(repo: Path):
                'B25: control --ask is on Remote Control under the titled name')
             ca = R.control_argv(6, 'sid', False)
             eq(ca[ca.index('--remote-control') + 1], f'{rn} · control 6', 'B25: without an ask, the old name')
-        from agent_runner.guide import RUNNER_BRIEF
-        check('--image' not in RUNNER_BRIEF and '--file' not in RUNNER_BRIEF, 'the feed brief leaves images to control --new', RUNNER_BRIEF)
-        rb = RUNNER_BRIEF.format(cmd='run', repo='r', answer='')
-        check('start it again the same way and output nothing at all' in rb and 'expires' in rb
-              and 're-armed' in rb and 'nothing to repost' in rb,
-              'B48: the standing feed brief says to re-arm the Monitor silently', rb)
         with tempfile.TemporaryDirectory() as tdir:
             tr = Path(tdir, 'feed.jsonl')
             hum = lambda *c: {'type': 'user', 'origin': {'kind': 'human'}, 'message': {'content': list(c)}}
@@ -2731,7 +2638,7 @@ def test_feed_handoff_b74():
 
 
 def test_board_follows_run(repo: Path, tmp: Path):
-    print('the board follows the run: it ends when the run does (force stop, crash, plain stop), and the feed '
+    print('since --follow --keep-mark '
           'holds while the run is idle, or paused or stopping with nothing running')
     import contextlib
     import io
@@ -2782,33 +2689,6 @@ def test_board_follows_run(repo: Path, tmp: Path):
         check(seen == [0], 'held: the landed line is not printed while the run is idle', out.getvalue())
         check('landed: F5' in out.getvalue(), 'work resumes: it prints what was logged meanwhile', out.getvalue())
 
-        # the text board ends once its run has
-        dead = subprocess.Popen([sys.executable, '-c', 'pass'])
-        dead.wait()
-        t0 = time.monotonic()
-        with contextlib.redirect_stdout(io.StringIO()):
-            R.follow(poll=0.1, until=time.monotonic() + 10, mark=False, end=lambda: not R.plat.alive(dead.pid))
-        check(time.monotonic() - t0 < 5, 'the text board ends when its run is gone')
-
-        # the runner feed ends with the run: a force stop or a crash ends the run's process
-        pidf = tmp / 'feed.pid'
-        fake = [sys.executable, '-c', f'import os,time; open({str(pidf)!r},"w").write(str(os.getpid())); '
-                                      'time.sleep(60)']
-        runp = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
-        threading.Timer(1.0, runp.kill).start()
-        t0 = time.monotonic()
-        with mock.patch.object(R, 'feed_argv', lambda: fake):
-            rc = R.board_feed(runp.pid, poll=0.1)
-        runp.wait()
-        eq(rc, 0, 'the board ends once its run is gone')
-        check(time.monotonic() - t0 < 10, 'and promptly')
-        pid = int(pidf.read_text())
-        check(not R.plat.alive(pid), "the feed's process is gone after the run is (offline in the apps)", pid)
-
-        # the feed ending on its own ends the board too (keep_board opens it again while the run is up)
-        with mock.patch.object(R, 'feed_argv', lambda: [sys.executable, '-c', 'raise SystemExit(3)']):
-            eq(R.board_feed(os.getpid(), poll=0.1), 3, 'the feed exiting ends the board with its code')
-        eq(run(repo, 'since', '--feed').returncode, 2, '--feed without --board is refused')
     finally:
         for f, k in ((state, keep), (notes, keep_log)):
             if k is None:
@@ -2869,10 +2749,10 @@ def test_remote_sweep(repo: Path, tmp: Path):
         sent = {c.args[0] for c in term.call_args_list}
         # Windows has no SIGTERM to ignore: plat.terminate ends the tree there (taskkill /F after its grace)
         stuck = [] if R.plat.WINDOWS else ['repo · runner (stuck)']
-        eq(sorted(ended), ['repo · runner', 'repo · runner (stuck)'] if R.plat.WINDOWS else ['repo · runner'],
-           "the earlier run's feed is ended")
+        eq(sorted(ended), ['repo · runner', 'repo · runner', 'repo · runner (stuck)'] if R.plat.WINDOWS
+           else ['repo · runner', 'repo · runner'], "the earlier run's feed is ended, and (B195) one of this run's")
         eq(left, stuck, 'one that ignores SIGTERM is left running, not killed')
-        eq(sent, {old_feed.pid, stubborn.pid}, 'SIGTERM went to the earlier run\'s feeds only')
+        eq(sent, {old_feed.pid, cur_feed.pid, stubborn.pid}, 'SIGTERM went to the feeds only')
         time.sleep(0.3)
         check(not R.plat.alive(old_feed.pid), 'the earlier feed is gone (its teardown archives its entry)')
         if R.plat.WINDOWS:
@@ -2881,11 +2761,11 @@ def test_remote_sweep(repo: Path, tmp: Path):
             check(R.plat.alive(stubborn.pid), 'never SIGKILLed: a killed session would stay listed')
         check(R.plat.alive(old_server.pid), 'the control server this run adopts is left up (no new entry)')
         check(R.plat.alive(old_c2.pid), "an earlier run's control session is the person's: left up")
-        check(R.plat.alive(cur_feed.pid), "the current run's feed is left alone")
+        check(not R.plat.alive(cur_feed.pid), 'B195: a feed this run started before an upgrade in place is ended too')
         check(R.plat.alive(stranger.pid), 'a session nobody recorded is never touched')
         kinds = sorted((s['kind'], s['name']) for s in R.rc_records())
-        check(('feed', 'repo · killed feed') not in kinds and ('feed', 'repo · runner') in kinds and
-              len([k for k in kinds if k[1] == 'repo · runner']) == 1, 'gone records are dropped', kinds)
+        check(('feed', 'repo · killed feed') not in kinds and ('feed', 'repo · runner') not in kinds,
+              'gone records are dropped', kinds)
         has(notes.read_text(encoding='utf-8'), '"repo · killed feed" was killed before it could archive itself',
             'a killed one is named as possibly still listed')
 
@@ -2893,27 +2773,15 @@ def test_remote_sweep(repo: Path, tmp: Path):
         ended, _ = R.rc_sweep(me, keep_server=False, wait=3)
         eq(ended, ['repo · control'], "the earlier run's control server is ended when this run will not adopt it")
 
-        # the stop: the current run's own feed ends as well; control sessions stay
-        with mock.patch.object(R, 'RC_ENDING', [False]):
-            with mock.patch.object(R, 'rc_sweep', lambda *a, **k: R_sweep(*a, **{**k, 'wait': 3})):
-                R.rc_sweep_stop()
-            check(R.RC_ENDING[0], 'the stop keeps the board from opening a new feed')
+        # the stop: the current run's own control server ends; control sessions stay
+        own = spawn()
+        reap(own)
+        R.rc_record('server', 'repo · control', own.pid, me)
+        with mock.patch.object(R, 'rc_sweep', lambda *a, **k: R_sweep(*a, **{**k, 'wait': 3})):
+            R.rc_sweep_stop()
         time.sleep(0.3)
-        check(not R.plat.alive(cur_feed.pid), "the stop ends the run's own feed")
+        check(not R.plat.alive(own.pid), "the stop ends the run's own control server")
         check(R.plat.alive(old_c2.pid) and R.plat.alive(stranger.pid), 'control sessions and strangers stay up')
-
-        # the feed's guard records its claude and drops the record once it ends
-        fake = [sys.executable, '-c', 'import time; time.sleep(0.5)']
-        seen = []
-        orig = R.rc_record
-        with mock.patch.object(R, 'feed_argv', lambda: fake), \
-                mock.patch.object(R, 'rc_record', lambda *a, **k: seen.append(a) or orig(*a, **k)):
-            with contextlib.redirect_stdout(io.StringIO()):
-                R.board_feed(me, poll=0.1)
-            R.board_feed(0, poll=0.1)
-        eq([a[0] for a in seen], ['feed'], 'the run\'s feed is recorded; one started by hand is not')
-        check(not any(s['kind'] == 'feed' and s['pid'] == seen[0][2] for s in R.rc_records()),
-              'and its record goes when it ends')
     finally:
         for p in procs:
             if p.poll() is None:
@@ -2929,81 +2797,6 @@ def test_remote_sweep(repo: Path, tmp: Path):
 
 
 R_sweep = R.rc_sweep
-
-
-def test_feed_resume(repo: Path, tmp: Path):
-    print('B15: a restart that is not a stop keeps the runner feed (an upgrade\'s exec keeps the run\'s key, so '
-          'its feed is left up) or resumes the same Claude session; a real stop ends it and the next is fresh')
-    import contextlib
-    import io
-    R.init(repo)
-    me = os.getpid()
-    sidf = R.C.notes(R.REMOTE_DIR, R.FEED_SID)
-    argf = tmp / 'feed-argv.json'
-    fake = [sys.executable, '-c', f'import json,sys,time; json.dump(sys.argv[1:], open({str(argf)!r},"w")); '
-                                  'time.sleep(0.3)']
-
-    def start(argv=fake, run_pid=me):
-        argf.unlink(missing_ok=True)
-        with mock.patch.object(R, 'feed_argv', lambda: argv), contextlib.redirect_stderr(io.StringIO()):
-            rc = R.board_feed(run_pid, poll=0.1)
-        return rc, (json.loads(argf.read_text()) if argf.exists() else [])
-
-    keeper = None
-    try:
-        sidf.unlink(missing_ok=True)
-        seen = []
-        orig = R.rc_record
-        with mock.patch.object(R, 'rc_record', lambda *a, **k: seen.append(a) or orig(*a, **k)):
-            _, a1 = start()
-        check('--session-id' in a1 and '--resume' not in a1, 'the first feed starts a session of its own', a1)
-        sid = a1[a1.index('--session-id') + 1]
-        eq(R.feed_sid_file(), sid, 'its session id is kept in <notes>/remote/')
-        eq(seen[0][4] if len(seen[0]) > 4 else '', sid, 'and recorded with the feed')
-
-        # an upgrade restart execs in place: same pid and start, so the same run key and the same board
-        keeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
-        R.rc_record('feed', 'repo · runner', keeper.pid, me, sid)
-        eq(R.run_key(me), R.run_key(os.getpid()), 'the run keeps its key across exec')
-        with contextlib.redirect_stdout(io.StringIO()):
-            ended, _ = R.rc_sweep(me, wait=1)
-        eq(ended, [], "the restarted run's sweep leaves its live feed up (no new entry)")
-        check(R.plat.alive(keeper.pid), 'the feed process is still the same one')
-        check(R.board_command().endswith(f'--run-pid {me}'), 'and its board command is unchanged')
-
-        # a feed the board has to start again (window replaced, feed exited, run started again) resumes
-        _, a2 = start()
-        check(a2[a2.index('--resume') + 1] == sid and '--session-id' not in a2,
-              'a restarted feed resumes the same session (history and app entry carry on)', a2)
-        _, a3 = start(run_pid=0)
-        check('--resume' not in a3 and '--session-id' not in a3, 'a feed started by hand is its own', a3)
-        eq(R.feed_sid_file(), sid, 'and leaves the run\'s session alone')
-
-        # a resume that fails at once (its transcript gone): the next start is fresh, not a loop of failures
-        rc, _ = start(argv=[sys.executable, '-c', 'raise SystemExit(1)'])
-        eq(rc, 1, 'the failed resume ends the board with its code')
-        check(not sidf.exists(), 'and forgets the session')
-        _, a4 = start()
-        check('--session-id' in a4, 'so the next feed starts fresh', a4)
-
-        # a real stop ends the feed and its session: the next run's feed is a new one
-        sid = a4[a4.index('--session-id') + 1]
-        with mock.patch.object(R, 'RC_ENDING', [False]), contextlib.redirect_stdout(io.StringIO()), \
-                mock.patch.object(R, 'rc_sweep', lambda *a, **k: R_sweep(*a, **{**k, 'wait': 3})):
-            R.rc_sweep_stop()
-        keeper.wait(timeout=10)
-        check(not sidf.exists(), 'the stop forgets the feed\'s session')
-        check(not R.plat.alive(keeper.pid), 'and ends the feed')
-        _, a5 = start()
-        check('--session-id' in a5 and a5[a5.index('--session-id') + 1] != sid, 'the next start is a new session', a5)
-    finally:
-        if keeper and keeper.poll() is None:
-            keeper.kill()
-        sidf.unlink(missing_ok=True)
-        d = R.C.notes(R.REMOTE_DIR)
-        if d.is_dir():
-            for f in d.glob('*.json'):
-                f.unlink()
 
 
 def test_take_text_and_here(repo: Path):
@@ -5083,9 +4876,8 @@ def test_limit_resumes(repo: Path, tmp: Path):
     here = os.getcwd()
     os.chdir(repo)
     try:
-        # never a real c1 or runner feed from the suite: the run starts both hidden
-        with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: (0, 'test')), \
-                mock.patch.object(R, 'start_board', lambda: None):
+        # never a real control session from the suite: the run starts them hidden
+        with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: (0, 'test')):
             eq(R.run(['1'], 'run'), 0, 'the run ends on its stop')
     finally:
         os.chdir(here)
@@ -5147,7 +4939,6 @@ def test_limit_falls_back(repo: Path, tmp: Path):
     os.chdir(repo)
     try:
         with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: (0, 'test')), \
-                mock.patch.object(R, 'start_board', lambda: None), \
                 mock.patch.object(R.C, 'fallback', ['copilot:gpt-test'], create=True), \
                 mock.patch.object(login, 'missing', lambda m, c: ''), \
                 mock.patch.object(R, 'unlogged', lambda *a: False):
@@ -6847,16 +6638,14 @@ def control_pages(cmd: str = './run', needs: str = 'Needs you') -> str:
 
 
 def control_text(cmd: str = './run') -> str:
-    """The control brief as rendered with the needs-you watch, followed by its guide pages (B98)."""
-    from agent_runner.guide import CONTROL, CONTROL_WATCH
-    return CONTROL.format(repo='r', cmd=cmd, log='l', watch=CONTROL_WATCH.format(repo='r', cmd=cmd),
-                          needs='Needs you', answer='') + control_pages(cmd)
+    """The control brief as rendered, followed by its guide pages (B98)."""
+    from agent_runner.guide import CONTROL
+    return CONTROL.format(repo='r', cmd=cmd, log='l', needs='Needs you', answer='') + control_pages(cmd)
 
 
 def test_control_status_rules(repo: Path):
     """F39: every status a control session writes names IDs with titles and minutes, starts with its headline, and
     leaves usage out below 80% (or 10 points short of a cap)."""
-    from agent_runner.guide import RUNNER_BRIEF
     text = control_text()
     check('Never a bare task ID' in text and 'short title' in text and 'its minutes' in text,
           'the control brief: each task ID with its short title and a running one with its minutes', text)
@@ -6864,15 +6653,13 @@ def test_control_status_rules(repo: Path):
     check('80%' in text and 'within 10 points of a configured cap' in text and 'weekly_max' in text,
           'usage only at or past 80% or near a cap', text)
     check('push notification' in text, 'the rules cover push notifications too', text)
-    check('never a bare ID' in RUNNER_BRIEF, 'the runner feed pushes name tasks with their titles', RUNNER_BRIEF)
 
 
 def test_control_leaves_needs_alone():
-    """F151: control sessions leave blocked and Needs you items alone; the needs topic and the feed keep theirs."""
-    from agent_runner.guide import CONTROL, CONTROL_FEED_WATCH, CONTROL_TOPICS, RUNNER_BRIEF, topic
+    """F151: control sessions leave blocked and Needs you items alone; the needs topic keeps its own."""
+    from agent_runner.guide import CONTROL, CONTROL_TOPICS, topic
     flat = lambda t: ' '.join(t.split())
-    brief = flat(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_FEED_WATCH.format(repo='r'),
-                                needs='Needs you', answer=''))
+    brief = flat(CONTROL.format(repo='r', cmd='./run', log='l', needs='Needs you', answer=''))
     summary = flat(CONTROL_TOPICS['summary'].format(cmd='./run', needs='Needs you'))
     for name, t in (('brief', brief), ('summary topic', summary)):
         check('Nothing needs you' not in t and 'first line' not in t and '**Needs you**' not in t
@@ -6888,17 +6675,13 @@ def test_control_leaves_needs_alone():
     needs = flat(topic('needs', './run'))
     check('whenever you show that item again' in needs and 'Map the answer to one of three' in needs
           and 'plan confirm ID' in needs, 'the needs topic still answers items', needs)
-    for name, t in (('needs topic', needs), ('feed brief', flat(RUNNER_BRIEF))):
-        check('never mention' not in t and 'items alone' not in t and 'unless they bear' not in t,
-              f'the rule is not in the {name}: it is unchanged', t)
-    check('You are the only one watching for what needs the person' in RUNNER_BRIEF
-          and 'make its first item line, word for word, the last line of your reply' in RUNNER_BRIEF,
-          'the feed still pushes what needs the person', RUNNER_BRIEF)
+    check('never mention' not in needs and 'items alone' not in needs and 'unless they bear' not in needs,
+          'the rule is not in the needs topic: it is unchanged', needs)
 
 
 def test_control_do_it_here(repo: Path):
     """F50: after queueing, the control brief offers to run the task in this session, and maps that ask to take ID."""
-    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    from agent_runner.guide import CONTROL
     text = control_text()
     check('Say "do F48 here" to start it now.' in text and 'instead of waiting for a slot' not in text,
           'the add-a-task bullet ends with the do-it-here hint, F135: a statement, everywhere', text)
@@ -6914,7 +6697,7 @@ def test_control_do_it_here(repo: Path):
 
 def test_control_retitle_on_topic(repo: Path):
     """F55: the control brief retitles the session when the topic changes, not for drift, never over the person's name."""
-    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    from agent_runner.guide import CONTROL
     text = ' '.join(control_text().split())
     check('`./run control --title "' in text, 'the brief names control --title', text)
     check('again when the talk moves to another task or topic' in text,  # B98: worded shorter
@@ -6926,10 +6709,7 @@ def test_control_retitle_on_topic(repo: Path):
 
 
 def test_idle_control_not_waiting():
-    """B56: an idle control session is not waiting on the person: its run.log lines put out no needs-you line
-    (so the feed pushes nothing), and the feed's hand-off and other replies read as reports, never as an ask
-    (the Claude apps show the feed's last reply as its status)."""
-    from agent_runner.guide import RUNNER_BRIEF, RUNNER_START
+    """B56: an idle control session is not waiting on the person: its run.log lines put out no needs-you line."""
     now = R.dt.datetime.now()
     stamp = now.isoformat(timespec='seconds')
     for msg in ('control 4: closed, quiet 1h', 'control: c1 is up in window c1 (run control opens another)',
@@ -6939,21 +6719,12 @@ def test_idle_control_not_waiting():
         eq(R.needs_you_line(line, {}, now, []), None, f'B56: no needs-you line for {msg!r}')
         got, _ = R.follow_lines(line, {}, now, needs_you=True, waiting=[])
         eq(got, [], f'B56: since --follow --needs-you stays quiet for {msg!r}')
-    rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
-    check('That goes to a control session' not in rb and '"Sent to control N: <the link>"' in rb,
-          'B56: the feed hands an ask off with a report, not "That goes to a control session"', rb)
-    check('"Opened control N: <the link>"' in rb, 'B56: a new control session is reported, not offered', rb)
-    check('never an ask' in rb and 'last reply as its status' in rb,
-          'B56: the feed brief says every reply is a report, since the apps read an ask as waiting on you', rb)
-    start = RUNNER_START.format(cmd='run', repo='r')
-    check('?' not in start, 'B56: the feed\'s opening line asks nothing', start)
 
 
 def test_needs_cmd_f44():
-    """F44: `needs` prints only what waits on the person, 'ID - what to do' each, then a summary line; the feed
-    brief ends an idle reply with its first item and the control brief answers 'what is waiting on me' with it."""
+    """F44: `needs` prints only what waits on the person, 'ID - what to do' each, then a summary line; the
+    control brief answers 'what is waiting on me' with it."""
     from agent_runner import plan as P
-    from agent_runner.guide import CONTROL, CONTROL_WATCH, RUNNER_BRIEF
     eq(P.needs_lines([]), ['Nothing needs you'], 'F44: nothing waiting')
     r7 = ('DECIDE', 'R7', '', 'pick which config changes to build', '', 'Config review', False)
     r6 = ('CONFIRM', 'R6', '', 'Windows desktop check - reply with what you saw', 'https://x.example/r6',
@@ -6973,9 +6744,6 @@ def test_needs_cmd_f44():
     eq(got, f'D1 - run `{cmd}`…', 'B150: the cut never lands inside a command')
     concept = ('CONCEPT', 'F9', 'K4', P.CONCEPT_ASK, 'https://x.example/k4', 'Sync options', False)
     eq(P.needs_lines([concept])[0], 'K4 - pick an option for sync options', 'F44: a concept by its K id')
-    rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
-    check('`run needs`' in rb and 'first item line' in rb and 're-arming the Monitor' in rb and 'Nothing needs you' in rb,
-          'F44: the feed ends an idle reply with `needs`\' first item', rb)
     text = ' '.join(control_text().split())
     check('"what is waiting on me?"' in text and '`./run needs`' in text.split('"what is waiting on me?"', 1)[1][:200],
           'F44: the control brief answers "what is waiting on me" with `needs`', text)
@@ -6984,7 +6752,7 @@ def test_needs_cmd_f44():
 def test_control_push_when_asked():
     """B81: the control brief pushes what the person asked to hear (its own subagent/take finishing included),
     and finished/stuck/needs-you events while they are away; it never promises a push it cannot send."""
-    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    from agent_runner.guide import CONTROL
     text = ' '.join(control_text().split())
     part = text.split('Push what the person asked to hear', 1)[-1].split(' - ', 1)[0]
     check('Push what the person asked to hear' in text and 'PushNotification' in part
@@ -6999,7 +6767,7 @@ def test_control_push_when_asked():
 
 def test_take_running_slot(repo: Path):
     """F52: `take ID` on a task a slot runs names the slot, its claude.ai/code link and how to steer it."""
-    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    from agent_runner.guide import CONTROL
     R.init(repo)
     add = run(repo, 'plan', 'add', 'T', 'a slot runs me', '--files', 'w52.py')
     tid = re.search(r'\b(T\d+)\b', add.stdout + add.stderr)[1]
@@ -7032,8 +6800,7 @@ def test_take_running_slot(repo: Path):
     check('When take says the task is running in a slot, start nothing' in text and 'attach s' not in text
           and '`./run plan tell ID "..."`' in text and 'claude.ai/code link' in text,
           'the take guide: a running slot means give the link or plan tell, start nothing', text)
-    check('`./run guide take`' in CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(
-        repo='r', cmd='./run'), needs='Needs you', answer=''), 'C2: and the control brief points there')
+    check('`./run guide take`' in CONTROL.format(repo='r', cmd='./run', log='l', needs='Needs you', answer=''), 'C2: and the control brief points there')
 
 
 def test_runner_route_b54(repo: Path):
@@ -7041,11 +6808,6 @@ def test_runner_route_b54(repo: Path):
     the project, and a hand-off whose words share nothing with the waiting items carries none of them."""
     import contextlib
     import io
-    from agent_runner.guide import RUNNER_BRIEF
-    rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='iFizBox', answer='').split())
-    check('`run control --new --forward --runner`' in rb and 'agent-runner itself' in rb and 'releases' in rb
-          and '"Sent to agent-runner control N: <the link>"' in rb, 'B54: the feed brief routes agent-runner asks', rb)
-    check('`run upgrade`' in rb and 'update runner' in rb, 'B54: updating this run is still answered in the feed', rb)
     item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags?', '', 'How should the site deploy')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
         eq(R.control_ask('update runner, when is release?'), 'update runner, when is release?',
@@ -7100,7 +6862,7 @@ def test_upgrade_cmd(repo: Path):
     import contextlib
     import io
     from agent_runner import cli
-    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    from agent_runner.guide import CONTROL
     calls = []
     with mock.patch.object(cli, 'skill', lambda: None), \
             mock.patch.object(R, 'upgrade', lambda: calls.append(1) or True), \
@@ -7118,7 +6880,7 @@ def test_upgrade_cmd(repo: Path):
 def test_control_no_upgrade_watcher():
     """D2: the control brief says runner updates come from [run] auto_upgrade and the release task, so a
     control session never sets up a background watcher to upgrade agent-runner."""
-    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    from agent_runner.guide import CONTROL
     text = ' '.join(control_text().split())
     check('(else `[run] auto_upgrade` and the release task)' in text
           and 'never set up a background watcher, Monitor or loop to upgrade agent-runner' in text,
@@ -7170,10 +6932,9 @@ def test_split_modules_c3():
 
 def test_release_push(repo: Path):
     """F51: a merge that brings a release logs '<repo> X.Y.Z released: <first changelog line>', which
-    `since --follow` prints and the runner feed pushes; and the control brief covers 'notify me when'."""
+    `since --follow` prints; and the control brief covers 'notify me when'."""
     import contextlib
     import io
-    from agent_runner.guide import CONTROL, CONTROL_WATCH, RUNNER_BRIEF
     R.init(repo)
     base = git(repo, 'rev-parse', 'HEAD')
     (repo / 'CHANGELOG.md').write_text(
@@ -7207,9 +6968,6 @@ def test_release_push(repo: Path):
     finally:
         git(repo, 'tag', '-d', 'v1.2.1')
         git(repo, 'reset', '-q', '--hard', base)
-    rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
-    check('released' in rb and 'PushNotification' in rb.split('Releases:', 1)[-1].split('- Commands', 1)[0],
-          'the feed brief says to push each release line', rb)
     text = ' '.join(control_text().split())
     part = text.split('"notify me when X"', 1)[-1].split(' - ', 1)[0]
     check('"notify me when X"' in text and 'since --follow' in part and 'PushNotification' in part
@@ -7900,7 +7658,7 @@ def done_test_f178(tmp: Path):
 
 
 def test_hidden_control_f59(repo: Path, tmp: Path):
-    print('F59/C26: control --new opens in a pty with no window, and the run keeps the runner feed hidden')
+    print('F59/C26: control --new opens in a pty with no window')
     if R.plat.WINDOWS:
         return
     import contextlib
@@ -7912,14 +7670,6 @@ def test_hidden_control_f59(repo: Path, tmp: Path):
     cmd = [sys.executable, str(agent)]
     pids = []
     try:
-        # feed_on: C26, every run on Linux and macOS keeps the runner feed (a hidden session); Windows none
-        with mock.patch.object(Ctl, 'remote_on', lambda: True):
-            Ctl.mark_board()
-            check(Ctl.feed_on(), 'a run keeps the runner feed: the feed is on')
-            with mock.patch.object(Ctl.plat, 'WINDOWS', True):
-                Ctl.mark_board()
-                check(not Ctl.feed_on(), 'Windows: no runner feed, so control sessions keep their own needs-you watch')
-            Ctl.mark_board()
         # F176: a run start opens no control session
         got = []
         with mock.patch.object(Ctl, 'hidden_control', lambda n, c, wait=None: got.append((n, c)) or (4242, '')), \
@@ -7957,7 +7707,6 @@ def test_hidden_control_f59(repo: Path, tmp: Path):
         eq(rc, 0, 'control --new starts hidden')
         has(out.getvalue(), r'control 9 is up in a hidden terminal', 'it says it is hidden')
     finally:
-        R.C.notes(Ctl.NO_BOARD).unlink(missing_ok=True)
         for p in pids:
             if p and R.plat.alive(p):
                 R.plat.terminate(p)
@@ -8225,40 +7974,6 @@ def test_context_warn_f25(repo: Path):
           'peak': 168, 'warn': 150, 'top': 'runner.py 61k, test_runner.py 22k'}
     eq(R.since_text([ev], now - R.dt.timedelta(hours=2), {'B32': 'a title'}, now)[0].splitlines()[1:],
        ['  14:00  B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k'], 'since says it, from the fields')
-
-
-def test_control_fresh_f27(repo: Path):
-    print('F27: what counts as a restart of the last run')
-    R.init(repo)
-    from agent_runner import control as Ctl
-    evf, statef = (repo / '.runner' / n for n in ('events.jsonl', 'STATE'))
-    kept = {f: f.read_bytes() if f.exists() else None for f in (evf, statef)}
-    try:
-        now = R.dt.datetime(2026, 11, 20, 15, 0, 0).timestamp()
-
-        def events(*recs):
-            evf.write_text(''.join(json.dumps({'time': t, 'kind': k}) + '\n' for t, k in recs), encoding='utf-8')
-        statef.unlink(missing_ok=True)
-        evf.unlink(missing_ok=True)
-        check(not Ctl.run_restart(now), 'no earlier run: a new run')
-        events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T10:00:00', R.EV_STOPPED))
-        check(not Ctl.run_restart(now), 'the last run stopped hours ago: a new run')
-        events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T14:58:00', R.EV_STOPPED))
-        check(Ctl.run_restart(now), 'stopped two minutes ago: a restart')
-        events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T10:00:00', R.EV_STOPPED),
-               ('2026-11-20T11:00:00', R.EV_RUN_UP), ('2026-11-20T11:05:00', R.EV_LANDED))
-        check(Ctl.run_restart(now), 'the last run never logged its stop (upgrade restart, crash, kill): a restart')
-        events(('2026-11-19T09:00:00', R.EV_RUN_UP), ('2026-11-19T09:05:00', R.EV_LANDED))
-        check(not Ctl.run_restart(now), 'but one last alive a day ago: a new run')
-        events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T10:00:00', R.EV_STOPPED))
-        statef.write_text(json.dumps({'at': '2026-11-20T14:59:00'}), encoding='utf-8')
-        check(Ctl.run_restart(now), 'its last STATE a minute ago counts as its end')
-    finally:
-        for f, b in kept.items():
-            if b is None:
-                f.unlink(missing_ok=True)
-            else:
-                f.write_bytes(b)
 
 
 def test_merged_count_b78(repo: Path):
@@ -8545,7 +8260,7 @@ def test_cap_stop_hint_b102():
     d = loop.cap_stop_detail()
     cmd = f'`{R.C.command} force`'
     check(cmd in d, f'the cap alarm names {cmd}', d)
-    check('control session' in d and 'runner feed' in d, 'it names the runner feed and a control session', d)
+    check('control session' in d and 'runner feed' not in d, 'it names a control session', d)
     check(cmd in d and d.index(cmd) < d.index('f + Enter'), 'the remote way comes before the pane', d)
 
 
@@ -8642,7 +8357,7 @@ def main() -> int:
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_short_name_hints(repo), test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),
                        lambda: test_board_follows_run(repo, tmp),
-                       lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
+                       lambda: test_remote_sweep(repo, tmp),
                        lambda: test_concepts_waiting(repo), lambda: test_publish_page_f106f(repo, tmp),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
@@ -8657,7 +8372,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp), lambda: test_done_test_f178(tmp), lambda: test_gate_limit_b186(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), lambda: test_stream_spend_keeps_terminal_turns_b151(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])
+                       lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), lambda: test_stream_spend_keeps_terminal_turns_b151(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])
 
 
 if __name__ == '__main__':

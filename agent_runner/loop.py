@@ -48,7 +48,7 @@ from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, R
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, merge)
 from agent_runner.control import hand_hook, rc_sweep_start, start_control, start_control_server
-from agent_runner.feed import rc_sweep_stop, start_board
+from agent_runner.feed import rc_sweep_stop
 
 
 def nap(s: float) -> None:
@@ -857,10 +857,10 @@ def capped(force: bool) -> str | None:
 
 
 def cap_stop_detail() -> str:
-    """B102: the usage-cap alarm's detail, the remote-friendly way to go on first (the runner feed, a control
-    session, `[run] command` force), the run view's f + Enter last."""
-    return ('the running tasks finish and merge; new ones wait for the reset. To go on now: say force in the '
-            f'runner feed or a control session, or run `{C.command} force`, or type f + Enter in the run view '
+    """B102: the usage-cap alarm's detail, the remote-friendly way to go on first (a control session,
+    `[run] command` force), the run view's f + Enter last."""
+    return ('the running tasks finish and merge; new ones wait for the reset. To go on now: say force in '
+            f'a control session, or run `{C.command} force`, or type f + Enter in the run view '
             f'({C.command} attach).')
 SHUTDOWN_GRACE = 120  # s the run must stay idle first; new work or a stop in that time cancels it
 SLEPT_AT = [-1.0]  # the idle stretch (its idle_at) the machine was suspended in: once per stretch, not on every wake
@@ -1075,10 +1075,9 @@ def run(argv: list[str], prog: str) -> int:
     HIDDEN[0] = True  # Windows: consoles start hidden
     share(MUX=MUX)
     log(hidden_line())
-    rc_sweep_start()  # B12: end the feed or control server an earlier run left on Remote Control
+    rc_sweep_start()  # B12, B195: end the control server an earlier run left, and an older version's feed and board
     start_control()  # F176: no session of an earlier run is picked up, but those a shutdown cut off come back
     start_control_server()
-    start_board()  # the runner feed's window ([run] remote); reopened if closed
     from agent_runner.web import start_web
     if srv := start_web():  # F66: the run page on this machine ([run] web), its address in the run log
         PAGE.append(srv)  # B144: the stop closes it before it says `run stopped`

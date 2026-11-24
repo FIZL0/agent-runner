@@ -12,7 +12,7 @@ From a sample Home works out:
                (`headroom`)
     alerts     the thresholds that need the person: disk under min_free_gb, high temperatures, memory nearly
                full, session temp folders over 5% of the disk after the auto-clean (`alerts`); they show under
-               Needs you on Home and go to each running project's runner feed, which pushes them
+               Needs you on Home and go to each running project's events, which its run page and `since` show
                (`Vitals.push_alerts`)
     footprint  what agent-runner keeps on disk: worktrees under each run home, session temp folders, logs,
                wip/ branches, each sized (`footprint`), and Clean's safe list (`clean_plan`, `clean`);
@@ -1160,7 +1160,7 @@ def fetch_json(url: str, data: dict | None = None, timeout: float = PEER_TIMEOUT
 # --- pushing alerts --------------------------------------------------------------------------------------------
 
 def push_alert(roots: list[Path], what: str, host: str) -> int:
-    """Put a device alert in each running project's events, where its runner feed reads it and pushes it as
+    """Put a device alert in each running project's events, where `since` shows it as
     'needs you: …'. It goes as a device alert event (EV_DEVICE; status.since_event prints those as needs you
     lines), with its host in `device`. How many projects got it."""
     from agent_runner.cmds import run_info

@@ -141,7 +141,7 @@ DEFAULTS: dict = {
         'grill': 'ask',         # control sessions ask rounds of numbered questions before queueing:
                                 # ask = when the person says grill me / poke holes; big = also big vague asks; off
         'voice': '',            # the person's wording file (`agent-runner voice`), read by control sessions
-                                # the runner feed and task agents; '' = ~/.config/agent-runner/voice.md; a
+                                # and task agents; '' = ~/.config/agent-runner/voice.md; a
                                 # .runner/voice.md with lines overrides it for this project
         'voice_learn': 'ask',   # ask = a session that had to say something again offers one wording line to add;
                                 # off = lines are added only when the person says so
@@ -257,7 +257,7 @@ DEFAULTS: dict = {
         'docs': 'haiku',        # the `docs` subagent a task hands CHANGELOG, docs, README, journal and plan-text
                                 # edits to, then checks; false: no docs subagent
         'control': 'opus',      # control sessions (c2, c3, ...)
-        'feed': 'haiku',        # the runner feed and the one-shot that publishes the run page's claude.ai copy
+        'feed': 'haiku',        # the one-shot that publishes the run page's claude.ai copy
         'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
                   'R': 'sonnet'},  # a task's session by its kind (the id's letters): a kind set here replaces
                                 # only that kind; one not listed runs on `code`; `plan add --model` wins for a task
@@ -368,8 +368,8 @@ def parse_model(value: str, providers: dict[str, dict] | None = None, local: boo
     return head, rest
 
 
-# F106c: the roles that run as Claude Code itself (its subagents, Remote Control's control sessions, the feed's
-# one-shot), so only on claude; a task's session (code, [models.kinds], plan add --model, run --model) and a fix
+# F106c: the roles that run as Claude Code itself (its subagents, Remote Control's control sessions, the page
+# copy's one-shot), so only on claude; a task's session (code, [models.kinds], plan add --model, run --model) and a fix
 # session run on any provider, another than claude through the harness loop (agent_runner/harness.mjs)
 CLAUDE_ONLY_ROLES = ('review', 'docs', 'control', 'feed')
 
@@ -384,7 +384,7 @@ def claude_model(value: str, providers: dict[str, dict] | None = None, local: bo
         return model
     if claude_only:
         raise SystemExit(f'agent-runner: {where} = {value!r}: this role runs as Claude Code itself (a subagent, a '
-                         'control session or the feed), so only a claude model; the harness loop runs the '
+                         'control session or the page copy), so only a claude model; the harness loop runs the '
                          f'{provider} provider for task and fix sessions ([models] code, fix, [models.kinds])')
     return f'{provider}:{model}'
 
