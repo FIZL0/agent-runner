@@ -73,3 +73,14 @@ document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.len
 /* F114, F204a: a key of the row, or the search's x, keeps the field's focus (and its keyboard) */
 for(const t of ['pointerdown','mousedown'])document.addEventListener(t,e=>{if(e.target.closest&&e.target.closest('.keys .tool,[data-feedkeys],[data-setqclear]'))e.preventDefault()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)loadFeed(S.thread)});
+/* F204b: every draw looks whether Settings is in view (render()), so any way out or back counts, and so does the page hidden
+   or kept by the browser; true when its search was cleared */
+function settingsTrip(leaving){
+  const t=settingsAway(S.setAway,!leaving&&!document.hidden&&S.view==='settings'&&!S.thread,Date.now());S.setAway=t.since;
+  if(!t.late||!S.f.setq)return false;
+  S.f.setq='';const el=document.querySelector('[data-f="setq"]');if(el)el.value='';
+  return true;
+}
+document.addEventListener('visibilitychange',()=>{if(settingsTrip())render(true)});
+addEventListener('pagehide',()=>settingsTrip(true));
+addEventListener('pageshow',()=>{if(settingsTrip())render(true)});

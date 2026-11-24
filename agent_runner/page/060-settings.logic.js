@@ -81,6 +81,10 @@ function settingShows(k,all){
   const v=p.value;
   return !(v===false||v===''||v==null);
 }
+/* F204b: a trip away from Settings: since when the person is away (0 while it is in view), and whether they came back too
+   late for its search to stay */
+const SEARCH_STAYS=5*60000;
+const settingsAway=(since,inView,now)=>inView?{since:0,late:!!since&&now-since>=SEARCH_STAYS}:{since:since||now,late:false};
 /* the rows that set several kinds' models at once */
 const KINDS_ROWS=[{id:'build',name:'Features, fixes, tests',desc:'Also concepts and releases. A stronger model does them better and uses more of your limit.',kinds:['F','B','T','V','K']},
   {id:'light',name:'Docs, cleanup, research',desc:'Lighter work; a cheaper model does it and saves your limit.',kinds:['D','C','R']}];
