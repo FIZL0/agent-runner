@@ -9,9 +9,9 @@ USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in 
 What you type
     agent-runner setup                make this repo ready: back up uncommitted work, runner.toml, a first plan
     agent-runner demo [DIR]           make the example project to try it on; starts no agent (--remove: take it away)
-    agent-runner                      start the run in the background and get the prompt back (at a terminal:
-                                      pick a run on this device, then open its run page, its ui, or copy the link)
-    agent-runner --attach             the same, then the run view here (Ctrl-C leaves it; the run keeps going)
+    agent-runner                      pick a run on this device, then open its run page, its ui, copy the link, or s:
+                                      start it in the background (no terminal: starts this repo's at once)
+    agent-runner --attach             start the run in the background, then the run view here (Ctrl-C leaves it; the run keeps going)
     agent-runner attach [s2]          the run view (its log, live, and its keys), or slot 2's terminal (c3:
                                       control session 3; Ctrl-b d leaves it)
     agent-runner list                 every run and session on this device, numbered, from any folder

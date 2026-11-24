@@ -6,7 +6,7 @@
    when it has none (B80).
 3. Start one full Claude session (normal tools, CLAUDE.md, not the lean slot brief) whose first message asks it to
    read the repo and write the plan through `plan goal` / `plan add`, set the gate and a short notes section.
-4. Print what it set up, and `agent-runner` to start the run.
+4. Print what it set up, and `agent-runner` to start the run (s in its launcher).
 
 On a repo whose plan already has a TODO.md it asks before the session touches the plan (`--yes`: go on).
 """

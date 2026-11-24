@@ -1160,7 +1160,7 @@ def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint, hint: str = 
     """Screen 1 in colour (F109, concept K2 option A)."""
     out = [p.c('accent', 'agent-runner', True) + f'{BOLD} · pick a run{RESET}', '']
     if not rows:
-        out.append(p.c('dim', '  no run is up on this device; start one from inside a project: agent-runner'))
+        out.append(p.c('dim', '  no run is up on this device; start one from inside a project: agent-runner, then Enter and s'))
     for i, r in enumerate(rows):
         up = (r['run'] or {}).get('up')
         slots, left = slots_words(r['run']) if up else '(not running)', left_words(r)
@@ -1212,7 +1212,7 @@ def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None, hi
         return picker_text_painted(rows, sel, paint, hint)
     out = [f'{BOLD}agent-runner · pick a run{RESET}', '']
     if not rows:
-        out.append('  no run is up on this device; start one from inside a project: agent-runner')
+        out.append('  no run is up on this device; start one from inside a project: agent-runner, then Enter and s')
     for i, r in enumerate(rows):
         up = (r['run'] or {}).get('up')
         what = ' · '.join(x for x in (slots_words(r['run']) if up else '(not running)', left_words(r)) if x)
@@ -1475,4 +1475,7 @@ def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=
         i = pick_run(rows, key, show, paint, hint)
         if i is None:
             return 0
+        if sessions is None:  # F402a: s is offered by what the run is now, not when the picker opened
+            run = run_info(Path(rows[i]['root']))
+            rows[i].update({'run': run, **run_facts(Path(rows[i]['root']), run)})
         launch(rows[i], key, show, actions, paint)

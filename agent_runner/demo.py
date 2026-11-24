@@ -231,7 +231,7 @@ Next:
     cd {here}
     {cmd} plan                 its tasks
     {cmd} run --dry-run 3      what three agents would start; starts none
-    {cmd}                      start the run: agents work, on your own Claude usage
+    {cmd}                      then Enter and s: start the run: agents work, on your own Claude usage
 
 Take it away:
     {cmd} demo --remove{'' if a.dir == DEFAULT else ' ' + here}''')
