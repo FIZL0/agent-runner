@@ -9,7 +9,7 @@ import time
 from contextlib import ExitStack
 from typing import NamedTuple
 
-from agent_runner import plan as P, plansync, shared_tools
+from agent_runner import plan as P, plansync, shared_tools, stack
 from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log, MERGE, note, plan_rel, plan_text,
     queued, ROOT, SLOTS_DIR)
 from agent_runner.state import EV_LEFT
@@ -128,7 +128,8 @@ def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:
 def ahead(branch: str) -> list[str]:
     """Ids whose task/<ID> has commits `branch` lacks, in one `git for-each-ref` rather than a call per branch."""
     refs = git('for-each-ref', f'--no-merged={branch}', '--format=%(refname)', 'refs/heads/task/').stdout.split()
-    return [r.removeprefix('refs/heads/task/') for r in refs]
+    ids = [r.removeprefix('refs/heads/task/') for r in refs]
+    return [t for t in ids if stack.has_own(t, branch)]  # F198: not for the merge it was started on alone
 
 
 def family(tid: str) -> str:
@@ -354,11 +355,37 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'merging', None
     if P.release(tid) and unpushed():  # F98: a release waits until everything before it is approved and pushed
         return 'unpushed', None
-    if b := next((b for b in h.busy if clash(t, b, h.shared, h.alone) and not passes(t, b, h)), None):
+    if b := clash_or_stack(t, h)[0]:
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
     if w := tool_hold(t, tried, h):
         return 'tool', w
     return None
+
+
+def clash_or_stack(t: tuple, h: Held) -> tuple[tuple | None, dict]:
+    """(the busy task that holds `t`, {}), or (None, the merge `t` may start on, {} for none needed). F198: a `t` that
+    clashes by files alone, and only with finished tasks all in one merge under way (under test, or built ahead on
+    that one), starts on that merge instead of waiting for it to land."""
+    clashing = (b for b in h.busy if clash(t, b, h.shared, h.alone) and not passes(t, b, h))
+    if not (first := next(clashing, None)):
+        return None, {}
+    from agent_runner.merge import under_way  # merge reads sched; imported here, not at the top
+    if not (merges := under_way()) or t[0] in h.alone or P.release(t[0]) or ordered(t[1]):
+        return first, {}
+    bs = [first, *clashing]
+    for b in bs:
+        by_files = family(t[0]) != family(b[0])
+        done_ = b[0] in h.mine and b[0] not in h.busy_ids | h.live | h.away | h.alone and not P.release(b[0])
+        if not (by_files and done_):
+            return b, {}
+    if git('for-each-ref', f'refs/heads/asked/{t[0]}', f'refs/heads/waiting/{t[0]}').stdout.strip():
+        return first, {}  # its session goes on with the work it has, on the commit it began on
+    ids = {b[0] for b in bs}
+    for m in merges:
+        if ids <= set(m['tids']) and not any(
+                git('merge-base', '--is-ancestor', f'refs/heads/task/{x}', m['on']).returncode for x in ids):
+            return None, m
+    return first, {}
 
 
 def unpushed() -> int:
@@ -448,8 +475,15 @@ def choose(h: Held, tried: set, branch: str, claim: bool = False):
         tid = t[0]
         if claim and tid in h.needs and not shared_tools.ready(tid, h.needs[tid]):
             continue  # F168: checked once more, so no stale answer starts it
+        b, on = clash_or_stack(t, h)
+        if b:
+            continue  # the merge it would have started on has just ended
         if got := claim_task(t, h, branch) if claim else t:
             PASSED.discard(tid)
+            if claim:
+                stack.CHOSEN.pop(tid, None)
+                if on:
+                    stack.CHOSEN[tid] = on
             return got
         if tid not in PASSED:
             PASSED.add(tid)
@@ -494,7 +528,7 @@ def touched(tid: str, branch: str, slot: Path | None) -> set[str]:
     """Files task `tid` has changed so far: its branch's commits past `branch`, and in its slot what is not
     committed yet. A claim carries them, so another runner keeps off them even when the task line lists
     none (or too few)."""
-    out = set(git('diff', '--name-only', f'{branch}...task/{tid}').stdout.split())
+    out = set(git('diff', '--name-only', f'{stack.fork(tid, branch)}...task/{tid}').stdout.split())
     if slot and slot.is_dir():
         st = git('status', '--porcelain', '--untracked-files=all', cwd=slot)
         if not st.returncode:

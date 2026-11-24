@@ -26,7 +26,8 @@ docs/REFERENCE.md describes each mechanism. In short:
 
   Siblings never run together. An ordered section runs one task at a time. Two tasks never run on the same
   files: a line's `| files:` and, for a task running, the files it has touched; a finished one waiting to merge
-  holds only the files it changed. A whole-directory glob (`dir/**`) is a guess, not a lock: it meets only
+  holds only the files it changed, and once in a merge under way not even those: the task starts on top of that
+  merge (F198, `stack.py`). A whole-directory glob (`dir/**`) is a guess, not a lock: it meets only
   another such glob, so a task naming a file under it waits only for the files the glob's task has touched.
 * **one worktree per slot**, kept warm between tasks, with `[run] links` symlinked in;
 * **an idle stop** (the Stop hook): a finished session is ended once its transcript is quiet;
