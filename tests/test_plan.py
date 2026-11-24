@@ -1523,8 +1523,56 @@ def test_slot_writes_own_plan():
         eq(run(other, 'plan', 'note', 'A1', 'a note', env=env).returncode, 0, 'outside a slot nothing is checked')
 
 
+def test_multi_line_text():
+    print('plan: text of several lines stays on its task (B189)')
+    with tempfile.TemporaryDirectory() as tmp:
+        git(Path(tmp), 'init', '-q')
+        (Path(tmp) / 'runner.toml').write_text('', encoding='utf-8')
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        said = 'it failed again. The report:\nmic: hold\n\n- [ ] **Z9** 0 pointerdown\r\nlast words'
+        whole = 'it failed again. The report: mic: hold - [ ] **Z9** 0 pointerdown last words'
+
+        def back(tid: str, why: str, box: str = ' '):
+            blk = plan.section(todo, tid)
+            eq(len(blk), 1, f'{why}: one line')
+            check(blk[0].startswith(f'- [{box}] **{tid}**') and whole in blk[0], f'{why}: read back whole', blk)
+            ids = [m.group(3) for l in plan.lines(todo) if (m := plan.ITEM.match(l))]
+            eq(sorted(ids), sorted(f'F{n}' for n in range(1, made + 1)), f'{why}: no task appears or is lost')
+
+        made = 0
+        for text in ('a', 'b', 'c', 'd', 'e'):
+            plan.add('F', f'{text} | files: {text}.py', **kw)
+            made += 1
+        plan.change('F1', said, **kw)
+        back('F1', 'a change to an open task')
+        has('\n'.join(plan.brief('F1', root=Path(tmp), plan_dir=d)), re.escape(whole), 'and the brief has all of it')
+        plan.block('F2', 'CONFIRM: does it work?', todo=todo, after=[])
+        plan.change('F2', said, **kw)
+        back('F2', 'a change to an ask')
+        plan.block('F3', 'DECIDE: which one?', todo=todo, after=[])
+        plan.confirm('F3', said, **kw)
+        back('F3', 'an answer')
+        has(plan.last_answer('F3', todo=todo), r'your answer \(DECIDE .*last words$', 'and last_answer gives it whole')
+        plan.block('F4', f'DECIDE: {said}', todo=todo, after=[])
+        back('F4', 'a block', '~')
+        has([a[3] for a in plan.asks(todo) if a[1] == 'F4'][0], 'last words', 'and Needs you asks it whole')
+        plan.edit('F5', said + '\n| test: tests/test_e.py', todo=todo)
+        back('F5', 'an edit')
+        eq(plan.fields(plan.section(todo, 'F5')[0]).get('test'), ['tests/test_e.py'], 'with a field on its own line')
+        plan.add('F', said, **kw)
+        made += 1
+        back('F6', 'an add')
+        plan.hold('F6', 'K1', 'blue\nand round', todo=todo)
+        eq(plan.held_on({'K1'}, todo=todo), [('F6', 'K1', 'blue and round')], "a hold's style stays on its line")
+        text, _, keyed, _, _ = plan.add_args(['one\ntwo', '--files', 'a.py,\nb.py'])
+        eq((text, keyed), ('one two', ' | files: a.py, b.py'), 'add and edit join their arguments')
+        eq(plan.one_line('  as  given\n'), '  as  given', 'text of one line keeps its spaces')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_own_project, test_needs_config, test_slot_writes_own_plan, test_concept_shown]))

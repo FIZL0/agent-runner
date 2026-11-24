@@ -275,6 +275,13 @@ def _write(path, ls: list[str]) -> None:
     write_atomic(path, text)
 
 
+def one_line(text: str) -> str:
+    """B189: `text` as it goes on a task line, which is one line of TODO.md: its lines joined by a space (a
+    newline would end the task's block there, and what follows would belong to no task)."""
+    ls = text.splitlines()
+    return ' '.join(x for l in ls if (x := l.strip())) if len(ls) > 1 else ''.join(ls)
+
+
 def _mark(ls: list[str], i: int, box: str) -> None:
     ls[i] = re.sub(r'^(\s*)- \[.\]', rf'\1- [{box}]', ls[i])
 
@@ -593,7 +600,7 @@ def block(tid: str, why: str, todo=None, after=None) -> None:
     todo, _ = ensure(todo)
     ls = list(lines(todo))
     i = _find(ls, tid)
-    why = stamp_ask(why)
+    why = stamp_ask(one_line(why))
     if after is None and asking(why):
         after = []  # it waits on a person (`asks`), not on a task its words happen to name
     if after is None:
@@ -637,6 +644,7 @@ def reopen(todo=None) -> list[tuple[str, list[str]]]:
 
 def unblock(tid: str, note: str = '', todo=None) -> None:
     todo, _ = ensure(todo)
+    note = one_line(note)
     ls = list(lines(todo))
     i = _find(ls, tid)
     _mark(ls, i, ' ')
@@ -905,7 +913,8 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         if (v := vals.get(f'--{key}')) is not None:
             keyed += f' | {key}: ' + (v if key in ('test', 'model') else ', '.join(
                 LAST if x == LAST else ', '.join(re.split(r'[,\s]+', x)) for x in re.split(r',\s*', v.strip(', '))))
-    t, _, w = ' '.join(text).partition(' @ ')
+    t, _, w = one_line(' '.join(text)).partition(' @ ')
+    keyed = one_line(keyed)
     return t, ' '.join(where) or w or ('bottom' if last else ''), keyed, pri, force
 
 
@@ -1004,6 +1013,7 @@ def add(prefix: str, text: str, where: str | None = None, ref: str | None = None
     if pri is not None and pri not in PRI:
         raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, done = ensure(todo, done)
+    text = one_line(text)
     tid = next_id(prefix, [todo, done, *_other_checkouts(todo, done)], reserved(todo))
     reserve(todo, tid)
     ls = list(lines(todo))
@@ -1097,7 +1107,7 @@ def note(tid: str, text: str, todo=None) -> None:
     todo, _ = ensure(todo)
     ls = list(lines(todo))
     i = _find(ls, tid)
-    ls[i + len(_item_block(ls, i)) - 1] += f' — {text}'
+    ls[i + len(_item_block(ls, i)) - 1] += f' — {one_line(text)}'
     _write(todo, ls)
 
 
@@ -1112,6 +1122,7 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
     if pri is not None and pri not in PRI:
         raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, _ = ensure(todo)
+    text, keyed = one_line(text), one_line(keyed)
     ls = list(lines(todo))
     i = _find(ls, tid)
     first = ls[i]
@@ -1463,7 +1474,7 @@ def hold(tid: str, rid: str, style: str, todo=None) -> None:
     i = _find(ls, tid)
     _mark(ls, i, '~')
     end = i + len(_item_block(ls, i)) - 1
-    ls[end] += (f' BLOCKED: {RESTYLE_HELD}{rid} (style: {style}): reopens with the style noted once the restyle '
+    ls[end] += (f' BLOCKED: {RESTYLE_HELD}{rid} (style: {one_line(style)}): reopens with the style noted once the restyle '
                 f'page is approved')
     _write(todo, ls)
 
