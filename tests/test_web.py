@@ -4784,7 +4784,8 @@ def test_settings_f97(tmp: Path) -> None:
         push, _ = key('git', 'push')
         eq((push['value'], push['source'], push['off']), (False, 'project', True), 'push = false, from the project')
         quiet, _ = key('ui', 'chat_quiet')
-        eq((quiet['value'], quiet['source'], quiet['applies']), ('6h', 'default', 'next run'), 'chat_quiet: the default, 6h')
+        eq((quiet['value'], quiet['source'], quiet['applies']), ('6h', 'default', 'now'), 'chat_quiet: the default, 6h')
+        eq(key('run', 'web_port')[0]['applies'], 'next run', 'web_port cannot change while the run is up')
         eq((quiet['name'], quiet['home']), ('Gray out a chat after', 'device'), 'with its name and home')
         check('bottom of Chats' in quiet['desc'], 'and its description', quiet)
         eq([(u['table'], u['key'], u['file']) for u in d['unknown']], [('run', 'slotz', 'runner.toml'), ('rnu', '', 'runner.toml')],
@@ -4802,7 +4803,10 @@ def test_settings_f97(tmp: Path) -> None:
             eq(act_('setting_device', table='run', key='links', value=['a b'])['ok'], True, 'a list over several lines')
             check('# one\nlinks = ["a b"]  # big' in local.read_text(encoding='utf-8'), 'becomes one line, its comments kept')
             eq(act_('setting_device', table='git', key='land_edited', value='wip')['ok'], True, 'a table not there yet')
-            eq(sorted(key('run', 'slots')[1]['waits']), ['git.land_edited', 'run.links'], 'the others wait for a restart')
+            eq(key('run', 'slots')[1]['waits'], [], 'F202a: the run reads them by itself')
+            eq(act_('setting_device', table='run', key='web_port', value=8999)['ok'], True, 'one it cannot take')
+            eq(key('run', 'slots')[1]['waits'], ['run.web_port'], 'waits for the next run')
+            eq(act_('setting_reset', table='run', key='web_port')['ok'], True, 'reset again')
             eq(CF.tomllib.loads(local.read_text(encoding='utf-8'))['git'], {'land_edited': 'wip'}, 'is added')
             eq(key('run', 'slots')[0]['value'], 5, 'the page reads the new value')
             for t, k in (('run', 'slots'), ('run', 'links'), ('git', 'land_edited')):

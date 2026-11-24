@@ -1242,11 +1242,15 @@ def control_server_live() -> int:
     return pid if pid and plat.alive(pid) and (args is None or 'remote-control' in args) else 0
 
 
-def keep_control_server() -> None:
+def keep_control_server(off: threading.Event | None = None, before: threading.Thread | None = None) -> None:
     """Keep the control server running while the run is up: restarted when it exits (Remote Control quits after
     about 10 minutes offline), after 30 s, doubling to 10 minutes while it keeps failing at once. One a run
-    before an upgrade restart left is adopted; the run's end ends it."""
+    before an upgrade restart left is adopted; the run's end ends it. F202a: so does `off`, set when the settings turn
+    it off while the run is up. `before`: the thread of an earlier turn, still ending its server."""
     import atexit
+    nap = off.wait if off else time.sleep
+    if before:
+        before.join(RC_TEARDOWN + 10)
     pidf, out, err = C.notes('control-server.pid'), C.notes('control-server.log'), C.notes('control-server.err')
     atexit.register(lambda: (pid := control_server_live()) and plat.terminate(pid))
     backend().trust(ROOT)  # it asks to trust a new folder, and has no terminal to ask on
@@ -1258,13 +1262,13 @@ def keep_control_server() -> None:
     if (pid := control_server_live()) and server_stale(plat.cmdline(pid)):
         log(f'control: the control server an earlier run left (pid {pid}) has other flags; restarting it')
         plat.terminate(pid)
-    while True:
+    while not (off and off.is_set()):
         proc = None
         if not (pid := control_server_live()):
             err_since = err.stat().st_size if err.exists() else 0
             env = control_env()
-            if silent():  # no push after its start push (that one cannot be stopped)
-                env[PRESENCE_ENV] = str(quiet_file('server'))
+            # while it is there ([run] silent) no push after its start push (that one cannot be stopped)
+            env[PRESENCE_ENV] = str(quiet_file('server', on=silent()))
             with open(out, 'ab') as fh, open(err, 'ab') as eh:
                 try:
                     proc = sp.Popen(control_server_argv(), cwd=str(ROOT), env=env, stdin=sp.DEVNULL,
@@ -1281,7 +1285,9 @@ def keep_control_server() -> None:
             rc_record('server', f'{ROOT.name} · control', pid, os.getpid())
         began = time.monotonic()
         while (proc.poll() is None) if proc else plat.alive(pid):
-            time.sleep(1 if time.monotonic() - began < 30 else 10)
+            if off and off.is_set():
+                return end_server(pid, proc)
+            nap(1 if time.monotonic() - began < 30 else 10)
         rc_forget(C.notes(REMOTE_DIR) / f'server-{pid}.json')
         lasted = time.monotonic() - began
         wait = CONTROL_SERVER_WAIT[0] if lasted > 600 else min(wait * 2, CONTROL_SERVER_WAIT[1])
@@ -1294,7 +1300,7 @@ def keep_control_server() -> None:
             except (OSError, IndexError):
                 said = ''
         log(f'control: the control server exited{f" ({said})" if said else ""}; restarting it in {wait} s')
-        time.sleep(wait)
+        nap(wait)
 
 
 def server_stale(args: list[str] | None) -> bool:
@@ -1303,9 +1309,49 @@ def server_stale(args: list[str] | None) -> bool:
     return args is not None and [a for a in args if a][1:] != control_server_argv()[1:]
 
 
+def end_server(pid: int, proc: sp.Popen | None = None) -> None:
+    """F202a: the settings turned the control server off: end it and wait for its teardown, which archives its entry."""
+    name = f'"{ROOT.name} · control"'
+    plat.terminate(pid)
+    end = time.monotonic() + RC_TEARDOWN
+    while (up := (proc.poll() is None) if proc else plat.alive(pid)) and time.monotonic() < end:
+        time.sleep(0.25)
+    if up:
+        log(f'remote: {name} (pid {pid}) did not end within {RC_TEARDOWN} s of SIGTERM; left running, '
+            'the next start ends it')
+        return
+    rc_forget(C.notes(REMOTE_DIR) / f'server-{pid}.json')
+    log(f'remote: ended {name}; its entry is archived')
+
+
+SERVER_TURN: list[tuple[threading.Thread, threading.Event]] = []  # the control server's thread, and what ends it
+
+
 def start_control_server() -> None:
     if remote_on() and C.run['control']:
-        threading.Thread(target=keep_control_server, name='control-server', daemon=True).start()
+        off, before = threading.Event(), SERVER_TURN.pop()[0] if SERVER_TURN else None
+        t = threading.Thread(target=keep_control_server, args=(off, before), name='control-server', daemon=True)
+        SERVER_TURN[:] = [(t, off)]
+        t.start()
+
+
+def settle_control_server() -> None:
+    """F202a: [run] remote or control changed while the run is up: start the control server, or end it."""
+    up = bool(SERVER_TURN) and SERVER_TURN[0][0].is_alive() and not SERVER_TURN[0][1].is_set()
+    on = remote_on() and bool(C.run['control'])
+    if on and not up:
+        start_control_server()
+    elif up and not on:
+        SERVER_TURN[0][1].set()
+
+
+def settle_quiet() -> None:
+    """F202a: [run] silent changed: the control server and the control sessions that are up follow it (one that started
+    with no PRESENCE_ENV, under an older version, cannot)."""
+    quiet_file('server', on=silent())
+    for f in C.notes('x').parent.glob('control*.live'):
+        if (n := f.stem.removeprefix('control')).isdigit():
+            quiet_file(f'c{n}', on=silent())
 
 
 # --- Remote Control sessions a run started (B12) ---------------------------------

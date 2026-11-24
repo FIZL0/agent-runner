@@ -61,9 +61,9 @@ GLOSSARY = ('When the repo has a GLOSSARY.md, use its terms, not the words it li
 SETTINGS = """\
 **Settings (runner.toml).** `{cmd} settings` prints every key the runner takes, its default and what it
 does: read it rather than guess a key. runner.toml is shared and committed; runner.local.toml (git-ignored,
-laid over it key by key) holds this machine's own values. Most keys apply on the next run; `{cmd} slots N`
-changes the run that is up now. When what the person says fits a setting,
-recommend the one change in one line, `[table] key = value`: what it does, and ask. Name only keys
+laid over it key by key) holds this machine's own values. A run that is up takes most keys
+within seconds (`{cmd} settings` names those that apply on the next run); `{cmd} slots N` changes it without a
+file. When what the person says fits a setting, recommend the one change in one line, `[table] key = value`: what it does, and ask. Name only keys
 `{cmd} settings` lists; when none fits, say so and offer a task instead. For example:
   - "too many control sessions", "close them faster": `[run] control_idle = "1h"` (idle ones close sooner;
     `[run] control_idle = false` keeps them open)

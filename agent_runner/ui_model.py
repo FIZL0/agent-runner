@@ -2128,11 +2128,11 @@ def settings() -> dict:
     from agent_runner import config as CF
     snap, was = CF.settings_snapshot(S.ROOT), SETTINGS_AT[0]
     now = _setting_values(snap)
-    snap['waits'] = [f'{t}.{k}' for (t, k), v in now.items() if was and (t, k) not in CF.SETTING_NOW and was.get((t, k)) != v]
+    snap['waits'] = [f'{t}.{k}' for (t, k), v in now.items() if was and (t, k) in CF.SETTING_NEXT and was.get((t, k)) != v]
     return snap
 
 
-SETTINGS_AT: list[dict] = [{}]  # F166: the settings as this process read them at its start: one that differs now waits
+SETTINGS_AT: list[dict] = [{}]  # F166: the settings as this process read them at its start: a SETTING_NEXT one that differs now waits
 
 
 def _setting_values(snap: dict) -> dict:
@@ -2170,9 +2170,9 @@ def _setting_row(table: str, key: str) -> dict:
 
 
 def _setting_now(table: str, key: str, name: str) -> dict | None:
-    """A setting that applies now: the run that is up is told; its result when it did not take it."""
-    from agent_runner import config as CF
-    if (table, key) not in CF.SETTING_NOW or not S.run_up():
+    """The slot count: the run that is up is told (a key may have set another); its result when it did not take it.
+    Every other setting it reads by itself (F202a)."""
+    if (table, key) != ('run', 'slots') or not S.run_up():
         return None
     r = call(['slots', str(_setting_row(table, key)['value'])])
     return None if r['ok'] else {**r, 'out': f'saved in {name}, but the run did not take it: {r["out"]}'}

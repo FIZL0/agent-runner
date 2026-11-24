@@ -300,8 +300,10 @@ How: a runner.toml change is a commit, so make it through `{cmd} take "set [TABL
 --files runner.toml` (its own worktree, then `take ID --merge`), never as an edit in the main checkout.
 runner.local.toml is git-ignored, so it holds no merge: edit it in place (`{cmd} run` creates it, all
 comments).
-When: a run reads both files when it starts, so most keys apply on the next run (a run that is up keeps what
-it read until it stops); `{cmd} slots N`, `pause` and `force` change the run that is up now.
+When: a run that is up reads both files again when they change, so most keys apply within seconds (running
+tasks keep their own; a file that does not parse or a bad value keeps the old settings, and run.log says why). A
+few apply on the next run: {next_run}. `{cmd} slots N`, `pause` and `force`
+change the run that is up now without a file.
 """
 
 
@@ -436,7 +438,7 @@ def settings_reference(cmd: str | None = None) -> str:
     """The text `agent-runner settings` prints: where and how to change a key, then every [plan], [run]
     and [git] key as `key = default  # what it does`."""
     docs = default_docs()
-    out = [SETTINGS_HEAD.format(cmd=cmd or RUNNER)]
+    out = [SETTINGS_HEAD.format(cmd=cmd or RUNNER, next_run=', '.join(f'[{t}] {k}' for t, k in sorted(SETTING_NEXT)))]
     for table, keys in DEFAULTS.items():
         out.append(f'[{table}]')
         for k, v in keys.items():
@@ -877,9 +879,17 @@ class Config:
         return v if v in ('wait', 'wip') else 'wait'
 
 
+_LIVE: dict[Path, Config] = {}  # F202a: the run's own config, kept as one object when it is read again
+_WAITING: dict[tuple[str, str], object] = {}  # F202a: what the run keeps for changed SETTING_NEXT keys
+
+
 @cache
 def _cfg(root: Path) -> Config:
-    return Config(root)
+    if c := _LIVE.get(root):
+        return c
+    c = Config(root)
+    _keep(c, _WAITING)
+    return c
 
 
 def cfg(cwd: Path | str | None = None) -> Config:
@@ -919,7 +929,10 @@ SETTING_ALSO: dict[tuple[str, str], tuple[str, ...]] = {
     ('run', 'weekly_max'): ('float',), ('run', 'session_max'): ('float',),
 }
 SETTING_DURATIONS = {('run', 'control_idle'), ('run', 'control_ask'), ('ui', 'chat_quiet')}
-SETTING_NOW = {('run', 'slots')}  # a change reaches the run that is up (through `slots N`); the rest wait for the next
+# F202a: what a run that is up cannot change: the run page's server, and where its files, plan and worktrees are and
+# which branch it merges into (its lock, state and sessions are there already). Every other key applies live.
+SETTING_NEXT = {('run', 'web'), ('run', 'web_port'), ('run', 'web_https'), ('run', 'home'), ('run', 'notes'),
+                ('plan', 'dir'), ('plan', 'repo'), ('git', 'master_branch')}
 
 
 def setting_type(table: str, key: str) -> str:
@@ -1242,7 +1255,7 @@ def settings_snapshot(root: Path) -> dict:
                    'off': 'off' in SETTING_ALSO.get((t, k), ()), 'also': list(SETTING_ALSO.get((t, k), ())),
                    'name': W.name(t, k), 'desc': W.desc(t, k), 'group': W.group(t, k), 'home': W.home(t, k),
                    'parent': W.parent(t, k), 'words': W.words(t, k), 'parts': W.parts(t, k), 'unit': W.unit(t, k), 'order': W.order(t, k),
-                   'applies': 'now' if (t, k) in SETTING_NOW else 'next run', 'value': d, 'source': 'default'}
+                   'applies': 'next run' if (t, k) in SETTING_NEXT else 'now', 'value': d, 'source': 'default'}
             for side in ('project', 'device'):
                 have = raws[side].get(t)
                 row[f'has_{side}'] = isinstance(have, dict) and k in have
@@ -1257,6 +1270,73 @@ def settings_snapshot(root: Path) -> dict:
             'groups': [list(g) for g in W.GROUPS],
             'project': files['project'].name if files['project'] else 'runner.toml',
             'device': files['device'].name if files['device'] else LOCAL}
+
+
+# --- F202a: a run that is up reads its settings again ---------------------------------------------------------
+
+def settings_print(root: Path) -> tuple:
+    """What the settings files of main checkout `root` hold now (their bytes; None: no file), to see a change by."""
+    env = os.environ.get('AGENT_RUNNER_CONFIG')
+    out = []
+    for f in (root / (env or 'runner.toml'), root / LOCAL):
+        try:
+            out.append(f.read_bytes())
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+def settled(c: Config) -> dict[tuple[str, str], object]:
+    """Every setting as `c` runs on it."""
+    out = {(t, k): c.raw[t].get(k) for t, keys in DEFAULTS.items() for k in keys}
+    return {**out, ('models', 'local'): c.models_local, ('models', 'providers'): c.providers,
+            ('models', 'fallback'): c.fallback}
+
+
+def _keep(c: Config, values: dict) -> None:
+    for (t, k), v in values.items():
+        c.raw[t][k] = v
+
+
+def read_again(c: Config) -> tuple[Config, dict, list]:
+    """The settings files read again for a run on `c`, which is not changed (`reload` does): (the new config, the keys
+    that change now as {(table, key): value}, the changed keys that wait for the next run). ValueError says why they
+    cannot be taken: a file that does not parse, a bad value."""
+    try:
+        new = Config(c.root)
+        for f in (new.file, new.local):
+            for t, v in (_load(f) if f else {}).items():
+                if t in DEFAULTS and not isinstance(v, dict):
+                    raise ValueError(f'{f.name}: [{t}] is a table, not {v!r}')
+    except tomllib.TOMLDecodeError as e:  # runner.local.toml's names its file itself
+        raise ValueError(f'{config_file(c.root).name}: {e}') from None
+    except SystemExit as e:
+        raise ValueError(str(e).removeprefix('agent-runner: ')) from None
+    except Exception as e:  # noqa: BLE001 - whatever a file holds, the run goes on with what it has
+        raise ValueError(f'{type(e).__name__}: {e}') from None
+    was, now = settled(c), settled(new)
+    changed = {k: v for k, v in now.items() if v != was[k] or type(v) is not type(was[k])}
+    for (t, k), v in changed.items():  # only the changed ones: what the run started with it goes on with
+        if problem := setting_problem(t, k, v):
+            raise ValueError(problem)
+    waits = {k: was[k] for k in changed if k in SETTING_NEXT}
+    _keep(new, waits)
+    for t, k in waits:
+        (new.given.setdefault(t, set()).add if k in c.given.get(t, ()) else new.given.get(t, set()).discard)(k)
+    if 'model_flag' in c.run:  # `run --model`
+        new.run['model_flag'] = c.run['model_flag']
+    return new, {k: v for k, v in changed.items() if k not in waits}, sorted(waits)
+
+
+def reload(c: Config, new: Config, waits: list) -> None:
+    """Take `new` (`read_again`) into `c` itself, so whoever holds `c` reads it; code that took `c.run` for what it is
+    in the middle of keeps the old values."""
+    _WAITING.clear()
+    _WAITING.update({(t, k): new.raw[t][k] for t, k in waits})
+    c.__dict__.update(new.__dict__)
+    _LIVE.clear()
+    _LIVE[c.root] = c
+    _cfg.cache_clear()  # the worktrees' own
 
 
 # B79: a user-level SessionStart hook, so a session opened by hand in a runner repo's main checkout (the desktop
