@@ -232,7 +232,7 @@ a{color:var(--accent)}
 .slimbox [data-slimbox]{flex:1;min-width:0} .slimbox [data-slimbox] span{overflow:hidden;text-overflow:ellipsis} .slimbox .draft{color:var(--fg)}
 .schips{display:flex;gap:6px;overflow-x:auto;max-width:720px;margin:0 auto 8px} .schips .chip{flex:none;background:var(--surface);white-space:nowrap} .schips .chip.up{border-color:var(--warn)}
 .box .act{height:32px;border-radius:var(--r-s);border:1px solid var(--line2);background:none;color:var(--fg);font-size:var(--fs-m);padding:0 8px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;flex:none} .boxrow:has(.act){gap:4px}
-.box .act.force{background:var(--accent);border-color:var(--accent);color:var(--onaccent)} .box .act.halt{margin-left:auto} .box .act svg{width:14px;height:14px}
+.box .act.halt{margin-left:auto} .box .act.halt+.send{margin-left:0} .send:not(.force) .forcemark{display:none} .send.force svg{stroke-width:3.2}.box .act svg{width:14px;height:14px}
 .top button.title{border:0;background:none;padding:0;font-family:inherit;color:inherit;cursor:pointer;min-height:var(--tap)}
 .feedtouch{display:none;position:absolute;inset:0;touch-action:pinch-zoom;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .feedsay{position:absolute;left:50%;top:var(--s3);transform:translateX(-50%);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-full);padding:2px 12px;font-size:var(--fs-s);color:var(--muted);display:flex;gap:8px;align-items:center;white-space:nowrap}
@@ -452,7 +452,7 @@ a{color:var(--accent)}
 .wave{display:inline-flex;gap:3px;align-items:center;flex:none} .wave i{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:wave var(--pulse) infinite} .wave i:nth-child(2){animation-delay:calc(var(--pulse)*.12)} .wave i:nth-child(3){animation-delay:calc(var(--pulse)*.24)}
 /* a press, and the spring back; a wide row gives less */
 .btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.pill,.shadd,.card.tap,.asktap,.ni,.thread,.prow,.it,.fold{transition:transform var(--dur-spring) var(--spring)}
-.send{transition:transform var(--dur-spring) var(--spring),opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop){opacity:.45}
+.send{transition:transform var(--dur-spring) var(--spring),opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop,.force){opacity:.45}
 :is(.btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.send,.pill,.shadd):active:not(:disabled){transform:scale(.94);transition-duration:var(--dur-fast)}
 :is(.card.tap,.asktap,.ni,.thread,.prow,.it:not(.setrow),.fold):active{transform:scale(.98);transition-duration:var(--dur-fast)}
 /* a count that rolls; what left, while it collapses; your words on their way to a session */
@@ -1105,6 +1105,8 @@ const BOX_KEYS=[['Enter','sends'],['Shift+Enter','new line'],['↑ ↓','earlier
    input method still composing, which Safari ends with keyCode 229). On touch only Ctrl/Cmd+Enter sends */
 const composing=e=>!!e.isComposing||e.keyCode===229;
 const boxEnter=(e,touch)=>e.key!=='Enter'||composing(e)?'':(touch?e.ctrlKey||e.metaKey:!e.shiftKey)?'send':'line';
+/* B208: is Send a Force send? Only while the session works, with words or an attachment (uploaded, as send() takes it) */
+const sendForces=(works,words,atts)=>!!works&&(!!String(words||'').trim()||(atts||[]).some(a=>a.path));
 const keysLine=()=>'<span class="keysl">'+BOX_KEYS.map(([k,d])=>`${k} ${d}`).join(' · ')+'</span>';
 /* B120: the chat's message history (kept per chat): HIST_MAX the most it keeps; histPush the list once `text` is
    sent (not twice in a row); histEdge whether ArrowUp / ArrowDown leaves the box's text for history (the caret on
@@ -1321,7 +1323,7 @@ function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploa
   :o.form?'Save or close the device form first. It is not kept over a refresh.'
   :o.secret?'Send or clear the secret first. It is not kept over a refresh.'
   :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
-if(typeof module!=='undefined')module.exports={giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,planReleases,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={sendForces,giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,planReleases,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1363,6 +1365,7 @@ const I={
  trash:ic('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),  // F118
  clip:ic('<path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.4 3.4 0 0 1 4.8 4.8L10.4 17.7a1.8 1.8 0 0 1-2.6-2.6L15.5 7.5"/>'),
  up:ic('<path d="M12 19V5M6 11l6-6 6 6"/>'),
+ send:ic('<path d="M12 19V5M6 11l6-6 6 6"/><path class="forcemark" d="M6 18l6-6 6 6"/>'),  // B208: its second head shows for Force send alone
  stop:ic('<rect x="7" y="7" width="10" height="10" rx="1.5"/>'),
  back:ic('<path d="M15 5l-7 7 7 7"/>'),
  chev:ic('<path d="M9 6l6 6-6 6"/>'),
@@ -2269,7 +2272,7 @@ function box(ph,foot){
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
     <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in${enterHint()} placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?`<button type="button" class="tool spkbox" id="spkbox" data-spk hidden aria-label="Stop speaking" title="Stop speaking">${I.stop}</button>`+(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread&&!isNew(S.thread)?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}${real?'<button type="button" class="tool" data-slashopen aria-label="Commands" title="Commands">/</button>':''}${real&&busyNow?'':`<span class="to">${esc(isNew(S.thread)?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to a new chat')}</span>`}${real&&busyNow?`<button type="button" class="act halt" data-halt="${esc(shownNow)}">${I.stop}Stop</button><button class="act force">Force send</button></div></form>`:`${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>`}${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?`<button type="button" class="tool spkbox" id="spkbox" data-spk hidden aria-label="Stop speaking" title="Stop speaking">${I.stop}</button>`+(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread&&!isNew(S.thread)?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}${real?'<button type="button" class="tool" data-slashopen aria-label="Commands" title="Commands">/</button>':''}${real&&busyNow?'':`<span class="to">${esc(isNew(S.thread)?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to a new chat')}</span>`}${real&&busyNow?`<button type="button" class="act halt" data-halt="${esc(shownNow)}">${I.stop}Stop</button>`:busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" data-send aria-label="Send" title="Send">${I.send}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 /* B177: a chat with a transcript that the run no longer lists (one just started is not listed yet: its message waits) */
 const ended=n=>!!(S.snap.at&&S.feeds[n]&&S.feeds[n].ok&&!sessionOf(n)&&!(S.sent[n]&&(S.sent[n].pending||[]).length));
@@ -3222,9 +3225,17 @@ if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
     document.addEventListener('touchend',kbTapEnd,{passive:false})}}
 let boxWas={k:'',h:0};
 function grow(ta,drawn){
+  sendDraw(ta);
   const k=boxKey(), was=boxWas.k===k?boxWas.h:0;
   ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';
   const h=ta.offsetHeight||0;boxWas={k,h};if(was&&h&&was!==h)growGlide(ta,h-was,drawn);
+}
+/* B208: Send is Force send while the open session works and there is something to send; changed in place, so nothing is
+   drawn again under a caret. box() draws it plain, and grow() runs after every draw and every change of the words. */
+function sendDraw(ta){
+  const b=ta.closest('.box')?.querySelector('[data-send]');if(!b)return;
+  const n=S.thread, on=!!n&&!isNew(n)&&sendForces(sessWorks(n),ta.value,S.atts[boxKey()]), say=on?'Force send':'Send';
+  b.classList.toggle('force',on);b.setAttribute('aria-label',say);b.title=say;
 }
 /* F147: a box that grew by d: at the foot of the view it slides up into its new height (and the chat with it), on Home what is under its words slides down */
 function growGlide(ta,d,drawn){

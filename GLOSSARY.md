@@ -200,10 +200,10 @@ _In code_: ui_model.feed, feed_entries, /feed/NAME
 _Avoid_: log, terminal, thread
 
 **Force send**:
-The message box's send while Claude works: it interrupts the session (Escape), waits until Claude Code is at rest, and sends the message once. Stop sits beside it.
+The message box's send arrow while Claude works and the box has words or an attachment: it interrupts the session (Escape), waits until Claude Code is at rest, and sends the message once. It is drawn bolder, with a second arrowhead; otherwise the arrow is the plain Send. Stop sits beside it.
 _Said_: force send
-_On screen_: Force send
-_In code_: session_now.force_send, chat_to (force), .act.force
+_On screen_: Send arrow with a second head, labelled Force send
+_In code_: session_now.force_send, chat_to (force), sendForces, .send.force
 _Avoid_: interrupt and send, resend
 
 **Session chips**:

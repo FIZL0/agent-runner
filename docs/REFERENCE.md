@@ -394,8 +394,8 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   output tail, Stop through `/tasks`), agents (Open through `/tasks`), Update (the command, run on the run's machine: only
   known update commands; Restart chat, `restart_chat`, for an idle c2 and up). The status comes from `/live/NAME` (Claude
   Code's status, mode and background work). The `/` button's commands come from `/commands?s=NAME`: the runner's, Claude
-  Code's own, the project's and the person's, and the skills named in that chat's transcript. While Claude works, Force
-  send interrupts with Escape, waits until Claude Code's status is at rest, then sends once. Scrolling up hides the chips,
+  Code's own, the project's and the person's, and the skills named in that chat's transcript. While Claude works and the
+  box has words or an attachment, the box's send arrow is Force send (drawn bolder, with a second arrowhead; otherwise the plain Send, the same size). Force send interrupts with Escape, waits until Claude Code's status is at rest, then sends once. Scrolling up hides the chips,
   box and top bar and leaves a thin strip that says Working; scrolling down, at the end, a tap on the strip or typing
   brings them back.
 - **Message box.** On a computer Enter sends and Shift+Enter starts a new line; on a touch phone or tablet Enter starts a new line and only Send (or Force send, or Ctrl/Cmd+Enter on a hardware keyboard) sends. A composing input method never sends. In the slash menu Return picks the highlighted command, on touch too. Each chat keeps its own draft and unsent attachments. Messages that never landed are listed in the Outbox popup as not delivered, with Retry and Discard. A message to a control session still starting stays pending in the Outbox, which says it waits for the chat to start, until the session takes input; then it is sent, or after 2 minutes fails as not sent. Attachments are uploaded to the run (`POST /upload`), kept under

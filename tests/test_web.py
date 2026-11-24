@@ -1939,7 +1939,7 @@ const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
                   querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
 const fetch = () => Promise.resolve({json: () => Promise.resolve([{name: 'clear', desc: ''}])});
 eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
-     + slice('let boxWas=', '\n}\n') + 'function growGlide(){}\n'
+     + slice('let boxWas=', '\n}\n') + 'function growGlide(){}\nfunction sendDraw(){}\n'
      + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n')
      + slice("document.addEventListener('beforeinput',", '\n});\n')
      + slice("document.addEventListener('input',", ')}});\n') + `
@@ -5357,7 +5357,14 @@ def test_session_controls_f170(tmp: Path) -> None:
     eq([c['label'] for c in got[15]], ['Bypass', '2 agents', 'Update'], 'what the screen says')
     eq(([c['label'] for c in got[16]], got[17], got[18]), (['Session'], '1m 12s', '1h 2m'), 'nothing known; a clock')
     page = W.PAGE.read_text(encoding='utf-8')
-    check('Force send' in page and 'data-halt' in page and "{force:true}" in page, 'Force send and Stop while it works')
+    check("say=on?'Force send':'Send'" in page and 'data-halt' in page and "{force:true}" in page, 'Force send and Stop while it works')
+    check('act force' not in page and '>Force send<' not in page and page.count('data-send aria-label="Send" title="Send">${I.send}') == 1,
+          'B208: one Send arrow, never a wide text button')
+    check('\n  sendDraw(ta);' in page.split('function grow(', 1)[1][:60], 'B208: it follows the words, the attachments and the status')
+    eq(logic_js([['sendForces', *x] for x in (
+        [True, '', []], [True, ' \n', None], [False, 'hi', [{'path': '/a'}]], [True, 'hi', []], [True, '', [{'path': '/a'}]],
+        [True, '', [{'name': 'a'}, {'name': 'b', 'err': 'no'}]])]), [False, False, False, True, True, False],
+       'B208: a force send only while it works, with words or an attachment to send')
     check('lineHeight=1.3' in W.session_frame.ttyd_options('dark') and 'minimumContrastRatio=4.5' in W.session_frame.ttyd_options('dark'),
           'room between the lines, text that reads')
     head = W.session_frame.with_head(b'<head>', 'c6', 'page').decode()
