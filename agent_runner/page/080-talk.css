@@ -1,0 +1,19 @@
+/* F124: Talk: the speaker and the mic (64px each) with the keyboard beside them; the box cross-fades in its place */
+.talkdock{display:grid;max-width:720px;margin:0 auto;align-items:end}
+.talkdock>*{grid-area:1/1;min-width:0;transition:opacity var(--dur) var(--ease),visibility var(--dur)}
+.dock .talkbox,.dock.typing .talkmic{opacity:0;visibility:hidden}
+.dock.typing .talkbox{opacity:1;visibility:visible}
+.talkmic{display:grid;gap:6px;justify-items:center;padding-bottom:4px}
+.talkrow{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center;width:100%}
+.mic,.spk{width:64px;height:64px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.mic.hold{touch-action:none} .mic svg{pointer-events:none}
+.mic{background:var(--accent);color:var(--onaccent)}
+ .mic svg{width:28px;height:28px;stroke-width:1.8}
+.spk{justify-self:end;background:var(--surface);border:1px solid var(--line2);color:var(--fg)} .spk svg{width:26px;height:26px}
+.spk.off{color:var(--muted)} .spk.on,.tool.spkbox{color:var(--accent)}
+.kbd{justify-self:start;width:var(--tap);height:var(--tap);border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer}
+.mic.on{background:var(--bad);color:var(--onbad);animation:pulse var(--pulse) infinite}
+.mic:disabled{background:var(--line2);color:var(--muted);cursor:default}
+.talkline{font-size:var(--fs-m);line-height:1.45;color:var(--muted);text-align:center;min-height:1.45em;max-width:34em;overflow-wrap:anywhere}
+.speakb{justify-self:start;display:inline-grid;place-items:center;width:32px;height:32px;border:0;background:none;border-radius:var(--r-s);color:var(--muted);cursor:pointer;margin-left:-6px}
+.speakb:hover{background:var(--bubble);color:var(--fg)} .speakb.on{color:var(--accent)}

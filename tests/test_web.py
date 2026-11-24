@@ -5797,6 +5797,22 @@ def test_session_run_side_f170(tmp: Path) -> None:
         srv.stop()
 
 
+def test_page_parts_c41a(tmp: Path) -> None:
+    print('C41a: the page is one file per area, joined in the order of their names into one page')
+    parts = sorted(W.PAGE_DIR.glob('*'))
+    check(len(parts) >= 10, 'the parts are there', len(parts))
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('/*PAGE_PARTS' not in page, 'every marker has its parts')
+    for p in parts:
+        check(p.read_text(encoding='utf-8') in page, f'{p.name} is in the page')
+    check({p.suffix for p in parts} == {'.css', '.js'}, 'only styles and scripts', {p.suffix for p in parts})
+    areas = {p.name.split('-', 1)[1].split('.')[0] for p in parts}
+    check({'talk', 'chats', 'settings', 'tools', 'home', 'plan', 'live', 'shared'} <= areas, 'one file per area', areas)
+    eq(W.PAGE_TEXT, page, 'the served page is the joined one')
+    toml = (Path(W.__file__).parent.parent / 'pyproject.toml').read_text(encoding='utf-8')
+    check('"page/*.css"' in toml and '"page/*.js"' in toml, 'the wheel holds every part')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_trusted_networks_f136), in_tmp(test_no_settings_f178), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -5812,4 +5828,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_row_buttons_f187), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_motion_f147), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_motion_f147), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_page_parts_c41a)]))

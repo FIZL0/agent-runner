@@ -1,0 +1,23 @@
+/* B179: a concept's page over the Home Screen app */
+.cview{position:fixed;inset:0;z-index:31;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.cview .top{padding-left:max(10px,env(safe-area-inset-left,0px))} .cview iframe{flex:1;min-height:0;width:100%;border:0}
+.obpop{position:fixed;inset:0;background:var(--scrim);z-index:30;display:grid;place-items:center;padding:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.obcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);padding:14px 16px;display:grid;gap:10px;width:min(520px,100%);max-height:80vh;overflow:auto;box-shadow:0 6px 24px var(--shadow)}
+.obrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}
+.obrow .grow,.obstand .grow{min-width:0}
+.ell2{overflow-wrap:anywhere}
+.obrow.failed .small,.obstand.failed .small,.u.failed .small{color:var(--bad)}
+.obstand.sending{opacity:.7}
+.u.pending.failed{opacity:1;border:1px solid var(--bad)}
+.thread.ob.sending{opacity:.75}
+.thread.ob.failed .t{color:var(--bad)}
+
+@container (min-width:760px){
+  .shell{grid-template-columns:260px minmax(0,1fr)}
+  .side,.side:not(.open):not(.drag){position:relative;transform:none;box-shadow:none;width:auto;max-width:none;visibility:visible}
+  .scrim:not(.sheetscrim),.top .menu{display:none!important}
+  .top{padding:12px 18px 6px}
+  .top .title{text-align:left}
+  .grid2{grid-template-columns:1fr 1fr}
+}
+.grid2{display:grid;gap:12px}

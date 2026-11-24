@@ -1,0 +1,36 @@
+/* motion (docs/STYLE.md, Motion): enter() sets these on what is new or changed, never the markup */
+@keyframes enter{from{opacity:0;transform:translateY(14px) scale(.97)}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+@keyframes fadein{from{opacity:0}}
+@keyframes listin{from{transform:translateX(-100%)}}
+@keyframes listout{to{transform:translateX(-100%)}}
+@keyframes wave{0%,60%,100%{transform:none;opacity:.45}30%{transform:translateY(-4px);opacity:1}}
+.enter{animation:enter var(--dur-spring) var(--spring) backwards} .changed{animation:fadein var(--dur) var(--ease)} .viewin{animation:rise var(--dur-spring) var(--spring-soft)}
+.fresh{animation:rise var(--dur-spring) var(--spring-soft) backwards} span.fresh{animation-name:fadein}
+.obpop:not([hidden]){animation:fadein var(--dur-fast) var(--ease)} .toast:not([hidden]){animation:fadein var(--dur) var(--ease)}
+.wave{display:inline-flex;gap:3px;align-items:center;flex:none} .wave i{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:wave var(--pulse) infinite} .wave i:nth-child(2){animation-delay:calc(var(--pulse)*.12)} .wave i:nth-child(3){animation-delay:calc(var(--pulse)*.24)}
+/* a press, and the spring back; a wide row gives less */
+.btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.pill,.shadd,.card.tap,.asktap,.ni,.thread,.prow,.it,.fold{transition:transform var(--dur-spring) var(--spring)}
+.send{transition:transform var(--dur-spring) var(--spring),opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop,.force){opacity:.45}
+:is(.btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.send,.pill,.shadd):active:not(:disabled){transform:scale(.94);transition-duration:var(--dur-fast)}
+:is(.card.tap,.asktap,.ni,.thread,.prow,.it:not(.setrow),.fold):active{transform:scale(.98);transition-duration:var(--dur-fast)}
+/* a count that rolls; what left, while it collapses; your words on their way to a session */
+.roll{position:relative;overflow:clip} .rolls{display:inline-block} .rolls.out{position:absolute;inset:0;padding:inherit;white-space:nowrap}
+.gone0{position:absolute!important;margin:0!important;pointer-events:none;transform-origin:50% 0}
+.main .u.flybub{position:absolute;justify-self:auto;width:max-content;max-width:80%;z-index:4;pointer-events:none;max-height:160px;overflow:hidden}
+.tt{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+/* a chat opening and closing (viewGo): the main part slides, the drawer goes, the chat's title is carried over */
+html.vt .main{view-transition-name:main} html.vt .side{view-transition-name:side} html.vt .scrim:not(.sheetscrim){view-transition-name:scrim}
+html.vt :is(.side,.scrim){transition:none}
+::view-transition-group(*){animation-duration:var(--dur-spring);animation-timing-function:var(--spring-soft)}
+::view-transition-group(main){overflow:clip}
+::view-transition-old(*),::view-transition-new(*){animation-duration:var(--dur-spring);animation-timing-function:var(--ease)}
+::view-transition-old(root),::view-transition-new(side){display:none} ::view-transition-new(root),::view-transition-old(side){animation:none;mix-blend-mode:normal}
+html:not(.vt-drawer)::view-transition-old(side){display:none} html:not(.vt-drawer)::view-transition-new(side){display:block;animation:none}
+@keyframes fromright{from{transform:translateX(100%)}} @keyframes toright{to{transform:translateX(100%)}}
+@keyframes fromback{from{transform:translateX(-25%);opacity:.4}} @keyframes toback{to{transform:translateX(-25%);opacity:.4}}
+::view-transition-old(main),::view-transition-new(main){mix-blend-mode:normal}
+html.vt-in::view-transition-old(main){animation:toback var(--dur-spring) var(--spring-soft) both} html.vt-in::view-transition-new(main){animation:fromright var(--dur-spring) var(--spring-soft) both}
+html.vt-out::view-transition-old(main){z-index:1;animation:toright var(--dur-spring) var(--spring-soft) both} html.vt-out::view-transition-new(main){animation:fromback var(--dur-spring) var(--spring-soft) both}
+::view-transition-old(chat-title),::view-transition-new(chat-title){height:100%;object-fit:none;object-position:0 50%;overflow:clip}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

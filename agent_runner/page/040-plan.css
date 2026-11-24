@@ -1,0 +1,52 @@
+/* the main column */
+.main{position:relative;display:flex;flex-direction:column;min-height:0;min-width:0;touch-action:pan-y pinch-zoom}
+.top{position:relative;z-index:3;background:var(--bg);display:flex;align-items:center;gap:6px;padding:10px 10px 6px;padding-right:max(10px,env(safe-area-inset-right,0px))}
+.icon{width:36px;height:36px;border-radius:var(--r-m);border:0;background:none;display:grid;place-items:center;cursor:pointer;color:var(--fg);flex:none}
+.icon:hover{background:var(--bubble)}
+.top .title{flex:1;min-width:0;text-align:center;font-weight:500;font-size:var(--fs-b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.body{position:relative;flex:1;overflow:auto;min-height:0;overflow-anchor:none;overscroll-behavior:contain}
+.col{max-width:720px;margin:0 auto;padding:6px 16px 24px;display:grid;gap:12px}
+.greet{font:400 30px/1.2 var(--serif);text-align:center;margin:18px 0 6px;display:flex;align-items:center;justify-content:center;gap:10px}
+.greet .logo{width:30px;height:30px;font-size:var(--fs-b)}
+.sec{font-size:var(--fs-m);color:var(--muted);margin-top:10px;display:flex;align-items:center;gap:8px}
+.sec .ln{flex:1;height:1px;background:var(--line)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);padding:14px 16px;display:grid;gap:10px;min-width:0}
+.card.tap{cursor:pointer} .card.tap:hover{border-color:var(--line2)}
+.card.need{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+.q{font:500 17px/1.35 var(--serif);overflow-wrap:anywhere}
+/* F162: a Needs you card's words: one button, what is wanted, the title, at most two lines of what to do */
+.asktap{display:grid;gap:var(--s1);width:100%;min-width:0;min-height:var(--tap);border:0;background:none;padding:0;text-align:left;color:inherit;cursor:pointer}
+.asktap b{font:500 17px/1.35 var(--serif)} .asklab{color:var(--warn);font-weight:600;font-size:var(--fs-m)}
+.askdo{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.small{font-size:var(--fs-m);color:var(--muted)}
+.row{display:flex;align-items:center;gap:12px;min-width:0}
+.grow{flex:1;min-width:0}
+.ell{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who{width:34px;height:34px;border-radius:var(--r-m);background:var(--bubble);display:grid;place-items:center;font:600 12px var(--sans);color:var(--muted);flex:none}
+.status{font-size:var(--fs-s);color:var(--accent);display:inline-flex;align-items:center;gap:6px}
+.quote{font:400 15px/1.45 var(--serif);color:var(--fg);border-left:2px solid var(--line2);padding-left:10px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line2);background:var(--surface);border-radius:var(--r-m);padding:7px 14px;font-weight:500;font-size:var(--fs-n);cursor:pointer;text-decoration:none;color:var(--fg);display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--bubble)}
+.btn.pri{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.btn.acc{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:default}
+.card.relph{opacity:.6}
+.btn.busy{opacity:.7;cursor:progress}
+.btn.bad{background:var(--bad);color:var(--onbad);border-color:var(--bad)}
+.sure{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.slotsn{display:inline-flex;gap:6px;align-items:center}
+.slotsn input{width:64px;border:1px solid var(--line2);background:var(--surface);color:var(--fg);border-radius:var(--r-m);padding:7px 8px;font:16px/1.35 var(--sans)}
+.chev{color:var(--faint);display:grid}
+.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-m);padding:7px 12px;font-size:var(--fs-m);cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:var(--fg)}
+.chip svg{width:15px;height:15px;color:var(--muted)}
+.chip:hover{background:var(--bubble)}
+.chip[data-view]{position:relative}  /* F164: Talk is 44px to press with any pointer, and looks like the chips beside it */
+.chip[data-view]::after{content:'';position:absolute;left:0;right:0;top:50%;height:var(--tap);transform:translateY(-50%)}
+.ev{display:flex;gap:12px;align-items:flex-start;padding:4px 2px;min-width:0}
+.ev .ic{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--bubble);color:var(--muted)}
+.ev .ic svg{width:14px;height:14px}
+.ev .ic.ok{color:var(--ok)} .ev .ic.bad{color:var(--bad)} .ev .ic.go{color:var(--accent)}
+.ev .txt{min-width:0;overflow-wrap:anywhere}
+

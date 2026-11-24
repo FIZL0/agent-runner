@@ -1,0 +1,2 @@
+/* the composer: the send button fills once there is something to send */
+@media (pointer:coarse){.keysl{display:none} .btn,.chip,.icon{min-height:var(--tap)} .icon{min-width:var(--tap)}}

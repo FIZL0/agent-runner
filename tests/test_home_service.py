@@ -497,6 +497,10 @@ def test_restart_on_upgrade(tmp: Path) -> None:
         eq(H.package_stamp(), was, 'unchanged files: the same stamp')
         (pkg / 'web_page.html').write_text('newer', encoding='utf-8')
         check(H.package_stamp() != was, 'a changed page, the version the same: another stamp')
+        (pkg / 'page').mkdir()
+        was = H.package_stamp()
+        (pkg / 'page' / '010-x.css').write_text('a', encoding='utf-8')
+        check(H.package_stamp() != was, 'C41a: a changed part of the page: another stamp')
     with mock.patch.object(H, '__file__', str(tmp / 'gone' / 'home.py')):
         eq(H.package_stamp(), None, 'no package there: None')
 

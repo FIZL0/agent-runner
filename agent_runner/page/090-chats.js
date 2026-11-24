@@ -1,0 +1,384 @@
+/* --- F114: a chat or slot: the real session in #feed ------------------------------------------------------------
+   One frame, for the open chat alone: leaving it, or a page out of sight for FEED_AWAY, takes it out, so the session
+   gets its other viewers' size back. FD: n its chat, info the run's answer, frame, up (its socket is open) */
+const FD={n:'',turn:0,info:null,frame:null,up:false,timer:0,away:0,downs:0}, FEED_AWAY=15000, FEED_AGAIN=3000;
+const FEED_LINES=1;  // lines of a drag to one wheel step
+const TOUCH=()=>!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
+const enterHint=()=>TOUCH()?' enterkeyhint="enter"':'';  // B181
+const feedNow=n=>feedState({stand:String(n||'')[0]==='@',starting:starting(n),info:FD.n===n?FD.info:null,chat:!isAgent(n)});
+const feedSrc=n=>`t/${encodeURIComponent(T)}/${encodeURIComponent(n)}/?fontSize=${TOUCH()?12:13}`;
+function feedLeave(){feedGone();FD.turn++;clearTimeout(FD.timer);FD.timer=0;FD.up=false;if(FD.frame){FD.frame.remove();FD.frame=null}}
+async function feedLoad(){
+  const n=FD.n, turn=++FD.turn;clearTimeout(FD.timer);FD.timer=0;
+  if(!n||n[0]==='@'||isNew(n)||document.hidden)return;
+  let i;try{i=await (await fetch(tq('terminal/'+encodeURIComponent(n)))).json()}catch(e){i=null}
+  if(turn!==FD.turn)return;
+  if(i)FD.info=i;
+  if(i&&i.ok){
+    const f=document.createElement('iframe');f.title=`${threadTitle(n)}: its session`;f.allow='clipboard-read; clipboard-write';f.src=feedSrc(n);
+    if(FD.frame)FD.frame.remove();
+    FD.frame=f;FD.up=false;$('feedframe').appendChild(f);
+  }else{if(FD.frame){FD.frame.remove();FD.frame=null}FD.timer=setTimeout(feedLoad,FEED_AGAIN)}  // it may come up, or be installed
+  render();
+}
+/* the frame's word: its socket opened or closed (the session ended, the connection broke: look again), files dropped */
+addEventListener('message',e=>{
+  const d=e.data;if(e.origin!==location.origin||!d||!FD.frame||e.source!==FD.frame.contentWindow||d.session!==FD.n)return;
+  if(d.files){[...d.files].forEach(upload);return}
+  FD.up=d.state==='up';clearTimeout(FD.timer);FD.timer=0;
+  if(FD.up){FD.downs=0;feedUp()}else FD.timer=setTimeout(feedLoad,Math.min(1000*2**FD.downs++,15000));
+  feedSay();
+});
+function feedSay(){const el=$('feedsay'), on=!!FD.frame&&!FD.up;el.hidden=!on;setHTML(el,on?'<span class="livedot"></span>Connecting to the session…':'')}
+/* each draw: the frame for the chat that is open, or its state in the body */
+function feedDraw(n){
+  if((n||'')!==FD.n){feedLeave();FD.n=n||'';FD.info=null;FD.downs=0;if(n)feedLoad()}
+  const show=!!n&&feedNow(n)==='session';
+  $('feed').hidden=!show;$('body').hidden=show;
+  document.documentElement.classList.toggle('lightfeed',S.snap.session_look==='light');document.documentElement.classList.toggle('pagefeed',show&&FD.info.look==='page');
+  feedSay();feedShown(show);
+}
+document.addEventListener('visibilitychange',()=>{
+  clearTimeout(FD.away);
+  if(document.hidden)FD.away=setTimeout(()=>{if(document.hidden)feedLeave()},FEED_AWAY);
+  else if(FD.n&&!FD.frame)feedLoad();
+});
+/* what a chat or slot with no session to show says */
+function feedHTML(n){
+  if(isNew(n))return `<div class="col feeds">${card(`<div class="q">${esc(threadTitle(n))}</div><div class="small">The chat starts with your first message.</div>`,'',`data-k="feed:${esc(n)}"`)}</div>`;  // F172
+  const st=feedNow(n), i=(FD.n===n&&FD.info)||{}, last=S.last[n]||{}, link=i.link||(sessionOf(n)||{}).link||last.link||'';
+  const open=link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open its session ${I.ext}</a>`:'';
+  if(st==='starting')return `<div class="col feeds"><div class="msgs">${sentBubbles(n,t=>t)}${obBubbles(n)}${n[0]==='@'?'':`<div class="think">${LOGO()}${WAVE}Starting the chat…</div>`}</div></div>`;
+  if(st==='loading')return `<div class="col feeds"><div class="think">${LOGO()}Loading…</div></div>`;
+  let title='', words=i.out||'', btns=open;
+  if(st==='install'){title='The session cannot be shown here';if(S.snap.ttyd_install)words+=` On this machine: ${S.snap.ttyd_install}`}
+  else if(st==='ended'){
+    title='This chat has ended';
+    words=i.resume?'Resume brings it back with everything said in it.':'';
+    if(i.resume)btns=`<button class="btn pri${S.ob.some(x=>x.res===n&&x.state==='sending')?' busy':''}" data-resume="${esc(n)}">Resume</button>`+open;
+  }else if(st==='idle'){
+    const tid=(sessionOf(n)||{}).task||last.task||'', cut=tid&&((S.snap.fixups||{}).resume||[]).some(x=>x.id===tid)&&controlOf('resume');
+    title=sessionOf(n)?`${n} has no session now`:'This slot is gone';
+    words=cut?`Its session on ${tid} was cut off. Its work is kept.`:last.task&&last.title?`It last worked on “${last.title}”.`:'It shows here when a task starts.';
+    if(cut)btns=`<button class="btn pri${ctlBusy('resume',tid)?' busy':''}" data-ctl="resume" data-tid="${esc(tid)}">Resume</button>`+open;
+  }else title='There is no terminal to show';
+  return `<div class="col feeds">${card(`<div class="q">${esc(title)}</div>${words?`<div class="small">${esc(words)}</div>`:''}${btns?`<div class="btns">${btns}</div>`:''}`,'',`data-k="feed:${esc(n)}" data-v="${st}"`)}</div>`;
+}
+/* ttyd's terminal (xterm.js), once its page has made it; null before */
+function feedTerm(){try{return FD.up&&FD.frame&&FD.frame.contentWindow.term||null}catch(e){return null}}
+function feedKey(k){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
+  t.input(feedBytes(k,!!(t.modes&&t.modes.applicationCursorKeysMode)),true)}
+const keyButtons=()=>`<div class="keys" role="toolbar" aria-label="Keys for the session">${FEED_KEYS.map(([k,l])=>`${k==='left'?'<button type="button" class="tool" data-feedtext title="The screen as text, to copy">Text</button>':''}<button type="button" class="tool" data-feedkey="${k}">${l}</button>`).join('')}</div>`;
+const keysRow=()=>S.keys?keyButtons():'';
+/* the screen's text in a sheet, to select and copy with a finger */
+function feedText(){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
+  const b=t.buffer.active, l=[];for(let y=b.viewportY;y<b.viewportY+t.rows;y++){const x=b.getLine(y);l.push(x?x.translateToString(true):'')}
+  S.feedText=feedWords(l);openSheet('text')}
+function feedScreen(){const t=feedTerm(), el=t&&t.element&&t.element.querySelector('.xterm-screen');return el?{t,el,win:FD.frame.contentWindow,cell:el.getBoundingClientRect().height/t.rows||16}:null}
+/* wheel steps on the session, as a mouse's: its own scrolling (a fullscreen session's history) or the terminal's */
+function feedWheel(n,x,y){
+  const f=feedScreen();if(!f||!n)return;
+  if(f.t.modes.mouseTrackingMode==='none'&&f.t.buffer.active.type==='normal'){f.t.scrollLines(n);return}
+  [x,y]=feedAt(x,y);
+  for(let i=Math.min(Math.abs(n),20);i>0;i--)f.el.dispatchEvent(new f.win.WheelEvent('wheel',{deltaY:Math.sign(n)*f.cell,deltaMode:0,clientX:x,clientY:y,bubbles:true,cancelable:true}));
+}
+function feedClick(x,y){const f=feedScreen();if(!f)return;[x,y]=feedAt(x,y);
+  for(const type of ['mousemove','mousedown','mouseup','click'])f.el.dispatchEvent(new f.win.MouseEvent(type,{clientX:x,clientY:y,button:0,buttons:type==='mousedown'?1:0,detail:1,bubbles:true,cancelable:true,view:f.win}))}
+/* the touch layer over the frame: a drag scrolls (and glides on), a tap clicks, a long press gives the text. The
+   drawer's swipe has the touch first: once it is on, this leaves it alone */
+{let G=null, glide=0;
+const layer=$('feedtouch'), at=t=>{const r=layer.getBoundingClientRect();return[t.clientX-r.left,t.clientY-r.top]};
+const step=by=>{const f=feedScreen(), px=feedScroll(by);if(!f||!px)return;const [n,left]=feedSteps(G.rest+px,f.cell*FEED_LINES);G.rest=left;feedWheel(n,G.x,G.y)};
+layer.addEventListener('touchstart',e=>{cancelAnimationFrame(glide);if(G)clearTimeout(G.hold);
+  if(e.touches.length!==1){G=null;return}
+  const t=e.touches[0], [x,y]=at(t);G={x,y,y0:t.clientY,x0:t.clientX,ly:t.clientY,lt:e.timeStamp,v:0,rest:0,on:false};
+  const g=G;g.hold=setTimeout(()=>{if(G===g&&!g.on&&!(SW&&SW.on)){G=null;feedText()}},550)},{passive:true});
+layer.addEventListener('touchmove',e=>{
+  if(!G)return;
+  if(SW&&SW.on||e.touches.length!==1){clearTimeout(G.hold);G=null;return}
+  const t=e.touches[0], dy=t.clientY-G.y0, dx=t.clientX-G.x0;
+  if(!G.on){if(Math.abs(dy)<8&&Math.abs(dx)<8)return;clearTimeout(G.hold);if(Math.abs(dx)>Math.abs(dy)){G=null;return}G.on=true;SW=null}
+  step(G.ly-t.clientY);
+  if(e.timeStamp>G.lt)G.v=.7*(G.ly-t.clientY)/(e.timeStamp-G.lt)+.3*G.v;
+  G.ly=t.clientY;G.lt=e.timeStamp},{passive:true});
+layer.addEventListener('touchend',e=>{const g=G;if(!g)return;clearTimeout(g.hold);
+  if(!g.on){G=null;if(e.cancelable)e.preventDefault();feedClick(g.x,g.y);return}
+  let last=performance.now(), v=e.timeStamp-g.lt>60||matchMedia('(prefers-reduced-motion:reduce)').matches?0:g.v;
+  const go=now=>{if(G!==g)return;if(Math.abs(v)<.05){G=null;return}step(v*(now-last));v*=Math.pow(.996,now-last);last=now;glide=requestAnimationFrame(go)};
+  glide=requestAnimationFrame(go)},{passive:false});
+layer.addEventListener('touchcancel',()=>{if(G)clearTimeout(G.hold);G=null},{passive:true});
+layer.addEventListener('wheel',e=>{const f=feedScreen();if(!f||feedTake(e.deltaY))return;const r=layer.getBoundingClientRect();feedWheel(Math.sign(e.deltaY),e.clientX-r.left,e.clientY-r.top)},{passive:true});
+layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r=layer.getBoundingClientRect();feedClick(e.clientX-r.left,e.clientY-r.top)}})}
+/* --- F170: the lines at the bottom of the agent's window as the page's own controls (approved on K10's page, option A) --
+   The frame is taller than its room by FOOT_ROWS, so those lines lie past the edge; feedSpot says where it goes, by a
+   transform, never by a resize: the bars come and go, the box grows, and the session's size stays. B192: the bars going or
+   coming never moves it; only a scroll does (feedScroll), and the session's own going to its end. Whole (a menu, a
+   question, unsent words, a look feedFoot does not know): it fits its room exactly, all of it shown. */
+Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',above:0,last:0,run:0,rest:0,slim:false,jump:false,typed:0,full:0,wide:0,doc:0,live:null,liveAt:0,raf:0,task:''});
+const KB_PAD=6;  // .dock's bottom padding: 14px, and 8px in .app.kb
+const SLIM_H=56, FOOT_WAIT=400, TEXT_WAIT=1200, LIVE_EVERY=2000;
+const pageDark=()=>{const t=document.documentElement.dataset.theme;return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches};
+function feedLook(){return pageDark()?'dark':'light'}
+function lookAgain(){try{if(FD.frame&&FD.info&&FD.info.look==='page')FD.frame.contentWindow.arLook(feedLook())}catch(e){}}
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',lookAgain);
+if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+/* does the session of a chat or slot work? The agent CLI's own status; until it is read, or with none, the feed's */
+const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
+function feedGone(){clearTimeout(FD.wait);Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,live:null,liveAt:0});feedClass()}
+function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');if(!m||!row)return;
+  m.classList.toggle('still',calm());m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);row.hidden=!FD.shown;
+  const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;row.inert=!FD.slim;
+  if(!FD.shown){const a=feedFly;feedFly=null;if(a)a.cancel();$('feed').style.bottom='';$('feedframe').style.cssText=''}}
+function feedShown(on){if(FD.shown!==on){FD.shown=on;if(!on){FD.slim=false;FD.off=0}}feedClass();if(on)requestAnimationFrame(feedPlace)}
+/* its socket is open: its screen is read at each draw */
+function feedUp(){
+  let t;try{t=FD.frame.contentWindow.term}catch(e){}
+  if(t&&!t.arSeen){t.arSeen=true;t.onRender(()=>{if(!FD.raf)FD.raf=requestAnimationFrame(()=>{FD.raf=0;feedSee()})})}
+  lookAgain();liveLoad();feedSee();
+  setTimeout(()=>{if(FD.up&&FD.foot===undefined){FD.foot=null;feedWhole(true)}},4000);
+}
+function feedLines(t){const b=t.buffer.active,l=[];for(let y=b.baseY;y<b.baseY+t.rows;y++){const x=b.getLine(y);l.push(x?x.translateToString(true):'')}return l}
+function feedSee(){
+  const t=feedTerm();if(!t||!FD.shown)return;
+  const b=t.buffer.active, lines=feedLines(t);
+  const dim=(y,x)=>{const l=b.getLine(b.baseY+y), c=l&&l.getCell(x);return!!(c&&c.isDim())};
+  const lit=(y,x)=>{const l=b.getLine(b.baseY+y), c=l&&l.getCell(x);return!!(c&&!c.isBgDefault())};
+  if(!lines.some(l=>l))return;  // not drawn yet
+  FD.last=b.viewportY<b.baseY?t.rows:lines.findLastIndex(l=>l.trim())+1;
+  const foot=feedFoot(lines,dim,lit), was=FD.foot;
+  FD.foot=foot;
+  let blank=0;if(foot)while(blank<foot.top&&!lines[foot.top-1-blank].trim())blank++;
+  FD.short=foot&&(!b.baseY||t.modes.mouseTrackingMode!=='none')&&(blank>3||foot.end<t.rows-FOOT_ROWS-2)?Math.max(1,foot.top-blank):0;
+  const all=!foot||!!foot.text||foot.bash;
+  if(all!==FD.whole){if(!FD.wait)FD.wait=setTimeout(()=>{FD.wait=0;const f=FD.foot;if(f===undefined)return;const now=!f||!!f.text||f.bash;if(now!==FD.whole)feedWhole(now)},foot&&foot.text?TEXT_WAIT:FOOT_WAIT)}
+  else{clearTimeout(FD.wait);FD.wait=0}
+  const jump=b.viewportY<b.baseY||!!(foot&&foot.jump);
+  const ended=FD.jump&&!jump, left=!FD.jump&&jump;
+  FD.jump=jump;
+  if(!jump)FD.off=0;  // at its end the last lines stand on the box
+  if(ended&&FD.slim)feedSlim(false);
+  feedPlace();
+  if(left&&FD.run<=-8)feedSlim(true);
+  const key=f=>f?[f.mode,f.shells,f.tasks,f.agents,f.update,f.status.join('|'),f.work].join():String(f);
+  if(key(was)!==key(foot)){if(!was||!foot||was.work!==foot.work||was.shells!==foot.shells)liveLoad();render()}
+}
+function feedWhole(on){FD.whole=on;if(on){FD.slim=false;FD.off=0}feedClass();feedPlace();render()}
+/* B214: the view's height with the keyboard closed: the session's size comes from it, so a keyboard never resizes it.
+   A width that changed (rotation) counts again, with the keyboard open too; the bottom inset is off .app then */
+function feedRoom(main){
+  const w=main.clientWidth, h=main.clientHeight, doc=document.documentElement.clientHeight;
+  const kept=kbH?Math.abs(doc-FD.doc)<100:Date.now()<kbStill||TOUCH()&&typingIn(document.activeElement)&&h<FD.full-100;  // the last: a browser that shrinks the page itself
+  if(FD.full&&FD.wide===w&&kept)return FD.full;
+  FD.wide=w;FD.doc=doc;
+  return FD.full=kbH?h+doc-kbH-(parseFloat(getComputedStyle($('app')).getPropertyValue('--sab'))||0):h;
+}
+/* the dock's height with the keyboard closed and one line in the box */
+function dockRest(dock){
+  const ta=document.querySelector('#dock [data-in]');let more=0;
+  if(ta){const c=getComputedStyle(ta), px=k=>parseFloat(c[k])||0;more=Math.max(0,Math.round(ta.offsetHeight-Math.max(px('minHeight'),px('lineHeight')+px('paddingTop')+px('paddingBottom'))))}
+  return dock-more+(kbH?KB_PAD:0);
+}
+/* B214: the frame goes to its new place with the box, from `was`, its top on screen until now (feedTop). translate, so
+   a draw half way may still set its transform */
+let feedFly=null;
+const feedTop=()=>FD.shown&&FD.frame?$('feedframe').getBoundingClientRect().top:null;
+function feedGlide(was){
+  if(was==null)return;
+  const el=$('feedframe');if(feedFly){const a=feedFly;feedFly=null;a.cancel();el.style.translate='';$('feed').style.bottom=''}
+  feedPlace();
+  const d=was-el.getBoundingClientRect().top;if(Math.abs(d)<1||!el.animate||calm())return;
+  const css=getComputedStyle(document.documentElement), at=`0 ${d}px`, room=$('feed').style;
+  const a=feedFly=el.animate([{translate:at},{translate:'0 0'}],{duration:parseFloat(css.getPropertyValue('--dur-slow')),easing:css.getPropertyValue('--ease').trim()});
+  el.style.translate=at;room.bottom=d>0?-d+'px':'';  // it starts below its new room, so that is not cut off yet
+  const still=()=>{if(feedFly===a)el.style.translate=''};
+  requestAnimationFrame(()=>requestAnimationFrame(still));  // iOS draws one frame before the animation
+  a.onfinish=a.oncancel=()=>{if(feedFly===a){still();feedFly=null;room.bottom=''}};
+}
+/* the box grew or shrank: as .dock does it, over the glide for a keyboard that may still go on */
+let feedGrew=null;
+function feedGrow(d){
+  if(feedGrew)feedGrew.cancel();
+  feedGrew=moAnim($('feedframe'),[{translate:`0 ${d}px`},{translate:'0 0'}],{ease:'--ease',dur:'--dur-slow',composite:'add'});
+}
+/* B218: the slim message box's row: the box's own bottom edge, 44px and 4px. Its height is the same with the keyboard open */
+function slimGap(){const d=$('dock'), b=d&&d.querySelector('.box');return b?Math.round(d.getBoundingClientRect().bottom-b.getBoundingClientRect().bottom):0}
+function slimRow(){const g=slimGap();return g?48+g+(kbH?KB_PAD:0):SLIM_H}
+/* B218: how far the bars' motion goes: the dock's and the box's height over the slim box's, and how far its words ride */
+function slimSize(){
+  const m=document.querySelector('.main'), d=$('dock'), b=d&&d.querySelector('.box'), ta=b&&b.querySelector('[data-in]');if(!ta||!FD.shown)return;
+  const by=Math.max(0,b.offsetHeight-44), c=getComputedStyle(ta);
+  const mid=ta.getBoundingClientRect().top-b.getBoundingClientRect().top+parseFloat(c.paddingTop)+parseFloat(c.lineHeight)/2-22;  // the first line's middle over a slim row's
+  const set=(k,v)=>m.style.setProperty(k,v), o=+getComputedStyle(d).opacity, rest=o===0||o===1;
+  if(rest)m.classList.add('still');  // nothing moves now: the new sizes are not a motion
+  set('--slimd',by);set('--slimride',by-Math.min(8,Math.max(0,mid))+'px');set('--slimgap',slimGap()+'px');set('--slimgrow',d.offsetHeight/(48+slimGap()));
+  const f=d.querySelector('.foot');setHTML($('slimfoot'),f?f.innerHTML:'');
+  set('--slimtop',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px');
+  if(rest){for(const e of [d,b,$('top'),document.querySelector('.notices'),$('slimbox'),...document.querySelectorAll('.slimground i,.slimskin i')])getComputedStyle(e).translate;m.classList.remove('still')}
+}
+/* what the frame's place is made of; null while there is none */
+function feedPlace(){
+  const main=document.querySelector('.main'), box=$('feedframe');if(!FD.shown||!FD.frame||!main||!main.clientHeight)return;
+  const top=$('top').offsetHeight, say=document.querySelector('.notices').offsetHeight;
+  main.style.setProperty('--seebar',top+'px');
+  if(!FD.slim||!FD.bar)FD.bar=top+say;
+  const dock=document.querySelector('.dockwrap').offsetHeight, f=feedScreen();
+  const cell=f?f.cell:17, pad=f?f.el.getBoundingClientRect().top:12;
+  const row=slimRow(), full=feedRoom(main), high=FD.whole?Math.max(60,full-FD.bar-dockRest(dock)):Math.round(full-row+FOOT_ROWS*cell);
+  const size=[full,cell].join(), above=main.clientHeight-dock+dockRest(dock), hold=FD.jump&&FD.held===size?FD.t+above-FD.above:null;  // scrolled up: where it was over the box; a chip or a file that comes moves nothing
+  const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,row,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,hold});
+  if(!FD.whole&&FD.foot===undefined)at.t=Math.min(FD.bar,main.clientHeight-dock-high+FOOT_ROWS*cell);  // not read yet
+  FD.far=at.far;FD.off=at.off;FD.t=at.t;FD.above=above;FD.held=FD.whole||!FD.foot?'':size;
+  const st=box.style, set=(k,v)=>{if(st[k]!==v)st[k]=v};
+  set('inset','0 0 auto 0');set('height',high+'px');set('transform',`translateY(${Math.round(at.t)}px)`);
+  const b=f&&f.t.buffer.active, away=b&&b.type==='normal'?(b.baseY-b.viewportY)*cell:0;
+  set('clipPath',at.cut>away?`inset(0 0 ${Math.round(at.cut-away)}px 0)`:'none');
+}
+/* the bars and the box away, or back. Never while the person types, or while a menu, a question or a sheet is open */
+const slimMay=()=>!FD.whole&&!!FD.foot&&FD.jump&&FD.far>8&&!S.sheet&&!slashOpen()&&!kbH&&Date.now()-FD.typed>2500&&!(document.activeElement&&document.activeElement.matches('[data-in]')&&document.activeElement.value.trim());
+function feedSlim(on){if(on&&!slimMay())return;FD.run=0;if(FD.slim!==on){slimSize();FD.slim=on;feedClass();slimDraw()}}
+/* a drag or a wheel of px (down is more): the bars go or come, and what is left of it for the session to scroll */
+function feedScroll(px){
+  if(!px||!FD.shown)return px;
+  const b=feedBars(px,FD);FD.run=b.run;
+  if(b.slim!==FD.slim)feedSlim(b.slim);
+  const take=feedShare(px,FD);if(!take)return px;
+  FD.t-=take;FD.off-=take;feedPlace();
+  return px-take;
+}
+/* a wheel step in the frame (session_frame.HEAD asks): was it the page's? What the frame leaves goes on to the session */
+function feedTake(px){
+  const left=feedScroll(px), f=feedScreen();if(left===px||!f)return false;
+  const [n,rest]=feedSteps(FD.rest+left,f.cell*FEED_LINES), r=$('feedtouch').getBoundingClientRect();
+  FD.rest=rest;feedWheel(n,r.width/2||FD.frame.clientWidth/2,r.height/2||FD.frame.clientHeight/2);
+  return true;
+}
+/* B190: a key or a paste in the frame (session_frame.HEAD asks): was it the page's? Its words go in the message box */
+function feedTyped(e,paste){
+  const ta=document.querySelector('[data-in]'), how=S.sheet?'':feedHand(paste?{paste}:e,FD.foot,FD.whole);
+  if(how==='line')return sessType('\n');
+  if(how!=='box'||!ta)return false;
+  if(FD.slim)feedSlim(false);  // the box was away and inert
+  ta.focus({preventScroll:true});
+  ta.setRangeText(paste||(e.key==='Enter'?'\n':e.key),ta.selectionStart,ta.selectionEnd,'end');
+  ta.dispatchEvent(new Event('input',{bubbles:true}));
+  return true;
+}
+/* a point on the touch layer, in the frame */
+function feedAt(x,y){const l=$('feedtouch').getBoundingClientRect(), r=FD.frame.getBoundingClientRect();return[x+l.left-r.left,y+l.top-r.top]}
+/* the run's word on the session: its status, its background work */
+async function liveLoad(){
+  const n=FD.n, turn=FD.turn;if(!n||!FD.frame||document.hidden||!/^[cs]\d+$/.test(n))return;
+  FD.liveAt=Date.now();
+  let j;try{j=await (await fetch(tq('live/'+encodeURIComponent(n)))).json()}catch(e){return}
+  if(turn!==FD.turn||FD.n!==n)return;
+  const same=JSON.stringify(FD.live)===JSON.stringify(j);FD.live=j;
+  if(!same)render();
+}
+const workFor=()=>FD.live&&FD.live.status==='busy'&&FD.live.since?'Working '+forWords(Date.now()/1000-FD.live.since):'Working';
+/* B192: the message box's one row while the reader is scrolled up: its words, Working (its sheet) and Stop */
+function slimDraw(){
+  const ta=document.querySelector('[data-in]'), words=ta&&ta.value.trim(), on=FD.n&&sessWorks(FD.n);
+  setHTML($('slimbox'),`<div><button type="button" data-slimbox aria-label="Show the message box"><span class="pr" aria-hidden="true">&gt;</span><span${words?' class="draft"':''}>${esc(words||(ta?ta.placeholder:''))}</span></button>${on?`<button type="button" data-sheet="sesswork"><span class="livedot"></span><span data-workfor>Working</span></button><button type="button" data-halt="${esc(FD.n)}">${I.stop}Stop</button>`:''}</div>`);workDraw()}
+function workDraw(){for(const e of document.querySelectorAll('[data-workfor]')){const w=workFor();if(e.textContent!==w)e.textContent=w}}
+setInterval(()=>{if(!FD.shown||document.hidden)return;workDraw();if(Date.now()-FD.liveAt>=LIVE_EVERY)liveLoad()},1000);
+addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]')){FD.typed=Date.now();if(FD.slim)feedSlim(false)}});
+addEventListener('keydown',e=>{if(FD.slim&&e.target.matches&&e.target.matches('[data-in]')&&e.key!=='Escape')feedSlim(false)});
+/* the row above the box: what there is to say, each a sheet; a menu or a question has the key row in its place */
+function sessRow(n){
+  if(feedNow(n)!=='session')return '';
+  if(FD.foot===null&&FD.whole)return TOUCH()&&!S.keys?keyButtons():'';
+  const w=sessWorks(n), icon={work:'<span class="livedot"></span>',update:'<span class="bdot"></span>'};
+  setTimeout(slimDraw,0);
+  return `<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
+}
+const sessTasks=kind=>((FD.live||{}).tasks||[]).filter(t=>t.kind===kind);
+const taskWhen=t=>t.running?`running${t.at?' '+forWords(Date.now()/1000-t.at).replace(/ \d+s$/,''):''}`:'done';
+const sessIdle=()=>!!(FD.live&&FD.live.status==='idle');
+/* typing into the session, one step at a time: each waits for what the screen then says */
+const sessType=x=>{const t=feedTerm();if(t)t.input(x,true);return!!t};
+async function sessWait(ok,ms){for(const end=Date.now()+ms;Date.now()<end;){const t=feedTerm(), l=t?feedLines(t):[];const got=ok(l);if(got)return got;await new Promise(r=>setTimeout(r,60))}return null}
+const promptOf=l=>{const f=feedFoot(l,()=>true);return f&&!f.bash?f:null};
+async function setMode(key){
+  if(FD.task)return;
+  const label=FEED_MODES.find(m=>m[0]===key)[1], n=FD.n, now=l=>{const f=promptOf(l);return f&&f.mode};
+  if(!FD.foot||!FD.foot.mode)return toast('Its mode cannot be read off the window now',true);
+  FD.task='mode';
+  try{
+    for(let i=0,at=FD.foot.mode;at!==key;i++){
+      if(i>6||FD.n!==n||!sessType('\x1b[Z'))return toast(`The session did not go to ${label}`,true);
+      const was=at;at=await sessWait(l=>{const m=now(l);return m&&m!==was&&m},2000);
+      if(!at)return toast(`The session did not go to ${label}`,true);
+    }
+    toast(`Mode: ${label}`);
+  }finally{FD.task=''}
+}
+/* Stop on a shell, Open on an agent: through the agent CLI's own list (/tasks). The message box is never used */
+async function sessTask(t,what){
+  const n=FD.n, no=why=>toast(`${what==='stop'?'Not stopped':'Not opened'}: ${why}`,true);
+  if(FD.task)return;
+  if(!FD.foot||FD.foot.text||FD.foot.bash)return no('its prompt is not free');
+  const same=x=>t.name.startsWith(x.name)||x.name.startsWith(t.name), open=l=>l.some(x=>/x to stop|to select|Esc to close/i.test(x));
+  const away=async()=>{for(let i=0;i<3;i++){const t2=feedTerm();if(!t2||promptOf(feedLines(t2)))return;sessType('\x1b');await sessWait(promptOf,900)}};
+  FD.task=what;
+  try{
+    sessType('/tasks');await sessWait(l=>{const f=feedFoot(l,()=>false);return f&&/\/tasks/.test(f.text)},2000);sessType('\r');
+    if(!await sessWait(open,4000)){await away();return no('its list did not open')}
+    let lines=feedLines(feedTerm()), rows=taskLines(lines);
+    if(!rows.length&&!lines.some(l=>l.includes(t.name.slice(0,24)))){await away();return no('it is not in its list')}
+    if(rows.length){
+      const like=rows.filter(same), mine=like.find(x=>x.running)||like[0];
+      if(!mine||like.filter(x=>x.running).length>1){await away();return no(mine?'more than one has that name':'it is not in its list')}
+      for(let i=0;i<30;i++){
+        rows=taskLines(feedLines(feedTerm()));const on=rows.findIndex(x=>x.on), to=rows.findIndex(x=>same(x)&&x.running===mine.running);
+        if(to<0||on<0){await away();return no('it is not in its list')}
+        if(on===to)break;
+        sessType(on<to?'\x1b[B':'\x1b[A');await sessWait(l=>taskLines(l).findIndex(x=>x.on)!==on,900);
+        if(i===29||FD.n!==n){await away();return no('its list did not move')}
+      }
+      if(what==='open'){sessType('\r');return}
+    }else if(what==='open')return;
+    sessType('x');
+    const done=await sessWait(l=>promptOf(l)||!taskLines(l).some(x=>same(x)&&x.running)&&l.some(x=>/Background|No tasks/.test(x)),4000);
+    await away();liveLoad();
+    if(done)toast('Stopped');else no('it still runs');
+  }finally{FD.task=''}
+}
+const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
+function homeHTML(){
+  const ws=working_(), nx=upNext().slice(0,3);
+  return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
+    <div class="chips"><button class="chip" data-view="talk">${I.talk}Talk</button><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><span class="chips"><button class="chip" data-about="new">${I.plus}Add a task</button><button class="chip" data-about="newconcept">${I.plus}New concept</button></span></div>
+    ${needsSec()}
+    <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:emptyCard(S.snap.up===false?'No run is up.':'No agent is working right now.')}
+    <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):emptyCard('The queue is empty.')}
+    ${relCard()}</div>`;
+}
+/* B120: without ttyd, one line says a chat needs it to show its session, with this machine's install command */
+const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>A chat shows the real session with ttyd, which this machine lacks: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
+const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`,'','data-k="noneed"')}`;
+/* F185, F186: each release on its own line, with Drop until it starts; then New release */
+function relCard(){
+  const rs=planReleases(S.snap), drops=x=>obActs(x,'queue')&&rs.some(q=>!q.placeholder&&x.ctl.endsWith(':'+q.id));
+  const line=q=>{const r=q.release||q;
+    return `<div class="row" data-k="rel:${esc(q.id||'next')}"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><div class="small">${esc((q.id?q.id+' · ':'')+(r.words||'')+(r.note||''))}</div></div>${q.placeholder?'':actBtns(relDrop(q),q.id)}</div>${q.placeholder?'':actSure(relDrop(q),q.id)}`};
+  return obCards(drops)+(rs.length?card(rs.map(line).join(''),'','data-k="releases"'):'')+newReleaseCard();
+}
+/* F186: New release: says which release is open already, and then asks before it queues another */
+function newReleaseCard(){
+  const ws=working_(), said=S.snap.release_said||'';
+  const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait').map(controlOf).filter(Boolean);
+  const sure=acts.filter(c=>c.confirm&&S.sure===c.key).map(c=>ctlSure(c)).join('');
+  return obCards(x=>obActs(x,'release'))+card(`<div class="row"><div class="grow"><b>New release</b>${sure?'':`<div class="small" data-k="relsaid" data-v="${esc(said)}">${esc(said?said+'.':ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')}</div>`}</div></div>${sure||`<div class="btns">${acts.map((c,i)=>`<button class="btn ${i===0?'acc':''}${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`}`,'','data-k="release"')}
+/* F124: the Status view: one scroll in the TUI's order: needs you, the run (its slots and controls), usage, landed
+   lately, the release, then the run log */
+const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};
+function statusHTML(){
+  const log=(S.snap.log||[]).slice().reverse(), use=S.snap.usage||[], late=S.snap.lately||[];
+  return `<div class="col">${ttydLine()}${needsSec()}
+    <div class="sec">Run<span class="ln"></span></div>${controlsCard()}
+    <div class="sec">Usage<span class="ln"></span></div>${use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):emptyCard('No usage read yet.')}
+    <div class="sec">Landed lately<span class="ln"></span></div>${late.length?card(late.map(l=>`<div class="lrow" data-k="late:${esc(l.at+l.text)}"><span>${esc(l.text)}</span><span class="small">${esc(agoWords(l.at))}</span></div>`).join(''),'','data-k="late"'):emptyCard('Nothing has landed yet.')}
+    <div class="sec">Release<span class="ln"></span></div>${relCard()}
+    <div class="sec">Run log<span class="ln"></span></div><div class="chips" style="justify-content:flex-start"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="yesterday">${I.clock}Since yesterday</button></div>
+    ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev" data-k="log:${esc(l)}"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):emptyCard('Nothing in the run log yet.')}</div>`;
+}
