@@ -35,8 +35,8 @@ function takeTyped(){
 }
 function newsRefresh(){
   const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
-  if(said)return toast(said,true);
-  location.reload();
+  if(said){toast(said,true);return false}  // F401: what asked is told that it is held
+  location.reload();return true;
 }
 function takeSnap(s){
   if(!s||s.error){if(s&&s.error)toast(s.error,true);return}
@@ -462,7 +462,7 @@ document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closes
    a swipe down closes the sheet. B167: a touch is one thing until the finger lifts: one that scrolled never becomes a
    swipe, and a drawer swipe keeps the page from scrolling (so touchmove is not passive). Not from a text box, a sideways scroller, a held mic, a row being dragged or
    a mostly vertical move; Safari keeps its own back swipe at the very edge. */
-let SW=null;
+let SW=null, PULL=null;  // F401: PULL is the spinner of a pull to refresh
 /* F147: a panel goes on from where the finger left it, with its speed; .drag stays on (no transition) until it is there */
 function runStop(el){  // from where it is, the stylesheet's transition takes it on (or a finger)
   const a=el&&el._run;if(!a)return;
@@ -483,12 +483,13 @@ const scrollers=el=>{const a=[];for(;el&&el!==document.body;el=el.parentElement)
 const scrolled=a=>a.some(s=>{const [el,top,h]=s;if(el.scrollHeight===h)return el.scrollTop!==top;s[1]=el.scrollTop;s[2]=el.scrollHeight;return false});
 const drawerOn=()=>{const m=document.querySelector('.top .menu');return !!(m&&m.offsetParent)};
 document.addEventListener('touchstart',e=>{
-  if(SW&&SW.on&&!SW.sheet){if(e.touches.length>1)return;swipeEnd(false)}  // B167: a second finger does not end the lock
+  if(SW&&SW.on&&!SW.sheet){if(e.touches.length>1&&!SW.pl)return;swipeEnd(false)}  // B167: a second finger does not end the lock
   SW=null;const t=e.touches[0], el=e.target;
   if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop,.cview,.mic.hold')||DR&&DR.on)return;
   if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,ly:t.clientY,lt:e.timeStamp,v:0,base:0};return}
-  if(!drawerOn()||el.closest('#body,#dock')&&sideways(el))return;
-  SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0,id:t.identifier,scr:scrollers(el)};
+  const scr=scrollers(el), dr=drawerOn()&&!(el.closest('#body,#dock')&&sideways(el)), pull=pullPane(el,scr);
+  if(!dr&&!pull)return;
+  SW={dr,pull,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0,id:t.identifier,scr};
 },{passive:true});
 document.addEventListener('touchmove',e=>{
   if(!SW)return;
@@ -500,18 +501,47 @@ document.addEventListener('touchmove',e=>{
     SW.d=Math.max(0,SW.base+dy);$('sheet').style.transform=`translateY(${SW.d}px)`;return;
   }
   if(!SW.on&&!SW.lvl){if(!e.cancelable||scrolled(SW.scr)){SW=null;return}  // B167: it is a scroll
-    if(SW.open&&HB&&!atAll()&&!oneProject(H.projects)&&swipeTakes(dx,dy,false)==='drag'){SW.lvl=true;if(DR)dragEnd()}  // F150: up a level
-    else{const s=swipeTakes(dx,dy,SW.open);if(s==='wait')return;if(!s){SW=null;return}
-    SW.on=true;if(DR)dragEnd();SW.base=Math.max(-SW.w,grab($('side'),'m41',SW.open?0:-SW.w));$('side').classList.add('drag');$('scrim').classList.add('drag','on')}}
+    if(SW.dr&&SW.open&&HB&&!atAll()&&!oneProject(H.projects)&&swipeTakes(dx,dy,false)==='drag'){SW.lvl=true;if(DR)dragEnd()}  // F150: up a level
+    else{const s=swipeTakes(dx,dy,SW.open);if(s==='wait')return;
+    if(!s||!SW.dr){if(!SW.pull||!pullTakes(dx,dy)||!atTop(SW.scr)){SW=null;return}pullStart(SW)}
+    else{SW.on=true;if(DR)dragEnd();SW.base=Math.max(-SW.w,grab($('side'),'m41',SW.open?0:-SW.w));$('side').classList.add('drag');$('scrim').classList.add('drag','on')}}}
   if(e.cancelable)e.preventDefault();  // B167: no scroll until the finger lifts
+  if(SW.pl){pullMove(SW,dy);return}
   SW.d=dx;if(SW.lvl)return;
   if(e.timeStamp>SW.lt){SW.v=(t.clientX-SW.lx)/(e.timeStamp-SW.lt);SW.lx=t.clientX;SW.lt=e.timeStamp}
   const at=SW.px=Math.max(-SW.w,Math.min(0,SW.base+dx));
   $('side').style.transform=`translateX(${at}px)`;$('scrim').style.opacity=String(1+at/SW.w);
 },{passive:false});
+/* F401: pull to refresh: a touch that starts with all under it at the top and moves mostly down. The spinner follows the
+   finger; let go past PULL_AT it does what Refresh does, or springs back. Where that may start: the main view and the sidebar */
+const atTop=scr=>scr.every(s=>s[0].scrollTop<=0);
+function pullPane(el,scr){
+  const zoomed=(globalThis.visualViewport||{}).scale>1.01;  // a finger pans a zoomed page
+  return !S.obOpen&&$('cview').hidden!==false&&!zoomed&&atTop(scr)?el.closest('#body,#side'):null;
+}
+const pullCSS=at=>({transform:`translate(-50%,${at}px)`,opacity:Math.min(1,at/30)});
+const pullSay=t=>{const s=PULL.lastElementChild;if(s.textContent!==t)s.textContent=t};
+function pullStart(w){
+  if(!PULL){PULL=document.createElement('div');PULL.className='pull';PULL.setAttribute('role','status');PULL.innerHTML='<i></i><span></span>';document.body.append(PULL)}
+  w.on=w.pl=true;if(DR)dragEnd();
+  const r=w.pull.getBoundingClientRect();PULL.style.left=r.left+r.width/2+'px';PULL.style.top=r.top+'px';
+  w.base=Math.max(0,grab(PULL,'m42',0));PULL.classList.remove('go');
+}
+function pullMove(w,dy){
+  w.d=dy;w.px=w.base+pullAt(dy);const ready=dy>=PULL_AT;
+  PULL.classList.toggle('ready',ready);pullSay(ready?'Let go to refresh':'');
+  Object.assign(PULL.style,pullCSS(w.px));PULL.firstElementChild.style.transform=`rotate(${Math.round(w.px*4)}deg)`;
+}
+function pullEnd(w,done){
+  noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;
+  if(done&&w.d>=PULL_AT&&newsRefresh()){PULL.classList.add('go');pullSay('Refreshing');return}
+  PULL.classList.remove('ready');pullSay('');PULL.style.transform=PULL.style.opacity='';
+  springRun(PULL,springFrames(w.px,0,0).map(x=>Math.max(0,x)),pullCSS);
+}
 function swipeEnd(done){
   const w=SW;SW=null;if(w&&w.lvl){noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;if(done&&w.d>48)goUp();return}
   if(!w||!w.on)return;
+  if(w.pl){pullEnd(w,done);return}
   const still=performance.now()-w.lt>120, v=still?0:w.v;  // it rested before it was let go
   if(w.sheet){const el=$('sheet'), go=done&&(w.d>80||v>.5&&w.d>10);el.style.transform='';
     if(go)closeSheet();

@@ -877,5 +877,86 @@ def test_status_view_f124(tmp: Path) -> None:
     eq(got[21:23], [True, False], 'at the end, or not')
 
 
+
+PULL_DRIVER = r"""
+const page = require('fs').readFileSync(0, 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const on = {}, els = {}, S = {}, PD = {}, HB = '', render = () => {}, atAll = () => false, getComputedStyle = () => ({overflowX: 'auto', transform: ''});
+let DR = null, noClick = false, inside = ['#body'], held = false, refreshes = 0, reduced = false, wide = false, ran = [];
+const calm = () => reduced, shiftOf = () => ({m41: 0, m42: 0}), dragEnd = () => { DR = null }, closeSheet = () => { S.sheet = '' };
+const newsRefresh = () => { if (held) return false; refreshes++; return true };
+const elem = () => ({style: {}, offsetWidth: 280, scrollTop: 0, set: new Set(), setAttribute(k, v) { this[k] = v }, append() {},
+  classList: {add() {}, remove() {}, toggle() {}}, firstElementChild: {style: {}}, lastElementChild: {textContent: ''},
+  animate(f) { ran.push(f); return {cancel() {}} }, getBoundingClientRect: () => ({left: 0, top: 50, width: 400})});
+const $ = k => els[k] = els[k] || elem();
+const document = {body: {append() {}}, querySelector: () => ({offsetParent: wide ? null : {}}),
+  createElement() { const p = elem(), c = p.set; p.classList = {add: x => c.add(x), remove: x => c.delete(x), toggle: (x, y) => y ? c.add(x) : c.delete(x)}; return p },
+  addEventListener(t, f) { (on[t] = on[t] || []).push(f) }};
+const box = {scrollTop: 0, scrollHeight: 3000, clientHeight: 600, scrollWidth: 400, clientWidth: 400, parentElement: document.body};
+const el = {scrollHeight: 20, clientHeight: 20, parentElement: box, closest: s => s.split(',').some(x => inside.includes(x)) ? elem() : null};
+let now = 0;
+const fire = (t, x, y, n, o = {}) => { let kept = 0;
+  on[t].forEach(f => f({target: el, touches: Array(n).fill().map((_, i) => ({identifier: i, clientX: x, clientY: y})), timeStamp: now += 100,
+    cancelable: !o.late, preventDefault() { kept = 1 }}));
+  return kept };
+eval(logic + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'", page.indexOf('/* F124: a swipe right anywhere'))) + `
+// a touch through these [dx, dy, options]: the moves it kept, the refreshes, whether it sprang back, how far the spinner got
+function touch(moves, o = {}) {
+  S.drawer = !!o.drawer; S.sheet = o.sheet || ''; S.obOpen = !!o.pop; DR = null; inside = o.inside || ['#body']; held = !!o.held; reduced = !!o.calm; wide = !!o.wide;
+  box.scrollTop = o.top || 0; $('cview').hidden = !o.concept; refreshes = 0; ran = []; $('side').style.transform = ''; if (PULL) { PULL.style = {}; PULL.set.clear() }
+  fire('touchstart', 100, 300, o.fingers || 1);
+  const kept = moves.map(([dx, dy, m = {}]) => { if (m.top) box.scrollTop = m.top; if (m.hold) DR = {ready: true, hold: 1};
+    if (m.second) { fire('touchstart', 9, 9, 2); return 's' } return fire('touchmove', 100 + dx, 300 + dy, 1, m) }).join('');
+  const mid = PULL ? [PULL.style.transform || '', PULL.set.has('ready'), PULL.lastElementChild.textContent] : [];
+  fire(o.end || 'touchend', 0, 0, 0); if (SW) kept += '!';
+  return {kept, refreshes, back: ran.length, mid, go: !!PULL && PULL.set.has('go'), drawer: S.drawer, sheet: S.sheet, role: PULL && PULL.role, noClick};
+}
+const down = [[0, 5], [1, 9], [2, 60], [3, 90]];
+const out = {
+  pull: touch(down), side: touch(down, {inside: ['#side'], drawer: true}), wide: touch(down, {wide: true}),
+  short: touch([[0, 9], [0, 60]]), undone: touch([[0, 9], [0, 90], [0, 30]]), cancel: touch(down, {end: 'touchcancel'}),
+  second: touch([[0, 9], [0, 90], [0, 0, {second: true}], [0, 95]]), twoFingers: touch(down, {fingers: 2}),
+  held: touch(down, {held: true}), calm: touch(down, {held: true, calm: true}),
+  up: touch([[0, -9], [0, 90]]), sidewaysLeft: touch([[-12, 2], [0, 90]]), slant: touch([[9, 10], [9, 90]]), wideSide: touch([[12, 2], [0, 90]], {wide: true}),
+  scrolledList: touch(down, {top: 40}), scrolledFirst: touch([[0, 5, {top: 3}], [0, 90]]), begun: touch([[0, 9, {late: true}], [0, 90]]),
+  sheet: touch(down, {sheet: 'run'}), popup: touch(down, {pop: true}), concept: touch(down, {concept: true}), row: touch([[0, 5], [0, 9, {hold: true}], [0, 90]]),
+  box: touch(down, {inside: ['#body', 'textarea']}), iframe: touch(down, {inside: ['#body', 'iframe']}), dock: touch(down, {inside: ['#dock']}), terminal: touch(down, {inside: ['#feedtouch']}),
+  drawerSwipe: touch([[20, 0], [220, 90]]), sheetSwipe: touch([[0, 20], [0, 120]], {sheet: 'run', inside: ['#sheet']}),
+};
+globalThis.visualViewport = {scale: 2}; out.zoomed = touch(down);
+out.logic = [PULL_AT, pullAt(0), pullAt(-20), pullAt(70) < 70 && pullAt(200) > pullAt(70)];
+console.log(JSON.stringify(out));process.exit(0)`);
+"""
+
+
+def test_pull_refresh_f401(tmp: Path) -> None:
+    """F401: on touch, a pull down past the top refreshes once, as Refresh does; anything else is left alone."""
+    page = W.page_html().decode()
+    css = page.split('<style>', 1)[1].split('</style>', 1)[0]
+    check('html,body{height:100%;overscroll-behavior:none;overflow:hidden' in css and 'overscroll-behavior:contain' in css, 'the lock stays (B160)')
+    news = page.split('function newsRefresh(){', 1)[1].split('\n}', 1)[0]
+    check('return false' in news and 'location.reload();return true' in news, 'Refresh says whether it is held')
+    if not shutil.which('node'):
+        print('  (no node here: the pull script test is skipped)')
+        return
+    p = subprocess.run(['node', '-e', PULL_DRIVER], input=page, capture_output=True, text=True, encoding='utf-8', timeout=30)
+    check(p.returncode == 0, 'the pull script runs', p.stderr)
+    got = json.loads(p.stdout or '{}')
+    for k in ('pull', 'side', 'wide'):
+        eq([got[k][x] for x in ('kept', 'refreshes', 'back', 'go')], ['0111', 1, 0, True], f'{k}: refreshes once, kept from scrolling once it is a pull')
+    eq(got['pull']['mid'][1:] + [got['pull']['role']], [True, 'Let go to refresh', 'status'], 'ready past the threshold, and said')
+    check(got['pull']['noClick'], 'letting go presses nothing')
+    for k in ('short', 'undone', 'cancel', 'held'):
+        eq([got[k][x] for x in ('refreshes', 'back', 'go')], [0, 1, False], f'{k}: springs back')
+    eq([got['second'][x] for x in ('kept', 'refreshes', 'back')], ['11s0', 0, 1], 'a second finger ends it')
+    eq([got['calm'][x] for x in ('refreshes', 'back', 'go')], [0, 0, False], 'calm(): back at once')
+    for k in ('up', 'sidewaysLeft', 'slant', 'wideSide', 'scrolledList', 'scrolledFirst', 'begun', 'sheet', 'popup', 'concept', 'row',
+              'box', 'iframe', 'dock', 'terminal', 'twoFingers', 'zoomed'):
+        check('1' not in got[k]['kept'] and not got[k]['refreshes'] and not got[k]['back'], f'{k}: no pull', got[k])
+    eq([got['drawerSwipe'][x] for x in ('kept', 'refreshes', 'drawer')], ['11', 0, True], 'a drawer swipe still opens the drawer')
+    eq([got['sheetSwipe'][x] for x in ('refreshes', 'sheet')], [0, ''], 'a sheet swipe still closes the sheet')
+    eq(got['logic'], [70, 0, 0, True], 'the threshold, and the spinner resists')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401)]))

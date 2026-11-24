@@ -28,6 +28,9 @@ function swipeTakes(dx,dy,open){
   if(Math.hypot(dx,dy)<8)return 'wait';  // B167: under the 10px at which iOS begins a scroll, which nothing can cancel then
   return Math.abs(dx)>Math.abs(dy)*1.7&&(open?dx<0:dx>0)?'drag':'';
 }
+/* F401: past the first 8px, is a finger moving (dx, dy) a pull down; how far it must go for letting go to refresh; and how
+   far the spinner then is (it resists) */
+const pullTakes=(dx,dy)=>dy>Math.abs(dx)*1.7, PULL_AT=70, pullAt=dy=>96*(1-Math.exp(-Math.max(0,dy)/120));
 const WAVE='<span class="wave" aria-hidden="true"><i></i><i></i><i></i></span>';  // F147: at work
 /* F147: a spring with no overshoot of its own, let go at from with speed v (px/ms): where it is on each frame (16 ms) to to */
 function springFrames(from,to,v){
