@@ -7,7 +7,7 @@ const SHEETS={
       const bad=c.key==='stop_now'||c.key==='wip_drop', busy=ctlBusy(c.key)?' busy':'';
       if(c.needs==='n')return `<div class="it setrow"><span class="slotsn"><input type="number" min="1" max="99" inputmode="numeric" data-slots-n data-f="slotsn" aria-label="Slots" placeholder="N"><button class="btn${busy}" data-ctl="${esc(c.key)}">${esc(label)}</button></span><span class="k">${esc(c.tui)}</span></div>`;
       if(c.fix&&!c.each){const on=S.fixOpen===c.key;
-        return `<button class="it${bad?' bad':''}" data-fix="${esc(c.key)}" aria-expanded="${on}"><span>${esc(label)}${on?'':'…'}</span><span class="k">${esc(c.tui)}</span></button>${on?choices.map(x=>S.sure===c.key+':'+x.id?ctlSure(c,x.id):`<div class="it setrow"><span class="grow"><span class="ell">${esc(x.label)}</span><span class="small">${esc(x.id)}</span></span><button class="btn${ctlBusy(c.key,x.id)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(x.id)}">${esc({resume:'Resume',wip_show:'Show',wip_restore:'Restore',wip_drop:'Drop'}[c.key]||c.label)}</button></div>`).join(''):''}`}
+        return `<button class="it${bad?' bad':''}" data-k="fix:${esc(c.key)}" data-fix="${esc(c.key)}" aria-expanded="${on}"><span>${esc(label)}${on?'':'…'}</span><span class="k">${esc(c.tui)}</span></button>${on?foldIn('fix:'+c.key,choices.map(x=>S.sure===c.key+':'+x.id?ctlSure(c,x.id):`<div class="it setrow"><span class="grow"><span class="ell">${esc(x.label)}</span><span class="small">${esc(x.id)}</span></span><button class="btn${ctlBusy(c.key,x.id)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(x.id)}">${esc({resume:'Resume',wip_show:'Show',wip_restore:'Restore',wip_drop:'Drop'}[c.key]||c.label)}</button></div>`).join('')):''}`}
       return S.sure===c.key?ctlSure(c):`<button class="it${bad?' bad':''}${busy}" data-ctl="${esc(c.key)}"><span>${esc(label)}</span><span class="k">${esc(c.tui)}</span></button>`;
     }).join('')}`).join('')||'<div class="small">Nothing to do here right now.</div>'}`;
   },
@@ -38,11 +38,16 @@ Object.assign(SHEETS,{
     return `<h2>Update the agent CLI</h2>${cmd&&cmd!=='…'?`<div class="small">This runs on ${esc(S.snap.machine||'the machine of the run')}:</div><pre class="out">${esc(cmd)}</pre><div class="btns"><button class="btn pri${busyUp?' busy':''}" data-update="${esc(cmd)}">Update</button></div>`:'<div class="small">Its command does not fit the window: turn the phone, or use a wider one.</div>'}<div class="small">Open chats keep their version until they restart.</div>${own?`<div class="btns"><button class="btn" data-restart="${esc(FD.n)}"${sessIdle()?'':' disabled'}>Restart chat</button></div>${sessIdle()?'':'<div class="small">It can restart once it has nothing running.</div>'}`:''}`},
 });
 SHEETS.need=needSheet;  // F162
-function openSheet(name,arg){if(name==='talk')loadVoices();runStop($('sheet'));S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;scrollStop($('sheet'));render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
+/* F189b: a sheet took the place of another: its edges go on from where that one's were, and its words fade in */
+function sheetOver(el,box){
+  shotEnd();const r=el.getBoundingClientRect();shotEdges(el,r.top-box.top,box.bottom-r.bottom);
+  for(const x of el.children)if(!x.matches('.grab'))moAnim(x,[{opacity:0},{opacity:1}],{ease:'--ease',dur:'--dur'});
+}
+function openSheet(name,arg){const over=S.sheet&&$('sheet').animate&&!calm()&&shotSeen($('sheet'));MO.folded=0;if(name==='talk')loadVoices();runStop($('sheet'));S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;scrollStop($('sheet'));render(true);$('sheet').scrollTop=0;if(over)sheetOver($('sheet'),over);$('sheet').focus({preventScroll:true})}
 /* F162a2: where focus goes back to: what opened the sheet, or a Needs you card drawn again since */
 function sheetOpener(){const b=sheetBack, id=b&&b.dataset&&b.dataset.needopen;
   return !b||b.isConnected||!id?b:[...document.querySelectorAll('[data-needopen]')].find(x=>x.dataset.needopen===id)}
-function closeSheet(){if(!S.sheet)return;runStop($('sheet'));S.sheet='';S.sure=null;render(true);const b=sheetOpener();if(b&&b.isConnected&&b.focus)b.focus({preventScroll:true});sheetBack=null}
+function closeSheet(){if(!S.sheet)return;MO.folded=0;runStop($('sheet'));S.sheet='';S.sure=null;render(true);const b=sheetOpener();if(b&&b.isConnected&&b.focus)b.focus({preventScroll:true});sheetBack=null}
 /* B222a: the sheet's markup; a Needs you sheet with a field in use is patched around that field, which stays the same
    element: a new one under the keyboard loses its autocorrect and the letters on their way */
 function sheetHTML(el,h){
@@ -77,12 +82,24 @@ function sameAttrs(x,y){
   for(const k of x.getAttributeNames())if(!y.hasAttribute(k))x.removeAttribute(k);
   for(const k of y.getAttributeNames())if(x.getAttribute(k)!==y.getAttribute(k))x.setAttribute(k,y.getAttribute(k));
 }
+/* F189b: a press in the sheet made it longer or shorter: its edges and its parts go there */
+function sheetMoves(el,box,spot,had){
+  const r=el.getBoundingClientRect();shotEdges(el,r.top-box.top,box.bottom-r.bottom);
+  enter(el,had);glide(el,el,spot);leaving(el);
+}
 function sheetDraw(){
   const el=$('sheet');
   if(S.sheet==='need'&&!needOf(S.sheetArg)){S.sheet='';S.sure=null;sheetBack=null}  // F162: answered, or it left Needs you
-  if(S.sheet!=='need')shotEnd();  // F189
+  if(el._sheet!==S.sheet){el._sheet=S.sheet;if(S.sheet!=='need')shotEnd()}  // F189: not by a refresh: F189b's edges go on
   if(S.sheet)el.classList.toggle('dlg',S.sheet==='need');
-  if(S.sheet&&SHEETS[S.sheet]){const put=keepScroll(el), f=keepFields(el);if(sheetHTML(el,'<div class="grab"></div>'+SHEETS[S.sheet]())){f();put()}}  // closing, it keeps its words while it slides
+  if(S.sheet&&SHEETS[S.sheet]){
+    const h='<div class="grab"></div>'+SHEETS[S.sheet](), drawn=el._h!==h;
+    const spot=drawn&&el.animate&&folding()?glideSpot(el):null, box=spot&&shotSeen(el), had=spot&&keysIn(el);  // F189b
+    if(spot)shotEnd();
+    if(drawn&&el._gone)for(const g of el._gone)g.remove();
+    const put=keepScroll(el), f=keepFields(el);
+    if(sheetHTML(el,h)){f();put();if(spot)sheetMoves(el,box,spot,had)}
+  }  // closing, it keeps its words while it slides
   if(S.sheet==='need')for(const x of el.querySelectorAll('[data-f^="askre:"]')){const v=S.f[x.dataset.f]||'';if(x.value!==v)x.value=v}  // B222a: a sent reply's words go
   if(S.sheet!=='device'&&S.sheet!=='devsecrets')toolForget();  // F169: a typed secret goes with its sheet
   giveForget(S.sheet==='need'?S.sheetArg:'');  // F175a

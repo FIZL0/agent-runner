@@ -12,8 +12,16 @@ function chatRow(s,quiet){
 }
 /* F187: on touch, the chat row opened by its three dots: one at a time, its buttons in the row, Delete in the dots' place.
    A tap anywhere else only closes it, and so do Esc, one of its buttons and the drawer closing */
-function rowExpand(n){S.rowOpen=n;render(true);const b=document.querySelector('.rowacts button');if(b)b.focus({preventScroll:true})}
-function rowShut(){const n=S.rowOpen;S.rowOpen='';render(true);const b=document.querySelector(`[data-rowmenu="${CSS.escape(n)}"]`);if(b)b.focus({preventScroll:true})}
+function rowExpand(n){S.rowOpen=n;render(true);const b=document.querySelector('.rowacts button');if(b){b.focus({preventScroll:true});if(b.animate)moAnim(b.parentElement,[{transform:'translateX(24px)',opacity:0},{transform:'none',opacity:1}],FOLD_MO)}}
+function rowShut(){const n=S.rowOpen, was=document.querySelector('.rowacts');S.rowOpen='';render(true);const b=document.querySelector(`[data-rowmenu="${CSS.escape(n)}"]`);if(b){b.focus({preventScroll:true});if(b.animate)rowActsOut(b.parentElement,was)}}
+/* F189b: a copy of a closed row's buttons goes back; the dots come in their place */
+function rowActsOut(row,was){
+  const g=was&&row&&!calm()&&was.cloneNode(true);if(!g)return;
+  g.className='rowacts gone0';g.style.left='auto';g.setAttribute('aria-hidden','true');g.inert=true;for(const x of g.querySelectorAll('*'))for(const k of Object.keys(x.dataset))delete x.dataset[k];
+  row.appendChild(g);
+  const a=moAnim(g,[{transform:'none',opacity:1},{transform:'translateX(24px)',opacity:0}],{...FOLD_MO,fill:'forwards'});a.onfinish=a.oncancel=()=>g.remove();
+  moAnim(row.querySelector('.rowmenu'),[{opacity:0},{opacity:1}],{ease:'--ease',dur:'--dur'});
+}
 function rowTap(e){
   if(!S.rowOpen||e.target.closest('.rowacts button,[data-rowmenu]'))return;
   e.preventDefault();e.stopPropagation();rowShut();
