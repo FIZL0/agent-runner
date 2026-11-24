@@ -1272,7 +1272,7 @@ def test_settled_about_chat():
 
 
 def test_settled_filed():
-    print('F209a: a chat is about the concept or DECIDE it filed itself')
+    print('F209a, F211: a chat is about the concept, restyle or DECIDE it filed itself')
     from agent_runner import plan as P
     url = 'https://claude.ai/code/artifact/aaa'
     for tid, by, told in (('K1', 4, [6]), ('F1', 4, [6]), ('K1', 0, [6]), ('K1', 6, []), ('F1', 6, [])):
@@ -1287,6 +1287,19 @@ def test_settled_filed():
             w.look(w.base + 400)
             w.look(w.base + 4000)
             eq([n for n, _ in w.typed], told, f'approve {tid} by c{by}: the filer is told once, not of its own')
+            check(all(f'{tid} was approved at ' in t for _, t in w.typed), 'worded', w.typed)
+    for tid, by, told in (('K1', 4, [6]), ('F1', 4, [6]), ('K1', 0, [6]), ('K1', 6, []), ('F1', 6, [])):
+        with settled_world() as w:
+            K.control_give(6, f'{w.R.ROOT.name} · 6')
+            eq(w.plan('restyle', 'rounder buttons', '--page', url, by=6), 0, 'c6 files the restyle')
+            eq(w.Z.about(6, 's6', {}), {'K1', 'F1'}, 'about it and its build')
+            w.look()
+            eq(w.typed, [], 'filing it says nothing')
+            eq(w.plan('approve', tid, 'go', by=by), 0, 'approved')
+            w.look()
+            w.look(w.base + 400)
+            w.look(w.base + 4000)
+            eq([n for n, _ in w.typed], told, f'approve {tid} of a restyle by c{by}: the filer is told once, not of its own')
             check(all(f'{tid} was approved at ' in t for _, t in w.typed), 'worded', w.typed)
     with settled_world() as w:
         K.control_give(6, f'{w.R.ROOT.name} · 6')

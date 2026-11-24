@@ -3169,6 +3169,7 @@ def _p_restyle(a, x):
         return 2
     got = restyle(style, opts['page'], opts.get('from') or '', globs, ids, split('files'),
                   running=lambda t: run_on(x.c, t), todo=x.todo, done=x.done)
+    _filed_here(x.c, got['rid'], got['build'])
     RESTYLE_PARK[:] = [f'{t}\t{got["rid"]}\t{style}' for t in got['park']]
     said = [f'restyle {got["rid"]} filed (its build {got["build"]} waits for the OK on {opts["page"]})']
     if got['held']:

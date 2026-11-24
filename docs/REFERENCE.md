@@ -168,7 +168,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   against a real limit yet: it was checked against transcripts only (the real ones of 2026-11-22 were read).
 - **Items settled elsewhere**: a control session about a task or a Needs you item (its title starts with the id, or it was
   opened from that item: the first message of the chat gives it; or it filed the item itself: a concept, with its build task, by
-  `plan concept`, a `plan block ID "DECIDE: …"`, or its own open question, which the run filed when it
+  `plan concept`, a restyle, with its build task, by `plan restyle`, a `plan block ID "DECIDE: …"`, or its own open question, which the run filed when it
   closed the chat, once that is open again; kept per session id in `<notes>/settled/<session id>.filed`, so another
   session that gets the same number is not it) is told, once per change, when a command settles or changes
   that item: plan drop, change, edit, confirm, approve, revise, shelve, unshelve, restore or unblock; a tick of an item under
