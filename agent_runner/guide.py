@@ -413,6 +413,10 @@ What the person asks, and what you run:
 
 """ + NO_BANG + """
 
+**Keys and passwords.** Never ask for a key, passphrase or password in chat, and never write one down: they are entered \
+on the run app's Tools page, which keeps them out of every chat. Give its link (`{cmd} device link`). A machine or \
+test rig agents should reach is added there too.
+
 **Settings.** When what the person says fits a runner.toml setting, read `guide settings` first, then recommend the one change in one line and ask.
 Never `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: work is lost.
 """

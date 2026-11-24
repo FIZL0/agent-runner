@@ -54,7 +54,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from agent_runner import home_screen
+from agent_runner import devices, home_screen
 from agent_runner.session_frame import tunnel
 
 PORT = 8770
@@ -407,6 +407,7 @@ class HomeHandler(BaseHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0)
         except ValueError:
             n = 0
+        self.body_read = True
         return self.rfile.read(n) if n > 0 else b''
 
     def route(self, method: str) -> None:
@@ -476,9 +477,12 @@ class HomeHandler(BaseHTTPRequestHandler):
                 self.body()
                 self.send(503, {'ok': False, 'out': 'Runner Home is restarting on a new version; try again'})
             return
+        self.body_read = False
         try:
             self.route(method)
         finally:
+            if method == 'POST' and not self.body_read:  # F169: else it is taken for the next request, and said back
+                self.close_connection = True
             self.server.leave()
 
     def proxy(self, method: str) -> None:
@@ -559,7 +563,9 @@ class HomeHandler(BaseHTTPRequestHandler):
         """The request goes on to 127.0.0.1:PORT at TARGET; the answer streams back as it comes. `gone` answers when
         the run does not."""
         data = self.body()
-        headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP | {'host', 'x-token'}}
+        headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP | {'host', 'x-token', devices.CHANNEL.lower()}}
+        # F169: the run sees only Home's loopback connection, so Home says how the browser's came
+        headers[devices.CHANNEL] = devices.channel(self.client_address[0], self.headers, method == 'POST') or 'ok'
         conn = http.client.HTTPConnection('127.0.0.1', port, timeout=60)
         try:
             conn.request(method, target, body=data if method == 'POST' else None, headers=headers)

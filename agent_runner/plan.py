@@ -2925,9 +2925,9 @@ def _needs_wrong(text: str) -> str:
 
 def _tool_waits(c, st_todo) -> dict[str, str]:
     """F168: {task: 'waits for iPhone 15, held by F389, 12 min'}; {} without shared tools, or when they cannot be read."""
-    if not c.run.get('tools') and not any(c.notes().glob('*.wait')):  # B184: or a wait for memory
-        return {}
     from agent_runner import shared_tools, state
+    if not shared_tools.specs(c) and not any(c.notes().glob('*.wait')):  # B184: or a wait for memory
+        return {}
     try:
         if state.C is None:
             state.init()

@@ -21,6 +21,9 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
                                  (session_now.live)
     GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
     GET  /settings?t=TOKEN       F97: every setting, its value, source and default (`ui_model.settings`)
+    GET  /tools?t=TOKEN          F169: every tool and device of the Tools page, with no secret (`devices.page`)
+    POST /tools?t=TOKEN          F169: {"op": …}: a device added, edited, tested, its secrets set (`devices.post`); only
+                                 over https or loopback, and from this page
     GET  /task/ID?t=TOKEN        F85: task ID's whole text (`plan ID`), for its row folded open
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
     GET  /speech?t=TOKEN         F158: the voices this machine can read Talk's replies with (`speech.voices`)
@@ -52,7 +55,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from agent_runner import home_screen, plat, session_frame, session_now, session_theme, speech
+from agent_runner import devices, home_screen, plat, session_frame, session_now, session_theme, speech
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -991,6 +994,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
         if path == '/settings':  # F97
             return self.send(200, json.dumps(U.settings(), ensure_ascii=False, default=str))
+        if path == '/tools':  # F169
+            try:
+                got = devices.page(S.C, devices.channel(self.client_address[0], self.headers, False, behind=True))
+            except Exception as e:  # noqa: BLE001 - an answer, so the page says why
+                got = {'ok': False, 'out': f'The tools could not be read ({type(e).__name__}).'}
+            return self.send(200, json.dumps(got, ensure_ascii=False))
         if path == '/speech':  # F158
             return self.send(200, json.dumps(speech.voices()))
         if path.startswith('/task/'):  # F85
@@ -1003,13 +1012,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if not self.allowed():
+            self.unread()
             return self.refuse()
         if urlsplit(self.path).path == '/upload':
             return self.upload()
         if urlsplit(self.path).path == '/speech':
             return self.speech()
+        if urlsplit(self.path).path == '/tools':
+            return self.tools()
         if urlsplit(self.path).path != '/act':
-            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /upload or /speech'}))
+            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /upload, /speech or /tools'}))
         try:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
             name, args = str(body.get('name', '')), body.get('args') or {}
@@ -1064,6 +1076,33 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as e:
             return self.send(500, json.dumps({'ok': False, 'out': f'could not keep the upload: {e}'}))
         self.send(200, json.dumps(r, ensure_ascii=False))
+
+    def unread(self) -> None:
+        """F169: a refused request's body may hold a secret. It is read and thrown away (a little of it), and the
+        connection closes: left there it would be taken for the next request, and its error would say it back."""
+        self.close_connection = True
+        try:
+            n = int(self.headers.get('Content-Length') or 0)
+            if 0 < n <= devices.BODY_MAX:
+                self.rfile.read(n)
+        except (ValueError, OSError):
+            pass
+
+    def tools(self) -> None:
+        """F169: a device changed on the Tools page (`devices.post`). Refused unread when it may not carry a secret."""
+        try:
+            size = int(self.headers.get('Content-Length') or 0)
+        except ValueError:
+            size = 0
+        why = devices.channel(self.client_address[0], self.headers, behind=True)
+        if why or not 0 < size <= devices.BODY_MAX or \
+                (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
+            self.unread()
+            return self.send(403 if why else 400, json.dumps(devices.refusal(why) if why else
+                                                             {'ok': False, 'out': 'bad request'}))
+        code, got = devices.post(self.rfile.read(size), S.C)
+        self.server.snaps.at = 0.0
+        self.send(code, json.dumps(got, ensure_ascii=False))
 
     def speech(self) -> None:
         """F158: a clip of Talk's reply, made on this machine; the page reads with the browser's own voice when

@@ -29,7 +29,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import plan as P, plat
+from agent_runner import devices, plan as P, plat
 from agent_runner import state as S
 from agent_runner.state import git, log
 
@@ -51,12 +51,14 @@ EV_WAITS = 'tool waited'   # task `id` gave up its slot to wait for a tool
 
 
 def specs(c=None) -> dict[str, dict]:
-    """{name: {check, label, connect}} of the project's shared tools; {} without the setting."""
+    """{name: {check, label, connect, description, exclusive, device}} of the project's shared tools: [run.tools], and
+    the devices it uses (F169; only an `exclusive` one is for one task at a time)."""
     c = c or S.C
-    out = {}
+    out = devices.specs(c) if c else {}
     for name, t in ((c.run.get('tools') if c else None) or {}).items():
         label = t.get('label') or name
-        out[name] = {'check': t['check'], 'label': label, 'connect': t.get('connect') or f'Connect {label}'}
+        out[name] = {'check': t['check'], 'label': label, 'connect': t.get('connect') or f'Connect {label}',
+                     'description': t.get('description', ''), 'exclusive': True, 'device': False}
     return out
 
 
@@ -66,7 +68,7 @@ def unknown_names(names, c=None) -> str:
     if not (bad := [n for n in names if n not in known]):
         return ''
     return (f'no shared tool named {", ".join(bad)}; ' +
-            (f'the project has: {", ".join(known)}' if known else 'this project names none ([run.tools] in runner.toml)'))
+            (f'the project has: {", ".join(known)}' if known else 'this project names none ([run.tools] in runner.toml, or a device on the Tools page)'))
 
 
 def label(name: str, c=None) -> str:
@@ -194,6 +196,8 @@ def check(name: str, c=None) -> tuple[str, str]:
     """Run tool `name`'s check now, in the main checkout: (its state, who holds it or why it is not to be had)."""
     from agent_runner.config import main_checkout
     c = c or S.C
+    if specs(c)[name]['device']:
+        return devices.check(name, c)
     # files, not pipes: a daemon the check leaves behind (adb's server) would hold a pipe open past the timeout
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
@@ -343,6 +347,35 @@ def start(free: list[int] = ()) -> None:
         WAKES[name] = threading.Event()
         t = THREADS[name] = threading.Thread(target=_watch, args=(name, WAKES[name]), name=f'tool:{name}', daemon=True)
         t.start()
+    SYNC[:] = [threading.Thread(target=_sync, name='tools:sync', daemon=True)]
+    SYNC[0].start()
+
+
+SYNC: list[threading.Thread] = []
+SYNC_EVERY = 5.0  # s between two looks at which devices the project uses
+
+
+def _sync() -> None:
+    """F169: a device that comes or goes on the Tools page while the run is up gets or loses its checker."""
+    while not STOP.wait(SYNC_EVERY):
+        try:
+            sync()
+        except Exception as e:  # noqa: BLE001 - the next look tries again
+            log(f'shared tools: {e}')
+
+
+def sync() -> None:
+    known = specs()
+    for name in [n for n in THREADS if n not in known]:
+        WAKES[name].set()  # `_watch` sees it is gone
+        THREADS.pop(name, None)
+        with LOCK:
+            READINGS.pop(name, None)
+    for name in known:
+        if name not in THREADS:
+            WAKES[name] = threading.Event()
+            THREADS[name] = threading.Thread(target=_watch, args=(name, WAKES[name]), name=f'tool:{name}', daemon=True)
+            THREADS[name].start()
 
 
 def stop(keep: bool = False) -> None:
@@ -350,8 +383,9 @@ def stop(keep: bool = False) -> None:
     STOP.set()
     for w in WAKES.values():
         w.set()
-    for t in THREADS.values():
+    for t in [*THREADS.values(), *SYNC]:
         t.join(1)
+    SYNC.clear()
     for d in (THREADS, WAKES, READINGS, ASKED):
         d.clear()
     IGNORED.clear()
@@ -360,7 +394,7 @@ def stop(keep: bool = False) -> None:
 
 
 def _watch(name: str, wake: threading.Event) -> None:
-    while not STOP.is_set():
+    while not STOP.is_set() and WAKES.get(name) is wake and name in specs():
         wake.clear()
         try:
             once(name)
@@ -417,7 +451,8 @@ def hold(tid: str, needs: list[str], users: dict[str, str], before: dict[str, st
             if why := memory_hold(tid):
                 return name, why
             continue
-        if (u := users.get(name)) and u != tid:
+        shared = not (specs().get(name) or {}).get('exclusive', True)  # F169: a device for several tasks at once
+        if (u := users.get(name)) and u != tid and not shared:
             return name, held_by(u)
         r = now(name)
         if r is None:
@@ -428,7 +463,7 @@ def hold(tid: str, needs: list[str], users: dict[str, str], before: dict[str, st
             IGNORED.add(name)
             log(f'{specs()[name]["label"]}: its check has failed for {UNKNOWN_HOLD / 60:g} min; tasks that need it '
                 f'start without it')
-        if w := before.get(name):
+        if (w := before.get(name)) and not shared:
             return name, f'{w} goes first'
     return None
 
@@ -723,16 +758,19 @@ def pending(tried=()) -> bool:
 
 def used(ls: list[str], st: dict) -> dict[str, tuple[str, float]]:
     """{tool: (the running task that has it, since when or 0)}, by the tasks' lines and waits, not the checks."""
-    need = {tid: needs_of(ls[i]) for _, _, tid, _, i in P.iter_tasks(ls)} if specs() else {}
+    known = specs()
+    need = {tid: needs_of(ls[i]) for _, _, tid, _, i in P.iter_tasks(ls)} if known else {}
     out: dict[str, tuple[str, float]] = {}
     for n, tid in (st.get('running') or {}).items():
         for name in [*need.get(tid, []), *([h] if (h := holding(tid)) else [])]:
-            out.setdefault(name, (tid, (st.get('since') or {}).get(n, 0)))
+            if (known.get(name) or {}).get('exclusive', True):
+                out.setdefault(name, (tid, (st.get('since') or {}).get(n, 0)))
     return out
 
 
-def rows(ls: list[str] | None = None, st: dict | None = None, t: float | None = None) -> list[dict]:
-    """Each shared tool for status and the pages: {name, label, state, words, waits}; [] without the setting."""
+def rows(ls: list[str] | None = None, st: dict | None = None, t: float | None = None, checked: bool = False) -> list[dict]:
+    """Each shared tool for status and the pages: {name, label, state, words, waits}, with `checked` also `at`, when it
+    was last checked; [] without the setting."""
     if not specs():
         return []
     ls = P.lines(S.C.todo) if ls is None else ls
@@ -746,7 +784,8 @@ def rows(ls: list[str] | None = None, st: dict | None = None, t: float | None = 
         n = sum(name in ts for ts in ws.values())
         if n and said != FREE:
             said += f', {n} task{"s wait" if n != 1 else " waits"}'
-        out.append({'name': name, 'label': spec['label'], 'state': r['state'] if r else '', 'words': said, 'waits': n})
+        out.append({'name': name, 'label': spec['label'], 'state': r['state'] if r else '', 'words': said, 'waits': n,
+                    **({'at': r.get('at', 0) if r else 0} if checked else {})})
     return out
 
 
@@ -774,7 +813,7 @@ def wait_words(ls: list[str] | None = None, st: dict | None = None, t: float | N
                 said = words(r, t)
             elif u:
                 said = f'held by {u[0]}' + (f', {mins(u[1], t)}' if u[1] else '')
-            elif first.get(name, tid) != tid:
+            elif first.get(name, tid) != tid and (specs().get(name) or {}).get('exclusive', True):
                 said = f'{first[name]} goes first'
             elif tid in ws and name == ws[tid]['tool']:
                 said = 'free: it goes on in the next free slot' if r else 'not checked yet'
@@ -883,11 +922,14 @@ BRIEF = ('Shared tools: only one task at a time can use each of {names}. When yo
 
 def brief(runner: str, tid: str = '') -> str:
     """The slot brief's paragraph; '' without the setting."""
-    if not (known := specs()):
-        return ''
-    names = ', '.join(f'`{n}` ({s["label"]})' if s['label'] != n else f'`{n}`' for n, s in known.items())
+    own = devices.brief(runner, S.C)  # F169
+    if not (known := {n: s for n, s in specs().items() if s['exclusive']}):
+        return own
+    names = ', '.join(f'`{n}`' + (f' ({about})' if (about := ': '.join(
+        x for x in (s['label'] if s['label'] != n else '', '' if s['device'] else s['description']) if x)) else '')
+        for n, s in known.items())
     ls = P.lines(S.C.todo)
-    mine = next((needs_of(ls[i]) for _, _, t, _, i in P.iter_tasks(ls) if t == tid), [])
-    return BRIEF.format(names=names, runner=runner) + (
+    mine = [n for n in next((needs_of(ls[i]) for _, _, t, _, i in P.iter_tasks(ls) if t == tid), []) if n in known]
+    return (f'{own}\n\n' if own else '') + BRIEF.format(names=names, runner=runner) + (
         f' This task is tagged as needing {", ".join(mine)}, so the run starts no other task with that tag beside '
         f'it; still take the lock.' if mine else '')

@@ -104,7 +104,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     live = {tid for _, box, tid, _, _ in tasks if box in ' ~'}
     landed = {tid for _, box, tid, _, _ in tasks if box not in ' ~'} | done_ids()
     where = slot_of(st or {}, time.time() if now is None else now)
-    tool_waits = tool_wait_words(ls, st, now)
+    tool_waits, tool_names = tool_wait_words(ls, st, now), project_tools()
     for section, box, tid, rest, i in tasks:
         if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
             continue
@@ -116,7 +116,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
                     'section': section, 'blocked': box == '~',
                     'after_title': after_words(after, names_of, live, everything, landed),
                     'state': queue_state(tid, pri, after, live, where, box == '~', tid in tool_waits)})
-        if S.C and S.C.run.get('tools'):  # F168
+        if tool_names:  # F168
             out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
         elif tid in tool_waits:  # B184: memory
             out[-1]['tool_wait'] = tool_waits[tid]
@@ -198,6 +198,12 @@ def tool_wait_words(ls: list[str], st: dict | None, now: float | None = None) ->
         return shared_tools.wait_words(ls, st or {}, now)
     except Exception:  # noqa: BLE001 - costs the words, not the snapshot
         return {}
+
+
+def project_tools() -> list[str]:
+    """The names a task's `needs:` may have here: [run.tools], and the devices the project uses (F169)."""
+    from agent_runner import shared_tools
+    return sorted(shared_tools.specs())
 
 
 def tool_rows(up: bool, ls: list[str], st: dict, now: float | None = None) -> list[dict]:
@@ -639,7 +645,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
             'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release, tools_line(tools)) if x)),
-            'tools': tools, 'tool_names': sorted((S.C.run.get('tools') or {}) if S.C else {}),
+            'tools': tools, 'tool_names': project_tools(),
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': queue, 'release_row': row, 'release_acts': [c['key'] for c in RUN_CONTROLS
                                                                  if c['where'] == 'release'],

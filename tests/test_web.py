@@ -472,7 +472,7 @@ def test_page(tmp: Path) -> None:
         page = get(f'http://127.0.0.1:{srv.server_address[1]}/?t={token}')[1].decode()
     finally:
         srv.stop()
-    for part in ('New chat', "['home','Home'],['status','Status'],['plan','Plan'],['concepts','Concepts'],['settings','Settings']",
+    for part in ('New chat', "['home','Home'],['status','Status'],['plan','Plan'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']",
                  'Style rules: docs/STYLE.md',
                  '<div class="shead row"><span>Chats</span>', '<div class="shead">Agents working</div>', 'class="livedot"',
                  'S.snap.machine', 'usage ${esc(use)}',  # the sidebar
@@ -2394,7 +2394,7 @@ const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: 
 const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
-const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
+const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
 const DRAFT_KEY = k => k, toast = () => {}, open = n => { S.thread = n; render(true) }, outboxed = [];
 const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, keepPlace = () => {};
 const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };
@@ -2406,7 +2406,7 @@ eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('fu
   const b = $('body'), out = {}, scroll = y => { b.scrollTop = y; b.on.scroll() };
   // every view: a refresh keeps the reading position, whatever came in above it
   out.views = {};
-  for (const v of ['home', 'status', 'plan', 'concepts', 'settings']) {
+  for (const v of ['home', 'status', 'plan', 'concepts', 'tools', 'settings']) {
     S.view = v; VIEW = 'a:60 b:60 c:60 d:60'; render(true);
     b.scrollTop = 70; VIEW = 'a:60 b:60 c:60 d:60 e:60'; render();
     const same = b.scrollTop;
@@ -3467,7 +3467,7 @@ const history = {replaceState(a, b, u) { log.url = u; location.hash = '' }}, add
 const setTimeout = () => { log.focus = (log.focus || 0) + 1 }, tq = p => p, followVersion = () => false, toast = () => {}, esc = t => String(t), LOGO = () => '', md = t => t, I = {chev: ''};
 const fetch = async p => ({json: async () => (o.feeds || {})[decodeURIComponent(p.split('/')[1])] || {ok: false, name: decodeURIComponent(p.split('/')[1]), entries: [], out: 'none'}});
 const S = {snap: {sessions: [], needs: []}, view: 'home', thread: null, ctx: null, feeds: {}, sent: o.sent || {}, ob: o.ob || [], openSteps: {}, gone: {}, waitNew: null};
-const OB = {}, drain = () => {}, working_ = () => [], keepSent = () => {}, loadSettings = () => { log.settings++ };
+const OB = {}, drain = () => {}, working_ = () => [], keepSent = () => {}, loadSettings = () => { log.settings++ }, loadTools = () => {};
 const TK = {state: '', wait: null, starting: [], gen: 0}, TS = {read: true, auto: true}, speak = t => log.spoke.push(t), listen = () => { log.heard++ };
 const render = () => { keepPlace(); log.draws.push([S.view, S.thread]) }, obBubbles = () => '', isAgent = n => n[0] === 's';
 const threadTitle = n => n, PN = () => 'p', sentBubbles = () => '', starting = () => false, startLine = () => '', busy = () => true, talkGoing = () => '', tkey = t => t;

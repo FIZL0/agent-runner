@@ -228,7 +228,8 @@ DEFAULTS: dict = {
                                 # `git clean -ffdXq` (every git-ignored file; `links` come back on their own)
         'tools': {},            # the shared tools, [run.tools.<name>]: things only one task can use at a time (a
                                 # test phone). check = a command that exits 0 free, 75 busy, 69 missing, its first
-                                # output line the holder or why; label; connect = what Needs you asks when missing
+                                # output line the holder or why; label; connect = what Needs you asks when missing;
+                                # description = what it is, for agents
         'command_timeout': 3600,  # seconds the gate, a retest or a hook command (join, before_start, on_exit,
                                 # `done`'s gate) may run before it is stopped and counts as failed
         'needs_order': 'oldest',  # what waits on a person (Needs you): oldest first; "newest" first; "plan":
@@ -967,7 +968,7 @@ def setting_problem(table: str, key: str, v) -> str:
 
 
 def tools_problem(v) -> str:
-    """F168: why `v` cannot be `[run] tools` ('' when it can): {name: {check, label, connect}}, all text."""
+    """F168: why `v` cannot be `[run] tools` ('' when it can): {name: {check, label, connect, description}}, all text."""
     import re
     if not isinstance(v, dict):
         return f'[run] tools is a table of shared tools ([run.tools.iphone15]), not {v!r}'
@@ -979,8 +980,8 @@ def tools_problem(v) -> str:
             return f'{where}: memory is built in (`run wait-for memory`); name the tool otherwise'
         if not isinstance(t, dict) or not isinstance(t.get('check'), str) or not t['check'].strip():
             return f'{where} needs check, the command that says whether it is free'
-        if bad := [k for k in t if k not in ('check', 'label', 'connect')]:
-            return f'{where}: {bad[0]} is not one of check, label, connect'
+        if bad := [k for k in t if k not in ('check', 'label', 'connect', 'description')]:
+            return f'{where}: {bad[0]} is not one of check, label, connect, description'
         if bad := [k for k, x in t.items() if not isinstance(x, str)]:
             return f'{where}: {bad[0]} must be text'
     return ''
