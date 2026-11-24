@@ -70,6 +70,9 @@ On yes, make it: this person's or machine's taste (slots, usage caps, phone, con
 runner.local.toml, edited in place (git ignores it, so it holds no merge); the project's behaviour (test,
 review, rules) in runner.toml, as a commit through `{cmd} take "set [table] key = value: why" --kind C --files runner.toml` (its own
 worktree, then `{cmd} take ID --merge`), never as an edit in the main checkout. Say when it takes effect.
+
+Keys, passwords and devices (a machine or test rig agents reach) are no settings: they are entered on the run app's
+Tools page, whose link `{cmd} device link` prints. Never ask for a secret in chat, and never write one down.
 """
 
 # C2: branch-only material, printed by `{cmd} guide <topic>` when the pointer in GUIDE or the control brief fires.
@@ -413,9 +416,7 @@ What the person asks, and what you run:
 
 """ + NO_BANG + """
 
-**Keys and passwords.** Never ask for a key, passphrase or password in chat, and never write one down: they are entered \
-on the run app's Tools page, which keeps them out of every chat. Give its link (`{cmd} device link`). A machine or \
-test rig agents should reach is added there too.
+**Keys, passwords:** never ask for one in chat; give the Tools page's link (`{cmd} device link`).
 
 **Settings.** When what the person says fits a runner.toml setting, read `guide settings` first, then recommend the one change in one line and ask.
 Never `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: work is lost.
