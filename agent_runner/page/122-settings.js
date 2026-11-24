@@ -10,11 +10,17 @@ function draftChange(fn){
 }
 const draftFields=()=>{for(const [f,d] of Object.entries(S.draft))if(!d.unset)S.f[f]=d.text};
 draftLoad();draftFields();
+/* the setting as it is once the change of it that is on its way is saved */
+function settingSoon(k,side){
+  const c=setGoing(settingId(k),side);if(!c)return k;
+  const v=c.unset?resetValue(k,side):c.value;
+  return{...k,['has_'+side]:!c.unset,[side]:v,value:v};
+}
 /* a change of setting `id` on `side`: d = {text} or {unset:true}; one that changes nothing leaves the draft */
 function draftSet(id,side,d){
   const k=settingOf(id), f=setField(id,side), x={id,side,...d};if(!k)return;
   if(d.unset){delete S.f[f];delete S.f[otherField(id,side)]}
-  draftChange(()=>{if(draftSame(k,x))delete S.draft[f];else S.draft[f]=x});
+  draftChange(()=>{if(draftSame(settingSoon(k,side),x))delete S.draft[f];else S.draft[f]=x});
 }
 function draftDrop(f){draftChange(()=>{delete S.draft[f]})}
 /* words typed in a row: the bar counts them at once; the view is drawn again once the field is left */
@@ -26,7 +32,7 @@ function draftType(el){
 }
 /* the settings were read: changes that are there by now, or whose setting is gone, leave the draft */
 function draftTidy(){
-  const gone=Object.entries(S.draft).filter(([,d])=>{const k=settingOf(d.id);return !k||draftSame(k,d)}).map(([f])=>f);
+  const gone=Object.entries(S.draft).filter(([,d])=>{const k=settingOf(d.id);return !k||draftSame(settingSoon(k,d.side),d)}).map(([f])=>f);
   if(gone.length)draftChange(()=>{for(const f of gone)delete S.draft[f]});
 }
 const setLeave=()=>{const a=document.activeElement;if(a&&a.dataset&&a.dataset.f&&/^set(other)?:/.test(a.dataset.f))a.blur()};  // its last words are in first
@@ -43,7 +49,7 @@ function settingsSave(){
     toast(`${settingOf(S.draft[bad[0]].id).name}: ${errs[bad[0]]}`,true);render(true);return}
   if(!changes.length)return;
   const n=draftCount(S.draft,all);
-  draftChange(()=>{S.draft={}});
+  draftChange(()=>{S.draft={};S.setUndo=[]});  // the Undo offered is always the last Save's
   outbox('settings_save',{changes},{setbar:'save',n,say:`Save ${changeWords(n)} in Settings`});
 }
 function settingsUndo(){
@@ -75,10 +81,11 @@ function settingsDone(it,j){
 /* what the bar says: changes not saved, else a Save or Undo on its way, else the Undo of the last Save; '' for none */
 function setBarHTML(){
   if(!S.set||!S.set.tables)return '';
-  const n=draftCount(S.draft,settingsAll(S.set)), it=S.ob.filter(x=>x.setbar).pop();
+  const n=draftCount(S.draft,settingsAll(S.set)), its=S.ob.filter(x=>x.setbar), it=its.filter(x=>x.state!=='failed').pop(), bad=its.filter(x=>x.state==='failed');
   const row=(words,btns,live)=>`<div class="row">${live?'<span class="livedot"></span>':''}<span class="grow" role="status">${words}</span><div class="btns">${btns}</div></div>`;
-  if(n)return row(`${changeWords(n)} not saved`,'<button class="btn" data-setdrop>Undo</button><button class="btn acc" data-setall>Save</button>');
-  if(it)return row(`${it.setbar==='undo'?'Undoing':'Saving'} ${changeWords(it.n)}: ${esc(obState(it))}`,it.state==='failed'?obBtns(it):'',it.state!=='failed');
+  const going=it=>row(`${it.setbar==='undo'?'Undoing':'Saving'} ${changeWords(it.n)}: ${esc(obState(it))}`,it.state==='failed'?obBtns(it):'',it.state!=='failed'), lost=bad.map(going).join('');
+  if(n)return lost+row(`${changeWords(n)} not saved`,'<button class="btn" data-setdrop>Undo</button><button class="btn acc" data-setall>Save</button>');
+  if(it||lost)return lost+(it?going(it):'');
   const u=undoCount(S.setUndo);
   return u?row(`${changeWords(u)} saved`,`<button class="btn" data-setundo>Undo</button><button class="icon" data-setundox aria-label="Close" title="Close">${I.x}</button>`):'';
 }

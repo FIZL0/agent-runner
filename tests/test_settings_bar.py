@@ -181,6 +181,7 @@ const out = {};
   draftDrop('set:device:run.web_port'); type('set:device:run.weekly_max', '85'); resetSetting('run.slots', 'project'); out.reset = [now(), text(settingRow(settingOf('run.slots'), {}))];
   draftDrop('set:project:run.slots');
   settingsSave(); out.sent = [sent[0].name, sent[0].args, now(), settingNow(settingOf('run.slots'), 'device', true)];
+  stepSetting('run.slots', -2); out.during = [now(), S.draft['set:device:run.slots'].text]; draftTidy(); out.during.push(now()); settingsUndrop();
   S.f = {}; out.going = settingNow(settingOf('run.slots'), 'device', true);  // a reload while it goes
   const was = [{table: 'run', key: 'slots', side: 'device', was: {has: true, value: 4}, now: {has: true, value: 6}}, {table: 'run', key: 'weekly_max', side: 'device', was: {has: false, value: null}, now: {has: true, value: 85}}];
   S.ob = []; Object.assign(K('run.slots'), {has_device: true, device: 6, value: 6});
@@ -191,11 +192,13 @@ const out = {};
   S.ob = [];
   settingsDone(sent[1], {ok: false, out: 'a merge is landing', bad: [{table: 'run', key: 'slots', side: 'device', why: 'a merge is landing'}, {table: 'run', key: 'weekly_max', side: 'device', why: 'changed', changed: true}]}); await settle();
   out.undoLeft = [now(), said.pop()]; setUndoClose(); out.closed = [now(), kept['ar-setbar']];
+  S.setUndo = was; kept['ar-setbar'] = JSON.stringify({draft: {}, undo: was});  // an older offer
   // what Save did not take is in the bar again, with why
   stepSetting('run.slots', 2); settingsSave(); S.ob = [{...sent[2], state: 'failed'}];
   settingsDone(sent[2], {ok: false, out: 'HTTP'}); await settle();
   out.failed = [now(), S.ob.length, text(settingRow(settingOf('run.slots'), {}))];
-  settingsUndrop();
+  S.ob = [{setbar: 'save', n: 1, state: 'failed', args: {changes: []}}]; out.both = now(); S.ob = [];
+  settingsUndrop(); out.noOld = now();
   // an older run: the outbox keeps it
   S.ob = [{setbar: 'save', n: 1, state: 'failed', args: {changes: []}}]; out.old = now(); S.ob = [];
   // two controls of one key, the kinds rows
@@ -240,6 +243,8 @@ def test_bar(tmp: Path) -> None:
     eq(o['sent'][:2], ['settings_save', {'changes': [{'table': 'run', 'key': 'slots', 'side': 'device', 'value': 6},
                                                      {'table': 'run', 'key': 'weekly_max', 'side': 'device', 'value': 85}]}], 'Save sends them all at once')
     eq(o['sent'][2:], ['Saving 2 changes: sending', '6'], 'and the bar and the row show it')
+    eq(o['during'], ['1 change not saved Undo Save', '4', '1 change not saved Undo Save'], 'set back while the Save goes: a change of its own')
+    eq((o['both'], o['noOld']), ('Saving 1 change: failed [btns] 1 change not saved Undo Save', ''), 'a Save an older run refused stays beside new changes; a failed Save brings no older Undo back')
     eq(o['going'], '6', 'over a reload too')
     eq(o['saved'], ['2 changes saved Undo x', 0, True, True], 'then it offers Undo, with no toast over it')
     eq((o['over'], o['offer']), ('1 change not saved Undo Save', '2 changes saved Undo x'), 'a new change comes first; Undo drops it and the offer is there again')

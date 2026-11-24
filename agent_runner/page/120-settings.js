@@ -15,7 +15,7 @@ const settingOf=id=>{const x=S.set&&S.set.tables&&S.set.tables.find(t=>t.table==
 const settingsAll=d=>d.tables.flatMap(t=>t.keys.map(k=>({...k,table:t.table}))).sort((a,b)=>a.order-b.order);
 const PLACE={device:'this device',project:'everyone',everyone:'everyone'};
 /* a change of `id` on `side` that is on its way to the run */
-const setGoing=(id,side)=>S.ob.filter(x=>x.setbar&&x.state==='sending').flatMap(x=>x.args.changes).filter(c=>`${c.table}.${c.key}`===id&&c.side===side).pop();
+const setGoing=(id,side)=>S.ob.filter(x=>x.setbar).flatMap(x=>x.args.changes).filter(c=>`${c.table}.${c.key}`===id&&c.side===side).pop();
 /* the words in a setting's field on `side`: the change not saved yet or on its way, else what is kept */
 function settingNow(k,side,field){
   const f=setField(settingId(k),side);
@@ -133,8 +133,8 @@ function kindsRow(g,k){
     ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies now.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`):''}</div>`;
 }
 function kindsNote(g,k){
-  const d=(S.draft||{})[setField('models.kinds',settingSide(k))];
-  return d&&(d.unset||d.err||kindsDrafted(k,d).some(x=>x.id===g.id))?`<div class="small setnew${d.err?' v-bad':''}">Not saved yet${d.err?`. ${esc(d.err)}`:''}</div>`:'';
+  const ds=['device','project'].map(s=>(S.draft||{})[setField('models.kinds',s)]).filter(Boolean);
+  return ds.filter(d=>d.unset||d.err||d.set||kindsDrafted(k,d).some(x=>x.id===g.id)).map(d=>`<div class="small setnew${d.err?' v-bad':''}">Not saved yet${d.side===settingSide(k)&&!d.unset?'':`: ${d.unset?'reset ':''}${d.side==='device'?'on this device':'for everyone'}`}${d.err?`. ${esc(d.err)}`:''}</div>`).join('');
 }
 function saveKinds(gid,model){
   const k=settingOf('models.kinds'), g=KINDS_ROWS.find(x=>x.id===gid);if(!k||!g||!model)return;
