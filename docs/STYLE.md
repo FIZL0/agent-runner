@@ -121,7 +121,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Only `transform` and `opacity`**, with `visibility` to take a closed thing out of reach, and a switch's
   `background-color`. Never height, width, top or margin.
 - **What animates:** the drawer and the sheet slide; their scrim fades; the Talk dock's mic and box cross-fade;
-  Talk's top bar slides off when you scroll up (`.away`, transform only); a session's chips, box and top bar go the same way as the reader scrolls up (`.slim`), and its frame moves with the finger (`feedPlace()`); a card
+  Talk's top bar slides off when you scroll up (`.away`, transform only); a session's chips, box and top bar fade or slide over its text as the reader scrolls up (`.slim`, and the slim message box `.slimbox` stays), and no line moves when they go or come back (`feedShare()` takes part of an upward scroll only while they are away); a card
   or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns; the message box, Talk's words and the sheet glide (transform
   only) to their place when the keyboard opens or closes (`kbGlide()`).
 - **What never animates:** a refresh of what is already there, a list reordering under the reader, text being
@@ -139,7 +139,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **The page never moves on its own.** A refresh keeps the reading position in every view (`keepScroll()`): the first
   `data-k` on screen stays where it was. At the very top, new things show.
-- **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session takes the frame's bottom first (its chips, box and top bar go, and the thin strip stays), then the session scrolls.
+- **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session scrolls it, and its bars fade away over the text; the slim message box stays (see The session).
 - Going to a view starts at its top; coming back to one you left returns to where you were.
 - **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form is not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
 - A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
@@ -169,6 +169,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 A chat or slot shows the real Claude Code session through ttyd, in place of a thread the page draws. These rules hold:
 
+- **The bars only go over the text.** The chips, the message box and the top bar fade or slide over the session; their going or coming never moves a line or the frame (`#feedframe`). Scrolling up 8px takes them away once the session itself is scrolled up (`feedBars()`, `.slim`); scrolling down 8px, reaching the session's end, or a tap on the slim message box brings them back (`feedSlim()`, `slimMay()`). A tap on the slim box opens the full box; on touch it does not focus the box, since a keyboard would resize the session. The draft is kept, and the bars do not go while the person types or a menu, question or sheet is open. A line moves only by the scroll: the session gets the scroll first (so it stops following new words), and only while it is scrolled up with the bars away does the frame take part of an upward scroll (`feedShare()`), 1:1 with the finger, to bring lines into the room the box left. Scrolling down gives that back first, so at the end the frame rests with the last lines above the full box. While scrolled up `feedSpot()` holds its place (`hold`), so a growing box or a notice moves nothing. A session that reaches its end by itself (a sent message) rests at once, with no animation; it is the one other move. `feedFoot()` reads "scrolled up" from Claude Code's own pill (`FEED_JUMP`: Jump to bottom, N new messages, Waiting for your answer), so new output while reading does not bring the bars back.
 - **One frame.** The session is one iframe (`#feed`), filling the view behind the header and the message box (`#feedframe`, placed by `feedPlace()`). Its
   address is the run's own (`/t/TOKEN/NAME/`), so https and Runner Home both work.
 - **Never redrawn.** A refresh, a snapshot or a state change leaves the frame as it is: it is set once per open, and
@@ -251,5 +252,5 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 2. Empty, loading, working, failed: each seen.
 3. Reduced motion on: everything still works.
 4. Scroll half way down, wait for a refresh: nothing moved.
-5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up hides the chips, box and top bar, the strip stays, and scrolling down brings them back.
+5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up fades the chips, box and top bar away over the text, the slim message box stays, and scrolling down brings them back; no line moves when they go or come back.
 6. `python3 tests/test_web.py`.

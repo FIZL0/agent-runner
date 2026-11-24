@@ -219,12 +219,12 @@ _On screen_: Working, Update, 2 shells
 _In code_: sessionChips, .schips, session_now.py
 _Avoid_: footer, status bar, toolbar
 
-**Thin strip**:
-The 28px strip at a session's bottom that stays when the reader has scrolled up: it says Working, and a tap brings the chips, box and top bar back.
-_Said_: the strip
-_On screen_: Working
-_In code_: .strip, .slim
-_Avoid_: handle, bar
+**Slim message box**:
+The row at a session's bottom that stands in for the message box while the reader has scrolled up: the draft or its placeholder, and while Claude works, Working (its sheet opens) and Stop. A tap opens the full box, and the chips and top bar come back.
+_Said_: the type button
+_On screen_: Reply to c2, Working, Stop
+_In code_: .slimbox, slimDraw, .slim
+_Avoid_: thin strip, strip, handle, bar
 
 **Session theme**:
 The Claude Code theme the run gives the sessions it starts (control sessions and slots), named `agent-runner` in their settings: its colours each browser fills from the run page's light or dark. A person's own terminals keep theirs.
