@@ -704,3 +704,10 @@ _Said_: https on Tailscale
 _On screen_: run page link in status and the run log, Run page over https setting
 _In code_: page_https.py, [run] web_https, serve/<port>.json
 _Avoid_: serve URL, public link
+
+**Example project**:
+A tiny app with a plan that ships with agent-runner; one command makes a copy with a remote on the same machine, to try a run on
+_Said_: example repo, demo
+_On screen_: The example project
+_In code_: demo.py, agent-runner demo, examples/hello, is_demo
+_Avoid_: sample repo, sandbox, playground

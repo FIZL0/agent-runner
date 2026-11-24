@@ -24,10 +24,16 @@ Homepage = "https://github.com/FIZL0/agent-runner"
 agent-runner = "agent_runner.cli:main"
 
 [tool.setuptools]
-packages = ["agent_runner"]
+packages = ["agent_runner", "agent_runner.example"]
+# the example project `agent-runner demo` copies: plain files, shipped inside the package
+package-dir = { "agent_runner.example" = "examples/hello" }
 
 [tool.setuptools.dynamic]
 version = { attr = "agent_runner.__version__" }
 
 [tool.setuptools.package-data]
 agent_runner = ["web_page.html", "harness.mjs"]
+"agent_runner.example" = ["*", "**/*", ".gitignore", "journal/.keep"]
+
+[tool.setuptools.exclude-package-data]
+"agent_runner.example" = ["__pycache__/*"]

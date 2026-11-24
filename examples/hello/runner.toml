@@ -9,7 +9,7 @@ journal = "journal"          # one folder per task; the newest entry is pasted i
 # many Linuxes), then python: on Windows python3 is often the Microsoft Store placeholder, which exits 9009,
 # and `||` works the same in sh and cmd.exe. A real failure under python3 just runs the tests a second time.
 test = "python3 -m unittest -q || python -m unittest -q"
-slots = 2
+slots = 3                    # three tasks can start side by side
 rules = "AGENTS.md"          # what the prompt tells each session to read first
 joinable = ["plan/TODO.md", "plan/DONE.md", "journal/*/*.md", "CHANGELOG.md"]
 shared_files = ["CHANGELOG.md"]   # every task appends here; not counted as two tasks on the same file

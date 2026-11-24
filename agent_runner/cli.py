@@ -8,6 +8,7 @@ USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in 
 
 What you type
     agent-runner setup                make this repo ready: back up uncommitted work, runner.toml, a first plan
+    agent-runner demo [DIR]           make the example project to try it on; starts no agent (--remove: take it away)
     agent-runner                      start the run in the background and get the prompt back (at a terminal:
                                       pick a run on this device, then open its run page, its ui, or copy the link)
     agent-runner --attach             the same, then the run view here (Ctrl-C leaves it; the run keeps going)
@@ -189,6 +190,7 @@ def utf8_streams() -> None:
 COMMANDS = {
     'done': ('done', 'main'),
     'setup': ('setup', 'main'),  # F49
+    'demo': ('demo', 'main'),  # F194a: the example project
     'run': ('runner', 'cmd_run'),
     '--attach': ('runner', 'cmd_background_attach'),  # bare, then attach: the run view in this terminal
     'attach': ('runner', 'cmd_attach'),
