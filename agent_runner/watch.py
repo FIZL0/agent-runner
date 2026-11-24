@@ -827,18 +827,19 @@ def watch_code(merging: bool, now: float | None = None) -> None:
 
 
 def ask_restart() -> None:
-    """F97: the `restart` key: settings saved on the run page wait for it."""
+    """F97: the `restart` key: the settings that apply on the next run wait for it."""
     RESTART[0] = not plat.WINDOWS
-    log('restarting between merges, to read the settings again; the running tasks keep going' if RESTART[0] else
+    log('restarting between merges, to take the settings that wait for it; the running tasks keep going' if RESTART[0] else
         'restart: not on Windows; stop the run and start it again')
 
 
 def restart_run() -> None:
     """Re-exec this run as it was started; the new process reads the settings again and adopts the sessions."""
     sys.stdout.flush()
+    from agent_runner.settings_live import KEPT
     # what the keys set lives in this process: the new one takes it over (see `kept_keys`)
     os.environ['AGENT_RUNNER_KEEP'] = json.dumps({'slots': SLOTS, 'paused': PAUSED[0], 'power': POWER,
-                                                  'stop': stopping(), 'forced': FORCED[0]})
+                                                  'stop': stopping(), 'forced': FORCED[0], **({'kept': KEPT} if KEPT else {})})
     os.execv(sys.executable, sys.orig_argv)  # run.lock's fd closes on exec; the new process takes it again
 
 
