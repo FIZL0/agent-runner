@@ -1136,7 +1136,7 @@ SUSPEND_ASK = ('This computer suspends once the run stops or goes idle, and its 
 SHUTDOWN_ASK = ('This computer shuts down once the run stops or goes idle, and every session on it ends. Asked again, it '
                 'is taken back. Shut down?')
 UPGRADE_ASK = 'The run restarts on the new version between merges. Running tasks keep going. Upgrade?'
-RESTART_ASK = 'The run restarts between merges and reads its settings again. Running tasks keep going. Restart?'
+RESTART_ASK = 'The run restarts between merges and takes the settings that wait for it. Running tasks keep going. Restart?'
 WIP_DROP_ASK = 'These edits are deleted here and on the remote, and cannot be brought back. Drop them?'
 def answer_of(row: dict, key: str) -> str:
     """F180: the fixed answer the answer action `key` stands for on a Needs you row ('' none): need_yes and need_no

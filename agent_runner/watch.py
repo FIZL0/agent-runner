@@ -829,7 +829,7 @@ def watch_code(merging: bool, now: float | None = None) -> None:
 def ask_restart() -> None:
     """F97: the `restart` key: the settings that apply on the next run wait for it."""
     RESTART[0] = not plat.WINDOWS
-    log('restarting between merges, to read the settings again; the running tasks keep going' if RESTART[0] else
+    log('restarting between merges, to take the settings that wait for it; the running tasks keep going' if RESTART[0] else
         'restart: not on Windows; stop the run and start it again')
 
 

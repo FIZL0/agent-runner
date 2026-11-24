@@ -44,7 +44,10 @@ def take(run) -> None:
     waiting to resume) keep theirs."""
     def before() -> None:
         own = [(p[1], run.running[n][0]) for n, p in run.procs.items() if n in run.running]
-        for sid, tid in own + [(q[1], q[0]) for q in S.queued().values()]:
+        own += [(q[1], q[0]) for q in S.queued().values()]
+        for sid in set(KEPT) - {sid for sid, _ in own}:
+            del KEPT[sid]
+        for sid, tid in own:
             keep_own(sid, tid, run.model, run.branch)
     if read_settings(before, run.once):
         run.r = S.C.run

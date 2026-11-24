@@ -148,6 +148,10 @@ def test_running_keep() -> None:
     SV.take(run)
     eq(SV.KEPT['sid-live-1'], ('opus', (1000, 0)), 'its own')
     eq((SL.task_model('F2', run.model, 'main'), S.C.run['task_tokens']), ('haiku', 10), 'a new one has the new')
+    kept = SV.KEPT['sid-live-1'][0]
+    line = lambda m: ['- [ ] **F1** it' + (f' | model: {m}' if m else '')]  # noqa: E731
+    eq((SL.task_model('F1', run.model, 'main', line(''), kept), SL.task_model('F1', run.model, 'main', line('sonnet'), kept)),
+       ('opus', 'sonnet'), "a resume keeps its model, unless the task's own field names another")
     with mock.patch.object(os, 'execv') as ex, mock.patch.dict(os.environ):
         WT.restart_run()
         eq((L.kept_keys()['kept']['sid-live-1'], ex.call_count), (['opus', [1000, 0]], 1), 'a restart in place hands it on')
@@ -160,6 +164,10 @@ def test_running_keep() -> None:
     (d / 'runner.toml').write_text('[run]\ntask_tokens = 5\n[models.kinds]\nF = "sonnet"\n')
     SV.take(run)
     eq(SV.KEPT['sid-live-1'], ('opus', (1000, 0)), 'a second change too')
+    run.procs, run.running = {}, {}
+    (d / 'runner.toml').write_text('')
+    SV.take(run)
+    eq(SV.KEPT, {}, 'and it is forgotten once it has ended')
 
 
 def test_remote_and_silent() -> None:
