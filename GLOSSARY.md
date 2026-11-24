@@ -306,7 +306,7 @@ _Avoid_: archived chat, old chat, stale chat
 **Device override**:
 A setting this machine's runner.local.toml sets over the project's runner.toml
 _Said_: This device
-_On screen_: Saved on this device only, Reset on this device
+_On screen_: Saved on this device only, Reset on this device, This device overrides everyone's
 _In code_: save_local_setting, setting_device, setting_reset
 _Avoid_: local config, user setting
 
@@ -584,10 +584,10 @@ _In code_: speech.py, speech_worker.py, /speech, runVoice, playClips
 _Avoid_: TTS, voice file
 
 **Setting's home**:
-Where a change to a setting is saved: on this device at once, or for everyone as a queued task
+Where a change to a setting is saved: both are saved at once, this device in runner.local.toml, everyone in runner.toml
 _Said_: this device or everyone
 _On screen_: this device, everyone
-_In code_: setting_words.home, settingSide
+_In code_: setting_words.home, settingSide, setting_project, plansync.commit_file
 _Avoid_: scope, level
 
 **Shared tool**:

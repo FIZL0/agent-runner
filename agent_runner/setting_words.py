@@ -6,7 +6,7 @@ reference (`agent-runner settings`); these are the words for the person who deci
 """
 from __future__ import annotations
 
-DEVICE, EVERYONE = 'device', 'everyone'  # a home: saved in runner.local.toml at once, or queued as a task on runner.toml
+DEVICE, EVERYONE = 'device', 'everyone'  # a home: saved in runner.local.toml at once, or in runner.toml, committed at once
 
 # (group, heading, where it is drawn, what the heading says of its home): 'page' on the page itself, 'advanced' behind
 # Advanced, 'file' behind Project file (read only)

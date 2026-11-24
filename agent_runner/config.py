@@ -1040,7 +1040,7 @@ def _toml_inner(lines: list[str]) -> list[str]:
 
 
 def toml_edit(text: str, table: str, key: str, value=None, unset: bool = False) -> str:
-    """F97: `text` (a runner.local.toml) with `[table] key` set to `value` (`unset`: taken out), every other line
+    """F97: `text` (a settings file) with `[table] key` set to `value` (`unset`: taken out), every other line
     and comment as it was. ValueError when it cannot be done on its own line (a key written as a [table.key]
     section, an inline table); the result is read back, and only that key may differ."""
     import re
@@ -1141,6 +1141,25 @@ def setting_check(root: Path, table: str, key: str, v) -> str:
     return ''
 
 
+def setting_edit(data: bytes, table: str, key: str, value=None, unset: bool = False, name: str = LOCAL) -> bytes:
+    """A settings file's bytes with one key set (or `unset`), its comments and line ends kept. An old key that still
+    sets this one goes with it (F166). ValueError says why not; `name` is the file it names."""
+    raw = data.decode('utf-8')
+    crlf = '\r\n' in raw
+    try:
+        out = toml_edit(raw.replace('\r\n', '\n'), table, key, value, unset)
+        for (t, k), (nt, nk, _, _) in MOVED.items():
+            got = tomllib.loads(out)
+            got = got['agent-runner'] if isinstance(got.get('agent-runner'), dict) else got
+            if (nt, nk) == (table, key) and isinstance(got.get(t), dict) and k in got[t]:
+                out = toml_edit(out, t, k, unset=True)
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f'{name} does not read as TOML ({e}): fix it there first') from None
+    except ValueError as e:
+        raise ValueError(str(e).replace(LOCAL, name)) from None
+    return (out.replace('\n', '\r\n') if crlf else out).encode('utf-8')
+
+
 def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool = False) -> Path:
     """F97: set (or `unset`) one key in this machine's runner.local.toml, in place; ValueError says why not."""
     if problem := ('' if unset else setting_check(root, table, key, value)):
@@ -1153,19 +1172,9 @@ def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool
             return f
         ensure_local(f.parent)
     f = f.resolve()
-    raw = f.read_bytes().decode('utf-8')
-    crlf = '\r\n' in raw
-    try:
-        out = toml_edit(raw.replace('\r\n', '\n'), table, key, value, unset)
-        for (t, k), (nt, nk, _, _) in MOVED.items():  # F166: an old key that still sets this one goes with it
-            data = tomllib.loads(out)
-            data = data['agent-runner'] if isinstance(data.get('agent-runner'), dict) else data
-            if (nt, nk) == (table, key) and isinstance(data.get(t), dict) and k in data[t]:
-                out = toml_edit(out, t, k, unset=True)
-    except tomllib.TOMLDecodeError as e:
-        raise ValueError(f'{f.name} does not read as TOML ({e}): fix it there first') from None
+    out = setting_edit(f.read_bytes(), table, key, value, unset, f.name)
     tmp = f.with_name(f.name + '.tmp')
-    tmp.write_bytes((out.replace('\n', '\r\n') if crlf else out).encode('utf-8'))
+    tmp.write_bytes(out)
     os.chmod(tmp, f.stat().st_mode & 0o777)
     os.replace(tmp, f)
     keep_local_ignored(f.parent)

@@ -3154,7 +3154,7 @@ def test_task_text_f85(tmp: Path) -> None:
 
 def test_settings_f97(tmp: Path) -> None:
     """F97: the Settings view: every key with its value, source and default; a device value saved and reset in place in
-    runner.local.toml, its comments kept; a project value queued as a C task; bad values refused."""
+    runner.local.toml, its comments kept; a project value committed in runner.toml (F173); bad values refused."""
     repo = fake_repo(tmp)
     toml, local = repo / 'runner.toml', repo / 'runner.local.toml'
     toml.write_text('[run]\nslots = 4\nslotz = 1\n\n[rnu]\nslots = 9\n\n[git]\npush = false\n', encoding='utf-8')
@@ -3208,32 +3208,13 @@ def test_settings_f97(tmp: Path) -> None:
             eq((key('run', 'slots')[0]['source'], ran[-1]), ('project', ['slots', '4']), 'and the project value is in force again')
             ran.clear()
             before = toml.read_text(encoding='utf-8')
+            git(repo, 'add', 'runner.toml')
+            git(repo, 'commit', '-qm', 'settings')
             r = act_('setting_project', table='run', key='weekly_max', value=80)
-            eq(r['ok'], True, 'a project save')
-            check(ran[0][:3] == ['plan', 'add', 'C'] and 'set [run] weekly_max = 80' in ran[0][3]
-                  and ran[0][4:] == ['--files', 'runner.toml', '--force'], 'queues a C task on runner.toml', ran)
-            eq(toml.read_text(encoding='utf-8'), before, 'and never edits the main checkout')
-            check('chat' in act_('setting_project', table='run', key='test', value='a | files: b')['out'], "the plan's marks are refused")
-            ran.clear()
-            todo = S.C.todo  # F166: a queued change is on its row, is changed in place, and goes when it is undone
-            kept = todo.read_text(encoding='utf-8')
-            wait = "- [ ] **C9** set [run] weekly_max = 80 in runner.toml (from the run app's Settings) | files: runner.toml\n"
-            todo.write_text(kept + '\n### Later\n\n' + wait, encoding='utf-8')
-            eq(key('run', 'weekly_max')[0]['queued'], {'id': 'C9', 'value': 80, 'unset': False}, 'the row says what is queued')
-            check('queued' not in key('run', 'slots')[0], 'and no other row does')
-            act_('setting_project', table='run', key='weekly_max', value=70)
-            check(ran[-1][:3] == ['plan', 'edit', 'C9'] and 'weekly_max = 70' in ran[-1][3], 'another value changes that task', ran)
-            act_('setting_project', table='run', key='weekly_max', value=90)
-            eq(ran[-1][:3], ['plan', 'drop', 'C9'], 'back to what it was: the task is dropped')
-            act_('setting_project', table='run', key='session_max', value=80)
-            eq(ran[-1][:3], ['plan', 'add', 'C'], 'another setting is a task of its own')
-            todo.write_text(kept + '\n### Later\n\n' + wait.replace('[ ]', '[~]'), encoding='utf-8')
-            act_('setting_project', table='run', key='weekly_max', value=70)
-            eq(ran[-1][:3], ['plan', 'add', 'C'], 'a task that has started is left alone: a new one')
-            todo.write_text(kept, encoding='utf-8')
+            eq((r['ok'], ran), (True, []), 'a project save queues no task')
+            eq(toml.read_text(encoding='utf-8'), before.replace('slotz = 1\n', 'slotz = 1\nweekly_max = 80\n'), 'and writes that key at once')
             r = act_('setting_project', table='run', key='slots', unset=True)
-            check(r['ok'] and 'reset [run] slots to its default: take it out of runner.toml' in ran[-1][3], 'Reset for everyone queues too', ran)
-            eq(U._SETTING_TASK.search(ran[-1][3]).group(4, 5), ('run', 'slots'), 'and reads back as that')
+            eq((r['ok'], key('run', 'slots')[0]['has_project'], ran), (True, False, [['slots', '3']]), 'Reset for everyone takes it out, at once')
             check(not act_('setting_project', table='run', key='nokey', unset=True)['ok'], 'an unknown key is refused')
             ran.clear()
             now = local.read_text(encoding='utf-8')
@@ -3245,6 +3226,7 @@ def test_settings_f97(tmp: Path) -> None:
                     r = act_(name, table=t, key=k, value=v)
                     check(not r['ok'] and r['out'], f'{name} refuses [{t}] {k} = {v!r}', r)
             eq((local.read_text(encoding='utf-8'), ran), (now, []), 'a refused value changes nothing')
+            eq(subprocess.run(['git', 'status', '--porcelain', '--', 'runner.toml'], cwd=repo, capture_output=True, text=True).stdout, '', 'runner.toml is clean')
             local.write_text('run = { slots = 2 }\n', encoding='utf-8')
             check('by hand' in act_('setting_device', table='run', key='slots', value=3)['out'], 'an inline table: by hand')
             eq(local.read_text(encoding='utf-8'), 'run = { slots = 2 }\n', 'and it is left alone')
@@ -3273,6 +3255,13 @@ def test_settings_f97(tmp: Path) -> None:
                     ['settingValue', k(default=False, also=['list']), 'bug, ui'], ['settingValue', k(default=False, also=['list']), 'true']])
     eq([g.get('v', 'err') for g in got], [4, 'err', ['a', 'b'], False, False, 'false', True, 'auto', {'every': 10}, 'err', 8,
                                           ['bug', 'ui'], True], "a field's words as a value of its type")
+    item = lambda c, **o: {'cid': c, 'name': 'setting_project', 'state': 'sending', 'set': {'id': 'run.slots'}, **o}  # noqa: E731
+    box = [item('a'), item('b'), item('c', set={'id': 'run.web'}), item('d', name='setting_device'), item('e', state='failed')]
+    eq([x['cid'] for x in logic_js([['obAdd', box, item('f'), 'a']])[0]], ['a', 'c', 'd', 'e', 'f'],
+       'F173: a later save of a setting takes the place of the one not sent yet, never of the one going')
+    for gone in ('Queue for everyone', 'lands through', 'queuedTask', 'k.queued'):
+        check(gone not in page, f'F173: no {gone!r} left in the page')
+    check('overSays' in page, 'a row says when this device overrides everyone')
     # F166: a row's control, and which rows show
     rel = k(table='run', key='auto_release', type='table', default=False, also=['table'], words={'false': 'Off', '{"every":10}': 'Every 10 tasks'})
     rem = k(type='choice', choices=['auto', True, False], words={'auto': 'Auto', 'true': 'On', 'false': 'Off'})
@@ -3285,7 +3274,7 @@ def test_settings_f97(tmp: Path) -> None:
                     ['settingSide', k(home='device', has_device=False)], ['settingSide', k(home='everyone', has_device=False)],
                     ['settingSide', k(home='everyone', has_device=True)], ['settingChanged', k(source='device', value=3, default=3)],
                     ['settingChanged', k(source='project', value=4, default=3)], ['settingShows', kid, [par]],
-                    ['settingShows', kid, [{**par, 'value': True}]], ['settingShows', kid, [{**par, 'queued': {'value': True}}]],
+                    ['settingShows', kid, [{**par, 'value': True}]], ['settingShows', kid, [{**par, 'has_project': True, 'value': True}]],
                     ['settingHit', k(table='run', key='slots', name='Tasks at once', desc='How many.'), 'slots'],
                     ['settingHit', k(table='run', key='slots', name='Tasks at once', desc='How many.'), 'tasks at'],
                     ['kindsModel', ['F', 'B'], {'F': 'opus', 'B': 'opus'}], ['kindsModel', ['F', 'B'], {'F': 'opus', 'B': 'haiku'}]])

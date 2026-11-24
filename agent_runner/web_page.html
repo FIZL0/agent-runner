@@ -790,11 +790,11 @@ function settingSays(k,t){
 const settingSide=k=>k.has_device||k.home==='device'?'device':'project';
 const settingChanged=k=>k.source!=='default'&&JSON.stringify(k.value)!==JSON.stringify(k.default);
 const settingHit=(k,q)=>!q||`${k.name} ${k.desc} ${k.table}.${k.key} [${k.table}] ${k.key}`.toLowerCase().includes(q);
-/* shown only while its parent is on (the queued value of the parent counts) */
+/* shown only while its parent is on */
 function settingShows(k,all){
   if(!k.parent)return true;
   const p=all.find(x=>`${x.table}.${x.key}`===k.parent);if(!p)return true;
-  const v=p.queued&&!p.has_device?(p.queued.unset?p.default:p.queued.value):p.value;
+  const v=p.value;
   return !(v===false||v===''||v==null);
 }
 /* the rows that set several kinds' models at once */
@@ -953,6 +953,8 @@ const obOld=x=>obRefused(x)&&!x.ctl&&!(x.args&&x.args.confirm);
 const obDue=(box,boot)=>boot?(box||[]).filter(x=>obOld(x)&&!obTo(x).startsWith('@')&&(x.boot||'')!==boot):[];
 const obBootCid=(x,boot)=>x.cid.split('~')[0]+'~'+boot;
 const obTo=x=>String((x&&x.args&&x.args.to)||'');
+/* take an item in; a setting's own later save takes the place of one that did not go yet (`at`: the one going now) */
+function obAdd(box,it,at){return(box||[]).filter(x=>!(it.set&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending'&&x.cid!==at)).concat([it])}
 /* the next item to send: the first still sending, skipping messages to a chat that is not up yet */
 function obNext(box){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@'))||null}
 /* a starting chat (placeholder '@cid') got its name: its messages go there */
@@ -1066,7 +1068,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1208,7 +1210,7 @@ async function act(name,args){
 /* --- F137: the outbox (obParse and the rest in the logic script) ------------------------------------------ */
 const OB_KEY='ar-outbox';
 S.ob=obParse(store.get(OB_KEY));S.obOpen=false;
-const OB={busy:false,offline:false,timer:0,wait:2000};
+const OB={at:'',busy:false,offline:false,timer:0,wait:2000};
 const newCid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,10);
 function obChange(fn){S.ob=fn(S.ob);store.set(OB_KEY,S.ob.length?JSON.stringify(S.ob):'')}
 /* B154: the sent messages (sentStep), kept over a reload */
@@ -1236,13 +1238,13 @@ function sentBubbles(n,shown){
 /* take an action: drawn at once by the caller, kept in the outbox, sent behind */
 function outbox(name,args,more){
   const it={cid:newCid(),name,args:args||{},state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
-  obChange(b=>b.concat([it]));render(true);drain();return it;
+  obChange(b=>obAdd(b,it,OB.at));render(true);drain();return it;
 }
 async function drain(){
   if(OB.busy)return;OB.busy=true;clearTimeout(OB.timer);
   try{
     for(let it;(it=obNext(S.ob));){
-      let j;
+      let j;OB.at=it.cid;
       try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:it.name,args:it.args,cid:it.cid})});
         if(r.status>=500)throw new Error(`HTTP ${r.status}`);
         j=await r.json()}
@@ -1252,7 +1254,7 @@ async function drain(){
       obChange(b=>obSettle(b,it.cid,j,S.snap.boot));
       obDone(it,j);render(true);
     }
-  }finally{OB.busy=false}
+  }finally{OB.busy=false;OB.at=''}
   obDraw();
 }
 /* what the page does once the run answered an item */
@@ -1267,13 +1269,12 @@ function obDone(it,j){
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
-  else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(it.name==='setting_project'?`${queuedTask(j.out)} queued: the setting lands through the gate`:String(j.out||'Saved').split('\n')[0])}  // F97
+  else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
     else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
   if(it.res&&FD.n===it.res)feedLoad();  // F114
   if(it.done)toast(it.done);
 }
-const queuedTask=out=>((String(out||'').match(/\b[A-Z]+\d+[a-z]?\b/)||['A task'])[0]);
 /* the cards an item still sending stands in for stay off the lists */
 function obHide(){
   const ns=obHidden(S.ob,'need'), cs=obHidden(S.ob,'concept'), now=Date.now();
@@ -1989,17 +1990,16 @@ async function loadSettings(){
   render(true);
 }
 /* F166: the Settings view: the everyday settings with their control on the row, the rest behind Advanced and Project
-   file. A setting has one home: 'device' saves at once, 'everyone' queues a task. `side` is where its row saves. */
+   file. A setting has one home: 'device' saves in runner.local.toml, 'everyone' in runner.toml, both at once. `side` is where its row saves. */
 const settingId=k=>`${k.table}.${k.key}`;
 const settingOf=id=>{const x=S.set&&S.set.tables&&S.set.tables.find(t=>t.table===id.split('.')[0]);return x&&x.keys.map(k=>({...k,table:x.table})).find(k=>settingId(k)===id)};
 const settingsAll=d=>d.tables.flatMap(t=>t.keys.map(k=>({...k,table:t.table}))).sort((a,b)=>a.order-b.order);
 const PLACE={device:'this device',project:'everyone',everyone:'everyone'};
 const setField=(id,side)=>`set:${side}:${id}`;
-/* the words in a setting's field on `side`: what is typed, else what is queued, else what is kept */
+/* the words in a setting's field on `side`: what is typed, else what is kept */
 function settingNow(k,side,field){
   const f=setField(settingId(k),side);
   if(f in S.f)return S.f[f];
-  if(side==='project'&&k.queued)return settingText(k.queued.unset?k.default:k.queued.value);
   return k['has_'+side]?settingText(k[side]):field?settingText(k.value):'';
 }
 function settingField(k,side,onRow){
@@ -2019,17 +2019,18 @@ function settingControl(k,side,readonly){
   if(onRow(k))return settingField(k,side,true);
   return `<span class="setval">${esc(settingSays(k,settingNow(k,side,true)))}</span>`;
 }
+/* this device's own value over the one everyone has, in words; '' for none */
+const overSays=k=>k.has_device&&k.has_project?`This device overrides everyone's (${settingSays(k,settingText(k.project))})`:'';
 function settingRow(k,o={}){
   const id=settingId(k), open=!!S.setOpen[id], side=settingSide(k), busy=S.ob.filter(x=>x.set&&x.set.id===id&&!x.set.part);
   const place=side==='device'?'device':'everyone', off=o.home&&place!==o.home, e=esc(id);
   const where=k.source==='default'?'the default':k.source==='device'?'this device':'everyone';
   return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side,o.readonly)}</div>
     ${busy.map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
-    ${k.queued&&!busy.length?`<div class="small"><span class="tag warn">Queued</span> ${esc(k.queued.id)} ${k.queued.unset?'resets it':`sets it to ${esc(settingSays(k,settingText(k.queued.value)))}`} for everyone</div>`:''}
-    ${off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
+    ${overSays(k)?`<div class="small">${esc(overSays(k))}</div>`:off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
     ${open?`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
       ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side)}
-      <div class="btns">${onRow(k)||id==='run.slots'?'':`<button class="btn pri" data-setsave="${side}" data-id="${e}">${side==='device'?'Save on this device':'Queue for everyone'}</button>`}<button class="btn" data-setmore="${e}">More…</button></div>`}`:''}
+      <div class="btns">${onRow(k)||id==='run.slots'?'':`<button class="btn pri" data-setsave="${side}" data-id="${e}">${side==='device'?'Save on this device':'Save for everyone'}</button>`}<button class="btn" data-setmore="${e}">More…</button></div>`}`:''}
     ${o.reset?`<div class="btns">${resetBtn(k)}</div>`:''}</div>`;
 }
 const resetBtn=k=>(k.has_device?`<button class="btn" data-setreset="device" data-id="${esc(settingId(k))}">Reset on this device</button>`:'')+(k.has_project?`<button class="btn" data-setreset="project" data-id="${esc(settingId(k))}">Reset for everyone</button>`:'');
@@ -2037,22 +2038,21 @@ const resetBtn=k=>(k.has_device?`<button class="btn" data-setreset="device" data
 function kindsValue(k){
   const side=settingSide(k), f=setField(settingId(k),side);
   if(f in S.f){const r=settingValue(k,S.f[f]);if(r.v)return r.v}
-  return side==='project'&&k.queued?(k.queued.unset?{}:k.queued.value||{}):k['has_'+side]?k[side]:{};
+  return k['has_'+side]?k[side]:{};
 }
 function kindsRow(g,k){
   const open=!!S.setOpen['kinds:'+g.id], now=kindsModel(g.kinds,{...k.default,...kindsValue(k)}), ms=[...new Set(['opus','sonnet','haiku',...(now?[now]:[])])];
   return `<div class="srow" data-k="setkinds:${g.id}"><div class="row setline"><button class="fold setname" data-setopen="kinds:${g.id}" aria-expanded="${open}"><span class="grow"><b>${g.name}</b><span class="small">${g.desc}</span></span></button>
     <select class="fld setpick" data-kinds="${g.id}" aria-label="${g.name}">${now?'':'<option value="" selected>Mixed</option>'}${ms.map(m=>`<option ${m===now?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
     ${S.ob.filter(x=>x.set&&x.set.part===g.id).map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
-    ${k.queued?`<div class="small"><span class="tag warn">Queued</span> ${esc(k.queued.id)} changes the models for everyone</div>`:''}
-    ${k.has_device?'<div class="small">Saved on this device only</div>':''}
+    ${k.has_device?`<div class="small">${k.has_project?'This device overrides what everyone has':'Saved on this device only'}</div>`:''}
     ${open?`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies when the run restarts.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`:''}</div>`;
 }
 function saveKinds(gid,model){
   const k=settingOf('models.kinds'), g=KINDS_ROWS.find(x=>x.id===gid);if(!k||!g||!model)return;
   const side=settingSide(k), v={...kindsValue(k)};for(const x of g.kinds)v[x]=model;
   S.f[setField('models.kinds',side)]=JSON.stringify(v);
-  outbox(side==='device'?'setting_device':'setting_project',{table:'models',key:'kinds',value:v},{set:{id:'models.kinds',applies:side==='project'?'now':k.applies,part:gid},say:`${side==='device'?'Save':'Queue'} ${g.name} on ${model}`});
+  outbox(side==='device'?'setting_device':'setting_project',{table:'models',key:'kinds',value:v},{set:{id:'models.kinds',applies:k.applies,part:gid},say:`Save ${g.name} on ${model}`});
 }
 const setErrHTML=()=>S.setErr?`${S.setOld?oldRunHTML(S.setErr):`<div class="small v-bad">${esc(S.setErr)}</div>`}<div class="btns"><button class="btn" data-setload>Try again</button></div>`:'';
 function setGroup(d,g,ks,o){
@@ -2089,8 +2089,8 @@ function settingSheet(){
   const id=settingId(k), side=settingSide(k), other=side==='device'?'project':'device';
   return `<h2>${esc(k.name)}</h2><div class="small">${esc(k.desc)}</div>
     <div class="sec">${other==='device'?'Only on this device':'For everyone'}<span class="ln"></span></div>
-    <div class="small">${other==='device'?`Saved at once in ${esc(S.set.device)}, and wins over everyone's.`:`Queued as a task on ${esc(S.set.project)}; it lands once its tests pass.${k.has_device?' This device keeps its own.':''}`}</div>
-    ${settingField(k,other)}<div class="btns"><button class="btn pri" data-setsave="${other}" data-id="${esc(id)}">${other==='device'?'Save on this device':'Queue for everyone'}</button></div>
+    <div class="small">${other==='device'?`Saved at once in ${esc(S.set.device)}, and wins over everyone's.`:`Saved at once in ${esc(S.set.project)}, and committed.${k.has_device?' This device keeps its own.':''}`}</div>
+    ${settingField(k,other)}<div class="btns"><button class="btn pri" data-setsave="${other}" data-id="${esc(id)}">${other==='device'?'Save on this device':'Save for everyone'}</button></div>
     ${k.has_device||k.has_project?`<div class="sec">Reset<span class="ln"></span></div><div class="btns">${k.has_device?`<button class="btn" data-setreset="device" data-id="${esc(id)}">Reset on this device</button>`:''}${k.has_project?`<button class="btn" data-setreset="project" data-id="${esc(id)}">Reset for everyone</button>`:''}</div>`:''}
     <div class="btns"><button class="btn" data-closesheet>Close</button></div>`;
 }
@@ -2100,12 +2100,12 @@ function saveSetting(id,side){
   const f=setField(id,side), el=[...document.querySelectorAll('[data-f]')].find(e=>e.dataset.f===f);
   const text=f in S.f&&!(el&&el.type!=='checkbox'&&el.tagName!=='SELECT')?S.f[f]:el?(el.type==='checkbox'?String(el.checked):el.value):settingNow(k,side,true);
   const r=pickOptions(k,text)?{v:pickValue(k,text)}:settingValue(k,text);if(r.err)return toast(r.err,true);
-  outbox(side==='device'?'setting_device':'setting_project',{table:k.table,key:k.key,value:r.v},{set:{id,applies:side==='project'?'now':k.applies},say:`${side==='device'?'Save':'Queue'} ${k.name}: ${settingSays(k,text)}`});
+  outbox(side==='device'?'setting_device':'setting_project',{table:k.table,key:k.key,value:r.v},{set:{id,applies:k.applies},say:`Save ${k.name}: ${settingSays(k,text)}`});
 }
 function resetSetting(id,side){
   const k=settingOf(id);if(!k)return;
   if(side==='device')outbox('setting_reset',{table:k.table,key:k.key},{set:{id,applies:k.applies},say:`Reset ${k.name}`});
-  else outbox('setting_project',{table:k.table,key:k.key,unset:true},{set:{id,applies:'now'},say:`Queue ${k.name}: reset`});
+  else outbox('setting_project',{table:k.table,key:k.key,unset:true},{set:{id,applies:k.applies},say:`Reset ${k.name} for everyone`});
 }
 /* the stepper: what it shows moves at once; one save goes once the taps stop */
 let stepWait={};

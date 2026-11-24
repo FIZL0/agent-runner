@@ -18,6 +18,7 @@ A `[plan] dir` outside the code repo without `repo` (a synced folder) gets the l
 from __future__ import annotations
 
 import getpass
+import os
 import re
 import socket
 import threading
@@ -125,6 +126,74 @@ def publish(c, msg: str) -> str:
             if not pull(c, force=True):
                 return f'! plan: {msg}: merging the remote conflicts; committed in {c.plan_dir}, not pushed'
         return f'! plan: {msg}: not pushed (offline?); committed in {c.plan_dir}, the next edit pushes it'
+
+
+# --- F173: one file committed on the shared branch ----------------------------------------------
+
+def commit_file(root: Path, f: Path, edit, branch: str) -> tuple[bool, str]:
+    """Change `f` with `edit` (its bytes -> its new bytes and the commit message) and commit only it in the main checkout
+    `root`, so it is never left dirty; the caller holds state.LANDING. (True, '') committed, (True, note) when there was
+    nothing to commit, (False, why) with nothing changed. A file outside the repo, or one git ignores, is written
+    and not committed."""
+    g = lambda *a: git(*a, cwd=root)  # noqa: E731
+    try:
+        rel = f.resolve().relative_to(Path(root).resolve()).as_posix()
+    except ValueError:
+        rel = ''
+    tracked = bool(rel) and not g('ls-files', '--error-unmatch', '--', rel).returncode
+    new = not f.exists()
+    outside = not rel or not tracked and not g('check-ignore', '-q', '--', rel).returncode
+    if not outside:
+        st = g('status', '--porcelain', '--', rel)
+        if st.returncode:
+            return False, f'git could not read {f.name}: {st.stderr.strip()}'
+        if st.stdout.strip():
+            return False, f'{f.name} has uncommitted edits in {root}: commit or undo them first. Nothing was changed'
+        cur = g('branch', '--show-current').stdout.strip()
+        if cur != branch:
+            return False, f'{root} has {cur or "a detached HEAD"} out, not {branch}. Nothing was changed'
+        for what in ('MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD'):
+            at = g('rev-parse', '--path-format=absolute', '--git-path', what).stdout.strip()
+            if at and os.path.exists(at):
+                return False, f'a merge or rebase is under way in {root}: finish it first. Nothing was changed'
+    path = f.resolve()
+    old = b'' if new else path.read_bytes()
+    data, msg = edit(old)
+    if data == old:
+        return True, 'nothing to change'
+    _write(path, data, new)
+    if outside:
+        return True, f'{f.name} is not in git here, so there is no commit'
+    try:
+        why = g('add', '-N', '--', rel).stderr.strip() if new else ''
+        for _ in range(20):  # another git command in this checkout holds the index for a moment
+            r = g('commit', '-q', '-m', msg, '--', rel)
+            if not r.returncode:
+                return True, ''
+            why = r.stderr.strip() or r.stdout.strip() or why
+            if 'index.lock' not in why:
+                break
+            time.sleep(0.25)
+    except BaseException:
+        _undo(path, old, new, g, rel)
+        raise
+    _undo(path, old, new, g, rel)
+    return False, f'{f.name} could not be committed ({why[-200:]}). Nothing was changed'
+
+
+def _write(path: Path, data: bytes, new: bool = False) -> None:
+    tmp = path.with_name(path.name + '.tmp')
+    tmp.write_bytes(data)
+    if not new:
+        os.chmod(tmp, path.stat().st_mode & 0o777)
+    os.replace(tmp, path)
+
+
+def _undo(path: Path, old: bytes, new: bool, g, rel: str) -> None:
+    if not new:
+        return _write(path, old)
+    path.unlink(missing_ok=True)
+    g('reset', '-q', '--', rel)
 
 
 # --- claims: which runner has which task ------------------------------------------------------
