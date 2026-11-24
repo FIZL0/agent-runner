@@ -90,6 +90,10 @@ def test_no_trigger(tmp: Path):
     project(tmp, on('src/*.py'))
     eq(go(slot='X1', files={'src/a.py'}), 'C1', 'a pattern meets the file a running task holds')
 
+    project(tmp, on('src/**'))
+    with mock.patch.object(F.sched, 'touched', lambda *_: {'src/a.py'}):
+        eq(go(), '', 'two whole-directory globs: no one file holds the tasks')
+
 
 def test_which_files(tmp: Path):
     print('never a shared, generated, lock, docs or plan file')

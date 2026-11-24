@@ -44,6 +44,8 @@ def waiting_for(h: sched.Held, tried: set, tracked: set[str]) -> dict[str, list[
                 files = set()  # it waits for this one whatever its files are: a split would not free it
                 break
             for e in sched.file_overlap(t[2], b, h.shared):
+                if sched.whole_dir(e):
+                    continue  # it meets only another such glob: no one file holds the task
                 hits = {e} if '*' not in e else P.overlap({f for f in b[2] if '*' not in f}, {e})
                 files |= {p for f in hits if (p := path_of(f, tracked))}
         for f in files:
