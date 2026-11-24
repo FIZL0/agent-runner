@@ -305,18 +305,29 @@ def release_ask(rows: list[dict]) -> dict | None:
     rows = [r for r in rows if not r.get('placeholder')]
     if not rows:
         return None
-    said = '; '.join(f'{r["id"]} is {"releasing now" if r["state"] == "releasing" else "already queued"}' for r in rows)
+    from agent_runner.sched import taken
+    by_hand = taken() if S.C else {}
+    said = '; '.join(f'{r["id"]} is ' + ('releasing now' if r['state'] == 'releasing' else 'taken by a person'
+                                         if r['id'] in by_hand else 'already queued') for r in rows)
     return {'said': said, 'ask': f'{said}. Queue another release?', 'seen': ' '.join(sorted(r['id'] for r in rows))}
 
 
-RELEASE_LOCK = threading.Lock()  # F186: one New release at a time looks at the plan and adds to it
+RELEASE_WAIT = 60.0  # s a New release waits for another one to be queued (the page's, a TUI's)
 
 
 def new_release(argv: list[str], seen: str = '', confirm: bool = False) -> dict:
     """F186: queue a release by `argv`; with one open already only on a `confirm` that names the ones open now
-    (`seen`), so neither a second press nor a second Yes queues one more unasked."""
-    with RELEASE_LOCK:
-        ask = release_ask(release_tasks(P.lines(S.C.todo), _state(S.run_up()))) if S.C else None
+    (`seen`), so neither a second press nor a second Yes queues one more unasked. One at a time looks at the plan
+    and adds to it, across the pages and TUIs (a file lock of its own: the `plan add` it runs takes the plan's)."""
+    if not S.C:  # before `state.init`
+        return call(argv)
+    end = time.monotonic() + RELEASE_WAIT
+    while not (f := _plat().lock(S.C.notes('release.lock'))):
+        if time.monotonic() >= end:
+            return {'ok': False, 'code': 1, 'out': 'another release is being queued: look again', 'argv': argv}
+        time.sleep(0.05)
+    with f:
+        ask = release_ask(release_tasks(P.lines(S.C.todo), _state(S.run_up())))
         if ask and not (confirm is True and seen == ask['seen']):
             return {'ok': False, 'code': 3, 'out': ask['ask'], 'confirm': ask['ask'], 'seen': ask['seen'], 'argv': argv}
         return call(argv)

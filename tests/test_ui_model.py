@@ -320,6 +320,12 @@ def test_new_release_f186(tmp: Path) -> None:
         with mock.patch.object(U, '_state', lambda up: {'running': {'1': 'V6'}}):
             eq(U.run_control('release_now')['confirm'], 'V6 is releasing now; V7 is already queued. Queue another release?',
                'one that runs is named too')
+        with mock.patch('agent_runner.sched.taken', lambda: {'V6': tmp}):
+            check(U.run_control('release_now')['confirm'].startswith('V6 is taken by a person; V7 is already queued'), 'and one taken')
+        from agent_runner import plat
+        with plat.lock(S.C.notes('release.lock')), mock.patch.object(U, 'RELEASE_WAIT', 0.1):
+            r = U.run_control('release_now', confirm=True, text='V6 V7')
+            eq((r['code'], len(ran)), (1, 2), 'while another page or TUI queues one, this one adds nothing')
     todo.write_text(TODO.replace(v6 + '\n', ''), encoding='utf-8')
     ran.clear()
     ids = iter(('V6', 'V7', 'V8'))
