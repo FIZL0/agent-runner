@@ -44,6 +44,9 @@ const I={
  clock:ic('<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>'),
  check:ic('<path d="M5 12.5l4.5 4.5L19 7"/>'),
  play:ic('<path d="M8 5v14l11-7z"/>'),
+ pause:ic('<path d="M9 6v12M15 6v12" stroke-width="2.2"/>'),  // B763a, and the two below
+ minus:ic('<path d="M5 12h14"/>'),
+ undo:ic('<path d="M9 5L4 10l5 5"/><path d="M4 10h10a5.5 5.5 0 0 1 0 11h-3"/>'),
  alert:ic('<path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/>'),
  dot:ic('<circle cx="12" cy="12" r="2"/>'),
  file:ic('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),

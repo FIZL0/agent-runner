@@ -473,5 +473,62 @@ def test_manage_releases_f193(tmp: Path) -> None:
     check(not re.search(r'release', body, re.I) and 'Ship 1.2.0' in body, 'the copy, off: an ordinary task, nothing of releases', body)
 
 
+RUN_CARD_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1);
+const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
+const icons = page.slice(page.indexOf('const I={'), page.indexOf('const LOGLINE_ICON='));
+const S = {ob: [], snap: null};
+const env = {S, lastWords: () => '', obCards: () => '[outbox]'};
+const src = ['const esc=', 'const ic=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const obRun=', 'const slots=',
+  'const working_=', 'const taskControlsOn=', 'const CTL_ICON=', 'function cardControls(', 'const toolsWords='].map(line).join('')
+  + icons + grab('function slotRow(') + grab('function controlsCard(');
+const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return [controlsCard, I]}')(env);
+const out = JSON.parse(process.argv[3]).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw[0]() });
+console.log(JSON.stringify([out, draw[1]]));
+"""
+
+
+def test_run_card_b763a(tmp: Path) -> None:
+    """B763a: the Run card's controls stand above the slot rows, under the notices, each with its icon; the
+    walkthrough's start step still finds its target."""
+    if not shutil.which('node'):
+        print('  (no node here: the Run card script test is skipped)')
+        return
+    fake_repo(tmp)
+
+    def snap(n: int, up: bool = True, **run) -> dict:
+        return {'up': up, 'run': run, 'slots': n, 'controls': U.controls(), 'unpushed': 'Not pushed yet',
+                'sessions': [{'name': f's{i}', 'task': f'B{i}', 'state': 'working', 'task_controls': True}
+                             for i in range(1, n + 1)], **U.controls_shown(up, run, {})}
+    busy = [{'ctl': 'pause:', 'state': 'sending'}]
+    cases = [(snap(0), []), (snap(1), []), (snap(4), busy), (snap(4, paused=True), []),
+             (snap(4, stopping=True), []), (snap(0, up=False), [])]
+    (tmp / 'driver.js').write_text(RUN_CARD_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps(cases)],
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
+    cards, icons = json.loads(r.stdout)
+    icon = {'start': 'play', 'go_on': 'play', 'pause': 'pause', 'stop': 'stop', 'stop_undo': 'undo',
+            'slot_add': 'plus', 'slot_remove': 'minus'}
+    for (s, _), html in zip(cases, cards):
+        row = html.split('aria-label="Run controls">', 1)[1].split('</div>', 1)[0]
+        for k in s['card']:
+            check(re.search(rf'data-ctl="{k}">{re.escape(icons[icon[k]])}\w', row), f'{k}: its icon, then its word', row)
+        check(f'data-sheet="run">{icons["dots"]}More…' in row, 'More… too', row)
+        eq(row.count('<svg'), len(s['card']) + 1, 'one icon on each')
+        at = html.index('Run controls')
+        check(html.index('data-k="runsaid"') < html.index('data-k="unpushed"') < html.index('[outbox]') < at,
+              'under the state line, the notices and the outbox', html)
+        eq(html.count('class="srow"'), len(s['sessions']), 'a row for each slot')
+        check(all(at < m.start() for m in re.finditer('class="srow"', html)), 'above every slot row', html)
+        walk = logic_js([['walkStep', 'start', {'up': s['up']}]])[0]['at']
+        eq(walk[0], '.card:has([data-k="runsaid"])' if s['up'] else '[data-ctl="start"]', "the walk's start target")
+        check(html.startswith('<div class="card ') and (s['up'] or 'data-ctl="start"' in html), 'and it is there', html)
+    check('class="btn  busy" data-ctl="pause"' in cards[2], 'a control being sent is busy', cards[2])
+    for i, k in ((3, 'go_on'), (4, 'stop_undo'), (5, 'start')):
+        check(f'class="btn acc" data-ctl="{k}"' in cards[i], f'{k} is the main button', cards[i])
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_run_card_b763a)]))

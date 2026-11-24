@@ -89,6 +89,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   tasks by title, what landed today. One main button (`mainBtn()`: Start run or Open); the rest is in the
   … sheet (`dotsBtn()`), never beside it.
 - **Release card** (New release, `release_wait`, `release_now`): one line of what is open, then its buttons; the question takes their place; a press with a release open asks in place, Yes then No, and a Drop on a release that has not started asks its own question first. With Manage releases off (`releasesOn()`) it goes, and its heading with it; an open release is a task in the Queue.
+- **Run card** (`controlsCard()`, `.btns.tight`, `CTL_ICON`): order top to bottom: state line, notices, the run's controls, then the slot rows, each under a line, so a run control never reads as a slot's own button. Each run control has an icon beside its word, never an icon alone: 15px, decorative (`aria-hidden`). A new control on the card gets an entry in `CTL_ICON`.
 - **Walkthrough** (`.walk`, `walkDraw()`, `walkStep()`): one card at a time (`.walkcard`), only on the example project's
   page (`walkNow()` says when), never in a chat or Talk. Its row of its own under the view covers nothing, and goes while
   the keyboard is open. A 2px `--accent` ring (`[data-walkat]`) is on the real thing it points at. Back, Next and Skip
