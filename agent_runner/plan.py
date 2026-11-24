@@ -3328,7 +3328,8 @@ def decide_question(text: str) -> str:
     if len(q) <= 240:
         return q
     end = m[0] if (m := re.search(r' \[[^\[\]]+ / [^\[\]]+\]\.?(?: https?://\S+)*$', q)) else ''
-    return q[:len(q) - len(end)][:max(239 - len(end), 100)].rsplit(' ', 1)[0] + '…' + end
+    head, room = q[:len(q) - len(end)], max(239 - len(end), 100)  # a long bracket still leaves the question 100
+    return q if len(head) <= room else head[:room].rsplit(' ', 1)[0] + '…' + end
 
 
 if __name__ == '__main__':

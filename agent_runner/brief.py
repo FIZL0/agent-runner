@@ -441,7 +441,7 @@ def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
 
 SHEET_PROMPT = """\
 When you block with `DECIDE:` on a choice that takes more than one question (a pick-list, settings to change or \
-keep), or whose answers each need a why (one question with a few short answers is the bracket or "options" above), write the choice \
+keep), or whose answers each need a why (one question with a few short answers is the bracket or "options" above; a sheet is the one `DECIDE:` that holds several), write the choice \
 as a pick sheet, not as a numbered list: no option numbers anywhere. Write {path} as JSON: "title" (a short \
 name), "summary" (one line that says what is ready, e.g. "12 config cleanups ready, 10 optional"), "intro" \
 (one or two sentences), and "groups": [{{"heading": <a kind of change>, "questions": [{{"id": <short key>, \

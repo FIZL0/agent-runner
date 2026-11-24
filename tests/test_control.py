@@ -1313,6 +1313,8 @@ def test_decide_options_f181d():
         opts, what = N.decide_options(tid, a[3], line)
         eq([o['name'] for o in opts], names, f'{n}: filed as {tid}, its options are buttons')
         check(opts and opts[0]['rec'] and what.startswith('Which look?') and '[' not in what, f'{n}: and off the question', what)
+    long = 'Which look? [' + ' / '.join(f'{c * 60}' for c in 'abcd') + ']'
+    eq(P.decide_question(f'DECIDE: {long}'), long, 'a long bracket costs a short question no word')
     eq(len(P.decide_question('DECIDE: ' + 'word ' * 100)) <= 240, True, 'no bracket: cut as before')
 
 
