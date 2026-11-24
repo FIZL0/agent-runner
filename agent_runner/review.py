@@ -42,6 +42,9 @@ def prompt(tid: str, base: str, cwd: Path, diff: str) -> str:
 def claude_once(model: str, text: str, cwd: Path) -> tuple[str, str]:
     """(the answer, why it failed) of a headless Claude Code one-shot with Read only, `text` on stdin."""
     from agent_runner.control import control_env
+    from agent_runner.sched import agent_held
+    if bad := agent_held():  # B764c
+        return '', f'the one-shot on {model} did not run: {bad}'
     argv = [plat.exe(state.C.run['agent']), '-p', '--model', model, '--tools', 'Read', '--permission-mode', 'dontAsk',
             '--strict-mcp-config', '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False})]
     try:

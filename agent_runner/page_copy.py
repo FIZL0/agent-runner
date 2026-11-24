@@ -180,16 +180,15 @@ def page_copy_said(r) -> str:
 
 def page_copy_publish(path: Path, url: str, icon: str = 'dashboard') -> str:
     """Run the one-shot (`page_copy_argv`; `harness_once` for another provider's feed model) and return the URL it
-    published to, '' when it did not. Raises OSError when the agent cannot be started at all. B764c: none is started
-    while [run] agent is wrong."""
-    if bad := agent_held():
-        log(f'run page copy: not published: {bad}')
-        return ''
+    published to, '' when it did not. Raises OSError when the agent cannot be started at all. B764c: FileNotFoundError
+    while [run] agent is wrong and the feed model is Claude's."""
     if feed_on_harness():  # F406e: no claude.ai page from there, whatever it says: the local copy stands
         said, why = harness_once(feed_model(), page_copy_ask(path, url, icon) + ' With no Artifact tool, publish it '
                                  'nowhere: answer "local copy".', path.parent, PAGE_COPY_TIMEOUT)
         log(f'run page copy: no claude.ai page without Claude Code; the local copy is {path}' + (f' ({why})' if why else ''))
         return ''
+    if bad := agent_held():  # B764c: as no agent here (F406e): the local copy is the answer
+        raise FileNotFoundError(bad)
     r = sp.run(page_copy_argv(path, url, icon), cwd=str(path.parent), env=control_env(), stdin=sp.DEVNULL,
                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=PAGE_COPY_TIMEOUT)
     got = ARTIFACT_URL.findall(r.stdout or '')
@@ -246,7 +245,7 @@ def page_copy_tick(now: float | None = None, snap: dict | None = None, publish=N
     now = time.time() if now is None else now
     try:
         if (PAGE_COPY_OFF[0] or not (one_session() and remote_on())
-                or now - PAGE_COPY_AT[0] < PAGE_COPY_EVERY or agent_held()):  # B764c
+                or now - PAGE_COPY_AT[0] < PAGE_COPY_EVERY or (agent_held() and not feed_on_harness())):  # B764c
             return False
         if snap is None:
             from agent_runner import ui_model
