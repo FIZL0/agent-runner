@@ -15,7 +15,7 @@ from unittest import mock
 from _check import check, eq, git, report
 
 from agent_runner import cmds, config as CF, control, gitops, loop, no_push as N, plan as P, plansync  # noqa: E402
-from agent_runner import runner as R, slots  # noqa: E402
+from agent_runner import runner as R, slots, tools  # noqa: E402
 
 
 def head(bare: Path, branch: str = 'main') -> str:
@@ -106,9 +106,6 @@ def test_config_kept(repo: Path) -> None:
     eq((on['GIT_CONFIG_COUNT'], on['GIT_CONFIG_VALUE_0'], on['GIT_CONFIG_KEY_1']), ('2', 'Ann', N.KEY),
        "git config the environment carries is kept")
     eq({**on, **N.env(on)}, on, 'a session in a session: once')
-    eq(N.without(on), base, 'and taken out again, the rest kept')
-    eq(N.without({'A': '1', **N.env({})}), {'A': '1'}, 'nothing left behind')
-    eq(N.without(base), base, 'no policy: untouched')
     eq(N.env({'GIT_CONFIG_COUNT': 'x'})['GIT_CONFIG_COUNT'], '1', 'a broken count is replaced')
     configure(repo, True, 'slot_env = ["GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=user.name", "GIT_CONFIG_VALUE_0=Ann"]\n')
     env = task_env(1)
@@ -145,9 +142,10 @@ def test_inherited(repo: Path, other: Path) -> None:
         eq(CF.cfg(other).push_remote, None, "the runner's commands there push nothing either")
         eq(gitops.push(other, 'main', shared=True), '', 'no push to try')
         refused(session(task_env(1), other, 'git', 'push'), 'its sessions are still refused')
-        N.start_run(R.C, other)  # a run started from that session follows its own project
-        check(N.ENV not in os.environ and N.KEY not in os.environ.values(), 'a run drops an inherited policy')
-        eq(CF.cfg(other).push_remote, 'origin', 'and its project pushes')
+        N.require(R.C, other)
+        eq(CF.cfg(other).push_remote, None, 'a run started from that session keeps the policy')
+        check('no-push policy' in (tools.fence('Bash', {'command': 'git push'}, other, other, other, other, other, False) or ''),
+              'the git fence names the policy')
 
 
 def test_old_git(repo: Path) -> None:

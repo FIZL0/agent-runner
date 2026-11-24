@@ -646,13 +646,14 @@ A run or control session refuses to start when this machine's git does not hold 
 It is a guard, not a sandbox. Not stopped: a process that clears or changes its environment (`env -i`, sudo, WSL, ssh
 to another machine, a container); a git older than 2.31 at another path; `git send-pack`; git-svn, p4 and git-lfs
 uploads; tools with their own git code (libgit2, jj, JGit); gh and API calls; package uploads; release commands. A
-session opened by hand (not started by the runner) is not covered. The test gate that `done` runs in a session
+session opened by hand (not started by the runner) and `agent-runner setup`'s session are not covered. The test gate that `done` runs in a session
 inherits the policy, so tests that push, even to a local remote, fail there (the merge gate does not have it; a test
 may unset `GIT_CONFIG_COUNT` for its own temp repos). For a guarantee, remove the credentials or use branch protection
 or read-only deploy keys on the remote.
 
-A run started from a session in another project follows that project's own setting. The setting is a file, so an
-agent could edit `runner.toml` for a later run; `runner.local.toml` can override it. Claude.ai page publishing and
+A run started from a session under the policy keeps it, in any project; start it from your own terminal or Runner Home
+to follow that project's own setting. An `env` in Claude Code's settings (or a shell profile) that sets
+`GIT_CONFIG_COUNT` can displace the policy. The setting is a file, so an agent could edit `runner.toml` for a later run; `runner.local.toml` can override it. Claude.ai page publishing and
 GitHub issue comments are not git pushes and are unchanged. The person's own terminal is unaffected.
 
 ### Concept tasks

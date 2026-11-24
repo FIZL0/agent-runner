@@ -1039,7 +1039,7 @@ def run(argv: list[str], prog: str) -> int:
         return slot_shim(a.slot_shim)
 
     init()
-    no_push.start_run(C, ROOT)
+    no_push.require(C, ROOT)
     r = C.run
     if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
         a.model = claude_model(a.model, C.providers, C.models_local, 'run --model')

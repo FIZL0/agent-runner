@@ -43,28 +43,6 @@ def env(base: dict) -> dict[str, str]:
     return {ENV: '1', 'GIT_CONFIG_COUNT': str(n + 1), f'GIT_CONFIG_KEY_{n}': KEY, f'GIT_CONFIG_VALUE_{n}': REFUSED}
 
 
-def without(base: dict) -> dict[str, str]:
-    """`base` with the policy taken out, other git config kept."""
-    if not base.get(ENV) and (KEY, REFUSED) not in _entries(base):
-        return dict(base)
-    n, keep = _count(base), [e for e in _entries(base) if e != (KEY, REFUSED)]
-    drop = {ENV, 'GIT_CONFIG_COUNT'} | {f'GIT_CONFIG_{w}_{i}' for i in range(n) for w in ('KEY', 'VALUE')}
-    out = {k: v for k, v in base.items() if k not in drop}
-    if keep:
-        out['GIT_CONFIG_COUNT'] = str(len(keep))
-        for i, (k, v) in enumerate(keep):
-            out[f'GIT_CONFIG_KEY_{i}'], out[f'GIT_CONFIG_VALUE_{i}'] = k, v
-    return out
-
-
-def drop() -> None:
-    """Out of this process: a run started from a session under the policy follows its own project's setting."""
-    new = without(dict(os.environ))
-    for k in [k for k in os.environ if k not in new]:
-        del os.environ[k]
-    os.environ.update(new)
-
-
 def problem(cwd: Path) -> str:
     """Why this machine's git would not hold the policy (before 2.31 it does not read GIT_CONFIG_COUNT), else ''."""
     from agent_runner.gitops import git
@@ -79,9 +57,3 @@ def require(c, root: Path) -> None:
     """Refuse to start anything under a policy git here would not hold."""
     if c.no_push and (why := problem(root)):
         raise SystemExit(why)
-
-
-def start_run(c, root: Path) -> None:
-    """A run's start: an inherited policy goes, and this project's own must hold."""
-    drop()
-    require(c, root)
