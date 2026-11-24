@@ -2227,7 +2227,7 @@ const needs = JSON.parse(process.argv[3]);
 const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
 const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
-const el = {h: '', cls: new Set(), focus() {}, scrollTop: 0, classList: {toggle: (c, on) => on ? el.cls.add(c) : el.cls.delete(c)}};
+const el = {h: '', cls: new Set(), focus() {}, scrollTop: 0, querySelectorAll: () => [], classList: {toggle: (c, on) => on ? el.cls.add(c) : el.cls.delete(c)}};
 const sent = [], handlers = {}, fetched = [];
 const env = {S: {snap: {needs, controls: JSON.parse(process.argv[4])}, f: {}, sheet: '', askShot: -1, askFold: {}, ob: []}, I: {ext: '', chev: ''}, SHEETS: {}, sheetBack: null,
   $: () => el, esc: t => env.E(t), setHTML: (n, h) => { el.h = h; return false }, keepScroll: () => () => {}, keepFields: () => () => {},
@@ -2330,6 +2330,169 @@ def test_need_popup_f162(tmp: Path) -> None:
        "F162a: a pitch's answers carry the words too")
     check('askfoot' not in o['tool'] and 'data-askfold' not in o['tool'], 'a missing tool has nothing to answer, and no task', o['tool'])
     eq(o['left'], '', 'it closes when the item leaves Needs you')
+
+
+GIVE_DRIVER = NEED_DRIVER.split("  out.card = env.card0")[0] + r"""
+  const answers = JSON.parse(process.argv[5]), posts = [];
+  env.sureHTML = new Function('esc', line('const sureHTML=') + 'return sureHTML')(env.E); env.kbReveal = () => {}; env.window = {isSecureContext: true}; env.KEEP = k => S.f[k];
+  el.querySelector = () => null;
+  const nodes = ['give:F399:link', 'givesec:F399:tok'].map(f => ({dataset: {f}, value: 'x', remove() { this.gone = true }}));
+  el.querySelectorAll = s => s.startsWith('[data-f') ? nodes : [];
+  env.fetch = async (p, o) => { if (!o) return {json: async () => ({ok: true, text: 't'})}; posts.push([p, JSON.parse(o.body), env.S.giving]); return {json: async () => answers.shift()} };
+  const type = (k, v) => { S.f[k] = v };
+  const done = async sure => { press2(sure); await wait() };
+  const press2 = sure => handlers.click.forEach(f => f({target: {closest: s => s === '[data-give]' ? {dataset: {give: 'F399'}, hasAttribute: () => sure} : null}}));
+  out.card = env.card0(needs[0], 0); out.other = env.card0(needs[1], 1);
+  press('[data-needopen]', {needopen: 'F399'}, false); await wait(); out.html = el.h;
+  env.window.isSecureContext = false; env.render(); out.http = el.h; env.window.isSecureContext = true;
+  type('give:F399:link', 'https://evil.example'); type('givesec:F399:tok', 'hunter2');
+  await done(false); out.refused = [el.h, {...S.f}];
+  await done(false); out.asked = [el.h, {...S.f}];
+  await done(true); out.sent = [S.sheet, {...S.f}, nodes.map(n => [n.value, !!n.gone]), S.snap.needs.map(n => n.id)];
+  out.posts = posts; out.acts = sent;
+  S.snap.needs = needs; nodes[1].value = 'x'; press('[data-needopen]', {needopen: 'F399'}, false);
+  type('give:F399:link', 'kept'); type('givesec:F399:tok', 'hunter2'); env.closeSheet(); out.closed = [{...S.f}, nodes[1].value];
+  console.log(JSON.stringify(out)); process.exit(0);
+})();
+"""
+
+
+def give_row() -> dict:
+    """F175a: a Needs you row as iFizBox F399 asks: two steps, a link with a match and a question, and a secret."""
+    d = {'said': 'Waits on you', 'title': 'Shortcuts', 'where': '', 'summary': 's', 'lead': [], 'expect': ['It is listed'], 'notes': [], 'shots': [],
+         'steps': ["Add main's copy of Install Switch to Shortcuts", 'Share > Copy iCloud Link', 'Run this'],
+         'step_more': [{'link': 'https://www.icloud.com/shortcuts/a?b="c'}, {}, {'cmd': 'echo "<b>"', 'on': 'mini'}],
+         'inputs': [{'key': 'link', 'label': 'iCloud link', 'kind': 'link', 'hint': 'h', 'match': '', 'confirm': 'Publish?', 'env': ''},
+                    {'key': 'tok', 'label': 'To<ken', 'kind': 'secret', 'hint': '', 'match': '', 'confirm': '', 'env': 'TOK'}]}
+    return {'id': 'F399', 'label': 'BLOCKED', 'ask': 'a', 'detail': d, 'answers': [{'label': 'Done', 'value': 'Done'}]}
+
+
+def test_need_give_page_f175a(tmp: Path) -> None:
+    """F175a: the popup draws an item's steps, fields and Done, with no plain answers; what it sends, a refusal, a
+    question first, and what is left on the page afterwards."""
+    if not shutil.which('node'):
+        print('  (no node here: the popup script test is skipped)')
+        return
+    plain = {'id': 'F2', 'label': 'BLOCKED', 'ask': 'Log in', 'answers': [{'label': 'Done', 'value': 'Done'}]}
+    needs = [give_row(), plain]
+    for n in needs:
+        n.update(acts=U.row_acts('need', n), labels=U.row_labels('need', n))
+    answers = [{'ok': False, 'field': 'link', 'out': 'iCloud link: paste <it>'}, {'ok': False, 'code': 3, 'confirm': 'Publish?', 'out': 'Publish?'},
+               {'ok': True, 'gone': 'F399', 'said': 'F399 has what you gave'}]
+    (tmp / 'give.js').write_text(GIVE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'give.js'), str(W.PAGE), json.dumps(needs), json.dumps(U.controls()), json.dumps(answers)],
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node presses Done', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    h = o['html']
+    check('need_answer1' not in o['card'] and 'need_answer1' in o['other'], 'no plain answers on its card; an item without inputs keeps them', o['card'])
+    parts = ['Install Switch', 'href="https://www.icloud.com/shortcuts/a?b=&quot;c" target="_blank"', '>Open</a>', 'Share &gt; Copy iCloud Link', 'Run on mini',
+             '<code>echo &quot;&lt;b&gt;&quot;</code>', '>Copy</button>', 'iCloud link', 'data-f="give:F399:link"', 'To&lt;ken',
+             'data-f="givesec:F399:tok" type="password"', 'data-give="F399" >Done<']
+    at = [h.find(x) for x in parts]
+    check(-1 not in at and at == sorted(at), 'steps with Open and Copy, then a field each, then Done', list(zip(parts, at)))
+    check('need_answer1' not in h and 'askre:' not in h and h.count('data-give=') == 1, 'one Done, no plain answer', h)
+    check('plain http' in o['http'] and 'givesec' not in o['http'] and 'data-give="F399" disabled' in o['http'], 'over http: no secret field, and why', o['http'])
+    vals = {'link': 'https://evil.example', 'tok': 'hunter2'}
+    h, f = o['refused']
+    check('iCloud link: paste &lt;it&gt;' in h and h.index('data-f="give:F399:link"') < h.index('paste &lt;it') < h.index('To&lt;ken') and 'aria-invalid' in h,
+          'a refusal shows at its field', h)
+    eq(f, {'give:F399:link': vals['link'], 'givesec:F399:tok': vals['tok']}, 'and keeps what was typed')
+    h, f2 = o['asked']
+    check('Publish?' in h and 'data-give="F399" data-sure' in h and '>Done<' not in h and f2 == f, 'asked first', h)
+    eq([x[:2] for x in o['posts']], [['give?t=T', {'tid': 'F399', 'values': vals, 'confirm': c}] for c in (False, False, True)], 'what is sent, and where')
+    eq(o['posts'][0][2], 'F399', 'and it shows that it is sending')
+    check('hunter2' not in json.dumps([o['refused'][0], o['asked'][0], o['html']]), 'a secret is never in the markup')
+    eq(o['sent'], ['', {}, [['', True], ['', True]], ['F2']], 'sent: the popup closes, its fields and their values are gone')
+    eq(o['acts'], [['toast', 'F399 has what you gave']], 'nothing went through the outbox')
+    eq(o['closed'], [{'give:F399:link': 'kept'}, ''], 'closing forgets a secret, not a link')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("!k.startsWith('givesec:')" in page[page.index('function keepTyped'):page.index('function takeTyped')]
+          and "secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')" in page, 'a refresh keeps no secret and waits for it')
+    from agent_runner import page_copy
+    copy = page_copy.page_copy_html({'needs': needs})
+    check('F399' in copy and '<input' not in copy and 'ken' not in copy, 'the claude.ai copy has no field', copy)
+
+
+def test_give_route_f175a(tmp: Path) -> None:
+    """F175a: POST /give: the token, and a secret only over https or this machine, whatever the page says; a failed
+    match says its hint, a question is asked first; nothing the run keeps or shows but its own file has the secret."""
+    import shlex
+    import urllib.request as ur
+    from agent_runner import home as H, plan as P
+    from agent_runner.status import waiting_ok
+    repo = fake_repo(tmp)
+    asks = repo / '.runner' / 'asks'
+    asks.mkdir(parents=True, exist_ok=True)
+    token, secret, url = W.web_token(), 'hunter2-sentinel', 'https://www.icloud.com/shortcuts/abc'
+    ask = lambda tid, *xs: (P.block(tid, 'BLOCKED: give it', todo=S.C.todo),  # noqa: E731
+                            (asks / f'{tid}.json').write_text(json.dumps({'steps': ['Do it'], 'inputs': list(xs)}), encoding='utf-8'))
+    ask('F1', {'key': 'link', 'label': 'iCloud link', 'kind': 'link', 'match': r'https://www\.icloud\.com/shortcuts/\S+', 'hint': 'paste the iCloud link',
+               'confirm': 'Publish this?'})
+    tokin = [{'key': 'tok', 'label': 'Token', 'kind': 'secret', 'env': 'TOK'}]
+    ask('B2', *tokin)
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'needs': U.needs_rows(waiting_ok(), dt.datetime.now())[0]})
+    port = srv.server_address[1]
+    hs = H.serve_home('home-tok', 0, '127.0.0.1', rows=lambda *a: [])
+    hs.link, hs.project = (lambda root: (port, token)), (lambda key: repo)
+    hp = hs.server_address[1]
+    said = []
+
+    def give(body, p=port, path=None, **hd) -> tuple[int, dict]:
+        hd = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{p}', **hd}
+        req = ur.Request(f'http://127.0.0.1:{p}' + (path or f'/give?t={token}'), data=json.dumps(body).encode(), headers=hd, method='POST')
+        try:
+            with ur.urlopen(req, timeout=20) as r:
+                got = r.status, r.read()
+        except urllib.error.HTTPError as e:
+            got = e.code, e.read()
+        said.append(got[1].decode())
+        return got[0], json.loads(got[1])
+    far = {'Host': 'box:8770', 'Origin': 'http://box:8770'}  # as a page opened over plain http by name
+    ts = {'Host': 'box.ts.net', 'Origin': 'https://box.ts.net', 'X-Forwarded-Proto': 'https', 'X-Forwarded-For': '100.1.2.3'}
+    tok = {'tid': 'B2', 'values': {'tok': secret}}
+    home = '/p/proj/give?t=home-tok'
+    try:
+        eq(give({'tid': 'F1', 'values': {'link': url}}, path='/give')[0], 403, 'only with the token')
+        eq(give(tok, Origin='http://evil.example')[0], 403, 'not from another page')
+        eq(give(tok, **{'Content-Type': 'text/plain'})[0], 400, 'JSON only')
+        for bad in ([], {'tid': 5, 'values': {}}, {'tid': 'F1', 'values': [secret]}, {'tid': 'F1'}):
+            eq(give(bad)[0], 400, f'bad request: {bad}')
+        line = S.C.todo.read_text(encoding='utf-8')
+        for body, p, path, hd in ((tok, port, None, far), ({**tok, 'secure': True}, port, None, far), (tok, port, None, {**ts, 'X-Forwarded-Proto': 'http'}),
+                                  (tok, hp, home, far), ({**tok, 'secure': True}, hp, home, {**far, 'X-Runner-Channel': 'ok'})):
+            code, r = give(body, p, path, **hd)
+            check((code, r['ok'], r.get('field')) == (200, False, 'tok') and 'plain http' in r['out'], 'plain http: a secret is refused, and why', (hd, r))
+        check(not (asks / 'B2.env').exists() and S.C.todo.read_text(encoding='utf-8') == line, 'nothing was kept or sent')
+        r = give({'tid': 'F1', 'values': {'link': 'https://evil.example'}, 'confirm': True}, **far)[1]
+        check((r['ok'], r['field']) == (False, 'link') and 'paste the iCloud link' in r['out'], 'a failed match says the hint at its field', r)
+        for c in (False, 'true', 1):
+            r = give({'tid': 'F1', 'values': {'link': url}, 'confirm': c}, **far)[1]
+            eq((r['code'], r['confirm']), (3, 'Publish this?'), f'asked first ({c!r})')
+        check(S.C.todo.read_text(encoding='utf-8') == line, 'nothing was sent yet')
+        r = give({'tid': 'F1', 'values': {'link': url}, 'confirm': True}, **far)[1]
+        check(r['ok'] and r['gone'] == 'F1' and url in S.C.todo.read_text(encoding='utf-8'), 'a link goes over http too', r)
+        for p, path, hd in ((port, None, {}), (port, None, ts), (hp, home, ts), (hp, home, {})):
+            ask('B2', *tokin)
+            (asks / 'B2.env').unlink(missing_ok=True)
+            r = give(tok, p, path, **hd)[1]
+            check(r['ok'] and shlex.split((asks / 'B2.env').read_text(encoding='utf-8')) == [f'TOK={secret}'], 'https or this machine: kept', (hd, r))
+        ask('B2', *tokin)
+        with mock.patch.object(U, 'need_give', mock.Mock(side_effect=RuntimeError(secret))):
+            check('RuntimeError' in give(tok)[1]['out'], 'an error says its kind alone')
+        with mock.patch.object(W.Handler, 'log_message') as log:
+            said.append(get(f'http://127.0.0.1:{port}/snapshot?t={token}')[1].decode())
+            check(secret not in str(log.mock_calls), 'nor in a log')
+    finally:
+        hs.stop()
+        srv.stop()
+    check(not any(secret in x for x in said), 'no answer and no snapshot holds the secret')
+    check('"inputs"' in said[-1], 'the snapshot asks for it', said[-1][:500])
+    for f in repo.rglob('*'):
+        if f.is_file() and f.name != 'B2.env':
+            check(secret.encode() not in f.read_bytes(), f'nor does {f.name}')
 
 
 def test_need_note_f162(tmp: Path) -> None:
@@ -4588,7 +4751,7 @@ if __name__ == '__main__':
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
-                           in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
+                           in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),

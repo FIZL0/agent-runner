@@ -24,6 +24,8 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
     GET  /tools?t=TOKEN          F169: every tool and device of the Tools page, with no secret (`devices.page`)
     POST /tools?t=TOKEN          F169: {"op": …}: a device added, edited, tested, its secrets set (`devices.post`); only
                                  over https or loopback, and from this page
+    POST /give?t=TOKEN           F175a: {"tid", "values", "confirm"}: Done on a Needs you item with inputs
+                                 (`ui_model.need_give`); whether it may hold a secret is the connection's to say
     GET  /task/ID?t=TOKEN        F85: task ID's whole text (`plan ID`), for its row folded open
     GET  /why/ID?t=TOKEN         F162: why a Needs you item waits: its agent's last words (`ui_model.need_why`)
     GET  /shot/DIR/FILE?t=TOKEN  F162: a Needs you item's picture, an image under <notes>/uploads or <notes>/asks
@@ -1029,8 +1031,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.speech()
         if urlsplit(self.path).path == '/tools':
             return self.tools()
+        if urlsplit(self.path).path == '/give':
+            return self.give()
         if urlsplit(self.path).path != '/act':
-            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /upload, /speech or /tools'}))
+            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /give, /upload, /speech or /tools'}))
         try:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
             name, args = str(body.get('name', '')), body.get('args') or {}
@@ -1112,6 +1116,33 @@ class Handler(BaseHTTPRequestHandler):
         code, got = devices.post(self.rfile.read(size), S.C)
         self.server.snaps.at = 0.0
         self.send(code, json.dumps(got, ensure_ascii=False))
+
+    def give(self) -> None:
+        """F175a: Done on a Needs you item with inputs. `secure` is the connection's (`devices.channel`), never the
+        page's own word; text and links go over plain http too. No answer, and no error, holds what was sent."""
+        try:
+            size = int(self.headers.get('Content-Length') or 0)
+        except ValueError:
+            size = 0
+        why = devices.channel(self.client_address[0], self.headers, behind=True)
+        if why == 'origin' or not 0 < size <= devices.BODY_MAX or \
+                (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
+            self.unread()
+            return self.send(403 if why == 'origin' else 400, json.dumps(
+                devices.refusal(why) if why == 'origin' else {'ok': False, 'out': 'bad request'}))
+        try:
+            body = json.loads(self.rfile.read(size))
+            tid, values = body['tid'], body['values']
+            if not isinstance(tid, str) or not isinstance(values, dict):
+                raise ValueError('tid or values')
+        except (ValueError, KeyError, TypeError, RecursionError):
+            return self.send(400, json.dumps({'ok': False, 'out': 'bad request'}))
+        try:
+            r = U.need_give(tid, values, confirm=body.get('confirm') is True, secure=not why)
+        except Exception as e:  # noqa: BLE001 - the type alone: an error's text may hold what was sent
+            r = {'ok': False, 'code': 1, 'out': f'that failed on the machine ({type(e).__name__})', 'argv': []}
+        self.server.snaps.at = 0.0
+        self.send(200, json.dumps(r, ensure_ascii=False))
 
     def speech(self) -> None:
         """F158: a clip of Talk's reply, made on this machine; the page reads with the browser's own voice when
