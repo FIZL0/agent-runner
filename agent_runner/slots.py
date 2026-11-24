@@ -16,10 +16,9 @@ import threading
 import time
 import urllib.parse
 import uuid
-from contextlib import contextmanager
 from pathlib import Path
 
-from agent_runner import plan as P, plat, session_theme, shared_tools
+from agent_runner import inbox_lock, plan as P, plat, session_theme, shared_tools
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -1117,34 +1116,8 @@ def logged(marker: Path) -> bool:
         return False
 
 
-LOCK_WAIT = 30.0  # s a sender waits for the one before it to finish
-
-
-@contextmanager
-def inbox_lock(inbox: Path):
-    """B161: one sender at a time types into `inbox`: a paste and its Enter are never split by another sender (the
-    run page, the TUI and the feed are separate processes, so it is a file lock). Yields False when the one before
-    has it for LOCK_WAIT s."""
-    end, f = time.monotonic() + LOCK_WAIT, None
-    try:
-        while not (f := plat.lock(inbox.with_name(inbox.name + '.lock'))) and time.monotonic() < end:
-            time.sleep(0.02)
-    except OSError:  # no such directory: the session has ended
-        pass
-    try:
-        yield f is not None
-    finally:
-        if f:
-            f.close()
-
-
+@inbox_lock.one_sender
 def send_fifo(inbox: Path, text: str) -> bool:
-    """`_send_fifo`, one sender at a time (`inbox_lock`)."""
-    with inbox_lock(inbox) as mine:
-        return mine and _send_fifo(inbox, text)
-
-
-def _send_fifo(inbox: Path, text: str) -> bool:
     """F40: type `text` into a hidden session through the FIFO its shim reads (`run_pty`): a bracketed paste
     (so a newline in it does not send early), then Enter. False when no shim reads it (the session ended)."""
     if plat.WINDOWS:
@@ -1171,13 +1144,8 @@ def _send_fifo(inbox: Path, text: str) -> bool:
         os.close(fd)
 
 
+@inbox_lock.one_sender
 def send_fifo_raw(inbox: Path, data: bytes) -> bool:
-    """`_send_fifo_raw`, one sender at a time (`inbox_lock`)."""
-    with inbox_lock(inbox) as mine:
-        return mine and _send_fifo_raw(inbox, data)
-
-
-def _send_fifo_raw(inbox: Path, data: bytes) -> bool:
     """F89: `data` written to a hidden session's FIFO as is, with no bracketed paste and no Enter: a key such
     as Escape (b'\\x1b') reaches the agent the way a key press would. False when no shim reads it."""
     if plat.WINDOWS:

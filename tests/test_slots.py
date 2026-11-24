@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from _check import check, eq, report
-from agent_runner import control as K, plat, session_theme as T, slots, state as S, web as W
+from agent_runner import control as K, inbox_lock, plat, session_theme as T, slots, state as S, web as W
 
 
 def test_theme(tmp: Path) -> None:
@@ -79,7 +79,7 @@ def test_one_sender_b161(tmp: Path) -> None:
             left = left.replace(whole, b'', 1)
         eq(left, b'\x1b', 'and the key on its own')
         check(got.index(b'one') < got.index(b'two'), 'in order', got)
-        with mock.patch.object(slots, 'LOCK_WAIT', 0.1), slots.inbox_lock(inbox):
+        with mock.patch.object(inbox_lock, 'LOCK_WAIT', 0.1), plat.lock(tmp / 'control7.in.lock'):
             eq(slots.send_fifo(inbox, 'x'), False, 'not typed while another sender has it')
     finally:
         os.close(fd)

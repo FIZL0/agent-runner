@@ -2175,6 +2175,8 @@ def test_once_b161(tmp: Path) -> None:
         f.write_text(f.read_text() + '["cut', encoding='utf-8')
         check(len(f.read_text().splitlines()) <= 7, 'the file is kept short', f.read_text())
         eq(W.ActsOnce(f).run('i19', lambda: {})['n'], 19, 'a line cut off does not lose the rest')
+        W.ActsOnce(f).run('next', lambda: {'ok': True, 'n': 1})
+        eq(W.ActsOnce(f).run('next', lambda: {}).get('n'), 1, 'nor the next one kept after it')
     if not shutil.which('node'):
         print('  (no node here: the outbox tabs test is skipped)')
         return

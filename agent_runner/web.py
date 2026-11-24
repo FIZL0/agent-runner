@@ -476,9 +476,10 @@ class ActsOnce:
         self.seen: dict[str, list] = {}  # cid -> [done Event, result]
         self.kept, self.lines = kept, 0  # the file, and how many lines it has
         try:
-            rows = kept.read_text(encoding='utf-8').splitlines() if kept else []
+            text = kept.read_text(encoding='utf-8') if kept else ''
         except (OSError, ValueError):
-            rows = []
+            text = ''
+        rows = text.splitlines()
         for row in rows:
             try:
                 cid, result = json.loads(row)
@@ -487,7 +488,7 @@ class ActsOnce:
                     self.seen[cid][0].set()
             except (ValueError, TypeError):  # a line cut off
                 pass
-        self.lines = len(rows)
+        self.lines = len(rows) if not text or text.endswith('\n') else 2 * self.KEEP  # cut off: written anew first
 
     def keep(self, cid: str, result: dict) -> None:
         if not self.kept:
@@ -1256,7 +1257,7 @@ class WebServer(ThreadingHTTPServer):
 
     def __init__(self, token: str, port: int, bind: str = '0.0.0.0', snap=run_snapshot):
         self.token, self.snaps, self.stopped = token, Snapshots(snap), threading.Event()
-        self.once = ActsOnce(S.C.notes('acts-once.jsonl'))  # F137
+        self.once = ActsOnce(S.C.notes('acts-once.jsonl') if S.C else None)  # F137
         self.speaker = speech.Speaker()  # F158
         super().__init__((bind, port), Handler)
         self.terms = Terminals(token, self.server_address[1], bind)
