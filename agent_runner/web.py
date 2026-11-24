@@ -60,7 +60,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, login_hold, need_detail,plat, session_frame, session_now, session_theme, speech, trust, watch
+from agent_runner import devices, home_screen, login_hold, need_detail, plat, session_frame, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 

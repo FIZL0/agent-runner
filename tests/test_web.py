@@ -1012,6 +1012,8 @@ const draw = (run, home) => { S = {snap: {claude_login: run}}; H = {login: home}
 const out = {run: draw('R', 'H'), fine: draw('', 'H'), old: draw(undefined, '')};
 all = true; out.all = draw('R', 'H'); out.allFine = draw('R', '');
 all = false; HOME_PAGE = true; out.home = draw(undefined, 'H'); out.homeFine = draw(undefined, '');
+let closed = 0; const closeSheet = () => { closed++; S.sheet = '' }, toast = () => {};
+S = {sheet: 'login', snap: {}}; H = {login: 'H'}; loginDraw(); out.open = closed; H.login = ''; loginDraw(); out.closed = [closed, el.hidden];
 console.log(JSON.stringify(out));
 """
 
@@ -1068,6 +1070,7 @@ def test_login_banner_f126a(tmp: Path) -> None:
         return
     again = '</span><button class="btn" data-login>Log in again</button>'  # F126b
     o, gone = json.loads(r.stdout), [True, '']
+    eq((o['open'], o['closed']), (0, [1, True]), 'F126b: renewed: the banner goes and its sheet closes')
     eq((o['run'], o['fine'], o['old']), ([False, '!<span>R' + again], gone, gone), "the run page: the run's words, or none")
     eq((o['all'], o['allFine'], o['home'], o['homeFine']), ([False, '!<span>H' + again], gone, [False, '!<span>H' + again], gone),
        "All projects and Home: Home's words, or none")

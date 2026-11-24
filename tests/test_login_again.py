@@ -156,6 +156,8 @@ try:
             c, f, first, _ = browser(port, path)
             eq(L.read_frame(f)[2], b'link', 'back: what it printed so far')
             eq(len(ttyd.targets), n + 1, 'the same login, not a new one')
+            ttyd.clients[-1].sendall(L.frame(9, b'p'))
+            eq(L.read_frame(f)[0], 9, 'a browser is pinged, so one that vanished is noticed')
             ttyd.stop()
             op, _, body = L.read_frame(f)
             eq((op, body), (8, struct.pack('>H', L.ENDED)), 'the command ended: said as that')
@@ -175,6 +177,13 @@ try:
         ttyd.clients[-1].sendall(L.frame(9, b'p'))
         check(until(lambda: not hold.live()), 'nobody came back for HOLD: ended')
         home.restart_due = lambda: False
+    with mock.patch.object(W.Terminals, 'ttyd', lambda self, n, sock='': {'ok': True, 'port': ttyd.port}), \
+            mock.patch.object(L, 'QUIET', 0.3):
+        c, f, *_ = browser(run.server_address[1], f'/t/{token}/login/ws')
+        check(until(lambda: run.terms.login.viewers == [] and run.terms.login.left), 'a silent browser is dropped')
+        check(run.terms.login.live(), 'and the login waits')
+        f.close()
+        c.close()
     try:
         L.read_frame(io.BytesIO(b'\x82\x7f' + (1 << 40).to_bytes(8, 'big')))
         check(False, 'a huge frame is refused')

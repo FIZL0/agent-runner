@@ -16,6 +16,7 @@ import threading
 import time
 
 HOLD = 600.0  # s a login waits for its person to come back from the sign-in page
+QUIET = 20.0  # s a browser may say nothing (it is pinged with ttyd's pings, every 5 s), or take nothing, before it is gone
 ENDED = 4001  # the close code that says the login itself ended, not only the connection
 BIGGEST = 1 << 20  # bytes of one frame
 MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'  # RFC 6455
@@ -84,6 +85,8 @@ class LoginHold:
                 with self.lock:
                     if op == 9:  # ttyd's ping, every 5 s
                         up.sendall(frame(10, body, mask=True))
+                        for v in self.viewers:
+                            self._send(v, frame(9, b''))
                         if not self.viewers and time.monotonic() - self.left > HOLD:
                             break
                     elif op == 8:
@@ -116,7 +119,10 @@ class LoginHold:
         try:
             viewer.wfile.write(data)
         except (OSError, ValueError):  # it is going: its own thread sees that
-            pass
+            try:
+                viewer.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
 
     def close(self) -> None:
         with self.lock:
@@ -138,6 +144,7 @@ class LoginHold:
             up = self.up
             accept = base64.b64encode(hashlib.sha1((key + MAGIC).encode()).digest()).decode()
             handler.close_connection = True
+            handler.connection.settimeout(QUIET)
             self._send(handler, ('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
                                  f'Sec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Protocol: tty\r\n\r\n').encode()
                        + b''.join(self.said))
