@@ -76,6 +76,81 @@ function askFold(key,label,got){
 }
 /* F162a2: only when there are words of the agent */
 function askWhyFold(id){const got=(S.askWhy||{})[id];return got&&got.text?askFold('why','Why it waits',got):''}
+/* F189: a picture opens out of its thumbnail and goes back into it, and the sheet's edges, title and foot move with it.
+   SHOT: what moves over or on the sheet now, and the scroll place Back returns to */
+const SHOT={ghost:null,n:-1,clip:null,at:0}, SHOT_MO={ease:'--spring-soft'};
+function shotEnd(){
+  const {ghost,clip}=SHOT;SHOT.ghost=SHOT.clip=null;
+  if(ghost)ghost.remove();
+  if(clip){clip.onfinish=null;clip.cancel();$('sheet').style.paddingTop=$('sheet').style.paddingBottom=''}
+}
+/* where a thing is seen now: its box less its clip-path, so a new motion starts from there */
+function shotSeen(el){
+  const r=el.getBoundingClientRect(), m=/^inset\(([^)]*?)( round [^)]*)?\)$/.exec(getComputedStyle(el).clipPath||''), v=m?m[1].trim().split(/\s+/):['0px'];
+  const k=el.offsetWidth?r.width/el.offsetWidth:1, side=i=>{const x=v[i]??v[i-2]??v[0];return Math.max(0,parseFloat(x)*(x.endsWith('%')?(i%2?r.width:r.height)/100:k))};
+  return{left:r.left+side(3),top:r.top+side(0),right:r.right-side(1),bottom:r.bottom-side(2)};
+}
+/* the part of a box that the sheet shows: not what is under its foot */
+function shotCut(b){
+  const v=shotSeen($('sheet')), f=$('sheet').querySelector('.askfoot'), low=f?Math.min(v.bottom,f.getBoundingClientRect().top):v.bottom;
+  const c={left:Math.max(b.left,v.left),top:Math.max(b.top,v.top),right:Math.min(b.right,v.right),bottom:Math.min(b.bottom,low)};
+  return c.right>c.left&&c.bottom>c.top?c:null;
+}
+/* the frame that draws a whole picture laid out at box to as the box seen: as large as covers it, the rest clipped */
+function shotFrame(to,seen,round){
+  const W=to.right-to.left, H=to.bottom-to.top, w=seen.right-seen.left, h=seen.bottom-seen.top, s=Math.max(w/W,h/H);
+  const cx=(W-w/s)/2, cy=(H-h/s)/2;
+  return{transform:`translate(${(seen.left+seen.right-to.left-to.right)/2}px,${(seen.top+seen.bottom-to.top-to.bottom)/2}px) scale(${s})`,clipPath:`inset(${cy}px ${cx}px round ${round/s}px)`};
+}
+const shotThumb=i=>$('sheet').querySelector(`[data-shot="${i}"]`);
+const shotBig=()=>$('sheet').querySelector('.shotbig img');
+function shotGo(i){
+  const sh=$('sheet'), open=i>=0, old=S.askShot, go=()=>{
+    if(open)SHOT.at=sh.scrollTop;
+    S.askShot=i;render(true);sh.scrollTop=open?0:SHOT.at};
+  if(calm()||!sh.animate){shotEnd();go();return}
+  const parts=()=>[...sh.querySelectorAll('.asktop,.asktop+.small,.askfoot')].map(el=>[el,el.getBoundingClientRect()]);
+  const box=shotSeen(sh), was=parts(), big0=!open&&shotBig(), from=open?SHOT.n===i&&SHOT.ghost||shotThumb(i):big0&&big0.complete&&big0.offsetHeight?big0:null;
+  const seen=from&&(open&&from===SHOT.ghost?shotSeen(from):shotCut(shotSeen(from)));
+  const round=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--r-m'))||0;
+  const src=big0&&seen?big0.cloneNode():null, size=src&&[big0.offsetWidth,big0.offsetHeight];
+  shotEnd();go();
+  const now=sh.getBoundingClientRect(), t=now.top-box.top, b=box.bottom-now.bottom;
+  shotEdges(sh,t,b);
+  parts().forEach(([el,r],j)=>{const w=was[j]&&was[j][1], y=w?w.top-r.top:0;if(w&&Math.abs(y)>=1&&w.bottom>box.top&&w.top<box.bottom)glideTo(el,0,y,SHOT_MO)});
+  for(const el of sh.querySelectorAll('.askbody>:not(.shotbig)'))moAnim(el,[{opacity:0},{opacity:1}],{ease:'--ease',dur:'--dur'});
+  if(!seen)return;
+  if(open){
+    const img=shotBig(), grow=()=>{
+      if(!img.isConnected||!img.offsetHeight)return;
+      const to=img.getBoundingClientRect();
+      moAnim(img,[shotFrame(to,seen,round),{transform:'none',clipPath:`inset(0px round ${round}px)`}],SHOT_MO);
+    };
+    if(img)if(img.complete)grow();else img.addEventListener('load',grow,{once:true});
+    return;
+  }
+  const thumb=shotThumb(old), to=thumb&&shotCut(thumb.getBoundingClientRect());if(!to)return;
+  /* a copy goes back, over the sheet: the thumbnail clips what is in it */
+  src.className='shotfly';src.setAttribute('aria-hidden','true');src.alt='';
+  const w=size[0], h=size[1], at={left:0,top:0,right:w,bottom:h};
+  Object.assign(src.style,{width:w+'px',height:h+'px'});
+  document.body.appendChild(src);
+  const a=moAnim(src,[shotFrame(at,seen,round),shotFrame(at,to,round)],{...SHOT_MO,fill:'forwards'});
+  if(!a){src.remove();return}
+  SHOT.ghost=src;SHOT.n=old;a.onfinish=()=>{if(SHOT.ghost===src)SHOT.ghost=null;src.remove()};
+  moAnim(thumb,[{opacity:0},{opacity:0}],SHOT_MO);
+}
+/* the sheet's box grew or shrank by t at its top and b at its foot: a clip goes over it, with room kept for what it lost */
+function shotEdges(sh,t,b){
+  if(Math.abs(t)<1&&Math.abs(b)<1)return;
+  const cs=getComputedStyle(sh), px=n=>Math.max(0,n)+'px', round=cs.borderRadius||'0px';
+  if(t>0)sh.style.paddingTop=parseFloat(cs.paddingTop)+t+'px';
+  if(b>0)sh.style.paddingBottom=parseFloat(cs.paddingBottom)+b+'px';
+  const a=moAnim(sh,[{clipPath:`inset(${px(-t)} 0px ${px(-b)} 0px round ${round})`},{clipPath:`inset(${px(t)} 0px ${px(b)} 0px round ${round})`}],SHOT_MO);
+  SHOT.clip=a||{cancel(){}};
+  if(a)a.onfinish=shotClip;else shotEnd();
+}
+function shotClip(){SHOT.clip=null;$('sheet').style.paddingTop=$('sheet').style.paddingBottom=''}
 function needSheet(){
   const n=needOf(S.sheetArg);if(!n)return '';
   const i=S.snap.needs.indexOf(n), d=needD(n), big=d.shots[S.askShot], rep=needReplies(n), f=askField(n.id), said=S.giveSaid&&S.giveSaid.id===n.id?S.giveSaid:{}, secure=window.isSecureContext!==false;

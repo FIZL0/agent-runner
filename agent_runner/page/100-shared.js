@@ -46,6 +46,7 @@ function closeSheet(){if(!S.sheet)return;runStop($('sheet'));S.sheet='';S.sure=n
 function sheetDraw(){
   const el=$('sheet');
   if(S.sheet==='need'&&!needOf(S.sheetArg)){S.sheet='';S.sure=null;sheetBack=null}  // F162: answered, or it left Needs you
+  if(S.sheet!=='need')shotEnd();  // F189
   if(S.sheet)el.classList.toggle('dlg',S.sheet==='need');
   if(S.sheet&&SHEETS[S.sheet]){const put=keepScroll(el), f=keepFields(el);if(setHTML(el,'<div class="grab"></div>'+SHEETS[S.sheet]())){f();put()}}  // closing, it keeps its words while it slides
   if(S.sheet!=='device'&&S.sheet!=='devsecrets')toolForget();  // F169: a typed secret goes with its sheet
