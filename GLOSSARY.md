@@ -620,3 +620,17 @@ _Said_: oversized task
 _On screen_: F5 is too big for one session (size 37, over 10: ...)
 _In code_: task_size, size, too_big, SPLIT_PROMPT
 _Avoid_: weight, points
+
+**Device**:
+A machine or test rig that agents reach over SSH or another way, added by a person on the Tools page; a project uses it as a shared tool, and its secrets stay on this machine.
+_Said_: device
+_On screen_: Tools, Add a device
+_In code_: devices.py, run device
+_Avoid_: host, server, box, endpoint
+
+**Tools page**:
+The run app's view where a person adds, edits and removes devices, switches each on for this project, tests it and sets its secrets; it also lists the shared tools that runner.toml names.
+_Said_: Tools page
+_On screen_: Tools
+_In code_: toolsHTML, GET/POST /tools, devices.page
+_Avoid_: devices page, tools screen, settings

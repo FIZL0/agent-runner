@@ -312,12 +312,12 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   that makes the clips ends after 10 idle minutes and starts again on the next one. Sound plays after a tap on the
   speaker (or a play button, or Send) has let the browser play it; if the browser blocks it, the talk line says to tap
   the speaker. A reply is read in few clips: its first sentence alone, then about 200 letters, then 400 each. While a reply is read, a second element plays silence so a Bluetooth route stays open between clips; the audio session is play-and-record for the mic and playback once it ended (browsers with navigator.audioSession, iOS). A pause nobody asked for (a call, a route change) is undone once per reply, unless a mic listens; a second one ends the reply, and the lock screen's or the earbuds' pause stops it. A clip request with no answer is tried again twice (after 0.5 s and 2 s; once when none came in 25 s); what was fetched plays on, then the phone's voice reads the rest of that reply, so it is heard to its end, and a toast says "No connection to the run; reading with the phone's voice" (the next reply tries run speech again). An engine's own failure is not retried. With no engine installed, or when one fails, the browser's own speech reads.
-- **Sidebar.** New chat, Talk, Home (with the Needs you count), Status, Plan, Concepts and Settings. Chats are the
+- **Sidebar.** New chat, Talk, Home (with the Needs you count), Status, Plan, Concepts, Tools and Settings. Chats are the
   control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
   and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (a pinned or a renamed one is left alone by the run; by hand any chat can go Quiet or be deleted). Double-click a chat's name (on a phone: its ⋯) to rename it; the name is yours, so the
   run neither closes that chat when idle nor renames it. Agents working are the slots on a task. On a phone the
   sidebar is a drawer: swipe right anywhere to open it, left to close it, and its button has a dot while Home or
-  Concepts has a count. A reload opens what was open: the view (Home, Talk, Status, Plan, Concepts, Settings or All
+  Concepts has a count. A reload opens what was open: the view (Home, Talk, Status, Plan, Concepts, Tools, Settings or All
   projects) and the open chat or slot, kept per project and per browser tab. A chat with no transcript that the run no
   longer lists, or a view that is not there, opens Home. A link may name a view or a chat (`#plan`, `#c3` or `#s1` at
   the end of the address); it wins over what was kept, and the # then leaves the address. When storage is blocked the
@@ -400,6 +400,8 @@ terminal socket says so with its link (o open, y copy; Enter opens the link). On
 outside it, it re-execs itself in the project's tmux session (named for the folder, or a new window in it); without
 tmux, or on Windows, it refuses with exit 2 (the install line, or the run page's link). Ctrl-f makes the session
 full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link; `c` (anywhere) starts a new chat, and `d` closes any control session.
+- **Tools.** The devices and shared tools: add, edit or remove a device, Used here per project, Test connection, and
+  its secrets (### Devices). The shared tools of runner.toml show here too, and are edited there.
 
 ### Adding a row action
 
@@ -918,6 +920,7 @@ runner.toml, with a `check` command:
 check = "tools/ui-15.sh state"   # exit 0 free, 75 busy (first line: the holder), 69 missing (first line: why)
 label = "iPhone 15"              # what the screens say; default: the name
 connect = "Connect iPhone 15"    # the Needs you wording while it is missing; default: "Connect <label>"
+description = "the phone on the shelf, for app tests"  # what it is, for agents; default: none
 ```
 
 - **The check** runs in the main checkout. Exit 0 is free, 75 busy, 69 missing; any other status, or a run past
@@ -948,6 +951,58 @@ connect = "Connect iPhone 15"    # the Needs you wording while it is missing; de
 - **Without the setting** no tool is checked and nothing else changes; a command stopped for low memory still waits
   (### Waiting for memory). The run keeps its readings in `.runner/TOOLS.json`, so a restart goes on
   with them (a file older than 10 min is not used).
+
+### Devices
+
+A device is a machine or test rig agents reach over SSH or another way: a phone's address, a board on the LAN, a
+command on this machine. A person adds it on the run app's Tools page. Each project says which devices it uses
+(**Used here**, a switch per project), and a used device is a shared tool: a task names it in `needs:` like any other
+(### Shared tools). Tools in runner.toml show on the same page with their source; they are edited in runner.toml.
+
+- **The Tools page.** Add a device: a name (letters, digits, - and _, 40 at most), its kind (SSH or other), the host or
+  a `~/.ssh/config` alias, the user and port of a host of its own, a description (what agents see), and whether one task at a time may use
+  it. Edit… (a new name too: a task's `needs:` keeps the old one), Remove (its secrets go too) and Test connection, which checks it now and, for SSH, shows the host key for
+  a person to accept. An other device takes the address or command agents use.
+- **The check.** A device is free, busy, missing or unknown, as a shared tool is, and a missing one with tasks waiting
+  for it is a Needs you item. The default check uses no secret. An SSH host is a TCP connection to its host and port
+  (22 by default); an alias behind a ProxyJump or ProxyCommand is probed with ssh, as TCP cannot see through it. An
+  other device with an address is a TCP connection to its port (vnc, rdp, http and https have their own); with a
+  command, it is free when that command is on this machine.
+- **One task at a time.** A device marked so is held by one task. An agent's first `run device ssh` or `run device copy`
+  (or `run device take NAME`, for a device reached another way) takes it, until that task's session ends or `run device release NAME`. The hold covers every project on this
+  machine: another project's running task that names the device in `needs:` holds it too. An agent that finds it held
+  gets exit 75 and runs `run wait-for NAME`.
+- **Where it is kept.** `devices.json` and the secret files are in the state folder: ~/.local/state/agent-runner/devices
+  on Linux, ~/Library/Application Support/agent-runner/devices on macOS, %LOCALAPPDATA%\agent-runner\devices on Windows.
+  `AGENT_RUNNER_DEVICES` names another folder. It is refused inside a git repo, a worktree or a synced folder, so no
+  secret is kept there.
+- **Secrets.** The SSH private key, its passphrase and a password are write-only: the page takes them and never shows
+  them again. It shows `set, changed <date>`, the key's fingerprint and its public key. A key pair can be made on the
+  machine (Keys and password…); only its public key is shown, to add to `~/.ssh/authorized_keys` on the device. A
+  secret is kept in the OS keyring only when an unattended run can read it: the macOS keychain, or secret-tool on Linux
+  when the login keyring is open now, the run can read it with no display, and the user has no systemd linger (else
+  the run starts before the person logs in). Otherwise it is a 0600 file in a 0700 folder. `AGENT_RUNNER_KEYRING=off`
+  forces files. Windows does not support a stored secret: pick a `~/.ssh/config` alias there.
+- **Saving.** The page saves only over https, or on the machine itself, with the run app's token and a same-origin
+  request. That holds for any change on the Tools page, not only secrets. Over plain http the page is read only and
+  gives the https link to open (Tailscale Serve gives one).
+- **The commands.** `run device list` shows the devices this project uses and how each is reached; `show NAME` one of
+  them; `link` prints the Tools page's address.
+  - `run device ssh NAME -- CMD`: one word is shell text for the device; several words go each as they are. The runner
+    signs in itself: with a key from an ssh-agent of its own (the key held one minute), or a password through an
+    SSH_ASKPASS helper. Neither is on the command line or in the environment.
+  - `run device copy FROM TO`: one side is `NAME:path`, the other a local path; `-r` for a folder.
+  - `run device take NAME`: has a one-task device until the task's session ends; `run device release NAME`: frees a one-task device before its task ends.
+- **Output.** What the command prints has each stored secret replaced by `[secret hidden]`, so a chat, a log or a
+  transcript does not carry it. Only the exact bytes are caught: an encoded or transformed copy of a secret is not.
+- **Host key.** The first host key an SSH device shows is accepted only by a person, on the page, from its fingerprint.
+  A later change is refused and said so, and a person checks it on the Tools page before the device is used again.
+  Changing a device's host, port, user or kind forgets the accepted key. A `~/.ssh/config` alias signs in with the config's own
+  keys (its host key is accepted on the page too) and no secret of this runner's; nothing is copied.
+- **Not a wall.** Agents run as the same OS user as the person. This keeps secrets out of chats, logs and transcripts
+  by default, but it does not stop an agent that goes looking: it could read the secret file or keyring, or ask the
+  ssh-agent while a connection is made. What would: run the agents as a separate OS user, with the secrets and a small
+  service that signs in kept under the person's own user.
 
 ### Waiting for memory
 
@@ -1310,6 +1365,13 @@ agent-runner resume ID...              continue each task's last session in its 
 run wait-for TOOL                      a slot's agent, when a shared tool is busy or missing, or a command was stopped
                                        for low memory (`memory`): its session ends and its work is kept; the same
                                        session goes on once it is free (### Shared tools, ### Waiting for memory)
+run device list                        the devices this project uses, with how each is reached
+run device show NAME                   one device: its description and how it is reached
+run device ssh NAME -- CMD             run CMD on a device (SSH; the runner signs in); exit 75 while it is held
+run device copy FROM TO                copy to or from a device (one side NAME:path; -r for a folder)
+run device take NAME                   have a one-task device until this task's session ends
+run device release NAME                a one-task device is free for other tasks again, before its task ends
+run device link                        the Tools page's address (a run app must be up)
 agent-runner cost [--days N] [--files] where the workers' tokens went, by kind of tool call (--files: by
                                        file read, and exact-repeat commands)
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live
@@ -1501,7 +1563,7 @@ needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "n
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
 
 
-[run.tools]               # shared tools, one [run.tools.<name>] each: check, label, connect (### Shared tools)
+[run.tools]               # shared tools, one [run.tools.<name>] each: check, label, connect, description (### Shared tools)
 ```
 
 ### Models per role

@@ -2215,7 +2215,7 @@ const devText=(k,label,o={})=>`<label class="small">${label}${o.area?`<textarea 
 const devPick=(k,label,opts)=>`<label class="small">${label}<select class="fld" data-f="${toolField(k)}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===toolVal(k)?'selected':''}>${esc(l)}</option>`).join('')}</select></label>`;
 SHEETS.device=()=>{
   const edit=S.sheetArg, d=S.tools||{aliases:[]}, ssh=toolVal('kind')!=='other', n=edit||'';
-  return `<h2>${edit?`Edit ${esc(edit)}`:'Add a device'}</h2>${edit?'':devText('name','Name, as tasks name it',{hint:'macmini'})}
+  return `<h2>${edit?`Edit ${esc(edit)}`:'Add a device'}</h2>${devText('name','Name, as tasks name it',{hint:'macmini'})}${edit&&toolVal('name')!==edit?'<div class="small">A task that needs it keeps the old name until it is edited.</div>':''}
     ${devText('description','What it is, what it is for, and its rules (agents read this; no secrets here)',{area:4})}
     ${devPick('kind','How agents reach it',[['ssh','SSH'],['other','Another way (a command or address)']])}
     ${ssh?`${d.aliases.length||toolVal('alias')?devPick('alias','Host',[['','Its own host, below'],...[...new Set([...(toolVal('alias')?[toolVal('alias')]:[]),...d.aliases])].map(a=>[a,`${a}, in ~/.ssh/config`])]):''}${toolVal('alias')?'<div class="small">Signs in as ~/.ssh/config says. No secret is copied.</div>':devText('host','Host name or address',{hint:'macmini.local'})+devText('user','User')+devText('port','Port',{num:true,hint:'22'})}`
@@ -2240,7 +2240,7 @@ SHEETS.devsecrets=()=>{
 };
 function toolEdit(t){
   toolForget();S.toolSaid={};
-  for(const k of ['description','alias','host','user','reach'])S.f[toolField(k)]=t&&t[k]||'';
+  for(const k of ['name','description','alias','host','user','reach'])S.f[toolField(k)]=t&&t[k]||'';
   S.f[toolField('kind')]=t?t.kind:'ssh';S.f[toolField('port')]=t&&t.port?String(t.port):'';S.f[toolField('exclusive')]=String(!!(t&&t.exclusive));
   openSheet('device',t?t.name:'');
 }
@@ -2257,7 +2257,7 @@ async function toolClick(x){
   if(tool==='copypub'){const pre=$('sheet').querySelector('[data-pub]');if(!pre)return;
     try{await navigator.clipboard.writeText(pre.textContent);toast('Copied')}catch(e){const r=document.createRange();r.selectNodeContents(pre);const g=getSelection();g.removeAllRanges();g.addRange(r);toast('Selected: copy it with your own Copy')}return}
   if(tool==='save'){
-    const a={op:'save',...(name?{edit:name}:{name:toolVal('name').trim()})};
+    const a={op:'save',name:toolVal('name').trim(),...(name?{edit:name}:{})};
     for(const k of ['description','kind','alias','host','user','port','reach'])a[k]=toolVal(k);
     a.exclusive=toolVal('exclusive')==='true';
     const j=await toolPost(a,name);if(j&&j.ok){closeSheet();toast(j.out)}return}

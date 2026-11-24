@@ -159,6 +159,11 @@ def test_secrets(tmp: Path) -> None:
     s = D.load()['devices']['mini']['secrets']
     check(s['key']['pub'].startswith('ssh-ed25519 ') and s['key']['fp'].startswith('SHA256:'), 'its public key is shown')
     eq([f.name for f in d.iterdir() if f.name.startswith('.')], [], 'nothing left behind')
+    base = dict(kind='ssh', host='127.0.0.1', user='me', port='22', exclusive=True)
+    check(not op('save', edit='mini', name='-x', **base)['ok'], 'a bad new name')
+    check(op('save', edit='mini', name='mini2', **base)['ok'] and T.S.C and 'mini2' in T.specs(), 'renamed, still used here')
+    eq([f.name for f in (d / 'secrets').iterdir()], ['mini2.key'], 'its secrets with it')
+    check(op('save', edit='mini2', name='mini', **base)['ok'], 'and back')
     for op_ in ('secret', 'keypair', 'unsecret'):
         check(not op(op_, name='nope', what='password', password='x')['ok'], f'{op_}: no such device')
     check(op('secret', name='mini', what='key', key=locked, passphrase=PHRASE)['ok']
@@ -397,6 +402,7 @@ def test_lease(repo: Path, tmp: Path) -> None:
     try:
         eq(D.take('mini', dev, T.S.C), '', 'T9 takes it')
         eq(T.check('mini'), ('busy', 'T9'), 'the check says so')
+        check(not op('remove', name='mini')['ok'], 'and it is not removed under it')
         tools.task_here = lambda *a: 'T8'
         eq(D.take('mini', dev, T.S.C), 'T9', 'T8 does not get it')
         D._running = lambda r: {}

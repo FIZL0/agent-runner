@@ -80,6 +80,10 @@ action until the run answers, and sends it again after a lost connection. A card
 once; its stand-in shows in the same place. A failure brings Retry, Edit or Discard. `act()` is only for what has
 nothing to draw (an interrupt, an order kept) and for Talk, which draws the person's words itself.
 
+A secret never goes through `outbox()`, which the browser keeps: a device's change goes straight to the run
+(`toolPost()`), a secret's field is emptied when it is sent or its sheet closes, and a saved secret is shown only as
+`set, changed <date>`.
+
 ## Words
 
 - Plain words, a verb first on a button, sentence case, no exclamation marks, no dash between clauses.

@@ -375,7 +375,7 @@ class Redactor:
     def __init__(self, secrets: list[str]):
         want = set()
         for s in secrets:
-            for part in {s, s.strip(), *(l for l in s.splitlines() if len(l) >= 16 and '-----' not in l)}:
+            for part in {s, s.strip(), *(l for l in s.splitlines() if len(l) >= 8 and '-----' not in l)}:
                 if part:
                     want.add(part.encode())
         self.want = sorted(want, key=len, reverse=True)
@@ -877,6 +877,36 @@ def _put_key(name: str, dev: dict, key: str, phrase: str, pub: str) -> None:
         _drop(name, 'passphrase', s.pop('passphrase'))
 
 
+def _free_name(name, d: dict, c, but: str = '') -> None:
+    if not isinstance(name, str) or not NAME.fullmatch(name):
+        raise Refused('the name is letters, digits, - and _, not a dash first, 40 at most')
+    if name.lower() == 'memory' or name in (c.run.get('tools') or {}):
+        raise Refused('that name is taken by a shared tool')
+    if name.lower() in {n.lower() for n in d['devices'] if n != but}:
+        raise Refused('there is a device with that name')
+
+
+def _not_in_use(name: str) -> None:
+    if (h := _lease(name)) and h['tid'] in _running(h['root']).values():
+        raise Refused(f'a task of {Path(h["root"]).name} uses it now')
+
+
+def _rename(old: str, new: str, d: dict, c) -> None:
+    """The device and its secrets under a new name. A task's `needs:` keeps the name it has."""
+    _free_name(new, d, c, old)
+    _not_in_use(old)
+    dev = d['devices'].pop(old)
+    values = {w: _secret(old, w, dev) for w in dev.get('secrets') or {}}
+    for w, v in values.items():
+        was = dict(dev['secrets'][w])
+        dev['secrets'][w]['store'] = _keep(new, w, v, None)
+        if _file(old, w) != _file(new, w):
+            _drop(old, w, was)
+    d['devices'][new] = dev
+    d['uses'] = {r: [new if n == old else n for n in ns] for r, ns in d['uses'].items()}
+    (state_dir() / 'held' / old).unlink(missing_ok=True)
+
+
 def op_save(a: dict, c) -> dict:
     """Add a device, or edit one (`edit`: its name). A new place to connect to forgets the accepted host key."""
     name, edit = a.get('name'), a.get('edit')
@@ -892,13 +922,11 @@ def op_save(a: dict, c) -> dict:
                 for w, m in (kept.pop('secrets', None) or {}).items():
                     _drop(edit, w, m)
             d['devices'][edit] = {**new, **kept}
+            if name not in (None, '', edit):
+                _rename(edit, name, d, c)
+                edit = name
             return {'out': f'{edit} is saved' + ('; test it to accept its host key' if moved and new['kind'] == 'ssh' else '')}
-        if not isinstance(name, str) or not NAME.fullmatch(name):
-            raise Refused('the name is letters, digits, - and _, not a dash first, 40 at most')
-        if name.lower() == 'memory' or name in (c.run.get('tools') or {}):
-            raise Refused('that name is taken by a shared tool')
-        if name.lower() in {n.lower() for n in d['devices']}:
-            raise Refused('there is a device with that name')
+        _free_name(name, d, c)
         d['devices'][name] = new
         d['uses'].setdefault(project(c), []).append(name)
     return {'out': f'{name} is added, and this project uses it'}
@@ -907,6 +935,7 @@ def op_save(a: dict, c) -> dict:
 def op_remove(a: dict, c) -> dict:
     with _edit() as d:
         dev, name = _get(d, a.get('name')), a['name']
+        _not_in_use(name)
         for w in SECRETS:
             _drop(name, w, (dev.get('secrets') or {}).get(w))
         (state_dir() / 'held' / name).unlink(missing_ok=True)
@@ -952,7 +981,7 @@ def op_accept(a: dict, c) -> dict:
         del dev['offered']
     r = test(a['name'], load()['devices'][a['name']])
     r.pop('seen', None)
-    return {**r, 'ok': True, 'out': 'Fingerprint accepted. ' + r['out']}
+    return {**r, 'out': 'Fingerprint accepted. ' + r['out']}
 
 
 def _ssh_own(dev: dict) -> None:
@@ -1042,7 +1071,7 @@ def post(body: bytes, c) -> tuple[int, dict]:
 
 def how(name: str, dev: dict, runner: str) -> str:
     if dev['kind'] == 'other':
-        return dev['reach']
+        return dev['reach'] + (f' (first: {runner} device take {name})' if dev.get('exclusive') else '')
     return f'{runner} device ssh {name} -- CMD'
 
 
@@ -1105,7 +1134,7 @@ def cmd_device(argv: list[str]) -> int:
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('list', help='every device this project uses')
     sub.add_parser('link', help="the Tools page's address, where a person adds devices and secrets")
-    for n, h in (('show', 'one device'), ('release', 'a one-task device is free for other tasks again')):
+    for n, h in (('show', 'one device'), ('take', 'have a one-task device until your task ends'), ('release', 'a one-task device is free for other tasks again')):
         sub.add_parser(n, help=h).add_argument('name')
     s = sub.add_parser('ssh', help='run a command on a device')
     s.add_argument('name')
@@ -1160,6 +1189,15 @@ def cmd_device(argv: list[str]) -> int:
             return fail(f'{name} is held by another task', 1)
         (state_dir() / 'held' / name).unlink(missing_ok=True)
         print(f'{name} is free')
+        return 0
+    if a.cmd == 'take':
+        try:
+            who = take(name, dev, c)
+        except Refused as e:
+            return fail(str(e), 1)
+        if who:
+            return fail(f'{name} is held by {who}: `{RUNNER} wait-for {name}` gives up your slot until it is free', 75)
+        print(f'{name} is yours')
         return 0
     if a.cmd == 'ssh' and not words:
         return fail('say the command: run device ssh NAME -- CMD')
