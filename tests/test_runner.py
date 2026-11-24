@@ -5924,6 +5924,8 @@ def test_control_task_name(repo: Path):
     eq(R.control_summary_name(11, 'R43 site deploy via tags'), f'{rn} · R43 · site deploy via tags', 'one task: its id')
     eq(R.control_summary_name(11, 'R43: site deploy'), f'{rn} · R43 · site deploy', 'a colon after the id dropped')
     eq(R.control_summary_name(11, 'P17a'), f'{rn} · P17a', 'the id alone')
+    eq(R.control_summary_name(11, 'F162a2 popup focus'), f'{rn} · F162a2 · popup focus', 'B201: a part of a part')
+    eq(R.control_summary_name(11, 'F162a2: popup focus'), f'{rn} · F162a2 · popup focus', 'B201: and its colon dropped')
     eq(R.control_summary_name(11, 'deploy with tags'), f'{rn} · 11 · deploy with tags', 'no single task: N kept')
     pidf, titlef = R.C.notes('control11.pid'), R.C.notes('control11.title')
     pidf.write_text('999 old-sid', encoding='utf-8')
