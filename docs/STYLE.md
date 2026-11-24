@@ -117,6 +117,10 @@ Every list and view has all four, drawn the same way:
 - **Empty:** one calm sentence saying so (`emptyCard()`), and the way to add one when there is a way. Never a blank.
 - **Loading:** `Loading…` in `.small`, only where nothing is there yet. Old content stays while new loads.
 - **Working:** `.livedot` beside the words; a button that is sending is `.busy` and stays where it is.
+- **Opening:** a press that leaves for another project's page marks it at once (`openProject()`, `.opening`): Opening… with
+  a `.livedot` in the words of its row and card, its Open button `.busy`, the project's name in the sidebar (`.slevel`)
+  when that is the project's level, and a toast when none of these is on screen. The mark goes when the page comes back,
+  its load fails, or after `OPEN_MS`.
 - **Failed:** what did not happen and why, in `--bad`, with Retry or the way out. Nothing the person wrote is lost.
 
 ## Instant feedback
