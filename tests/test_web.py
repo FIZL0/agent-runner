@@ -4404,7 +4404,7 @@ def test_phone_screen_b194(tmp: Path) -> None:
     # what Claude Code 2.1.331 draws at 48 and 34 columns
     names = [(' agent-runner · F149 · page auto-update and m… ─', 48), (' agent-runner · F149 · page aut… ─', 34),
              ('────── agent-runner · F149 · page auto-updates ─', 48), ('── agent-runner · F149 · page auto-update soon ─', 48),
-             (' 日本語の長い名前の会話がここにあります日本語… ─', 48), ('─' * 43 + ' c3 ─', 48), (' 日本語の長い名前の会話がここに… ─', 34)]
+             (' 日本語の長い名前の会話がここにあります日本語… ─', 48), ('─' * 43 + ' c3 ─', 48), (' 🇬🇧 👨\u200d👩\u200d👧 ' + 'n' * 37 + '… ─', 48), (' 日本語の長い名前の会話がここに… ─', 34)]
     table = ['● x', ' Name │ Value', '───────┼──────── long words in the table here ─', '  a │ b', '', '─' * 48, '  more']
     md = ['● x', '', '─' * 48, '', '  words of an answer', ' a line that ends with a dash ─', '  more words', '─' * 48, '  more']
     short = [*shot[:3], ' not as wide as the window ─', '❯ ', '─' * 48]
@@ -4428,6 +4428,11 @@ def test_phone_screen_b194(tmp: Path) -> None:
     i += len(no)
     eq(got[i]['jump'], True, 'over a line of wide letters')
     eq((got[i + 1]['jump'], got[i + 1]['top']), (True, 3), "right over the rule it is the pill, not Claude Code's note")
+    driver = W.PAGE.read_text(encoding='utf-8').split('<script id="logic">', 1)[1].split('</script>', 1)[0] + f'''
+const l = {json.dumps(shot)}; console.log(JSON.stringify([() => false, (y, x) => y === 1 && x >= 10 && x < 39].map(lit => feedFoot(l, null, lit).jump)))'''
+    (tmp / 'b194.js').write_text(driver, encoding='utf-8')
+    run = subprocess.run(['node', str(tmp / 'b194.js')], capture_output=True, text=True, timeout=60)
+    eq(run.stdout.strip(), '[false,true]', "the same words with no ground of the pill's own are an answer's")
 
 
 def test_frame_typing_b190(tmp: Path) -> None:

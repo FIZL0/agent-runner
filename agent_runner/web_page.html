@@ -509,23 +509,25 @@ function feedBytes(k,app){const c=app?'\x1bO':'\x1b[';
 /* what a terminal shows, as plain text: no trailing spaces, no empty lines at its end */
 function feedWords(lines){return lines.map(l=>l.replace(/\s+$/,'')).join('\n').replace(/\n+$/,'')}
 /* F170: the lines at the bottom of the agent's window, from the screen's lines (top to bottom, no trailing spaces); dim(y,x):
-   is that cell dim (a hint, not typed)? null when the prompt is not there as the agent CLI draws it (a menu, a question, a new
+   is that cell dim (a hint, not typed)? lit(y,x): has it a ground of its own? null when the prompt is not there as the agent CLI draws it (a menu, a question, a new
    look): then nothing is hidden. {top, end: rows, the first hidden and the last of the box; text: unsent words in the
    prompt; bash; mode: FEED_MODES' key; shells, agents: how many; update: its command, '…' when cut off; status: the status
    line; rate: a 1: 2: 3: survey stands above it, answered by a digit; work: does it work; jump: is it scrolled up} */
 const FEED_MODES=[['default','Ask first','manual mode|default mode'],['acceptEdits','Accept edits','accept edits'],['plan','Plan','plan mode'],['auto','Auto','auto mode'],['bypassPermissions','Bypass permissions','bypass permissions']];
 const feedRule=l=>/^[─━]{6}/.test(l)&&(l.match(/[─━]/g)||[]).length>=l.length/2;
-// cells of a line's words: 2 for a wide letter or an emoji, 0 for a mark on the letter before it
-const feedCells=l=>[...l].reduce((n,c)=>n+(/[\p{M}\u200d]/u.test(c)?0:/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]|\p{Emoji_Presentation}/u.test(c)?2:1),0);
+// cells of a line's words as the agent CLI counts them: 2 for a wide letter or an emoji, marks and joined parts with it
+const feedSeg=new Intl.Segmenter(undefined,{granularity:'grapheme'});
+const feedCells=l=>[...feedSeg.segment(l)].reduce((n,{segment:c})=>n+(/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]|\p{Emoji_Presentation}|\p{RI}|\ufe0f/u.test(c)?2:1),0);
 // B194: the rule over the prompt with a session name on it: on a narrow window mostly the name, cut with no dashes before
 // it when it is long (' agent-runner · F149 · pa… ─'); as wide as the rule under the prompt (cols), its > on the next line
 const feedNamed=(l,next,cols)=>/^[─━]* \S.* [─━]+$/.test(l)&&Math.abs(feedCells(l)-cols)<=1&&/^[❯!>](\s|$)/.test(next||'');
 // B192: the pill the agent CLI puts at the end of its last line while scrolled up, in each wording it has
 const FEED_PILL=/ (?:Jump to bottom|\d+ new messages?|Waiting for your answer)(?: \([^)]*\))?(?: ↓| · \S+ to scroll)(?: |$)/g;
 const FEED_JUMP=/(Jump to bottom|\d+ new messages?|Waiting for your answer)( \(.*\))?( ↓| · .* to scroll)\s*$/;
-// B194: it is drawn over the middle of that line, whose words may go on after it: known by its place, the middle of cols
-const feedJump=(l,cols)=>FEED_JUMP.test(l)||[...l.matchAll(FEED_PILL)].some(m=>Math.abs(feedCells(l.slice(0,m.index))-(cols-feedCells(m[0].trim())-2)/2)<1);
-function feedFoot(lines,dim){
+// B194: it is drawn over the middle of that line, whose words may go on after it: known by its place, the middle of cols,
+// and its own ground (lit(x): has that cell one?), which words in an answer do not have
+const feedJump=(l,cols,lit)=>FEED_JUMP.test(l)||[...l.matchAll(FEED_PILL)].some(m=>Math.abs(feedCells(l.slice(0,m.index))-(cols-feedCells(m[0].trim())-2)/2)<1&&(!lit||lit(feedCells(l.slice(0,m.index))+2)));
+function feedFoot(lines,dim,lit){
   let end=-1,at=-1;
   for(let y=lines.length-1;y>1&&end<0;y--){
     if(!feedRule(lines[y]))continue;
@@ -541,15 +543,15 @@ function feedFoot(lines,dim){
   const hint=/^\s*$/.test(own)||!!(dim&&dim(at+1,lines[at+1].slice(1).search(/[^\s ]/)+1));
   let top=at;
   const note=lines[at-1]||'';
-  if(/^\s+Update available/.test(note)||/^\s{12,}\S/.test(note)&&!/Jump to bottom/.test(note)&&!feedJump(note,cols)&&/ · |Update available|\/effort|ctrl\+/.test(note))top=at-1;
+  if(/^\s+Update available/.test(note)||/^\s{12,}\S/.test(note)&&!/Jump to bottom/.test(note)&&!feedJump(note,cols,lit&&(x=>lit(at-1,x)))&&/ · |Update available|\/effort|ctrl\+/.test(note))top=at-1;
   const foot=(top<at?[note]:[]).concat(below), all=foot.join('\n'), num=re=>{const m=re.exec(all);return m?+m[1]:0};
   const m=/Update available(?: · run |! Run: | · Run: )(.+?)\s*$/m.exec(all);
   const mode=FEED_MODES.find(x=>new RegExp('[⏵⏸][^\\n]*\\b(?:'+x[2]+')','i').test(all)||new RegExp('^\\s*(?:'+x[2]+') on','im').test(all));
   const modeAt=below.findIndex(l=>/[⏵⏸]|\? for shortcuts|for shell mode/.test(l));
-  const near=lines.slice(Math.max(0,top-5),top);
+  const from=Math.max(0,top-5), near=lines.slice(from,top);
   return{top,end,bash,text:hint?'':own,mode:mode?mode[0]:'',shells:num(/(\d+) shells?\b/),tasks:num(/(\d+) background tasks?\b/),agents:num(/← (\d+) agents?\b/),
     update:m?m[1].replace(/^`|`$/g,''):/Update available/.test(all)?'…':'',status:below.slice(0,modeAt<0?below.length:modeAt).map(l=>l.trim()).filter(l=>l&&!/Update available/.test(l)),
-    rate:lines.slice(Math.max(0,top-8),top).some(l=>/\b1: \S.*\s2: \S/.test(l)),work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.some(l=>feedJump(l,cols))};
+    rate:lines.slice(Math.max(0,top-8),top).some(l=>/\b1: \S.*\s2: \S/.test(l)),work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.some((l,i)=>feedJump(l,cols,lit&&(x=>lit(from+i,x))))};
 }
 /* where the session's frame goes. o: main its room, bar and dock what stands over it, row the slim message box's, high the
    frame's own height, pad its terminal's, cell a line, rows, foot (feedFoot's; null: show all), short (its words end at
@@ -1945,8 +1947,9 @@ function feedSee(){
   const t=feedTerm();if(!t||!FD.shown)return;
   const b=t.buffer.active, lines=feedLines(t);
   const dim=(y,x)=>{const l=b.getLine(b.baseY+y), c=l&&l.getCell(x);return!!(c&&c.isDim())};
+  const lit=(y,x)=>{const l=b.getLine(b.baseY+y), c=l&&l.getCell(x);return!!(c&&!c.isBgDefault())};
   if(!lines.some(l=>l))return;  // not drawn yet
-  const foot=feedFoot(lines,dim), was=FD.foot;
+  const foot=feedFoot(lines,dim,lit), was=FD.foot;
   FD.foot=foot;
   let blank=0;if(foot)while(blank<foot.top&&!lines[foot.top-1-blank].trim())blank++;
   FD.short=foot&&(!b.baseY||t.modes.mouseTrackingMode!=='none')&&(blank>3||foot.end<t.rows-FOOT_ROWS-2)?Math.max(1,foot.top-blank):0;
