@@ -18,9 +18,11 @@ Home's /p/KEY/ (B146, site_links), so one device address switches between runner
 
     GET  /?t=TOKEN               the Home page: F134: the run app (web_page.html) in Home mode, its All projects
                                  view: every project, running, idle or off, what needs you, buttons, Devices
+                                 (F150: /p/KEY/ of a project with no run up is this page too, showing that project)
     GET  /projects?t=TOKEN       the same as JSON (`project_rows`)
     POST /act?t=TOKEN            {"project": KEY, "name": start|stop|pause|resume|slots, "arg": "+1"}: the
-                                 runner's own command in that project (`run_action`)
+                                 runner's own command in that project (`run_action`); F150: with a "cid" it is run
+                                 once, however often it is sent
     POST /add?t=TOKEN            {"path": PATH} lists a project; /remove unlists one
     ANY  /p/KEY/...?t=TOKEN      that project's run app, routed to its run's page with the run's own token, so
                                  Home's link is the only one a phone needs; a run works the same with Home off
@@ -298,10 +300,26 @@ def why_closed(root: Path) -> str:
             'every project on this device one address')
 
 
-def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -> dict:
+ASKS = 50  # the most of one project's asks a row carries
+
+
+def plan_said(root: Path) -> dict:
+    """F150: the titles, queue and landed-today of the project at `root` (`ui_model.plan_facts`), {} when its plan
+    cannot be read."""
+    try:
+        from agent_runner.config import Config
+        from agent_runner.ui_model import plan_facts
+        return plan_facts(Config(root))
+    except (OSError, SystemExit, ValueError, KeyError, TypeError):
+        return {}
+
+
+def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said, plan=plan_said) -> dict:
     """What Home shows of one project: {'key', 'name', 'root', 'state' (running|idle|off), 'paused',
-    'stopping', 'slots', 'running' (task ids), 'left', 'needs' (how many), 'asks' (their 'ID - what to do'
-    lines), 'no_settings' (F178: its warning or ''), 'page' (its run app through Home, or '')}."""
+    'stopping', 'slots', 'running' (task ids), 'titles' (F150: the running tasks' titles by id), 'queue' (the next
+    tasks, [{'id', 'title'}]), 'landed' (the last 3 titles that landed today) and 'landed_n' (how many did), 'left', 'needs' (how many), 'asks'
+    (their 'ID - what to do' lines), 'no_settings' (F178: its warning or ''), 'page' (its run app through Home, or
+    '')}."""
     n, asks = needs(root)
     from agent_runner import cmds
     run = (info or cmds.run_info)(root) or {}
@@ -312,22 +330,31 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -
     up = bool(run.get('up'))
     running = sorted(str(v) for v in (run.get('running') or {}).values() if v) if up else []
     words = str(run.get('state') or '')
+    said = plan(root)
+    titles = said.get('titles') or {}
     return {'key': key, 'name': root.name, 'root': str(root),
             'state': 'off' if not up else 'running' if running else 'idle',
             'paused': up and 'paused' in words, 'stopping': bool(f.get('stopping')),
             'slots': run.get('slots') if up and isinstance(run.get('slots'), int) else None,
-            'running': running, 'left': f.get('left'), 'needs': n, 'asks': asks[:5],
+            'running': running, 'titles': {t: titles[t] for t in running if t in titles},
+            'queue': [q for q in said.get('queue') or [] if q['id'] not in running], 'landed': (said.get('landed') or [])[:3], 'landed_n': len(said.get('landed') or []),
+            'left': f.get('left'), 'needs': n, 'asks': asks[:ASKS],
             'no_settings': f.get('no_settings') or '',  # F178
             'page': f'p/{key}/' if up and f.get('link') else ''}
 
 
 def project_rows(reg: dict | None = None, row=project_row) -> list[dict]:
-    """Every project's row, for All projects and the switcher: those with a run by name, then those off by name
-    (F148)."""
+    """Every project's row, for All projects: F150: those running, then up but idle or paused, then off (F148), by
+    name in each group."""
     ks = keys(projects(reg))
     with cf.ThreadPoolExecutor(max_workers=8) as ex:
         rows = list(ex.map(lambda kv: row(*kv), ks.items()))
-    return sorted(rows, key=lambda r: (r.get('state') or 'off') == 'off')  # stable: projects() is by name
+    return sorted(rows, key=row_group)  # stable: projects() is by name
+
+
+def row_group(r: dict) -> int:
+    """Where a project's row stands: 0 running, 1 up but idle or paused, 2 off."""
+    return 2 if (r.get('state') or 'off') == 'off' else 0 if r['state'] == 'running' and not r.get('paused') else 1
 
 
 ACTIONS = {'start': [], 'stop': ['stop'], 'pause': ['pause'], 'resume': ['pause', '--off'], 'slots': ['slots']}
@@ -453,7 +480,8 @@ class HomeHandler(BaseHTTPRequestHandler):
             if path == '/remove':
                 ok, out = remove_project(str(root))
                 return self.send(200, {'ok': ok, 'out': out})
-            return self.send(200, self.server.act(root, str(req.get('name') or ''), str(req.get('arg') or '')))
+            return self.send(200, self.server.act_once(str(req.get('cid') or ''), root, str(req.get('name') or ''),
+                                                       str(req.get('arg') or '')))
         self.send(404, {'ok': False, 'out': f'no such page: {path}'})
 
     def manifest(self, path: str) -> None:
@@ -507,17 +535,20 @@ class HomeHandler(BaseHTTPRequestHandler):
         if root is None:
             return self.send(404, {'ok': False, 'out': f'no such project: {key}'})
         link = self.server.link(root)
+        page = method == 'GET' and parts[3] in ('', 'index.html')
         if link is None:
-            return self.send(502, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
-                             '<meta name="color-scheme" content="light dark"><title>Runner Home</title>'
-                             f'<p>{root.name} has no run up, so it has no run app to open. '
-                             f'<a href="/?{u.query}">Back to Home</a> to start it.</p>', 'text/html; charset=utf-8')
+            return self.off_page() if page else self.send(502, {'ok': False, 'out': f'{root.name} has no run up'})
         port, token = link
         if parts[3].startswith('t/'):
             return self.terminal(root, port, token, parts[3], u.query)
         query = [(k, v) for k, vs in parse_qs(u.query, keep_blank_values=True).items() if k != 't' for v in vs]
         target = '/' + parts[3] + '?' + urlencode([('t', token), *query])
-        self.forward(method, root, port, target)
+        self.forward(method, root, port, target, self.off_page if page else None)
+
+    def off_page(self) -> None:
+        """F150: /p/KEY/ while no run serves it: Home's page showing that project, which turns into its run app once
+        the run is up."""
+        self.send(200, home_page(), 'text/html; charset=utf-8')
 
     def pick(self, key: str) -> None:
         """F167: /p/KEY/pick is a pick link (web.pick): a concept page holds it, so it carries no token of Home's or
@@ -623,6 +654,9 @@ def end_stream(sock: socket.socket) -> None:
         sock.shutdown(socket.SHUT_RDWR)
 
 
+ACTS_KEPT = 200  # finished actions kept by their cid
+
+
 class HomeServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -636,6 +670,8 @@ class HomeServer(ThreadingHTTPServer):
         self.open_lock, self.open = threading.Lock(), 0  # requests being answered, terminal tunnels included
         self.streams: dict = {}  # of those, the runs' event streams: {handler: its socket to the run}
         self.token, self._rows, self._act, self._link, self._roots = token, rows, act, link, roots
+        self.acts: dict[str, cf.Future] = {}  # F150: a page's actions by cid, so one sent again is not run again
+        self.acts_lock = threading.Lock()
         self.vitals = vitals or home_vitals(self)
         if self.vitals.act is None:
             self.vitals.act = self.act_key  # the vitals page's + slot runs this Home's buttons
@@ -654,6 +690,25 @@ class HomeServer(ThreadingHTTPServer):
 
     def act(self, root: Path, name: str, arg: str) -> dict:
         return self._act(root, name, arg)
+
+    def act_once(self, cid: str, root: Path, name: str, arg: str) -> dict:
+        """F150: `act`, run once per `cid`: one sent again (a lost connection, a page that moved on) gets the first
+        one's answer, waiting for it while it runs."""
+        if not cid:
+            return self.act(root, name, arg)
+        with self.acts_lock:
+            got = self.acts.get(cid)
+            mine = None if got else cf.Future()
+            if mine:
+                for old in [k for k, f in self.acts.items() if f.done()][:-ACTS_KEPT]:
+                    del self.acts[old]
+                got = self.acts[cid] = mine
+        if mine:
+            try:
+                mine.set_result(self.act(root, name, arg))
+            except Exception as e:  # noqa: BLE001 - whoever waits for it gets an answer
+                mine.set_result({'ok': False, 'out': f'{name}: {e}'})
+        return got.result()
 
     def link(self, root: Path) -> tuple[int, str] | None:
         return self._link(root)
