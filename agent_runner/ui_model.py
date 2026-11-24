@@ -126,7 +126,16 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
         elif tid in tool_waits:  # B184: memory; B196: its author's split
             out[-1]['tool_wait'] = tool_waits[tid]
+        if P.release(tid):  # F186: one that started cannot be dropped from its row
+            out[-1]['started'] = release_started(tid, st or {})
     return out
+
+
+def release_started(tid: str, st: dict) -> bool:
+    """F186: is release task `tid` under way: a slot of STATE `st` runs it, it merges, or a person took it."""
+    from agent_runner.sched import taken
+    return tid in (st.get('running') or {}).values() or tid in (st.get('merging') or []) or \
+        bool(S.C and tid in taken())
 
 
 # F74: a queue row's state, first word. 'blocked' (beyond the design's four): a [~] task waits on a person or
@@ -288,6 +297,29 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
                     'waits': [{'id': t, 'title': titles.get(t, '')} for t in held],
                     'text': f'{tid} {titles[tid]} · {words}', 'note': note})
     return sorted(out, key=lambda r: r['state'] != 'releasing')
+
+
+def release_ask(rows: list[dict]) -> dict | None:
+    """F186: what a New release is told of the open releases among `release_rows`' rows: {'said': 'V17 is already
+    queued', 'ask': the question before another is queued, 'seen': their ids, which the Yes carries}; None with none."""
+    rows = [r for r in rows if not r.get('placeholder')]
+    if not rows:
+        return None
+    said = '; '.join(f'{r["id"]} is {"releasing now" if r["state"] == "releasing" else "already queued"}' for r in rows)
+    return {'said': said, 'ask': f'{said}. Queue another release?', 'seen': ' '.join(sorted(r['id'] for r in rows))}
+
+
+RELEASE_LOCK = threading.Lock()  # F186: one New release at a time looks at the plan and adds to it
+
+
+def new_release(argv: list[str], seen: str = '', confirm: bool = False) -> dict:
+    """F186: queue a release by `argv`; with one open already only on a `confirm` that names the ones open now
+    (`seen`), so neither a second press nor a second Yes queues one more unasked."""
+    with RELEASE_LOCK:
+        ask = release_ask(release_tasks(P.lines(S.C.todo), _state(S.run_up()))) if S.C else None
+        if ask and not (confirm is True and seen == ask['seen']):
+            return {'ok': False, 'code': 3, 'out': ask['ask'], 'confirm': ask['ask'], 'seen': ask['seen'], 'argv': argv}
+        return call(argv)
 
 
 def _no_tag(rest: str) -> str:
@@ -804,7 +836,10 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             r['acts'] = row_acts(where, r)  # C34, C35
             if labels := row_labels(where, r):  # F180
                 r['labels'] = labels
+            if asks := row_asks(where, r):  # F186
+                r['asks'] = asks
     fix = fixups(st, ls)
+    rel_ask = release_ask(releases)  # F186
     return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
             'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release, tools_line(tools)) if x), login),
@@ -813,7 +848,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'queue': queue, 'releases': releases, 'release_acts': [c['key'] for c in RUN_CONTROLS
                                                                    if c['where'] == 'release'],
             'shelved': shelved, 'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
-            'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
+            'release_said': rel_ask['said'] if rel_ask else '',
+            'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(rel_ask),
             'no_settings': no_settings(st=st if up else None),  # F178
             'claude_login': login,  # F126a
             'unpushed': unpushed_line(),  # F98
@@ -1137,6 +1173,7 @@ RUN_CONTROLS = (
     # C34: a Queue row's actions ('where' 'queue', '{id}' the row's task; `fits` says which rows it is allowed on, and
     # each snapshot row carries those keys as `acts`; '{pri}' the other level of critical / normal), and the release
     # tab's ('where' 'release'). 'tui_sure' False: the terminal UI runs it without asking (the page asks).
+    # 'confirm_of' (F186): a row's own confirm ('' the entry's), asked by both; the snapshot row's `asks` carries it.
     {'key': 'queue_priority', 'label': 'Priority', 'argv': ('plan', 'edit', '{id}', '--pri', '{pri}'), 'tui': 'p',
      'where': 'queue', 'fits': lambda r: r.get('state') != 'parked'},
     {'key': 'queue_unpark', 'label': 'Unpark', 'argv': ('plan', 'edit', '{id}', '--pri', 'normal'), 'tui': 'U',
@@ -1144,6 +1181,8 @@ RUN_CONTROLS = (
     {'key': 'queue_take', 'label': 'Do it here', 'ask': 'do {id} here', 'tui': 'H', 'where': 'queue'},
     {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
+     'fits': lambda r: not r.get('started'),
+     'confirm_of': lambda r: f'Drop {r["id"]}? It leaves the plan, and nothing is released.' if P.release(r['id']) else '',
      'confirm': 'It leaves the plan, and a slot running it is stopped. Drop it?'},
     # F184: a shelved task's, in the Parked group; never Unpark, which would not reopen it
     {'key': 'shelved_back', 'label': 'Bring back', 'argv': ('plan', 'unshelve', '{id}'), 'tui': 'U', 'where': 'shelved',
@@ -1234,6 +1273,12 @@ def row_labels(where: str, row: dict) -> dict[str, str]:
             if c['where'] == where and 'label_of' in c and c['fits'](row)}
 
 
+def row_asks(where: str, row: dict) -> dict[str, str]:
+    """F186: {key: question} of the actions allowed on `row` whose confirm is the row's own."""
+    return {c['key']: q for c in RUN_CONTROLS if c['where'] == where and 'confirm_of' in c
+            and c.get('fits', lambda r: True)(row) and (q := c['confirm_of'](row))}
+
+
 def queue_row(tid: str) -> dict | None:
     """C34: the queue's row of task `tid` as TODO.md has it now (None: not queued)."""
     return next((q for q in queue_rows(P.lines(S.C.todo), _state(S.run_up())) if q['id'] == tid), None)
@@ -1261,9 +1306,10 @@ def run_control_of(key: str) -> dict | None:
     return next((c for c in RUN_CONTROLS if c['key'] == key), None)
 
 
-def controls() -> list[dict]:
+def controls(rel_ask: dict | None = None) -> list[dict]:
     """The run controls as a page shows them: key, label, TUI key, where, what it needs typed ('n': a slot
-    count, 'id': a task) and its confirm question ('' none)."""
+    count, 'id': a task) and its confirm question ('' none). F186: with a release open (`rel_ask`:
+    `release_ask`), New release's actions ask, and carry the open ones as `seen`."""
     from agent_runner import plat
 
     def needs(c):
@@ -1274,7 +1320,8 @@ def controls() -> list[dict]:
             return 'id'
         return 'n' if any('{n}' in w for w in words) else 'id' if any('{id}' in w for w in words) else ''
     return [{'key': c['key'], 'label': c['label'], 'tui': c['tui'], 'where': c['where'], 'needs': needs(c),
-             'confirm': c.get('confirm', ''), 'group': c.get('group', ''), 'fix': c.get('fix', ''),
+             'confirm': rel_ask['ask'] if rel_ask and c['where'] == 'release' else c.get('confirm', ''),
+             'seen': rel_ask['seen'] if rel_ask and c['where'] == 'release' else '', 'group': c.get('group', ''), 'fix': c.get('fix', ''),
              'each': bool(c.get('each')), 'up': c.get('up', True), 'tui_also': c.get('tui_also', ''),
              'tui_sure': c.get('tui_sure', True), 'chat': bool(c.get('ask') or c.get('chat')), 'fn': bool(c.get('fn')),
              'tui_main': c.get('tui_main', True), 'answer': bool(c.get('answer')),
@@ -1305,7 +1352,8 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
     """F82: run one run control (RUN_CONTROLS) for the web page or agent-runner ui. One with a confirm question
     runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'. B139:
     one with an 'ask' starts a new control session with it (`new_control`, `wait` as there). F180: an answer takes `text`, the label the
-    person pressed (refused when the row's answers have changed since), and `note`, the words beside it."""
+    person pressed (refused when the row's answers have changed since), and `note`, the words beside it. F186: a New release takes
+    the open releases the person said Yes to (`seen`) as `text`."""
     c = run_control_of(key)
     if c and c.get('each') and not tid:  # every one there is: 'Release stale claims (2)'
         ids = [x['id'] for x in fixups(_state(S.run_up()), P.lines(S.C.todo)).get(c['fix']) or []]
@@ -1314,11 +1362,13 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
         rs = [run_control(key, tid=i) for i in ids]
         bad = next((r for r in rs if not r['ok']), None)
         return bad or {**rs[-1], 'out': ', '.join(r['out'] for r in rs)}
-    pri = ''
+    pri, row = '', {}
     if c and c['where'] in ROW_WORDS:  # C34, C35: allowed on this row now (the snapshot's `acts`, checked again)
         row = row_of(c['where'], tid)
         if c.get('answer') and row is None:
             return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
+        if row and row.get('started') and key == 'queue_drop':  # F186
+            return {'ok': False, 'code': 1, 'out': f'{tid} has started: a running release cannot be dropped', 'argv': []}
         if row is None or key not in row_acts(c['where'], row):
             return {'ok': False, 'code': 1, 'out': f'{c["label"]}: {tid or "none"} is not {ROW_WORDS[c["where"]]} it '
                                                    f'fits', 'argv': []}
@@ -1335,10 +1385,12 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
     except ValueError as e:
         return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
     if c.get('confirm') and confirm is not True:
-        ask = c['confirm'].replace('{id}', tid)
+        ask = row_asks(c['where'], row).get(key) or c['confirm'].replace('{id}', tid)
         return {'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'argv': argv}
     if c.get('ask'):
         return new_control(c['ask'].replace('{id}', tid), wait)
+    if c['where'] == 'release':  # F186
+        return new_release(argv, text, confirm)
     r = call(argv)
     FIXUPS[0] = float('-inf')  # what there is to fix is looked up anew
     if r['ok'] and c.get('said'):  # C35

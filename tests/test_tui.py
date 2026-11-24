@@ -2147,8 +2147,82 @@ def test_release_row_f131() -> None:
         eq(p.msg, 'V5 stays in Releases', 'the release stays there')
 
 
+def test_new_drop_release_f186() -> None:
+    """F186: the release tab's New release names the open one and asks; D drops a release that has not started, after
+    its confirm, there and on its row; R in the Queue opens the tab."""
+    ask, drop = 'V6 is already queued. Queue another release?', 'Drop V6? It leaves the plan, and nothing is released.'
+
+    def rel(tid: str, started: bool) -> dict:
+        r = {'id': tid, 'title': 'Release', 'placeholder': False, 'words': 'next', 'all': 'next', 'text': f'{tid} Release · next'}
+        return dict(SNAP['queue'][0], id=tid, title='Release', release=r, started=started,
+                    acts=['queue_take'] if started else ['queue_take', 'queue_drop'],
+                    asks={} if started else {'queue_drop': drop.replace('V6', tid)})
+
+    def page_of(*vs, said=ask):
+        return page(dict(SNAP, queue=SNAP['queue'] + list(vs), releases=[v['release'] for v in vs], release_said=said.split('.')[0],
+                         controls=U.controls({'ask': said, 'seen': ' '.join(v['id'] for v in vs)} if said else None)))
+    ran = []
+
+    def control(key, **kw):
+        ran.append((key, kw))
+        return {'ok': True, 'out': 'ok'}
+    with mock.patch.object(U, 'run_control', control):
+        p = page_of(rel('V6', False))
+        p.key('3')
+        p.cur[3] = 0
+        text = '\n'.join(drawn(p).lines())
+        check('Releases · R new release' in text, 'the group says how to make one', text)
+        p.key('R')
+        eq((p.panel, p.tab()[0]), (1, 'release'), 'R in the Queue: the release tab')
+        text = '\n'.join(drawn(p).lines())
+        check('New release: V6 is already queued' in text and '[D drop V6]' in text, 'it says so, and has Drop', text)
+        p.key('ENTER')
+        eq((p.msg, ran), (f'{ask} ⏎ again: yes', []), 'a press asks')
+        check('Queue another release?' in '\n'.join(drawn(p).lines()), 'in the tab too')
+        p.key('x')
+        eq(ran, [], 'any other key: no')
+        p.key('ENTER')
+        p.key('ENTER')
+        eq(ran, [('release_wait', {'confirm': True, 'text': 'V6'})], 'again: a second, the open one named')
+        ran.clear()
+        p.key('D')
+        eq((p.msg, ran), (f'{drop} D again: yes', []), 'D asks')
+        p.key('D')
+        eq(ran, [('queue_drop', {'confirm': True, 'tid': 'V6', 'why': 'dropped from agent-runner ui'})], 'then drops it')
+        ran.clear()
+        p.key('ESC')
+        p.key('3')
+        p.cur[3] = 0
+        p.key('d')
+        eq((p.msg, ran), (f'{drop} D again: yes', []), 'd on its row asks')
+        p.key('d')
+        eq([k for k, _ in ran], ['queue_drop'], 'then drops it')
+        ran.clear()
+        p = page_of(rel('V5', True))
+        p.key('3')
+        p.cur[3] = 0
+        p.key('d')
+        p.key('d')
+        p.key('R')
+        p.key('D')
+        eq((ran, p.msg), ([], 'no release waits: one that has started cannot be dropped'), 'a running one has no Drop')
+        p = page_of(rel('V6', False), rel('V7', False))
+        p.key('3')
+        p.key('R')
+        p.key('D')
+        eq((p.panel, p.sel()['id'], ran), (3, 'V6', []), 'two wait: pick its row')
+    stale = iter(({'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'seen': 'V6'}, {'ok': True, 'out': 'added V7'}))
+    with mock.patch.object(U, 'run_control', lambda key, **kw: (ran.append((key, kw)), next(stale))[1]):
+        p = page_of(said='')
+        p.key('R')
+        p.key('f')
+        eq(p.msg, f'{ask} f again: yes', 'one the snapshot did not show yet: asked too')
+        p.key('f')
+        eq(ran, [('release_now', {}), ('release_now', {'confirm': True, 'text': 'V6'})], 'then queued')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

@@ -15,6 +15,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest import mock
@@ -272,8 +273,8 @@ def test_row_actions(tmp: Path) -> None:
         eq(U.run_control('queue_drop', tid='F1', confirm=True)['ok'], True, 'and runs once confirmed')
         eq(ran, [['plan', 'drop', 'F1', 'dropped from the run app']], 'plan drop')
         ran.clear()
-        U.run_control('release_now')
-        eq(ran, [['plan', 'add', 'V', '--now']], 'release now')
+        r = U.run_control('release_now', confirm=True, text='V6')
+        eq((r['ok'], ran), (True, [['plan', 'add', 'V', '--now']]), 'release now, V6 named in the Yes (F186)')
         ran.clear()
         r = U.run_control('need_drop', tid='D3')
         check(not r['ok'] and r['confirm'].startswith('Drop D3?') and not ran, 'C35: a Needs you drop asks first', r)
@@ -286,6 +287,69 @@ def test_row_actions(tmp: Path) -> None:
             eq(U.run_control(key, tid=tid, confirm=True)['code'], 1, f'{key} on {tid} is refused')
         with mock.patch('agent_runner.control.close_from_tui', lambda n: {'ok': True, 'out': f'c{n} closed'}):
             eq(U.run_control('session_close', tid='c6')['out'], 'c6 closed', 'a control session closes')
+
+
+def test_new_release_f186(tmp: Path) -> None:
+    """F186: New release queues one when none is open; with one open it says so and asks, and a Yes counts only for the
+    releases open then, so no double press queues another unasked."""
+    todo = fake_run(tmp) / 'plan' / 'TODO.md'
+    v6 = next(l for l in TODO.splitlines() if '**V6**' in l)
+    todo.write_text(TODO.replace(v6 + '\n', ''), encoding='utf-8')
+    ran, ids = [], iter(('V6', 'V7', 'V8'))
+
+    def run(argv):
+        ran.append(argv)
+        ls = todo.read_text(encoding='utf-8')
+        todo.write_text(ls.replace('### Follow-ups', f'- [ ] **{next(ids)}** Release it | after: all\n### Follow-ups'), encoding='utf-8')
+        return 0, 'added'
+    rel = lambda: {c['key']: (c['confirm'], c['seen']) for c in U.snapshot(up=True, now=NOW, links={})['controls']  # noqa: E731
+                   if c['where'] == 'release'}
+    with mock.patch.object(U, 'RUN', [run]):
+        eq(rel(), {'release_wait': ('', ''), 'release_now': ('', '')}, 'none open: nothing to ask')
+        eq((U.act('run_control', key='release_wait')['ok'], ran), (True, [['plan', 'add', 'V']]), 'add: queued at once')
+        for key in ('release_wait', 'release_now'):
+            r = U.act('run_control', key=key)
+            eq((r['ok'], r['code'], r['confirm'], r['seen'], len(ran)),
+               (False, 3, 'V6 is already queued. Queue another release?', 'V6', 1), f'{key} again: no silent duplicate')
+        eq(U.snapshot(up=True, now=NOW, links={})['release_said'], 'V6 is already queued', 'the snapshot says so')
+        eq(rel()['release_wait'], ('V6 is already queued. Queue another release?', 'V6'), 'and its action asks')
+        eq(U.run_control('release_wait', confirm=True)['ok'], False, 'a Yes that names no release is asked again')
+        eq((U.run_control('release_wait', confirm=True, text='V6')['ok'], len(ran)), (True, 2), 'confirmed: a second')
+        r = U.run_control('release_wait', confirm=True, text='V6')
+        eq((r['ok'], r['seen'], len(ran)), (False, 'V6 V7', 2), 'the same Yes sent twice asks again')
+        with mock.patch.object(U, '_state', lambda up: {'running': {'1': 'V6'}}):
+            eq(U.run_control('release_now')['confirm'], 'V6 is releasing now; V7 is already queued. Queue another release?',
+               'one that runs is named too')
+    todo.write_text(TODO.replace(v6 + '\n', ''), encoding='utf-8')
+    ran.clear()
+    ids = iter(('V6', 'V7', 'V8'))
+    with mock.patch.object(U, 'RUN', [run]):
+        ts = [threading.Thread(target=U.run_control, args=('release_now',)) for _ in range(3)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(30)
+    eq(len(ran), 1, 'pressed at once from three places: one release')
+
+
+def test_drop_release_f186(tmp: Path) -> None:
+    """F186: a release not started drops on its confirm; one a slot runs, that merges or that a person took does not."""
+    fake_run(tmp)
+    ran = []
+    v6 = lambda: next(q for q in U.snapshot(up=True, now=NOW, links={})['queue'] if q['id'] == 'V6')  # noqa: E731
+    ask = 'Drop V6? It leaves the plan, and nothing is released.'
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+        eq((v6()['asks'], 'queue_drop' in v6()['acts']), ({'queue_drop': ask}, True), 'its row has Drop and its question')
+        eq((U.run_control('queue_drop', tid='V6')['confirm'], ran), (ask, []), 'asked first')
+        eq(U.run_control('queue_drop', tid='V6', confirm=True)['ok'], True, 'then dropped')
+        eq(ran, [['plan', 'drop', 'V6', 'dropped from the run app']], 'plan drop')
+        ran.clear()
+        for what, st in (('running', {'running': {'1': 'V6'}}), ('merging', {'merging': ['V6']}), ('taken', {})):
+            with mock.patch.object(U, '_state', lambda up, st=st: st), \
+                    mock.patch('agent_runner.sched.taken', lambda: {'V6': tmp} if what == 'taken' else {}):
+                check('queue_drop' not in v6()['acts'] and 'asks' not in v6(), f'{what}: no Drop', v6())
+                r = U.run_control('queue_drop', tid='V6', confirm=True)
+                eq((r['ok'], r['out'], ran), (False, 'V6 has started: a running release cannot be dropped', []), f'{what}: refused')
 
 
 def test_answers_f180(tmp: Path) -> None:
@@ -1372,7 +1436,7 @@ def test_plan_facts_f150(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_new_release_f186), in_tmp(test_drop_release_f186), in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),

@@ -3317,7 +3317,7 @@ def test_release_row_f131(tmp: Path) -> None:
     """F131, F185: the Plan view's Releases group, above the Queue: each open release once, in its row's words, then the
     dimmed rows that are no task."""
     page = W.PAGE.read_text(encoding='utf-8')
-    check('rs=planReleases(S.snap)' in page and 'rs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q))' in page
+    check('rs=planReleases(S.snap)' in page and 'rs.map(q=>q.placeholder?nextReleaseCard(q):releaseCard(q))' in page
           and '.card.relph{opacity' in page, 'the Plan view draws planReleases, a placeholder dimmed')
     if not shutil.which('node'):
         print('  (no node here: the release row script test is skipped)')
@@ -3335,6 +3335,58 @@ def test_release_row_f131(tmp: Path) -> None:
                     ['planReleases', two], ['planQueue', two], ['planWords', v5, []]])
     eq(got, [[], [], [ph], [v5], [v5, v6, done], [task], 'releasing now'],
        'none, none from an older run, auto, one running, two; the Queue without them (Parked is its own group)')
+
+
+RELEASE_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1);
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
+const [controls, v5, v6] = JSON.parse(process.argv[3]);
+const S = {ob: [], taskOpen: {}, sure: null, snap: {controls, queue: [v5, v6], releases: [v5.release, v6.release], release_acts: ['release_wait', 'release_now'], release_said: 'V6 is already queued'}};
+const working_ = () => [{}], cutsOff = () => '', taskRow = q => q.id, obCards = () => '', toast = () => {}, obChange = f => { S.ob = f(S.ob) }, obDrop = (b, c) => b.filter(x => x.cid !== c);
+globalThis.fetch = async () => { throw 0 };
+const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue='].map(line).join('')
+  + slice('const queueGroups=', '/* F185') + slice('const planReleases=', 'const planQueue=') + grab('function planCard(') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
+  + grab('function controlReq(') + line('function controlClick(');
+new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + `
+  const out = {rel: relCard(), v5: releaseCard(env.v5), v6: releaseCard(env.v6)};
+  S.sure = 'release_wait'; out.sure = newReleaseCard();
+  S.sure = 'queue_drop:V6'; out.drop = releaseCard(env.v6); out.relDrop = relCard();
+  out.click = [controlClick(controlOf('release_wait'), {}), controlClick(controlOf('release_wait'), {sure: true})];
+  for (const c of controlsOf('release')) { c.confirm = ''; c.seen = '' }
+  S.sure = null; S.ob = [{cid: 'a'}];
+  obDone({cid: 'a', ctl: 'release_now:', name: 'run_control', args: {}}, {ok: false, confirm: 'V7 is already queued. Queue another release?', seen: 'V7'});
+  out.stale = [S.ob, S.sure, newReleaseCard(), controlClick(controlOf('release_now'), {sure: true})];
+  console.log(JSON.stringify(out))}`)({S, working_, cutsOff, taskRow, obCards, toast, obChange, obDrop, v5, v6, tq: p => p, takeSnap: () => {}});
+"""
+
+
+def test_new_drop_release_f186(tmp: Path) -> None:
+    """F186: New release says which release is open and asks before another; Drop stands on a release that has not
+    started, not on one that runs; a release the page had not heard of is asked about, not failed."""
+    if not shutil.which('node'):
+        print('  (no node here: the New release script test is skipped)')
+        return
+    ask, drop = 'V6 is already queued. Queue another release?', 'Drop V6? It leaves the plan, and nothing is released.'
+    row = lambda t, w: {'id': t, 'title': 'Release', 'words': w, 'placeholder': False}  # noqa: E731
+    v5 = {'id': 'V5', 'acts': ['queue_take'], 'release': row('V5', 'releasing now')}
+    v6 = {'id': 'V6', 'acts': ['queue_take', 'queue_drop'], 'asks': {'queue_drop': drop}, 'release': row('V6', 'next')}
+    (tmp / 'driver.js').write_text(RELEASE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps([U.controls({'ask': ask, 'seen': 'V6'}), v5, v6])],
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
+    o = json.loads(r.stdout)
+    check('New release' in o['rel'] and 'V6 is already queued.' in o['rel'] and 'V5 · releasing now' in o['rel'], 'says so and shows it', o['rel'])
+    eq((o['rel'].count('data-ctl="queue_drop"'), 'data-tid="V6"' in o['rel'], 'data-tid="V5"' in o['rel']), (1, True, False), 'Drop on V6 only')
+    check('queue_drop' not in o['v5'] and 'queue_drop' in o['v6'], "the Plan view's cards: the same", o['v5'])
+    check(ask in o['sure'] and 'data-sure' in o['sure'], 'New release asks in place', o['sure'])
+    check(all(drop in o[k] for k in ('drop', 'relDrop')), 'Drop asks in its own words', o['drop'])
+    eq(o['click'], [{'ask': True}, {'name': 'run_control', 'args': {'key': 'release_wait', 'confirm': True, 'text': 'V6'}}],
+       'a press asks; its Yes names the open release')
+    eq(o['stale'][:2], [[], 'release_now'], 'one just queued elsewhere: the press asks, with nothing failed')
+    check('V7 is already queued' in o['stale'][2], 'about it', o['stale'][2])
+    eq(o['stale'][3]['args'], {'key': 'release_now', 'confirm': True, 'text': 'V7'}, 'and its Yes names it')
 
 
 SCROLL_DRIVER = r"""
@@ -4377,7 +4429,7 @@ def test_task_text_f85(tmp: Path) -> None:
     """F85: a queue row folds open to the task's whole text (plan ID)."""
     fake_repo(tmp)
     page = W.page_html().decode()
-    for part in ('data-task="${esc(q.id)}" aria-expanded="${open}"', "fetch(tq('task/'", '<pre class="tasktext"', "planCard(q)"):
+    for part in ('data-task="${esc(q.id)}" aria-expanded="${open}"', "fetch(tq('task/'", '<pre class="tasktext"', "planCard(q,rel)"):
         check(part in page, f'the page has {part}')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
@@ -5421,7 +5473,7 @@ def test_session_run_side_f170(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_trusted_networks_f136), in_tmp(test_no_settings_f178), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
+    raise SystemExit(report([in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_trusted_networks_f136), in_tmp(test_no_settings_f178), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
