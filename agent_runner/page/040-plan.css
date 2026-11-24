@@ -28,6 +28,7 @@
 .btns{display:flex;gap:8px;flex-wrap:wrap}
 .btn{border:1px solid var(--line2);background:var(--surface);border-radius:var(--r-m);padding:7px 14px;font-weight:500;font-size:var(--fs-n);cursor:pointer;text-decoration:none;color:var(--fg);display:inline-flex;align-items:center;gap:6px}
 .btn:hover{background:var(--bubble)}
+.btns.tight .btn svg{width:15px;height:15px}  /* B763a: a run control's icon */
 .btn.pri{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .btn.acc{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}
 .btn:disabled{opacity:.5;cursor:default}
