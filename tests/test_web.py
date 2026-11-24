@@ -2233,12 +2233,12 @@ const env = {S: {snap: {needs, controls: JSON.parse(process.argv[4])}, f: {}, sh
   $: () => el, esc: t => env.E(t), setHTML: (n, h) => { el.h = h; return false }, keepScroll: () => () => {}, keepFields: () => () => {},
   document: {activeElement: null, addEventListener: (t, f) => { (handlers[t] = handlers[t] || []).push(f) }}, card: (h, c, a) => `<div class="card" ${a}>${h}</div>`,
   actSure: () => '', tq: p => p + '?t=T', toast: t => sent.push(['toast', t]), composing: () => false, HOME_PAGE: false,
-  fetch: async p => { fetched.push(p); return {json: async () => ({ok: true, text: 'A task | files: <a>\nBLOCKED: CONFIRM'})} },
+  fetch: async p => { fetched.push(p); return {json: async () => ({ok: true, text: env.mute && p.startsWith('why/') ? '' : 'A task | files: <a>\nBLOCKED: CONFIRM'})} },
   render: () => env.sheetDraw(), outbox: (n, a, o) => { sent.push([n, a]); env.S.snap.needs = env.S.snap.needs.filter(x => x.id !== o.need); env.sheetDraw() }};
 const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
 env.env = env;
 new Function('known', 'env', 'with (known) {' + logic + 'env.E=E_;' + line('const controlOf=') + line('const ctlBusy=') + slice('const actBtns=', 'const actSure=') + slice('function needBtns(', '/* F85: a task') + 'env.needOf=needOf;'
-  + line('SHEETS.need=') + line('function openSheet(') + line('function closeSheet(') + slice('function sheetDraw(', '/* --- F97') + 'env.sheetDraw=sheetDraw;env.card0=needCard;'
+  + line('SHEETS.need=') + line('function openSheet(') + slice('function sheetOpener(', 'function sheetDraw(') + slice('function sheetDraw(', '/* --- F97') + 'env.sheetDraw=sheetDraw;env.card0=needCard;env.closeSheet=closeSheet;'
   + slice("document.addEventListener('click',async e=>{", "document.addEventListener('submit'")
   + slice("document.addEventListener('keydown',e=>{\n", "document.addEventListener('input',") + '}')(known, env);
 const press = (sel, dataset = {}, inSheet = true) => handlers.click.forEach(f => f({target: {closest: s => s === sel ? {dataset, closest: () => inSheet, hasAttribute: () => false} : null}}));
@@ -2258,6 +2258,10 @@ const S = env.S, out = {}, ans = (ctl, tid, inSheet) => press('[data-ctl]', {ctl
   press('[data-reply]', {reply: 'D7'}); S.f['askre:D7'] = '8770'; press('[data-reply]', {reply: 'D7'}); out.sent = sent;
   const pitch = {id: 'pitch1', label: 'PITCH', ask: 'Approve 1 change', options: ['Approve', 'Not this: drop'], acts: ['need_answer1', 'need_answer2', 'need_chat'], labels: {need_answer1: 'Approve', need_answer2: 'Not this: drop'}, changes: [{id: 'F1', title: 'a'}]};
   const no = {pitchno: '0', how: 'reopen', tid: 'F1'};
+  env.mute = true; S.snap.needs = needs; S.askWhy = {}; press('[data-needopen]', {needopen: 'D7'}, false); await wait(); out.mute = el.h;
+  const focused = [], node = (id, on) => ({dataset: {needopen: id}, isConnected: on, focus: () => focused.push(id + on)});
+  env.document.querySelectorAll = () => [node('F2', true), node('D7', true)];
+  env.sheetBack = node('D7', false); env.closeSheet(); out.focused = focused;
   S.snap.needs = [pitch]; S.f['askre:pitch1'] = ' nice '; press('[data-needopen]', {needopen: 'pitch1'}, false);
   out.pitchHtml = el.h; ans('need_answer1', 'pitch1'); S.snap.needs = [pitch]; press('[data-pitchno]', no);
   handlers.click.forEach(f => f({target: {closest: s => s === '[data-pitchno]' ? {dataset: no, closest: () => true, hasAttribute: () => true} : null}}));
@@ -2310,6 +2314,11 @@ def test_need_popup_f162(tmp: Path) -> None:
     eq((o['esc1'], o['esc2']), (['need', -1], ''), 'Esc closes the picture, then the popup')
     eq(o['buttons'], ['', 1], 'a button of the card answers and opens nothing')
     eq(o['closed'], '', 'an answer closes it')
+    check('Full task' in o['mute'] and 'Why it waits' not in o['mute'], 'F162a2: no words of the agent, no Why it waits', o['mute'])
+    eq(o['focused'], ['D7true'], 'F162a2: closing gives focus back to its card, drawn again since')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('.sheet.open:not(.drag){transition:transform var(--dur-slow) var(--ease)}' in page and 'visible at once' in page,
+          'F162a2: an opening sheet is visible at once, or it cannot take focus')
     check('data-reply="D7"' in o['reply'], 'an ask with no answers has Reply', o['reply'])
     eq(o['sent'], [['run_control', {'key': 'need_answer1', 'tid': 'F2', 'text': 'Done'}],
                    ['run_control', {'key': 'need_no', 'tid': 'B160', 'text': 'No', 'note': 'still grey'}],
@@ -2394,7 +2403,9 @@ def test_shot_f162(tmp: Path) -> None:
         for f in bad + (['uploads/out.png', 'asks/dir/secret.png'] if linked else []):
             eq(get(f'{base}/shot/{f}?t={token}')[0], 404, f'{f} is refused')
         why = json.loads(get(f'{base}/why/F1?t={token}')[1])
-        check(why['ok'] and 'Board page' in why['text'], 'why it waits: no session yet, so its task lines', why)
+        eq((why['ok'], why['text']), (True, ''), 'why it waits: no session, so no words (Full task has the task lines)')
+        with mock.patch.object(U, 'agent_said', lambda tid: f'{tid} needs a phone'):
+            eq(json.loads(get(f'{base}/why/F1?t={token}')[1])['text'], 'F1 needs a phone', "a session's last words")
         eq(json.loads(get(f'{base}/why/--x?t={token}')[1])['ok'], False, 'a task id only')
         eq(get(f'{base}/why/F1')[0], 403, 'only with the token')
     finally:

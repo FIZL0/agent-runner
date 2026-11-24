@@ -1705,9 +1705,8 @@ def need_options(row: dict) -> list[str]:
     return []
 
 
-def agent_last_words(tid: str) -> str:
-    """F143: the last message of the agent that worked on task `tid` (its latest session's transcript), else the
-    task's own lines in TODO.md, uncut (what it blocked with); '' for neither."""
+def agent_said(tid: str) -> str:
+    """F162a2: the last message of the agent that worked on task `tid` (its latest session's transcript), or ''."""
     try:
         from agent_runner.slots import transcript
         from agent_runner.watch import last_session
@@ -1716,6 +1715,14 @@ def agent_last_words(tid: str) -> str:
                 return says[-1]
     except Exception:  # noqa: BLE001 - no slot logs, or a transcript that does not read
         pass
+    return ''
+
+
+def agent_last_words(tid: str) -> str:
+    """F143: the agent's last message (`agent_said`), else the task's own lines in TODO.md, uncut (what it blocked
+    with); '' for neither."""
+    if said := agent_said(tid):
+        return said
     ls = P.lines(S.C.todo)
     return next(('\n'.join(P._item_block(ls, i)).strip() for _, _, t, _, i in P.iter_tasks(ls) if t == tid), '')
 
@@ -1782,10 +1789,10 @@ def task_text(tid: str) -> dict:
 
 
 def need_why(tid: str) -> dict:
-    """F162: why a Needs you item waits, for its popup: the agent's last words (`agent_last_words`)."""
+    """F162: why a Needs you item waits, for its popup: the agent's last words (`agent_said`), '' when it left no session."""
     if not TASK_ID.fullmatch(tid or ''):
         return {'ok': False, 'id': tid, 'out': f'a task id (F83), not {tid!r}'}
-    return {'ok': True, 'id': tid, 'text': agent_last_words(tid)}
+    return {'ok': True, 'id': tid, 'text': agent_said(tid)}
 
 
 def settings() -> dict:

@@ -63,7 +63,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Sheet** (`#sheet`, `openSheet(name)`): more choices about what is on screen. It slides up from the bottom, groups
   its items (`.it`) under `.sec`, closes on the scrim, Esc, a swipe down, or a pick. One sheet, never a sheet over a
   sheet. Its markup comes from `SHEETS[name]()`. A button whose label ends in … opens one or folds open. A Needs you item's
-  sheet is a centred dialog (`.dlg`) from 760px wide, not a sheet from the bottom.
+  sheet is a centred dialog (`.dlg`) from 760px wide, not a sheet from the bottom. A sheet is visible from the first frame so it can take focus when it opens (its visibility is only animated on closing; no ring around the sheet itself), and closing gives focus back to what opened it (for a Needs you card, the one drawn again since).
 - **Badge** (`.n`): a count of what waits on the person, never of anything else. **Dot** (`.bdot`): something
   waits, no count. **Pill** (`.pill`): a state in a word or two. Same words on every page: Running, Paused,
   Stopping, Caps forced, Not up.
