@@ -145,8 +145,10 @@ a{color:var(--accent)}
 .card.tap{cursor:pointer} .card.tap:hover{border-color:var(--line2)}
 .card.need{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
 .q{font:500 17px/1.35 var(--serif);overflow-wrap:anywhere}
-.q.clamp{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.more{border:0;background:none;padding:0;font:500 13px var(--sans);color:var(--accent);cursor:pointer;justify-self:start}
+/* F162: a Needs you card's words: one button, what is wanted, the title, at most two lines of what to do */
+.asktap{display:grid;gap:var(--s1);width:100%;min-width:0;min-height:var(--tap);border:0;background:none;padding:0;text-align:left;color:inherit;cursor:pointer}
+.asktap b{font:500 17px/1.35 var(--serif)} .asklab{color:var(--warn);font-weight:600;font-size:var(--fs-m)}
+.askdo{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .small{font-size:var(--fs-m);color:var(--muted)}
 .row{display:flex;align-items:center;gap:12px;min-width:0}
 .grow{flex:1;min-width:0}
@@ -375,6 +377,19 @@ a{color:var(--accent)}
 .it:hover{background:var(--bubble)} .it.bad{color:var(--bad)} .it .k{font:12px var(--mono);color:var(--muted);flex:none} .it:last-child{border-bottom:0}
 .it.setrow{cursor:default} .it.setrow:hover{background:none}
 .sheet pre.out{font:12.5px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+/* F162: a Needs you item's popup: the sheet on a phone, a centred dialog on a wide screen; its answers stay on screen */
+.sheet.dlg{padding-bottom:0} .app.kb .sheet.dlg{padding-bottom:0}
+.asktop{display:flex;gap:var(--s3);justify-content:space-between;align-items:flex-start} .asktop h2{min-width:0;overflow-wrap:anywhere} .asktop .btn{flex:none}
+.askbody{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s3);padding-block:var(--s3);overflow-wrap:anywhere} .askbody p,.askbody h3{margin:0} .askbody h3{font-size:var(--fs-m);color:var(--muted);font-weight:600}
+.askbody ol,.askbody ul{margin:var(--s1) 0 0;padding-left:22px;display:grid;gap:var(--s2)} .asktext{display:grid;gap:var(--s2);font-size:var(--fs-n)} .asklink{color:var(--accent);min-height:var(--tap);display:flex;align-items:center;gap:var(--s1)}
+.askbody .fold{min-height:var(--tap)} .shots{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s1)}
+.shot{width:92px;height:120px;border:1px solid var(--line2);border-radius:var(--r-m);background:var(--bubble);padding:0;overflow:hidden;cursor:pointer} .shot img{width:100%;height:100%;object-fit:cover;display:block}
+.shotbig{border:0;background:none;padding:0;cursor:zoom-out;min-width:0} .shotbig img{display:block;max-width:100%;margin:0 auto;border-radius:var(--r-m)}
+.askfoot{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding-block:var(--s3) max(var(--s3),env(safe-area-inset-bottom,0px));display:grid;gap:var(--s2)} .app.kb .askfoot{padding-bottom:var(--s3)}
+@container (min-width:760px){
+  .sheet.dlg{top:0;bottom:0;margin:auto;height:fit-content;max-width:600px;border-bottom:1px solid var(--line2);border-radius:var(--r-l);padding-top:var(--s4);opacity:0;transform:translateY(var(--s4));transition:transform var(--dur-slow) var(--ease),opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
+  .sheet.dlg.open{opacity:1;transform:none} .sheet.dlg .grab{display:none}
+}
 /* form controls: a switch, a select, a text field */
 .sw{appearance:none;-webkit-appearance:none;width:44px;height:26px;border-radius:var(--r-full);border:1px solid var(--line2);background:var(--bubble);position:relative;cursor:pointer;flex:none;margin:0;transition:background-color var(--dur-fast) var(--ease)}
 .sw::after{content:'';position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px var(--shadow);transition:transform var(--dur-fast) var(--ease)}
@@ -444,16 +459,26 @@ a{color:var(--accent)}
 /* The page's pure parts, run in node by tests/test_web.py: no DOM here. */
 /* a Needs you item's possible answers (F74): yes / no for a CONFIRM or a yes-or-no ask, else its options */
 function answerOpts(it){return((it&&it.answers)||[]).map(a=>a.value)}  // C33: the row's own, from ui_model.need_answers
-/* B152: a Needs you card's ask: short (ask_short: first sentence, no paths or asides) clamped to 2 lines with a More
-   that opens the whole ask in place, Less to fold it again; the title under it on one line with an ellipsis */
-const ASK_LONG=80;
-function needAsk(n,i,open){
-  const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const full=(n&&(n.ask||n.title||n.what))||'', short=(n&&n.ask_short)||full;
-  const more=short!==full||full.length>ASK_LONG;
-  const q=open&&more?`<div class="q">${e(full)}</div>`:`<div class="q clamp">${e(short)}</div>`;
-  return q+(more?`<button class="more" data-more="${i}" aria-expanded="${open?'true':'false'}">${open?'Less':'More'}</button>`:'');
-}
+/* F162: a Needs you card and its popup: what they say is the row's own (ui_model's detail); a run without it has the ask */
+const E_=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const askWords=s=>E_(s).replace(/`([^`]+)`/g,'<code>$1</code>');  // `code` as code
+function needD(n){const ask=n.ask||n.title||n.what||'';
+  return n.detail||{said:'Needs you',title:n.title||n.id,where:'',summary:n.ask_short||ask,lead:[],steps:[ask],expect:[],notes:[],shots:[]}}
+const needLab=n=>{const d=needD(n);return d.said+(d.where?` · ${d.where}`:'')};
+/* the card's words, one button that opens the popup: what is wanted and where, the title, two lines of what to do */
+function needTap(n){const d=needD(n), k=d.steps.length;
+  return `<button class="asktap" data-needopen="${E_(n.id)}" aria-haspopup="dialog"><span class="asklab">${E_(needLab(n))}</span><b class="ell">${E_(d.title)}</b><span class="askdo">${askWords(d.summary)}</span><span class="small">${['Press for details',k>1?`${k} steps`:'',E_(n.id),E_(n.age||'')].filter(Boolean).join(' · ')}</span></button>`}
+/* the popup's lists and pictures; url: a picture's address */
+function needBody(n,url){const d=needD(n), list=(t,h,xs)=>xs.length?`<section><h3>${h}</h3><${t}>${xs.map(x=>`<li>${askWords(x)}</li>`).join('')}</${t}></section>`:'';
+  return d.lead.map(x=>`<p>${askWords(x)}</p>`).join('')+list('ol','What to do',d.steps)+list('ul','What you should see',d.expect)
+    +d.notes.map(x=>`<p class="small">${askWords(x)}</p>`).join('')
+    +(d.shots.length?`<section><h3>Pictures</h3><div class="shots">${d.shots.map((s,j)=>`<button class="shot" data-shot="${j}" aria-label="Open the picture: ${E_(s.caption||'no caption')}"><img src="${E_(url(s))}" alt="${E_(s.caption||'Picture')}" loading="lazy"></button>`).join('')}</div></section>`:'')}
+/* a task's text as paragraphs: its fields, notes, block and numbered parts each on their own */
+function taskParas(text){return String(text||'').split(/\n+|(?= \| )|(?= — )|(?= BLOCKED: )|(?=\s\(?\d\)\s)/).map(x=>x.trim()).filter(Boolean)}
+/* whose reply box has a button of its own: nothing else answers it, or the answers take no words with them */
+function needReplies(n){return n.label!=='TOOL'&&(!answerOpts(n).length||['DECIDE','STUCK','PITCH'].includes(n.label))}
+/* what an answer button sends; note: the popup's reply box */
+function answerArgs(n,v,note){note=String(note||'').trim();return{tid:n.id,text:v,button:true,...(note&&n.label!=='PITCH'?{note}:{})}}
 /* B138: an answered item stays off Needs you for a while (GONE_MS), so a snapshot taken before the answer landed
    does not bring a stale card back; gone maps an id to when it was answered */
 const GONE_MS=30000;
@@ -1153,7 +1178,7 @@ function pageNews(s,mine,later){
 function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploading?'Wait for the attachments to finish uploading.'
   :o.form?'Save or close the device form first. It is not kept over a refresh.'
   :o.unkept?'This browser cannot keep what you wrote. Send or clear it first.':''}
-if(typeof module!=='undefined')module.exports={pageNews,refreshHold,boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={needTap,needBody,taskParas,needReplies,answerArgs,pageNews,refreshHold,boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1213,7 +1238,7 @@ const LOGLINE_ICON={ok:'check',bad:'alert',go:'play','':'dot'};
 
 const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:'',machine:'',slots:0},
   view:'home',thread:null,ctx:null,atts:[],drawer:false,feeds:{},sent:{},waitNew:null,online:true,
-  sheet:'',ren:null,f:{},taskOpen:{},tasks:{},set:null,setOpen:{},setChanged:false,
+  sheet:'',askShot:-1,askFold:{},ren:null,f:{},taskOpen:{},tasks:{},set:null,setOpen:{},setChanged:false,
   sel:[],selLast:'',undo:null};  // F118: chats picked for delete, the last one clicked, a delete Undo can still take back
 const $=id=>document.getElementById(id);
 /* B153: the project's name (the top-left, the chat's lead label) and its first letter (the logo) */
@@ -1352,7 +1377,7 @@ function obDone(it,j){
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
-  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&j.gone))){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&j.gone))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&it.name==='answer')delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
@@ -1638,17 +1663,46 @@ function pitchNo(n,i){
     return `<div class="small ell">${esc(title)}</div><div class="btns">${['reopen','drop'].map(how=>`<button class="btn" data-pitchno="${i}" data-how="${how}" data-tid="${esc(tid)}">${how==='drop'?'Undo and drop':'Undo and reopen'}</button>`).join('')}</div>`
       +['reopen','drop'].map(how=>sure===at(how)?sureHTML(`Undo ${tid||'all of it'} here and ${how} ${tid?'its task':'the tasks'}?`,`undo and ${how}`,`data-pitchno="${i}" data-how="${how}" data-tid="${esc(tid)}"`):'').join('')};
   return (xs.length>1?row('','All of it'):'')+xs.map(x=>row(x.id,`${x.id} · ${x.title}`)).join('')}
-function pitchCard(n,i){
-  const open=!!(S.pitchOpen||{})[n.id], href=n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):'');
-  return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.age?` · ${esc(n.age)}`:''}</div>
-    <div class="btns"><button class="btn pri" data-ans="${i}" data-v="Approve">Approve</button><button class="btn" data-pitchopen="${i}" aria-expanded="${open}">Not this…</button>${actBtns(n.acts,n.id)}${href?`<a class="btn" href="${esc(href)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>${open?pitchNo(n,i):''}`,'need',`data-k="need:${esc(n.id)}"`);
+/* F162: an item's buttons, the same on its card and in its popup: its answers, Later, Chat, Drop and Open */
+function needBtns(n,i,more=''){
+  const open=a=>a?`<a class="btn" href="${esc(a)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:'';
+  if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id];
+    return `<div class="btns"><button class="btn pri" data-ans="${i}" data-v="Approve">Approve</button><button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${actBtns(n.acts,n.id)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?pitchNo(n,i):''}`}
+  if(n.label==='TOOL')return '';  // F168: nothing to answer, it clears once the tool is back
+  return `<div class="btns">${answerOpts(n).map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}${more}${actBtns(n.acts,n.id)}${open(n.url)}</div>${actSure(n.acts,n.id)}`;
 }
-function needCard(n,i){
-  if(n.label==='PITCH')return pitchCard(n,i);
-  if(n.label==='TOOL')return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.title)}${n.age?` · ${esc(n.age)}`:''}</div>`,'need',`data-k="need:${esc(n.id)}"`);  // F168: nothing to answer, it clears once the tool is back
-  const os=answerOpts(n);
-  return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.title?` · ${esc(n.title)}`:''}${n.age?` · ${esc(n.age)}`:''}</div>
-    <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}${actBtns(n.acts,n.id)}${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>${actSure(n.acts,n.id)}`,'need',`data-k="need:${esc(n.id)}"`);
+const needCard=(n,i)=>card(needTap(n)+needBtns(n,i),'need',`data-k="need:${esc(n.id)}"`);
+/* F162: the popup of one Needs you item: everything about it, its answers always on screen at the foot */
+const needOf=id=>((S.snap&&S.snap.needs)||[]).find(n=>n.id===id);
+const shotUrl=s=>tq('shot/'+s.src.split('/').map(encodeURIComponent).join('/'));
+const askField=id=>'askre:'+id;
+const askTask=id=>!/^(tool-|pitch)/.test(id);
+function askFold(key,label,got){
+  const on=!!S.askFold[key];
+  return `<button class="fold" data-askfold="${key}" aria-expanded="${on}"><span class="grow"><b>${label}</b></span><span class="chev">${I.chev}</span></button>${on?`<div class="asktext">${!got?'<div class="small">Loading…</div>':got.err?`<div class="small v-bad">${esc(got.err)}</div><div class="btns"><button class="btn" data-askload>Retry</button></div>`:taskParas(got.text).map(p=>`<p>${esc(p)}</p>`).join('')||'<div class="small">There are no words of it.</div>'}</div>`:''}`;
+}
+function needSheet(){
+  const n=needOf(S.sheetArg);if(!n)return '';
+  const i=S.snap.needs.indexOf(n), d=needD(n), big=d.shots[S.askShot], rep=needReplies(n), f=askField(n.id);
+  const body=big?`<button class="shotbig" data-shotclose aria-label="Back to the details"><img src="${esc(shotUrl(big))}" alt="${esc(big.caption||'Picture')}"></button>${big.caption?`<p class="small">${esc(big.caption)}</p>`:''}`
+    :`${needBody(n,shotUrl)}${n.url?`<a class="asklink" href="${esc(n.url)}" target="_blank" rel="noopener">Its page ${I.ext}</a>`:''}${askTask(n.id)?askFold('why','Why it waits',(S.askWhy||{})[n.id])+askFold('task','Full task',(S.askText||{})[n.id]):''}`;
+  const foot=n.label==='TOOL'?'':`<div class="askfoot"><input class="fld" data-f="${esc(f)}" aria-label="${rep?'Your reply':'A note with your answer'}" placeholder="${rep?'Your reply':'Add a note (optional)'}" autocomplete="off" value="${esc(S.f[f]||'')}">${needBtns(n,i,rep?`<button class="btn ${answerOpts(n).length?'':'pri'}" data-reply="${esc(n.id)}">Reply</button>`:'')}</div>`;
+  return `<div class="asktop"><h2>${esc(d.title)}</h2>${big?'<button class="btn" data-shotclose>Back</button>':'<button class="btn" data-closesheet>Close</button>'}</div>
+    <div class="small"><span class="asklab">${esc(needLab(n))}</span>${n.age?` · ${esc(n.age)}`:''} · ${esc(n.id)}</div><div class="askbody">${body}</div>${foot}`;
+}
+async function askLoad(id){
+  if(!askTask(id))return;
+  const one=async(path,key)=>{let got;
+    try{const j=await (await fetch(tq(path+encodeURIComponent(id)))).json();got=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read')}}
+    catch(e){got={err:'Could not reach the run page'}}
+    S[key]={...(S[key]||{}),[id]:got};render(true)};
+  await Promise.all([one('why/','askWhy'),one('task/','askText')]);
+}
+function needOpen(id){if(!needOf(id))return;S.askShot=-1;S.askFold={};openSheet('need',id);askLoad(id)}
+function needReply(id){
+  const n=needOf(id), text=String(S.f[askField(id)]||'').trim();if(!n)return;
+  if(!text)return toast('Write your reply first',true);
+  outbox('answer',{tid:id,text},{need:id,say:`${id} · replied “${text}”`});
 }
 /* F85: a task's row: one line; a tap folds its whole text (plan ID) open in place */
 function taskRow(q,title){
@@ -2061,10 +2115,13 @@ Object.assign(SHEETS,{
   sessupdate(){const cmd=(FD.foot||{}).update||'', busyUp=S.ob.some(x=>x.upd&&x.state==='sending'), own=/^c\d+$/.test(FD.n);
     return `<h2>Update the agent CLI</h2>${cmd&&cmd!=='…'?`<div class="small">This runs on ${esc(S.snap.machine||'the machine of the run')}:</div><pre class="out">${esc(cmd)}</pre><div class="btns"><button class="btn pri${busyUp?' busy':''}" data-update="${esc(cmd)}">Update</button></div>`:'<div class="small">Its command does not fit the window: turn the phone, or use a wider one.</div>'}<div class="small">Open chats keep their version until they restart.</div>${own?`<div class="btns"><button class="btn" data-restart="${esc(FD.n)}"${sessIdle()?'':' disabled'}>Restart chat</button></div>${sessIdle()?'':'<div class="small">It can restart once it has nothing running.</div>'}`:''}`},
 });
+SHEETS.need=needSheet;  // F162
 function openSheet(name,arg){if(name==='talk')loadVoices();S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
 function closeSheet(){if(!S.sheet)return;S.sheet='';S.sure=null;render(true);if(sheetBack&&sheetBack.isConnected&&sheetBack.focus)sheetBack.focus({preventScroll:true});sheetBack=null}
 function sheetDraw(){
   const el=$('sheet');
+  if(S.sheet==='need'&&!needOf(S.sheetArg)){S.sheet='';S.sure=null;sheetBack=null}  // F162: answered, or it left Needs you
+  if(S.sheet)el.classList.toggle('dlg',S.sheet==='need');
   if(S.sheet&&SHEETS[S.sheet]){const put=keepScroll(el), f=keepFields(el);if(setHTML(el,'<div class="grab"></div>'+SHEETS[S.sheet]())){f();put()}}  // closing, it keeps its words while it slides
   if(S.sheet!=='device'&&S.sheet!=='devsecrets')toolForget();  // F169: a typed secret goes with its sheet
   el.classList.toggle('open',!!S.sheet);$('sheetscrim').classList.toggle('on',!!S.sheet);
@@ -3205,9 +3262,13 @@ document.addEventListener('click',async e=>{
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
   if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;  // B138: the plan command, no AI session
     // F137: the card folds away at once (obHide) and stands as 'sending' until answer returns (obDone)
-    outbox('answer',{tid:n.id,text:x.dataset.v,button:true},{need:n.id,say:`${n.id} · answered “${x.dataset.v}”`});return}
-  if(x=q('[data-more]')){const n=S.snap.needs[+x.dataset.more];if(!n)return;  // B152: the whole ask, in place
-    S.askOpen={...(S.askOpen||{}),[n.id]:!(S.askOpen||{})[n.id]};render(true);return}
+    outbox('answer',answerArgs(n,x.dataset.v,x.closest('#sheet')?S.f[askField(n.id)]:''),{need:n.id,say:`${n.id} · answered “${x.dataset.v}”`});return}
+  if(x=q('[data-needopen]')){needOpen(x.dataset.needopen);return}  // F162
+  if(x=q('[data-askfold]')){S.askFold={...S.askFold,[x.dataset.askfold]:!S.askFold[x.dataset.askfold]};render(true);return}
+  if(q('[data-askload]')){S.askWhy={};S.askText={};render(true);askLoad(S.sheetArg);return}
+  if(x=q('[data-shot]')){S.askShot=+x.dataset.shot;render(true);$('sheet').scrollTop=0;return}
+  if(q('[data-shotclose]')){S.askShot=-1;render(true);return}
+  if(x=q('[data-reply]')){needReply(x.dataset.reply);return}
   if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
   if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
@@ -3250,9 +3311,12 @@ document.addEventListener('keydown',e=>{
   if(e.target.matches&&e.target.matches('[data-f="ren"]')){  // F129: Enter keeps the name (its form), Esc does not
     if(e.key==='Escape'){e.preventDefault();S.ren=null;render(true)}
     return}
+  if(e.key==='Escape'&&S.sheet==='need'&&S.askShot>=0){e.preventDefault();S.askShot=-1;render(true);return}  // F162
   if(e.key==='Escape'&&S.sheet){e.preventDefault();closeSheet();return}  // the topmost thing only
   if(e.target.matches&&e.target.matches('[data-f]')&&e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.dataset.f.startsWith('set:')){
     e.preventDefault();const [,side,...id]=e.target.dataset.f.split(':');S.f[e.target.dataset.f]=e.target.value;saveSetting(id.join(':'),side);return}
+  if(e.target.matches&&e.target.matches('[data-f^="askre:"]')&&e.key==='Enter'){  // F162: Enter sends a reply; beside answers the note waits for one
+    const n=needOf(S.sheetArg);if(n&&needReplies(n)&&!composing(e)){e.preventDefault();needReply(n.id)}return}
   if(e.target.matches&&e.target.matches('[data-kin]')){  // F87: Enter queues the concept (B181: a new line on touch), Esc closes the box
     if(e.key==='Enter'&&boxEnter(e,TOUCH())==='send'){e.preventDefault();newConcept();return}
     if(e.key==='Escape'){e.preventDefault();S.kOpen=false;render(true);return}

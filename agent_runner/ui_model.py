@@ -14,7 +14,8 @@ copy, and the actions they share.
               state ('running s2 6m', 'critical', 'after', 'tool', 'parked', 'ready'); with shared tools set, needs
               and tool_wait ('waits for iPhone 15, held by F389, 12 min')
     tools     the shared tools ([run.tools]; F168): name, label, state, words, waits; [] without them
-    needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age
+    needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age, detail (what
+              its card and popup say: said, title, where, summary, lead, steps, expect, notes, shots; need_detail)
     concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
               of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none)
     log       the run log's last lines
@@ -54,6 +55,7 @@ import time
 from html.parser import HTMLParser
 from pathlib import Path
 
+from agent_runner import need_detail
 from agent_runner import plan as P
 from agent_runner import plansync
 from agent_runner import state as S
@@ -297,6 +299,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
     """(needs-you items, concepts) from `status.waiting_ok()`'s list; shelved items are left out of both."""
     needs, concepts = [], []
     stamps = {w[1]: w[7] for w in waiting if len(w) > 7 and w[7]}
+    texts = need_detail.task_lines() if waiting else {}
     for label, tid, k, what, url, title, shelved, *_ in waiting:
         if shelved:
             continue
@@ -304,7 +307,8 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
             concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
                       'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
-                      'age': P.age(stamps.get(tid, ''), now)})
+                      'age': P.age(stamps.get(tid, ''), now),
+                      'detail': need_detail.detail(label, tid, ask, title, texts.get(tid, ''), ask_short)})  # F162
         if label == 'PITCH':  # F98
             from agent_runner import pitch
             xs = [{'id': x['id'], 'title': x['title']} for x in pitch.changes_of(tid, state='waiting')]
@@ -751,13 +755,15 @@ def need_label(tid: str) -> str:
         return ''
 
 
-def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], str]:
+def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tuple[list[str], str]:
     """B138: the runner command that settles a Needs you reply at once, and what to say once it did; ([], '')
     when the reply is a chat's to read. A button's Yes (or a pick, or done) is `plan confirm ID "<reply>"`, a
     CONFIRM's No is `plan change ID "No: the check failed"`; a pick sheet's go or Send line is `sheet ID
     --go|--picks`; a concept's option button is `plan approve ID "<option>"` (B149). Free words typed in the
-    reply box are a new chat's."""
-    said, label = (text or '').strip(), need_label(tid)
+    reply box are a new chat's. F162: `note`, the words beside a button's answer, go with it (a pitch or a pick
+    sheet takes none)."""
+    said, label, note = (text or '').strip(), need_label(tid), ' '.join((note or '').split())
+    noted = f': {note}' if note else ''
     if label == 'PITCH' and button:  # F98
         if said.lower() == 'approve':
             return ['pitch', 'approve', tid], f'{tid} approved'
@@ -773,21 +779,21 @@ def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], s
         if has_sheet(tid) and said.startswith(f'{tid} picks:'):
             return ['sheet', tid, '--picks', said], f'{tid} answered with your picks'
     if label == 'CONCEPT' and button and said:  # B149: a concept's option button approves that option itself
-        return ['plan', 'approve', tid, said], f'{tid} approved ({said}): a run starts its build'
+        return ['plan', 'approve', tid, said + noted], f'{tid} approved ({said}): a run starts its build'
     if not button or not said or label not in ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK):
         return [], ''
     if label == 'CONFIRM' and said.lower() == 'no':
-        return ['plan', 'change', tid, CHECK_FAILED], f'{tid} reopened: the check failed'
+        return ['plan', 'change', tid, f'No{noted}' if note else CHECK_FAILED], f'{tid} reopened: the check failed'
     if label == 'CONFIRM':
-        return ['plan', 'confirm', tid, said], f'{tid} ticked'
-    return ['plan', 'confirm', tid, said], f'{tid} answered ({said}): a run starts it'
+        return ['plan', 'confirm', tid, said + noted], f'{tid} ticked'
+    return ['plan', 'confirm', tid, said + noted], f'{tid} answered ({said}): a run starts it'
 
 
-def answer(tid: str, text: str, button: bool = False) -> dict:
+def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
     """A reply to a Needs you item. B138: a button's answer runs the plan command itself (`answer_argv`), with
     no AI session, and an ok result carries 'said' (what was done, for the toast) and 'gone' (the item, off
     Needs you); the words typed in a reply box go to a new chat to settle as its needs guide says."""
-    argv, done = answer_argv(tid, text, button)
+    argv, done = answer_argv(tid, text, button, note)
     if button and not argv and not need_label(tid):  # answered already, or never asked: say so, no AI session
         return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
     if argv:
@@ -1682,6 +1688,13 @@ def task_text(tid: str) -> dict:
         return {'ok': False, 'id': tid, 'out': f'a task id (F83), not {tid!r}'}
     r = call(['plan', tid])
     return {'ok': r['ok'], 'id': tid, 'text': r['out'] if r['ok'] else '', 'out': '' if r['ok'] else r['out']}
+
+
+def need_why(tid: str) -> dict:
+    """F162: why a Needs you item waits, for its popup: the agent's last words (`agent_last_words`)."""
+    if not TASK_ID.fullmatch(tid or ''):
+        return {'ok': False, 'id': tid, 'out': f'a task id (F83), not {tid!r}'}
+    return {'ok': True, 'id': tid, 'text': agent_last_words(tid)}
 
 
 def settings() -> dict:

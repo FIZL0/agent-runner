@@ -346,8 +346,14 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   control session). The TUI's control rows are `ui_model.CONTROL_ROWS`.
 - **Settings.** The run app's Settings page: about 24 everyday settings in Speed and limits, Landing work, Models and Chats, each with its control on its row. The rest sit behind Advanced, and commands, paths, patterns and rules behind Project file, read only ("Ask a chat to change it"). Each setting has a home: this device saves to `runner.local.toml` at once, or everyone saves to `runner.toml` at once. That save is committed alone on the shared branch and pushed as a plan edit is; it never queues a task. It waits up to 60 s for a merge landing in the main checkout (not one still in its test gate). Saves that come together are one commit. Nothing is changed, and it says so, when runner.toml has uncommitted edits, another branch is out in the main checkout, or a merge or rebase is under way there. A failed push says `saved here, not pushed: why`. With `[run] approve` it is pushed with the next approved change. A runner.toml that git ignores, or one outside the repo (`AGENT_RUNNER_CONFIG`), is written without a commit; with no runner.toml, one is made. Buttons say Save for everyone. When this device's runner.local.toml overrides the key, the row says "This device overrides everyone's (value)" and the run is not told. The other home is in the row's More…. A value set on this device wins and is what the row edits. Changed lists what differs from its default, with Reset, and the lines the run ignores or moved. Dependent rows show with their parent (`approve_wait` and `approve_batch` with `approve` on). Release by itself has two controls on a line under its description: Every (Off, 5, 10, 20 tasks; a count of your own already set is kept and shown) and When idle (a switch). Changing one keeps the other, and both off writes `false`. Search finds names, descriptions and code names. A "N changes wait for a restart" card has Restart the run; `slots` applies now. `agent-runner settings` still prints the developer notes. The words the page shows are in `agent_runner/setting_words.py`.
 - **Home.** A greeting, a message box, quick asks (since my last look, what needs me, add a task), then
-  Needs you (each item's answer buttons, Later to shelve it, Chat to open a new chat that shows the question and its answers, Drop to
-  drop the task after a confirm), Working now (opens
+  Needs you (each item is one short card: what is wanted and where, in everyday words, its title, at most two lines of
+  what to do, and Press for details; its answer buttons sit below it, Later to shelve it, Chat to open a new chat that shows the
+  question and its answers, Drop to drop the task after a confirm). Pressing the card's words opens a popup with the whole ask: what to
+  do as numbered steps, what you should see, notes, pictures, a link to its page, the agent's last words (`GET /why/ID`) and the
+  full task (`GET /task/ID`), and at the foot a one-line reply box with the answer buttons. The reply's words go with the answer
+  (Yes is `plan confirm ID "Yes: words"`, No is `plan change ID "No: words"`, a concept option likewise). An item with no
+  answer buttons, and a DECIDE, STUCK or PITCH, has a Reply button, which sends the words to a new chat. The popup is a sheet on
+  a phone and a centred dialog from 760px wide, and closes when the item is answered or leaves Needs you. Working now (opens
   that slot's session), Up next (a row folds open to the task's whole text) and Release (when the next one
   lands, or now). Each item's answers come from `ui_model.need_answers` (in each snapshot needs row as `answers`): Yes and No on a
   CONFIRM or a yes/no ask, a concept's options (A/B/C when its copy has none), a pitch's options, and Done on a BLOCKED item,
@@ -502,6 +508,21 @@ cannot tell):
 Answers stay in their own project: `confirm`, `change` and `shelve` read and change only this project's plan,
 never another's. An id only another project has gets `nothing needs you here about 'R43' in <project>`, and is
 answered in that project's control session; a project that needs another's state checks it itself.
+
+The card and popup of a Needs you item say what the ask is in short. Optionally, `<notes>/asks/ID.json` gives them
+their own words, each field standing in for what the ask's text gives: `summary` (the card's line), `where`, `steps`
+(What to do), `expect` (What you should see) and `shots` (pictures, each with a `caption`):
+
+```json
+{"summary": "Open the pay page on the phone", "where": "iPhone, Safari", "steps": ["Open the shop", "Tap Pay"],
+ "expect": ["A green tick"], "shots": [{"file": "uploads/pay.png", "caption": "The pay button"}]}
+```
+
+A missing, broken or over 64 KB file is ignored. Without one, the ask is split by rule (at sentences, numbered steps,
+`;`, `then` and colons), with nothing lost and no AI. A `file` is relative to `<notes>/asks`, or `uploads/NAME`, or an
+absolute path inside one of those two folders. A picture is png, jpg, gif or webp, served by a token-checked
+`GET /shot/uploads/…` or `/shot/asks/…` and never from anywhere else; a picture under `<notes>/uploads` that the task's
+line names shows too. The TUI's Needs you pane shows the same steps, expected list and picture paths.
 
 ### Approve to push
 

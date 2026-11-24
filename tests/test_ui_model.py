@@ -865,8 +865,78 @@ def test_need_answers_c33(tmp: Path) -> None:
           'state': 'merging'}) and not U.task_controls_on({'name': 'c1', 'task': 'F1'}), 'task controls')
 
 
+ASKS_F162 = {  # real asks, as Needs you showed them
+    'B160': ('CONFIRM', 'On an iPhone in Safari, after this lands and the run restarts: 1) reload, open a chat, tap the message box; '
+             'the header stays and the box rides up with no grey band. 2) Close the keyboard; it glides back. 3) Same in Talk, '
+             'Home, Settings and a sheet. Chat and Home were already seen working on the iPhone 15 Pro - reply yes/no'),
+    'F154': ('CONFIRM', "On an iPhone, in a long chat, on Home and in the open drawer's list: scroll up/down and bend sideways (the "
+             'drawer must not open or close); swipe the drawer open and closed at a slant (nothing may scroll up or down); taps '
+             'still open rows, and holding a chat row still drags it - reply yes/no'),
+    'F106h': ('BLOCKED', 'Log in to Copilot: `run login copilot` (device code; unattended it ended exit 124 waiting for approval at '
+              'github.com/login/device). Then the Copilot check, the default and the docs follow; findings in '
+              'docs/research/F106h-harness-end-to-end.md - reply done once it is'),
+    'B163': ('STUCK', 'Stuck: waits for its Windows run - reply with what to do'),
+    'B177': ('CONFIRM', 'On the iPhone, reload the run page on Talk, then on a chat, then on Plan: each opens again without Home '
+             'flashing, and Talk neither listens nor speaks by itself - reply yes/no'),
+    'R6': ('CONFIRM', "Once B79 is released and upgraded on the work Windows machine: in the Claude desktop app open a runner repo in "
+           "its Claude Code (no run started from a terminal): (1) does 'status' give the run's status (the control brief)? (2) start "
+           'a run from it, close the app: is the run still going? - reply with what you saw - reply yes/no')}
+
+
+def test_need_detail_f162(tmp: Path) -> None:
+    """F162: real asks split into what to do and what to see, nothing lost; <notes>/asks/ID.json stands in for them, a
+    broken, odd or oversized one is the fallback; the pictures a task names and the file's are found."""
+    from agent_runner import need_detail as N
+    got = {}
+    for tid, (label, ask) in ASKS_F162.items():
+        pieces = N.split_ask(ask, label in ('CONFIRM', 'BLOCKED'))
+        eq(''.join(p for _, p in pieces), ask, f'{tid}: the pieces joined are the ask')
+        got[tid] = N.detail(label, tid, ask, 'A task', '', U.ask_short)
+    for odd in ('', 'x', '  a; b  ', 'Pick: 1) a 2) b', 'Read (a; b: c', 'See https://x.y/z: ok. e.g. This one; then\nthat', '`a; b` then c'):
+        eq(''.join(p for _, p in N.split_ask(odd)), odd, f'joined back: {odd!r}')
+    b = got['B160']
+    eq((b['said'], b['where'], b['summary']), ('Check this', 'iPhone, Safari', 'Reload, open a chat, tap the message box'), 'the card')
+    eq(b['steps'], ['Reload, open a chat, tap the message box', 'Close the keyboard', 'Same in Talk, Home, Settings and a sheet.'], 'B160: the steps')
+    eq(b['expect'], ['The header stays and the box rides up with no grey band.', 'It glides back.'], 'B160: what to see')
+    eq(b['lead'], ['On an iPhone in Safari, after this lands and the run restarts'], 'B160: where and when')
+    check('Chat and Home were already seen working on the iPhone 15 Pro' in b['notes'], 'B160: the rest is kept', b['notes'])
+    eq((len(got['F154']['steps']), got['F154']['expect'], got['F154']['where']),
+       (2, ['Taps still open rows, and holding a chat row still drags it'], 'iPhone'), 'F154')
+    eq((got['F106h']['said'], len(got['F106h']['steps']), got['F106h']['expect']), ('Do this', 1, []), 'F106h: code after a colon is the same step')
+    check('`run login copilot`' in got['F106h']['steps'][0], 'and it is kept', got['F106h'])
+    eq((got['B163']['said'], got['B163']['steps']), ('Stuck', ['Waits for its Windows run']), 'B163')
+    eq((len(got['B177']['steps']), len(got['B177']['expect'])), (3, 1), 'B177: then is a step, the colon what to see')
+    eq((len(got['R6']['steps']), got['R6']['expect']), (3, ['Is the run still going?']), 'R6: (1) and (2)')
+    eq(N.detail('DECIDE', 'F1', 'Which look: Full, Small?', '', '', U.ask_short)['steps'], ['Which look: Full, Small?'], 'a question is one piece')
+    repo = fake_run(tmp)
+    notes = repo / '.runner'
+    for d in ('asks', 'uploads'):
+        (notes / d).mkdir(parents=True, exist_ok=True)
+    png = b'\x89PNG\r\n\x1a\nfake'
+    for f in ('asks/one.png', 'uploads/IMG_1.png', 'uploads/IMG_2.PNG', 'secret.png'):
+        (notes / f).write_bytes(png)
+    S.C.todo.write_text(TODO.replace('which layout', f'which layout, see {notes}/uploads/IMG_1.png and .runner/uploads/gone.png'), encoding='utf-8')
+    d3 = lambda: next(n['detail'] for n in U.snapshot(up=False, now=NOW, links={})['needs'] if n['id'] == 'D3')  # noqa: E731
+    plain = d3()
+    eq([s['src'] for s in plain['shots']], ['uploads/IMG_1.png'], 'the picture its line names, only one that is there')
+    js = notes / 'asks' / 'D3.json'
+    js.write_text(json.dumps({'summary': 'Open both', 'where': 'iPad', 'steps': ['Open one', 7, ''], 'expect': ['Two tabs'], 'shots': [
+        {'file': 'one.png', 'caption': 'Before'}, {'file': 'uploads/IMG_2.PNG'}, {'file': '../secret.png', 'caption': 'x'},
+        {'file': str(notes / 'secret.png')}, 'x', {'caption': 'y'}]}), encoding='utf-8')
+    full = d3()
+    eq({k: full[k] for k in ('summary', 'where', 'steps', 'expect', 'lead')},
+       {'summary': 'Open both', 'where': 'iPad', 'steps': ['Open one'], 'expect': ['Two tabs'], 'lead': []}, 'the file stands in')
+    eq([(s['src'], s['caption']) for s in full['shots']], [('asks/one.png', 'Before'), ('uploads/IMG_2.PNG', ''),
+                                                           ('uploads/IMG_1.png', 'Picture named in the task')], 'its pictures, none from outside')
+    for bad in ('{', '[]', 'null', '"x"', '{"steps": 5, "shots": {}, "expect": null, "summary": []}', '[' * 100000, '{"a": "' + 'x' * N.FILE_MAX + '"}'):
+        js.write_text(bad, encoding='utf-8')
+        eq(d3(), plain, f'the fallback for {bad[:20]!r}')
+    js.write_bytes(b'\xff\xfe\x00')
+    eq(d3(), plain, 'and for one that is no text')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command),
                          in_tmp(test_to_new), in_tmp(test_control_titles),

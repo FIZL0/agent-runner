@@ -1751,7 +1751,7 @@ def test_answer_button_b138(tmp: Path) -> None:
     eq((yes['ok'], yes['said'], yes['gone']), (True, 'F1 ticked', 'F1'), 'the result says what was done')
     eq(no['said'], 'F1 reopened: the check failed', "No's words")
     page = W.PAGE.read_text(encoding='utf-8')
-    check("outbox('answer',{tid:n.id,text:x.dataset.v,button:true},{need:n.id" in page, 'the page sends a button answer', '')
+    check("outbox('answer',answerArgs(n,x.dataset.v," in page, 'the page sends a button answer', '')
     check("obCards(x=>x.need)" in page, 'the answer stands in Needs you while it is sent (F137)', '')
     if not shutil.which('node'):
         print('  (no node here: the page script test is skipped)')
@@ -2192,27 +2192,149 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     eq(o['c1'], ['chat_to', {'text': 'hello', 'to': 'c1'}], 'and a message there goes there')
 
 
-def test_short_ask_b152(tmp: Path) -> None:
-    """B152: a Needs you card shows its short ask clamped to 2 lines with a More that opens the whole ask in
-    place (Less folds it), and the title under it on one line with an ellipsis."""
-    page = W.PAGE.read_text(encoding='utf-8')
-    check('.q.clamp{display:-webkit-box;-webkit-line-clamp:2' in page, 'a clamped ask is cut at 2 lines', '')
-    check('<div class="small ell">${esc(n.id)}${n.title' in page, 'the title line has an ellipsis', '')
-    check("q('[data-more]')" in page and 'S.askOpen' in page, 'More opens the ask in place', '')
+NEED_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const needs = JSON.parse(process.argv[3]);
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const el = {h: '', cls: new Set(), focus() {}, scrollTop: 0, classList: {toggle: (c, on) => on ? el.cls.add(c) : el.cls.delete(c)}};
+const sent = [], handlers = {}, fetched = [];
+const env = {S: {snap: {needs}, f: {}, sheet: '', askShot: -1, askFold: {}, ob: []}, I: {ext: '', chev: ''}, SHEETS: {}, sheetBack: null,
+  $: () => el, esc: t => env.E(t), setHTML: (n, h) => { el.h = h; return false }, keepScroll: () => () => {}, keepFields: () => () => {},
+  document: {activeElement: null, addEventListener: (t, f) => { (handlers[t] = handlers[t] || []).push(f) }}, card: (h, c, a) => `<div class="card" ${a}>${h}</div>`,
+  actBtns: () => '', actSure: () => '', tq: p => p + '?t=T', toast: t => sent.push(['toast', t]), composing: () => false, HOME_PAGE: false,
+  fetch: async p => { fetched.push(p); return {json: async () => ({ok: true, text: 'A task | files: <a>\nBLOCKED: CONFIRM'})} },
+  render: () => env.sheetDraw(), outbox: (n, a, o) => { sent.push([n, a]); env.S.snap.needs = env.S.snap.needs.filter(x => x.id !== o.need); env.sheetDraw() }};
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+env.env = env;
+new Function('known', 'env', 'with (known) {' + logic + 'env.E=E_;' + slice('function needBtns(', '/* F85: a task') + 'env.needOf=needOf;'
+  + line('SHEETS.need=') + line('function openSheet(') + line('function closeSheet(') + slice('function sheetDraw(', '/* --- F97') + 'env.sheetDraw=sheetDraw;env.card0=needCard;'
+  + slice("document.addEventListener('click',async e=>{", "document.addEventListener('submit'")
+  + slice("document.addEventListener('keydown',e=>{\n", "document.addEventListener('input',") + '}')(known, env);
+const press = (sel, dataset = {}, inSheet = true) => handlers.click.forEach(f => f({target: {closest: s => s === sel ? {dataset, closest: () => inSheet, hasAttribute: () => false} : null}}));
+const esc = () => handlers.keydown.forEach(f => f({key: 'Escape', preventDefault() {}, target: {closest: () => null, matches: () => false}}));
+const S = env.S, out = {};
+(async () => {
+  const wait = () => new Promise(r => setTimeout(r, 10));
+  out.card = env.card0(needs[0], 0);
+  press('[data-needopen]', {needopen: 'B160'}, false); await wait();
+  out.opened = [S.sheet, S.sheetArg, el.cls.has('open'), el.cls.has('dlg')]; out.fetched = [...fetched].sort(); out.html = el.h;
+  press('[data-askfold]', {askfold: 'task'}); out.text = el.h;
+  press('[data-shot]', {shot: '0'}); out.big = el.h; esc(); out.esc1 = [S.sheet, S.askShot]; esc(); out.esc2 = S.sheet;
+  press('[data-ans]', {ans: '1', v: 'Done'}, false); out.buttons = [S.sheet, sent.length];
+  press('[data-needopen]', {needopen: 'B160'}, false);
+  S.f['askre:B160'] = ' still grey '; press('[data-ans]', {ans: '0', v: 'No'}); out.closed = S.sheet;
+  press('[data-needopen]', {needopen: 'D7'}, false); out.reply = el.h;
+  press('[data-reply]', {reply: 'D7'}); S.f['askre:D7'] = '8770'; press('[data-reply]', {reply: 'D7'}); out.sent = sent;
+  press('[data-needopen]', {needopen: 'tool-x'}, false); out.tool = el.h; S.snap.needs = []; env.render(); out.left = S.sheet;
+  console.log(JSON.stringify(out)); process.exit(0);
+})();
+"""
+
+
+def test_need_popup_f162(tmp: Path) -> None:
+    """F162: a Needs you card is short, and a press on its words opens the popup with its steps, what to see, pictures
+    and answers, all escaped; its buttons do not; an answer (with the reply box's words) closes it, and so does an item
+    that leaves Needs you. Esc closes the picture, then the popup."""
     if not shutil.which('node'):
-        print('  (no node here: the short ask script test is skipped)')
+        print('  (no node here: the popup script test is skipped)')
         return
-    long = {'id': 'R45', 'title': 'Check the sign-in', 'ask_short': 'Sign in to Chariz and check that Glint downloads.',
-            'ask': 'Sign in to Chariz (iFizBox > Sources > Chariz > Sign In) and check that Glint downloads. '
-                   'Notes are in .runner/journal/R45.md - reply yes/no'}
-    shut, opened, small = logic_js([['needAsk', long, 3, False], ['needAsk', long, 3, True],
-                                    ['needAsk', {'id': 'D7', 'ask': 'Which port?', 'ask_short': 'Which port?'}, 0, False]])
-    check('<div class="q clamp">Sign in to Chariz and check that Glint downloads.</div>' in shut
-          and 'data-more="3"' in shut and '>More<' in shut and 'R45.md' not in shut,
-          'a long ask renders short and clamped, with a More control', shut)
-    check('R45.md' in opened and '(iFizBox &gt; Sources' in opened and 'clamp' not in opened and '>Less<' in opened,
-          'More shows the whole ask, paths and asides too, with Less', opened)
-    eq(small, '<div class="q clamp">Which port?</div>', 'a short ask has no More (and is clamped all the same)')
+    d = {'said': 'Check this', 'where': 'iPhone, Safari', 'title': 'Keyboard <b>', 'summary': 'Run `x` <i>', 'lead': ['On an iPhone'],
+         'steps': ['Tap <script>', 'Close it'], 'expect': ['No grey "band"'], 'notes': ['Reply yes/no'],
+         'shots': [{'src': 'uploads/a b.png', 'path': '/x', 'caption': '"><img onerror=1>'}]}
+    none = {k: [] for k in ('lead', 'expect', 'notes', 'shots')}
+    needs = [{'id': 'B160', 'label': 'CONFIRM', 'ask': 'a', 'age': '20m', 'url': 'https://claude.ai/x', 'detail': d,
+              'answers': [{'label': 'Yes', 'value': 'Yes'}, {'label': 'No', 'value': 'No'}]},
+             {'id': 'F2', 'label': 'BLOCKED', 'ask': 'Log in', 'answers': [{'label': 'Done', 'value': 'Done'}]},
+             {'id': 'D7', 'label': 'DECIDE', 'ask': 'Which port?', 'detail': {**none, 'said': 'Choose', 'where': '', 'title': 'Port', 'summary': 'p', 'steps': ['Which port?']}, 'answers': []},
+             {'id': 'tool-x', 'label': 'TOOL', 'ask': 'Connect it', 'answers': []}]
+    (tmp / 'driver.js').write_text(NEED_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps(needs)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node presses the card', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    card = o['card']
+    check('Check this · iPhone, Safari' in card and 'Keyboard &lt;b&gt;' in card and '<code>x</code> &lt;i&gt;' in card
+          and '2 steps · B160 · 20m' in card, 'the card: what is wanted and where, the title, what to do', card)
+    check('Close it' not in card and card.index('</button>') < card.index('data-ans="0"'), 'no steps on it, and its buttons are not inside its words', card)
+    eq(o['opened'], ['need', 'B160', True, True], 'a press on its words opens the popup')
+    eq(o['fetched'], ['task/B160?t=T', 'why/B160?t=T'], 'which asks for why it waits and the whole task')
+    h = o['html']
+    parts = ['Keyboard &lt;b&gt;', 'Check this', '20m', 'On an iPhone', '<ol><li>Tap &lt;script&gt;</li><li>Close it</li></ol>',
+             '<ul><li>No grey &quot;band&quot;</li></ul>', 'src="shot/uploads/a%20b.png?t=T"', 'Its page', 'Why it waits',
+             'Full task', 'data-f="askre:B160"', 'data-v="Yes"', 'data-v="No"', '>Open ']
+    at = [h.find(x) for x in parts]
+    check(-1 not in at and at == sorted(at), 'the popup, in order', list(zip(parts, at)))
+    check('<script>' not in h and '<img onerror' not in h and '&quot;&gt;&lt;img onerror=1&gt;' in h, 'all of it escaped', h)
+    check('<p>| files: &lt;a&gt;</p><p>BLOCKED: CONFIRM</p>' in o['text'] and '<pre' not in o['text'], 'the task text in paragraphs', o['text'])
+    check('data-shotclose' in o['big'] and 'What to do' not in o['big'] and 'data-v="Yes"' in o['big'], 'a picture opens in it, the answers stay', o['big'])
+    eq((o['esc1'], o['esc2']), (['need', -1], ''), 'Esc closes the picture, then the popup')
+    eq(o['buttons'], ['', 1], 'a button of the card answers and opens nothing')
+    eq(o['closed'], '', 'an answer closes it')
+    check('data-reply="D7"' in o['reply'], 'an ask with no answers has Reply', o['reply'])
+    eq(o['sent'], [['answer', {'tid': 'F2', 'text': 'Done', 'button': True}],
+                   ['answer', {'tid': 'B160', 'text': 'No', 'button': True, 'note': 'still grey'}],
+                   ['toast', 'Write your reply first'], ['answer', {'tid': 'D7', 'text': '8770'}]],
+       "what is sent: the reply box's words go with the answer")
+    check('askfoot' not in o['tool'] and 'data-askfold' not in o['tool'], 'a missing tool has nothing to answer, and no task', o['tool'])
+    eq(o['left'], '', 'it closes when the item leaves Needs you')
+
+
+def test_need_note_f162(tmp: Path) -> None:
+    """F162: the words beside a button's answer reach the plan with it."""
+    from agent_runner import plan as P
+    fake_repo(tmp)
+    P.block('F1', 'CONFIRM: check the board loads', todo=S.C.todo)
+    P.block('B2', 'DECIDE: ship it, yes or no?', todo=S.C.todo)
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, ''))[1]]):
+        U.act('answer', tid='F1', text='Yes', button=True, note='on  wifi')
+        U.act('answer', tid='F1', text='No', button=True, note='still grey')
+        U.act('answer', tid='F1', text='No', button=True, note=' ')
+        U.act('answer', tid='B2', text='Yes', button=True, note='on Monday')
+    eq(ran, [['plan', 'confirm', 'F1', 'Yes: on wifi'], ['plan', 'change', 'F1', 'No: still grey'],
+             ['plan', 'change', 'F1', 'No: the check failed'], ['plan', 'confirm', 'B2', 'Yes: on Monday']], 'the note goes with it')
+
+
+def test_shot_f162(tmp: Path) -> None:
+    """F162: a Needs you item's pictures are served only with the token, only images, only from <notes>/uploads and
+    <notes>/asks, with no way out by .. or a symlink; /why gives the agent's last words."""
+    repo = fake_repo(tmp)
+    notes = repo / '.runner'
+    (notes / 'uploads').mkdir(parents=True, exist_ok=True)
+    (notes / 'asks').mkdir(parents=True, exist_ok=True)
+    png = b'\x89PNG\r\n\x1a\nfake picture'
+    for f in ('uploads/a b.png', 'asks/b.png', 'secret.png'):
+        (notes / f).write_bytes(png)
+    (notes / 'uploads' / 'fake.png').write_bytes(b'not a picture at all')
+    (notes / 'uploads' / 'x.svg').write_text('<svg onload="1"/>')
+    (notes / 'asks' / 'B1.json').write_text('{}')
+    linked = True
+    try:
+        (notes / 'uploads' / 'out.png').symlink_to(notes / 'secret.png')
+        (notes / 'asks' / 'dir').symlink_to(notes, target_is_directory=True)
+    except OSError:
+        linked = False
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        for f in ('uploads/a%20b.png', 'asks/b.png'):
+            eq(get(f'{base}/shot/{f}?t={token}'), (200, png), f'{f} is served')
+            eq(get(f'{base}/shot/{f}')[0], 403, 'only with the token')
+        bad = ['uploads/../secret.png', 'uploads/%2e%2e/secret.png', 'uploads/..%2fsecret.png', 'asks/..%5csecret.png',
+               'secret.png', 'uploads/', 'uploads/no.png', 'uploads/fake.png', 'uploads/x.svg', 'asks/B1.json', 'concepts/a.png',
+               'uploads/%2fetc/passwd', 'uploads/%00.png', 'uploads/..%2fasks/b.png']
+        for f in bad + (['uploads/out.png', 'asks/dir/secret.png'] if linked else []):
+            eq(get(f'{base}/shot/{f}?t={token}')[0], 404, f'{f} is refused')
+        why = json.loads(get(f'{base}/why/F1?t={token}')[1])
+        check(why['ok'] and 'Board page' in why['text'], 'why it waits: no session yet, so its task lines', why)
+        eq(json.loads(get(f'{base}/why/--x?t={token}')[1])['ok'], False, 'a task id only')
+        eq(get(f'{base}/why/F1')[0], 403, 'only with the token')
+    finally:
+        srv.stop()
 
 
 DICT_DRIVER = r"""
@@ -4156,7 +4278,7 @@ if __name__ == '__main__':
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
-                           in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_short_ask_b152),
+                           in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_need_popup_f162), in_tmp(test_need_note_f162), in_tmp(test_shot_f162),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
