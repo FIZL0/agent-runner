@@ -185,7 +185,7 @@ def test_tell(root: Path, env: dict) -> None:
     check('plan note' not in r.stderr, 'no note: it would not answer the question')
     eq(todo.read_text(encoding='utf-8'), before, 'nothing is answered')
     with mock.patch.object(P, 'tell', lambda *a: (None, 'asked the run')):
-        eq((P._tell(R.C, [tid, 'red']), P._tell(R.C, ['F1', 'red'])), (1, 0), 'no answer in time: an asked task fails, another waits')
+        eq((P._tell(R.C, [tid, 'red']), P._tell(R.C, ['F99', 'red'])), (1, 0), 'no answer in time: an asked task fails, another waits')
     A.block_asks('main')
     check(asks_of(tid), 'now blocked')
     r = run(root, 'plan', 'tell', tid, 'red', env=env)
@@ -215,7 +215,9 @@ def test_answer_parked(root: Path, env: dict) -> None:
         eq(asks_of(tid), [], 'block_asks never files it after')
         check(words in P.last_answer(tid, todo=R.C.todo, about=slots.asked(tid).get('question', '')), 'its session gets the answer')
         eq(slots.asked(tid).get('sid'), 's', 'the next start resumes the session')
-        eq((A.answered_asks(), A.answered_asks()), ({tid}, set()), 'the run tries it again, once')
+        tried = {tid, 'F1'}
+        A.block_asks('main', tried)
+        eq((tried, A.answered_asks()), ({'F1'}, set()), 'the run tries it again, once')
         opened = mock.Mock()
         opened.open.return_value = 42
         with mock.patch.multiple(slots, MUX=opened, move_transcript=lambda sid, d: True, on_harness=lambda m: False,

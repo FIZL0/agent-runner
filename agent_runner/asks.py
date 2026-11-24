@@ -57,10 +57,13 @@ def park_asked(n: int, tid: str, sid: str, question: str, branch: str) -> bool:
     return True
 
 
-def block_asks(branch: str) -> None:
+def block_asks(branch: str, tried: set | None = None) -> None:
     """Block each asked task not blocked yet with `DECIDE: <its question>`, committed as `block_parked` commits
-    (MERGE free, TODO.md clean); one that cannot be now is tried again next tick. F175: also `sweep_env`, each tick."""
+    (MERGE free, TODO.md clean); one that cannot be now is tried again next tick. F175: also `sweep_env`, each tick.
+    B767: one answered before its block leaves `tried`, the run's tasks not to start again: its session goes on."""
     sweep_env(branch)
+    if tried is not None:
+        tried -= answered_asks()
     for f in C.notes().glob('*.ask'):
         try:
             ask = json.loads(f.read_text(encoding='utf-8'))
@@ -139,6 +142,14 @@ def _rewrite(f: Path, ask: dict) -> None:
     tmp = f.with_suffix('.ask-tmp')
     tmp.write_text(json.dumps(ask), encoding='utf-8')
     os.replace(tmp, f)
+
+
+def no_slot(tid: str, req: dict) -> str:
+    """B767: the answer to a `plan tell` / `change` of a task no slot runs. A tell's words are kept in the run log:
+    its sender may no longer wait for the answer."""
+    if req['how'] == 'tell':
+        log(f'{tid}: not told: {req["text"]}')
+    return f'no slot runs {tid} now'
 
 
 def answered_asks() -> set[str]:

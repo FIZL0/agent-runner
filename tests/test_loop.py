@@ -99,7 +99,7 @@ def test_answered_ask_and_tell():
     run = new_run()
     run.tried = {'T1', 'T2'}
     with ExitStack() as st:
-        stubs(st, said, block_asks=None, answered_asks={'T1'}, watch_ci=None, watch_issues=None, stopping=True,
+        stubs(st, said, block_asks=lambda branch, tried: tried.discard('T1'), watch_ci=None, watch_issues=None, stopping=True,
               keep_claims=None, take_keys=None, queued={})
         st.enter_context(mock.patch.object(loop.undo, 'tick', mock.Mock()))
         run.after()
@@ -107,6 +107,7 @@ def test_answered_ask_and_tell():
     with ExitStack() as st:
         m = stubs(st, said, tell_requests={'T9': {'how': 'tell', 'text': 'use red'}}, tell_answer=None)
         st.enter_context(mock.patch.object(loop, 'MUX', argparse.Namespace(typed=False)))
+        st.enter_context(mock.patch('agent_runner.asks.log', said.append))
         loop.tells({}, {})
     eq(m['tell_answer'].call_args.args[:2], ('T9', False), 'told false')
     check('T9: not told: use red' in said, 'its words are in the run log', said)
