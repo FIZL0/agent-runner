@@ -3,7 +3,7 @@
 1. Save what is there: uncommitted work (tracked edits and untracked files) is committed to a backup branch,
    runner-setup-backup-<date>, through a scratch index, so the checkout, its index and HEAD stay as they were.
 2. Write runner.toml when there is none, with a guessed gate, and add an empty `## Tools` section to CLAUDE.md
-   when it has none (B80).
+   when it has none (B80). Without ttyd, offer at a terminal to install it (F403).
 3. Start one full Claude session (normal tools, CLAUDE.md, not the lean slot brief) whose first message asks it to
    read the repo and write the plan through `plan goal` / `plan add`, set the gate and a short notes section.
 4. Print what it set up, and `agent-runner` to start the run (s in its launcher).
@@ -16,6 +16,7 @@ import argparse
 import datetime
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -211,6 +212,41 @@ def ask(question: str) -> bool:
         return False
 
 
+def at_terminal() -> bool:
+    """Are stdin and stdout both a terminal (someone can answer, and a sudo or winget prompt works)?"""
+    return all(f is not None and f.isatty() for f in (sys.stdin, sys.stdout))
+
+
+def offer_ttyd() -> str | None:
+    """F403: without ttyd a chat on the run page cannot show its session, so ask to install it with this machine's
+    command, run in this terminal. The line to say about it; None when ttyd is there. Never installs unasked, and
+    never fails setup."""
+    from agent_runner import ui_model as U
+    from agent_runner import web as W
+    if U.find_ttyd():
+        return None
+    cmd = W.ttyd_install_cmd()
+    if not cmd:
+        return f'ttyd is not installed, so the run page cannot show sessions: {W.TTYD_INSTALL}'
+    later = f'ttyd is not installed, so the run page cannot show sessions: install it with `{cmd}`'
+    if not at_terminal() or not ask(f'ttyd is not installed, so the run page cannot show sessions: run `{cmd}` now?'):
+        return later
+    argv = cmd.split()
+    argv[0] = shutil.which(argv[0]) or argv[0]  # Windows: scoop is a .cmd, which starts only by its full name
+    try:
+        code = subprocess.run(argv).returncode
+        why = f'exit {code}'
+    except OSError as e:
+        code, why = 127, str(e)
+    except KeyboardInterrupt:
+        code, why = 130, 'interrupted'
+    if U.find_ttyd():
+        return 'ttyd is ready: the run page can show sessions'
+    if code:
+        return f'ttyd was not installed: `{cmd}` failed ({why})'
+    return f'`{cmd}` ended, but ttyd is not found yet: open a new terminal, and run the command again if it is missing there'
+
+
 def count_tasks(todo: Path) -> int:
     try:
         return sum(1 for l in todo.read_text(encoding='utf-8').splitlines() if l.lstrip().startswith('- [ ] **'))
@@ -237,6 +273,9 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     print(f'agent-runner setup: {said[-1]}')
     if tools := ensure_tools(root):
         said.append(f'added an empty `{TOOLS_HEADING}` section to {tools}: list what agents can reach there')
+        print(f'agent-runner setup: {said[-1]}')
+    if ttyd := offer_ttyd():
+        said.append(ttyd)
         print(f'agent-runner setup: {said[-1]}')
     todo = todo_path(root)
     existing = todo.is_file()
