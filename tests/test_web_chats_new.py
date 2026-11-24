@@ -214,7 +214,7 @@ def test_new_chat_view_f172(tmp: Path) -> None:
 
 
 PLUS_DRIVER = r"""
-const page = require('fs').readFileSync(0, 'utf8'), on = {};
+const page = require('fs').readFileSync(0, 'utf8').replace(/\r\n/g, '\n'), on = {};
 const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
 const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
 let now = 0, timers = [], busy = false, opened = [], uploads = 0, btn = {disabled: false};

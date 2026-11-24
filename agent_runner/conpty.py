@@ -141,6 +141,7 @@ class ConPty:
                     k.CloseHandle(h)
         self.pid, self.proc, self.inw, self.out = int(pi.dwProcessId), pi.hProcess, in_w, out_r
         self.typed: queue.Queue = queue.Queue()
+        self.lock, self.closed = threading.Lock(), False  # no resize of a console that is being closed
         self.reader = threading.Thread(target=self._pump, args=(on_output,), daemon=True)
         self.writer = threading.Thread(target=self._type, daemon=True)
         self.reader.start()
@@ -171,8 +172,11 @@ class ConPty:
     def resize(self, rows: int, cols: int) -> None:
         """F114: the console's size (an attached terminal's)."""
         from ctypes import wintypes
-        if hr := self.k.ResizePseudoConsole(self.pc, wintypes._COORD(cols, rows)):
-            raise OSError(f'ResizePseudoConsole failed (0x{hr & 0xffffffff:08x})')
+        with self.lock:
+            if self.closed:
+                return
+            if hr := self.k.ResizePseudoConsole(self.pc, wintypes._COORD(cols, rows)):
+                raise OSError(f'ResizePseudoConsole failed (0x{hr & 0xffffffff:08x})')
 
     def wait(self, seconds: float) -> int | None:
         """The exit code once the process has ended, None when it has not within `seconds`."""
@@ -189,6 +193,8 @@ class ConPty:
         """End the pseudo-console and read what it still prints, for `seconds` at most: closing it ends what
         still runs in it, and a process that will not end must not hold the shim."""
         k = self.k
+        with self.lock:
+            self.closed = True
         # its own thread: before Windows 11 24H2 the call waits for every process in the console to end
         closer = threading.Thread(target=k.ClosePseudoConsole, args=(self.pc,), daemon=True)
         closer.start()

@@ -2329,7 +2329,7 @@ def test_control_new_ask_file():
             cmd = opened[-1]
             argv = R.shlex.split(cmd)
             check(rc == 0 and '--ask-file' in argv and '--ask' not in argv and 'rm -rf' not in cmd
-                  and 'head -c' not in cmd and '/u/shot.png' in argv, 'B72: the command holds no word of the '
+                  and 'head -c' not in cmd and str(Path('/u/shot.png').resolve()) in argv, 'B72: the command holds no word of the '
                   'message, only the file it is in and the attached image', cmd)
             text = R.read_ask_file(argv[argv.index('--ask-file') + 1])
             eq(text, msg, 'B72: quotes, backticks, $() and newlines reach the new control session unchanged')

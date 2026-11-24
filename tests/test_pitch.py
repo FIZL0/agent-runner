@@ -13,7 +13,9 @@ import os
 import sys
 import tempfile
 import time
+from contextlib import nullcontext
 from pathlib import Path
+from unittest import mock
 
 from _check import check, eq, git, has, report, run
 
@@ -287,7 +289,10 @@ def test_not_undone(tmp: Path):
     eq(git(repo, 'status', '--porcelain'), '', 'the main checkout is clean')
     R.C.run['test'] = 'false'
     pitch.refuse('pitch1', {'F2': 'reopen'})
-    undo.undo_changes('main')
+    # on Windows the gate reads `test` from the merge's own runner.toml, so it is failed here instead
+    fails = mock.patch.object(M, 'merge_gate', lambda *a: (1, 'no')) if os.name == 'nt' else nullcontext()
+    with fails:
+        undo.undo_changes('main')
     R.C.run['test'] = 'true'
     has(pitch.rows()[0][3], r'F2 could not be undone: the tests fail', 'an undo that fails the gate does not land')
     check('bbb' in (repo / 'ui/menu.py').read_text(), 'F2 is still in')

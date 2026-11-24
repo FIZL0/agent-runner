@@ -1284,10 +1284,10 @@ def run_conpty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
     finally:
         if typed:
             typed.close()
-        if viewers:
-            viewers.close()  # before the console it resizes
         if pty:
-            pty.close()
+            pty.close()  # before the viewers: the console's last words go to them too
+        if viewers:
+            viewers.close()
         if out:
             out.close()
         marker.unlink(missing_ok=True)
