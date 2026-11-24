@@ -70,7 +70,7 @@ function render(force){
   main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';main.classList.toggle('see',chatShown());pageColor(chatOn);
   if(moved){body._h=null;dockEl._h=null}
   const spot=moved||body._h===h?null:glideSpot(body);
-  const drew=setHTML(body,h);
+  const drew=!n&&S.view==='settings'?settingsDraw(body,h):setHTML(body,h);
   let drewDock=false;
   if(!n&&S.view==='talk'){  // F124: the mic and the box cross-fade: both stay in the dock
     drewDock=setHTML(dockEl,'<div class="talkdock"><div class="talkmic" id="talkmic"></div><div class="talkbox" id="talkbox"></div></div>');

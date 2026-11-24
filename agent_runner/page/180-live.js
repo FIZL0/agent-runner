@@ -287,6 +287,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-setreset]')){resetSetting(x.dataset.id,x.dataset.setreset);return}
   if(x=q('[data-setstep]')){stepSetting(x.dataset.id,+x.dataset.setstep);return}
   if(x=q('[data-setmore]')){openSheet('setting',x.dataset.setmore);return}
+  if(q('[data-setqclear]')){setqClear();return}
   if(q('[data-setchanged]')){S.setChanged=!S.setChanged;render(true);return}
   if(x=q('[data-thread]')){const n=x.dataset.thread;return viewGo(()=>{S.ctx=null;open(n)},n===S.thread?null:n)}
   if(q('[data-newtalk]')){newTalk();if(S.live)viewIn($('body'));return}  // F157
@@ -386,8 +387,8 @@ $('file').addEventListener('cancel',holdPlus);
 $('file').addEventListener('change',e=>{holdPlus();[...e.target.files].forEach(upload);e.target.value=''});
 document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files'))e.preventDefault()});
 document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length){e.preventDefault();[...e.dataTransfer.files].forEach(upload)}});
-/* F114: a key of the row keeps the box's focus (and its keyboard) */
-for(const t of ['pointerdown','mousedown'])document.addEventListener(t,e=>{if(e.target.closest&&e.target.closest('.keys .tool,[data-feedkeys]'))e.preventDefault()});
+/* F114, F204a: a key of the row, or the search's x, keeps the field's focus (and its keyboard) */
+for(const t of ['pointerdown','mousedown'])document.addEventListener(t,e=>{if(e.target.closest&&e.target.closest('.keys .tool,[data-feedkeys],[data-setqclear]'))e.preventDefault()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)loadFeed(S.thread)});
 /* F133, F201: drag a pinned chat's row to set its place among the pins, by pointer events so a phone's touch works too: a mouse drags at once,
    a touch after a short hold (a swipe before it still scrolls the list); the drop is kept by the run */
