@@ -127,16 +127,18 @@ function glideTo(el,x,y,o){
 /* F189a: box's scroll glides to its place (to: how far down, or a function of the box, asked again on every frame). The scroll
    itself moves, so a redraw under way goes on; calm() is at once, and the person's own hand on box takes it over */
 function scrollGlide(box,to){
-  const at=()=>Math.max(0,Math.min(typeof to==='function'?to(box):to,box.scrollHeight-box.clientHeight)), old=MO.scroll.get(box);
+  let off=0;  // how far something else moved the scroll meanwhile: a refresh holding the place, a key
+  const at=()=>Math.max(0,Math.min(typeof to==='function'?to(box):to+off,box.scrollHeight-box.clientHeight)), old=MO.scroll.get(box);
   if(old&&(old.to===to||Math.abs(old.at()-at())<1))return;
   scrollStop(box);
-  const from=box.scrollTop, a=Math.abs(at()-from)<1?null:moAnim(box,[],{ease:'--spring-soft'});  // it draws nothing: its time and easing
+  const a=Math.abs(at()-box.scrollTop)<1?null:moAnim(box,[],{ease:'--spring-soft'});  // it draws nothing: its time and easing
   if(!a){box.scrollTop=at();return}
-  const g={a,to,at,from};MO.scroll.set(box,g);
+  const g={a,to,at,from:box.scrollTop,last:box.scrollTop};MO.scroll.set(box,g);
   const step=()=>{
     if(MO.scroll.get(box)!==g)return;
     const p=a.playState==='finished'||!box.isConnected?null:a.effect.getComputedTiming().progress;
-    box.scrollTop=p===null?at():from+(at()-from)*p;
+    const by=box.scrollTop-g.last;if(Math.abs(by)>=1){off+=by;g.from+=by}
+    box.scrollTop=p===null?at():g.from+(at()-g.from)*p;g.last=box.scrollTop;
     if(p===null)MO.scroll.delete(box);else requestAnimationFrame(step);
   };
   requestAnimationFrame(step);

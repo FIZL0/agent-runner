@@ -460,11 +460,12 @@ const js = {reveal: grab('function kbReveal('), slash: grab('function slashShow(
   up(); kbReveal(field); out.typed = [b.scrollTop, made.length];
   up(); reduced = true; kbReveal(field, true); out.revealCalm = [b.scrollTop, made.length]; reduced = false;
   up(); kbReveal(field, true); kbReveal(field); out.both = [...trail(), made.length];
+  up(); kbReveal(field, true); frame(.5); b.scrollTop += 35; frame(.5); out.pushed = [b.scrollTop]; frame(1); out.pushed.push(b.scrollTop);
   // the slash menu: an arrow glides, typing is at once
   const menu = new Box(50); menu.innerHTML = 'x:40 y:40 z:40'; let into = 0;
   const row = {scrollIntoView() { into++ }, getBoundingClientRect: () => ({top: 80 - menu.scrollTop, bottom: 120 - menu.scrollTop})};
   Object.defineProperty(menu, 'innerHTML', {set() {}}); menu.querySelector = () => row; document.querySelector = s => s === '[data-slash]' ? menu : null;
-  const tb = {value: '/a'}; made = []; frames = []; slashDraw(tb, true); frame(0); const s0 = menu.scrollTop; frame(.5); const s1 = menu.scrollTop; frame(1); out.slash = [s0, s1, menu.scrollTop, into];
+  const tb = {value: '/a'}; made = []; frames = []; slashDraw(tb, true); frame(0); slashDraw(tb); const s0 = menu.scrollTop; frame(.5); const s1 = menu.scrollTop; frame(1); out.slash = [s0, s1, menu.scrollTop, into];
   made = []; slashDraw(tb); out.slashTyped = [into, made.length];
   reduced = true; menu.scrollTop = 0; slashDraw(tb, true); out.slashCalm = [menu.scrollTop, made.length]; reduced = false;
   // at once, with motion on: the first load, a view's own place, a refresh, Talk following a reply, its opening
@@ -501,6 +502,7 @@ def test_jumps_f189a(tmp: Path) -> None:
     eq(o['reveal'], [100, 274, 448], 'a press that moves to a field glides to it')
     eq((o['typed'], o['revealCalm']), ([448, 0], [448, 0]), 'while typing, and when calm(), at once')
     eq(o['both'], [100, 274, 448, 1], 'its focus does not cut the glide')
+    eq(o['pushed'], [309, 483], 'a refresh that moves the place under it: it goes on to the field')
     eq(o['slash'], [0, 35, 70, 0], "an arrow in the slash menu glides to its row")
     eq((o['slashTyped'], o['slashCalm']), ([1, 0], [70, 0]), 'typing and calm(): at once')
     eq((o['held'], o['back'], o['follow'], o['load']), (105, 105, [0, 0], 0), 'a refresh, a view back, Talk following, the first load are in place')

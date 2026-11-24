@@ -124,9 +124,9 @@ function slashShow(ta,press){
   m.hidden=!SL.items.length;
   m.innerHTML=SL.items.map((c,j)=>`<button type="button" role="option" class="${j===SL.i?'on':''}" aria-selected="${j===SL.i}" data-slashpick="${j}"><b>/${esc(c.name)}</b><span>${esc(c.desc||'')}</span></button>`).join('');
   const on=m.querySelector('.on');if(!on||!on.scrollIntoView)return;
-  if(!press){scrollStop(m);on.scrollIntoView({block:'nearest'});return}
-  const r=on.getBoundingClientRect(), v=m.getBoundingClientRect(), d=r.bottom>v.bottom?r.bottom-v.bottom:r.top<v.top?r.top-v.top:0;  // F189a: an arrow key
-  if(d)scrollGlide(m,m.scrollTop+d);else scrollStop(m);
+  if(!press&&!MO.scroll.has(m)){on.scrollIntoView({block:'nearest'});return}
+  const r=on.getBoundingClientRect(), v=m.getBoundingClientRect(), d=r.bottom>v.bottom?r.bottom-v.bottom:r.top<v.top?r.top-v.top:0;  // F189a: an arrow key; a redraw under its glide leaves it to go on
+  if(d)scrollGlide(m,m.scrollTop+d);else if(press)scrollStop(m);
 }
 /* B188: Enter picks the highlighted command, unless it is typed in full already */
 const slashPicks=ta=>{const c=SL.items[SL.i];return !!c&&ta.value.trim()!=='/'+c.name};
