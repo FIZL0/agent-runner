@@ -836,7 +836,7 @@ const els = {feed: el(), body: el(), feedframe: el(), feedsay: el(), feedstand: 
 const on = {}, docOn = {}, location = {origin: 'https://x'}, addEventListener = (t, f) => on[t] = f;
 const typed = [], term = {modes: {applicationCursorKeysMode: false}, input: t => typed.push(t), rows: 2,
   buffer: {active: {viewportY: 1, getLine: y => ({translateToString: () => ['old', 'one  ', 'two'][y]})}}};
-const hold = {}, calls = [], arLine = {dial: (n, l) => calls.push('dial ' + n + ' ' + l), hang: () => calls.push('hang'), keep: () => 'screen of ' + hold.FD.n, show: k => { arLine.shown = k }};
+const hold = {}, calls = [], arLine = {dial: (n, l) => calls.push('dial ' + n + ' ' + l), hang: () => calls.push('hang'), keep: () => 'screen of ' + hold.FD.n, show: k => { arLine.shown = k }, heard: () => hold.heard || 0};
 const requestAnimationFrame = f => f(), md = t => t, feedOf = n => n === 'c12' ? [{kind: 'you', text: 'Hi'}, {kind: 'tool', text: 'ls'}, {kind: 'say', text: 'Hello back'}] : [];
 let lost = false;
 const document = {hidden: false, documentElement: {classList: {toggle() {}}}, addEventListener: (t, f) => docOn[t] = f,
@@ -850,7 +850,8 @@ const starting = n => n === 'c8', sentBubbles = () => '', obBubbles = () => 'WAI
 const setHTML = (e, h) => { e.innerHTML = h }, render = () => feedDraw(S.thread);
 const feedGone = () => {}, feedUp = () => {}, feedSee = () => {}, feedPlace = () => {}, feedLook = () => 'dark', feedShown = on => { hold.FD.shown = on }, feedAt = (x, y) => [x, y];
 let answers = {};
-const fetch = async p => { if (lost) throw new Error('lost'); return {json: async () => answers[p.split('/')[1]]} };
+const fetch0 = async p => { if (lost) throw new Error('lost'); return {json: async () => answers[p.split('/')[1]]} };
+let fetch = fetch0;
 eval(logic + part + `
 hold.FD = FD;
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() };
@@ -876,6 +877,16 @@ const at = () => [!$('feed').hidden, !$('body').hidden, $('feedframe').kids.map(
   timers.filter(t => t.ms === 250).pop().f(); await settle();
   out.lost = [at(), calls.slice(), arLine.shown]; FD.since -= 6000; feedSkin(); out.re = $('feedsay').innerHTML; lost = false;
   word({state: 'up'}); word({state: 'drawn'}); out.again = [arLine.shown, $('feedline').hidden, FD.frame === f];
+  // F206a: the network goes silent, the socket still open: after 5 s the line and Reconnecting…, over the screen as it is
+  let quit; const ask = silent => { fetch = silent ? (p, o) => { quit = o.signal; return new Promise((f, no) => quit.addEventListener('abort', no)) } : fetch0; return liveGet('c6') };
+  const q1 = ask(true), q2 = await ask(true); FD.deaf -= 4000; feedSkin(); out.quiet4 = $('feedsay').hidden;
+  FD.deaf -= 1500; hold.heard = Date.now(); feedSkin(); out.heard = $('feedsay').hidden;
+  hold.heard = 0; feedSkin(); out.mute = [$('feedline').hidden, $('feedsay').innerHTML.includes('Reconnecting'), FD.frame.className, arLine.shown, q2];
+  timers.filter(t => t.ms === 8000).pop().f(); await q1; feedSkin(); out.gave = [quit.aborted, FD.ask, $('feedline').hidden];
+  calls.length = 0; answers.c6 = {ok: true}; await ask(false); await settle(); out.unmute = [calls.slice(), arLine.shown, $('feedsay').hidden, FD.deaf];
+  word({state: 'up'}); word({state: 'drawn'}); out.unmuted = [$('feedline').hidden, $('feedsay').hidden];
+  await ask(false); out.answered = FD.deaf;
+  ask(true); FD.deaf -= 9000; liveStop(); feedSkin(); out.woke = [quit.aborted, FD.deaf, $('feedline').hidden]; fetch = fetch0;
   // another chat: the same frame; back: its last screen at once, and it is dialed before the run's answer
   answers.c12 = {ok: true, look: 'page'}; calls.length = 0; const go = show('c12'); out.other = [$('feedstand').hidden, $('feedstand').innerHTML, feedWant()]; await go;
   out.dialed = [calls.slice(), FD.frame === f, $('feedframe').kids.length, feedWant(), FD.frame.className];
@@ -938,6 +949,12 @@ def test_session_feed_f114(tmp: Path) -> None:
     eq(o['lost'], [[True, False, ['t/TOK/c6/?fontSize=13']], ['dial c6 '], 'screen of c6'], 'by itself, with no page load, though the run cannot be asked')
     check('Reconnecting…' in o['re'], 'after 5 s it says so', o['re'])
     eq(o['again'], [None, True, True], 'the terminal again, in the same frame')
+    eq((o['quiet4'], o['heard']), (True, True), 'F206a: nothing yet before 5 s, nor while the session sends')
+    eq(o['mute'], [False, True, '', None, None], 'F206a: a silent network: the line and Reconnecting…, its screen as it is, and no second question')
+    eq(o['gave'], [True, None, False], 'the question is given up, and it still says so')
+    eq(o['unmute'], [['hang', 'dial c6 '], 'screen of c6', False, 0], 'the first answer dials again, its screen kept, still saying so')
+    eq((o['unmuted'], o['answered']), ([True, True], 0), 'drawn: nothing over it, and a run that answers is not silent')
+    eq(o['woke'], [True, 0, True], 'back from a locked phone: no old question counts')
     eq(o['other'][0], False, 'a chat not seen here: its latest messages stand in')
     check('Hi</div>' in o['other'][1] and 'Hello back' in o['other'][1] and 'ls' not in o['other'][1], 'your words and the replies', o['other'][1])
     eq((o['other'][2], o['dialed']), ('', [['hang', 'dial c12 page-dark'], True, 1, 'c12', 'blank']), 'the one frame, connected to it')
