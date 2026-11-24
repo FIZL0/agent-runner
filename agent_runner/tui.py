@@ -522,7 +522,7 @@ class RunPage:
     def queue_tag(self, it) -> tuple[str, str]:
         """A queue row's right tag: 'sN Nm' (yellow) while a slot runs it, 'critical' (red), 'blocked' (red),
         '⧗ after <id title>' (dim) while it waits, '⧗ waits for iPhone 15, …' (dim) while a shared tool keeps it, 'parked' (dim) at level later (B123: a run never starts it),
-        'shelved' (dim: F184),         'ready' (green)."""
+        'shelved' (dim: F184), 'ready' (green)."""
         state = str(it.get('state') or '')
         if state in ('parked', 'shelved'):  # F184
             return state, 'dim'
