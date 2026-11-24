@@ -1048,7 +1048,7 @@ def add(prefix: str, text: str, where: str | None = None, ref: str | None = None
     if pri and not PRI_TAG.search(text):
         text = f'(follow-up, {pri}) {text}'
     j = _place_pri(ls, pri) if pri and not where else _place(ls, where or 'top', ref)
-    line = f'- [ ] **{tid}** {text}'
+    line = _unheld(f'- [ ] **{tid}** {text}')  # only this sets a hold
     if split_c and _big([line], tid, split_c):  # in the same write: no run reads the task without it
         line += f' | {SPLIT_BY}: {split_stamp()}'
     ls[j:j] = [line]
@@ -1168,6 +1168,7 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
     if text.strip():
         desc = prose(text).strip()
         new = dict(FIELD.findall(text))
+        new.pop(SPLIT_BY, None)
         # continuation lines before the first sub-item are description too (and `note` appends to a block's
         # last line): they go, sub-items stay, and a BLOCKED on a dropped last line moves to the first line
         k = next((n for n, l in enumerate(rest_blk) if ITEM.match(l)), len(rest_blk))
@@ -2202,13 +2203,13 @@ def split_stamp(now: float | None = None) -> str:
 
 def split_left(line: str, now: float | None = None) -> float:
     """Seconds a task's line still holds it for its author to split it (B196); 0 for none, or a time that does not
-    read or lies further ahead than SPLIT_HOLD allows (another machine's wrong clock)."""
+    read or lies over two SPLIT_HOLDs ahead (another machine's wrong clock)."""
     try:
         by = calendar.timegm(time.strptime(fields(line).get(SPLIT_BY, [''])[0], '%Y-%m-%dT%H:%M:%SZ'))
     except (ValueError, IndexError):
         return 0
     left = by - (time.time() if now is None else now)
-    return left if 0 < left <= SPLIT_HOLD + 5 else 0
+    return left if 0 < left <= 2 * SPLIT_HOLD else 0
 
 
 def split_in(left: float) -> str:
@@ -2218,9 +2219,11 @@ def split_in(left: float) -> str:
 
 def split_waits(ls: list[str], now: float | None = None, busy=()) -> dict[str, str]:
     """B196: {task: 'waits to be split, starts in 4 min if it is not'} for the open tasks held for their author,
-    but for the `busy` ones (running, or taken by hand)."""
+    but for the `busy` ones (running, or taken by hand) and those that wait for another task."""
+    live = {tid for _, box, tid, _, _ in iter_tasks(ls) if box != 'x'}
     return {tid: f'waits to be split, {split_in(left)}' for section, box, tid, _, i in iter_tasks(ls)
-            if box == ' ' and tid not in busy and not section.startswith(SKIPPED) and (left := split_left(ls[i], now))}
+            if box == ' ' and tid not in busy and not section.startswith(SKIPPED) and (left := split_left(ls[i], now))
+            and not live & (set(waits_on(ls, i)) - {tid})}
 
 
 def _unheld(line: str) -> str:

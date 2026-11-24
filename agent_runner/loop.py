@@ -1460,8 +1460,7 @@ class Run:
         quiet = not procs and not waiting and not merging and all(dt.datetime.now() >= t for t in self.free_at.values())
         # Idle, never exit: tasks a human or a session commits later start without anyone restarting the
         # run. Logged once, and only with nothing running or merging, so no slot or finished branch is left
-        # behind. A script waiting on the run
-        # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
+        # behind. A script waiting on the run watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
         if quiet and not PAUSED[0] and (self.once or not shared_tools.pending(tried)) and (self.once and not stopping() or not self.idle_said
                                         or power_due(self.idle_at)) and not pick(self.running, tried, self.branch) \
