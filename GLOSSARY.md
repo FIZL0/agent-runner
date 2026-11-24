@@ -732,3 +732,10 @@ _Said_: walkthrough, tour
 _On screen_: Walkthrough
 _In code_: walkStep, walkDraw, 065-walk.js
 _Avoid_: tutorial, onboarding, tour guide
+
+**Page fold**:
+a row on the run page that opens in place to show more, and closes again
+_Said_: a fold
+_On screen_: a chevron row
+_In code_: foldIn, .foldin, data-askfold
+_Avoid_: accordion, expander
