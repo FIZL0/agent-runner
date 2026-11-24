@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.63.0 (2026-11-24)
+
 - Changed: while a critical `(alone)` task is ready and only this run's running or merging tasks hold it, the run starts only critical tasks (non-alone critical ones still start) until the running tasks have ended and merged; then the alone task takes its turn. Before, normal tasks kept starting, also on top of a merge under way (F198), so the slots never emptied and a file split (F200b) started only when the tasks it was for were done. A non-critical `(alone)` task still holds no start. No hold when a task in the way will not end by itself (a taken-by-hand or other runner's alone task, one waiting for a usage reset, a merge held by edits in the main checkout or crashed, the branch of a closed task), or when the alone task is tried this run, parked too often, being split, or its shared tool is missing. The dry run says `C1 runs alone next` (F208).
 - Changed: a control session (chat) that files a restyle with `plan restyle` also counts as about that restyle and its build task, as with a concept under `plan concept`, so it is told the settled line when someone else settles it, not when it settles it itself (F211).
 - Fixed: on Windows, starting a background run from an interactive terminal no longer crashes. The "run started by" record (run.log, events.jsonl) asked for the terminal's name with os.ttyname, which Windows Python lacks; it now records tty `terminal` there, and `no tty` as before when there is no terminal. macOS and Linux are unchanged. Not yet checked on a real Windows machine (B760).
