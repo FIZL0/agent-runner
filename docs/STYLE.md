@@ -51,12 +51,19 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   has an `aria-label` and a `title`.
 - **Card** (`.card`, `card()`): one thing. `.tap` opens something; `.need` waits on the person. Title, one line of
   second text, then `.btns`.
+- **Needs you item** (`.asktap`, `needTap()`): one button, not a card of buttons. What is wanted and where in everyday
+  words (`.asklab`), the title on one line, at most two lines of what to do (`.askdo`), then Press for details, the
+  steps count, the id and the age. Its answer buttons sit below it.
+- **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: title, label, age, id; where and when;
+  What to do; What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or Esc goes back); the
+  task text folded. The reply box (`.askfoot`) stays on screen at the foot, with the answer buttons.
 - **Row** (`.row`, `.crow`, `.prow`, `.srow`, its folding head `.fold`): one line when folded, with an ellipsis. A row that holds more folds
   open on tap in place (`aria-expanded`), and its chevron turns. A setting's row (`.srow`) shows its name, its description and its control; it opens to show the code name and More… (a sheet with the other home and Reset).
 - **Section** (`.sec`): a small muted heading and a line. Sections keep the TUI's order.
 - **Sheet** (`#sheet`, `openSheet(name)`): more choices about what is on screen. It slides up from the bottom, groups
   its items (`.it`) under `.sec`, closes on the scrim, Esc, a swipe down, or a pick. One sheet, never a sheet over a
-  sheet. Its markup comes from `SHEETS[name]()`. A button whose label ends in … opens one or folds open.
+  sheet. Its markup comes from `SHEETS[name]()`. A button whose label ends in … opens one or folds open. A Needs you item's
+  sheet is a centred dialog (`.dlg`) from 760px wide, not a sheet from the bottom.
 - **Badge** (`.n`): a count of what waits on the person, never of anything else. **Dot** (`.bdot`): something
   waits, no count. **Pill** (`.pill`): a state in a word or two. Same words on every page: Running, Paused,
   Stopping, Caps forced, Not up.
