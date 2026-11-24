@@ -193,6 +193,7 @@ def row_entries(d: dict, at: int) -> list[dict]:
         return []
     uid = d['uuid'] if isinstance(d.get('uuid'), str) and d['uuid'] else str(at)
     when = _stamp(d)
+    cwd = d['cwd'].rstrip('/') + '/' if isinstance(d.get('cwd'), str) and d['cwd'].startswith('/') else ''
     d = queued_message(d) or d
     made: list[tuple[int, dict]] = []
     if d.get('type') == 'system':
@@ -219,6 +220,8 @@ def row_entries(d: dict, at: int) -> list[dict]:
                 elif b.get('type') == 'tool_use':
                     name = str(b.get('name') or 'tool')
                     shown, arg = call_words(name, b.get('input'))
+                    if cwd and arg.startswith(cwd):  # as Claude Code shows a file of its own folder
+                        arg = arg[len(cwd):]
                     made.append((j, {'kind': 'tool', 'name': shown, 'arg': arg, 'call': str(b.get('id') or ''),
                                      **({'group': GROUPS[name]} if name in GROUPS else {}), 'state': 'open',
                                      '_tool': name, '_args': b.get('input')}))

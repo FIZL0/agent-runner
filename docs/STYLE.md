@@ -167,10 +167,10 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 | Token | Value | For |
 |---|---|---|
-| `--dur-fast` | 150ms | a press, a chevron, a fade out |
+| `--dur-fast` | 150ms | a press, a chevron, a fade out, the jump button's fade (`.pastjump`) |
 | `--dur` | 200ms | a card, row or message coming in, a cross-fade, a view's fade |
 | `--dur-slow` | 250ms | what leaves collapsing, the scrim, the project list's slide (`.sghost`) |
-| `--dur-bars` | 400ms | a session's bars going and coming back (`.slim`), and nothing else |
+| `--dur-bars` | 400ms | a session's bars going and coming back (`.slim`), the jump button's rise (`.pastjump`), and nothing else |
 | `--dur-spring` | 450ms | the time of either spring |
 | `--spring` | `linear()` curve, about 4% overshoot | cards, messages, pills, what glides, a press let go |
 | `--spring-soft` | `linear()` curve, no overshoot | the drawer, the sheet and views, whose edge must not show a gap |
@@ -207,7 +207,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Press.** Buttons, chips and rows scale down a little while pressed, and spring back when let go (`--spring`).
 - **Scroll jumps.** A scroll that a press causes glides (`scrollGlide()`, on `--dur-spring` and `--spring-soft`): `toEnd(true)`
   when Talk sends or its mic or typing changes while scrolled up, `kbReveal(el,true)` when a refused Done in Needs you
-  moves to its field and Rename to its row, and the slash menu's arrow keys. A redraw midway continues it. A pointer,
+  moves to its field and Rename to its row, and the slash menu's arrow keys, and a session's jump button (`pastDown()`). A redraw midway continues it. A pointer,
   touch or wheel on the box stops it (`scrollStop()`); another view or sheet ends it. Everything else jumps at once:
   first load, a refresh (`keepScroll()`), Talk following a reply (a glide under way is left to reach the end), `kbReveal()`
   while typing, a view's or sheet's own place, a new Talk chat, a notice's row (`noticeRoom()`), and all of it under `calm()`.
@@ -254,7 +254,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **The page never moves on its own.** A refresh keeps the reading position in every view (`keepScroll()`): the first
   `data-k` on screen stays where it was. At the very top, new things show.
-- **Talk is pinned to its newest words** when you open it, when you send (it glides there if you had scrolled up; see Scroll jumps), and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session scrolls it, and its bars fade away over the text; the slim message box stays (see The session).
+- **Talk is pinned to its newest words** when you open it, when you send (it glides there if you had scrolled up; see Scroll jumps), and while a reply comes in, unless you scrolled up. It has no jump button. The page scrolls a session only through its history, a scroller laid over the frame (see History in The session); otherwise the frame keeps its own scroll, and a refresh never redraws it. Scrolling up in a session scrolls it, and its bars fade away over the text; the slim message box stays (see The session).
 - Going to a view starts at its top; coming back to one you left returns to where you were.
 - **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form and a typed secret (`givesec:` keys) are not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
 - **The off page turns into the app.** An off project's page (see Off page in GLOSSARY.md) becomes its run's app once the
@@ -311,9 +311,25 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - **While an attachment uploads.** While any attachment of this box is uploading, the send arrow, Force send too, is gray (the `.send:disabled` opacity, plus grayscale), with words or without, and is labelled Uploading… (title, aria-label). It is `aria-disabled`, never `disabled`, so a tap or Enter still says why in a toast. It changes in place (`sendDraw()`, `sendWaits()`) and turns back at once when the last upload finishes, fails or is removed. An uploaded attachment alone counts as something to send (`sendHas()`, `.box.has`), so the arrow is bright; a failed one alone leaves it dim. Stop never changes.
 - **Box and session never both hold focus.** A mouse press in the session gives it the keyboard; ttyd's focus on connect
   never does. A tap on the box takes the focus back. So does typing in the session while its prompt is hidden (see above).
-- **Touch layer.** On a touch device a layer over the frame takes the touch: a drag scrolls the session (a wheel steps
-  it, and it glides), a tap clicks in it without opening the keyboard, and a long press or the key row's Text opens a
-  sheet with the screen's text to select and copy. A horizontal swipe still opens the drawer.
+- **Touch layer.** On a touch device a layer over the frame takes the touch: a drag scrolls the session, or its history
+  when that stands in (see History; a wheel steps the session, and it glides), a tap clicks in it without opening the
+  keyboard, and a long press or the key row's Text opens a sheet with the screen's text to select and copy. A horizontal
+  swipe still opens the drawer.
+- **History.** A drag (touch) or a wheel up (desktop) over a chat's or slot's session scrolls its history: a native
+  scroller (`#feedpast`) laid over the live frame, which the page draws from `GET /history/NAME`. The transcript's lines are
+  drawn as Claude Code draws them at the terminal's columns, font, row height and colours (`pastLines()`). At rest it is
+  see-through and the live session shows. A touch arms it (`pastArm()`), and its end is a copy of the screen's own rows, so
+  every line stays where it is, to the pixel. A scroll away makes it up (`pastUp()`); back at its end the live session
+  shows again in the same frame (`pastLive()`). What is not in the transcript yet, a reply being written, is the screen's
+  own lines, and the history meets the screen where the same lines stand (`pastJoin()`). While reading, new words are
+  added at the end and nothing on screen moves (`pastSee()`, `pastTail()`); older pages are loaded on demand and put in
+  only while nothing scrolls (`pastPut()`). Only chunks near the view are in the DOM (`pastDraw()`), and text can be
+  selected in it. The jump button (`.pastjump`, see Jump button in GLOSSARY.md) stands on its own strip just above the box,
+  so it covers no line; it glides to the live session (`scrollGlide()`, at once under `calm()`). Sending a message also goes
+  to the live session, and a fling ends on a press on the slim message box or the button (`pastStop()`). Where the history
+  cannot stand in (a menu, a question, unsent words in the prompt, a session with no transcript, a session someone else
+  scrolled, not connected), a wheel step scrolls the session as before (`feedWheel()`). The keyboard moves the history with
+  the box (`pastPlace()`). Page Up, Page Down, Ctrl+Home and Ctrl+End pressed in the session scroll it too (`pastPress()`); another width (a rotation) breaks its lines anew and keeps the place as near as can be (`pastWidth()`).
 - **Key row.** A keyboard button in the message box folds out the key row (`FEED_KEYS` in the page's scripts, and Text):
   Esc, Tab, ↑, Enter, Ctrl-C, Text, ←, ↓, →. Touch only.
 - **Text size.** 12px on touch, 13px otherwise, in ttyd's DOM renderer (its canvas is wrong at 2x).
@@ -370,7 +386,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   on screen. Talk stays at its newest words while pinned; one scrolled up stays put.
   In Talk the top bar may be away while scrolled up; the keyboard never brings it back (See-through Talk).
 - The session keeps its size: opening or closing the keyboard never resizes it (see The session). The frame moves with the box instead. `feedRoom()` takes the bottom inset off too, as `.app` has none while the keyboard is open.
-- The document never scrolls (`html` and `body` are locked). Only `.body`, `.side`, `.sheet` and small lists scroll.
+- The document never scrolls (`html` and `body` are locked). Only `.body`, `.side`, `.sheet`, small lists and a session's history (`#feedpast`) scroll.
   Anything with a text box lives inside `.app` and is sized in % or `cqh`, not vh, while the keyboard is open.
 - Never `scrollIntoView` to show a field being typed in: `kbReveal()` scrolls its own scroller. Pinch zoom is left
   alone. Safari's own address pill and arrows bar cannot be removed in a tab.
@@ -410,6 +426,6 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 2. Empty, loading, working, failed: each seen.
 3. Reduced motion on: everything still works.
 4. Scroll half way down, wait for a refresh: nothing moved.
-5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up takes the chips and top bar away over the text and shrinks the box to the slim message box, and scrolling down brings them back; no line moves when they go or come back. A switch between chats shows the kept last screen at once, with no blank frame and no move.
+5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up takes the chips and top bar away over the text and shrinks the box to the slim message box, and scrolling down brings them back; no line moves when they go or come back. A drag or a wheel up opens the history over the screen, and back at its end the live session shows in the same frame, with no line moved. A switch between chats shows the kept last screen at once, with no blank frame and no move.
 6. A changed motion is watched as a recording or frame strip at 390px, not only stills.
 7. `python3 tests/test_web_<area>.py` for each area the change touched (all of `tests/test_web_*.py` for a shared one).

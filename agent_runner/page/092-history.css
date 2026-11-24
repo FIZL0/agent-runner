@@ -1,0 +1,20 @@
+/* F191b: the session history, a native scroller over the session's frame; see-through until it is armed (092-history.js) */
+.feedpast{position:absolute;inset:0;overflow:hidden scroll;overscroll-behavior:none;overflow-anchor:none;opacity:0;background:var(--feed);scrollbar-width:none;pointer-events:none;touch-action:pan-y pinch-zoom;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;outline:0}
+.feedpast::-webkit-scrollbar{display:none}
+.feedpast.armed{opacity:1}
+.feedpast.up{pointer-events:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.feedpast.up:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+@media (pointer:coarse){.feedpast{pointer-events:auto}}
+#pastterm{position:static;padding:0;cursor:text} .feedpast:not(.up) #pastterm{pointer-events:none} #pastrows{position:relative;overflow:hidden}
+.hchunk{position:absolute;left:var(--hleft,14px);right:0;margin-top:var(--hpad,0)} .hchunk>div{height:var(--hcell);line-height:var(--hcell);white-space:pre;overflow:hidden}
+.feedpast.up .hchunk *{-webkit-user-select:text;user-select:text}
+.hchunk b{display:inline-block;width:calc(var(--w)*var(--hw));font-weight:inherit;letter-spacing:0;overflow:visible}
+.hm{color:var(--hmuted)} .hb{font-weight:bold} .hi{font-style:italic} .hu{text-decoration:underline} .hx{text-decoration:line-through} .hd{opacity:.5}
+.hc{color:var(--hcode)} .hl{color:var(--hlink)} .hr{color:var(--hbad)} .hk{color:var(--hok)} .hw{color:var(--hwarn)}
+.hy{background:var(--hminebg);color:var(--hmine)} .hy .hm{color:var(--hmmuted)}
+.hp{background:var(--haddbg);color:var(--hadd)} .hg{background:var(--hgonebg);color:var(--hgone)} .hpn{color:var(--haddn)} .hgn{color:var(--hgonen)}
+/* its button back to the live session, on a strip of its own just above the box, so it covers no line */
+.pastjump{position:absolute;left:0;right:0;bottom:56px;height:56px;display:grid;place-items:center;background:var(--feed);opacity:0;visibility:hidden;pointer-events:none;translate:0 calc(-1*var(--up,0px));transition:opacity var(--dur-fast) var(--ease),visibility var(--dur-fast),translate var(--dur-bars) var(--ease)}
+.pastjump.on{opacity:1;visibility:visible} .main.slim .pastjump{translate:0 0} .main.still .pastjump{transition:none}
+.pastjump button{pointer-events:auto;position:relative;width:var(--tap);height:var(--tap);border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--fg);display:grid;place-items:center;cursor:pointer}
+.pastjump svg{width:18px;height:18px} .pastjump .bdot{display:none} .pastjump.fresh .bdot{display:block;position:absolute;top:2px;right:2px}
