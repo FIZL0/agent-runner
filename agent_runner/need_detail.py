@@ -26,6 +26,8 @@ SHOT_TYPES = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', 
 
 PREP = re.compile(r'(?:and |then )?(?:on|in|at|after|before|once|with|when|while|for|from|using|if)\b', re.I)
 SEE = re.compile(r'(?:the|it|its|they|each|all of|both|nothing|no|there|taps|you should|you see)\b', re.I)
+STILL = re.compile(r'(?:an?|your|this|that|these|those|every|some)\b|[\w-]+ (?:is|are|has|have|does|do|stays?|shows?|opens?|'
+                   r'closes?|returns?|goes|moves?|appears?|neither|never|still|also|no longer)\b', re.I)  # goes on saying what to see
 NOTE = re.compile(r'(?:then the|findings|notes are|evidence|details are)\b|[^:;]*\b(?:was|were|is|are) already\b', re.I)
 HINT = re.compile(r'\s+- (?:reply\b|this clears\b)')
 THEN = re.compile(r'(?:and\s+)?then,?\s', re.I)
@@ -67,7 +69,12 @@ def split_ask(ask: str, sees: bool = True) -> list[tuple[str, str]]:
             return 'see'
         if not sees or why == 'then' or THEN.match(s):
             return 'do'
-        return 'see' if SEE.match(s) or (why == 'semi' and was == 'see') else 'do'
+        if why == 'semi' and was == 'see':  # classed again: a step ("tap Undo") or more to see ("and the list returns")
+            s = re.sub(r'^(?:and|but)\s+', '', s, flags=re.I)
+            if PREP.match(s):  # "on Home, the list returns"
+                s = re.sub(r'^[^,]*,\s+', '', s)
+            return 'see' if SEE.match(s) or STILL.match(s) else 'do'
+        return 'see' if SEE.match(s) else 'do'
 
     cuts: list[tuple[int, str]] = [(0, 'start')]
     while i < end:
