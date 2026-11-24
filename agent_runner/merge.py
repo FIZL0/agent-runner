@@ -23,6 +23,7 @@ from agent_runner import pitch, plan as P, plat, plansync, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
+from agent_runner.strays import drop_strays, new_empty
 from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
 from agent_runner.state import commit_plan, EV_LANDED, EV_LEFT, EV_PART
 from agent_runner.slots import (backend, entries, env_vars, merge_env, MUX, slot_env, trim, worktree)
@@ -780,6 +781,9 @@ def merge_rank(tid: str, crit: bool) -> int:
 def merge_tries(tid: str, branch: str) -> str | None:
     """`merge`'s three tries."""
     yields, tries = True, -1
+    if research_task(tid) and tid not in LANDED and tid not in WAITING and not research_code(tid, branch):
+        # not one waiting since the start: a merge of it as it is may be gated already
+        drop_strays(tid, branch)
     while (tries := tries + 1) < 3:
         if tid not in LANDED and (why := fix_ahead(tid, branch)):
             return why
@@ -875,12 +879,14 @@ def forget(tid: str) -> None:
 
 def research_code(tid: str, branch: str) -> list[str]:
     """F36: the files task/<tid> changes beyond its findings (`brief.findings_globs`, the list its brief names)
-    when `tid` is a research task; [] for any other task or a findings-only diff."""
+    when `tid` is a research task; [] for any other task or a findings-only diff. Files that are new and empty
+    (`new_empty`) count only beside real code (B224)."""
     if not research_task(tid):
         return []
     globs = findings_globs()
-    files = git('diff', '--name-only', '--no-renames', f'{branch}...task/{tid}').stdout.split()
-    return [f for f in files if not docs_only([f], globs)]
+    files = git('diff', '--name-only', '--no-renames', '-z', f'{branch}...task/{tid}').stdout.split('\0')
+    code = [f for f in files if f and not docs_only([f], globs)]
+    return code if set(code) - set(new_empty(tid, branch)) else []
 
 
 def research_says(tid: str, branch: str, title: str) -> str:
