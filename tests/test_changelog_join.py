@@ -106,7 +106,7 @@ def test_before_release(tmp: Path):
         '## Unreleased\n\n', '## Unreleased\n\n## 0.2.0 (2026-02-01)\n\n', 1), encoding='utf-8')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'release 0.2.0')
-    merge(repo, 'task/A')
+    check(merge(repo, 'task/A') == ['CHANGELOG.md'], 'the merge conflicts in the changelog and is joined')
     text = p.read_text(encoding='utf-8')
     eq(text.count('entry A (A1)'), 1, 'the entry once')
     eq(text.count('old unreleased (X1)'), 1, 'the released entry once')
@@ -114,9 +114,30 @@ def test_before_release(tmp: Path):
     check('entry A' not in section(text, '## 0.2.0'), 'entry A is not under 0.2.0')
 
 
+def test_main_into_branch(tmp: Path):
+    print('the other way: main, which released, merged into the task branch')
+    repo = make_repo(tmp / 'c')
+    R.init(repo)
+    branch(repo, 'task/A', lambda t: add_entry(t, '- Added: entry A (A1).'))
+    p = repo / 'CHANGELOG.md'
+    p.write_text(p.read_text(encoding='utf-8').replace(
+        '## Unreleased\n\n', '## Unreleased\n\n## 0.2.0 (2026-02-01)\n\n', 1), encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'release 0.2.0')
+    git(repo, 'checkout', '-q', 'task/A')
+    check(merge(repo, 'main') == ['CHANGELOG.md'], 'the merge conflicts in the changelog and is joined')
+    text = p.read_text(encoding='utf-8')
+    eq(text.count('entry A (A1)'), 1, 'the entry once')
+    eq(text.count('## 0.2.0'), 1, 'the release heading once')
+    check('entry A' in section(text, '## Unreleased'), 'entry A is under Unreleased')
+    check('entry A' not in section(text, '## 0.2.0'), 'entry A is not under 0.2.0')
+    check('old unreleased (X1)' in section(text, '## 0.2.0'), 'the released entry stays under 0.2.0')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
-        return report([test_config, lambda: test_two_branches(Path(tmp)), lambda: test_before_release(Path(tmp))])
+        return report([test_config, lambda: test_two_branches(Path(tmp)), lambda: test_before_release(Path(tmp)),
+                       lambda: test_main_into_branch(Path(tmp))])
 
 
 if __name__ == '__main__':
