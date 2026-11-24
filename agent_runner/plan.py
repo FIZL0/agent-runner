@@ -148,12 +148,15 @@ change is not rewritten at all (so mtimes stay meaningful and git stays quiet).
 from __future__ import annotations
 
 import argparse
+import calendar
 import difflib
+import math
 import os
 import re
 import shlex
 import subprocess
 import sys
+import time
 from collections import Counter
 from functools import partial
 from pathlib import Path
@@ -174,7 +177,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-KEYS = ('files', 'after', 'test', 'journal', 'model', 'needs')  # F105: model, the task's own session model; F168: needs, shared tools
+KEYS = ('files', 'after', 'test', 'journal', 'model', 'needs', 'split-by')  # B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
 # ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
 FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
@@ -723,6 +726,8 @@ def move(tid: str, where: str, ref: str | None = None, todo=None) -> None:
         got = _item_block(ls, i)
         del ls[i:i + len(got)]
         blk += got
+    if where == 'top':  # B196: a person wants it now
+        blk[0] = _unheld(blk[0])
     j = _place(ls, where, ref)
     ls[j:j] = blk
     _write(todo, ls)
@@ -891,7 +896,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
             force = True
         elif a == '--last':  # F43: at the end of the leading section, `after: all above`
             last, after_flag, in_where = True, False, False
-        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--'):
+        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--') and a != f'--{SPLIT_BY}':
             if k + 1 >= len(rest) or rest[k + 1].startswith('--'):
                 no(f'{a} needs a value')
             if a in vals or (a == '--pri' and pri):
@@ -1027,9 +1032,10 @@ def family_end(prefix: str, todo=None) -> tuple[str, str | None] | None:
 
 
 def add(prefix: str, text: str, where: str | None = None, ref: str | None = None, todo=None, done=None,
-        pri: str | None = None, alone_: bool = False) -> str:
+        pri: str | None = None, alone_: bool = False, split_c=None) -> str:
     """File a new task; with `pri` it is tagged `(follow-up, pri)` and, unless `where` says, filed by its level;
-    with `alone_` it is tagged `(alone)` (F130)."""
+    with `alone_` it is tagged `(alone)` (F130); with `split_c` (a Config) one too big for a session is held for
+    its author to split it (B196: `SPLIT_HOLD`)."""
     if pri is not None and pri not in PRI:
         raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, done = ensure(todo, done)
@@ -1042,7 +1048,10 @@ def add(prefix: str, text: str, where: str | None = None, ref: str | None = None
     if pri and not PRI_TAG.search(text):
         text = f'(follow-up, {pri}) {text}'
     j = _place_pri(ls, pri) if pri and not where else _place(ls, where or 'top', ref)
-    ls[j:j] = [f'- [ ] **{tid}** {text}']
+    line = f'- [ ] **{tid}** {text}'
+    if split_c and _big([line], tid, split_c):  # in the same write: no run reads the task without it
+        line += f' | {SPLIT_BY}: {split_stamp()}'
+    ls[j:j] = [line]
     _write(todo, ls)
     return tid
 
@@ -2159,21 +2168,74 @@ def size(blk: list[str], docs: list[str] = ()) -> tuple[int, int, int, int]:
 def too_big(tid: str, c, todo) -> str:
     """Why open task `tid` is over `[run] task_size` (0 is off): 'size 37, over 10: 19 code files, …'; else ''.
     Never a concept or a release (they build nothing), nor a task already `(split into …)` parts."""
+    ls = lines(todo)
+    i = next((i for i, l in enumerate(ls) if (m := ITEM.match(l)) and m.group(3).rstrip('.') == tid), None)
+    return '' if i is None else _big(_item_block(ls, i), tid, c)
+
+
+def _big(blk: list[str], tid: str, c) -> str:
+    """`too_big` of a task's lines `blk`."""
     try:
         most = int(c.run.get('task_size') or 0)
     except (TypeError, ValueError):
         return ''
     if most <= 0 or concept(tid) or release(tid):
         return ''
-    ls = lines(todo)
-    i = next((i for i, l in enumerate(ls) if (m := ITEM.match(l)) and m.group(3).rstrip('.') == tid), None)
-    if i is None or ITEM.match(ls[i]).group(2) == 'x' or SPLIT.search(ls[i]):
+    if ITEM.match(blk[0]).group(2) == 'x' or SPLIT.search(blk[0]):
         return ''
-    n, files, parts, chars = size(_item_block(ls, i), c.run.get('docs_files') or [])
+    n, files, parts, chars = size(blk, c.run.get('docs_files') or [])
     if n <= most:
         return ''
     return (f'size {n}, over [run] task_size {most}: {files} code file{"s" * (files != 1)}, {parts} numbered '
             f'outcomes, {chars:,} characters of text')
+
+
+# B196: `plan add` of a task too big for one session writes `| split-by: <when>` on its line, and no run starts it
+# before then, so its author can split it. On the line, so every machine's run and a branch's merge carry it.
+SPLIT_BY = 'split-by'
+SPLIT_HOLD = 300  # seconds, fixed: a session that never splits its task only delays it
+
+
+def split_stamp(now: float | None = None) -> str:
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime((time.time() if now is None else now) + SPLIT_HOLD))
+
+
+def split_left(line: str, now: float | None = None) -> float:
+    """Seconds a task's line still holds it for its author to split it (B196); 0 for none, or a time that does not
+    read or lies further ahead than SPLIT_HOLD allows (another machine's wrong clock)."""
+    try:
+        by = calendar.timegm(time.strptime(fields(line).get(SPLIT_BY, [''])[0], '%Y-%m-%dT%H:%M:%SZ'))
+    except (ValueError, IndexError):
+        return 0
+    left = by - (time.time() if now is None else now)
+    return left if 0 < left <= SPLIT_HOLD + 5 else 0
+
+
+def split_in(left: float) -> str:
+    """When a held task starts, for `left` seconds: 'starts in 4 min if it is not'."""
+    return f'starts in {math.ceil(left / 60)} min if it is not'
+
+
+def split_waits(ls: list[str], now: float | None = None, busy=()) -> dict[str, str]:
+    """B196: {task: 'waits to be split, starts in 4 min if it is not'} for the open tasks held for their author,
+    but for the `busy` ones (running, or taken by hand)."""
+    return {tid: f'waits to be split, {split_in(left)}' for section, box, tid, _, i in iter_tasks(ls)
+            if box == ' ' and tid not in busy and not section.startswith(SKIPPED) and (left := split_left(ls[i], now))}
+
+
+def _unheld(line: str) -> str:
+    """A task line without its split-by field."""
+    return FIELD.sub(lambda m: '' if m.group(1) == SPLIT_BY else m.group(0), line)
+
+
+def end_split_hold(tid: str, todo=None) -> None:
+    """The task is split, or small enough now: a run may start it at once."""
+    todo, _ = ensure(todo)
+    ls = list(lines(todo))
+    i = _find(ls, tid)
+    if (now := _unheld(ls[i])) != ls[i]:
+        ls[i] = now
+        _write(todo, ls)
 
 
 def big_note(tid: str, x) -> str:
@@ -2758,6 +2820,7 @@ def _main(argv: list[str], c) -> int:
         out, cl = index(todo), plansync.claims(c)
         out = [f'{l}  [{plansync.label(cl[t])}]' if (t := l.rsplit(' ', 1)[-1]) in cl else l for l in out]
         tw = _tool_waits(c, todo)
+        tw.update(_split_waits(c, todo))
         out = [f'{l}  [{tw[t]}]' if (t := l.rsplit(' ', 1)[-1]) in tw else l for l in out]
     else:
         # a heading named exactly that, in any file, before one that only contains it (`hst` before `hst-data`)
@@ -2770,7 +2833,7 @@ def _main(argv: list[str], c) -> int:
         for l in last_lines(todo):
             if l.startswith(f'{argv[0]} waits for everything'):
                 print(l)
-        if said := _tool_waits(c, todo).get(argv[0]):
+        if said := (_split_waits(c, todo) | _tool_waits(c, todo)).get(argv[0]):
             print(f'{argv[0]} {said}')
     return 0
 
@@ -2967,6 +3030,21 @@ def _tool_waits(c, st_todo) -> dict[str, str]:
         return {}
 
 
+def _split_waits(c, todo) -> dict[str, str]:
+    """`split_waits` of the plan, without the tasks running or taken by hand here, or claimed."""
+    ls = lines(todo)
+    if not split_waits(ls):  # nearly always: nothing more is read
+        return {}
+    from agent_runner import sched, state
+    try:
+        if state.C is None:
+            state.init()
+        busy = {*sched.taken(), *plansync.claims(c)}
+    except (OSError, SystemExit, ValueError):
+        busy = ()
+    return split_waits(ls, busy=busy)
+
+
 def _p_add(a, x):
     kind = a.kind
     rel = kind == RELEASE  # F38: a release (module doc)
@@ -3016,8 +3094,10 @@ def _p_add(a, x):
             return 2
         print(f'{PROG}: warning: {why}', file=sys.stderr)
 
-    tid = add(kind, text, w[0], (w[1:] or [None])[0], pri=pri, alone_=bool(solo))
+    tid = add(kind, text, w[0], (w[1:] or [None])[0], pri=pri, alone_=bool(solo), split_c=x.c)
     msg = f'added {tid}' + (f' ({pri})' if pri else '') + (' (alone: nothing starts beside it)' if solo else '')
+    if fam and family_end(kind):  # B196: the parent is split now
+        end_split_hold(kind)
     if fam:  # a subtask queues behind its family: only right when it needs the parent's code, data or verdict
         print(f'{PROG}: note: {tid} never runs beside {kind}\'s family; if it could start now, add it '
               f'with a fresh letter instead (`{PROG} add {re.match(r"[A-Za-z]+", kind).group()} …`)',
@@ -3051,6 +3131,8 @@ def _p_edit(a, x):
         print(f'{PROG}: not edited: {why}', file=sys.stderr)
         return 2
     edit(a.id, text, keyed, pri or None, alone_=solo)
+    if not too_big(a.id, x.c, x.todo):  # B196
+        end_split_hold(a.id)
     return x.say(f'edited {a.id}' + big_note(a.id, x))
 
 

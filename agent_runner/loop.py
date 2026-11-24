@@ -30,7 +30,7 @@ from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED, EV_CONTEXT)
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
 from agent_runner.brief import no_remote_line
-from agent_runner.sched import blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, tasks
+from agent_runner.sched import blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
 from agent_runner.tools import take_end
 from agent_runner.login import retry_held, unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_asks
@@ -1464,7 +1464,8 @@ class Run:
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
         if quiet and not PAUSED[0] and (self.once or not shared_tools.pending(tried)) and (self.once and not stopping() or not self.idle_said
-                                        or power_due(self.idle_at)) and not pick(self.running, tried, self.branch):
+                                        or power_due(self.idle_at)) and not pick(self.running, tried, self.branch) \
+                and not splitting(tried, self.branch):  # B196: it starts by itself in minutes
             if self.once and not stopping():
                 log('run done: nothing it may start (once)')
                 return 0

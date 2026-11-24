@@ -634,12 +634,18 @@ def needs_heading(heading: str) -> str:
 
 def tool_lines(st: dict) -> list[str]:
     """F168: the Tools line and a line per task a shared tool, or memory (B184), keeps waiting."""
+    from agent_runner.sched import taken  # here, not at the top: as merge and land do
+    try:
+        split = [f'  {t} {said}' for t, said in P.split_waits(
+            P.lines(C.todo), busy={*taken(), *(st.get('running') or {}).values()}).items()]  # B196
+    except (OSError, AttributeError):  # no plan, or no init
+        split = []
     try:
         tools = shared_tools.rows(st=st)
         return [x for x in (shared_tools.line(tools),) if x] + \
-            ([f'  {t} {said}' for t, said in shared_tools.wait_words(st=st).items()])
+            ([f'  {t} {said}' for t, said in shared_tools.wait_words(st=st).items()]) + split
     except (OSError, SystemExit, ValueError, KeyError, AttributeError):  # no plan, or no init: the lines, not status
-        return []
+        return split
 
 
 def spend_shown(st: dict, n: str) -> str:

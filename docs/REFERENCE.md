@@ -724,6 +724,7 @@ words in a note on the task (after ` — `, not in its title), its next merge la
     its row instead, see Auto release).
   - `model:` the model the task's own session runs on (`plan add/edit --model M`), which wins over its kind's
     `[models.kinds]` entry; `plan ID` shows it. See Models per kind.
+  - `split-by:` the time (UTC) before which a task too big for one session may not start, so its author can split it (B196). Only `plan add` writes it, from the size check; it is not set by hand, and it ends early as the splitting paragraph below says.
   - `test:` the tests that prove it. `journal:` its journal folder.
   - `plan add P "text" --files a,b --after X --test name` writes them; `--model M` writes `model:`; `--needs T` writes `needs:`.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what
@@ -849,6 +850,8 @@ A plain new number (`plan add A "…"`) is an independent task and may run besid
 prints this summary; `agent-runner run --dry-run N` shows what N free slots would start now, and why the rest wait.
 
 A task over `[run] task_size` is split the same way: `plan add A12 "…"` per part (A12a, A12b, …), then `plan edit A12 "<title> (split into A12a, A12b)"`. `plan add`, `edit`, `note` and an approval say when a task is too big and how to split it, and a run that starts an unsplit one has its session split it before it does the first part (F177). A12 ticks itself once its parts land.
+
+When `plan add` says a task is too big, it also writes `| split-by: <UTC time, 5 minutes ahead>` on the task line, and no run starts it before that time (B196), so its author can file the parts first. The hold ends at once when the first part is filed (`plan add A12 …`), when `(split into …)` is written or the task is brought under the size, or on `plan move ID top`; `take` starts it any time. An edit that leaves it too big keeps the same end time. A task a run's own agent files behaves the same. Only `add` sets `split-by`; a note, edit or approval that makes a task too big does not hold it. While one is held, `status`, `plan` and the queue say `waits to be split, starts in 4 min if it is not`, the dry run says `waiting to be split`, and the run does not show idle.
 
 ## Picking
 
