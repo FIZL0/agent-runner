@@ -109,15 +109,16 @@ let boxWas={k:'',h:0};
 function grow(ta,drawn){
   sendDraw(ta);
   const k=boxKey(), was=boxWas.k===k?boxWas.h:0;
-  ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';
+  ta.closest('.box')?.classList.toggle('has',sendHas(ta.value,S.atts[k]));ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';
   const h=ta.offsetHeight||0;boxWas={k,h};if(was&&h&&was!==h)growGlide(ta,h-was,drawn);
 }
 /* B208: Send is Force send while the open session works and there is something to send; changed in place, so nothing is
    drawn again under a caret. box() draws it plain, and grow() runs after every draw and every change of the words. */
 function sendDraw(ta){
   const b=ta.closest('.box')?.querySelector('[data-send]');if(!b)return;
-  const n=S.thread, on=!!n&&!isNew(n)&&sendForces(sessWorks(n),ta.value,S.atts[boxKey()]), say=on?'Force send':'Send';
+  const n=S.thread, atts=S.atts[boxKey()], wait=sendWaits(atts), on=!!n&&!isNew(n)&&sendForces(sessWorks(n),ta.value,atts), say=wait?'Uploading…':on?'Force send':'Send';
   b.classList.toggle('force',on);b.setAttribute('aria-label',say);b.title=say;
+  if(wait)b.setAttribute('aria-disabled','true');else b.removeAttribute('aria-disabled');  // F205: not disabled, so a tap or Enter still says why
 }
 /* F147: a box that grew by d: at the foot of the view it slides up into its new height (and the chat with it), on Home what is under its words slides down */
 function growGlide(ta,d,drawn){

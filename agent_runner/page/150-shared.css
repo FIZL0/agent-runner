@@ -12,7 +12,9 @@
 /* a press, and the spring back; a wide row gives less */
 .btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.pill,.shadd,.card.tap,.asktap,.ni,.thread,.prow,.it,.fold{transition:transform var(--dur-spring) var(--spring)}
 .send{transition:transform var(--dur-spring) var(--spring),opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop,.force){opacity:.45}
-:is(.btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.send,.pill,.shadd):active:not(:disabled){transform:scale(.94);transition-duration:var(--dur-fast)}
+/* F205: an attachment uploads */
+.box .send[data-send][aria-disabled=true]:not(#_){opacity:.4;filter:grayscale(1);cursor:default}
+:is(.btn,.icon,.tool,.chip,.act,.mic,.spk,.kbd,.send,.pill,.shadd):active:not(:disabled,[aria-disabled=true]){transform:scale(.94);transition-duration:var(--dur-fast)}
 :is(.card.tap,.asktap,.ni,.thread,.prow,.it:not(.setrow),.fold):active{transform:scale(.98);transition-duration:var(--dur-fast)}
 /* a count that rolls; what left, while it collapses; your words on their way to a session */
 .roll{position:relative;overflow:clip} .rolls{display:inline-block} .rolls.out{position:absolute;inset:0;padding:inherit;white-space:nowrap}
