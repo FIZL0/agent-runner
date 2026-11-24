@@ -3470,7 +3470,7 @@ const window = {};
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: {}, ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
-const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
+const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, side = () => {}, rowSettle = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
@@ -4407,7 +4407,7 @@ def test_row_buttons_f187(tmp: Path) -> None:
     if r.returncode:
         return
     o = json.loads(r.stdout)
-    check('aria-expanded="false"' in o['closed'] and 'rowacts' not in o['closed'], 'closed: the dots only', o['closed'])
+    check('" data-k="chat:c1" data-crow=' in o['closed'] and 'aria-expanded="false"' in o['closed'] and 'rowacts' not in o['closed'], 'closed: the dots only', o['closed'])
     n, html = o['opened']
     acts = html.split('class="rowacts"')[1]
     eq((n, [acts.count(f'data-{k}="c1"') for k in ('ren', 'pin', 'del')], acts.count('aria-label') - 1, 'data-rowmenu' in html), ('c1', [1, 1, 1], 3, False),

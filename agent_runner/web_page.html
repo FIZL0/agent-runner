@@ -2077,7 +2077,7 @@ function chatRow(s,quiet){
   const pinned=chatPins().includes(n), pin=gone?'':`<button class="pin${pinned?' on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat" title="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button>`;
   const on=!gone&&S.rowOpen===n, menu=gone?'':on?`<span class="rowacts" role="group" aria-label="This chat"><button data-ren="${esc(n)}" aria-label="Rename this chat">${I.edit}</button><button class="${pinned?'on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button><button data-del="${esc(n)}" aria-label="Delete this chat">${I.trash}</button></span>`:
     `<button class="rowmenu" data-rowmenu="${esc(n)}" aria-expanded="false" aria-label="More for this chat">${I.dots}</button>`;  // F187
-  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}${on?' open':''}"data-k="chat:${esc(n)}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
+  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}${on?' open':''}" data-k="chat:${esc(n)}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
 }
 /* F187: on touch, the chat row opened by its three dots: one at a time, its buttons in the row, Delete in the dots' place.
    A tap anywhere else only closes it, and so do Esc, one of its buttons and the drawer closing */
