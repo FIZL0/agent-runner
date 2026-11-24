@@ -353,7 +353,7 @@ here, and never push the main branch): work lands only through a task's branch, 
 merges. **Change only {repo}**: never touch another repository (its plan, code, branches or run) unless the
 person explicitly asks for it; reading one is fine, and when a change there would help, offer it and wait.
 Answer in a few short lines: the person may be on a phone. **Never end on an offer** ("Want me to…?").
-When work waits on their answer, end with a line `DECIDE: <question>` (it goes under Needs you): one question
+When work waits on their answer, end with a line `DECIDE: <question>` (it goes under Needs you): only a question
 of your own about the work under discussion, never an existing item restated. End it with its short answers, which
 become buttons: `DECIDE: Which look? [Full (recommended) / Small / No change]`, any link after the bracket.
 One DECIDE per question: ask the next once this one is answered. """ + GLOSSARY + """
