@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import ci, gitops, plan as P, plansync, plat, shared_tools, undo
+from agent_runner import ci, gitops, plan as P, plansync, plat, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -437,8 +437,7 @@ def park_for_restyle(tid: str, rid: str, branch: str) -> str:
     C.notes(f'{tid}.restyle').unlink(missing_ok=True)
     if git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
         return f'nothing committed to park; it stays held for restyle {rid}'
-    commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
-    if not commits:
+    if not (commits := git('log', '--format=%s', f'{stack.fork(tid, branch)}..task/{tid}').stdout.splitlines()):
         git('branch', '-D', f'task/{tid}')
         git('update-ref', '-d', TESTED + tid)
         return f'nothing committed to park (anything left uncommitted the slot saved); it stays held for restyle {rid}'
@@ -747,7 +746,7 @@ def not_attempt(tid: str, branch: str) -> bool:
     """The session's last commit matches `[run] not_attempt` ({id} = the task): a phase that leaves the task open
     on purpose (a spec written for a later session to port from), so the task may start again once it merges."""
     rx = C.run['not_attempt']
-    last = git('log', '-1', '--format=%s', f'{branch}..task/{tid}').stdout.strip()
+    last = git('log', '-1', '--format=%s', f'{stack.fork(tid, branch)}..task/{tid}').stdout.strip()
     return bool(rx and last and re.search(rx.replace('{id}', re.escape(tid)), last))
 
 
@@ -767,6 +766,8 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
 
 def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     """False when task/<tid> waits for the next run to merge it."""
+    if (unsettled := stack.settle(tid, branch, lambda: tid in halt_requests())) is False:  # F198
+        return False
     if tid in halt_requests():  # B19: dropped or changed before its merge: never lands
         did = discard_task(tid, None)
         DISCARDED[tid] = 'its finished branch never merged' + (f' ({", ".join(did)})' if did else '')
@@ -780,8 +781,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
             return True
         C.notes(f'{tid}.restyle').unlink(missing_ok=True)
         landed_for = rs['rid']  # its done passed (it was in its test gate) or it was merging: it lands
-    commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
-    if not commits:
+    if not (commits := git('log', '--format=%s', f'{stack.fork(tid, branch)}..task/{tid}').stdout.splitlines()):
         git('branch', '-D', f'task/{tid}')
         git('update-ref', '-d', TESTED + tid)
         note(f'{tid}: no commits — nothing to merge')
@@ -794,7 +794,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         C.notes(f'{tid}.budget').unlink(missing_ok=True)
         if git('rev-parse', '--verify', '-q', TESTED + tid).returncode and not (plansync.ticks(C) / tid).exists():
             over = f'stopped over its budget: {bm}'
-    while (why := over or merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
+    while (why := over or unsettled or merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
         alarm(f'{tid} is not merging: ' + ('uncommitted edits in the main checkout' if why.startswith(EDITED)
@@ -1175,7 +1175,7 @@ class Run:
         finished = unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign])
         # the riders of a merge an earlier run gated wait from the start, so its turn finds them and reuses it
         WAITING.update(set(finished) & {t for g in gate_runs() for t in g.get('tids', [])})
-        for tid in sorted(finished, key=lambda t: t not in left):  # the merge an earlier run left going first: it adopts that
+        for tid in sorted(finished, key=lambda t: (bool(stack.stacked(t, branch)), t not in left)):  # the merge an earlier run left going first: it adopts that
             log(f'{tid}: ' + ('its merge was under way when the last run ended; adopting it' if tid in left else
                               'finished, not merged yet; merging it now'))
             self.tried.add(tid)
@@ -1489,7 +1489,7 @@ def sweep_unmerged(branch: str, merging: list) -> None:
         return
     SWEEP_AT[0] = time.time()
     live = {t.name for t in merging if t.is_alive()}
-    for tid in unmerged(branch, []):
+    for tid in sorted(unmerged(branch, []), key=lambda t: bool(stack.stacked(t, branch))):  # after what it is on
         if tid in SWEPT or f'merge:{tid}' in live:
             continue
         SWEPT.add(tid)

@@ -911,7 +911,7 @@ push from outside the run has put that ahead (fetched at most once a minute).
 | `### Stretch`, `### Parked` | never unattended |
 | tried this run | one attempt per run: if it failed, a human looks next |
 | `task/<ID>` has commits not yet merged | it's finished and waiting for the merge |
-| a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files`; a whole-directory entry (`tests/**`) is a guess, not a lock: it meets only another whole-directory entry, so a named file under it meets only what that task has touched | keeps merges clean |
+| a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files`; a whole-directory entry (`tests/**`) is a guess, not a lock: it meets only another whole-directory entry, so a named file under it meets only what that task has touched | keeps merges clean. Exception: a task that clashes only with finished tasks all in one merge under way starts on top of that merge (F198, Behaviour) |
 
 `plan add` warns of a line with no `files:` and no `test:` (`[plan] need_files` makes that an error).
 
@@ -1268,6 +1268,19 @@ waits for the gate already under way on that exact tree, so two batches cost abo
 the first batch fails or the branch moves another way, the merge built ahead is dropped and its gate
 stopped. Its conflicts get only the line join: one that needs a fix session waits for its own turn. The
 first gate in merge2 builds from cold, and merge2 has a build directory of its own.
+
+A task that clashes with finished tasks only by files, and only with ones that are all in one merge under way
+(the one under test, or a merge built ahead on it whose own gate has not failed), starts at once on top of
+that merge in its own worktree, instead of waiting for the gate (F198). Not for an `(alone)` task, a release,
+a sibling, a task in an ordered section, an `after:` wait, a task resuming after `run ask` or a shared-tool
+wait, or one that also clashes with a running task. A finished task not yet in any merge still holds its
+files. Which merge it started on is in `<notes>/<ID>.stacked`, which survives a restart; its brief says so
+and which diff is its own. It lands only after that merge is on main: when it finishes it waits (log: "S2:
+finished; it lands after S1, on whose merge it was started"), then merges as any task. If that merge is
+refused, or built again as another commit, once those tasks' merges are over its own commits are moved onto
+main alone (`git rebase --onto`; when they do not apply, as one commit, joined or given to a fix session) in
+a fix worktree, and its remote task branch replaced. If they cannot be moved it is parked as `wip/<ID>`
+whole, and its next attempt is told which of those commits are its own. No unlanded task's commit reaches main. If the run stops first, `task/<ID>` waits for the next run.
 
 A tested merge that cannot land because of uncommitted edits in the main checkout to files it changes (or
 anything staged there, which git refuses to merge onto) waits 10 minutes, then gives the merge lock back
