@@ -374,10 +374,10 @@ _In code_: cmds.launch, launcher_text
 _Avoid_: action menu
 
 **Follow an upgrade**:
-When the run restarts on a newer agent-runner, an open TUI starts again on it where it was and an open run page reloads
+When the run restarts on a newer agent-runner, an open TUI starts again on it where it was; an open run page does not reload, it shows the New version popup
 _Said_: follow an upgrade of the run
-_On screen_: (no wording: the TUI starts again, the run page reloads)
-_In code_: follow_upgrade, followVersion, newer_version, PLACE_ENV, snapshot 'version'
+_On screen_: (no wording: the TUI starts again; the run page shows the popup)
+_In code_: follow_upgrade, newer_version, PLACE_ENV, snapshot 'version'
 _Avoid_: hot reload, auto-refresh
 
 **Run view**:
@@ -634,3 +634,16 @@ _Said_: Tools page
 _On screen_: Tools
 _In code_: toolsHTML, GET/POST /tools, devices.page
 _Avoid_: devices page, tools screen, settings
+
+**New version popup**:
+The popup over a run page or Home's page when the run serves another page than the open one (Refresh loads it), or when newer code waits for a person to restart the run. Later hides it for that page in this tab. A page never reloads by itself.
+_Said_: the new version popup
+_On screen_: A new version of this page is ready; Refresh; Later
+_In code_: newsDraw, pageNews, PAGE_PRINT, snapshot 'page', 'restart_needed'
+_Avoid_: banner, toast, update bar
+
+**Changed-code restart**:
+A run from a source checkout (a clone with .git beside agent_runner/) with auto_upgrade on restarts itself between merges once main's agent_runner code has held still for 10 min (at most 1 h after the first change), so one restart covers a batch. It keeps its slots and adopts its sessions.
+_Said_: restart on changed code
+_In code_: watch_code, code_restart, CODE_QUIET
+_Avoid_: hot reload

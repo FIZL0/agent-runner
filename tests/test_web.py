@@ -860,45 +860,106 @@ def in_tmp(f):
     return go
 
 
-VERSION_DRIVER = r"""
-const fs = require('fs');
-let reloads = 0;
-const location = {reload() { reloads++ }};
-const src = fs.readFileSync(process.argv[2], 'utf8');
-const out = [];
-for (const seq of JSON.parse(fs.readFileSync(0, 'utf8'))) {
-  reloads = 0;
-  const follow = new Function('location', src + '\nreturn followVersion;')(location);
-  const back = seq.map(v => follow(v));
-  out.push([back, reloads]);
-}
+NEWS_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const part = page.slice(page.indexOf("let RUN_VERSION=''"), page.indexOf('function takeSnap('));
+const mk = () => { const m = {}; return {m, get: k => m[k] || '', set(k, v) { if (dead) return; if (v) m[k] = v; else delete m[k] }} };
+let dead = false, reloads = 0, said = [], ta = null, rc = {key: 'restart'};
+const store = mk(), tabStore = mk(), HKEY = 'p', HI = {i: null}, TK = {}, DK = {}, OB_KEY = 'ob';
+const DRAFT_KEY = k => 'd:' + k, boxKey = () => 'home', toast = t => said.push(t), esc = t => String(t), render = () => {};
+const document = {title: 't', querySelector: () => ta}, location = {reload() { reloads++ }}, els = {}, $ = k => els[k] = els[k] || {};
+const setHTML = (e, h) => { e.h = h }, controlOf = () => rc, ctlBusy = () => false, ctlSure = () => 'SURE';
+let H, S;
+const fresh = (snap, f) => { H = {add: ''}; S = {snap, f: f || {}, atts: [], ob: [], setOpen: {}, sure: null}; };
+fresh({});
+const src = (home, mine) => logic + part.replace("let RUN_VERSION=''", "var RUN_VERSION=''").replace(/\bconst /g, 'var ')
+  + `;var HOME_PAGE=${home}, PAGE_PRINT=${JSON.stringify(mine)};`;
+const out = {};
+eval(src(false, 'aaa').replace(/\bconst /g, 'var '));
+const draw = snap => { S.snap = snap; newsDraw(); return [els.news.hidden, els.news.h] };
+out.same = draw({page: 'aaa', version: '1'});
+out.oldRun = draw({version: '2'});
+out.newer = draw({page: 'bbb', version: '1'});
+newsLater('page:bbb'); out.later = draw({page: 'bbb'}); out.next = draw({page: 'ccc'});
+S.later = tabStore.get(LATER_KEY).split(' '); out.laterKept = draw({page: 'bbb'})[0];
+out.restart = draw({page: 'aaa', restart_needed: true, boot: 'b1'});
+S.sure = 'restart'; out.sure = draw({page: 'aaa', restart_needed: true, boot: 'b1'})[1]; S.sure = null;
+rc = null; out.noctl = draw({page: 'aaa', restart_needed: true, boot: 'b1'})[1];
+newsLater('restart:b1'); out.restartLater = [draw({page: 'aaa', restart_needed: true, boot: 'b1'})[0], draw({page: 'aaa', restart_needed: true, boot: 'b2'})[0]];
+PAGE_PRINT = '/' + '*PAGE_PRINT*/'; out.raw = draw({page: 'bbb'})[0]; PAGE_PRINT = 'aaa';
+out.noReload = reloads;
+// Refresh keeps what is written, or waits
+const go = () => { const n = reloads; said = []; newsRefresh(); return [reloads - n, said[0] || ''] };
+fresh({}, {'set:project:x': '5', setq: 'cap'}); S.kOpen = true; S.kText = 'a dark mode'; H.add = '/x'; S.ren = 'c2'; S.setOpen = {a: 1};
+S.atts = [{name: 'p.png', path: '/up/p.png', thumb: 'data:'}]; S.ob = [{cid: '1'}]; store.set('ob', JSON.stringify(S.ob));
+ta = {value: 'half a thought'}; store.set('d:home', ta.value);
+out.kept = go();
+fresh({}); takeTyped(); out.back = [S.f, S.kOpen, S.kText, H.add, S.ren, S.setOpen, S.atts]; out.once = tabStore.get(TYPED_KEY);
+fresh({}); ta = null; out.nothing = [go(), tabStore.get(TYPED_KEY)];
+fresh({}); S.atts = [{name: 'x'}]; out.uploading = go();
+fresh({}); TK.rec = {}; out.mic = go(); TK.rec = null; DK.rec = {}; out.dict = go(); DK.rec = null;
+fresh({}, {'dev:password': 'hunter2', setq: 'a'}); out.form = [go(), JSON.stringify(tabStore.m).includes('hunter2')];
+fresh({}); ta = {value: 'not kept'}; store.set('d:home', ''); out.unkept = go();
+dead = true; fresh({}); ta = null; S.kText = 'x'; out.dead = go(); fresh({}); S.ob = [{cid: '9'}]; out.deadOb = go();
+HOME_PAGE = true; fresh({}); S.later = []; out.home = [draw({page: 'bbb'})[1], draw({page: 'aaa', restart_needed: true})[1]];
 console.log(JSON.stringify(out));
 """
 
 
-def test_follow_version_f90(tmp: Path) -> None:
-    """F90: the run page keeps the run's version from the first snapshot and reload when a later one differs;
-    a snapshot without one (an older run) changes nothing."""
-    for path, call in ((W.PAGE, 'if(followVersion(s.version))return;'),):
-        page = path.read_text(encoding='utf-8')
-        check(call in page, f'{path.name}: each snapshot goes through followVersion before it is taken')
-        m = re.search(r"let RUN_VERSION='';\nfunction followVersion\(v\)\{.*?return true\}return false\}\n", page, re.S)
-        check(m, f'{path.name}: has followVersion')
-        if not m or not shutil.which('node'):
-            print('  (no node here: the version reload script test is skipped)') if m else None
-            continue
-        (tmp / 'follow.js').write_text(m.group(0), encoding='utf-8')
-        (tmp / 'driver.js').write_text(VERSION_DRIVER, encoding='utf-8')
-        cases = [['0.59.0', '0.59.0', '0.59.0'], ['0.59.0', '0.60.0'], ['', None, '0.59.0', '', '0.59.0'],
-                 ['', '', '']]
-        r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'follow.js')], input=json.dumps(cases),
-                           capture_output=True, text=True, timeout=60)
-        check(r.returncode == 0, f'{path.name}: node runs followVersion', r.stderr[-800:])
-        same, changed, missing, never = json.loads(r.stdout or '[[[], 0], [[], 0], [[], 0], [[], 0]]')
-        eq(same, [[False, False, False], 0], f'{path.name}: the same version: no reload')
-        eq(changed, [[False, True], 1], f'{path.name}: a different version: reload')
-        eq(missing, [[False] * 5, 0], f'{path.name}: a missing version neither sets nor changes it')
-        eq(never, [[False] * 3, 0], f'{path.name}: an older run, never a version: nothing')
+def test_news_f149(tmp: Path) -> None:
+    """F149: a page that is not the one the run serves shows a popup with Refresh and Later and never reloads by
+    itself; Refresh keeps what is written; code only a person restarts the run on says a restart is needed."""
+    page = W.page_html().decode()
+    check(f"const PAGE_PRINT='{W.PAGE_PRINT}'" in page and f"const PAGE_PRINT='{W.PAGE_PRINT}'" in W.page_html(home=True).decode(),
+          "the page holds its own fingerprint, Home's too")
+    snap = W.with_extras({})
+    eq((snap['page'], snap['restart_needed']), (W.PAGE_PRINT, False), 'the snapshot names the page the run serves')
+    with mock.patch.object(W.watch, 'RESTART_NEEDED', [True]):
+        eq(W.with_extras({})['restart_needed'], True, 'and that a person must restart the run')
+    eq(page.count('location.reload()'), 1, 'one reload in the page, the Refresh button')
+    from agent_runner import home as H
+    stamps = [('a', 1)]
+    with mock.patch.object(H, 'package_stamp', lambda: stamps[0]):
+        srv = H.serve_home('HT', 0, '127.0.0.1', rows=lambda: [], roots=lambda: [], vitals=mock.Mock())
+        own = H.HomeServer('HT', 0, '127.0.0.1', rows=lambda: [], roots=lambda: [], vitals=mock.Mock(), stamp=lambda: stamps[0])
+        try:
+            url = f'http://127.0.0.1:{srv.server_address[1]}/projects?t=HT'
+            got = json.loads(get(url)[1])
+            eq((got['page'], got['restart_needed']), (W.PAGE_PRINT, False), 'Home answers its page too')
+            stamps[0] = ('b', 2)
+            eq(json.loads(get(url)[1])['restart_needed'], True, 'a Home that cannot restart itself says so')
+            check(not own.restart_needed(), 'one that restarts by itself needs no person')
+        finally:
+            srv.stop()
+            own.server_close()
+    if not shutil.which('node'):
+        print('  (no node here: the popup script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(NEWS_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the popup', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq((o['same'], o['oldRun'], o['raw']), ([True, ''], [True, ''], True), 'the same page, or a run that names none: no popup')
+    check(not o['newer'][0] and 'A new version of this page is ready' in o['newer'][1] and 'data-newsrefresh' in o['newer'][1]
+          and 'data-newslater' in o['newer'][1], 'another page, the version the same: the popup', o['newer'])
+    eq((o['later'][0], o['next'][0], o['laterKept']), (True, False, True), 'Later holds for that page, over a reload too; the next one shows')
+    check('Restart the run to use it' in o['restart'][1] and 'data-ctl="restart"' in o['restart'][1], 'a restart is needed', o['restart'])
+    eq(o['sure'].count('SURE'), 1, 'its button asks first')
+    check('data-ctl' not in o['noctl'] and 'start it again' in o['noctl'], 'a run without the control: what to do', o['noctl'])
+    eq(o['restartLater'], [True, False], 'Later holds for this run of the code')
+    eq(o['noReload'], 0, 'nothing of that reloads the page')
+    eq(o['kept'], [1, ''], 'Refresh with a draft and an outbox reloads')
+    eq(o['back'], [{'set:project:x': '5', 'setq': 'cap'}, True, 'a dark mode', '/x', 'c2', {'a': 1},
+                   [{'name': 'p.png', 'path': '/up/p.png'}]], 'and what was written comes back')
+    eq((o['once'], o['nothing']), ('', [[1, ''], '']), 'once; with nothing written nothing is kept')
+    for k, word in (('uploading', 'uploading'), ('mic', 'mic'), ('dict', 'mic'), ('unkept', 'cannot keep'), ('dead', 'cannot keep'),
+                    ('deadOb', 'cannot keep')):
+        check(o[k][0] == 0 and word in o[k][1], f'{k}: Refresh waits and says why', o[k])
+    check(o['form'][0][0] == 0 and 'device form' in o['form'][0][1] and not o['form'][1], 'a device form holds it, and its secret is never kept', o['form'])
+    check('data-newsrefresh' in o['home'][0] and 'Restart Runner Home' in o['home'][1] and 'data-ctl' not in o['home'][1], 'the same on Home', o['home'])
 
 
 def test_talk_f93(tmp: Path) -> None:
@@ -1116,7 +1177,7 @@ const speechSynthesis = window.speechSynthesis;
 class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
 const navigator = {language: 'en-US'};
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
-const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk', TALK_OLD = 'ar-talkold', TALK_START = 'ar-talkstart';
+const toast = () => {}, render = () => {}, tq = p => p, TALK_KEY = 'ar-talk', TALK_OLD = 'ar-talkold', TALK_START = 'ar-talkstart';
 const talkKept = () => store.get(TALK_KEY), talkKeep = v => store.set(TALK_KEY, v);  // B177
 const keepSent = () => {}, sessionOf = () => null, newCid = () => 'k';  // B154
 const loadVoices = () => {};  // F158
@@ -2392,7 +2453,7 @@ const window = {};
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: [], ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
-const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
+const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
@@ -3543,7 +3604,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const said = [], toast = t => said.push(t), render = () => {}, tq = p => p, esc = t => String(t);
 const els = {}, $ = k => els[k] = els[k] || {}, setHTML = (el, h) => { el.h = h };
-const emptyCard = t => t, card = h => h, followVersion = () => false, pageTitle = () => '', HOME_PAGE = false, document = {}, I = {chev: ''}, stepWait = {};
+const emptyCard = t => t, card = h => h, pageTitle = () => '', HOME_PAGE = false, document = {}, I = {chev: ''}, stepWait = {};
 const working_ = () => [], talkWaitName = () => '', chats = () => [], open = n => { S.thread = n };
 const carrySent = () => {}, addSent = () => {};
 let reply = null, status = 200, posts = [];
@@ -3621,7 +3682,7 @@ function load(o) {
 const log = {draws: [], settings: 0, spoke: [], heard: 0, on: {}};
 const HOME_PAGE = false, location = {pathname: o.path || '/p/a/', search: '?t=x', hash: o.hash || ''}, document = {title: o.title || 'a · runner', querySelector: () => null};
 const history = {replaceState(a, b, u) { log.url = u; location.hash = '' }}, addEventListener = (t, f) => { log.on[t] = f };
-const setTimeout = () => { log.focus = (log.focus || 0) + 1 }, tq = p => p, followVersion = () => false, toast = () => {}, esc = t => String(t), LOGO = () => '', md = t => t, I = {chev: ''};
+const setTimeout = () => { log.focus = (log.focus || 0) + 1 }, tq = p => p, takeTyped = () => {}, toast = () => {}, esc = t => String(t), LOGO = () => '', md = t => t, I = {chev: ''};
 const fetch = async p => ({json: async () => (o.feeds || {})[decodeURIComponent(p.split('/')[1])] || {ok: false, name: decodeURIComponent(p.split('/')[1]), entries: [], out: 'none'}});
 const S = {snap: {sessions: [], needs: []}, view: 'home', thread: null, ctx: null, feeds: {}, sent: o.sent || {}, ob: o.ob || [], openSteps: {}, gone: {}, waitNew: null};
 const OB = {}, drain = () => {}, working_ = () => [], keepSent = () => {}, loadSettings = () => { log.settings++ }, loadTools = () => {};
@@ -4090,7 +4151,7 @@ if __name__ == '__main__':
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_page_copy_publish), in_tmp(test_parked),
-                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
+                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_news_f149),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),

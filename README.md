@@ -94,7 +94,7 @@ and run log offering `agent-runner home install`. Its projects and token are in 
 > `plan brief` and `run --dry-run` without starting an agent. `examples/demo.sh --run` also does one real task.
 
 Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) any time: a running run restarts itself on the new
-version and adopts its sessions (not on Windows, nor across a major version). Or pin a
+version and adopts its sessions (not on Windows, nor across a major version; with `[run] auto_upgrade = false` nothing restarts by itself). Or pin a
 [release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install
 git+https://github.com/FIZL0/agent-runner@v<version>`. On Windows each slot runs in a ConPTY pseudo-console with no
 window (Windows 10 1809 and later; before that, a console that starts hidden, which `agent-runner attach s2` shows). On
@@ -153,7 +153,7 @@ in one step. Edits already made in the main checkout: add `--here`, and they mov
 **Stopping.** Type `s` + Enter in the run view (`agent-runner attach`, or the terminal `run 3` runs in), or
 run `agent-runner stop`. Nothing new starts; the
 running tasks finish and merge, then the run exits (`s` again takes it back). `s!` (`stop --force`) ends the
-sessions now instead, each to resume in the next run. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `[run] auto_upgrade`, on by default, does it once a release is out), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
+sessions now instead, each to resume in the next run. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `[run] auto_upgrade`, on by default, does it once a release is out, and off, nothing restarts by itself), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
 `x` suspend or shut the computer down once the run stops (or goes idle); `?` lists the keys. To leave the
 machine to it from the start, run with `--shutdown` or `--suspend`.
 

@@ -130,7 +130,8 @@ DEFAULTS: dict = {
         'control_ask': '2h',    # quiet this long on a question marked with a last line `DECIDE: …` (F135):
                                 # filed under Needs you as a DECIDE item, then closed. false: such a session stays open
         'auto_upgrade': True,   # upgrade agent-runner by itself when a newer release is out, once no merge runs,
-                                # and restart the run on it (as `u` does, without the key); false: only `u` does
+                                # and restart the run on it (as `u` does, without the key), also when a source
+                                # checkout's agent_runner code changed on main; false: only `u` or a restart does
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
         'wizards': True,        # an agent blocking with BLOCKED: (a login, cert, secret) writes a bash wizard

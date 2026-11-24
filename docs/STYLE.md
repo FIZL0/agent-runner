@@ -134,6 +134,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   `data-k` on screen stays where it was. At the very top, new things show.
 - **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session takes the frame's bottom first (its chips, box and top bar go, and the thin strip stays), then the session scrolls.
 - Going to a view starts at its top; coming back to one you left returns to where you were.
+- **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form is not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
 - A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll.

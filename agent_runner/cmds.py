@@ -295,7 +295,7 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
 def cmd_upgrade(argv: list[str], prog: str = f'{RUNNER} upgrade') -> int:
     """B49 `agent-runner upgrade`: what `u` in the run view does, from any terminal or a control session.
     It runs `upgrade` (pipx, uv tool, or a pull, per `upgrade_argv`) here; a run that is up sees the new version
-    on disk and restarts on it by itself (`restart_if_upgraded`), as after `u`."""
+    on disk and restarts on it by itself (`restart_if_upgraded`), as after `u`; with auto_upgrade off it is asked to."""
     ap = argparse.ArgumentParser(prog=prog, description='Upgrade agent-runner (pipx, uv tool, or a git pull in '
                                  'its clone); a run that is up restarts on the new version by itself.')
     ap.parse_args(argv)
@@ -306,6 +306,8 @@ def cmd_upgrade(argv: list[str], prog: str = f'{RUNNER} upgrade') -> int:
     from agent_runner import __version__
     new = installed_version()
     if new and new != __version__ and run_up():
+        if not C.run['auto_upgrade'] and not plat.WINDOWS and not breaking(__version__, new):
+            send_key('restart')  # F149: off, so it restarts on nothing by itself
         print('the run that is up restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, new)
               else 'read CHANGELOG.md, then restart the run')
     return 0
