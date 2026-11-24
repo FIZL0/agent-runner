@@ -1,0 +1,6 @@
+/* F194b: the example project's walkthrough: a card in a row of its own under the view, so it covers nothing, and a ring
+   on what it points at */
+.walk{flex:none;padding:var(--s2) var(--s4);padding-left:max(var(--s4),env(safe-area-inset-left,0px));padding-right:max(var(--s4),env(safe-area-inset-right,0px));border-top:1px solid var(--line)}
+.walkcard{max-width:688px;margin:0 auto;gap:var(--s2);border-color:var(--accent)} .walkcard .btn{min-height:var(--tap)} .walkcard .end{margin-left:auto}
+.app.kb .walk{display:none}
+[data-walkat]{outline:2px solid var(--accent);outline-offset:2px} .sec[data-walkat]{border-radius:var(--r-s)}

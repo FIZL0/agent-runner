@@ -247,6 +247,8 @@ each run at `/p/<project>/`. Without it, the first run up serves its own page on
 second run listens on 127.0.0.1 only, and its status and run log offer `agent-runner home install`. `home status` shows whether it is installed and serving;
 `home add PATH` lists a project outside `~/repos`. See the README's Runner Home section.
 
+With no projects, Home's page offers Try the example project beside Add a project (`POST /example`). It makes `~/agent-runner-demo` (or takes the one already there), lists it and opens its page; nothing starts.
+
 Trusted networks (F136): `home trust add NETWORK` (remove NETWORK: stop) lets a client on a CIDR, or on `tailnet`
 (100.64.0.0/10 and fd7a:115c:a1e0::/48), open Home or a run's page without `?t=`. The list is Home's `trusted_networks`
 in `home.json`, and `home status` lists it; it takes effect with no restart. Through Home a run's page uses that list,
@@ -327,7 +329,7 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   lands while another is read waits for it. iOS can skip a sound's end event, so once a second while a reply is read the page
   checks that sound is really playing (run speech, the browser's voice, and again when the page is shown) and clears the
   speaking state when it is not: the browser's voice quiet for 2 checks (4 if it never began) or with no start in 10 s, or a clip paused or not moving for 10 s; the next waiting reply is then read. A reply is read in few clips: its first sentence alone, then about 200 letters, then 400 each. While a reply is read, a second element plays silence so a Bluetooth route stays open between clips; the audio session is play-and-record for the mic and playback once it ended (browsers with navigator.audioSession, iOS). A pause nobody asked for (a call, a route change) is undone once per reply, unless a mic listens; a second one ends the reply, and the lock screen's or the earbuds' pause stops it. A clip request with no answer is tried again twice (after 0.5 s and 2 s; once when none came in 25 s); what was fetched plays on, then the phone's voice reads the rest of that reply, so it is heard to its end, and a toast says "No connection to the run; reading with the phone's voice" (the next reply tries run speech again). An engine's own failure is not retried. With no engine installed, or when one fails, the browser's own speech reads.
-- **Sidebar.** All projects (through Runner Home), Talk, Home (with the Needs you count), Status, Plan, Concepts, Tools and Settings. Chats are the
+- **Sidebar.** All projects (through Runner Home), Talk, Home (with the Needs you count), Status, Plan, Concepts, Tools and Settings. On the example project only, a Walkthrough row brings back the walkthrough of seven cards that point at a run's parts. Chats are the
   control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
   and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (a pinned or a renamed one is left alone by the run; by hand any chat can go Quiet or be deleted). Opening a quiet chat does not move it; it comes up again only when something new is said in it, or it is pinned or renamed. Double-click a chat's name (on a phone: its ⋯ in the row, then Rename) to rename it; the name is yours, so the
   run neither closes that chat when idle nor renames it. Agents working are the slots on a task. On a phone the
