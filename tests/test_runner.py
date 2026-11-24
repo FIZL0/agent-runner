@@ -4276,7 +4276,7 @@ def test_research_findings_only(repo: Path):
         check(P.research('Q1', own) and not P.research('R1', own), 'a repo\'s own kinds mark research by meaning')
         (repo / rel).write_text(before.replace('### Later\n', '### Later\n\n- [ ] **R7** how slow is the parser\n'
                                                '- [ ] **R8** why the printer drops lines (no merge anyway '
-                                               'without a person)\n'), encoding='utf-8')
+                                               'without a person)\n- [ ] **R6** read every label\n'), encoding='utf-8')
         git(repo, 'commit', '-qm', 'test: R7, R8', '--', rel)
         p = R.prompt_for('R7', 1, 1, repo, 'main')
         has(p, r'R7 is a research task.*`plan/\*\*`.*`docs/research/\*\*`.*plan add.*change no code',
@@ -4294,12 +4294,55 @@ def test_research_findings_only(repo: Path):
               'nothing of it lands')
         a = [x for x in P.asks(repo / rel) if x[1] == 'R8']
         eq([x[0] for x in a], ['DECIDE'], 'it blocks on a person')
-        has(a[0][3] if a else '', r'r8\.py.*`follow-up`.*`merge anyway`', 'naming the code files and the two answers')
+        ask = a[0][3] if a else ''
+        has(ask, r'^And a fix\. .*finished, but held because R8 was research.*Ship these changes\? '
+                 r'\[Ship them \(recommended\) / Queue them as their own task\]$',
+            'in plain words, ending in the two buttons, the first recommended')
+        check('r8.py' not in ask and 'wip/' not in ask, 'no file names in the question', ask)
+        has((repo / rel).read_text(encoding='utf-8'), r'it changes r8\.py; the work is kept on wip/R8', 'they are in the detail')
+        from agent_runner import need_detail
+        eq(need_detail.decide_options('R8', ask)[0], [{'name': 'Ship them', 'rec': True},
+           {'name': 'Queue them as their own task', 'rec': False}], 'and the buttons read')
         eq(git(repo, 'status', '--porcelain', '--', rel), '', 'committed')
-        P.unblock('R8', 'merge anyway', todo=repo / rel)
+        item = next(l for l in P.lines(repo / rel) if '**R8**' in l)
+        old = (f'R8 is research, but its diff changes code (r8.py), so it did not merge. Answer `follow-up` (x) or '
+               f'`merge anyway` (y); the attempt is parked on wip/R8')
+        for said, ships in (('Ship them', True), ('Ship them: keep the log, don\'t queue it', True), ('yes', True),
+                            ('', True), ('merge anyway', True), ('Merge anyway.', True), ('go ahead', True),
+                            ('follow-up', False), ('Queue them as their own task', False), ('no', False),
+                            ('do not ship them', False), ('looks good, ship it', True), ('merge the findings only', False),
+                            ('ship them?', False), ('ok but wait for V3', False), ('yes, but as its own task', False),
+                            ('Queue them as their own task: not merge anyway', False)):
+            for q in (f'DECIDE {ask}', f'DECIDE {old}'):
+                for done in ([f'your answer ({q}): {said or "done"}'] + ([f'you said, on {q}: do this instead: {said}'] if said else [])):
+                    eq(P.research_ships(f'- [ ] **R8** t — {done}', 'R8'), ships, f'the answer {said!r}: {done[:60]}')
+        both = f'- [ ] **R8** t — your answer (DECIDE {ask}): Ship them — your answer (DECIDE {ask}): follow-up'
+        check(not P.research_ships(both, 'R8'), 'the last answer decides')
+        check(not P.research_ships('- [ ] **R8** t — your answer (DECIDE merge anyway or wait?): wait', 'R8'),
+              'nor does another question that says merge anyway')
+        check(P.research_ships('- [ ] **R8** t | files: a.py — The person\'s answer is merge anyway: bring it', 'R8'),
+              'a note that says merge anyway still ships')
+        P.confirm('R8', 'follow-up', todo=repo / rel)
         git(repo, 'commit', '-qm', 'test: R8 answered', '--', rel)
-        eq(R.merge('R8', 'main'), None, 'answered `merge anyway`, the same diff merges')
+        has(R.merge('R8', 'main') or '', r'blocked on a person', 'a quoted question answered follow-up does not merge')
+        P.confirm('R8', 'yes', todo=repo / rel)
+        git(repo, 'commit', '-qm', 'test: R8 answered yes', '--', rel)
+        eq(R.merge('R8', 'main'), None, 'answered yes, the same diff merges')
         eq((repo / 'r8.py').read_text(), '# fixed\n', 'code and all')
+        P.change('R6', 'it should also fix the wording', todo=repo / rel)
+        git(repo, 'commit', '-qm', 'test: R6 changed', '--', rel)
+        commit_on(repo, 'R6', {'r6.py': '# worded\n'}, 'R6: new wording\n\nasked for: "also rewrite the parser"')
+        check(R.research_asked('R6', 'main', next(l for l in P.lines(repo / rel) if '**R6**' in l)) == '',
+              'words the person never said ask for nothing')
+        commit_on(repo, 'R6', {'r6.py': '# worded\n'}, 'R6: new wording\n\nasked for: "it should also fix the wording"')
+        eq(R.merge('R6', 'main'), None, 'code the person\'s change asked for is not held')
+        line = '- [ ] **R5** measure it and fix the label — do note that the docs are old'
+        for words, told, where, want in (('measure it and fix the label', '', line, True),
+                                         ('also rename the button', 'please also rename the button\n', line, True),
+                                         ('note that the docs', '', line, False), ('the label', '', line, False),
+                                         ('measure it and fix the label', '', line.replace('** ', '** (follow-up, normal) '), False)):
+            eq(bool(P.asked_for(f'x\n\nasked for: "{words}"', P.person_words(where, 'R5', told=told))), want,
+               f'request, tell, agent\'s note, two words, a follow-up: {words}')
         R.C.raw['plan']['kinds'] = own
         commit_on(repo, 'R9', {'r9.py': '# tidied\n'}, 'R9: a refactor in a repo where R is not research')
         eq(R.merge('R9', 'main'), None, 'a kind that is not research merges code as before')
@@ -4309,7 +4352,7 @@ def test_research_findings_only(repo: Path):
             R.C.raw['plan'].pop('kinds', None)
         else:
             R.C.raw['plan']['kinds'] = saved_kinds
-        for b in ('task/R7', 'task/R8', 'task/R9'):
+        for b in ('task/R6', 'task/R7', 'task/R8', 'task/R9'):
             if git(repo, 'branch', '--list', b):
                 git(repo, 'branch', '-D', b)
         if (repo / rel).read_text(encoding='utf-8') != before:

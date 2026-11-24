@@ -659,10 +659,20 @@ means, not its letter: `R` in the default kinds, and any letter whose meaning in
 starts with "research" (`Q = "research: …"`). The merge lands such a branch only when every file it changes
 is findings: the plan directory, the journal (`[plan] journal`) or `[run] findings` (default
 `docs/research/**` and `research/**`; `!glob` takes one back). A research diff that touches any other file
-is not merged: the branch is parked on `wip/<ID>` and the task blocks with `DECIDE: R7 is research, but its
-diff changes code (a.py, …)`, listed under Needs you. Answer `follow-up` (the next attempt's brief tells it
-to file the code from `wip/<ID>` as its own task and commit the findings alone) or `merge anyway`: with those
-words in a note on the task (after ` — `, not in its title), its next merge lands the code too (F36).
+is not merged: the branch is parked on `wip/<ID>` and the task
+blocks under Needs you with a DECIDE that says what the change does (the first line of `release-notes/<ID>.md`
+on the branch, else the done message, else the title), that it is finished but held because the task was
+research, and what each answer does. It ends in two buttons: `Ship these changes? [Ship them (recommended) /
+Queue them as their own task]`. The file names and `wip/<ID>` are in the detail after ` — ` on the task's
+line. `Ship them` (a plain yes, or `merge anyway`): the next attempt brings the code over and its merge lands
+it. `Queue them as their own task` (`follow-up`): the next attempt files the code as its own task and commits
+only the findings. The last answer decides; anything unclear is asked again. Only the answer's own words are
+read, so a note that quotes the question does not count, but a plain note that says `merge anyway` still
+lands the code (F36). The question is not asked at all when the person's own words asked for the code: the
+brief has the agent put a line `asked for: "<their exact words>"` (three or more words) in the commit
+message, and the merge checks that those words stand in the task's request (its line or long form, unless an
+agent filed it as a follow-up), a person's change or answer, or a `plan tell` (kept in `<notes>/told/<ID>.txt`).
+An unmatched quote is ignored and the person is asked.
 
 ## The task list
 

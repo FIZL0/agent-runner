@@ -1393,7 +1393,87 @@ def research(tid: str, kinds_map: dict[str, str] | None = None) -> bool:
     return bool(m) and bool(RESEARCH.match(str(k.get(m.group(1), ''))))
 
 
-MERGE_ANYWAY = re.compile(r'\bmerge[ -]anyway\b', re.I)  # F36: a person's answer that lands a research diff's code
+# F36, B221: the question a research task whose diff changes code puts to the person, and what their answer says
+SHIP, QUEUE = 'Ship them', 'Queue them as their own task'
+RESEARCH_BUTTONS = f'[{SHIP} (recommended) / {QUEUE}]'  # ends the question; its quote in an answer's note ends so too
+MERGE_ANYWAY = re.compile(r'\bmerge[ -]anyway\b', re.I)
+_SHIP_NAME = re.compile(r'(?:ship them|merge[ -]anyway)\s*(?:$|[:.,;!(])', re.I)  # the button, words after it or not
+_SHIP_WORDS = re.compile(r'^(?:yes|yep|yeah|y|ok|okay|sure|done|go|ship|merge)\b|\b(?:go ahead|ship (?:it|them))\b', re.I)
+_QUEUE_WORDS = re.compile(r'\bqueue\b|\bfollow[ -]?up\b|\bown task\b', re.I)
+_NOT = re.compile(r"\b(?:no|not|never|dont|wont|without|only|findings|but|later|wait|first|until)\b|n['’]t\b|\?", re.I)  # no plain yes
+_NOT_MERGE = re.compile(r"(?:\b(?:no|not|never|dont|without)|n't)\s+(?:\w+\s+){0,2}merge[ -]anyway", re.I)
+_PERSON_NOTE = re.compile(r'(your answer|confirmed by you) \(|you said(?:, on (?:stuck|CONFIRM|DECIDE|BLOCKED) |: )')
+
+
+def research_choice(said: str) -> str:
+    """What the answer `said` to the research question chooses: 'ship', 'queue', or '' when it is neither."""
+    said = ' '.join(said.split()).strip('`\'"')
+    if _SHIP_NAME.match(said):
+        return 'ship'
+    if _QUEUE_WORDS.search(said):
+        return 'queue'
+    return 'ship' if _SHIP_WORDS.search(said) and not _NOT.search(said) else ''
+
+
+def _note_parts(item: str) -> list[str]:
+    """The parts of a task's text `item`: its own line first, then each note; not what it is blocked with."""
+    return item.split(' BLOCKED: ')[0].split(' — ')
+
+
+def _own_words(part: str, tid: str) -> tuple[str, bool] | None:
+    """(the person's own words in the note `part`, whether they answer `tid`'s research question), the question it
+    quotes left out; None when the note is not one `confirm` or `change` wrote."""
+    part = part.strip()
+    if not (m := _PERSON_NOTE.match(part)):
+        return None
+    for end in (RESEARCH_BUTTONS, f'the attempt is parked on wip/{tid}'):  # the second: an ask from before B221
+        if m[0] != 'you said: ' and (at := part.find(end)) >= 0:
+            return re.sub(r'^\)?:\s*(?:do this instead:\s*)?', '', part[at + len(end):]), True
+    cut = '): ' if m[1] else 'do this instead: '
+    return part.rsplit(cut, 1)[-1] if cut in part else '', False
+
+
+def research_ships(item: str, tid: str) -> bool:
+    """B221: does the last decision on task `tid`'s text `item` land its research diff's code: an answer to the
+    question (`research_choice`), or a note that says `merge anyway`. A question quoted in a note decides nothing."""
+    ships = False
+    for part in _note_parts(item)[1:]:
+        own = _own_words(part, tid)
+        said, ours = own or (part, False)
+        if ours:
+            ships = research_choice(said) == 'ship'
+        elif MERGE_ANYWAY.search(said) and not _NOT_MERGE.search(said):
+            ships = True
+    return ships
+
+
+ASKED_FOR = re.compile(r'^asked for: *["“]?(.+?)["”]? *$', re.I | re.M)  # a commit message line: the person's words
+
+
+def told_file(c, tid: str) -> Path:
+    """B221: what `tell` passed on to the agent of `tid`, kept because no plan line has it."""
+    return c.notes('told', f'{tid}.txt')
+
+
+def person_words(item: str, tid: str, long: str = '', told: str = '') -> str:
+    """Everything the person said about task `tid`: its request (its line and long form `long`, unless an agent filed
+    it as a follow-up), their answers and changes, and what was `told`."""
+    parts = _note_parts(item)
+    said = [] if not parts or PRI_TAG.search(parts[0]) else [parts[0], long]
+    said += [own[0] for p in parts[1:] if (own := _own_words(p, tid))]
+    return '\n'.join([*said, told])
+
+
+def asked_for(messages: str, words: str) -> str:
+    """B221: the first `asked for: "<words>"` line of the commit `messages` that quotes the person's `words` (three
+    words or more, as they stand there); '' for none."""
+    flat = lambda s: ' '.join(re.sub(r'[`"\'“”‘’]', '', s).casefold().split())  # noqa: E731
+    heard = [flat(x) for x in words.split('\n')]
+    for m in ASKED_FOR.finditer(messages):
+        q = flat(m[1]).rstrip('.…')
+        if len(q.split()) >= 3 and any(q in h for h in heard):
+            return m[1]
+    return ''
 
 
 def build_kind() -> str:
@@ -2186,6 +2266,9 @@ def tell(c, tid: str, text: str, how: str = 'tell', wait: float | None = None) -
         got = json.loads(said) if said is not None else None
     except ValueError:
         got = None
+    if not isinstance(got, dict) or got.get('told'):
+        with open(told_file(c, tid), 'a', encoding='utf-8') as f:  # B221
+            f.write(' '.join(text.split()) + '\n')
     if isinstance(got, dict):
         return bool(got.get('told')), str(got.get('msg', ''))
     return None, f'asked the run to pass it on to {where} ({tid}); it has not answered yet (`{c.command} since` shows it)'
