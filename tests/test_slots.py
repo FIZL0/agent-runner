@@ -20,7 +20,8 @@ def test_theme(tmp: Path) -> None:
     (tmp / 'plan').mkdir()
     (tmp / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
     S.init(tmp)
-    want = {'theme': 'custom:agent-runner', 'spinnerTipsEnabled': False, 'prefersReducedMotion': True}
+    want = {'theme': 'custom:agent-runner', 'spinnerTipsEnabled': False, 'prefersReducedMotion': True,
+            'bashEditDiffEnabled': False}
     flags = slots.Claude().flags('sid', 'opus', 90, False, False)
     got = json.loads(flags[flags.index('--settings') + 1])
     eq({k: got.get(k) for k in want}, want, 'a slot')
