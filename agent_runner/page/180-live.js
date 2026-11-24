@@ -279,7 +279,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-stepcopy]')){const pre=$('sheet').querySelector(`[data-stepcmd="${x.dataset.stepcopy}"]`);if(!pre)return;
     try{await navigator.clipboard.writeText(pre.textContent);toast('Copied')}catch(err){const r=document.createRange();r.selectNodeContents(pre);const g=getSelection();g.removeAllRanges();g.addRange(r);toast('Selected: copy it with your own Copy')}return}
   if(x=q('[data-reply]')){needReply(x.dataset.reply);return}
-  if(x=q('[data-about]'))return about(x.dataset.about);
+  if(x=q('[data-about]'))return plusHeld(x)?undefined:about(x.dataset.about);
   if(x=q('[data-quick]')){S.ctx=null;const t=x.textContent.trim();  // B139: a new chat
     newChat('quick_ask',{key:x.dataset.quick},t,t);return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
@@ -360,7 +360,8 @@ document.addEventListener('beforeinput',e=>{
 document.addEventListener('input',e=>{if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true);if(e.target.dataset.f.startsWith('give')&&String(S.sure||'').startsWith('give:')){S.sure=null;render(true)}}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
-$('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
+$('file').addEventListener('cancel',holdPlus);
+$('file').addEventListener('change',e=>{holdPlus();[...e.target.files].forEach(upload);e.target.value=''});
 document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files'))e.preventDefault()});
 document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length){e.preventDefault();[...e.dataTransfer.files].forEach(upload)}});
 /* F114: a key of the row keeps the box's focus (and its keyboard) */

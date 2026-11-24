@@ -1540,5 +1540,56 @@ def test_drop_confirm_id_b191(tmp: Path) -> None:
     eq(other, '', 'another item asks nothing')
 
 
+PLUS_DRIVER = r"""
+const page = require('fs').readFileSync(0, 'utf8'), on = {};
+const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+let now = 0, timers = [], busy = false, opened = [], uploads = 0, btn = {disabled: false};
+const setTimeout = (f, ms) => { timers.push({f, at: now + ms, id: timers.length + 1}); return timers.length };
+const clearTimeout = id => { timers.forEach(t => { if (t.id === id) t.at = Infinity }) };
+const go = ms => { now += ms; timers.forEach(t => { if (t.at <= now) { t.at = Infinity; t.f() } }) };
+const S = {view: 'home', thread: null, snap: {}}, I = {plus: ''}, HOME_PAGE = false;
+const $ = () => ({addEventListener: (t, f) => { on[t] = f }}), upload = () => { uploads++ }, about = a => { opened.push(a) };
+const document = {querySelector: s => s === '.plus[data-about="new"]' ? btn : null};
+const render = () => { if (!busy) { btn.disabled = plusBtn().includes(' disabled') } };
+const press = (what, plus) => { const el = {dataset: {about: what}, matches: s => plus && s === `.plus[data-about="${what}"]`}; opened = []; CLICK(el); return opened };
+eval(line('let PLUS_HOLD=') .replace('let', 'var') + grab('function holdPlus(') + line('function plusHeld(') + grab('function plusBtn(')
+  + line("$('file').addEventListener('cancel'") + line("$('file').addEventListener('change'")
+  + 'var CLICK=el=>{let x;const q=()=>el;' + line("  if(x=q('[data-about]'))") + '}');
+const pick = t => on[t]({target: {files: [1, 2], value: 'x'}});
+const see = () => { render(); return [btn.disabled, press('new', true).length] };
+const o = {before: see()};
+for (const t of ['change', 'cancel']) { S.view = t === 'change' ? 'home' : 'plan'; pick(t); const a = [see()]; go(990); a.push(see()); o[t + 'Chip'] = [press('new', false).length, press('newconcept', true).length, press('plan:F1', false).length]; go(20); a.push([btn.disabled], see()); o[t] = a }
+o.uploads = uploads;
+pick('change'); go(600); pick('change'); go(600); o.again = [see()]; go(500); o.again.push(see());
+busy = true; btn.disabled = false; pick('change'); o.busy = [press('new', true).length]; btn.disabled = true; go(1010); o.busy.push(btn.disabled, press('new', true).length);
+busy = false; pick('change'); S.view = 'concepts'; o.other = plusBtn().includes(' disabled');
+console.log(JSON.stringify(o));
+"""
+
+
+def test_plus_hold_b213(tmp: Path) -> None:
+    """B213: for a second after the file picker closes, + Task (Home, Plan) is disabled and opens nothing, also across
+    a redraw; then it works again by itself. Other buttons and the attachments are not held."""
+    if not shutil.which('node'):
+        print('  (no node here: the + Task hold test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(PLUS_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js')], input=W.PAGE.read_text(encoding='utf-8'),
+                       capture_output=True, text=True, encoding='utf-8', timeout=60)
+    check(r.returncode == 0, 'node presses + Task', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['before'], [False, 1], 'no picker: + Task opens the new task chat')
+    for t in ('change', 'cancel'):
+        eq(o[t], [[True, 0], [True, 0], [False], [False, 1]], f'{t}: held for a second, redraws too, then works by itself')
+        eq(o[t + 'Chip'], [1, 1, 1], f'{t}: no other button is held')
+    eq(o['uploads'], 2, 'the picked files are added at once')
+    eq(o['again'], [[True, 0], [False, 1]], 'a second pick holds it for a second from then')
+    eq(o['busy'], [0, False, 1], 'while draws wait (a finger down, a selection) it is held and let go all the same')
+    eq(o['other'], False, 'another view\'s + is not disabled')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_new_chat), in_tmp(test_esc_ctrl_c), in_tmp(test_delete_chats_f118), in_tmp(test_slash_menu_b119), in_tmp(test_chat_keys_b200), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181), in_tmp(test_interrupt_c1_b141), in_tmp(test_chat_order_f133), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191), in_tmp(test_plus_hold_b213)]))
