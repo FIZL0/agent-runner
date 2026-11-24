@@ -63,7 +63,7 @@ SHEETS.device=()=>{
     ${devText('description','What it is, what it is for, and its rules (agents read this; no secrets here)',{area:4})}
     ${devPick('kind','How agents reach it',[['ssh','SSH'],['other','Another way (a command or address)']])}
     ${ssh?`${d.aliases.length||toolVal('alias')?devPick('alias','Host',[['','Its own host, below'],...[...new Set([...(toolVal('alias')?[toolVal('alias')]:[]),...d.aliases])].map(a=>[a,`${a}, in ~/.ssh/config`])]):''}${toolVal('alias')?'<div class="small">Signs in as ~/.ssh/config says. No secret is copied.</div>':devText('host','Host name or address',{hint:'macmini.local'})+devText('user','User')+devText('port','Port',{num:true,hint:'22'})}`
-    :devText('reach','The command or address it uses',{hint:'vnc://rig.local:5900'})}
+    :devText('reach','The command or address it uses',{hint:'vnc://rig.local:5900'})+devText('page','Web page to open, if it has one',{hint:'http://rig.local:8080'})+devText('start','Command that starts the page, if it needs one',{hint:'npm start'})+devText('folder','Working directory of that command',{hint:'~/repos/rig'})}
     <label class="row setline"><span class="grow">Only one task may use it at a time</span><input type="checkbox" role="switch" class="sw" data-f="${toolField('exclusive')}" aria-label="Only one task may use it at a time" ${toolVal('exclusive')==='true'?'checked':''}></label>
     ${toolSaid(n)}<div class="btns"><button class="btn pri${toolBusy('save',n)}" data-tool="save" data-name="${esc(n)}">Save</button><button class="btn" data-closesheet>Cancel</button></div>`;
 };
@@ -84,7 +84,7 @@ SHEETS.devsecrets=()=>{
 };
 function toolEdit(t){
   toolForget();S.toolSaid={};
-  for(const k of ['name','description','alias','host','user','reach'])S.f[toolField(k)]=t&&t[k]||'';
+  for(const k of ['name','description','alias','host','user','reach','page','start','folder'])S.f[toolField(k)]=t&&t[k]||'';
   S.f[toolField('kind')]=t?t.kind:'ssh';S.f[toolField('port')]=t&&t.port?String(t.port):'';S.f[toolField('exclusive')]=String(!!(t&&t.exclusive));
   openSheet('device',t?t.name:'');
 }
@@ -102,7 +102,7 @@ async function toolClick(x){
     try{await navigator.clipboard.writeText(pre.textContent);toast('Copied')}catch(e){const r=document.createRange();r.selectNodeContents(pre);const g=getSelection();g.removeAllRanges();g.addRange(r);toast('Selected: copy it with your own Copy')}return}
   if(tool==='save'){
     const a={op:'save',name:toolVal('name').trim(),...(name?{edit:name}:{})};
-    for(const k of ['description','kind','alias','host','user','port','reach'])a[k]=toolVal(k);
+    for(const k of ['description','kind','alias','host','user','port','reach','page','start','folder'])a[k]=toolVal(k);
     a.exclusive=toolVal('exclusive')==='true';
     const j=await toolPost(a,name);if(j&&j.ok){closeSheet();toast(j.out)}return}
   if(tool==='secret'){
