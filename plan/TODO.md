@@ -74,3 +74,4 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 ### Parked
 - [ ] **F191** (follow-up, later) Run page chats scroll smoothly: history drawn by the page, the live session at the bottom (split into parts) | files: agent_runner/web_page.html, tests/test_web.py
 - [ ] **F194** (follow-up, later) The example project and a first-run walkthrough (split into parts) | files: agent_runner/demo.py
+- [ ] **F202** (follow-up, later) Settings apply without a restart, with Save and Undo on the Settings page (split into parts). The person, 2026-11-24: 'when changing toml can we dynamically load it and have a save and undo button on the settings page instead of having to restart the run when a setting is changed?' | files: agent_runner/config.py, agent_runner/watch.py, agent_runner/ui_model.py
