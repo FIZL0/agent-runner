@@ -112,16 +112,16 @@ def harness_once(model: str, prompt: str, cwd: Path, timeout: float, tools: str 
         argv = HARNESS.argv('', pf, sid, [*HARNESS.flags(sid, model, 0, False, True), '--tools', tools])
         r = sp.run(argv, cwd=str(cwd), env=env, stdin=sp.DEVNULL, capture_output=True, text=True, encoding='utf-8',
                    errors='replace', timeout=timeout)
-    except (OSError, sp.SubprocessError) as e:
+        said = ''
+        if r.returncode == 0 and (f := HARNESS.find_transcript(sid)):
+            for line in Path(f).read_text(encoding='utf-8').splitlines():
+                d = json.loads(line)
+                if d.get('type') == 'assistant':
+                    said = '\n'.join(b.get('text') or '' for b in d['message']['content'] if b.get('type') == 'text').strip()
+    except (OSError, ValueError, sp.SubprocessError) as e:
         return '', f'the one-shot on {model} did not run: {e}'
     finally:
         pf.unlink(missing_ok=True)
-    said = ''
-    if r.returncode == 0 and (f := HARNESS.find_transcript(sid)):
-        for line in Path(f).read_text(encoding='utf-8').splitlines():
-            e = json.loads(line)
-            if e.get('type') == 'assistant':
-                said = '\n'.join(b.get('text') or '' for b in e['message']['content'] if b.get('type') == 'text').strip()
     if said:
         return said, ''
     end = ' '.join(f'{r.stderr or ""} {r.stdout or ""}'.split())[-300:]

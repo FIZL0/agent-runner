@@ -208,7 +208,8 @@ def page_copy_job(f: Path, url: str, keyf: Path, publish) -> None:
             got = publish(f, url)
         except (OSError, sp.SubprocessError) as e:  # no agent to start, or it hung: as good as a failed publish
             if isinstance(e, FileNotFoundError):
-                page_copy_stop(f'the agent {C.run["agent"]} cannot be started; its local copy is {f}')
+                PAGE_COPY_FAILS[0] = 0  # F406e: no Claude Code here: the local copy is the answer
+                log(f'run page copy: the agent {C.run["agent"]} is not here, so no claude.ai page; the local copy is {f}')
                 return
             log(f'run page copy: {e}')
             got = ''

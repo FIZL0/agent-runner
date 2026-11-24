@@ -246,6 +246,12 @@ def test_feed_on_a_provider():
                 os.chdir(was)
                 PC.C = R.C
         check(rc == 0 and 'no claude.ai page' in out.getvalue(), 'publish-page goes through and says so', out.getvalue())
+    from agent_runner import ui_model as Q
+    row = ('CONCEPT', 'F9', 'K2', 'waiting for your OK on /concept/K2', '/concept/K2', 'a title', False, '')
+    import datetime as dt
+    concepts = Q.needs_rows([row], dt.datetime.now())[1]
+    check(len(concepts) == 1 and concepts[0]['url'] == '' and concepts[0]['copy'].endswith('K2.html'),
+          'the run page and the TUI open the local copy, with no bare link', concepts)
     args = mock.Mock(id='K2', artifact='/concept/K2', blocked=None)
     eq(done.artifact_refusal(args), None, 'done takes it as the concept\'s page')
     args.artifact = '/concept/K9'

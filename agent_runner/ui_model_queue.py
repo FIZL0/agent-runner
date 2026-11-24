@@ -367,6 +367,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
             continue
         opts, what = need_detail.decide_options(tid, what, texts.get(tid, '')) if label == 'DECIDE' else ([], what)  # F181c
         if label == 'CONCEPT':
+            url = '' if url.startswith('/concept/') else url  # F406e: no claude.ai page: `copy` is the page
             concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
             concepts[-1]['lead'] = concept_chat_text(concepts[-1])  # B219a: the run page's first message opens with it
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,

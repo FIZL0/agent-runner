@@ -2129,7 +2129,7 @@ class RunPage:
             self.type_in()
         elif self.panel == 5 and k == 'O' and it is not None and not it.get('new'):
             url = it.get('url', '')
-            if url.startswith('/') and it.get('copy'):  # F406e: no claude.ai page, so its local copy
+            if not url and it.get('copy'):  # F406e: no claude.ai page, so its local copy
                 url = Path(it['copy']).as_uri()
             self.open_link(url, it.get('title', 'the concept'))
 
