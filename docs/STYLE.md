@@ -37,7 +37,7 @@ name its own size).
 | `--r-xs --r-s --r-m --r-l --r-xl --r-full` | 4 a bar, 8 small control, 10 button and row, 16 card and sheet, 20 message box, pill |
 | `--s1` to `--s6` | 4, 8, 12, 16, 24, 32: gaps and padding |
 | `--tap` | 44px: the least a finger gets (40 in the message box's own row) |
-| `--dur-fast --dur --dur-slow --dur-spring --ease --spring --spring-soft` | motion, below |
+| `--dur-fast --dur --dur-slow --dur-bars --dur-spring --ease --spring --spring-soft` | motion, below |
 
 A state colour is never the only sign: there is a word or an icon with it. Text on `--bg` and `--surface` uses `--fg`
 or `--muted`; `--faint` is for what you can do without.
@@ -142,7 +142,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 |---|---|---|
 | `--dur-fast` | 150ms | a press, a chevron, a fade out |
 | `--dur` | 200ms | a card, row or message coming in, a cross-fade, a view's fade |
-| `--dur-slow` | 250ms | what leaves collapsing, the scrim, the project list's slide (`.sghost`), a session's bars (`.slim`) |
+| `--dur-slow` | 250ms | what leaves collapsing, the scrim, the project list's slide (`.sghost`) |
+| `--dur-bars` | 400ms | a session's bars going and coming back (`.slim`), and nothing else |
 | `--dur-spring` | 450ms | the time of either spring |
 | `--spring` | `linear()` curve, about 4% overshoot | cards, messages, pills, what glides, a press let go |
 | `--spring-soft` | `linear()` curve, no overshoot | the drawer, the sheet and views, whose edge must not show a gap |
@@ -151,7 +152,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **Springs.** Both are CSS `linear()` curves, with a `cubic-bezier` fallback for browsers without `linear()` (`@supports`).
 - **Only `transform` (and `translate`), `opacity` and `clip-path`**, with `visibility` to take a closed thing out of reach, and a switch's
-  `background-color`. Never height, width, top or margin; the scroll position is the one exception (see Scroll jumps). A transition's duration is a token; the one raw duration allowed is `0s`, delayed by a token, to swap a stand-in in or out at the end of a motion. Every `el.animate()` goes through `moAnim()`, which reads the
+  `background-color`. Never height, width, top or margin; the scroll position is the one exception (see Scroll jumps). A transition's duration is a token, or a `calc()` share of one; the one raw duration allowed is `0s`, delayed by a token, to swap a stand-in in or out at the end of a motion. Every `el.animate()` goes through `moAnim()`, which reads the
   tokens and returns nothing when `calm()`; `kbGlide()` and the velocity spring `springRun()` check `calm()` themselves, and `feedGlide()` places the frame at once under it.
   `calm()` is reduced motion or a hidden page.
 - **Views.** A chat opens: its view slides in from the right over the one that was there, and back slides it out,
@@ -189,7 +190,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   Under `calm()` both are instant.
 - **Kept.** The scrim fades. The Talk dock's mic and box cross-fade. Talk's top bar slides off when you scroll up
   (`.away`, transform only). A session's bars go over its text as the reader scrolls up
-  (`.slim`) in one motion on `--dur-slow` and `--ease`, all CSS transitions, so a reversal goes on from where it is: the top bar and a notice's row slide off the top edge and fade, the chips fade, and the message box shrinks into the slim message box (`.slimbox`) and grows back, its bottom edge still (`.slimskin`, `.slimground`, `.slimfoot`, `.dockclip`); the dock's words ride down onto the slim row's place. No line moves when they go or come back (`feedShare()` takes
+  (`.slim`) in one motion on `--dur-bars` and `--ease`, all CSS transitions, so a reversal goes on from where it is: the top bar and a notice's row slide off the top edge and fade, the chips fade, and the message box shrinks into the slim message box (`.slimbox`) and grows back, its bottom edge still (`.slimskin`, `.slimground`, `.slimfoot`, `.dockclip`); the dock's words ride down onto the slim row's place. Its inner fade (the slim box's buttons) and delay are shares of `--dur-bars` by `calc()` (.6 and .4), so top and bottom stay in step when the token changes. No line moves when they go or come back (`feedShare()` takes
   part of an upward scroll only while they are away). A chevron turns. The message box, Talk's words and the sheet glide
   (transform only) to their place when the keyboard opens or closes (`kbGlide()`). The session's frame glides in step with the message box (`feedGlide()`), on `--dur-slow` and `--ease`, from where it is on screen now; under `calm()` it is placed at once. A box growing or shrinking by lines glides too (`growGlide()`, the frame with it by `feedGrow()`; over a session the whole `.dock` glides, on the same duration and ease, not `--spring-soft`). The one exception to first load: the
   project list slides in from the left over the project's own sidebar and back out (`.sghost`, transform only,

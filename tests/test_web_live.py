@@ -1042,11 +1042,15 @@ def test_bars_over_text_b192(tmp: Path) -> None:
           and bar + '>:not(.menu){visibility:hidden}' in page,
           'B215: the menu fades with the bar and takes no taps, keyboard focus on it shows the bar')
     eq(page.count('.main.sess.slim .top'), page.count(bar), 'B215: no other rule keeps a control over the text')
-    slow = lambda *ps: ','.join(f'{p} var(--dur-slow) var(--ease)' for p in ps)  # noqa: E731
+    slow = lambda *ps: ','.join(f'{p} var(--dur-bars) var(--ease)' for p in ps)  # noqa: E731
+    check('--dur-slow:250ms; --dur-bars:400ms;' in page, 'B218a: the bars have a duration of their own')
+    bars = page[page.index("/* B218: the bars' one motion"):page.index('.main.sess.still :is(')]
+    eq('--dur-slow' in bars, False, 'B218a: top and bottom on the same one')
+    check('opacity calc(var(--dur-bars)*.6)' in bars and 'transition-delay:calc(var(--dur-bars)*.4)' in bars, 'B218a: the inner fade in proportion')
     for rule, what in (('.main.sess .top{transition:' + slow('transform', 'opacity') + '}', 'the top bar'),
-                       ('.main.sess .notices{transition:' + slow('transform', 'opacity') + ',visibility var(--dur-slow)}', "a notice's row"),
+                       ('.main.sess .notices{transition:' + slow('transform', 'opacity') + ',visibility var(--dur-bars)}', "a notice's row"),
                        ('.dock{background:none;background-color:var(--bg);transition:' + slow('translate', 'opacity') + ',', 'the message box'),
-                       ('transition:' + slow('translate', 'opacity') + ',visibility var(--dur-slow)}', 'the slim box')):
+                       ('transition:' + slow('translate', 'opacity') + ',visibility var(--dur-bars)}', 'the slim box')):
         check(rule in page, f'B218: {what} goes and comes on the one motion', rule)
     check('.main.sess.slim .notices{transform:translateY(calc(-1*var(--slimtop' in page, 'B218: a notice goes with the top bar, as one')
     check('.main.sess.still :is(' in page and "toggle('still',calm())" in page, 'B218: at once under calm()')
