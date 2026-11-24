@@ -356,7 +356,7 @@ const S = {ob: [], taskOpen: {}, sure: null, snap: {controls, queue: [v5, v6], r
 const working_ = () => [{}], cutsOff = () => '', taskRow = q => q.id, obCards = () => '', toast = () => {}, obChange = f => { S.ob = f(S.ob) }, obDrop = (b, c) => b.filter(x => x.cid !== c);
 globalThis.fetch = async () => { throw 0 };
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue='].map(line).join('')
-  + slice('const queueGroups=', '/* F185') + slice('const planReleases=', 'const planQueue=') + grab('function planCard(') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
+  + slice('const queueGroups=', '/* F185') + line('const releasesOn=') + slice('const planReleases=', 'const planQueue=') + grab('function planCard(') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
   + grab('function controlReq(') + line('function controlClick(');
 new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + `
   const out = {rel: relCard(), v5: releaseCard(env.v5), v6: releaseCard(env.v6)};
@@ -417,5 +417,61 @@ def test_task_text_f85(tmp: Path) -> None:
         srv.stop()
 
 
+MANAGE_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1);
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
+const S = {ob: [], taskOpen: {}, sure: null, snap: null};
+const no = () => '', env = {S, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
+  ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}, upNext: () => S.snap.queue, LOGO: no, greeting: no, box: no, keysLine: no, agentCard: no, esc: no};
+const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
+  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + ['planCard', 'nextReleaseCard', 'relCard', 'newReleaseCard', 'statusHTML', 'planHTML', 'homeHTML'].map(f => grab(`function ${f}(`)).join('');
+const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), statusHTML(), homeHTML()]}')(env);
+const out = JSON.parse(process.argv[3]).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw() });
+console.log(JSON.stringify(out));
+"""
+
+
+def test_manage_releases_f193(tmp: Path) -> None:
+    """F193: [run] releases off: the Plan and Status views and the run page copy say nothing of releases, an open V
+    task is in the Queue; on, they are as before. A New release already sent is still seen to its end."""
+    if not shutil.which('node'):
+        print('  (no node here: the Manage releases script test is skipped)')
+        return
+    from agent_runner import page_copy
+    fake_repo(tmp)
+    todo = S.C.todo
+    todo.write_text(todo.read_text(encoding='utf-8') + '- [ ] **V5** Ship 1.2.0 | after: all\n', encoding='utf-8')
+
+    def snap(on: bool) -> dict:
+        S.C.run['releases'] = on
+        s = U.snapshot(up=True, links={})
+        return {**s, 'lately': [], 'log': []}
+    on, off = snap(True), snap(False)
+    sent = [{'cid': 'a', 'ctl': 'release_now:', 'state': 'failed', 'say': 'Release now'}]
+    old = {k: v for k, v in on.items() if k != 'manage_releases'}
+    (tmp / 'driver.js').write_text(MANAGE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps([[on, []], [off, []], [off, sent], [on, []], [old, []]])],
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
+    (plan_on, st_on, home_on), (plan_off, st_off, home_off), (plan_sent, st_sent, home_sent), back, older = json.loads(r.stdout)
+    check('>Releases<' in plan_on and '<b>New release</b>' in plan_on and 'data-ctl="release_now"' in plan_on, 'on: Plan has them', plan_on)
+    check('>Release<' in st_on and 'data-ctl="release_now"' in st_on and 'V5' in st_on, 'on: Status too', st_on)
+    check('data-ctl="release_now"' in home_on, 'on: Home too', home_on)
+    queue = plan_on.split('>Queue<', 1)[1]
+    check('V5' not in queue and 'V5' in plan_on, 'on: V5 in Releases only', plan_on)
+    for name, html in (('Plan', plan_off), ('Status', st_off), ('Home', home_off)):
+        check(not re.search(r'release', html, re.I), f'off: {name} says nothing of releases', html)
+    check('V5 Ship 1.2.0' in plan_off.split('>Queue<', 1)[1], 'off: V5 is in the Queue', plan_off)
+    for html in (plan_sent, st_sent, home_sent):
+        check('[ob release_now:]' in html and 'New release' not in html, 'off: one already sent shows until settled', html)
+    eq((back, older), ([plan_on, st_on, home_on], [plan_on, st_on, home_on]), 'back on, and from an older run: all of it')
+    c_on, c_off = page_copy.page_copy_html(on), page_copy.page_copy_html(off)
+    check('waits for' in c_on, 'the copy, on: its release row', c_on)
+    body = c_off.split('</style>', 1)[1]
+    check(not re.search(r'release', body, re.I) and 'Ship 1.2.0' in body, 'the copy, off: an ordinary task, nothing of releases', body)
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_task_text_f85)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85)]))

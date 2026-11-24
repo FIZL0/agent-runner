@@ -84,7 +84,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Project card** (`.pcard`, `projectCard()`): one project on the Overview or in a list: its state dot and name, its
   tasks by title, what landed today. One main button (`mainBtn()`: Start run or Open); the rest is in the
   … sheet (`dotsBtn()`), never beside it.
-- **Release card** (New release, `release_wait`, `release_now`): one line of what is open, then its buttons; the question takes their place; a press with a release open asks in place, Yes then No, and a Drop on a release that has not started asks its own question first.
+- **Release card** (New release, `release_wait`, `release_now`): one line of what is open, then its buttons; the question takes their place; a press with a release open asks in place, Yes then No, and a Drop on a release that has not started asks its own question first. With Manage releases off (`releasesOn()`) it goes, and its heading with it; an open release is a task in the Queue.
 - **Walkthrough** (`.walk`, `walkDraw()`, `walkStep()`): one card at a time (`.walkcard`), only on the example project's
   page (`walkNow()` says when), never in a chat or Talk. Its row of its own under the view covers nothing, and goes while
   the keyboard is open. A 2px `--accent` ring (`[data-walkat]`) is on the real thing it points at. Back, Next and Skip

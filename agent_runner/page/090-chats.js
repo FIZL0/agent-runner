@@ -361,10 +361,13 @@ function relCard(){
   const rs=planReleases(S.snap), drops=x=>obActs(x,'queue')&&rs.some(q=>!q.placeholder&&x.ctl.endsWith(':'+q.id));
   const line=q=>{const r=q.release||q;
     return `<div class="row" data-k="rel:${esc(q.id||'next')}"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><div class="small">${esc((q.id?q.id+' · ':'')+(r.words||'')+(r.note||''))}</div></div>${q.placeholder?'':actBtns(relDrop(q),q.id)}</div>${q.placeholder?'':actSure(relDrop(q),q.id)}`};
+  if(!releasesOn(S.snap))return newReleaseCard();
   return obCards(drops)+(rs.length?card(rs.map(line).join(''),'','data-k="releases"'):'')+newReleaseCard();
 }
+/* F193: with releases off, only a New release sent before that, until it is settled */
 /* F186: New release: says which release is open already, and then asks before it queues another */
 function newReleaseCard(){
+  if(!releasesOn(S.snap))return obCards(x=>obActs(x,'release'));
   const ws=working_(), said=S.snap.release_said||'';
   const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait').map(controlOf).filter(Boolean);
   const sure=acts.filter(c=>c.confirm&&S.sure===c.key).map(c=>ctlSure(c)).join('');
@@ -378,7 +381,7 @@ function statusHTML(){
     <div class="sec">Run<span class="ln"></span></div>${controlsCard()}
     <div class="sec">Usage<span class="ln"></span></div>${use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):emptyCard('No usage read yet.')}
     <div class="sec">Landed lately<span class="ln"></span></div>${late.length?card(late.map(l=>`<div class="lrow" data-k="late:${esc(l.at+l.text)}"><span>${esc(l.text)}</span><span class="small">${esc(agoWords(l.at))}</span></div>`).join(''),'','data-k="late"'):emptyCard('Nothing has landed yet.')}
-    <div class="sec">Release<span class="ln"></span></div>${relCard()}
+    ${releasesOn(S.snap)?'<div class="sec">Release<span class="ln"></span></div>':''}${relCard()}
     <div class="sec">Run log<span class="ln"></span></div><div class="chips" style="justify-content:flex-start"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="yesterday">${I.clock}Since yesterday</button></div>
     ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev" data-k="log:${esc(l)}"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):emptyCard('Nothing in the run log yet.')}</div>`;
 }
