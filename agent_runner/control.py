@@ -16,7 +16,7 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import control_settled, pitch, plan as P, plansync, plat, session_theme
+from agent_runner import control_settled, no_push, pitch, plan as P, plansync, plat, session_theme
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.control_settled import LEAD  # F160: how the runner's own typed line starts
 from agent_runner.config import RUNNER, runner_cmd
@@ -537,6 +537,8 @@ def control_env() -> dict:
     spawns them with entrypoint sdk-cli, where Claude Code leaves the Artifact tool off by default) can still
     publish a page and hand over its claude.ai link; a value the person set (0 to turn it off) is kept."""
     env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_KEEP', CONTROL_N_ENV)}
+    if C and C.no_push:  # F400
+        env.update(no_push.env(env))
     return {ARTIFACT_ENV: '1', **env, RUNNER_STARTED_ENV: '1'}
 
 
