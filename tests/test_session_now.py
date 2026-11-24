@@ -5,6 +5,8 @@ import json
 import os
 import re
 import tempfile
+import threading
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -73,6 +75,154 @@ def test_stop_and_force() -> None:
         eq(s.got, ['\n', ('sent', 'hi')], 'idle with words left in its input: below them')
     with Session() as s, mock.patch.object(U, 'send', s.send):
         eq((U.act('chat_to', text='hi', to='c2', force=True)['ok'], s.got[-1]), (True, ('sent', 'hi')), 'chat_to force')
+
+
+def _at(t: float) -> str:
+    return time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(t)) + f'.{int(t % 1 * 1000):03d}Z'
+
+
+def _op(op: str, text=None, at: float = 0, **a) -> dict:
+    return {'type': 'queue-operation', 'operation': op, 'timestamp': _at(at or time.time()),
+            **({} if text is None else {'content': text}), **a}
+
+
+def _you(text: str) -> dict:
+    return {'type': 'user', 'timestamp': _at(time.time()), 'message': {'content': text}}
+
+
+def _say(text: str) -> dict:
+    return {'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': text}]}}
+
+
+def test_queued() -> None:
+    """F190b: what Claude Code's queue entries leave queued."""
+    note = '<task-notification>\n<task-id>b1</task-id>'
+    for want, why, rows in (
+            (0, 'nothing queued', [_you('hi'), _say('ok')]),
+            (1, 'queued', [_you('hi'), _op('enqueue', 'and this')]),
+            (2, 'two, one with an image (no content)', [_op('enqueue', 'and this'), _op('enqueue')]),
+            (0, 'taken in as the next turn', [_op('enqueue', 'and this'), _op('dequeue'), _you('and this')]),
+            (0, 'taken into the turn under way', [_op('enqueue', 'a'), _op('remove', 'a', reason='absorbed_mid_turn')]),
+            (1, 'the oldest of two is', [_op('enqueue', 'a'), _op('enqueue', 'b'), _op('dequeue')]),
+            (0, 'back in the input', [_op('enqueue', 'a'), _op('popAll', 'a')]),
+            (0, "a background event is no sent message", [_op('enqueue', note)]),
+            (1, 'an event first, and it is taken first', [_op('enqueue', note), _op('enqueue', 'a'), _op('dequeue')]),
+            (1, 'a paste, as a message typed in is', [_op('enqueue', '<pasted_content id="1">\nhi\n</pasted_content id="1">')]),
+            (0, 'a wrapped event', [_op('enqueue', f'<pasted_content id="1">\n{note}')])):
+        eq(N.queued_in(rows), want, why)
+    old = [_op('enqueue', 'a', at=1000.0)]
+    eq((N.queued_in(old, 900), N.queued_in(old, 1100)), (1, 0), 'the queue of an earlier process ended with it')
+
+
+def test_live_queued(tmp: Path) -> None:
+    """F190b: the page's word on a session says what is queued, from the transcript: a reload keeps it."""
+    f, rec = tmp / 't.jsonl', {'status': 'busy', 'startedAt': (time.time() - 60) * 1000}
+    f.write_text(''.join(json.dumps(d) + '\n' for d in (_you('hi'), _op('enqueue', 'and this'))), encoding='utf-8')
+    with mock.patch.object(N, 'record', lambda n: rec), mock.patch.object(N, 'transcript', lambda n, r: str(f)):
+        eq((N.live('c2')['queued'], N.live('c2')['queued'], N.queued_now('c2')), (1, 1, 1), 'queued, and on every read')
+        rec['startedAt'] = (time.time() + 60) * 1000
+        eq(N.live('c2')['queued'], 0, 'the same file under a new process')
+        rec.update(startedAt=0, status='idle')
+        eq(N.live('c2')['queued'], 0, 'never in an idle one')
+        rec['status'] = 'busy'
+        with open(f, 'a', encoding='utf-8') as o:
+            o.write(json.dumps(_op('dequeue')) + '\n')
+        eq(N.live('c2')['queued'], 0, 'taken in')
+    with mock.patch.object(N, 'record', lambda n: {}):
+        eq((N.live('c9')['queued'], N.queued_now('c9')), (0, 0), 'no such session')
+
+
+class Queue:
+    """A session with a transcript that answers Escape and Enter as Claude Code 2.1.331 does. `late`: what is queued
+    goes in on its own just before the Escape; `pop`: an Escape pops the queue into the input."""
+
+    def __init__(self, f: Path, queue=(), status='busy', late=False, pop=False, stuck=False, then='idle'):
+        self.then = then  # its status once a `late` one is interrupted
+        self.f, self.queue, self.status, self.late, self.pop, self.stuck = f, list(queue), status, late, pop, stuck
+        self.got, self.input = [], []
+        f.write_text('', encoding='utf-8')
+        self.add(_you('first'), *(_op('enqueue', q) for q in queue))
+
+    def add(self, *rows) -> None:
+        with open(self.f, 'a', encoding='utf-8') as o:
+            o.write(''.join(json.dumps(d) + '\n' for d in rows))
+
+    def take(self) -> None:
+        self.add(*(_op('dequeue') for _ in self.queue), *(_you(q) for q in self.queue))
+        self.queue = []
+
+    def keys(self, name: str, text: str = '', key: str = '') -> dict:
+        self.got.append(key or text)
+        if key == 'Enter' and self.input:
+            self.add(*(_you(x) for x in self.input))
+            self.input, self.status = [], 'busy'
+        elif key == 'Escape' and not self.stuck:
+            if self.late:  # its turn has no answer yet: put back
+                self.input, self.status = list(self.queue), self.then
+                self.take()
+            elif self.pop:
+                self.input, self.status, self.queue = self.queue, 'idle', []
+                self.add(_you('[Request interrupted by user]'), _op('popAll', '\n'.join(self.input)))
+            else:
+                self.add(_you('[Request interrupted by user]'))
+                self.take()
+        return {'ok': True, 'code': 0, 'out': '', 'argv': []}
+
+    def said(self, text: str) -> int:
+        return sum(d['message']['content'] == text for d in map(json.loads, self.f.read_text(encoding='utf-8').splitlines())
+                   if d['type'] == 'user')
+
+    def __enter__(self):
+        self.p = [mock.patch.object(U, 'keys', self.keys), mock.patch.object(N, 'STOP_WAIT', 0.5),
+                  mock.patch.object(N, 'record', lambda n: {'status': self.status, 'startedAt': 1}),
+                  mock.patch.object(N, 'transcript', lambda n, r: str(self.f)),
+                  mock.patch.object(U, 'send', side_effect=AssertionError('text typed'))]
+        for p in self.p:
+            p.start()
+        return self
+
+    def __exit__(self, *a):
+        for p in self.p:
+            p.stop()
+
+
+def test_force_queued(tmp: Path) -> None:
+    """F190b: a force with no text: one interrupt, and what is queued arrives once; nothing to do, nothing done."""
+    f = tmp / 't.jsonl'
+    with Queue(f, ['a', 'b']) as s:
+        r = U.act('chat_to', to='c2', text='', force=True)
+        eq((r['ok'], s.got, s.said('a'), s.said('b'), s.status), (True, ['Escape'], 1, 1, 'busy'), 'one Escape, each arrives once')
+        eq((s.said('first'), s.input), (1, []), 'the interrupted prompt stays in the conversation')
+        eq((U.act('chat_to', to='c2', text=' ', force=True)['ok'], s.got), (True, ['Escape']), 'again: they are in, nothing done')
+    for st, q in (('busy', []), ('idle', []), ('idle', ['a']), ('shell', ['a']), ('waiting', ['a']), ('', ['a'])):
+        with Queue(f, q, st) as s:
+            r = U.act('chat_to', to='c2', text='', force=True)
+            eq((r['ok'], s.got), (True, []), f'nothing done: {st!r} with {q}')
+    with Queue(f, ['a'], late=True) as s:
+        check(N.force_queued('c2')['ok'], 'taken in just before')
+        eq((s.got, s.input, s.status), (['Escape', 'Enter'], [], 'busy'), 'put back unanswered: sent from the input, not lost')
+    for then, more in (('waiting', {}), ('idle', {'unsent': True})):
+        with Queue(f, ['a'], late=True, then=then) as s:
+            N.force_queued('c2', **more)
+            eq(s.got, ['Escape'], f'no Enter into a question, nor with words of the person in its input: {then} {more}')
+    with Queue(f, ['a'], pop=True) as s:
+        check(N.force_queued('c2')['ok'], 'popped into the input')
+        eq((s.got, s.said('a'), s.input), (['Escape', 'Enter'], 1, []), 'sent from there, once')
+    with Queue(f, ['a'], stuck=True) as s:
+        eq((N.force_queued('c2')['ok'], s.got), (False, ['Escape']), 'one that does not stop: said, one Escape')
+    with Queue(f, ['a']) as s, mock.patch.object(U, 'keys', lambda *a, **k: {'ok': False, 'code': 1, 'out': 'no', 'argv': []}):
+        eq(N.force_queued('c2')['out'], 'no', 'an Escape that does not reach it says why')
+
+
+def test_force_presses(tmp: Path) -> None:
+    """F190b: two presses at once interrupt once."""
+    with Queue(tmp / 't.jsonl', ['a']) as s:
+        ts = [threading.Thread(target=N.force_queued, args=('c2',)) for _ in range(2)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(10)
+        eq((s.got, s.said('a')), (['Escape'], 1), 'one interrupt')
 
 
 def test_tasks() -> None:
@@ -187,4 +337,5 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_stop_and_force, test_tasks, in_tmp(test_skills), test_update_and_restart, in_tmp(test_theme), test_code_colours]))
+    raise SystemExit(report([test_stop_and_force, test_queued, in_tmp(test_live_queued), in_tmp(test_force_queued),
+                             in_tmp(test_force_presses), test_tasks, in_tmp(test_skills), test_update_and_restart, in_tmp(test_theme), test_code_colours]))
