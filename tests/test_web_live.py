@@ -907,6 +907,11 @@ const at = () => [!$('feed').hidden, !$('body').hidden, $('feedframe').kids.map(
   // out of sight a while: the frame goes, so the session has its other viewers' size; back: it comes again
   await show('c8'); document.hidden = true; calls.length = 0; docOn.visibilitychange(); timers.filter(t => t.ms === 15000).pop().f(); out.away = [calls.slice(), $('feedframe').kids.length, feedWant()];
   document.hidden = false; docOn.visibilitychange(); await settle(); out.back = [calls.slice(), feedWant()];
+  // F206a: frozen before its timer ran, its socket still open in name: dialed again
+  word({session: 'c8', state: 'up'}); document.hidden = true; docOn.visibilitychange(); FD.hid -= 20000; document.hidden = false; calls.length = 0;
+  docOn.visibilitychange(); await settle(); out.frozen = calls.slice();
+  word({session: 'c8', state: 'up'}); document.hidden = true; docOn.visibilitychange(); document.hidden = false; calls.length = 0; docOn.visibilitychange(); out.glance = calls.slice();
+  fetch = async () => ({json: async () => { throw new TypeError('cut') }}); await liveGet('c8'); out.cut = FD.deaf > 0; fetch = fetch0;
   await show(null); out.home = at();
   console.log(JSON.stringify(out));
 })();`);
@@ -954,6 +959,10 @@ def test_session_feed_f114(tmp: Path) -> None:
     eq(o['gave'], [True, None, False], 'the question is given up, and it still says so')
     eq(o['unmute'], [['hang', 'dial c6 '], 'screen of c6', False, 0], 'the first answer dials again, its screen kept, still saying so')
     eq((o['unmuted'], o['answered']), ([True, True], 0), 'drawn: nothing over it, and a run that answers is not silent')
+    eq((o['frozen'], o['glance'], o['cut']), (['hang', 'dial c8 dark'], [], True),
+       'F206a: back after a long freeze it dials again, after a glance away not; a body cut off is no answer')
+    check('t.onRender(feedSee)' in page and "st==='loading'&&sessionOf(n)" in page,
+          'F206a: placed in the frame that draws it, and the chips there from the first frame')
     eq(o['woke'], [True, 0, True], 'back from a locked phone: no old question counts')
     eq(o['other'][0], False, 'a chat not seen here: its latest messages stand in')
     check('Hi</div>' in o['other'][1] and 'Hello back' in o['other'][1] and 'ls' not in o['other'][1], 'your words and the replies', o['other'][1])
