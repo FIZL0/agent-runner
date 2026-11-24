@@ -2911,21 +2911,37 @@ fire('lostpointercapture', when); out.button = els.micrep.hidden;
 out.trail = TK.report.ev;
 TK.hold = false; fire('pointerdown', when); out.cleared = els.micrep.hidden; last().onstart(); fire('pointerup', when); last().end(); out.early = TK.note;
 // two fingers on the mic: one lifting is not the hold's end
-fire('pointerdown', when); fire('touchend', {...at, targetTouches: [1]}); out.two = !!last().stopped; last().end();
+fire('pointerdown', when); fire('touchend', {...at, targetTouches: [1]}); out.two = !!last().stopped; TK.hold = false; last().end();
 // a stop whose end never comes still ends the listen
 TS.mic = 'tap'; TK.hold = false; listen(); last().onaudiostart(); const z = last(); listen(); tick(5000); tick(1500); tick(1500); out.noEnd = [TK.state, !!z.aborted, TK.report && TK.report.ev.some(x => / no end came/.test(x))]; live--;
 // words heard: counted, never in the trail
 listen(); last().say('secret'); out.noWords = [TK.trail.ev.join(' '), TK.trail === TK.report]; last().end(); out.afterWords = [TK.report, els.micrep.hidden];
-// on iOS a hold is a tap: a press starts nothing, the click does, and the line and the report say so
+// a hold is a hold on every device, iOS too: a press listens, the release sends, the click after it does nothing
+const q = s => s === '[data-mic]', e = {detail: 1}, click = new Function('q', 'e', 'TS', 'TK', 'micLog', 'listen', line("  if(q('[data-mic]'))"));
 for (const [k, ua, touch] of [['iphone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)', 5], ['ipad', 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', 5], ['mac', 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', 0], ['android', 'Mozilla/5.0 (Linux; Android 16)', 5]]) {
   TS.mic = 'hold'; navigator.userAgent = ua; navigator.maxTouchPoints = touch; TK.hold = false; TK.state = TK.note = ''; TK.ear = null; render(); starts = 0;
-  fire('pointerdown', when); out[k] = [starts, els.mic.className, says()];
-  if (starts) { fire('pointerup', when); last().end() }
+  const rest = says(); fire('pointerdown', when); const o = out[k] = [rest, starts, els.mic.className, says()];
+  last().say('by ' + k); fire('pointerup', when); o.push(!!last().stopped); last().end(); click(q, e, TS, TK, micLog, listen); o.push(starts, sent.pop(), TK.state);
 }
-navigator.userAgent = 'iPhone'; TK.note = ''; render(); starts = 0; const q = s => s === '[data-mic]', e = {detail: 1};
-const click = new Function('q', 'e', 'TS', 'TK', 'micMode', 'navigator', 'micLog', 'listen', line("  if(q('[data-mic]'))"));
-click(q, e, TS, TK, micMode, navigator, micLog, listen); const tapped = last(); out.iosTap = [starts, TK.ear.mode];
-click(q, e, TS, TK, micMode, navigator, micLog, listen); out.iosStop = tapped.stopped; tapped.say('by tap'); tapped.end(); out.iosSent = sent.pop();
+// B162a1: silence never ends a hold: no-speech, an end by itself, iOS's abort for silence; words before and after are one message
+const held2 = () => [starts, TK.state, TK.hold, TK.ear && TK.ear.tries];
+TS.mic = 'hold'; TK.note = ''; render(); starts = 0; most = live = 0; sent.length = 0; fire('pointerdown', when); last().onaudiostart(); now += 5000; last().fail('no-speech'); out.quiet = held2();
+last().onaudiostart(); now += 5000; last().end(); out.ownEnd = held2();
+last().say('one'); now += 2000; last().end(); out.wordsKept = [...held2(), says(), sent.length];
+last().onaudiostart(); now += 300; last().fail('aborted', 'No speech detected'); out.shortWait = starts; tick(250); out.iosQuiet = held2();
+now += 3000; last().fail('aborted', 'No speech detected'); out.iosNoStart = held2();
+last().fail('aborted'); tick(250); out.oneFail = held2();
+last().say('two'); fire('pointerup', when); last().end(); out.holdWords = [sent.splice(0), TK.state, most];
+// nothing said: a release sends nothing, during a listen and while the next one waits
+starts = 0; fire('pointerdown', when); last().onaudiostart(); now += 5000; last().fail('no-speech'); fire('pointerup', when); last().end(); tick(250); out.holdNone = [starts, TK.state, sent.length, TK.note, says() === TK.note];
+starts = 0; fire('pointerdown', when); last().onaudiostart(); now += 300; last().end(); fire('pointerup', when); tick(250); out.holdWait = [starts, TK.state, sent.length];
+// a real failure ends it, and the words so far go out
+for (const err of ['not-allowed', 'service-not-allowed', 'audio-capture']) { starts = 0; fire('pointerdown', when); now += 2000; last().fail(err); tick(250); (out.real = out.real || []).push([starts, TK.state, sent.length]); fire('pointerup', when) }
+starts = 0; fire('pointerdown', when); last().say('kept'); now += 2000; last().end(); last().fail('audio-capture'); tick(250); out.realWords = [starts, TK.state, sent.splice(0)]; fire('pointerup', when);
+// a listen that is not held still ends at a silence
+starts = 0; listen(); now += 5000; last().fail('no-speech'); tick(250); out.notHeld = [starts, TK.state];
+navigator.userAgent = 'UA iPhone'; TK.hold = false; TK.report = TK.trail; let holdReport = '';
+navigator.clipboard = {writeText: async t => { holdReport = t }}; micCopy().then(() => { out.holdReport = holdReport });
 TS.mic = 'tap'; TK.state = ''; render();
 TK.trail = null; for (let i = 0; i < 130; i++) micLog('x'); out.cap = micReport(TK.trail, ['h']).split('\n').slice(-1)[0];
 // the copy, and what shows where it is refused
@@ -2984,12 +3000,20 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(got.get('noEnd'), ['', True, True], 'a stop with no end still ends the listen, and the report says so')
     check('result, 6 letters, final' in got['noWords'][0] and 'secret' not in got['noWords'][0], 'words are counted, not kept', str(got['noWords']))
     eq(got.get('afterWords'), ['', True], 'words heard: no report button')
-    no_hold = 'Hold to talk does not work on an iPhone or iPad yet: tap to start, tap again to send.'
-    for k in ('iphone', 'ipad'):
-        eq(got.get(k), [0, 'mic', no_hold], f'{k}: a press starts nothing in Hold, and the line says to tap')
-    for k in ('mac', 'android'):
-        eq(got.get(k), [1, 'mic hold on', 'Starting the mic…'], f'{k}: a hold is a hold')
-    eq((got.get('iosTap'), got.get('iosStop'), got.get('iosSent')), ([1, 'tap'], True, 'by tap'), 'iOS in Hold: a tap starts, a tap sends')
+    for k in ('iphone', 'ipad', 'mac', 'android'):
+        eq(got.get(k), ['Hold to talk', 1, 'mic hold on', 'Starting the mic…', True, 1, f'by {k}', ''], f'{k}: a hold is a hold')
+    eq((got.get('quiet'), got.get('ownEnd')), ([2, 'listening', True, 2], [3, 'listening', True, 3]), 'B162a1: no-speech and its own end: the hold listens on')
+    eq(got.get('wordsKept'), [4, 'listening', True, 4, 'one', 0], 'words heard stay on the line, unsent')
+    eq((got.get('shortWait'), got.get('iosQuiet')), (4, [5, 'listening', True, 5]), "iOS's abort for silence: on again, after a wait when it was short")
+    eq((got.get('iosNoStart'), got.get('oneFail')), ([6, 'listening', True, 6], [7, 'listening', True, 7]), 'the message alone says silence; one failed start is tried again')
+    eq(got.get('holdWords'), [['one two'], '', 1], 'release sends all the words; never two recognizers')
+    eq(got.get('holdNone', [])[:3] + got.get('holdNone', [])[4:], [2, '', 0, True], 'release with none sends nothing')
+    check('Heard nothing' in got['holdNone'][3], 'and the line says so, not that the mic was never on', got['holdNone'][3])
+    eq(got.get('holdWait'), [1, '', 0], 'released before the next start: none')
+    eq(got.get('real'), [[1, '', 0]] * 3, 'permission refused or no mic ends it')
+    eq(got.get('realWords'), [2, '', ['kept']], 'and the words so far go out')
+    eq(got.get('notHeld'), [1, ''], 'a listen not held ends at a silence')
+    check('mic hold, version' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
     eq(got.get('cap'), 'and 10 more', 'the report has an end')
     eq(got.get('copied')[:2] + got.get('copied')[3:4], ['Mic report', 'the note', 'UA'], 'the copy names the note and the browser')
     eq(got.get('sheet'), ['out', 'Mic report', True], 'no clipboard: shown to copy by hand')
@@ -3121,7 +3145,6 @@ const S = {view: 'talk', thread: null, sheet: '', feeds: {}}, feedOf = n => (S.f
 const TK = {state: '', playing: '', note: '', held: '', later: [], wait: null, watch: null, heard: '', hold: false, ear: null, unlocked: true, trail: null, report: ''};
 let TS; const micWhy = () => '', TM_KEY = 'tm', store = {get: k => kept[k] || ''}, talkWaitName = () => 'c5', talkSet = (k, v) => { TS = {...TS, [k]: v} };
 const RUN_VERSION = '', DK = {};
-navigator.userAgent = 'Android';  // B162: an iPhone has no hold
 // a send waits for its reply, as talkSend does
 const talkSend = async t => { sent.push(t); if (TK.state !== 'speaking') TK.state = 'thinking'; awaitReply() };
 const awaitReply = () => { TK.wait = {n: 'c5', since: 0, at: now, last: '', said: ''}; S.feeds.c5 = {entries: []} };
