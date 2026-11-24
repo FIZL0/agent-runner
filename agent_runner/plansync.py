@@ -120,6 +120,8 @@ def publish(c, msg: str) -> str:
             g('commit', '-qm', f'plan: {msg}'[:72])
         if g('rev-parse', '-q', '--verify', 'HEAD').returncode:
             return ''
+        if c.no_push:  # F400
+            return ''
         for _ in range(3):
             if not _net(c.plan_dir)('push', '-q', 'origin', f'HEAD:{_branch(c)}').returncode:
                 return ''
@@ -294,6 +296,8 @@ class _Refs:
 def store(c):
     """Where this repo's claims live: the plan clone, the code's remote, or nowhere (no remote to share them
     through: a local-only run is the only runner)."""
+    if c.no_push:  # F400: a claim is a push
+        return None
     if c.plan_repo:
         return _Files(c)
     if c.approve:  # F98: nothing reaches the push remote unapproved, a claim neither

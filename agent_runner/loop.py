@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import ci, file_split, gitops, plan as P, plansync, plat, shared_tools, stack, undo
+from agent_runner import ci, file_split, gitops, no_push, plan as P, plansync, plat, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -1039,6 +1039,7 @@ def run(argv: list[str], prog: str) -> int:
         return slot_shim(a.slot_shim)
 
     init()
+    no_push.require(C, ROOT)
     r = C.run
     if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
         a.model = claude_model(a.model, C.providers, C.models_local, 'run --model')

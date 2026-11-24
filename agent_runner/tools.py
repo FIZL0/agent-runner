@@ -219,6 +219,9 @@ def fence(tool: str, tool_input: dict, cwd: str | Path, worktree: str | Path | N
         return None
     for where, sub, args in _git_calls((tool_input or {}).get('command', ''), cwd):
         if sub == 'push' and (not push or any(_within(where, r) for r in (own, root, slots))):
+            from agent_runner import no_push
+            if no_push.active():
+                return f'the git fence: no `git push`: {no_push.REFUSED}.'
             return ('the git fence: no `git push` here. `run done` pushes your task branch; the runner pushes '
                     'the merge.')
         if sub == 'reset' and '--hard' in args:

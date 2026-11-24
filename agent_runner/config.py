@@ -242,6 +242,8 @@ DEFAULTS: dict = {
     'git': {
         'master_branch': '',    # explicit local branch for tasks and tested merges; empty discovers it as before
         'push': 'origin',       # where finished work goes; false turns every push off
+        'no_push': False,       # the no-push policy: no push by the runner, and `git push` refused in every session
+                                # it starts, in any repository; applies from the next run
         'push_merge': True,     # push the shared branch after each merge that passed the gate
         'land_edited': 'wait',  # a tested merge blocked by uncommitted edits in the main checkout: "wait" for them,
                                 # or "wip": after LAND_WAIT_WIP move them to a wip/main-checkout-<time> branch and land
@@ -851,7 +853,15 @@ class Config:
         return p
 
     @property
+    def no_push(self) -> bool:
+        """F400: the no-push policy: this project's, or the one of the session this process runs in."""
+        from agent_runner import no_push
+        return bool(self.raw['git']['no_push']) or no_push.active()
+
+    @property
     def push_remote(self) -> str | None:
+        if self.no_push:
+            return None
         v = self.raw['git']['push']
         return None if v is False else (str(v) if isinstance(v, str) else 'origin')
 

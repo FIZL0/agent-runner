@@ -760,3 +760,10 @@ _Said_: switcher
 _On screen_: Chats; Rename this chat
 _In code_: SHEETS.chats, chatsSheet, chatLast
 _Avoid_: chat picker, dropdown, tab bar, title menu
+
+**No-push policy**:
+A project setting under which the runner pushes nothing and git refuses a push in every session it starts, in any repository.
+_Said_: no-push policy
+_On screen_: Never push
+_In code_: no_push, [git] no_push, AGENT_RUNNER_NO_PUSH
+_Avoid_: push lock, offline mode
