@@ -322,9 +322,12 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -
 
 
 def project_rows(reg: dict | None = None, row=project_row) -> list[dict]:
+    """Every project's row, for All projects and the switcher: those with a run by name, then those off by name
+    (F148)."""
     ks = keys(projects(reg))
     with cf.ThreadPoolExecutor(max_workers=8) as ex:
-        return list(ex.map(lambda kv: row(*kv), ks.items()))
+        rows = list(ex.map(lambda kv: row(*kv), ks.items()))
+    return sorted(rows, key=lambda r: (r.get('state') or 'off') == 'off')  # stable: projects() is by name
 
 
 ACTIONS = {'start': [], 'stop': ['stop'], 'pause': ['pause'], 'resume': ['pause', '--off'], 'slots': ['slots']}

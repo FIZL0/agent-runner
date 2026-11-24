@@ -264,7 +264,8 @@ is now the run app itself: at `/` it is the "All projects" view, one row per pro
 Go on, −1 slot, +1 slot, Stop and Unlist, plus an add-project box, Needs you alerts and Devices. Through Home, a
 run's app (`/p/<project>/`) has a project switcher at the top of the sidebar (the current project's name; tap it to
 list every Home project as running, idle, paused or off, with its needs-you count; each moves to `/p/<project>/` on
-the same Home address) and an "All projects" item in the sidebar.
+the same Home address) and an "All projects" item in the sidebar. Both list projects with a run up (running, idle or
+paused) first, then those off, by name in each group.
 
 On a phone's Home Screen: add the app from Home's link. Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
 from, or on All projects if it was added from Home. An icon added before this change: remove it and add it again once,

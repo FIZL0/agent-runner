@@ -120,5 +120,16 @@ check(guide.point_rules(Config(repo), g).startswith('updated'), 'an older pointe
 eq((repo / 'AGENTS.md').read_text(encoding='utf-8'), f'# Rules\n\n{guide.POINTER.format(cmd=cmd)}\nmore rules\n',
    'in place, once')
 
+print('F148: projects with a run first, those off at the bottom, by name in each group')
+from agent_runner import home as H  # noqa: E402
+states = {'Echo': 'idle', 'alpha': 'off', 'bravo': 'running', 'Charlie': 'off', 'delta': 'idle', 'foxtrot': 'running'}
+for n in states:
+    (tmp / 'f148' / n).mkdir(parents=True)
+reg = {'projects': [str(tmp / 'f148' / n) for n in reversed(states)], 'hidden': [], 'scan': []}
+rows = H.project_rows(reg, row=lambda key, root: {'key': key, 'name': root.name, 'state': states[root.name],
+                                                  'paused': root.name == 'delta'})
+eq([r['name'] for r in rows], ['bravo', 'delta', 'Echo', 'foxtrot', 'alpha', 'Charlie'],
+   'running, idle and paused by name, then off by name')
+
 os.environ['AGENT_RUNNER_HOME'] = env
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
