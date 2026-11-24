@@ -120,6 +120,12 @@ def test_next_run() -> None:
     applies = {f'{t["table"]}.{k["key"]}': k['applies'] for t in config.settings_snapshot(d)['tables'] for k in t['keys']}
     eq({k for k, v in applies.items() if v == 'next run'}, {f'{t}.{k}' for t, k in config.SETTING_NEXT}, 'applies says so')
     eq(applies['run.slots'], 'now', 'and now for the others')
+    config._cfg.cache_clear()
+    for bad in ('[run\n', '[run]\ncommand_timeout = "x"\n'):
+        (d / 'runner.local.toml').write_text(bad)
+        got = config.cfg(wt)
+        eq((got.run['session_max'], got.run['command_timeout'], got.root), (33, 3600, wt.resolve()), 'a worktree read while a file is bad')
+        config._cfg.cache_clear()
     (d / 'runner.local.toml').unlink()
     run.read_settings()
     eq((U.settings()['waits'], config.cfg(d).run['session_max']), ([], 90), 'set back: nothing waits')
@@ -133,6 +139,9 @@ def test_running_keep() -> None:
     run.read_settings()
     eq(SL.KEPT['sid-live-1'], ('opus', (1000, 0)), 'its own')
     eq((SL.task_model('F2', run.model, 'main'), S.C.run['task_tokens']), ('haiku', 10), 'a new one has the new')
+    with mock.patch.object(os, 'execv') as ex, mock.patch.dict(os.environ):
+        WT.restart_run()
+        eq((L.kept_keys()['kept']['sid-live-1'], ex.call_count), (['opus', [1000, 0]], 1), 'a restart in place hands it on')
     told: list = []
     run.procs[2], run.running[2] = (os.getpid(), 'sid-live-2', 0.0), ('F2', '', set(), set())
     SL.BUDGET_AT[0] = 0.0

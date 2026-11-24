@@ -22,7 +22,7 @@ from agent_runner.tools import ended
 from agent_runner.state import (banner, C, FORCED, forced, git, LANDING, log, PAUSED, POWER, queued, READING,
     ROOT, share, SLOTS_DIR, stopped_by, stopping)
 from agent_runner.sched import open_tasks
-from agent_runner.slots import entries, GB, marker_pid, MUX, sids, slot_env, SLOTS, tmp_roots, transcript
+from agent_runner.slots import entries, GB, KEPT, marker_pid, MUX, sids, slot_env, SLOTS, tmp_roots, transcript
 from agent_runner.slots import claude_drift, remote_off_why
 
 
@@ -915,7 +915,7 @@ def restart_run() -> None:
     sys.stdout.flush()
     # what the keys set lives in this process: the new one takes it over (see `kept_keys`)
     os.environ['AGENT_RUNNER_KEEP'] = json.dumps({'slots': SLOTS, 'paused': PAUSED[0], 'power': POWER,
-                                                  'stop': stopping(), 'forced': FORCED[0]})
+                                                  'stop': stopping(), 'forced': FORCED[0], 'kept': KEPT})
     os.execv(sys.executable, sys.orig_argv)  # run.lock's fd closes on exec; the new process takes it again
 
 

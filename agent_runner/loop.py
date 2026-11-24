@@ -37,7 +37,7 @@ from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_ask
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
-from agent_runner.slots import budget_mark, budgets, keep_own, SPENT
+from agent_runner.slots import budget_mark, budgets, keep_own, KEPT, SPENT
 from agent_runner import fallback as FB
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
@@ -1040,6 +1040,8 @@ def run(argv: list[str], prog: str) -> int:
 
     init()
     settings_start()  # F202a: what changes from here on is read by the loop
+    from agent_runner import ui_model
+    ui_model.settings_start()  # what `waits` compares with
     r = C.run
     if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
         a.model = claude_model(a.model, C.providers, C.models_local, 'run --model')
@@ -1055,6 +1057,7 @@ def run(argv: list[str], prog: str) -> int:
     if keep := kept_keys():  # restarted on an upgrade: the slot count, pause, power and stop typed before it hold
         SLOTS = slots = keep['slots']
         POWER, PAUSED[0], FORCED[0] = keep['power'], keep['paused'], keep.get('forced', False)
+        KEPT.update(keep.get('kept') or {})  # F202a
     share(POWER=POWER, SLOTS=SLOTS)
     idle, stall, pause = a.idle or r['idle'], a.stall or r['stall'], a.pause or r['pause']
     model = a.model or r['model']

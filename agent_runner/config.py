@@ -887,9 +887,25 @@ _WAITING: dict[tuple[str, str], object] = {}  # F202a: what the run keeps for ch
 def _cfg(root: Path) -> Config:
     if c := _LIVE.get(root):
         return c
-    c = Config(root)
-    _keep(c, _WAITING)
+    live = next(iter(_LIVE.values()), None)
+    try:
+        c = Config(root)
+        if live and (bad := _problem(settled(live), settled(c))):
+            raise ValueError(bad)
+    except (SystemExit, Exception):  # noqa: BLE001
+        if not live:
+            raise
+        c = Config.__new__(Config)  # a worktree read while a file is bad: the run's settings, as the run itself keeps
+        c.__dict__.update(live.__dict__, root=root)
+    else:
+        _keep(c, _WAITING)
     return c
+
+
+def _problem(was: dict, now: dict) -> str:
+    """Why a value of `now` that is not the one in `was` cannot be taken; '' for none."""
+    return next((p for (t, k), v in now.items() if (v != was[t, k] or type(v) is not type(was[t, k]))
+                 and (p := setting_problem(t, k, v))), '')
 
 
 def cfg(cwd: Path | str | None = None) -> Config:
@@ -1316,9 +1332,8 @@ def read_again(c: Config) -> tuple[Config, dict, list]:
         raise ValueError(f'{type(e).__name__}: {e}') from None
     was, now = settled(c), settled(new)
     changed = {k: v for k, v in now.items() if v != was[k] or type(v) is not type(was[k])}
-    for (t, k), v in changed.items():  # only the changed ones: what the run started with it goes on with
-        if problem := setting_problem(t, k, v):
-            raise ValueError(problem)
+    if problem := _problem(was, now):  # only of the changed ones: what the run started with it goes on with
+        raise ValueError(problem)
     waits = {k: was[k] for k in changed if k in SETTING_NEXT}
     _keep(new, waits)
     for t, k in waits:
