@@ -22,7 +22,7 @@ async function send(){
   const rq=sendReq(ctx,to,msg);
   if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx?ctx.label:text||`${paths.length} attachment(s)`,msg);return}  // B139, F176
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
-  if(FD.shown)sendFly();  // the session draws it itself
+  if(FD.shown){feedRest();sendFly()}  // the session draws it itself
   outbox('chat_to',{text:msg,to,...(S.thread===to&&sessWorks(to)?{force:true}:{}),...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
 }
 /* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without

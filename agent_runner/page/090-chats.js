@@ -201,7 +201,7 @@ layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r
    transform, never by a resize: the bars come and go, the box grows, and the session's size stays. B192: the bars going or
    coming never moves it; only a scroll does (feedScroll), and the session's own going to its end. Whole (a menu, a
    question, unsent words, a look feedFoot does not know): it fits its room exactly, all of it shown. */
-Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',above:0,last:0,run:0,rest:0,slim:false,jump:false,typed:0,full:0,wide:0,doc:0,live:null,liveAt:0,task:''});
+Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',above:0,last:0,run:0,rest:0,slim:false,jump:false,top:false,still:'',rows:'',stillT:0,typed:0,full:0,wide:0,doc:0,live:null,liveAt:0,task:''});
 const KB_PAD=6;  // .dock's bottom padding: 14px, and 8px in .app.kb
 const SLIM_H=56, FOOT_WAIT=400, TEXT_WAIT=1200, LIVE_EVERY=2000;
 const pageDark=()=>{const t=document.documentElement.dataset.theme;return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches};
@@ -211,7 +211,7 @@ matchMedia('(prefers-color-scheme:dark)').addEventListener('change',lookAgain);
 if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 /* does the session of a chat or slot work? The agent CLI's own status; until it is read, or with none, the feed's */
 const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
-function feedGone(){clearTimeout(FD.wait);Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,live:null,liveAt:0});feedClass()}
+function feedGone(){clearTimeout(FD.wait);feedStill();Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,top:false,still:'',live:null,liveAt:0});feedClass()}
 function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');if(!m||!row)return;
   m.classList.toggle('still',calm());m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);row.hidden=!FD.shown;
   const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;row.inert=!FD.slim;
@@ -242,7 +242,8 @@ function feedSee(){
   const jump=b.viewportY<b.baseY||!!(foot&&foot.jump);
   const ended=FD.jump&&!jump, left=!FD.jump&&jump;
   FD.jump=jump;
-  if(!jump)FD.off=0;  // at its end the last lines stand on the box
+  if(ended)FD.off=0;  // at its end the last lines stand on the box
+  FD.top=FD.off>0&&FD.top||!jump&&!!foot&&(!!FD.short||feedGap(lines,foot.top))||!FD.slim&&!!FD.still&&feedRows(lines)===FD.still;  // once pulled, it stays till it is back
   if(ended&&FD.slim)feedSlim(false);
   feedPlace();
   if(left&&FD.run<=-8)feedSlim(true);
@@ -250,6 +251,24 @@ function feedSee(){
   if(foot&&Date.now()-FD.keptAt>FEED_KEEP)feedKeep();
   if(key(was)!==key(foot)){if(!was||!foot||was.work!==foot.work||was.shells!==foot.shells)liveLoad();render()}
 }
+/* B766: the session has nothing older to scroll to when its first rows stay as they are after an upward scroll it got.
+   feedStill ends a look */
+const STILL_ROWS=8, STILL_MS=800, feedRows=l=>l.slice(0,STILL_ROWS).join('\n');
+function feedStill(){clearTimeout(FD.stillT);FD.stillT=0;FD.rows=''}
+function feedStillLook(left,cell){
+  if(left>=0)return feedStill();
+  const t=feedTerm();if(!t||!FD.drawn||FD.whole||FD.top||FD.stillT)return;
+  if(!FD.rows)FD.rows=feedRows(feedLines(t));
+  if(FD.run>-3*cell)return;
+  const n=FD.n;
+  FD.stillT=setTimeout(()=>{
+    const was=FD.rows, u=feedTerm();feedStill();
+    if(FD.n!==n||!u||!FD.drawn||FD.whole||FD.slim)return;
+    if(was===feedRows(feedLines(u))){FD.still=was;feedSee()}
+  },STILL_MS);
+}
+/* a sent message: the session is at its end, the frame with it */
+function feedRest(){if(FD.off&&!FD.jump){FD.off=0;feedPlace()}}
 function feedWhole(on){FD.whole=on;if(on){FD.slim=false;FD.off=0}feedClass();feedPlace();render()}
 /* B214: the view's height with the keyboard closed: the session's size comes from it, so a keyboard never resizes it.
    A width that changed (rotation) counts again, with the keyboard open too; the bottom inset is off .app then */
@@ -314,8 +333,9 @@ function feedPlace(){
   const dock=document.querySelector('.dockwrap').offsetHeight, f=feedScreen(true);
   const cell=f?f.cell:17, pad=f?f.el.getBoundingClientRect().top:12;
   const row=slimRow(), full=feedRoom(main), high=FD.whole?Math.max(60,full-FD.bar-dockRest(dock)):Math.round(full-row+FOOT_ROWS*cell);
-  const size=[full,cell].join(), above=main.clientHeight-dock+dockRest(dock), hold=FD.jump&&FD.held===size?FD.t+above-FD.above:null;  // scrolled up: where it was over the box; a chip or a file that comes moves nothing
-  const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,row,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,hold});
+  const size=[full,cell].join(), above=main.clientHeight-dock+dockRest(dock), hold=(FD.jump||FD.off>0)&&FD.held===size?FD.t+above-FD.above:null;  // scrolled up: where it was over the box; a chip or a file that comes moves nothing
+  const o={main:main.clientHeight,bar:FD.bar,dock,row,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,top:FD.top,hold};
+  let at=feedSpot(o);if(!FD.jump&&hold!=null&&!at.off)at=feedSpot({...o,off:0,hold:null});
   if(!FD.whole&&FD.foot===undefined)at.t=Math.min(FD.bar,main.clientHeight-dock-high+FOOT_ROWS*cell);  // not read yet
   FD.far=at.far;FD.off=at.off;FD.t=at.t;FD.above=above;FD.held=FD.whole||!FD.foot?'':size;
   const st=box.style, set=(k,v)=>{if(st[k]!==v)st[k]=v};
@@ -331,7 +351,9 @@ function feedScroll(px){
   if(!px||!FD.shown)return px;
   const b=feedBars(px,FD);FD.run=b.run;
   if(b.slim!==FD.slim)feedSlim(b.slim);
-  const take=feedShare(px,FD);if(!take)return px;
+  const take=feedShare(px,FD), f=feedScreen();
+  if(f)feedStillLook(px-take,f.cell);
+  if(!take)return px;
   FD.t-=take;FD.off-=take;feedPlace();
   return px-take;
 }
