@@ -72,12 +72,13 @@ function kbFocus(el){
   el.focus({preventScroll:true});
   requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.opacity=''}));
 }
-/* the field being typed in, inside its own scroller (never scrollIntoView: that pans the page too) */
-function kbReveal(el){
+/* the field being typed in, inside its own scroller (never scrollIntoView: that pans the page too).
+   At once, as while typing; F189a: it glides when a press asked for it (press), or when that glide is under way */
+function kbReveal(el,press){
   const b=el&&el.closest&&el.closest('.sheet,.side,.body');if(!b)return;
   const r=el.getBoundingClientRect(), v=b.getBoundingClientRect();
-  if(r.bottom>v.bottom-8)b.scrollTop+=Math.min(r.bottom-v.bottom+8,r.top-v.top-8);
-  else if(r.top<v.top+8)b.scrollTop-=v.top+8-r.top;
+  const d=r.bottom>v.bottom-8?Math.min(r.bottom-v.bottom+8,r.top-v.top-8):r.top<v.top+8?r.top-v.top-8:0;if(!d)return;
+  if(press||MO.scroll.has(b))scrollGlide(b,b.scrollTop+d);else b.scrollTop+=d;
 }
 if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
   document.addEventListener('focusin',e=>{if(IOS&&typingIn(e.target))kbWatch();kbFit();if(kbH)kbReveal(e.target)});
@@ -115,14 +116,17 @@ function growGlide(ta,d,drawn){
 const SL={cmds:null,items:[],i:0,at:0,of:''};
 function slashLoad(of){SL.of=of;SL.at=Date.now();fetch(tq(of?'commands?s='+encodeURIComponent(of):'commands')).then(r=>r.json()).then(j=>{if(SL.of===of&&Array.isArray(j)&&j.length){SL.cmds=j;const ta=document.querySelector('[data-in]');if(ta&&document.activeElement===ta)slashShow(ta)}}).catch(()=>{})}
 slashLoad('');
-function slashShow(ta){
+function slashShow(ta,press){
   const of=/^[cs]\d+$/.test(S.thread||'')?S.thread:'';  // F170: the open chat's own commands, again after a while
   if(ta&&ta.value[0]==='/'&&(of!==SL.of||Date.now()-SL.at>60000))slashLoad(of);
   const m=document.querySelector('[data-slash]');if(!m)return;
   SL.items=ta?slashMatches(SL.cmds,ta.value):[];if(SL.i>=SL.items.length)SL.i=0;
   m.hidden=!SL.items.length;
   m.innerHTML=SL.items.map((c,j)=>`<button type="button" role="option" class="${j===SL.i?'on':''}" aria-selected="${j===SL.i}" data-slashpick="${j}"><b>/${esc(c.name)}</b><span>${esc(c.desc||'')}</span></button>`).join('');
-  const on=m.querySelector('.on');if(on&&on.scrollIntoView)on.scrollIntoView({block:'nearest'});
+  const on=m.querySelector('.on');if(!on||!on.scrollIntoView)return;
+  if(!press&&!MO.scroll.has(m)){on.scrollIntoView({block:'nearest'});return}
+  const r=on.getBoundingClientRect(), v=m.getBoundingClientRect(), d=r.bottom>v.bottom?r.bottom-v.bottom:r.top<v.top?r.top-v.top:0;  // F189a: an arrow key; a redraw under its glide leaves it to go on
+  if(d)scrollGlide(m,m.scrollTop+d);else if(press)scrollStop(m);
 }
 /* B188: Enter picks the highlighted command, unless it is typed in full already */
 const slashPicks=ta=>{const c=SL.items[SL.i];return !!c&&ta.value.trim()!=='/'+c.name};

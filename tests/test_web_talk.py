@@ -175,6 +175,7 @@ const HOME_PAGE = false, document = {};  // B153: takeSnap sets the window title
 const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
 const chats = () => S.snap.sessions.filter(s => /^c\d+$/.test(s.name)), working_ = () => [];
 const feedOf = n => (S.feeds[n] || {}).entries || [];
+const chatShown = () => false;
 const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: '', gen: 0, starting: [], later: []};
 const MIC = {rec: null, next: null};  // B174
 let feeds = {}, actDone = null, actResult = null;

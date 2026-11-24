@@ -111,7 +111,7 @@ function keepScroll(box){
 }
 /* F147: motion (docs/STYLE.md, Motion). born: when a key came in, so a redraw half way goes on from there; fly: what
    glides now; said: how long a reply was; sent: the words on their way out of the message box; vt: a View Transition */
-const MO={born:new Map(),said:new Map(),grown:new Map(),rolls:new Map(),fly:new Map(),sent:null,vt:null,named:[]}, MO_MS=450;
+const MO={born:new Map(),said:new Map(),grown:new Map(),rolls:new Map(),fly:new Map(),sent:null,vt:null,named:[],scroll:new Map()}, MO_MS=450;
 const calm=()=>document.hidden||matchMedia('(prefers-reduced-motion:reduce)').matches;
 function moAnim(el,frames,o){
   if(!el.animate||calm())return null;
@@ -124,8 +124,31 @@ function glideTo(el,x,y,o){
   const a=moAnim(el,[{transform:`translate(${x}px,${y}px)`},{transform:'none'}],o);if(!a)return;
   MO.fly.set(el,a);a.onfinish=a.oncancel=()=>{if(MO.fly.get(el)===a)MO.fly.delete(el)};
 }
+/* F189a: box's scroll glides to its place (to: how far down, or a function of the box, asked again on every frame). The scroll
+   itself moves, so a redraw under way goes on; calm() is at once, and the person's own hand on box takes it over */
+function scrollGlide(box,to){
+  let off=0;  // how far something else moved the scroll meanwhile: a refresh holding the place, a key
+  const at=()=>Math.max(0,Math.min(typeof to==='function'?to(box):to+off,box.scrollHeight-box.clientHeight)), old=MO.scroll.get(box);
+  if(old&&(old.to===to||Math.abs(old.at()-at())<1))return;
+  scrollStop(box);
+  const a=Math.abs(at()-box.scrollTop)<1?null:moAnim(box,[],{ease:'--spring-soft'});  // it draws nothing: its time and easing
+  if(!a){box.scrollTop=at();return}
+  const g={a,to,at,from:box.scrollTop,last:box.scrollTop};MO.scroll.set(box,g);
+  const step=()=>{
+    if(MO.scroll.get(box)!==g)return;
+    const p=a.playState==='finished'||!box.isConnected?null:a.effect.getComputedTiming().progress;
+    const by=box.scrollTop-g.last;if(Math.abs(by)>=1){off+=by;g.from+=by}
+    box.scrollTop=p===null?at():g.from+(at()-g.from)*p;g.last=box.scrollTop;
+    if(p===null)MO.scroll.delete(box);else requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function scrollStop(box){const g=MO.scroll.get(box);if(g){MO.scroll.delete(box);g.a.cancel()}}
+/* the end of a box that scrolls */
+const endOf=b=>b.scrollHeight-b.clientHeight;
 const shiftOf=el=>new DOMMatrix(getComputedStyle(el).transform);
 function flying(el){let d=0;for(const x of MO.fly.keys()){if(!x.isConnected)MO.fly.delete(x);else if(x===el||x.contains(el))d+=shiftOf(x).m42}return d}
+for(const t of ['pointerdown','touchstart','wheel'])document.addEventListener(t,e=>{for(const b of [...MO.scroll.keys()])if(b.contains(e.target)){scrollStop(b);if(b===$('body')&&chatShown())S.pin=atEnd(b)}},{capture:true,passive:true});
 /* the lists: where each thing was on screen before a redraw, then each glides from there; what left collapses */
 const GLIDES='[data-k],.col>.sec', LEAVES='.card,.srow,.lrow,.ev,.crow';
 const glideKey=el=>el.dataset.k||'sec:'+el.textContent.replace(/\d+/g,'');
@@ -224,8 +247,8 @@ function sentFrom(box,had){
   if(!s.began){if(had.has('t:'+u.dataset.t))return;s.began=now;s.t=u.dataset.t}
   else if(u.dataset.t!==s.t)return;
   u.classList.remove('enter');
-  const r=u.getBoundingClientRect();
-  const a=moAnim(u,[{transform:`translate(${s.r.left-r.left}px,${s.r.top-r.top}px) scale(.94)`,opacity:.5},{transform:'none'}]);
+  const r=u.getBoundingClientRect(), g=MO.scroll.get(box), up=g?box.scrollTop-g.from:0;  // F189a: the chat glides to its end under it: from where it was laid out at the start, on the same curve
+  const a=moAnim(u,[{transform:`translate(${s.r.left-r.left}px,${s.r.top-r.top-up}px) scale(.94)`,opacity:.5},{transform:'none'}],g?{ease:'--spring-soft'}:{});
   if(a)a.currentTime=now-s.began;
 }
 /* to a real session: the bubble leaves the box and fades; the session draws the words itself */

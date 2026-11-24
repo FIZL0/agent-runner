@@ -146,7 +146,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **Springs.** Both are CSS `linear()` curves, with a `cubic-bezier` fallback for browsers without `linear()` (`@supports`).
 - **Only `transform` (and `translate`), `opacity` and `clip-path`**, with `visibility` to take a closed thing out of reach, and a switch's
-  `background-color`. Never height, width, top or margin. A transition's duration is a token; the one raw duration allowed is `0s`, delayed by a token, to swap a stand-in in or out at the end of a motion. Every `el.animate()` goes through `moAnim()`, which reads the
+  `background-color`. Never height, width, top or margin; the scroll position is the one exception (see Scroll jumps). A transition's duration is a token; the one raw duration allowed is `0s`, delayed by a token, to swap a stand-in in or out at the end of a motion. Every `el.animate()` goes through `moAnim()`, which reads the
   tokens and returns nothing when `calm()`; `kbGlide()` and the velocity spring `springRun()` check `calm()` themselves, and `feedGlide()` places the frame at once under it.
   `calm()` is reduced motion or a hidden page.
 - **Views.** A chat opens: its view slides in from the right over the one that was there, and back slides it out,
@@ -169,6 +169,12 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Counts and states.** A count rolls (`roll()`, class `.roll`): up when it grew, down when it fell. An element
   with `data-roll` and its words in `data-v` does this; any other state word that changed fades in. The state pill rolls and morphs from its old width. The message box grows and shrinks by a glide (`grow()`).
 - **Press.** Buttons, chips and rows scale down a little while pressed, and spring back when let go (`--spring`).
+- **Scroll jumps.** A scroll that a press causes glides (`scrollGlide()`, on `--dur-spring` and `--spring-soft`): `toEnd(true)`
+  when Talk sends or its mic or typing changes while scrolled up, `kbReveal(el,true)` when a refused Done in Needs you
+  moves to its field and Rename to its row, and the slash menu's arrow keys. A redraw midway continues it. A pointer,
+  touch or wheel on the box stops it (`scrollStop()`); another view or sheet ends it. Everything else jumps at once:
+  first load, a refresh (`keepScroll()`), Talk following a reply (a glide under way is left to reach the end), `kbReveal()`
+  while typing, a view's or sheet's own place, a new Talk chat, a notice's row (`noticeRoom()`), and all of it under `calm()`.
 - **Drawer and sheet.** They open and close on `--spring-soft`. Released by a finger, they go on from where they are
   with the finger's speed (`springRun()`, frames from `springFrames()`). A finger can catch one mid-way, and a flick
   closes a sheet even when it is short.
@@ -184,10 +190,10 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   project list slides in from the left over the project's own sidebar and back out (`.sghost`, transform only,
   `--dur-slow`), and so does arriving at another project from the list (`sideShow()`).
 - **Interruptible.** A new motion starts from where the thing is on screen now, and nothing waits for a motion to end.
-  State and focus are final at once; only the drawing follows.
+  State and focus are final at once; only the drawing follows, and so does the scroll position a press moves (see Scroll jumps).
 - **What never animates:** the thing the person is reading: a refresh keeps the first keyed thing on screen where it was
-  (see Scroll; `keepScroll()` measures without transforms under way). Also anything inside the terminal, the scroll
-  position, anything on first load, and a redraw of the same thing.
+  (see Scroll; `keepScroll()` measures without transforms under way). Also anything inside the terminal, a scroll no
+  press caused, anything on first load, and a redraw of the same thing.
 - **New means new:** give a thing that can come and go `data-k="its key"` (and `data-v="its state"` if it has one).
   `enter()` animates only the keys that were not there before, and nothing before the first snapshot. Your own message
   has `data-t` too, so it comes in once, not again when it is sent and when it lands. Never animate from a class in
@@ -202,7 +208,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **The page never moves on its own.** A refresh keeps the reading position in every view (`keepScroll()`): the first
   `data-k` on screen stays where it was. At the very top, new things show.
-- **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session scrolls it, and its bars fade away over the text; the slim message box stays (see The session).
+- **Talk is pinned to its newest words** when you open it, when you send (it glides there if you had scrolled up; see Scroll jumps), and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session scrolls it, and its bars fade away over the text; the slim message box stays (see The session).
 - Going to a view starts at its top; coming back to one you left returns to where you were.
 - **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form and a typed secret (`givesec:` keys) are not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
 - **The off page turns into the app.** An off project's page (see Off page in GLOSSARY.md) becomes its run's app once the

@@ -339,7 +339,7 @@ document.addEventListener('keydown',e=>{
     const b=$('sheet').querySelector('[data-give]:not([data-sure])');if(b&&!b.disabled&&!composing(e)){e.preventDefault();giveSend(b.dataset.give,false)}return}
   if(e.target.matches&&e.target.matches('[data-in]')){
     if(slashOpen()&&!composing(e)){  // B119: arrows move, Enter or Tab picks, Esc closes the menu and stays in the box
-      if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();SL.i=slashMove(SL.i,SL.items.length,e.key);slashShow(e.target);return}
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();SL.i=slashMove(SL.i,SL.items.length,e.key);slashShow(e.target,true);return}
       if(e.key==='Escape'){e.preventDefault();slashClose();return}
       /* B188: on touch Shift does not count: a phone's keyboard that has shifted itself for a capital may send Return with it */
       if(e.key==='Tab'||(e.key==='Enter'&&(!e.shiftKey||TOUCH())&&slashPicks(e.target))){e.preventDefault();slashTake(SL.i);return}

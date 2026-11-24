@@ -105,7 +105,8 @@ function shotFrame(to,seen,round){
 const shotThumb=i=>$('sheet').querySelector(`[data-shot="${i}"]`);
 const shotBig=()=>$('sheet').querySelector('.shotbig img');
 function shotGo(i){
-  const sh=$('sheet'), open=i>=0, old=S.askShot, go=()=>{
+  const sh=$('sheet');scrollStop(sh);
+  const open=i>=0, old=S.askShot, go=()=>{
     if(open)SHOT.at=sh.scrollTop;
     S.askShot=i;render(true);sh.scrollTop=open?0:SHOT.at};
   if(calm()||!sh.animate){shotEnd();go();return}
@@ -198,7 +199,7 @@ async function giveSend(id,confirm){
   else S.giveSaid={id,field:j.field||'',out:plainOut(j,'That was not sent.')};
   render(true);
   const el=j.confirm?$('sheet').querySelector('[data-give][data-sure]'):[...$('sheet').querySelectorAll('[aria-invalid]')][0];
-  if(el){el.focus({preventScroll:true});kbReveal(el)}
+  if(el){kbReveal(el,true);el.focus({preventScroll:true})}
 }
 async function askLoad(id){
   if(!askTask(id))return;

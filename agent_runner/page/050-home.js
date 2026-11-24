@@ -67,6 +67,7 @@ function sideShow(h,to){
       g.addEventListener('animationend',()=>g.remove());$('sidein').addEventListener('animationend',()=>{g.remove();el.classList.remove('up')},{once:true});
       setTimeout(()=>{g.remove();if(level===to)el.classList.remove('up')},400);
     }
+    scrollStop(el);
     if(was==='in')S.sideAt=el.scrollTop;
     sideHTML(h,true);el.scrollTop=to==='in'?S.sideAt||0:0;
   }else sideHTML(h);
