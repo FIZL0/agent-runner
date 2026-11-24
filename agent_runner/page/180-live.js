@@ -273,8 +273,8 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-needopen]')){needOpen(x.dataset.needopen);return}  // F162
   if(x=q('[data-askfold]')){S.askFold={...S.askFold,[x.dataset.askfold]:!S.askFold[x.dataset.askfold]};render(true);return}
   if(q('[data-askload]')){S.askWhy={};S.askText={};render(true);askLoad(S.sheetArg);return}
-  if(x=q('[data-shot]')){S.askShot=+x.dataset.shot;render(true);$('sheet').scrollTop=0;return}
-  if(q('[data-shotclose]')){S.askShot=-1;render(true);return}
+  if(x=q('[data-shot]')){shotGo(+x.dataset.shot);return}
+  if(q('[data-shotclose]')){shotGo(-1);return}
   if(x=q('[data-give]')){giveSend(x.dataset.give,x.hasAttribute('data-sure'));return}  // F175a
   if(x=q('[data-stepcopy]')){const pre=$('sheet').querySelector(`[data-stepcmd="${x.dataset.stepcopy}"]`);if(!pre)return;
     try{await navigator.clipboard.writeText(pre.textContent);toast('Copied')}catch(err){const r=document.createRange();r.selectNodeContents(pre);const g=getSelection();g.removeAllRanges();g.addRange(r);toast('Selected: copy it with your own Copy')}return}
@@ -325,7 +325,7 @@ document.addEventListener('keydown',e=>{
   if(e.target.matches&&e.target.matches('[data-f="ren"]')){  // F129: Enter keeps the name (its form), Esc does not
     if(e.key==='Escape'){e.preventDefault();S.ren=null;render(true)}
     return}
-  if(e.key==='Escape'&&S.sheet==='need'&&S.askShot>=0){e.preventDefault();S.askShot=-1;render(true);return}  // F162
+  if(e.key==='Escape'&&S.sheet==='need'&&S.askShot>=0){e.preventDefault();shotGo(-1);return}  // F162
   if(e.key==='Escape'&&S.sheet){e.preventDefault();closeSheet();return}  // the topmost thing only
   if(e.key==='Escape'&&S.rowOpen){e.preventDefault();rowShut();return}  // F187
   if(e.target.matches&&e.target.matches('[data-f]')&&e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.dataset.f.startsWith('set:')){

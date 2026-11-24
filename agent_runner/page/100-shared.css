@@ -50,6 +50,7 @@
 .shot{width:92px;height:120px;border:1px solid var(--line2);border-radius:var(--r-m);background:var(--bubble);padding:0;overflow:hidden;cursor:pointer} .shot img{width:100%;height:100%;object-fit:cover;display:block}
 .shotbig{border:0;background:none;padding:0;cursor:zoom-out;min-width:0} .shotbig img{display:block;max-width:100%;margin:0 auto;border-radius:var(--r-m)}
 .give{display:grid;gap:var(--s1)} .give+.give{margin-top:var(--s3)} .askbody h3+.give{margin-top:var(--s1)} .give .v-bad{color:var(--bad)} .askbody li .btns,.askbody li pre{margin-top:var(--s1)}
+.shotfly{position:fixed;left:0;top:0;max-width:none;z-index:13;pointer-events:none}
 /* not over the fields */ .askfoot.end{position:static}
 .askfoot{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding-block:var(--s3) max(var(--s3),env(safe-area-inset-bottom,0px));display:grid;gap:var(--s2)} .app.kb .askfoot{padding-bottom:var(--s3)}
 @container (min-width:760px){

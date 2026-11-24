@@ -159,6 +159,69 @@ const S = env.S, out = {}, ans = (ctl, tid, inSheet) => press('[data-ctl]', {ctl
 """
 
 
+SHOT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const run = (reduced, hidden) => {
+  const anims = [], body = [], css = {clipPath: 'none', paddingTop: '8px', paddingBottom: '0px', borderRadius: '16px', getPropertyValue: k => k === '--r-m' ? '10px' : k === '--dur-spring' ? '450ms' : k === '--dur' ? '200ms' : 'e-' + k};
+  const node = (name, l, t, w, h, more) => ({name, style: {}, complete: true, isConnected: true, offsetWidth: w, offsetHeight: h, setAttribute() {}, remove() { const i = body.indexOf(this); if (i >= 0) body.splice(i, 1) },
+    getBoundingClientRect: () => ({left: l, top: t, right: l + w, bottom: t + h, width: w, height: h}), cloneNode: () => node('copy', 0, 0, w, h),
+    animate(f, o) { const a = {name, f, o, cancel() { this.gone = true; this.oncancel && this.oncancel() }}; anims.push(a); return a }, ...more});
+  const thumb = node('thumb', 20, 500, 92, 120, {querySelector: () => ({naturalWidth: 720, naturalHeight: 1440})}), img = node('big', 20, 150, 360, 720, {complete: false, addEventListener() {}}), words = node('words', 20, 300, 300, 40), sheet = node('sheet', 0, 0, 0, 0);
+  let high = 600, S = {askShot: -1};
+  Object.assign(sheet, {scrollTop: 340, getBoundingClientRect: () => ({left: 0, top: 800 - high, right: 400, bottom: 800, width: 400, height: high}),
+    querySelector: q => q === '.shotbig img' ? S.askShot >= 0 ? img : null : q === '[data-shot="0"]' ? S.askShot < 0 ? thumb : null : null,
+    querySelectorAll: q => q.startsWith('.askbody') ? [words] : []});
+  const f = new Function('S', '$', 'document', 'matchMedia', 'getComputedStyle', 'render', slice('const MO={', '\nconst shiftOf') + slice('const SHOT=', 'function needSheet(') + 'return {shotGo, SHOT, shotEnd}')(
+    S, () => sheet, {hidden: !!hidden, body: {appendChild: x => body.push(x)}, documentElement: {}}, () => ({matches: reduced}), () => css,
+    () => { high = S.askShot >= 0 ? 700 : 600; sheet.scrollTop = 17 });
+  const out = {}, seen = () => anims.splice(0).map(a => [a.name, a.o.duration, a.o.easing, a.f]);
+  f.shotGo(0); out.open = [S.askShot, sheet.scrollTop, seen()];
+  out.room = img.style.aspectRatio; img.complete = true; f.shotGo(-1); out.close = [S.askShot, sheet.scrollTop, body.length, sheet.style.paddingTop || ''];
+  const copy = anims.find(a => a.name === 'copy'); out.back = seen();
+  if (copy) { copy.onfinish(); out.landed = body.length; }
+  f.shotGo(0); f.shotGo(-1); out.two = body.length; f.shotEnd(); out.end = [body.length, sheet.style.paddingTop || ''];
+  return out;
+};
+console.log(JSON.stringify({moves: run(false), calm: run(true), hidden: run(false, true)}));
+"""
+
+
+def test_need_picture_moves_f189(tmp: Path) -> None:
+    """F189: a picture opens out of its thumbnail and goes back into it, Back returns to the scroll place left; at once
+    when calm()."""
+    if not shutil.which('node'):
+        print('  (no node here: the picture script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(SHOT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node opens and closes the picture', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    m = o['moves']
+    eq(m['open'][:2], [0, 0], 'open: the picture, from its top')
+    eq(m['room'], '720/1440', 'a picture not decoded yet takes its room at once')
+    by = {x[0]: x for x in m['open'][2]}
+    eq(sorted(by), ['big', 'sheet', 'words'], 'open: the picture, the edges of the sheet and the words move')
+    name, dur, ease, (first, last) = by['big']
+    # the 92 x 120 thumbnail is covered by the 360 x 720 picture at 92/360; from its middle (66, 560) to (200, 510)
+    check(first['transform'].startswith('translate(-134px,50px) scale(0.2555') and first['clipPath'].startswith('inset(125.2'), 'it starts as its thumbnail', first)
+    eq((dur, ease, last['transform']), (450, 'e---spring-soft', 'none'), 'and goes to its own place on the tokens')
+    eq(by['sheet'][3][0]['clipPath'], 'inset(100px 0px 0px 0px round 16px)', 'the sheet grows from where its edge was')
+    eq((by['words'][1], by['words'][2]), (200, 'e---ease'), 'the words fade in')
+    eq(m['close'], [-1, 340, 1, '108px'], 'Back: the scroll place left, the copy goes back, room kept for the edge')
+    back = {x[0]: x for x in m['back']}
+    check(back['copy'][3][1]['transform'].endswith('scale(0.25555555555555554)'), 'the copy ends as the thumbnail', back['copy'])
+    check('thumb' in back, 'the thumbnail is hidden until then', sorted(back))
+    eq((m['landed'], m['two'], m['end']), (0, 1, [0, '']), 'it is gone once there; pressed again, one copy; the sheet closed, none')
+    for how in ('calm', 'hidden'):
+        c = o[how]
+        eq((c['open'], c['close'], c['back'], c['two']), ([0, 0, []], [-1, 340, 0, ''], [], 0), f'{how}: at once, and the scroll place all the same')
+    page = W.PAGE.read_text(encoding='utf-8')
+    eq(page.count('shotGo(-1)'), 2, 'Back and Esc go the same way')
+
+
 def test_need_popup_f162(tmp: Path) -> None:
     """F162: a Needs you card is short, and a press on its words opens the popup with its steps, what to see, pictures
     and answers, all escaped; its buttons do not; an answer (with the reply box's words) closes it, and so does an item
@@ -736,4 +799,4 @@ def test_status_view_f124(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124)]))
