@@ -295,13 +295,15 @@ def main(argv: list[str]) -> int:
                     help='copilot: your GitHub Enterprise domain (company.ghe.com); "" for github.com. Asked when left out')
     ap.add_argument('--reopen', action='store_true', help=argparse.SUPPRESS)  # F406a: logged in elsewhere, by Home
     a = ap.parse_args(argv)
-    from agent_runner.config import cfg
+    from agent_runner.config import cfg, toplevel
     try:
-        c = cfg()
+        toplevel()
     except SystemExit:
         if not result:
             raise
         c = None  # F406a: Runner Home's own terminal has no project: the built-in providers
+    else:
+        c = cfg()
     if not a.provider:
         print('\n'.join(list_lines(c)))
         return 0

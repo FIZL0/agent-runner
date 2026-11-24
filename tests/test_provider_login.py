@@ -9,6 +9,7 @@ import os
 import shutil
 import socket
 import tempfile
+import threading
 import time
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -147,6 +148,7 @@ def whole_logins() -> None:
     through(HB, home, 'HT', 'login-gemini', b'g-SECRET\r')
     eq(row(HB, 'HT', 'gemini')['login']['state'], 'done', 'Home logs in with no project')
     check(until(lambda: not [a for a in P.asks(S.C.todo, all=True) if a[1] == tid]), "and a project's parked task reopens")
+    check(until(lambda: row(HB, 'HT', 'gemini')['login']['reopened'] == [tid]), 'and its list says which')
     through(PB, home, 'HT', 'login-acme', b'key-SECRET\r')
     eq(row(PB, 'HT', 'acme')['login']['state'], 'done', "and with a project's own provider")
     for base, t in ((RB, token), (HB, 'HT'), (PB, 'HT')):
@@ -241,15 +243,17 @@ try:
     b.result.write_text('[]', encoding='utf-8')
     b.over()
     eq((b.status()['state'], b.result.exists()), ('failed', False), 'a file of another shape too, and it is gone')
-    done = []
-    c = PL.Login('login-codex', 'codex', done.append)
+    done, go = [], threading.Event()
+    c = PL.Login('login-codex', 'codex', lambda p: go.wait(20) and done.append(p) or (['F2'], ['lab']))
     c.began()
     G.told(str(c.result), True, 'codex is logged in', ['F1'])
     if os.name == 'posix':
         eq(c.result.stat().st_mode & 0o777, 0o600, 'only this user reads how it ended')
     c.over()
     eq(c.status(), {'state': 'done', 'said': 'codex is logged in', 'reopened': ['F1']}, 'finished')
-    check(until(lambda: done == ['codex']), 'and Home is told, to reopen in every project')
+    go.set()
+    check(until(lambda: c.status()['reopened'] == ['F1', 'F2']) and done == ['codex'], 'and Home is told, to reopen in every project')
+    check('could not be reopened in lab' in c.status()['said'], 'one that failed is said', c.status())
 
     print('run login --reopen: only with a login, and no plan made where there is none')
     with mock.patch.object(G, 'reopen_for', side_effect=lambda p: done.append(p) or ['F1']), redirect_stdout(io.StringIO()):

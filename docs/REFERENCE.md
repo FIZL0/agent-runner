@@ -1908,6 +1908,25 @@ resumed session keeps its whole history.
 Not there yet: no Remote Control, no subagents (the review and docs subagents). A fix session starts fresh rather
 than as a copy of the task's session.
 
+### Provider logins in the run app
+
+`GET /logins` (on the run page and on Runner Home) lists each provider a role can name: the built-ins and those in
+`[models.providers]`. Each row has `name`, `ok` and `where` (where its login is kept), `terminal` (what opens its login,
+'' if none), `why` (then), and `login`: the state of its Provider login, '' (none), `running`, `done` or `failed`, with
+`said` and `reopened`. It never shows a secret.
+
+`GET /terminal/login-PROVIDER` opens a ttyd at `/t/TOKEN/login-PROVIDER/` running `run login PROVIDER`. Copilot on a
+GitHub Enterprise domain is `login-copilot~company.ghe.com`, running `run login copilot --enterprise=company.ghe.com`;
+`login-copilot` means github.com. The provider must be a known name and the domain a bare host name. Both are checked
+on the server and passed as arguments, never through a shell; a bad one is refused with the reason, which never repeats
+what was sent. API keys are typed only in that terminal. The key is required even on a trusted network, as for the
+Claude login. The terminal is held 10 minutes after the last browser leaves. There is one per provider: another domain
+for Copilot ends the one before.
+
+When it ends, `/logins` says `done` or `failed` with why, and the tasks parked for that login reopen. Runner Home
+serves it with no run up: at `/logins` for the built-in providers, under `/p/KEY` for a project's own. A login there
+reopens the tasks parked for it in every project. Home does not restart on an upgrade during a login.
+
 ### The stream engine
 
 `[run] engine = "stream"` runs each slot's Claude Code session headless: `claude -p --input-format stream-json

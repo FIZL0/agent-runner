@@ -94,7 +94,15 @@ class Login:
         except OSError:
             pass
         if ok and self.done:
-            threading.Thread(target=self.done, args=(self.provider,), name='login-done', daemon=True).start()
+            threading.Thread(target=self.tell, name='login-done', daemon=True).start()
+
+    def tell(self) -> None:
+        reopened, failed = self.done(self.provider)
+        with self.hold.lock:
+            if self.state == 'done':
+                self.reopened += [t for t in reopened if t not in self.reopened]
+                if failed:
+                    self.said += f'; the tasks waiting for it could not be reopened in {", ".join(failed)}'
 
     def status(self) -> dict:
         with self.hold.lock:
@@ -103,7 +111,8 @@ class Login:
 
 class Logins:
     """A page's provider logins, one a provider: opening Copilot's on another domain ends the one before.
-    `providers`: gives [models.providers]; `done`: told the provider once one has logged in; `env`: the environment."""
+    `providers`: gives [models.providers]; `done`: told the provider once one has logged in, it
+    gives (ids reopened elsewhere, where that failed); `env`: the environment."""
 
     def __init__(self, providers, done=None, env=None):
         self.providers, self.done, self._env = providers, done, env or (lambda: dict(os.environ))

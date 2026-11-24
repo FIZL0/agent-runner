@@ -110,8 +110,6 @@ class Terminals:
         if login := provider_login.is_login(name):  # F406a
             if why := provider_login.parse(name, self.logins.providers())[2]:
                 return {'ok': False, 'mode': 'none', 'live': False, 'out': why}
-            if (old := self.logins.get(name)[1]) and (was := self.procs.pop(old, None)) and was[0].poll() is None:
-                was[0].terminate()
         sock = sock or (name if login or name == session_frame.LOGIN else socket_of(name))  # F126b: the login has no socket
         with self.lock:
             p = self.procs.get(name)
@@ -122,6 +120,9 @@ class Terminals:
             if p and p[0].poll() is None:
                 p[0].terminate()
             self.procs.pop(name, None)
+            if login and (old := self.logins.get(name)[1]) and (was := self.procs.pop(old, None)):  # its own domain's
+                if was[0].poll() is None:
+                    was[0].terminate()
             with socket.create_server((LOCAL, 0)) as s:
                 port = s.getsockname()[1]
             err = tempfile.TemporaryFile()  # not a pipe: nobody reads it while ttyd runs

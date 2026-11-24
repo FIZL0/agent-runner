@@ -802,13 +802,21 @@ class HomeServer(ThreadingHTTPServer):
                     Logins(lambda: own_providers(root), self.logged_in, child_env))
             return got
 
-    def logged_in(self, provider: str) -> None:
-        """F406a: a login is this machine's, so the tasks of every project that wait for it reopen."""
+    def logged_in(self, provider: str) -> tuple[list[str], list[str]]:
+        """F406a: a login is this machine's, so the tasks of every project that wait for it reopen: their ids, and the
+        projects where that failed (one that does not know the provider has none waiting: exit 2)."""
+        ids, failed = [], []
         for root in self._roots():
             try:
-                runner(root, ['login', provider, '--reopen'])
+                r = runner(root, ['login', provider, '--reopen'])
             except (OSError, sp.SubprocessError):
-                pass
+                failed.append(root.name)
+                continue
+            if r.returncode not in (0, 2):
+                failed.append(root.name)
+            if m := re.search(r'^reopened (.+), blocked until', r.stdout, re.M):
+                ids += m[1].split(', ')
+        return ids, failed
 
     def login_live(self) -> bool:
         return any(t.login_live() for t in [self._terms, *list(self._project_terms.values())] if t)
