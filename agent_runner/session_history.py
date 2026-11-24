@@ -19,8 +19,8 @@ An answer is {'ok', 'name', 'entries', 'before' ('' at the start of the transcri
             for a slash command)
     say     'text', Claude's markdown
     tool    'name' and 'arg' as Claude Code words the call: Update(a.py); 'call' (its id); 'group' 'read' | 'search'
-            (neighbours with one Claude Code folds to one line, "Read 3 files"); 'state' 'running' | 'stopped' |
-            'ok' | 'error'; and once it has a result, a result's fields
+            (neighbours with one Claude Code folds to one line, "Read 3 files"); 'state' 'open' (no result
+            yet: at work while the session is, else cut off; /live says which) | 'ok' | 'error'; and once it has a result, a result's fields
     result  'call' and a result's fields: the result of a call that is in no entry of this answer, because the caller
             has it already (or, after a very long call, gets it with an older page)
     note    'what' (NOTES) and 'text'; a 'turn' has 'ms' instead, how long the turn took
@@ -47,6 +47,7 @@ SHOW, SHOW_ERROR, SHOW_WRITE = 3, 10, 10  # the lines of an output Claude Code s
 DIFF_LINES = 120
 NOTES = ('compacted', 'output', 'recap', 'event', 'hook', 'error', 'interrupted', 'info', 'turn')
 
+BRIEF = 'Unattended run: '  # how a task's brief, a slot's first message, starts
 TAGS = re.compile(r'</?pasted_content[^>]*>\n?')
 REMINDER = re.compile(r'<system-reminder>.*?</system-reminder>\s*', re.S)
 ANSI = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]')
@@ -98,7 +99,13 @@ def parse(line: bytes) -> dict | None:
         d = json.loads(line.decode('utf-8', errors='replace'))
     except (ValueError, RecursionError):
         return None
-    return d if isinstance(d, dict) else None
+    if not isinstance(d, dict):
+        return None
+    try:
+        from agent_runner.slots import backend
+        return backend().entry(d)
+    except Exception:  # noqa: BLE001 - no project initialised: Claude's shape as it is
+        return d
 
 
 # --- a transcript entry as history entries -------------------------------------------------------------------
@@ -138,7 +145,7 @@ def told(text: str) -> list[dict]:
     if not t or (t.startswith(RUNNER_TURN) and not t.startswith(LEAD)):
         return []
     return [{'kind': 'you', 'text': t[:YOU_CHARS], 'images': 0, 'cut': max(len(t) - YOU_CHARS, 0),
-             'from': 'runner' if t.startswith(LEAD) else 'person'}]
+             'from': 'runner' if t.startswith((LEAD, BRIEF)) else 'person'}]
 
 
 def call_words(name: str, args) -> tuple[str, str]:
@@ -213,7 +220,7 @@ def row_entries(d: dict, at: int) -> list[dict]:
                     name = str(b.get('name') or 'tool')
                     shown, arg = call_words(name, b.get('input'))
                     made.append((j, {'kind': 'tool', 'name': shown, 'arg': arg, 'call': str(b.get('id') or ''),
-                                     **({'group': GROUPS[name]} if name in GROUPS else {}), 'state': 'running',
+                                     **({'group': GROUPS[name]} if name in GROUPS else {}), 'state': 'open',
                                      '_tool': name, '_args': b.get('input')}))
             elif b.get('type') == 'tool_result':
                 made.append((j, {'kind': 'result', 'call': str(b.get('tool_use_id') or ''), '_block': b,
@@ -416,10 +423,6 @@ def history(name: str, before: str = '', since: str = '', limit: int = PAGE) -> 
                 entries, to = page_since(f, at, end, limit)
                 return {**got, 'entries': entries, 'since': f'{of}:{to}', 'more': to < end}
             entries, start = page_before(f, at if at >= 0 else end, limit)
-            if at >= 0:  # an older page: a call with no result in it is not one still at work
-                for e in entries:
-                    if e.get('state') == 'running':
-                        e['state'] = 'stopped'
             return {**got, 'entries': entries, 'before': f'{of}:{start}' if start else '',
                     'reset': bool(since or before) and at < 0}
     except OSError:

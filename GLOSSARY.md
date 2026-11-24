@@ -760,3 +760,10 @@ _Said_: switcher
 _On screen_: Chats; Rename this chat
 _In code_: SHEETS.chats, chatsSheet, chatLast
 _Avoid_: chat picker, dropdown, tab bar, title menu
+
+**Session history**:
+A chat's or slot's whole transcript as data for the run page, in pages: the person's messages, the agent's words, each tool call folded with its result, and notes. Unlike the Session feed, it reaches back to the transcript's start.
+_Said_: history
+_On screen_: nothing yet
+_In code_: session_history.py, history, /history/NAME
+_Avoid_: scrollback, log

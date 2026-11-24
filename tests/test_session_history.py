@@ -153,7 +153,7 @@ def test_since(tmp: Path) -> None:
     t = write(tmp / 's.jsonl', [you('go'), call('x', 'Read', file_path='a.py')])
     with at(t):
         g = H.history('c2')
-        eq([e.get('state') for e in g['entries']], [None, 'running'], 'a call at work')
+        eq([e.get('state') for e in g['entries']], [None, 'open'], 'a call with no result yet')
         eq(H.history('c2', since=g['since'])['entries'], [], 'nothing new')
         with t.open('a', encoding='utf-8') as f:
             f.write('{"type": "assis')
@@ -172,11 +172,10 @@ def test_since(tmp: Path) -> None:
             if not n['more']:
                 break
         eq((got, asks), ([f'n{i}' for i in range(25)], 3), "a long catch-up comes in answers, 'more' till the last")
-        old = H.history('c2', limit=1)
-        write(t, [call('y', 'Bash', command='z'), you('stop'), say('ok')], 'a')
+        write(t, [call('y', 'Bash', command='z'), you('stop'), you('Unattended run: do it')], 'a')
         end = H.history('c2', limit=2)
-        check(old['before'] and H.history('c2', before=end['before'], limit=1)['entries'][0]['state'] == 'stopped',
-              'a call left with no result on an older page is not at work')
+        eq([e['from'] for e in end['entries']], ['person', 'runner'], "a slot's brief is the runner's")
+        eq(H.history('c2', before=end['before'], limit=1)['entries'][0]['state'], 'open', 'the same on an older page')
 
 
 def test_fresh(tmp: Path) -> None:
