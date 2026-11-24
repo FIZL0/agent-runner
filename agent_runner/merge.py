@@ -1280,7 +1280,7 @@ def batch_build(t: BatchTurn):
                          if not untestable(f)]
                 log(f'{tid}: not reusing the merge gated with {", ".join(x for x in a["tids"] if x != tid)}: '
                     + (f'{branch} moved in tested files ({", ".join(moved[:5])}; `[run] untested` leaves '
-                       f'them in)' if moved else 'its tasks changed'))
+                       f'them in)' if moved else 'its tasks changed, or it holds research to ask about'))
             drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
         own = fixed(tid)
         ref = renumber_doubles(own, base, tid, d)
