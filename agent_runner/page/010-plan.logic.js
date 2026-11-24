@@ -5,11 +5,16 @@ function answerOpts(it){return((it&&it.answers)||[]).map(a=>a.value)}  // C33: t
 const E_=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const askWords=s=>E_(s).replace(/`([^`]+)`/g,'<code>$1</code>');  // `code` as code
 function needD(n){const ask=n.ask||n.title||n.what||'';
+  if(!n.detail&&n.label==='DECIDE')return{said:'Choose',title:n.title||n.id,where:'',summary:ask,question:ask,lead:[],steps:[],expect:[],notes:[],shots:[]};
   return n.detail||{said:'Needs you',title:n.title||n.id,where:'',summary:n.ask_short||ask,lead:[],steps:[ask],expect:[],notes:[],shots:[]}}
 const needLab=n=>{const d=needD(n);return d.said+(d.where?` · ${d.where}`:'')};
-/* the card's words, one button that opens the popup: what is wanted and where, the title, two lines of what to do */
-function needTap(n){const d=needD(n), k=d.steps.length;
-  return `<button class="asktap" data-needopen="${E_(n.id)}" aria-haspopup="dialog"><span class="asklab">${E_(needLab(n))}</span><b class="ell">${E_(d.title)}</b><span class="askdo">${askWords(d.summary)}</span><span class="small">${['Press for details',k>1?`${k} steps`:'',E_(n.id),E_(n.age||'')].filter(Boolean).join(' · ')}</span></button>`}
+/* B223b: a DECIDE's heading is its question, with the task's title small under it ('' when it has none to add); the rest have their title */
+const needTitle=n=>{const d=needD(n);return d.question&&d.title!==n.id&&d.title!==d.question?d.title:''};
+const needHead=n=>{const d=needD(n);return d.question?askWords(d.question):E_(d.title)};
+/* the card's words, one button that opens the popup: what is wanted and where, the title, two lines of what to do; a
+   DECIDE's: its question whole, the title, two lines of its background */
+function needTap(n){const d=needD(n), k=d.steps.length, t=needTitle(n), say=d.question?d.lead.join(' '):d.summary;
+  return `<button class="asktap" data-needopen="${E_(n.id)}" aria-haspopup="dialog"><span class="asklab">${E_(needLab(n))}</span><b class="${d.question?'q':'ell'}">${needHead(n)}</b>${t?`<span class="small ell">${E_(t)}</span>`:''}${say?`<span class="askdo">${askWords(say)}</span>`:''}<span class="small">${['Press for details',k>1?`${k} steps`:'',E_(n.id),E_(n.age||'')].filter(Boolean).join(' · ')}</span></button>`}
 /* F175a: a step's link to open and its command to copy */
 function stepMore(m,j){if(!m)return '';
   return (/^https?:/i.test(m.link||'')?`<div class="btns"><a class="btn" href="${E_(m.link)}" target="_blank" rel="noopener noreferrer">Open</a></div>`:'')

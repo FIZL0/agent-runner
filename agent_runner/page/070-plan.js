@@ -163,7 +163,7 @@ function needSheet(){
   const body=big?`<button class="shotbig" data-shotclose aria-label="Back to the details"><img src="${esc(shotUrl(big))}" alt="${esc(big.caption||'Picture')}"></button>${big.caption?`<p class="small">${esc(big.caption)}</p>`:''}`
     :`${needBody(n,shotUrl,giveHTML(n,{secure,...said,done:giveDone(n,said,secure)}))}${n.url?`<a class="asklink" href="${esc(n.url)}" target="_blank" rel="noopener">Its page ${I.ext}</a>`:''}${askTask(n.id)?askWhyFold(n.id)+askFold('task','Full task',(S.askText||{})[n.id]):''}`;
   const foot=needInputs(n).length?`<div class="askfoot end">${needBtns(n,i)}</div>`:n.label==='TOOL'?'':`<div class="askfoot"><input class="fld" data-f="${esc(f)}" aria-label="${rep?'Your reply':'A note with your answer'}" placeholder="${rep?'Your reply':'Add a note (optional)'}" autocomplete="off" value="${esc(S.f[f]||'')}">${needBtns(n,i,rep?`<button class="btn ${answerOpts(n).length?'':'pri'}" data-reply="${esc(n.id)}">Reply</button>`:'')}</div>`;
-  return `<div class="asktop"><h2>${esc(d.title)}</h2>${big?'<button class="btn" data-shotclose>Back</button>':'<button class="btn" data-closesheet>Close</button>'}</div>
+  return `<div class="asktop"><div class="grow"><h2>${needHead(n)}</h2>${needTitle(n)?`<div class="small">${esc(needTitle(n))}</div>`:''}</div>${big?'<button class="btn" data-shotclose>Back</button>':'<button class="btn" data-closesheet>Close</button>'}</div>
     <div class="small"><span class="asklab">${esc(needLab(n))}</span>${n.age?` · ${esc(n.age)}`:''} · ${esc(n.id)}</div><div class="askbody">${body}</div>${foot}`;
 }
 /* F175a: Done on an item with inputs, under its fields. A field may be gone meanwhile (the item changed): its words show here */

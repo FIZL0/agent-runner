@@ -137,7 +137,8 @@ const S = env.S, out = {}, ans = (ctl, tid, inSheet) => press('[data-ctl]', {ctl
   ans('need_answer1', 'F2', false); out.buttons = [S.sheet, sent.length];
   press('[data-needopen]', {needopen: 'B160'}, false);
   S.f['askre:B160'] = ' still grey '; ans('need_no', 'B160'); out.closed = S.sheet;
-  press('[data-needopen]', {needopen: 'D7'}, false); out.reply = el.h;
+  press('[data-needopen]', {needopen: 'D7'}, false); out.reply = el.h; out.askCard = env.card0(needs[2], 2);
+  out.steps = env.card0({...needs[2], detail: {...needs[2].detail, steps: ['a', 'b'], lead: [], title: 'D7'}}, 2);
   press('[data-reply]', {reply: 'D7'}); S.f['askre:D7'] = '8770'; press('[data-reply]', {reply: 'D7'}); out.sent = sent;
   S.f['askre:D8'] = ''; press('[data-needopen]', {needopen: 'D8'}, false); out.opts = el.h; out.optsCard = env.card0(needs[3], 3);
   S.f['askre:D8'] = ' dark too '; ans('need_answer1', 'D8'); out.opt = sent.slice(-1); sent.length -= 1;
@@ -236,7 +237,7 @@ def test_need_popup_f162(tmp: Path) -> None:
     needs = [{'id': 'B160', 'label': 'CONFIRM', 'ask': 'a', 'age': '20m', 'url': 'https://claude.ai/x', 'detail': d,
               'answers': [{'label': 'Yes', 'value': 'Yes'}, {'label': 'No', 'value': 'No'}]},
              {'id': 'F2', 'label': 'BLOCKED', 'ask': 'Log in', 'answers': [{'label': 'Done', 'value': 'Done'}]},
-             {'id': 'D7', 'label': 'DECIDE', 'ask': 'Which port?', 'detail': {**none, 'said': 'Choose', 'where': '', 'title': 'Port', 'summary': 'p', 'steps': ['Which port?']}, 'answers': []},
+             {'id': 'D7', 'label': 'DECIDE', 'ask': 'Which port?', 'detail': {**none, 'said': 'Choose', 'where': '', 'title': 'Port <b>', 'summary': 'p', 'question': 'Which `port` <i>?', 'lead': ['8765 is taken.', 'Both <work>.'], 'steps': []}, 'answers': []},
              {'id': 'D8', 'label': 'DECIDE', 'ask': 'Which look?', 'options': (opts := [{'name': 'Full', 'rec': True}, {'name': 'No <change>', 'rec': False}]),
               'answers': U.need_answers({'label': 'DECIDE', 'options': opts})},
              {'id': 'D9', 'label': 'DECIDE', 'ask': 'Pick a layout', 'url': 'https://claude.ai/y', 'picks': {U.SHEET_GO_LABEL: 'go', 'Tabs': 'D9 picks: lay=a'},
@@ -275,6 +276,13 @@ def test_need_popup_f162(tmp: Path) -> None:
     check('.sheet.open:not(.drag){transition:transform var(--dur-spring) var(--spring-soft)}' in page and 'visible at once' in page,
           'F162a2: an opening sheet is visible at once, or it cannot take focus')
     check('data-reply="D7"' in o['reply'], 'an ask with no answers has Reply', o['reply'])
+    q, t = 'Which <code>port</code> &lt;i&gt;?', 'Port &lt;b&gt;'
+    check(f'<b class="q">{q}</b><span class="small ell">{t}</span><span class="askdo">8765 is taken. Both &lt;work&gt;.</span>' in o['askCard'],
+          "B223b: a DECIDE's card: the question, the title small, its background", o['askCard'])
+    check(f'<h2>{q}</h2><div class="small">{t}</div>' in o['reply'] and '<p>8765 is taken.</p><p>Both &lt;work&gt;.</p>' in o['reply']
+          and 'What to do' not in o['reply'], 'the popup: the same, its background as paragraphs', o['reply'])
+    check('askdo' not in o['steps'] and 'ell' not in o['steps'] and '2 steps' in o['steps'], 'no background, no title of its own: neither', o['steps'])
+    check('<h2>Which look?</h2>' in o['opts'] and 'What to do' not in o['opts'], 'a DECIDE with no detail too', o['opts'])
     eq(o['sent'], [['run_control', {'key': 'need_answer1', 'tid': 'F2', 'text': 'Done'}],
                    ['run_control', {'key': 'need_no', 'tid': 'B160', 'text': 'No', 'note': 'still grey'}],
                    ['toast', 'Write your reply first'], ['answer', {'tid': 'D7', 'text': '8770'}]],

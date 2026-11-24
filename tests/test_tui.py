@@ -1938,6 +1938,23 @@ def test_need_detail_f162() -> None:
     check('Open it' in ''.join(t for t, _ in p.row(4, p.snap['needs'][0])), 'the row says what to do', p.row(4, p.snap['needs'][0]))
 
 
+def test_need_question_b223b() -> None:
+    """B223b: a DECIDE's pane is its question, its task's title under it and its background, with What to do only for
+    the steps of its ask file."""
+    from agent_runner import need_detail as N
+    ask = 'The port is taken. Both work. Which port do we use?'
+    d = N.detail('DECIDE', 'D3', ask, 'On the 15 Pro with Tailscale selected as the VPN, check the port', '', U.ask_short)
+    row = dict(SNAP['needs'][0], label='DECIDE', detail=d)
+    said = lambda row, w=80: [''.join(t for t, _ in x).rstrip() for x in page(SNAP).need_lines(row, w)]  # noqa: E731
+    lines = said(row)
+    eq((lines[0], lines[1]), ('D3 Which port do we use?', d['title']), 'the question, then the title')
+    check(lines[2].startswith('Choose') and lines[4] == 'The port is taken. Both work.', 'then its background', lines)
+    check('What to do' not in lines, 'no steps', lines)
+    eq(said(row, 20)[:2], ['D3 Which port do we', '   use?'], 'a long question wraps whole')
+    check('What to do' in said(dict(row, detail=dict(d, steps=['Open it']))), 'the ask file\'s steps show')
+    eq(said(dict(row, detail=dict(d, title='D3')))[1][:6], 'Choose', 'no title of its own: none')
+
+
 F399_ASK = {'summary': 'Give the link of Install Switch', 'steps': [
     {'text': "Add main's copy of Install Switch to Shortcuts", 'link': 'https://example.com/Install%20Switch.shortcut'},
     'Share > Copy iCloud Link'],
@@ -2281,7 +2298,7 @@ def test_manage_releases_f193() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_question_b223b, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
