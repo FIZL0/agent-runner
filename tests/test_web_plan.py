@@ -424,10 +424,10 @@ const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf
 const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
 const S = {ob: [], taskOpen: {}, sure: null, snap: null};
 const no = () => '', env = {S, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
-  ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}};
+  ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}, upNext: () => S.snap.queue, LOGO: no, greeting: no, box: no, keysLine: no, agentCard: no, esc: no};
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
-  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + ['planCard', 'nextReleaseCard', 'relCard', 'newReleaseCard', 'statusHTML', 'planHTML'].map(f => grab(`function ${f}(`)).join('');
-const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), statusHTML()]}')(env);
+  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + ['planCard', 'nextReleaseCard', 'relCard', 'newReleaseCard', 'statusHTML', 'planHTML', 'homeHTML'].map(f => grab(`function ${f}(`)).join('');
+const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), statusHTML(), homeHTML()]}')(env);
 const out = JSON.parse(process.argv[3]).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw() });
 console.log(JSON.stringify(out));
 """
@@ -455,17 +455,18 @@ def test_manage_releases_f193(tmp: Path) -> None:
     r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps([[on, []], [off, []], [off, sent], [on, []], [old, []]])],
                        capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
-    (plan_on, st_on), (plan_off, st_off), (plan_sent, st_sent), back, older = json.loads(r.stdout)
+    (plan_on, st_on, home_on), (plan_off, st_off, home_off), (plan_sent, st_sent, home_sent), back, older = json.loads(r.stdout)
     check('>Releases<' in plan_on and '<b>New release</b>' in plan_on and 'data-ctl="release_now"' in plan_on, 'on: Plan has them', plan_on)
     check('>Release<' in st_on and 'data-ctl="release_now"' in st_on and 'V5' in st_on, 'on: Status too', st_on)
+    check('data-ctl="release_now"' in home_on, 'on: Home too', home_on)
     queue = plan_on.split('>Queue<', 1)[1]
     check('V5' not in queue and 'V5' in plan_on, 'on: V5 in Releases only', plan_on)
-    for name, html in (('Plan', plan_off), ('Status', st_off)):
+    for name, html in (('Plan', plan_off), ('Status', st_off), ('Home', home_off)):
         check(not re.search(r'release', html, re.I), f'off: {name} says nothing of releases', html)
     check('V5 Ship 1.2.0' in plan_off.split('>Queue<', 1)[1], 'off: V5 is in the Queue', plan_off)
-    for html in (plan_sent, st_sent):
+    for html in (plan_sent, st_sent, home_sent):
         check('[ob release_now:]' in html and 'New release' not in html, 'off: one already sent shows until settled', html)
-    eq((back, older), ([plan_on, st_on], [plan_on, st_on]), 'back on, and from an older run: all of it')
+    eq((back, older), ([plan_on, st_on, home_on], [plan_on, st_on, home_on]), 'back on, and from an older run: all of it')
     c_on, c_off = page_copy.page_copy_html(on), page_copy.page_copy_html(off)
     check('waits for' in c_on, 'the copy, on: its release row', c_on)
     body = c_off.split('</style>', 1)[1]
