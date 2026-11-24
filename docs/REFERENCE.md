@@ -667,8 +667,8 @@ Queue them as their own task]`. The file names and `wip/<ID>` are in the detail 
 line. `Ship them` (a plain yes, or `merge anyway`): the next attempt brings the code over and its merge lands
 it. `Queue them as their own task` (`follow-up`): the next attempt files the code as its own task and commits
 only the findings. The last answer decides; anything unclear is asked again. Only the answer's own words are
-read, so a note that quotes the question does not count, but a plain note that says `merge anyway` still
-lands the code (F36). The question is not asked at all when the person's own words asked for the code: the
+read, so a note that quotes the question does not count, but with no clear answer a plain note that
+says `merge anyway` still lands the code (F36). The question is not asked at all when the person's own words asked for the code: the
 brief has the agent put a line `asked for: "<their exact words>"` (three or more words) in the commit
 message, and the merge checks that those words stand in the task's request (its line or long form, unless an
 agent filed it as a follow-up), a person's change or answer, or a `plan tell` (kept in `<notes>/told/<ID>.txt`).

@@ -1397,10 +1397,10 @@ def research(tid: str, kinds_map: dict[str, str] | None = None) -> bool:
 SHIP, QUEUE = 'Ship them', 'Queue them as their own task'
 RESEARCH_BUTTONS = f'[{SHIP} (recommended) / {QUEUE}]'  # ends the question; its quote in an answer's note ends so too
 MERGE_ANYWAY = re.compile(r'\bmerge[ -]anyway\b', re.I)
-_SHIP_NAME = re.compile(r'(?:ship them|merge[ -]anyway)\s*(?:$|[:.,;!(])', re.I)  # the button, words after it or not
+_SHIP_NAME = re.compile(r'(?:ship them|merge[ -]anyway)\s*(?:$|[:.!(])', re.I)  # the button, words after it or not
 _SHIP_WORDS = re.compile(r'^(?:yes|yep|yeah|y|ok|okay|sure|done|go|ship|merge)\b|\b(?:go ahead|ship (?:it|them))\b', re.I)
-_QUEUE_WORDS = re.compile(r'\bqueue\b|\bfollow[ -]?up\b|\bown task\b', re.I)
-_NOT = re.compile(r"\b(?:no|not|never|dont|wont|without|only|findings|but|later|wait|first|until)\b|n['’]t\b|\?", re.I)  # no plain yes
+_QUEUE_WORDS = re.compile(r'^queue\b|\bqueue (?:them|it|these|this|the (?:code|changes))\b|\bfollow[ -]?up\b|\bown task\b', re.I)
+_NOT = re.compile(r"\b(?:no|not|never|dont|wont|without|only|findings|later|wait|first|until)\b|n['’]t\b|\?", re.I)  # no plain yes
 _NOT_MERGE = re.compile(r"(?:\b(?:no|not|never|dont|without)|n't)\s+(?:\w+\s+){0,2}merge[ -]anyway", re.I)
 _PERSON_NOTE = re.compile(r'(your answer|confirmed by you) \(|you said(?:, on (?:stuck|CONFIRM|DECIDE|BLOCKED) |: )')
 
@@ -1412,7 +1412,7 @@ def research_choice(said: str) -> str:
         return 'ship'
     if _QUEUE_WORDS.search(said):
         return 'queue'
-    return 'ship' if _SHIP_WORDS.search(said) and not _NOT.search(said) else ''
+    return 'ship' if _SHIP_WORDS.search(said) and not _NOT.search(re.sub(r'\bno (?:problem|need)\b', '', said, flags=re.I)) else ''
 
 
 def _note_parts(item: str) -> list[str]:
@@ -1435,16 +1435,17 @@ def _own_words(part: str, tid: str) -> tuple[str, bool] | None:
 
 def research_ships(item: str, tid: str) -> bool:
     """B221: does the last decision on task `tid`'s text `item` land its research diff's code: an answer to the
-    question (`research_choice`), or a note that says `merge anyway`. A question quoted in a note decides nothing."""
-    ships = False
+    question (`research_choice`), or with no clear one a note that says `merge anyway` and offers no other answer. A
+    question quoted in a note decides nothing."""
+    choice, noted = '', False
     for part in _note_parts(item)[1:]:
         own = _own_words(part, tid)
         said, ours = own or (part, False)
         if ours:
-            ships = research_choice(said) == 'ship'
-        elif MERGE_ANYWAY.search(said) and not _NOT_MERGE.search(said):
-            ships = True
-    return ships
+            choice, noted = research_choice(said), False
+        elif MERGE_ANYWAY.search(said) and not _NOT_MERGE.search(said) and not _QUEUE_WORDS.search(said):
+            noted = True
+    return choice == 'ship' or not choice and noted
 
 
 ASKED_FOR = re.compile(r'^asked for: *["“]?(.+?)["”]? *$', re.I | re.M)  # a commit message line: the person's words

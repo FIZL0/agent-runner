@@ -4311,7 +4311,9 @@ def test_research_findings_only(repo: Path):
                             ('', True), ('merge anyway', True), ('Merge anyway.', True), ('go ahead', True),
                             ('follow-up', False), ('Queue them as their own task', False), ('no', False),
                             ('do not ship them', False), ('looks good, ship it', True), ('merge the findings only', False),
-                            ('ship them?', False), ('ok but wait for V3', False), ('yes, but as its own task', False),
+                            ('ship them?', False), ('Ship them, no, wait', False),
+                            ('yes, but keep the log', True), ('yes, no problem', True),
+                            ('queue it — merge anyway was wrong', False), ('ok but wait for V3', False), ('yes, but as its own task', False),
                             ('Queue them as their own task: not merge anyway', False)):
             for q in (f'DECIDE {ask}', f'DECIDE {old}'):
                 for done in ([f'your answer ({q}): {said or "done"}'] + ([f'you said, on {q}: do this instead: {said}'] if said else [])):
@@ -4320,6 +4322,10 @@ def test_research_findings_only(repo: Path):
         check(not P.research_ships(both, 'R8'), 'the last answer decides')
         check(not P.research_ships('- [ ] **R8** t — your answer (DECIDE merge anyway or wait?): wait', 'R8'),
               'nor does another question that says merge anyway')
+        check(not P.research_ships('- [ ] **R8** t — answer `follow-up` or `merge anyway`', 'R8'), 'nor a note offering both')
+        check(P.research_ships(f'- [ ] **R8** t — your answer (DECIDE {old}): this did not have a clear decision, queue a fix '
+                               'to the runner. also go ahead with the changes — The answer is merge anyway', 'R8'),
+              'an unclear answer goes by the note that settles it')
         check(P.research_ships('- [ ] **R8** t | files: a.py — The person\'s answer is merge anyway: bring it', 'R8'),
               'a note that says merge anyway still ships')
         P.confirm('R8', 'follow-up', todo=repo / rel)
