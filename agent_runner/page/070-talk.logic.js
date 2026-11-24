@@ -47,6 +47,14 @@ function soundAs(type){
   try{const a=navigator.audioSession;if(!a||a.type===type||(type==='playback'&&(MIC.rec||MIC.next||TK.ear)))return;
     a.type=type;micLog(`audio session ${type}, ${a.state||''}`)}catch(e){}
 }
+/* B166: a run voice reads, or may once the run has said which it has */
+const audioWanted=()=>!!(AU.got?runVoice(AU.got,TS.voice):TS.voice!=='system');
+/* B166: in the press that starts the mic, after rec.start(): the audio elements load the silent clip and play nothing, for
+   Safari lets one play later whose load() a tap called. So a listen that ends with no second tap has had its tap too */
+function audioReady(){
+  if(AU.ok||!audioWanted())return;
+  try{audioSrc(new Blob([silentWav()],{type:'audio/wav'})).load();holdEl().load()}catch(e){}
+}
 /* B174: a reply is read now, by itself or by its play button; and what Talk's state is once nothing is read */
 const talkReads=()=>TK.state==='speaking'||!!TK.playing, talkRest=()=>TK.wait?'thinking':'';
 /* B174: the replies that landed while the mic was on (or another was read), played in order once it has ended */
