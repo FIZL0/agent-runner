@@ -406,9 +406,31 @@ def test_started_by_logged():
               'run.log says it too')
 
 
+def test_started_by_tty_b760():
+    print('B760: started_by_record names the tty, or a fallback where Python has no os.ttyname (Windows)')
+    from types import SimpleNamespace
+
+    def tty(ttys: tuple, **names) -> str:
+        fake = SimpleNamespace(isatty=lambda fd: fd in ttys, getppid=lambda: 1, **names)
+        with mock.patch.object(M, 'os', fake):
+            return M.started_by_record('picker')['tty']
+
+    def unnamed_stdin(fd):
+        if fd == 0:
+            raise OSError('no name')
+        return f'/dev/pts/{fd}'
+    eq(tty((0, 1, 2)), 'terminal', 'Windows, interactive')
+    eq(tty((2,)), 'terminal', 'Windows, only stderr is a terminal')
+    eq(tty(()), 'no tty', 'Windows, not interactive')
+    eq(tty((1, 2), ttyname=lambda fd: f'/dev/pts/{fd}'), '/dev/pts/1', 'Unix, the first tty\'s name')
+    eq(tty((0, 1), ttyname=unnamed_stdin), '/dev/pts/1', 'Unix, a tty with no name: the next one')
+    eq(tty((), ttyname=unnamed_stdin), 'no tty', 'Unix, not interactive')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_attach_routes, test_run_view_posts_keys, test_list_two_projects,
                              test_attach_number, test_windows_hidden_consoles, test_picker_rows, test_picker_keys,
                              test_launcher_actions, test_picker_colours, test_copy_link_fallbacks,
                              test_copy_link_daemon_b153, test_launcher_back_b153,
-                             test_run_facts_https_link, test_bare_not_a_tty, test_started_by_logged]))
+                             test_run_facts_https_link, test_bare_not_a_tty, test_started_by_logged,
+                             test_started_by_tty_b760]))
