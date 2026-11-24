@@ -1366,7 +1366,7 @@ def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
     if gone:
         names = ', '.join(f'"{s["name"]}"' for s in gone)
         log(f'remote: ended {names} '
-            f'({"this run" if stopping else "left by an earlier run"}); their entries are archived')
+            f'({"this run" if stopping else "left by an earlier run or version"}); their entries are archived')
     for s in up:
         log(f'remote: "{s["name"]}" (pid {s["pid"]}) did not end within {wait:g} s of SIGTERM; left running, '
             f'the next start ends it')

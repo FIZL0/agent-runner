@@ -480,7 +480,7 @@ you, to act on a task or when the person asks which one.
   run idle or stopped, a release) or, for "notify me when something needs me", `{cmd} since --follow
   --needs-you` (push each line it prints, until they say stop), or else on a loop that polls `{cmd} status` every minute or so and prints a
   line once X shows. When X happened, send one PushNotification saying it in a plain sentence, post it here,
-  and stop that Monitor: one push per ask. On a timeout, start it again silently. When none of these can ever show X, say so instead.
+  and stop that Monitor: one push per ask (but the needs-you one goes on until they say stop). On a timeout, start it again silently. When none of these can ever show X, say so instead.
 """,
     'queue': """\
 # Shaping the queue
