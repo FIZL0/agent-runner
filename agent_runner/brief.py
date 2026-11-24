@@ -321,6 +321,8 @@ when too long for the line, go in the commit message). When the \
 check or choice is about how something looks, take screenshots: small ones, put under {shots}/, with no secrets or \
 tokens in them. The file is optional, and it is gone once they answer, so write a new one for each ask.
 
+A `DECIDE:` is one question. When its answers are a few short names, they become buttons, so give them: end the question with them in a bracket, as in `DECIDE: Which look? [Full (recommended) / Small / No change]`, before any link, or as "options": [{{"name": "Full", "rec": true}}, {{"name": "Small"}}] in the ask file. With `ask` use the ask file: a bracket there gives no buttons. Give 2 to 12 different names, each under 80 characters and no ` / ` in one, at most one recommended, and each clear on its own: its name is all the answer says.
+
 When you block with `BLOCKED:` because of steps only a person can take (a login, a certificate or signing key, \
 a secret, a click in a third-party dashboard), write the steps, links, commands and inputs they have to do in that \
 file: a step is words or {{"text", "link", "cmd", "on"}}, and "inputs" lists what they give back (a secret is only \
@@ -428,7 +430,7 @@ def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
         long='this task has one, so review it whatever its size' if has_long else 'this task has none')
 
 
-# --- F18: pick sheets for a DECIDE with options (agent_runner/sheet.py) ---------------------------------------
+# --- F18: pick sheets for a DECIDE with more than one question (agent_runner/sheet.py) ---------------------------------------
 #
 # An agent that blocks with `DECIDE:` on a choice writes it as questions with answers to <notes>/sheets/<ID>.json,
 # renders the page with `agent-runner sheet <ID> --html FILE`, publishes it (the Artifact tool) and blocks with
@@ -438,7 +440,8 @@ def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
 # task (`plan confirm`) with each answer spelled out in its note. `[run] questionnaires = false` turns it off.
 
 SHEET_PROMPT = """\
-When you block with `DECIDE:` on a choice (options, a pick-list, settings to change or keep), write the choice \
+When you block with `DECIDE:` on a choice that takes more than one question (a pick-list, settings to change or \
+keep), or whose answers each need a why (one question with a few short answers is the bracket or "options" above), write the choice \
 as a pick sheet, not as a numbered list: no option numbers anywhere. Write {path} as JSON: "title" (a short \
 name), "summary" (one line that says what is ready, e.g. "12 config cleanups ready, 10 optional"), "intro" \
 (one or two sentences), and "groups": [{{"heading": <a kind of change>, "questions": [{{"id": <short key>, \
@@ -451,7 +454,7 @@ answer in its note."""
 
 
 def questionnaires_on() -> bool:
-    """F18: `[run] questionnaires` (default on): a DECIDE with options is asked as a pick sheet."""
+    """F18: `[run] questionnaires` (default on): a DECIDE with more than one question is asked as a pick sheet."""
     try:
         return C.run.get('questionnaires', True) is not False
     except (AttributeError, NameError):  # no config loaded
