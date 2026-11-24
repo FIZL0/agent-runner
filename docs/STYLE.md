@@ -76,7 +76,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **+ button** (`.btn.plus`, `plusBtn()`): one per view, top right, its word kept on a phone (Project, Task, Concept,
   Slot, New talk, Device). `+ Chat` stands only beside Chats. None in Settings or in a chat.
 - **Project card** (`.pcard`, `projectCard()`): one project on the Overview or in a list: its state dot and name, its
-  tasks by title, what landed today. One main button (`mainBtn()`: Start run, Open, Pause or Go on); the rest is in the
+  tasks by title, what landed today. One main button (`mainBtn()`: Start run or Open); the rest is in the
   … sheet (`dotsBtn()`), never beside it.
 - **Badge** (`.n`): a count of what waits on the person, never of anything else. **Dot** (`.bdot`): something
   waits, no count. **Pill** (`.pill`): a state in a word or two. Same words on every page: Running, Paused,
