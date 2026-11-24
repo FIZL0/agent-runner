@@ -1892,6 +1892,122 @@ def test_need_detail_f162() -> None:
     check('Open it' in ''.join(t for t, _ in p.row(4, p.snap['needs'][0])), 'the row says what to do', p.row(4, p.snap['needs'][0]))
 
 
+F399_ASK = {'summary': 'Give the link of Install Switch', 'steps': [
+    {'text': "Add main's copy of Install Switch to Shortcuts", 'link': 'https://example.com/Install%20Switch.shortcut'},
+    'Share > Copy iCloud Link'],
+    'inputs': [{'key': 'icloud', 'label': 'iCloud link', 'kind': 'link', 'hint': 'It starts with https://www.icloud.com/shortcuts/',
+                'match': r'https://www\.icloud\.com/shortcuts/[0-9a-f]+', 'confirm': 'This publishes the shortcut. Send it?'}]}
+
+
+def give_page(ask: dict, tid: str = 'F2', **kw):
+    """F175b: answer_repo's item `tid` with the asks file `ask`, its answer tab open: (the page, its repo)."""
+    from agent_runner import need_detail as N
+    repo = answer_repo()
+    f = S.C.notes('uploads', 'x').parent.parent / 'asks' / f'{tid}.json'
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(ask), encoding='utf-8')
+    row = {'label': 'DECIDE', 'id': tid, 'concept': '', 'title': 'pick a database', 'what': '', 'url': '', 'ask': 'yes or no?',
+           'age': '1m', 'detail': N.detail('DECIDE', tid, 'yes or no?', 'pick a database', '', U.ask_short)}
+    row['answers'] = U.need_answers(row)
+    row.update(acts=U.row_acts('need', row), labels=U.row_labels('need', row))
+    p = page(dict(SNAP, needs=[row, SNAP['needs'][2]]), **kw)
+    p.key('4')
+    p.key('ENTER')
+    return p, repo
+
+
+def keys(p, *ks) -> None:
+    for k in ks:
+        for c in ([k] if k.isupper() or k[0] == '^' else k):  # a key's name, else words typed
+            p.key(c)
+
+
+def test_need_give_f175b() -> None:
+    """F175b: the Needs you pane draws an item's steps (Open), its field and one Done, no plain answers; a failed match
+    sends nothing and says the hint at the field; the confirm question is asked first."""
+    opened, ran = [], []
+    link = 'https://www.icloud.com/shortcuts/ab12'
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), mock.patch.object(U, 'SEND', [no_send]):
+        p, _ = give_page(F399_ASK, opener=lambda url: (opened.append(url), {'ok': True, 'out': 'opened'})[1])
+        text = drawn(p).text()
+        for want in ('1. Add main', 'https://example.com/Install%20Switch.shortcut', '[⏎ Open]', '2. Share > Copy iCloud Link',
+                     'What to enter', 'iCloud link', '[^S Done] [L later]'):
+            check(want in text, f'shows {want!r}', text)
+        for no in ('[y Yes]', 'your own reply', 'Your reply', 'nothing is entered'):
+            check(no not in text, f'no {no!r}', text)
+        check(not any(c.get('answer') for c in p.row_controls(p.sel(), 'need')), 'no plain answers')
+        keys(p, 'y', 'ENTER')
+        eq((opened, ran), ([F399_ASK['steps'][0]['link']], []), 'y answers nothing, Enter opens the link')
+        keys(p, 'TAB')
+        eq(p.typing, 'give:F2:icloud', 'Tab types into the field')
+        keys(p, 'https://evil.example/Lq', '^S')
+        text = drawn(p).text()
+        check('iCloud link: It starts with https://www.icloud.com/shortcuts/' in text and p.typing, 'the hint, at the field', text)
+        eq((ran, [n['id'] for n in p.snap['needs']][0]), ([], 'F2'), 'a failed match sends nothing')
+        keys(p, '^U', link, 'ENTER')
+        eq((p.typing, ran), ('', []), 'Enter leaves the last field and sends nothing')
+        keys(p, '^S')
+        check('This publishes the shortcut. Send it? ^S again' in drawn(p).text(), 'asked first', drawn(p).text())
+        keys(p, 'q')
+        eq((ran, p.msg, p.give_sure), ([], 'F2: not sent', ()), 'any other key: no')
+        keys(p, '^S', '^S')
+    eq([a[:3] for a in ran], [['plan', 'confirm', 'F2']], 'sent once')
+    check(link in ran[0][3], 'with the link', ran)
+    eq((p.msg, p.main, [n['id'] for n in p.snap['needs']], p.drafts), ('F2 has what you gave: a run starts it', False, ['D7'], {}),
+       'it is off Needs you, its words gone')
+
+
+def test_need_give_secret_f175b() -> None:
+    """F175b: a secret is dots as typed, goes to asks/ID.env only, and is on no screen, log or restart; a command names
+    its machine."""
+    secret, ran, wrote = 's3cr-et', [], []
+    ask = {'steps': [{'text': 'Log in', 'cmd': 'gh auth login', 'on': 'rycs'}],
+           'inputs': [{'key': 'who', 'label': 'Account'}, {'key': 'tok', 'label': 'Token', 'kind': 'secret', 'env': 'MY_TOKEN'}]}
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), mock.patch.object(U, 'SEND', [no_send]), \
+            mock.patch.dict(os.environ, {'SSH_CONNECTION': 'x'}):
+        p, repo = give_page(ask, out=wrote.append)
+        for h, w in ((32, 120), (12, 40)):
+            text = drawn(p, h, w).text()
+            check('[^S Done]' in text, f'Done shows at {w}x{h}', text)
+        text = drawn(p).text()
+        check('Run on rycs' in text and 'gh auth login' in text and '[⏎ Copy]' in text, 'the command and its machine', text)
+        keys(p, 'ENTER')
+        eq((p.msg, any(T.osc52('gh auth login') in x for x in wrote)), ('command copied', True), 'Enter copies it')
+        keys(p, 'TAB', 'me', 'ENTER')
+        eq(p.typing, 'givesec:F2:tok', 'Enter goes on to the next field')
+        keys(p, secret)
+        win = drawn(p, 12, 40).text()
+        check('•' * len(secret) + '█' in win and secret not in win, 'hidden as typed, its field scrolled into view', win)
+        check(secret not in json.dumps(p.saved_place()), 'a restart is handed no secret')
+        with mock.patch.object(T, 'EXEC_RESTART', True):
+            p.snap['version'] = '999.0'
+            p.refresh()
+            check(not p.restart, 'and waits for it')
+        rows = p.snap['needs']
+        p.get_snap = lambda: dict(p.snap, needs=[rows[1], rows[0]])
+        p.refresh()
+        eq((p.sel()['id'], p.secrets), ('F2', {'givesec:F2:tok': secret}), 'the item moved: still selected')
+        p.get_snap = lambda: dict(p.snap, needs=[rows[1]])
+        p.refresh()
+        keys(p, 'dLq')
+        eq((p.secrets, ran, p.typing, 'changed' in p.msg), ({}, [], 'givesec:F2:tok', True), 'it went: the secret goes, no key reaches a panel')
+        keys(p, 'ESC')
+        p.get_snap = lambda: dict(p.snap, needs=rows)
+        p.refresh()
+        p.cur[4], p.main = 0, True
+        keys(p, '^S')
+        eq((p.typing, p.give_said['field'], ran), ('givesec:F2:tok', 'tok', []), 'every field is needed')
+        keys(p, secret, '^J')
+        eq(p.secrets, {}, 'another item selected: forgotten')
+        keys(p, '^K', 'i', 'TAB', secret, '^S')
+    eq([a[:3] for a in ran], [['plan', 'confirm', 'F2']], 'sent')
+    env = S.C.notes('asks', 'F2.env')
+    eq(env.read_text(encoding='utf-8').strip(), f'MY_TOKEN={secret}', 'kept in the env file')
+    for f in repo.rglob('*'):
+        check(not f.is_file() or f == env or secret.encode() not in f.read_bytes(), f'not in {f}')
+    check(secret not in drawn(p).text() + json.dumps(ran) + json.dumps(p.saved_place()) + ''.join(wrote) + p.msg + str(p.secrets), 'nor on the screen after sending')
+
+
 def test_quick_ask_names_session_c32() -> None:
     """C32: a quick ask (and H) says the new session's name and selects its row, not 'c1 answers'."""
     c7 = {'name': 'c7', 'task': '', 'title': 'control session', 'minutes': None, 'state': 'live', 'files': [],
@@ -1970,7 +2086,7 @@ def test_release_row_f131() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_need_detail_f162, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_need_detail_f162, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

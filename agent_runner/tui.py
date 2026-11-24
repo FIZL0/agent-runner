@@ -26,7 +26,8 @@ Panels and their tabs (F76):
                n new, J/K reorder, p priority on/off, H do it here, d (or D) drop; a parked task: U unpark (no J/K, p);
                F184: the shelved tasks are its last rows: info, chat edit; U brings one back, d (or D) drops it
     Needs you  answer (a button per possible answer: y yes, n no, or a b c … for options; L later; a reply box),
-               info
+               info. F175b: an item with inputs has no answers: its steps with their link (Open) and command (Copy),
+               a field per input (a secret hidden) and one Done (^S); Tab moves over them, Enter opens or types
     Concepts   preview: the K copy inline, its options (the copy's headings) moved through with j/k, Enter goes
                with the selected one, i says what to change, O opens the page in the browser, N starts a new
                control session about it (`concept_chat`); the '+ new concept' row and n
@@ -194,6 +195,7 @@ Queue [3]
 Needs you [4]
   a        answer
 {need_actions}
+  Tab      next link, field        ^S       Done (send what you entered)
 Concepts [5]
   j/k      option                 Enter    go with it
   i        what to change         O        open in the browser
@@ -337,6 +339,11 @@ class RunPage:
         self.help = False
         self.typing = ''  # the box taking typed keys ('' none): 'edit:Q2', 'form:Q2:t', …
         self.drafts: dict[str, str] = {}  # each box's text, kept across Esc and refreshes
+        self.secrets: dict[str, str] = {}  # F175b: typed secrets, by box; apart from drafts, which a restart hands on
+        self.give_at: dict[str, int] = {}  # each Needs you item's place in `give_ring`
+        self.give_row, self.give_see = (0, 0), False  # the lines of that place; to be scrolled into view
+        self.give_said: dict = {}  # what Done refused: {'id', 'field', 'out'}
+        self.give_sure: tuple = ()  # (the item, its question) while Done waits for its key again
         self.forms: dict[str, dict] = {}  # each direct edit's fields, by task id ('+' a new task)
         self.cache: dict[str, tuple[float, object]] = {}  # diffs and concept copies read lately
         self.off: dict[str, int] = {}  # each place's scroll (j/k in the main pane)
@@ -440,7 +447,7 @@ class RunPage:
         if tab == 'chat edit':
             return f'edit:{it["id"]}'
         if tab == 'answer':
-            return f'answer:{it["id"]}'
+            return '' if self.give_inputs(it) else f'answer:{it["id"]}'
         if tab in ('preview', 'new concept'):
             return f'concept:{it["id"]}'
         return ''
@@ -449,7 +456,7 @@ class RunPage:
         if box.startswith('form:'):
             _, tid, f = box.split(':')
             return self.forms.get(tid, {}).get(TEXT_FIELDS[f], '')
-        return self.drafts.get(box, '')
+        return (self.secrets if box.startswith('givesec:') else self.drafts).get(box, '')
 
     def set_text(self, box: str, text: str) -> None:
         if box.startswith('form:'):
@@ -457,15 +464,20 @@ class RunPage:
             if tid in self.forms:
                 self.forms[tid][TEXT_FIELDS[f]] = text
             return
+        kept = self.secrets if box.startswith('givesec:') else self.drafts
         if text:
-            self.drafts[box] = text
+            kept[box] = text
         else:
-            self.drafts.pop(box, None)
+            kept.pop(box, None)
 
     def type_in(self) -> None:
         """i: type into the main pane's box (in a direct edit, its what field)."""
         if self.tab()[0] == 'direct edit':
             self.field('t')
+            return
+        if self.giving():  # F175b: the first field
+            self.main = True
+            self.give_go(next(i for i, x in enumerate(self.give_ring(self.sel())) if x[0] == 'field'))
             return
         if box := self.box():
             self.main, self.typing = True, box
@@ -639,6 +651,8 @@ class RunPage:
             out = self.need_lines(it, width)
             if it.get('url'):
                 out += [L(), L((it['url'], 'blue'))]
+            if self.give_inputs(it):
+                return out, self.give_foot(it, width), 0
             out += [L(), L(('Your reply is the answer: a run starts it.' if it.get('label') == 'DECIDE' else
                             'Your reply goes to a new chat, which settles the item.', 'dim'))]
             row = buttons(*[button(c['tui'], c['label']) for c in self.row_controls(it, 'need')
@@ -683,6 +697,9 @@ class RunPage:
                 out += [L(), L((head, 'dim'))]
                 for j, x in enumerate(xs, 1):
                     out += text_lines(x, 'fg', width, mark(j), ' ' * len(mark(j)))
+                    if xs is d['steps']:
+                        self.step_lines(it, j - 1, width, out)
+        self.give_fields(it, width, out)
         if d['shots']:
             out += [L(), L(('Pictures', 'dim'))]
             for s in d['shots']:
@@ -691,8 +708,175 @@ class RunPage:
         if d['notes']:
             out.append(L())
             for x in d['notes']:
-                out += text_lines(x, 'dim', width)
+                if not (self.give_inputs(it) and re.match('reply (done|yes)', x, re.I)):  # as the run page
+                    out += text_lines(x, 'dim', width)
         return out
+
+    # --- F175b: what a Needs you item asks the person to give -------------------------------------------------
+
+    @staticmethod
+    def give_inputs(it) -> list[dict]:
+        return ((it.get('detail') or {}).get('inputs') or []) if isinstance(it, dict) else []
+
+    def giving(self) -> bool:
+        """The main pane's tab is the answer of a Needs you item with inputs."""
+        return self.panel == 4 and self.tab()[0] == 'answer' and bool(self.give_inputs(self.sel()))
+
+    @staticmethod
+    def give_box(it, x: dict) -> str:
+        return f'{"givesec" if x["kind"] == "secret" else "give"}:{it["id"]}:{x["key"]}'
+
+    def give_ring(self, it) -> list[tuple]:
+        """What Tab goes over on item `it`: ('open' | 'copy', a step's index) and ('field', an input), as drawn."""
+        more = (it.get('detail') or {}).get('step_more') or []
+        return [(act, j) for j, m in enumerate(more) for act, k in (('open', 'link'), ('copy', 'cmd')) if m.get(k)] + \
+            [('field', x) for x in self.give_inputs(it)]
+
+    def give_on(self, it):
+        """The one Tab is on, None when the item has none."""
+        ring = self.give_ring(it)
+        return ring[min(self.give_at.get(it['id'], 0), len(ring) - 1)] if ring else None
+
+    def give_go(self, i: int) -> None:
+        """Tab onto the ring's place `i` (round its ends): a field is typed into."""
+        it = self.sel()
+        ring = self.give_ring(it)
+        i %= len(ring)
+        self.give_at[it['id']], self.give_see = i, True
+        self.typing = self.give_box(it, ring[i][1]) if ring[i][0] == 'field' else ''
+
+    def give_step(self, step: int) -> None:
+        it = self.sel()
+        n = len(self.give_ring(it))
+        self.give_go((min(self.give_at.get(it['id'], 0), n - 1) + step) % n)
+
+    def give_mark(self, on: bool, label: str) -> list:
+        """A button of the ring: Enter presses it while Tab is on it."""
+        return button('⏎', label, True) if on and self.main and not self.typing else [(f'[{label}]', 'fg' if on else 'dim')]
+
+    def step_lines(self, it, j: int, width: int, out: list) -> None:
+        """Step `j`'s link with Open, and its command with the machine to run it on and Copy, added to `out`."""
+        more = (it.get('detail') or {}).get('step_more') or []
+        m, at = more[j] if j < len(more) else {}, self.give_on(it)
+        for act, k, label, colour in (('open', 'link', 'Open', 'blue'), ('copy', 'cmd', 'Copy', 'fg')):
+            if not m.get(k):
+                continue
+            top = len(out)
+            if act == 'copy':
+                out += text_lines(f'Run on {m.get("on") or "this machine"}', 'dim', width, '   ', '   ')
+            out += text_lines(m[k], colour, width, '   ', '   ')
+            out.append([('   ', '')] + self.give_mark(at == (act, j), label))
+            if at == (act, j):
+                self.give_row = (top, len(out) - 1)
+
+    def give_fields(self, it, width: int, out: list) -> None:
+        """One field per input, added to `out`: its label, what is typed (a secret as dots), its hint or the refusal."""
+        xs, at, said = self.give_inputs(it), self.give_on(it), self.give_said if self.give_said.get('id') == it.get('id') else {}
+        if xs:
+            out += [[], [('What to enter', 'dim')]]
+        for x in xs:
+            box, on, top = self.give_box(it, x), at == ('field', x), len(out)
+            text, typing = self.text_of(box), self.typing == box
+            out += text_lines(x['label'], 'accent' if on and self.main else 'fg', width)
+            lines = text_lines('•' * len(text) if x['kind'] == 'secret' else text, 'fg', width - 1, '❯ ', '  ')[-BOX_LINES:]
+            if typing:
+                lines[-1] = lines[-1] + [('█', 'accent')]
+            elif not text:
+                lines = [[('❯ ', 'dim')] + self.give_mark(on, 'type')]
+            out += lines
+            if x['key'] == said.get('field'):
+                out += text_lines(said['out'], 'red', width, '  ', '  ')
+            elif x['hint']:
+                out += text_lines(x['hint'], 'dim', width, '  ', '  ')
+            if on:
+                self.give_row = (top, len(out) - 1)
+            out.append([])
+        if xs:
+            out.pop()
+
+    def give_foot(self, it, width: int) -> list:
+        """Done, under the fields; its question in its place while it waits for its key again."""
+        if self.give_sure and self.give_sure[0] == it['id']:
+            return text_lines(f'{self.give_sure[1]} ^S again: yes, send it; any other key: no', 'red', width)
+        said = self.give_said if self.give_said.get('id') == it['id'] else {}
+        loose = said.get('out') and said.get('field') not in [x['key'] for x in self.give_inputs(it)]
+        return (text_lines(said['out'], 'red', width) if loose else []) + \
+            [buttons(button('^S', 'Done', True), button('L', 'later'))]
+
+    def give(self, confirm: bool = False) -> None:
+        """Done: what was entered goes straight to the run (`need_give`). This page is this computer's own terminal,
+        so a secret may be sent."""
+        it = self.sel()
+        xs, tid = self.give_inputs(it), it['id']
+        values = {x['key']: self.text_of(self.give_box(it, x)) for x in xs}
+        r = self.quiet(U.need_give, tid, values, confirm=confirm, secure=True)
+        self.give_said = {}
+        if r.get('ok'):
+            for kept in (self.drafts, self.secrets):
+                for box in [b for b in kept if b.startswith((f'give:{tid}:', f'givesec:{tid}:'))]:
+                    del kept[box]
+            self.typing, self.main = '', False
+            self.give_at.pop(tid, None)
+            self.done(r)
+            return
+        if r.get('confirm'):
+            self.typing, self.give_sure = '', (tid, r['confirm'])
+            return
+        self.give_said = {'id': tid, 'field': r.get('field', ''), 'out': (r.get('out') or 'that was not sent').strip()}
+        at = next((i for i, x in enumerate(self.give_ring(it)) if x[0] == 'field' and x[1]['key'] == r.get('field')), -1)
+        if at >= 0:
+            self.give_go(at)
+
+    def give_key(self, k: str) -> bool:
+        """A key on an item with inputs, nothing being typed; True when it was one of its own."""
+        it = self.sel()
+        if k in ('TAB', 'BTAB'):
+            self.give_step(-1 if k == 'BTAB' else 1)
+        elif k == '^S':
+            self.give()
+        elif k == 'ENTER':
+            act, x = self.give_on(it)
+            if act == 'field':
+                self.give_go(self.give_ring(it).index((act, x)))
+            elif act == 'open':
+                self.open_link(it['detail']['step_more'][x]['link'], 'the step')
+            else:
+                r = copy_text(it['detail']['step_more'][x]['cmd'], self.out)
+                self.msg, self.msg_ok = 'command copied', bool(r.get('ok'))
+        else:
+            return False
+        return True
+
+    def give_typed(self, k: str) -> None:
+        """A key in an input's field. One line: Enter goes on to the next field, or out of the last; it never sends,
+        so pasted words with a line end in them do not."""
+        it, box = self.sel(), self.typing
+        boxes = [self.give_box(it, x) for x in self.give_inputs(it)] if self.giving() else []
+        if k == 'ESC':
+            self.typing = ''
+        elif box not in boxes:  # the item went, or asks for something else now: no key typed on reaches the panels
+            self.msg, self.msg_ok = 'what was asked for here changed or was answered: Esc leaves this field', False
+        elif k == '^S':
+            self.give()
+        elif k in ('TAB', 'BTAB'):
+            self.give_step(-1 if k == 'BTAB' else 1)
+        elif k == 'ENTER':
+            if box == boxes[-1]:
+                self.typing = ''
+            else:
+                self.give_step(1)
+        elif k == 'BS':
+            self.set_text(box, self.text_of(box)[:-1])
+        elif k == '^U':
+            self.set_text(box, '')
+        elif len(k) == 1 and k.isprintable():
+            self.set_text(box, self.text_of(box) + k)
+
+    def give_forget(self) -> None:
+        """A typed secret goes once its item is not the selected one, or no longer asks for it."""
+        it = self.sel() if self.panel == 4 else None
+        boxes = [self.give_box(it, x) for x in self.give_inputs(it)]
+        self.secrets = {b: t for b, t in self.secrets.items() if b in boxes}
 
     def release_pane(self, width: int) -> list:
         L = lambda *segs: list(segs)  # noqa: E731
@@ -758,7 +942,8 @@ class RunPage:
         acts = it['acts'] if 'acts' in it else U.row_acts(where, it)
         labels = it.get('labels', {}) if 'acts' in it else U.row_labels(where, it)  # F180: a label that is the row's own
         return [dict(c, label=labels.get(c['key'], c['label'])) for c in self.snap.get('controls') or U.controls()
-                if c['key'] in acts and c['where'] == where]
+                if c['key'] in acts and c['where'] == where
+                and not (c.get('answer') and where == 'need' and self.give_inputs(it))]  # F175b: Done answers it
 
     def row_key(self, k: str, it) -> bool:
         """C34, C35: key `k` as one of row `it`'s actions, from ui_model's one list; True when it was one."""
@@ -1047,6 +1232,10 @@ class RunPage:
         if inner < 1:
             foot, inner = foot[-max(h - 3, 0):], 1
         off = self.off.get(self.place(), 0)
+        if self.give_see and self.giving():  # F175b: Tab's place in view
+            top, end = (sum(len(wrap(l, w - 4)) for l in body[:n]) for n in (self.give_row[0], self.give_row[1] + 1))
+            off = self.off[self.place()] = min(max(off, end - inner), top)
+        self.give_see = False
         if anchor == 'end':
             off = max(0, min(off, len(lines) - inner))
             start = max(0, len(lines) - inner - off)
@@ -1071,6 +1260,8 @@ class RunPage:
         it, (tab, _) = self.sel(), self.tab()
         if self.typing:
             keys = [('Esc', 'leave')]
+            if self.typing.startswith(('give:', 'givesec:')):
+                return keys + [('Tab/⇧Tab', 'next'), ('^S', 'Done')]
             if self.typing.startswith('form:'):
                 keys.append(('Tab/⇧Tab', 'field'))
             if not self.typing.startswith(('form:', 'answer:', 'edit:', 'concept:')) or \
@@ -1083,6 +1274,10 @@ class RunPage:
             if tab == 'preview':
                 return [('⏎', 'go with it'), ('i', 'what to change'), ('h/l', 'tab'), ('Esc', 'back')]
             keys = [('h/l', 'tab')]
+            if self.giving():
+                if self.give_sure:
+                    return [('^S', 'yes, send it')]
+                keys = [('⏎', 'open or type'), ('Tab/⇧Tab', 'next')] + keys
             if self.box():
                 keys.append(('i', 'type'))
             if tab == 'session' and isinstance(it, dict) and not it.get('new'):
@@ -1224,15 +1419,19 @@ class RunPage:
     # --- keys and actions ------------------------------------------------------------------------------
 
     def refresh(self) -> None:
+        at = self.sel(4) if self.panel == 4 and self.give_inputs(self.sel(4)) else {}
         try:
             self.snap = self.get_snap()
             self.got = time.time()
         except Exception as e:  # noqa: BLE001 - keep the last snapshot on screen, say why it is old
             self.msg, self.msg_ok = f'could not read the run: {e}', False
             return
+        if at:  # F175b: the selection stays on the item whose fields are open
+            self.cur[4] = next((i for i, n in enumerate(self.items(4)) if n.get('id') == at['id']), self.cur[4])
+        self.give_forget()
         from agent_runner import __version__
         v = str(self.snap.get('version') or '')
-        if newer_version(v, __version__) and v != self.followed and EXEC_RESTART:  # F90
+        if newer_version(v, __version__) and v != self.followed and EXEC_RESTART and not self.secrets:  # F90; F175b: a typed secret is not handed on
             self.restart = True
         if self.side.pane and not self.side.alive():  # F112: detached or ended: its pane closed itself
             self.side.gone()
@@ -1409,6 +1608,7 @@ class RunPage:
         if self.starting:
             self.starting['on'] = self.panel == 2 and self.sel() is self.starting
         self.poll_new_chat()
+        self.give_forget()
         self.sync()
         return quit_
 
@@ -1420,6 +1620,14 @@ class RunPage:
             return False
         if k == '^C':  # F112: no chat to interrupt here any more (the session itself takes its Ctrl+C)
             return True
+        if self.give_sure:  # F175b: Done's question: its key again, on what was asked about
+            (tid, asked), self.give_sure = self.give_sure, ()
+            it = self.sel() if self.giving() else {}
+            if k != '^S' or it.get('id') != tid:
+                self.msg, self.msg_ok = f'{tid}: not sent', True
+            else:
+                self.give(confirm=asked == ' '.join(x['confirm'] for x in self.give_inputs(it) if x['confirm']))
+            return False
         if k == '^F':  # F112: the session full-screen between the bars, and back
             self.toggle_full()
             return False
@@ -1482,6 +1690,9 @@ class RunPage:
         """A key while typing in a box."""
         box = self.typing
         form = box.startswith('form:')
+        if box.startswith(('give:', 'givesec:')):
+            self.give_typed(k)
+            return
         if k == 'ESC':  # B116: leave the box only, never an interrupt
             self.typing = ''
             return
@@ -1597,6 +1808,8 @@ class RunPage:
                 return True
             return False
         if tab == 'answer' and it is not None:
+            if self.giving() and self.give_key(k):
+                return True
             if self.row_key(k, it):  # F180: before the panels' keys, so c picks the third option
                 return True
             if k == 'ENTER':
