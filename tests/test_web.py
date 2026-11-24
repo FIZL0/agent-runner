@@ -3729,7 +3729,7 @@ const getComputedStyle = el => el === ta ? {minHeight: '26px', lineHeight: '23.2
 const cls = () => ({toggle() {}, contains: () => false});
 let kbNow = () => 0;
 const kbOn = () => kbNow() > 0, mainH = () => kbNow() || doc - 34;
-const anim = who => (kf, o) => { const a = {who, by: parseFloat((kf[0].translate || kf[0].transform).match(/(-?[\d.]+)px/)[1]), o: [o.duration, o.easing], cancel() {}}; glides.push(a); return a };
+const anim = who => (kf, o) => { const a = {who, by: parseFloat((kf[0].translate || kf[0].transform.replace('0px,', '')).match(/(-?[\d.]+)px/)[1]), o: [o.duration, o.easing], cancel() {}}; glides.push(a); return a };
 const ta = {get offsetHeight() { return boxH }, matches: () => true};
 const main = {get clientHeight() { return mainH() }, get clientWidth() { return wide }, style: {setProperty() {}}};
 const dockEl = {get offsetHeight() { return 142 + boxH + extra - (kbOn() ? 6 : 0) }, style: {}, animate: anim('dock'), getBoundingClientRect: () => ({top: main.clientHeight - dockEl.offsetHeight})};
@@ -3739,9 +3739,9 @@ const $ = k => els[k], docOn = {};
 const document = {get hidden() { return hidden }, activeElement: null, documentElement: {get clientHeight() { return doc }}, addEventListener: (t, f) => (docOn[t] = docOn[t] || []).push(f),
   querySelector: s => s === '.main' ? main : s === '.dockwrap' ? dockEl : s === '.notices' ? {offsetHeight: 0} : s === '#dock [data-in]' ? ta : null};
 const S = {view: 'talk', thread: 'c6', pin: true, sheet: ''}, TOUCH = () => touch, seeRoom = () => {}, seeBar = () => {}, toEnd = () => {};
-const FD = {frame: {}, shown: true, foot: {top: 40}, whole: false, off: 0, jump: false, held: '', t: 0, above: 0, last: 0, full: 0, wide: 0, doc: 0, short: 0}, CELL = 17;
+const MO = {fly: new Map()}, shiftOf = () => ({m42: 0}), FD = {frame: {}, shown: true, foot: {top: 40}, whole: false, off: 0, jump: false, held: '', t: 0, above: 0, last: 0, full: 0, wide: 0, doc: 0, short: 0}, CELL = 17;
 const feedScreen = () => ({cell: CELL, el: {getBoundingClientRect: () => ({top: 12})}, t: {buffer: {active: {type: 'alternate'}}}});
-eval(line('const SLIM_H=') + line('const KB_PAD=') + line('const FOOT_ROWS=') + slice('function feedSpot(', '/* B192') + line('const calm=') + line('const chatShown=')
+eval(line('const SLIM_H=') + line('const KB_PAD=') + line('const FOOT_ROWS=') + slice('function feedSpot(', '/* B192') + slice('function moAnim(', 'const shiftOf=') + slice('function growGlide(', '/* B119') + line('const calm=') + line('const chatShown=')
   + slice('function feedRoom(', '/* the bars and the box away') + slice('const VV=', 'function grow(') + `
 kbNow = () => kbH;
 // the frame's height, and from its last line to the box
@@ -3752,12 +3752,15 @@ let stay = false;
 const trip = k => out[k] = [at(), kb(420), (boxH = 73, at()), (boxH = 27, at()), kb(380)[0], kb(0)];
 trip('rest'); FD.short = 6; trip('short'); FD.short = 0;
 FD.whole = true; FD.last = 31; trip('whole'); FD.last = 9; trip('asked'); FD.whole = false;
-at(); FD.jump = true; FD.t += 80; FD.off = 80; trip('up'); out.kept = FD.off; FD.jump = false; FD.off = 0; at();
+at(); FD.jump = true; FD.t += 80; FD.off = 80; trip('up'); out.kept = FD.off; const t0 = FD.t; extra = 40; at(); out.chip = FD.t - t0; extra = 0; at(); FD.jump = false; FD.off = 0; at();
+const dk = {children: [], animate: anim('box')}, tb = {closest: k => k === '.dock' ? dk : {animate() {}}};
+glides = []; feedPlace(); boxH = 73; growGlide(tb, 46); out.grown = glides.map(g => [g.who, g.by, ...g.o]);
+reduced = true; glides = []; boxH = 27; growGlide(tb, -46); out.grownCalm = glides.length; reduced = false; at();
 stay = true; kb(420); out.room = els.feed.style.bottom; stay = false; kb(0); out.roomAfter = els.feed.style.bottom;
 // half way: from where it is on screen
 stay = true; kb(420); stay = false; ff.style.translate = '0 100px'; dockEl.getBoundingClientRect = () => ({top: 0}); kb(0); out.mid = glides.filter(g => g.who === 'frame').map(g => g.by);
 dockEl.getBoundingClientRect = () => ({top: main.clientHeight - dockEl.offsetHeight}); ff.style.translate = '';
-reduced = true; out.calm = kb(420)[1]; kb(0); reduced = false; hidden = true; out.hid = kb(420)[1].filter(g => g[0] === 'frame'); kb(0); hidden = false;
+reduced = true; out.calm = kb(420)[1]; kb(0); reduced = false; hidden = true; out.hid = kb(420)[1]; kb(0); hidden = false;
 // rotation, the keyboard open; then closed
 kb(420); doc = 390; wide = 844; out.turned = kb(200)[0][0]; out.turnedBack = kb(0)[0][0]; doc = 900; wide = 1200; out.window = at()[0]; doc = 800; wide = 390; at();
 // a browser that shrinks the page itself, and a blur before it is back
@@ -3783,7 +3786,9 @@ def test_keyboard_feed_b214(tmp: Path) -> None:
         eq([here, grown, back, taller], [[high, gap]] * 4, f'{k}: one size, the last line as far from the box, keyboard open, box grown')
         eq((opened, closed), ([[high, gap], [['dock', 340, 250, 'ease-out'], ['frame', 340, 250, 'ease-out']]],
                               [[high, gap], [['dock', -380, 250, 'ease-out'], ['frame', -380, 250, 'ease-out']]]), f'{k}: the frame goes with the box')
+    eq((got.get('grown'), got.get('grownCalm')), ([['frame', 46, 250, 'ease-out'], ['box', 46, 250, 'ease-out']], 0), 'a box that grew: the frame goes with it; none when calm')
     eq(got.get('kept'), 80, 'scrolled up, as far past its rest as before')
+    eq(got.get('chip'), 0, 'scrolled up, a chip row that comes moves nothing')
     eq((got.get('room'), got.get('roomAfter')), ('-340px', ''), 'its lines are drawn below the view while they come up')
     eq(got.get('mid'), [-240], 'half way, it goes on from where it is on screen')
     eq((got.get('calm'), got.get('hid')), ([], []), 'calm: no glide')

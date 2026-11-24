@@ -2509,6 +2509,12 @@ function feedGlide(was){
   requestAnimationFrame(()=>requestAnimationFrame(still));  // iOS draws one frame before the animation
   a.onfinish=a.oncancel=()=>{if(feedFly===a){still();feedFly=null;room.bottom=''}};
 }
+/* the box grew or shrank: as .dock does it, over the glide for a keyboard that may still go on */
+let feedGrew=null;
+function feedGrow(d){
+  if(feedGrew)feedGrew.cancel();
+  feedGrew=moAnim($('feedframe'),[{translate:`0 ${d}px`},{translate:'0 0'}],{ease:'--ease',dur:'--dur-slow',composite:'add'});
+}
 /* what the frame's place is made of; null while there is none */
 function feedPlace(){
   const main=document.querySelector('.main'), box=$('feedframe');if(!FD.shown||!FD.frame||!main||!main.clientHeight)return;
@@ -2518,7 +2524,7 @@ function feedPlace(){
   const dock=document.querySelector('.dockwrap').offsetHeight, f=feedScreen();
   const cell=f?f.cell:17, pad=f?f.el.getBoundingClientRect().top:12;
   const full=feedRoom(main), high=FD.whole?Math.max(60,full-FD.bar-dockRest(dock)):Math.round(full-SLIM_H+FOOT_ROWS*cell);
-  const size=[full,cell].join(), above=main.clientHeight-dock, hold=FD.jump&&FD.held===size?FD.t+above-FD.above:null;  // scrolled up: where it was over the box
+  const size=[full,cell].join(), above=main.clientHeight-dock+dockRest(dock), hold=FD.jump&&FD.held===size?FD.t+above-FD.above:null;  // scrolled up: where it was over the box; a chip or a file that comes moves nothing
   const at=feedSpot({main:main.clientHeight,bar:FD.bar,dock,row:SLIM_H,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,hold});
   if(!FD.whole&&FD.foot===undefined)at.t=Math.min(FD.bar,main.clientHeight-dock-high+FOOT_ROWS*cell);  // not read yet
   FD.far=at.far;FD.off=at.off;FD.t=at.t;FD.above=above;FD.held=FD.whole||!FD.foot?'':size;
@@ -3220,7 +3226,7 @@ function kbSpot(){
   was.scroll=$('body').scrollTop;return was;
 }
 function kbGlide(was,pin){
-  if(!document.querySelector('.dockwrap')||matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  if(!document.querySelector('.dockwrap')||document.hidden||matchMedia('(prefers-reduced-motion:reduce)').matches)return;
   const dock=document.querySelector('.dockwrap'), b=$('body'), css=getComputedStyle(document.documentElement);
   const o={duration:parseFloat(css.getPropertyValue('--dur-slow')),easing:css.getPropertyValue('--ease').trim()};
   const go=(el,d)=>{if(Math.abs(d)<1)return;
@@ -3288,8 +3294,9 @@ function sendDraw(ta){
 /* F147: a box that grew by d: at the foot of the view it slides up into its new height (and the chat with it), on Home what is under its words slides down */
 function growGlide(ta,d,drawn){
   const dock=ta.closest('.dock'), box=ta.closest('.box'), go=(el,y)=>glideTo(el,0,y+(MO.fly.has(el)?shiftOf(el).m42:0),FD.shown?{ease:'--ease',dur:'--dur-slow'}:{ease:'--spring-soft'});
-  if(dock)feedGlide(feedTop());
+  const was=dock?feedTop():null, from=dock&&MO.fly.has(dock)?shiftOf(dock).m42:0;if(was!=null)feedPlace();
   if(!box||!box.animate||calm())return;
+  if(was!=null)feedGrow(was-feedTop()+from);
   if(dock){for(const el of FD.shown?[dock]:dock.children)go(el,d);const b=$('body'), c=!drawn&&chatShown()&&S.pin&&b.firstElementChild;if(c){const at=b.scrollTop;toEnd();go(c,b.scrollTop-at)}return}  // in a redraw glide() moves the chat
   for(let el=ta.closest('.inrow').nextElementSibling;el;el=el.nextElementSibling)go(el,-d);
   for(let el=box.nextElementSibling;el;el=el.nextElementSibling)if(el.getBoundingClientRect().top<innerHeight)go(el,-d);
