@@ -164,6 +164,13 @@ _On screen_: queued V<n> (auto_release: 10 landed / idle)
 _In code_: [run] auto_release, autorelease.auto_release, autorelease.landed_since_release, plan.add_release, EV_AUTO_RELEASE
 _Avoid_: auto publish, auto version
 
+**Manage releases**:
+The setting for whether a project has releases to manage; off, none is shown or queued by itself, and an open release is an ordinary task
+_Said_: manage releases
+_On screen_: Manage releases
+_In code_: [run] releases, autorelease.releases_on, snapshot manage_releases
+_Avoid_: release mode, release toggle
+
 **Run page**:
 One view of the whole run (sessions, queue, what needs the person, concepts, the run log, the release) that the web page, the terminal UI and the claude.ai copy all show, with the same actions on it
 _Said_: run page

@@ -358,6 +358,57 @@ def test_drop_release_f186(tmp: Path) -> None:
                 eq((r['ok'], r['out'], ran), (False, 'V6 has started: a running release cannot be dropped', []), f'{what}: refused')
 
 
+def test_manage_releases_f193(tmp: Path) -> None:
+    """F193: `[run] releases` off: nothing of releases in the snapshot (an open V task is an ordinary queue row), nor in
+    status; a stale page's New release is refused, a typed `plan add V` is not."""
+    from agent_runner import plan as P
+    from agent_runner.status import release_line
+    repo = fake_run(tmp)
+    todo, notes = repo / 'plan' / 'TODO.md', S.C.notes('events.jsonl')
+    was = notes.read_text(encoding='utf-8') if notes.exists() else ''
+    notes.write_text(was + json.dumps({'time': '2026-01-01T10:00:00', 'kind': S.EV_LANDED, 'id': 'V1', 'text': 'V1: merged'}) + '\n',
+                     encoding='utf-8')  # a landed release
+    v6 = next(l for l in TODO.splitlines() if '**V6**' in l)
+    todo.write_text(TODO.replace(v6, '- [ ] **V5** ' + P.RELEASE_BRIEF + ' | after: all\n- [ ] **T9** Release by hand | after: F1\n' + v6), encoding='utf-8')
+    S.C.run['auto_release'] = {'every': 10, 'idle': True}
+    snap = lambda: U.snapshot(up=True, now=NOW, links={})  # noqa: E731
+    parts = lambda s: (s['manage_releases'], s['releases'], s['release'], s['release_acts'], s['release_said'])  # noqa: E731
+    on = snap()
+    eq((on['manage_releases'], {r['id'] for r in on['releases']}), (True, {'V5', 'V6', 'V1'}), 'on: the rows')
+    eq({q['id'] for q in on['queue'] if 'release' in q}, {'V5', 'V6'}, 'on: pinned with their rows')
+    check('V1' in on['release'] and any(l.startswith('release: ') for l in on['status']), 'on: status says them', on['status'])
+    S.C.run['releases'] = False
+    off = snap()
+    eq(parts(off), (False, [], '', [], ''), 'off: none of it')
+    check(not any('release: ' in l for l in off['status']), 'off: nor a status line', off['status'])
+    eq(release_line(P.lines(todo), {}), '', "nor in `status`, for a release that is no V task either")
+    eq([q['id'] for q in off['queue']], [q['id'] for q in U.queue_rows(P.lines(todo), {}, NOW)], 'V tasks keep their place')
+    for q in off['queue']:
+        if q['id'] in ('V5', 'V6'):
+            check('release' not in q and 'started' not in q and 'asks' not in q, 'an ordinary row', q)
+            eq(q['acts'], ['queue_priority', 'queue_take', 'queue_drop'], 'with its actions')
+    with mock.patch.object(U, '_state', lambda up: {'running': {'1': 'V6'}}):
+        check('queue_drop' in U.row_acts('queue', U.queue_row('V6')), 'running too, as any task')
+    todo.write_text('\n'.join(l for l in todo.read_text(encoding='utf-8').splitlines() if '**V' not in l) + '\n', encoding='utf-8')
+    eq(parts(snap()), (False, [], '', [], ''), 'off, no V: no placeholder, no landed release')
+    S.C.run['releases'] = True
+    eq([(r['state']) for r in snap()['releases']], ['auto', 'released'], 'back on: both')
+    S.C.run['releases'] = False
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+        for key in ('release_wait', 'release_now'):
+            r = U.act('run_control', key=key, confirm=True, text='V6')
+            eq((r['ok'], r['out'], ran), (False, 'Manage releases is off in Settings: no release was queued', []), f'{key}: refused')
+    toml = repo / 'runner.toml'
+    old = toml.read_text(encoding='utf-8') if toml.exists() else ''
+    toml.write_text(old.replace('[run]\n', '[run]\nreleases = false\n', 1) if '[run]\n' in old else old + '\n[run]\nreleases = false\n',
+                    encoding='utf-8')
+    code, out = U._run(['plan', 'add', 'V'])
+    check(code == 0 and '**V' in todo.read_text(encoding='utf-8'), 'plan add V typed works', out)
+    code, out = U._run(['plan'])
+    check(code == 0 and '## Releases' not in out and re.search(r'\bV\d+', out), '`plan` lists it as a task', out)
+
+
 def test_answers_f180(tmp: Path) -> None:
     """F180: a Needs you row's fixed answers are row actions: Yes and No, Done or its options, labelled by the row;
     one runs the plan command only when the row still has the answer pressed, with the words beside it."""
@@ -1442,7 +1493,7 @@ def test_plan_facts_f150(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_new_release_f186), in_tmp(test_drop_release_f186), in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+    raise SystemExit(report([in_tmp(test_manage_releases_f193), in_tmp(test_new_release_f186), in_tmp(test_drop_release_f186), in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_plan_facts_f150), in_tmp(test_part_of_part_b199), in_tmp(test_need_give_f175), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command), in_tmp(test_shelved_f184),
                          in_tmp(test_to_new), in_tmp(test_control_titles),

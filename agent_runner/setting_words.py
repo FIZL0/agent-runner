@@ -38,6 +38,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.approve_wait': ('landing', 'Wait before asking', 'Minutes with no new related change before you are asked. Longer groups more work into one question.'),
     'run.approve_batch': ('landing', 'Ask at once at', 'This many related changes are put to you at once, without the wait. Lower asks sooner.'),
     'run.review': ('landing', 'Review each task', 'A second agent checks the work against what you asked. Off: faster, but nothing catches what was missed.'),
+    'run.releases': ('landing', 'Manage releases', 'Releases are shown, and you can queue one. Off: nothing about releases shows, and none is queued by itself.'),
     'run.auto_release': ('landing', 'Release by itself', 'A release is queued every so many tasks, when the run goes idle, or both. Both off: you ask for each one.'),
     'git.land_edited': ('landing', 'My unsaved edits are in the way', 'Wait: finished work waits for you. Set aside: your edits move to a branch so it can land.'),
     'run.ci_watch': ('landing', 'Fix failed GitHub checks', 'A check that fails on GitHub is filed as an urgent bug. Off: nobody looks.'),
