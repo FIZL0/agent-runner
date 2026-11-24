@@ -101,8 +101,10 @@ def test_prompts_and_replies() -> None:
     print('a prompt opens its own chat, a reply stays in its chat, and no chat is special')
     fake_repo()
     ran, typed = [], []
+    inbox = Path(tempfile.mkdtemp(prefix='agent-runner-f176-inbox-')) / 'c2.in'
+    inbox.touch()  # on Windows a session with no inbox file takes no typing
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, f'control {len(ran) + 1} is starting'))[1]]), \
-            mock.patch.object(U, 'hidden_inbox', lambda n: Path(f'/x/{n}.in') if n == 'c2' else None), \
+            mock.patch.object(U, 'hidden_inbox', lambda n: inbox if n == 'c2' else None), \
             mock.patch.object(S, 'send_fifo', lambda p, t: typed.append((p.name, t)) or True):
         names = [U.act('chat_to', text=t)['name'] for t in ('one', 'two')]
         eq(names, ['c2', 'c3'], 'each prompt is a chat of its own')

@@ -213,11 +213,11 @@ else:
     check(o['fall'][0] == ['Fall back.'] and o['fall'][1] == 'speaking' and 'it broke' in o['fall'][2], 'the run fails', o['fall'])
     eq(o['system'], [['Own.'], 0], "System voice: the browser's own")
     eq(o['none'], [['None.'], 0, '<option value="">System voice</option>'], 'no engine: as before')
-    clips = subprocess.run(['node', '-e', (W.PAGE.read_text(encoding='utf-8').split('<script id="logic">', 1)[1]
+    clips = subprocess.run(['node', '-'], input=(W.PAGE.read_text(encoding='utf-8').split('<script id="logic">', 1)[1]
                             .split('</script>', 1)[0] + ';console.log(JSON.stringify([speechClips("Hi. Version 0.13 is out. " + "Word. ".repeat(60)),'
                             'runVoice({voices:[{id:"kokoro:a"}],default:"kokoro:a"},"kokoro:gone"),'
-                            'runVoice({voices:[{id:"kokoro:a"}],default:"kokoro:a"},"Ava")]))')],
-                           capture_output=True, text=True, timeout=60)
+                            'runVoice({voices:[{id:"kokoro:a"}],default:"kokoro:a"},"Ava")]))'),  # on stdin: too long for a Windows command line
+                           capture_output=True, text=True, encoding='utf-8', timeout=60)
     c, gone, device = json.loads(clips.stdout or '[[], "", ""]')
     check(c and c[0].startswith('Hi. Version 0.13 is out.') and all(len(x) < 201 for x in c), 'sentences are kept whole', c)
     eq((gone, device), ('kokoro:a', ''), 'a voice that is gone: the default; a device voice: the browser')

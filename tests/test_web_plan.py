@@ -429,7 +429,7 @@ const no = () => '', env = {S, planField: no, planWant: no, planAsk: no, obCards
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
   + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + ['planCard', 'nextReleaseCard', 'relCard', 'newReleaseCard', 'statusHTML', 'planHTML', 'homeHTML'].map(f => grab(`function ${f}(`)).join('');
 const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), statusHTML(), homeHTML()]}')(env);
-const out = JSON.parse(process.argv[3]).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw() });
+const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw() });
 console.log(JSON.stringify(out));
 """
 
@@ -453,8 +453,10 @@ def test_manage_releases_f193(tmp: Path) -> None:
     sent = [{'cid': 'a', 'ctl': 'release_now:', 'state': 'failed', 'say': 'Release now'}]
     old = {k: v for k, v in on.items() if k != 'manage_releases'}
     (tmp / 'driver.js').write_text(MANAGE_DRIVER, encoding='utf-8')
-    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps([[on, []], [off, []], [off, sent], [on, []], [old, []]])],
-                       capture_output=True, text=True, timeout=60)
+    cases = tmp / 'cases.json'  # a file: too long for a Windows command line
+    cases.write_text(json.dumps([[on, []], [off, []], [off, sent], [on, []], [old, []]]), encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), str(cases)],
+                       capture_output=True, text=True, encoding='utf-8', timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     (plan_on, st_on, home_on), (plan_off, st_off, home_off), (plan_sent, st_sent, home_sent), back, older = json.loads(r.stdout)
     check('>Releases<' in plan_on and '<b>New release</b>' in plan_on and 'data-ctl="release_now"' in plan_on, 'on: Plan has them', plan_on)
