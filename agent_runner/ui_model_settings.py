@@ -21,6 +21,13 @@ def settings() -> dict:
         pass
     if 'next' in wb and 'git.master_branch' not in snap['waits']:  # a start that could not switch
         snap['waits'].append('git.master_branch')
+    from agent_runner import setting_checks
+    for t in snap['tables']:  # F448a: why a row cannot be changed here now, '' when it can
+        for k in t['keys']:
+            try:
+                k['locked'] = setting_checks.locked(S.ROOT, t['table'], k['key'])
+            except SystemExit:  # as above
+                k['locked'] = ''
     snap['providers'] = agents_here.providers(row('models', 'providers')['value'])
     return snap
 
@@ -55,6 +62,7 @@ def _setting_done(table: str, key: str, value=None, unset: bool = False) -> dict
         return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
     if bad := _setting_now(table, key, f.name):
         return bad
+    _plan_moved(table, key)
     more = _branch_said(table, key)
     out = f'{_setting_said(table, key, value, unset)} in {f.name}' + (f' ({more})' if more else '')
     return {'ok': True, 'code': 0, 'out': out, 'argv': [], **({'note': more} if more else {})}
@@ -117,7 +125,7 @@ def setting_project(table: str, key: str, value=None, unset: bool = False) -> di
     from agent_runner import config as CF
     if unset and key not in CF.DEFAULTS.get(table, {}):
         return {'ok': False, 'code': 2, 'out': f'[{table}] {key} is not a setting', 'argv': []}
-    if problem := '' if unset else CF.setting_check(S.ROOT, table, key, value):
+    if problem := _value_problem('project', table, key, value, unset):
         return {'ok': False, 'code': 2, 'out': problem, 'argv': []}
     return _project_saves([{'table': table, 'key': key, 'value': value, 'unset': unset}])[0]['got']
 
@@ -149,7 +157,6 @@ def _setting_has(row: dict, side: str) -> dict:
 
 def _change_problem(c: dict, rows: dict) -> dict:
     """Why a change of `settings_save` is not taken ({'why', 'changed'}), {} when it is."""
-    from agent_runner import config as CF
     table, key, side = str(c.get('table')), str(c.get('key')), c.get('side')
     row = rows.get((table, key))
     if row is None or side not in ('device', 'project'):
@@ -157,8 +164,23 @@ def _change_problem(c: dict, rows: dict) -> dict:
     want = c.get('expect')
     if isinstance(want, dict) and _setting_has(row, side) != {'has': want.get('has'), 'value': want.get('value')}:
         return {'why': f'[{table}] {key} was changed since, so it stays as it is', 'changed': True}
-    why = '' if c.get('unset') else CF.setting_check(S.ROOT, table, key, c.get('value'), device=side == 'device')
+    why = _value_problem(side, table, key, c.get('value'), bool(c.get('unset')))
     return {'why': why} if why else {}
+
+
+def _value_problem(side: str, table: str, key: str, value, unset: bool) -> str:
+    """Why this value, or the reset (`unset`), is not saved in `side`'s file; '' when it is."""
+    from agent_runner import config as CF, setting_checks
+    return setting_checks.reset_problem(S.ROOT, side, table, key) if unset else \
+        CF.setting_check(S.ROOT, table, key, value, device=side == 'device')
+
+
+def _plan_moved(table: str, key: str) -> None:
+    """F448a: where the plan or the worktrees are was saved, so no run is up: this page goes by it at once."""
+    from agent_runner import config as CF, setting_checks
+    if (table, key) in setting_checks.PLAN_AT and not S.run_up():
+        CF._cfg.cache_clear()
+        S.init(S.ROOT)
 
 
 def _setting_rows() -> dict:
@@ -169,9 +191,13 @@ def _setting_rows() -> dict:
 def _save_round(changes: list[dict]) -> tuple[list, list, list]:
     """Check and write `changes`: (change, its save, what its file had, what it has) of those saved, and (change, why)
     of those whose write failed, then of those refused."""
+    from agent_runner.setting_checks import PLAN_AT
     before, take, refused = _setting_rows(), [], []
     for c in changes:
         why = _change_problem(c, before)
+        at = c.get('table'), c.get('key')
+        if not why and at in PLAN_AT and any((x['table'], x['key']) in PLAN_AT for x in take):  # each was checked alone
+            why = {'why': f'[{at[0]}] {at[1]}: where the plan and the worktrees are is changed one setting at a time'}
         refused.append((c, why)) if why else take.append(c)
     project = [c for c in take if c['side'] == 'project']
     mine = [{'table': c['table'], 'key': c['key'], 'value': c.get('value'), 'unset': bool(c.get('unset'))} for c in project]
@@ -198,8 +224,8 @@ def settings_save(changes: list) -> dict:
     if not isinstance(changes, list) or not changes or not all(isinstance(c, dict) for c in changes):
         return {'ok': False, 'code': 2, 'out': 'no changes to save', 'argv': []}
     saved, failed, refused = _save_round(changes)
-    if refused and any(c['table'] == 'models' and c['key'] in ('local', 'providers') for c, *_ in saved):
-        more, fails, refused = _save_round([c for c, _ in refused])  # the models they name are there by now
+    if refused and any(c['table'] == 'models' for c, *_ in saved):
+        more, fails, refused = _save_round([c for c, _ in refused])  # the models they name are there by now, or none names the one that goes
         saved, failed = saved + more, failed + fails
     bad = [{'table': c.get('table'), 'key': c.get('key'), 'side': c.get('side'), **why} for c, why in failed + refused]
     warn = [x['got']['out'] for _, x, _, _ in saved if not x['got']['ok']]
@@ -284,6 +310,7 @@ def _save_project(batch: list[dict]) -> None:
             note = ''
         for x in last.values():
             if x['got'] is None:
+                _plan_moved(x['table'], x['key'])
                 row = _setting_row(x['table'], x['key'])
                 out = f'{_setting_said(x["table"], x["key"], x["value"], x["unset"])} in {f.name}'
                 x['note'] = '; '.join(filter(None, (note, _branch_said(x['table'], x['key']))))

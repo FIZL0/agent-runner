@@ -191,6 +191,49 @@ _UNITS: dict[str, str] = {
     'run.command_timeout': 's', 'run.task_usd': '$', 'run.context_warn': 'k tokens', 'plan.context_kb': 'KB',
 }
 
+# F448a: a sentence on what a risky change of a 'file' group setting does
+_WARNS: dict[str, str] = {
+    'run.test': 'Every task and merge uses it at once: one that always fails lands nothing, one that always passes lands anything.',
+    'run.done_test': 'Every running task has to pass it from now on: one that always fails lets no task finish.',
+    'run.test_since': 'A command that tests too little lets broken work land until the next whole test.',
+    'run.retest': 'A command that always passes makes every failed test count as load, so broken work lands.',
+    'run.build': 'A command that always fails leaves every conflict for you.',
+    'run.docs_check': 'A command that always fails holds back every docs change.',
+    'run.before_start': 'While it fails, no task starts.',
+    'run.on_exit': 'It runs in the worktree after every session, and what it deletes there is gone.',
+    'run.slot_clean': 'It runs in worktrees when disk is short, and what it deletes there is gone.',
+    'run.command': 'Every session reaches the runner by it: a wrong one lets no task finish.',
+    'run.tools': 'A check that always fails keeps the tasks that need the tool waiting.',
+    'run.checks': 'A blocked task that waits on a check no longer here goes on waiting.',
+    'run.join': 'A command that joins wrongly loses lines, and nobody looks.',
+    'plan.brief_extra': 'It runs each time a brief is made: a slow one holds every start.',
+    'plan.outline': 'It runs for each long file in a brief: a slow one holds every start.',
+    'run.home': 'The next run makes new worktrees there, and the old folder stays on the disk until you delete it.',
+    'run.notes': 'A folder without the old logs loses the open questions, approvals and history.',
+    'run.links': 'Too wide a pattern shares files between worktrees that each needs its own of.',
+    'run.copies': 'A copy that is in a worktree already is never renewed.',
+    'run.slot_env': 'A variable that tests need and that goes away here fails them in every slot.',
+    'run.pass_env': 'A variable that tests need and that goes away here fails them in every slot.',
+    'run.shared_files': 'Tasks that change a file named here run together, and their merges may conflict.',
+    'run.joinable': 'Both sides of a conflict are kept and nobody looks, which breaks code and prose.',
+    'git.master_branch': 'Tasks start from it and land on it after the next start of the run.',
+    'git.push': 'Off, finished work stays on this machine.',
+    'plan.dir': 'Chats use the task list there at once, and the run from its next start.',
+    'plan.repo': 'Chats use the task list there at once, and the run from its next start.',
+    'plan.journal': 'Notes in the old folder are no longer shown in briefs.',
+    'plan.journal_layout': 'Notes named the other way are no longer found.',
+    'run.untested': 'A pattern that matches code lets broken work land.',
+    'run.docs_files': 'A pattern that matches code lets broken work land.',
+    'run.findings': 'A research task may change and land every file that matches.',
+    'run.failures': 'A pattern that misses names takes a test that failed from load as a real failure.',
+    'run.flaky': 'A pattern that matches too much files an urgent task for each name it finds.',
+    'run.not_attempt': 'A pattern that matches too much starts the same task again and again.',
+    'run.prompt': 'It replaces all that sessions are told: what it leaves out, they do not know.',
+    'run.prompt_extra': 'Every task that starts from now on gets it.',
+    'plan.kinds': 'A letter that goes away takes no new tasks.',
+    'models.providers': 'No model of a provider that goes away can be picked.',
+}
+
 
 def _of(table: str, key: str) -> tuple[str, str, str]:
     return WORDS.get(f'{table}.{key}', ('work', key, ''))
@@ -230,6 +273,11 @@ def parts(table: str, key: str) -> dict:
 
 def unit(table: str, key: str) -> str:
     return _UNITS.get(f'{table}.{key}', '')
+
+
+def warn(table: str, key: str) -> str:
+    """What a risky change of it does, in a sentence ('' when it risks nothing)."""
+    return _WARNS.get(f'{table}.{key}', '')
 
 
 def order(table: str, key: str) -> int:
