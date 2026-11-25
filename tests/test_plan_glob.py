@@ -35,8 +35,10 @@ def test_expanded_glob() -> None:
         todo = root / 'plan' / 'TODO.md'
         before, head = todo.read_text(encoding='utf-8'), git('rev-parse', 'HEAD')
         many, files = ' '.join(paths), ('--files', paths[0])
+        gaps = ' '.join(f'{p} my note.md' if i % 5 == 4 else p for i, p in enumerate(paths))
         for args, what in (((f'check the page {many}', *files), 'paths folded into the text'),
                            ((f'check the page {many} and then more', *files, '--force'), 'in its middle, with --force'),
+                           ((f'check the page {gaps}', *files), 'names with a space between them'),
                            ((many,), 'a text of paths only'),
                            ((f'check the page | files: {many}',), "a field's value in the text"),
                            (('check the page\n' + '\n'.join(paths), *files), 'one path to a line'),
@@ -51,7 +53,7 @@ def test_expanded_glob() -> None:
                 eq(r.returncode, 2, f'{cmd[0]}: {what} is refused')
                 has(r.stderr, rf'{said}: ', f'{cmd[0]}: {what}: says so')
                 has(r.stderr, r'(?i)quote', f'{cmd[0]}: {what}: says to quote')
-        has(plan('add', 'R', f'x {many}', *files).stderr, r'20 existing paths in a row .*Quote the glob', 'and why')
+        has(plan('add', 'R', f'x {many}', *files).stderr, r'20 existing paths .*Quote the glob', 'and why')
         eq(todo.read_text(encoding='utf-8'), before, 'TODO.md is unchanged')
         eq(git('rev-parse', 'HEAD'), head, 'and nothing was committed')
 

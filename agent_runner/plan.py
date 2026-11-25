@@ -1020,21 +1020,25 @@ def _pathish(arg: str) -> bool:
     return ' ' not in arg and ('/' in arg or bool(re.search(r'\.[A-Za-z0-9]{1,8}$', arg)) or Path(arg).exists())
 
 
-EXPANDED = 6  # B773: this many existing paths in a row in a task's text are a glob the shell expanded, not prose
+EXPANDED = 6  # B773: a stretch of text with this many more existing paths than other words is an expanded glob
 
 
 def expanded_paths(text: str) -> list[str]:
-    """B773: the first run of EXPANDED or more words of `text` that each are a path that exists here, else []. A
-    path with a comma or a full stop after it, as prose and lists have, is no such word."""
-    run: list[str] = []
-    for w in [*text.split(), '']:
-        if w and os.path.exists(w):
-            run.append(w)
-            continue
-        if len(run) >= EXPANDED:
-            return run
-        run = []
-    return []
+    """B773: the existing paths in the first stretch of `text` that is mostly such paths (EXPANDED more of them than
+    of its other words: a file name with a space is two other words), else []. A path with a comma or a full stop
+    after it, as prose and lists have, is an other word."""
+    got: list[str] = []
+    score = best = 0
+    for w in text.split():
+        if os.path.exists(w):
+            got, score = [*got, w] if score else [w], score + 1
+            best = max(best, score)
+        elif score:
+            score -= 1
+            if not score and best >= EXPANDED:
+                break
+            best = best if score else 0
+    return got if best >= EXPANDED else []
 
 
 def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
@@ -1084,7 +1088,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
             text.append(a)
         k += 1
     if got := next((g for part in (text, where) if (g := expanded_paths(' '.join(part)))), []):  # B773
-        no(f'{len(got)} existing paths in a row ({got[0]} … {got[-1]}): a glob the shell expanded? Quote the glob, '
+        no(f'{len(got)} existing paths ({got[0]} … {got[-1]}): a glob the shell expanded? Quote the glob, '
            f"as in --files 'dir/**'")
     if in_where and not where:
         no('@ needs a place (top, bottom, before ID, after ID, in SECTION)')
