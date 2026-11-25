@@ -36,7 +36,7 @@ from agent_runner.asks import block_asks, EV_FINISHED, no_slot, park_asked, unbl
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged, budget_mark, budgets, SPENT)
-from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
+from agent_runner.teardown import close_page, end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
     START_TRIES, state_line, stats, stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, watch_code, weekly)
@@ -1076,8 +1076,7 @@ def run(argv: list[str], prog: str) -> int:
     start_control()  # F176: no session of an earlier run is picked up, but those a shutdown cut off come back
     start_control_server()
     from agent_runner.web import start_web
-    if srv := start_web():  # F66: the run page on this machine ([run] web), its address in the run log
-        PAGE.append(srv)  # B144: the stop closes it before it says `run stopped`
+    PAGE.extend(filter(None, [start_web()]))  # F66: the run page ([run] web); F402b3a: the stop hands it over
 
     code_start(bool(r['auto_upgrade']))  # F149
     threading.Thread(target=update_watch, daemon=True).start()
@@ -1450,7 +1449,7 @@ class Run:
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
         if stopping() and not procs and (not waiting or forced()) and not merging:
             how = stopped_by()
-            end_own(rc_sweep_stop, log)  # B144: its feed, control server, board and page are gone before it says it stopped
+            end_own(rc_sweep_stop, log, keep_page=not POWER)  # B144, F402b3a: its own are gone, or its page handed over, before it says so
             clear_stop()
             log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}', EV_STOPPED)
             if POWER:
@@ -1465,6 +1464,7 @@ class Run:
                                         or power_due(self.idle_at)) and not pick(self.running, tried, self.branch) \
                 and not splitting(tried, self.branch):  # B196: it starts by itself in minutes
             if self.once and not stopping():
+                close_page(True, log)  # F402b3a: the run ends, its page stays
                 log('run done: nothing it may start (once)')
                 return 0
             if not self.idle_said:

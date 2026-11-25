@@ -325,6 +325,7 @@ def test_stop_ends_own_b144():
             stubs(st, said, stopping=True, rc_sweep_stop=lambda: order.append('remote'),
                   log=lambda msg, *a, **k: order.append(msg))
             st.enter_context(mock.patch.object(loop, 'POWER', ''))
+            st.enter_context(mock.patch.object(teardown, 'kept_page', lambda say: False))  # the handover: test_page_only
             st.enter_context(mock.patch.object(loop.plat, 'alive', lambda pid: board.poll() is None and pid == board.pid))
             eq(new_run().end(), 0, 'a drained stop ends the run')
         stopped = next(i for i, m in enumerate(order) if m.startswith('run stopped'))
