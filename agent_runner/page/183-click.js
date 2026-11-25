@@ -70,6 +70,7 @@ document.addEventListener('click',async e=>{
     if(twice&&!S.drawer){startRename(x.dataset.thread);return}
   }
   if(q('[data-micreport]'))return micCopy();
+  if(q('[data-keptsend]'))return keptSend();  // B216a1
   if(x=q('[data-mictest]'))return micTest(x.dataset.mictest);  // B162b1
   if(q('[data-mictestcopy]'))return micCopyText('Mic test',micTestText());
   if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(TS.mic==='hold'&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
