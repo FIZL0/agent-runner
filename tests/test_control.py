@@ -1524,7 +1524,7 @@ def test_decide_options_f181d():
     for n, (words, after) in enumerate((('Which look?', ''), ('Which look? ' + 'It is a long story. ' * 20, ''),
                                         ('Which look?', more), ('Which look? ' + 'It is a long story. ' * 20, more))):
         q = P.decide_question(f'Two ways.\n\n**DECIDE: {words.strip()} [Full (recommended) / Small / No change]{after}**')
-        check(len(q) <= 240 and ('…' in q) == (len(words) > 100), f'{n}: {len(q)} characters, cut only when long', q)
+        check(q.startswith(words.strip()) and '…' not in q, f'{n}: {len(q)} characters, whole', q)
         tid = K.file_control_ask(n + 3, f'sid-{n}', q, link)
         a = next(x for x in P.asks(todo) if x[1] == tid)
         line = next(x for x in todo.read_text(encoding='utf-8').splitlines() if f'**{tid}**' in x)
@@ -1533,7 +1533,10 @@ def test_decide_options_f181d():
         check(opts and opts[0]['rec'] and what.startswith('Which look?') and '[' not in what, f'{n}: and off the question', what)
     long = 'Which look? [' + ' / '.join(f'{c * 60}' for c in 'abcd') + ']'
     eq(P.decide_question(f'DECIDE: {long}'), long, 'a long bracket costs a short question no word')
-    eq(len(P.decide_question('DECIDE: ' + 'word ' * 100)) <= 240, True, 'no bracket: cut as before')
+    plain = ('word ' * 100).strip()
+    eq(P.decide_question(f'DECIDE: {plain}'), plain, 'B840: over 240 with no bracket: whole')
+    q = P.decide_question('DECIDE: ' + 'word ' * 900 + '[Yes / No] https://example.com/a')
+    check(len(q) <= P.QUESTION_MAX and q.endswith('… [Yes / No] https://example.com/a'), 'past the guard: cut before its bracket', len(q))
 
 
 def test_wrong_agent_b764c():

@@ -11,11 +11,11 @@ from unittest import mock
 
 from _check import check, eq, git, report  # noqa: F401 (sets the suite's own environment first)
 from _ui_model import chat, fake_run, in_tmp
-from test_chat_question import ASK, say, you
+from test_chat_question import ASK, LINK, LONG, LONG_Q, say, you
 
 import test_web_question as Q
 from test_web_question_chat import run as chat_run
-from agent_runner import control as K, control_settled as Z, plan as P, session_now as N, state as S, ui_model as U
+from agent_runner import control as K, control_ask, control_settled as Z, need_detail, plan as P, session_now as N, state as S, ui_model as U
 
 LATER = 'DECIDE: Which size? [Big / Little]'
 
@@ -124,6 +124,35 @@ def test_filed_once(w: World) -> None:
     eq(Z.filed_questions(S.C, 'sid-5'), {}, "another session's is none of its")
 
 
+def test_long_b840(w: World) -> None:
+    w.rows[:] = []
+    w.add(say(LONG))
+    tid = w.file(LONG)
+    what, url = next((a[3], a[4]) for a in P.asks(S.C.todo) if a[1] == tid)
+    line = next(x for x in S.C.todo.read_text(encoding='utf-8').splitlines() if f'**{tid}**' in x)
+    opts, question = need_detail.decide_options(tid, what, line)
+    eq((url, w.ask()['need']), (LINK, tid), 'the link is kept, and the card knows its item')
+    check(question.startswith(LONG_Q) and '…' not in question, 'the item reads the whole question', question)
+    eq([o['name'] for o in opts], ['Attach both videos', 'Leave the item as it is'], 'and has both options')
+    eq(w.ask()['question'], LONG_Q, 'as the card does')
+    eq(U.question_answer('c6', 'u1', 'Attach both videos')['ok'], True, 'an option settles it')
+
+
+def test_filed_cut_b840(w: World) -> None:
+    w.rows[:] = []
+    w.add(say(LONG))
+    cut = P.cut_question(P.decide_question(LONG))
+    with mock.patch.object(control_ask, 'filed'):
+        tid = K.file_control_ask(6, 'sid-6', cut, 'https://claude.ai/code/session_01AbC')
+    check(cut in S.C.todo.read_text(encoding='utf-8'), 'filed by the version before, cut', cut)
+    eq((w.file(LONG), w.ask()['need']), (tid, tid), 'it is not filed twice, and the card is its')
+    eq(control_ask.explained(w.rows, cut)[0], 'Both are ready.', 'what explains it is still found')
+    eq(control_ask.explained(w.rows, '')[0], '', 'and nothing for no question')
+    eq(U.question_answer('c6', 'u1', 'Attach both videos')['ok'], True, "the card's option settles it")
+    check('Attach both videos' in ' '.join(P.section(S.C.todo, tid)).split('your answer')[-1], 'with the answer in its note')
+    eq((w.ask(), N.live('c6')['answered']), (None, ['u1']), 'and the card closes')
+
+
 NEED = "const need = {...ASK, need: 'F9'}; "
 
 
@@ -162,4 +191,4 @@ def test_page_needs_you(tmp: Path) -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([*(world(f) for f in (test_card_settles, test_needs_you_closes, test_closed_chat, test_dropped_and_shelved, test_only_its_own,
-                                                  test_filed_once)), in_tmp(test_page_sends), in_tmp(test_page_needs_you)]))
+                                                  test_filed_once, test_long_b840, test_filed_cut_b840)), in_tmp(test_page_sends), in_tmp(test_page_needs_you)]))

@@ -10,19 +10,19 @@ import hashlib
 import re
 
 from agent_runner import need_detail
-from agent_runner.plan import decide_question
+from agent_runner.plan import cut_question, decide_question
 
 
 def ask_of(text: str, uuid: str = '') -> dict | None:
     """The question Claude's message `text` ends on: {'id' (its transcript entry's `uuid`, else one made of its
-    words), 'question', 'options': [{'name', 'rec'}], the recommended first}. None when it ends on no DECIDE line, or
+    words, as cut before B840: one filed then keeps its id), 'question', 'options': [{'name', 'rec'}], the recommended first}. None when it ends on no DECIDE line, or
     on one with no options (a malformed bracket is part of the question, as in Needs you)."""
     q = decide_question(text)
     options, question = need_detail.decide_options('', q, f'DECIDE: {q}') if q else ([], '')
     if not options:
         return None
     question = re.sub(r'(?:\s+https?://\S+)+\s*$', '', question)  # the links after the bracket
-    return {'id': uuid or hashlib.sha256(q.encode('utf-8')).hexdigest()[:16], 'question': question, 'options': options}
+    return {'id': uuid or hashlib.sha256(cut_question(q).encode('utf-8')).hexdigest()[:16], 'question': question, 'options': options}
 
 
 def needs(sid: str) -> dict[str, str]:
