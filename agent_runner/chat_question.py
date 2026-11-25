@@ -26,19 +26,30 @@ def ask_of(text: str, uuid: str = '') -> dict | None:
 
 def needs(sid: str) -> dict[str, str]:
     """F192a3: {question id: the item that still asks it under Needs you (shelved too), '' once it does not} of the
-    questions of session `sid` the run filed there. An item that asks something else by now is not that question's.
+    questions of session `sid` the run filed there. An item answered once, or that asks something else by now, is not that question's.
     With a plan that does not read, every item waits: `ui_model.question_answer` looks again."""
     from agent_runner import control_settled, plan as P, state
     if not (filed := control_settled.filed_questions(state.C, sid)):
         return {}
     try:
         waits = {a[1]: a[3] for a in P.asks(state.C.todo, all=True) if a[0] == 'DECIDE'}
+        again = {t for t in filed if t in waits and ' — your answer (' in ' '.join(x.strip() for x in P.section(state.C.todo, t))}
     except (SystemExit, OSError):
         waits = {t: q['what'] for t, q in filed.items()}
+        again = set()
     out: dict[str, str] = {}
     for tid, q in filed.items():
-        out[q['id']] = out.get(q['id']) or (tid if waits.get(tid) == q['what'] else '')
+        out[q['id']] = out.get(q['id']) or (tid if waits.get(tid) == q['what'] and tid not in again else '')
     return out
+
+
+def need_of(chat: str, ask_id: str, sid: str) -> str:
+    """The item question `ask_id` of `chat` (c6) waits as; '' for none. `sid`: its session, '' once it closed (filing
+    the question ends it): then the sessions that had its number."""
+    from agent_runner import control_settled as Z, state
+    sids = [sid] if sid else [d.get('sid', '') for f in Z.folder(state.C).glob('*.filed')
+                              if f'c{(d := Z.read_json(f, {})).get("n")}' == chat]
+    return next((t for s in sids if (t := needs(s).get(ask_id))), '')
 
 
 def joined(ask: dict | None, sid: str) -> dict:

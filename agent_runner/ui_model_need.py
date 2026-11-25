@@ -270,7 +270,7 @@ def question_answer(chat: str, id: str, text: str) -> dict:
     from agent_runner import chat_question
     if not re.fullmatch(r'c\d+', chat or '') or not isinstance(text, str) or not text.strip():
         return {'ok': False, 'code': 2, 'out': f'question_answer: a chat and an option; not {chat!r} {text!r}', 'argv': []}
-    if not (tid := chat_question.needs(session_sid(chat)).get(id)):
+    if not (tid := chat_question.need_of(chat, id, session_sid(chat))):
         return {'ok': False, 'code': 1, 'out': 'That question no longer needs you (answered already?)', 'argv': []}
     return answer(tid, text, button=True)
 

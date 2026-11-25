@@ -10,7 +10,7 @@ const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabSto
 const questionAsk=n=>FD.n===n?questionNow(FD.live,QN.kept.get(n)):null;
 const questionSpoken=n=>questionSpoke(n,S.ob,(S.sent[n]&&S.sent[n].pending)||[],Date.now()-((S.sent[n]||{}).at||0));
 /* an answer to it, here or under Needs you, is on its way */
-const questionSettling=ask=>!!(ask&&ask.need)&&S.ob.some(x=>x.need===ask.need&&x.state!=='failed');
+const questionSettling=ask=>!!(ask&&ask.need)&&S.ob.some(x=>x.need===ask.need&&x.state!=='failed'&&(x.name==='question_answer'||x.name==='answer'||/^need_(yes|no|answer\d+|drop)$/.test((x.args||{}).key||'')));  // not Later
 /* the card of chat n, drawn over its chips (sessRow) */
 function questionCard(n){
   if(!/^c\d+$/.test(n||''))return '';

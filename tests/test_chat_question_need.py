@@ -80,6 +80,16 @@ def test_needs_you_closes(w: World) -> None:
     eq(U.question_answer('c6', 'u1', 'Full')['ok'], False, 'an option sent late is refused')
 
 
+def test_closed_chat(w: World) -> None:
+    tid = w.file()
+    S.C.notes('control6.pid').unlink()
+    eq(U.question_answer('c5', 'u1', 'Full')['ok'], False, 'another chat number has no such question')
+    eq(U.question_answer('c6', 'u1', 'Full').get('gone'), tid, 'filing ended the chat in the hold: its option still settles the item')
+    P.block(tid, P.decide_question(ASK) and 'DECIDE: ' + P.decide_question(ASK), todo=S.C.todo, after=[])
+    check(tid in w.waits(), 'asked again in the same words')
+    eq(U.question_answer('c6', 'u1', 'Small')['ok'], False, 'the old card does not settle it')
+
+
 def test_dropped_and_shelved(w: World) -> None:
     tid = w.file()
     P.shelve(tid, todo=S.C.todo)
@@ -134,20 +144,22 @@ def test_page_sends(tmp: Path) -> None:
 def test_page_needs_you(tmp: Path) -> None:
     out = chat_run(tmp, NEED + """
       live(need); outbox('run_control', {key: 'need_answer1', tid: 'F9'}, {need: 'F9'}); say(what());
+      S.ob[0].args.key = 'need_later'; render(); say(what()); S.ob[0].args.key = 'need_answer1';
       S.ob[0].state = 'failed'; render(); say(what()); S.ob = []; render();
-      pick(0); outbox('run_control', {}, {need: 'F9'}); await pass(6000); say(sent.map(x => x.name), toasts.length);
+      pick(0); outbox('run_control', {key: 'need_yes'}, {need: 'F9'}); await pass(6000); say(sent.map(x => x.name), toasts.length);
       S.ob = []; FD.live = null; live(need); await pass(600); chat(); say(what());
       type('why?'); gone(); live(null); await clear(); say(what(), QN.kept.get('c1').need);
       FD.live = {ok: true, ask: null, answered: ['u1']}; questionSee('c1'); render(); say(what());
       QN.mark.set('c1', need); questionSee('c1'); render(); say(what());""")
     if out is None:
         return
-    eq(out[:2], [[''], ['card']], 'an answer under Needs you takes the card at once; one that failed does not')
-    eq(out[2], [['run_control', 'run_control'], 1], 'and the held option is not sent as well')
-    eq(out[3:5], [['mark'], ['card', 'F9']], 'talked about, it is still the item\'s')
-    eq(out[5:], [[''], ['']], 'answered there, the kept card and a mark go too')
+    eq(out[:3:2], [[''], ['card']], 'an answer under Needs you takes the card at once; one that failed does not')
+    eq(out[1], ['card'], 'Later answers nothing')
+    eq(out[3], [['run_control', 'run_control'], 1], 'and the held option is not sent as well')
+    eq(out[4:6], [['mark'], ['card', 'F9']], 'talked about, it is still the item\'s')
+    eq(out[6:], [[''], ['']], 'answered there, the kept card and a mark go too')
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([*(world(f) for f in (test_card_settles, test_needs_you_closes, test_dropped_and_shelved, test_only_its_own,
+    raise SystemExit(report([*(world(f) for f in (test_card_settles, test_needs_you_closes, test_closed_chat, test_dropped_and_shelved, test_only_its_own,
                                                   test_filed_once)), in_tmp(test_page_sends), in_tmp(test_page_needs_you)]))
