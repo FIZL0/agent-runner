@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: on the run page, while a question card is open (whole, or its Undo row), the key row is not shown, neither the keyboard button's nor the one in place of the chips on touch; it comes back once the card is answered, gone, minimized or marked (Chat about this), and the keyboard button still opens it under the card for that question only (F437b).
 ## 0.72.0 (2026-11-25)
 
 - Fixed: a split task's row in the run page's Plan queue and the terminal UI's queue reads "Split: 2 of 4 parts landed" instead of Ready or what it waits for (blocked, held, parked and running rows keep their words; a dropped part is not counted); Drop on it, also when parked, first asks, naming the parts that stay open (the page with titles, the terminal UI by id); before, the question did not mention the parts. Status's reason why a slot is idle counts such tasks as waiting for their parts (B811b).

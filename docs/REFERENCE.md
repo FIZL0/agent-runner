@@ -420,7 +420,7 @@ words never show. `/terminal/NAME` says
   while it stands in), a tap clicks in it without
   opening the keyboard, a long press selects the word under the finger, at the live end too (no sheet; where no history can be drawn it does nothing), and the key row's Text opens a sheet with the screen's text to select and
   copy; a horizontal swipe still opens the drawer. The message box's keyboard button folds out the key row (Esc, Tab, ↑,
-  Enter, Ctrl-C, Text, ←, ↓, →) for the session's menus; touch only. The session's text is 12px on touch and 13px
+  Enter, Ctrl-C, Text, ←, ↓, →) for the session's menus; touch only, and while a question card is open only under that card, for that question. The session's text is 12px on touch and 13px
   otherwise, drawn by ttyd's DOM renderer (its canvas is wrong at 2x). The terminal page is gzip-compressed (about 196 KB,
   from 740 KB) and the browser keeps it (an ETag, `private, no-cache`, a 304 when unchanged), never without the token. Its ground is dark unless the person's agent
   `theme` (in `~/.claude/settings.json` or `~/.claude.json`) starts with light. A session the run starts (control sessions and

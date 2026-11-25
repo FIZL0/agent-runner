@@ -163,7 +163,11 @@ function feedTerm(){try{return FD.up&&FD.frame&&FD.frame.contentWindow.term||nul
 function feedKey(k){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
   t.input(feedBytes(k,!!(t.modes&&t.modes.applicationCursorKeysMode)),true)}
 const keyButtons=()=>`<div class="keys" role="toolbar" aria-label="Keys for the session">${FEED_KEYS.map(([k,l])=>`${k==='left'?'<button type="button" class="tool" data-feedtext title="The screen as text, to copy">Text</button>':''}<button type="button" class="tool" data-feedkey="${k}"${/\w/.test(l)?'':` aria-label="${k.charAt(0).toUpperCase()+k.slice(1)} arrow"`}>${l}</button>`).join('')}</div>`;
-const keysRow=()=>S.keys?keyButtons():'';
+/* F437b: no key row with an open question card, unless the keyboard button opened it there; S.keys stays, for after it */
+const keysCard=()=>sessUp(S.thread)?questionUp(S.thread):'';
+const keysShown=()=>{const k=keysCard();return k?QN.keys===k:!!S.keys};
+function keysFlip(){const k=keysCard();if(k)QN.keys=QN.keys===k?'':k;else S.keys=!S.keys}
+const keysRow=()=>keysShown()?keyButtons():'';
 /* the screen's text in a sheet, to select and copy with a finger */
 function feedText(){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
   const b=t.buffer.active, l=[];for(let y=b.viewportY;y<b.viewportY+t.rows;y++){const x=b.getLine(y);l.push(x?x.translateToString(true):'')}
@@ -430,11 +434,12 @@ addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]'))
 addEventListener('keydown',e=>{if(FD.slim&&e.target.matches&&e.target.matches('[data-in]')&&e.key!=='Escape')feedSlim(false)});
 /* F406g: the provider's name and model of a chat on the harness loop ('' for another), or of a new one */
 const modelOf=n=>/^c\d+$/.test(n||'')?(sessionOf(n)||{}).model||(FD.n===n&&FD.live&&FD.live.harness?S.snap.chat_model||'Model':''):isAgent(n)&&n?'':S.snap.chat_model||'';
-/* the row above the box: what there is to say, each a sheet; a menu or a question has the key row in its place */
+/* the row above the box: what there is to say, each a sheet; a menu or a question on the screen has the key row in its place, not with an open question card */
+const sessUp=n=>{const st=feedNow(n);return st==='session'||st==='loading'&&sessionOf(n)};
 function sessRow(n){
-  const st=feedNow(n);if(st!=='session'&&!(st==='loading'&&sessionOf(n)))return QN.mark.has(n)?questionCard(n):'';  // F192a2: what is sent is still about it; F206a: there from the first frame, so what stands over it does not move
+  if(!sessUp(n))return QN.mark.has(n)?questionCard(n):'';  // F192a2: what is sent is still about it; F206a: there from the first frame, so what stands over it does not move
   const model=modelOf(n), ask=questionCard(n);
-  if(!model&&FD.foot===null&&FD.whole)return ask+(TOUCH()&&!S.keys?keyButtons():'');
+  if(!model&&FD.foot===null&&FD.whole)return ask+(TOUCH()&&!S.keys&&!keysCard()?keyButtons():'');
   const w=sessWorks(n), icon={work:'<span class="livedot"></span>',update:'<span class="bdot"></span>'};
   setTimeout(slimDraw,0);
   return ask+`<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w,model}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
