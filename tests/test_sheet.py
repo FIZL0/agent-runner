@@ -118,7 +118,7 @@ def test_db():
 
 
 def test_needs_you():
-    print('a DECIDE with a sheet: one line and its link in status, the feed and the control brief')
+    print('a DECIDE with a sheet: one line and its link in status and the feed')
     with tempfile.TemporaryDirectory() as t:
         root, env = make(Path(t))
         R.init(root)
@@ -139,14 +139,8 @@ def test_needs_you():
         nl = R.needs_you_line(line, {}, dt.datetime(2026, 11, 20, 15, 0), R.waiting_ok())
         eq(nl, f'14:35  {R.ROOT.name} needs you: 2 config cleanups ready, 1 optional. Pick on the sheet or reply go [F2]  {URL}',
            'the feed line links the sheet')
-        here = os.getcwd()
-        os.chdir(root)
-        try:
-            brief = R.ask_waiting()
-        finally:
-            os.chdir(here)
-        has(brief, re.escape(f'- F2: 2 config cleanups ready, 1 optional. Pick on the sheet or reply go {URL}'),
-            'the control brief has the line and the link')
+        check('runner-waiting' not in R.control_ask('F2: go') and URL not in R.control_ask('F2: go'),
+              'B790: a control session\'s first message carries neither the line nor the link')
 
         p = R.prompt_for('F2', 1, 1, root, 'main')
         has(p, r'When you block with `DECIDE:` on a choice', 'the slot brief says when to write a sheet')

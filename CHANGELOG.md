@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a control session's first message (in Chat or Talk, or `control --new --ask`) no longer gets a `<runner-waiting>` block of Needs you items, only the person's ask and the lines for attached files; the control brief says a first message that is a bare reply or names an item ("yes", "R43: tags please") is settled after running `needs`, and any other is answered without mentioning waiting items. Older transcripts with a block still read clean where a Held message is shown (a chat's messages waiting out a usage limit). Before, the block filled the chat bubble, and in Talk nearly every ask carried every item.
 - Changed: a run's stop no longer closes its run page. Before the run says `run stopped`, it starts a detached page-only process that takes the page over (same address, port and key; web.url and the Tailscale Serve https rule kept, with or without Runner Home), and a run started right after takes it back. If the handover fails, the run still stops, the page closes and the run log says why. No page stays after a stop with suspend or shutdown, or with `[run] web = false`; Ctrl-C, a kill or a crash still takes the page with it. Before, a stop closed the page (F402b3a).
 ## 0.66.0 (2026-11-24)
 

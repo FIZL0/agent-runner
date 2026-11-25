@@ -1476,29 +1476,13 @@ def test_control(repo: Path):
     eq(R.control_argv(1, 'sid-1', resume=False)[1:3], ['--session-id', 'sid-1'], 'F176: number 1 opens with no summary')
     check('start no watch on them unasked' in R.control_brief() and 'first turn' not in R.control_brief(),
           'B195: no control session starts a needs-you watch of its own')
-    # B47: a handed-on ask carries what waits under Needs you, so a reply to it is answered, not just queued
-    item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags?', '', 'How should the site deploy')
-    with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
-        msg = R.control_ask('deploy with tags instead of every push')
-    check(msg.startswith('deploy with tags') and '- R43: Deploy on every push or on v* tags?' in msg
-          and 'plan confirm|change|shelve ID' in msg and 'plan answer' not in msg,
-          'a handed-on ask lists the waiting items and says to settle one by its id')
-    # B84: the list is fenced off as runner-added, after the person's words and any attached file, and the brief
-    # names the tag: settle only when the words answer it, else say nothing of the waiting items
-    with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
-        msg = R.control_ask('what is wrong with the push deploy in my screenshot?', ['/tmp/shot.png'])
-    head, tag, block = msg.partition('\n\n<runner-waiting>\n')
-    check(tag and head.startswith('what is wrong') and 'shot.png' in head and 'R43' not in head
-          and block.endswith('</runner-waiting>') and "not the person's ask" in block
-          and 'say nothing of these' in block and 'From the runner feed' not in msg,
-          'B84: the waiting items sit in a tagged runner block after the person\'s words, never part of them')
-    check('<runner-waiting>' in brief and 'not the person\'s ask' in brief
-          and 'say nothing about the waiting items' in brief,
-          'B84: the brief names the runner block: answer the person, settle an item only if their words answer it')
-    with mock.patch.object(R.P, 'asks', lambda *a, **k: []):
-        eq(R.control_ask('add dark mode'), 'add dark mode', 'nothing waiting: the ask as it was')
-    with mock.patch.object(R.P, 'asks', lambda *a, **k: (_ for _ in ()).throw(OSError())):
-        eq(R.control_ask('add dark mode'), 'add dark mode', 'an unreadable plan never stops the session opening')
+    # B790: a handed-on ask (B47, B84) carries no waiting item; the brief has the rule for a reply to one
+    flat = ' '.join(brief.split())
+    check('runner-waiting' not in brief, 'B790: the brief no longer names the tag')
+    check('A first message that is a bare reply or names an item ("yes", "R43: tags please") answers one: run' in flat
+          and f'`{R.C.command} needs`, then settle it' in flat
+          and 'Answer any other without mentioning waiting items.' in flat,
+          'B790: the brief: a bare reply or a named item is settled after `needs`, any other ask answered alone')
     argv = R.control_argv(2, 'sid-2', resume=False)
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
     eq(argv[1], '--session-id', 'a --new session has no first message: blank until the person types')
@@ -2253,7 +2237,7 @@ def test_short_titles_and_since(repo: Path):
             brief = R.control_brief()
             check('`./kit status`' in brief and './kit plan confirm' in brief and f'{R.RUNNER} ' not in brief,
                   'B93: the control brief names [run] command', brief[:200])
-            check('`./kit plan confirm' in R.ask_waiting_block('- R1 x'), 'B93: a handed-on ask settles by ./kit')
+            check('`./kit needs`, then settle it' in ' '.join(brief.split()), 'B93: a handed-on ask settles by ./kit')
             skills = R.control_skills_dir() / '.claude' / 'skills'
             ctl = (skills / 'control' / 'SKILL.md').read_text(encoding='utf-8')
             since = (skills / 'since' / 'SKILL.md').read_text(encoding='utf-8')
@@ -6683,17 +6667,20 @@ def test_take_running_slot(repo: Path):
     check('`./run guide take`' in CONTROL.format(repo='r', cmd='./run', log='l', needs='Needs you', answer=''), 'C2: and the control brief points there')
 
 
-def test_runner_route_b54(repo: Path):
-    """B54: a hand-off whose words share nothing with the waiting items carries none of them."""
-    item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags?', '', 'How should the site deploy')
+def test_first_message_no_waiting_b790(repo: Path):
+    """B790: a first message, typed or Talk, is the person's ask and files only, whatever waits under Needs you."""
+    from agent_runner.control import talk_ask
+    item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags? Reply on your phone', '', 'How should the site deploy')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
-        eq(R.control_ask('update runner, when is release?'), 'update runner, when is release?',
-           'B54: an ask that shares nothing with the waiting items carries none, and no order to settle one')
-        check('<runner-waiting>' in R.control_ask('R43: tags please'), 'B54: an ask naming the item carries it')
-        check('<runner-waiting>' in R.control_ask('yes'), 'B54: a bare reply carries the items it can answer')
-        check('<runner-waiting>' in R.control_ask('deploy only on tags'), 'B54: an ask on the same subject carries it')
-    eq(R.waiting_for_ask('fix the login page', '- R43: Deploy on every push?\n- B9: login page shows an error'),
-       '- B9: login page shows an error', 'B54: only the related item of several')
+        for words in ('yes', 'B', 'R43: tags please', 'deploy only on tags', 'update runner, when is release?'):
+            for ask in (words, talk_ask(words)):
+                eq(R.control_ask(ask), ask, f'B790: {words!r} goes in as it is')
+        msg = R.control_ask('yes', ['/tmp/shot.png'])
+        check(msg.startswith('yes\n\nThe person attached shot.png') and msg.count('\n\n') == 1 and 'R43' not in msg,
+              'B790: an attached file adds its line and nothing else', msg)
+        argv = R.control_argv(2, 'sid-2', resume=False, ask=talk_ask('yes'), typed=False)
+        check(talk_ask('yes') in argv and not any('runner-waiting' in a for a in argv),
+              'B790: a Talk session opens with no waiting item', argv)
 
 
 def test_upgrade_cmd(repo: Path):
@@ -8384,7 +8371,7 @@ def main() -> int:
                        lambda: test_closed_online_controls(repo),
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), test_control_leaves_needs_alone, lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
+                       lambda: test_control_status_rules(repo), test_control_leaves_needs_alone, lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_first_message_no_waiting_b790(repo), test_control_no_upgrade_watcher,
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
