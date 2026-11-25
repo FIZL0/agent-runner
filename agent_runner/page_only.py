@@ -7,6 +7,8 @@ per project: it holds <notes>/page.lock while it serves, and <notes>/page.live i
 when a run starts (`take_over`, called by the run's start_web, which then has the port and web.url), or after IDLE s with
 no page open. Chats are detached processes of their own, so none ends with it.
 
+F402b3a: a run's stop hands its page to one (`hand_over`): the same address, port, key and https rule.
+
 What a run's loop does for chats and nobody does here: closing idle chats, ending ones closed online, and bringing back
 those a shutdown cut off (the run's start does). A new chat, a message, Resume and the plan commands need no loop. One
 thing a message may need is done here too (`control_held.held_tick`): what a chat held for a usage limit is put in."""
@@ -17,6 +19,7 @@ import contextlib
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -30,7 +33,10 @@ IDLE = 600.0  # s with no page open (no request under way; an open page holds it
 LOOK = 0.5  # s between two looks at whether to end
 START_WAIT = 40.0  # s the launcher waits for the page to answer (Tailscale Serve may take 15)
 TAKE_WAIT = 20.0  # s a run's start waits for it to give up the page (turning Tailscale Serve off may take 10)
-LAST_ACTS = 120.0  # s it stays, its port already free, for actions that were still running when it ended
+READY_WAIT = 10.0  # s a run's stop waits for the process it hands its page to, its own page still up
+HAND_WAIT = 8.0  # s it then waits for that process to answer (a start waits LAST_RUN_WAIT for the whole stop)
+LAST_ACTS = 120.0 # s it stays, its port already free, for actions that were still running when it ended
+HANDED = '--handed'  # the word it is started with by a run's stop
 NOT_OURS = ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_KEEP', 'AGENT_RUNNER_REPO', 'AGENT_RUNNER_CONTROL',
             'AGENT_RUNNER_STARTED_BY')
 
@@ -157,6 +163,102 @@ def asked_to_end() -> bool:
     return bool(pid and plat.alive(pid))
 
 
+# --- the run: hand its page over at its stop ---------------------------------------------------------------------
+
+def kept() -> bool:
+    """Does a page stay up after this project's run? Not with [run] web = false, also when it was set during the run."""
+    from agent_runner.config import Config
+    return bool(Config(S.C.root).run.get('web', True))
+
+
+def hand_note() -> dict | None:
+    """What a stopping run hands over: {'pid': the run's, 'bind', 'port'}; None when no live run hands anything over."""
+    try:
+        d = json.loads(S.C.notes('page.hand').read_text(encoding='utf-8'))
+        return d if plat.alive(int(d['pid'])) and d['bind'] and int(d['port']) else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def wait_child(proc, done, wait: float) -> bool:
+    """Wait up to `wait` s for `done()`, or until `proc` has ended."""
+    end = time.monotonic() + wait
+    while not (got := done()) and proc.poll() is None and time.monotonic() < end:
+        time.sleep(0.1)
+    return bool(got)
+
+
+def hand_over(srv) -> str:
+    """A run's stop: a page-only process takes over what `srv` serves, on its address and with its https rule: '' once it
+    answers there, else why not. `srv` has stopped either way, and a handover that failed leaves no process and no rule."""
+    note, live, out = (S.C.notes(n) for n in ('page.hand', 'page.live', 'page.out'))
+    proc, why, https, closed = None, '', False, False
+    try:
+        live.unlink(missing_ok=True)  # of one that was killed
+        with contextlib.suppress(OSError):  # Windows: one that ended may still have it open (LAST_ACTS)
+            out.unlink(missing_ok=True)
+        S.C.notes('page.stop').unlink(missing_ok=True)  # this run's own ask, if the one it met was slow to end
+        bind, port = srv.server_address[:2]
+        note.write_text(json.dumps({'pid': os.getpid(), 'bind': bind, 'port': port}), encoding='utf-8')
+        env = {k: v for k, v in os.environ.items() if k not in NOT_OURS}
+        proc = plat.spawn_detached([*argv(), HANDED], out=out, cwd=S.C.root, env=env)
+        if not wait_child(proc, held, READY_WAIT):
+            why = 'the page-only process did not start'
+        else:
+            https, srv.https = srv.https, False  # its rule stays
+            closed = True
+            srv.stop()
+            if not wait_child(proc, serving, HAND_WAIT):
+                why = 'the page-only process did not answer'
+    except Exception as e:  # noqa: BLE001 - the stop goes on
+        why = f'{type(e).__name__}: {e}'
+    with contextlib.suppress(OSError):
+        note.unlink(missing_ok=True)  # a process that has not got the port by now ends
+    if not why:
+        return ''
+    if proc is not None:
+        end_child(proc)
+        with contextlib.suppress(OSError):
+            why += f': {said}' if (said := out.read_text(encoding='utf-8', errors='replace').strip()[-300:]) else ''
+    if not closed:
+        srv.stop()
+    elif https:
+        from agent_runner import page_https
+        page_https.https_off()
+    return why
+
+
+def end_child(proc) -> None:
+    """End the process of a handover that failed, so the next run meets nothing of it."""
+    for end in (lambda: plat.terminate(proc.pid), proc.kill):
+        if proc.poll() is None:
+            end()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(3)
+
+
+def take_page(end: threading.Event):
+    """The process a run hands its page to: that page's server, as soon as the run has closed its own; None when the
+    handover is off (the run gave it up or is gone, or `end` is set)."""
+    from agent_runner import page_https, web
+    srv = None
+    while (hand := hand_note()) and not end.is_set():
+        try:
+            srv = web.serve(web.web_token(), hand['port'], hand['bind'])
+            break
+        except OSError:  # the run still serves there
+            end.wait(0.1)
+    if srv is None:
+        return None
+    if not hand_note():
+        srv.stop()
+        return None
+    web.write_urls(srv)
+    srv.https = not srv.private() and page_https.made_rule() is not None
+    threading.Thread(target=web.HomeWatch(srv).loop, name='run-page-home', daemon=True).start()
+    return srv
+
+
 # --- the process ------------------------------------------------------------------------------------------------
 
 class Use:
@@ -223,8 +325,9 @@ def only_one():
     return None
 
 
-def serve(end: threading.Event) -> int:
-    """Serve the page until a run takes it over, it was idle for IDLE s, or `end` is set (a signal). The exit code."""
+def serve(end: threading.Event, handed: bool = False) -> int:
+    """Serve the page until a run takes it over, it was idle for IDLE s, or `end` is set (a signal). The exit code.
+    `handed`: a stopping run, still up, hands it its page."""
     lock = only_one()
     if lock is None:
         print('a page-only process serves this project already')
@@ -232,14 +335,20 @@ def serve(end: threading.Event) -> int:
     live, srv, use = S.C.notes('page.live'), None, Use()
     try:
         live.unlink(missing_ok=True)  # of one that was killed
-        if S.run_up():
+        from agent_runner import web
+        if handed:
+            srv = take_page(end)
+            if srv is None:
+                print("the run's page was not handed over, or its port could not be had")
+                return 1
+        elif S.run_up():
             print('a run is up in this repository, and it serves the page')
             return 0
-        from agent_runner import web
-        srv = web.start_web(only=True)
-        if srv is None:
-            print('the run page is off here ([run] web), or no port could be had')
-            return 1
+        else:
+            srv = web.start_web(only=True)
+            if srv is None:
+                print('the run page is off here ([run] web), or no port could be had')
+                return 1
         counted(srv, use)
         live.write_text(str(os.getpid()), encoding='utf-8')
         why = ''
@@ -264,7 +373,8 @@ def serve(end: threading.Event) -> int:
 
 def main(words: list[str]) -> int:
     """`agent-runner page-only`: the process itself (see above), in the foreground."""
-    if words:
+    handed = words == [HANDED]
+    if words and not handed:
         print('agent-runner page-only takes nothing more', file=sys.stderr)
         return 2
     from agent_runner.loop import drop_session_env
@@ -275,4 +385,4 @@ def main(words: list[str]) -> int:
     end = threading.Event()
     for s in (signal.SIGTERM, signal.SIGINT):
         signal.signal(s, lambda *_: end.set())
-    return serve(end)
+    return serve(end, handed)

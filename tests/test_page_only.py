@@ -19,7 +19,7 @@ from unittest import mock
 from _check import check, eq, git, report, RUN
 from _web import TODO, get, post
 
-from agent_runner import cmds as M, config as CF, home as H, page_only as P, plat, state as S, web as W  # noqa: E402
+from agent_runner import cmds as M, config as CF, home as H, page_https, page_only as P, plat, state as S, teardown, web as W  # noqa: E402
 
 CLAUDE = r"""#!%s
 import os, sys
@@ -144,7 +144,7 @@ def test_serves(tmp: Path) -> None:
             stream, read = urllib.request.urlopen(f'{base}/events?t={t}', timeout=30), []
             reader = threading.Thread(target=lambda: read.append(stream.read()), daemon=True)
             reader.start()
-            lock = plat.lock(S.C.notes('run.lock'))  # as loop.run before start_web
+            lock = until(lambda: plat.lock(S.C.notes('run.lock')))  # as loop.run before start_web
             srv = None
             try:
                 with mock.patch.object(S, 'log'):
@@ -172,7 +172,8 @@ def test_serves(tmp: Path) -> None:
 
 
 def test_start_from_page(tmp: Path) -> None:
-    print("F402b1: the page's own Start runs to its end while the run takes the page over")
+    print("F402b1: the page's own Start runs to its end while the run takes the page over; F402b3a: a stop hands it back, and "
+          'a start at once takes it again')
     if plat.WINDOWS:
         return
     env: dict = {}
@@ -183,18 +184,178 @@ def test_start_from_page(tmp: Path) -> None:
         (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n', encoding='utf-8')
         git(root, 'commit', '-qam', 'nothing to do')
         eq(P.start(root), '', 'it starts')
-        pid, t, run = pid_of(root), W.web_token(), 0
+        pid, t = pid_of(root), W.web_token()
+        pids, page = [pid], f'http://127.0.0.1:{port}/?t={t}'
+        stop = lambda: subprocess.run([sys.executable, str(RUN), 'stop'], cwd=root, capture_output=True, timeout=60)  # noqa: E731
+        said = lambda w: w in (S.C.notes('run.log').read_text(encoding='utf-8'))  # noqa: E731
         try:
             got = post_long(f'http://127.0.0.1:{port}/act?t={t}', {'name': 'run_control', 'args': {'key': 'start'}})
             check(got.get('ok'), 'the answer comes back', got)
             check(S.run_up(), 'the run is up')
             check(ended(root, pid), 'the page-only process is gone')
-            eq(get(f'http://127.0.0.1:{port}/?t={t}')[0], 200, 'the run serves the page on the same port')
+            eq(get(page)[0], 200, 'the run serves the page on the same port')
+            was = P.urls(root)
+            # the page's own Stop
+            got = post_long(f'http://127.0.0.1:{port}/act?t={t}', {'name': 'run_control', 'args': {'key': 'stop'}})
+            check(got.get('ok'), 'Stop on the page is taken', got)
+            check(until(lambda: said('run stopped'), 60), 'the run stopped')
+            pids.append(pid_of(root))
+            eq((P.serving(root), get(page)[0], P.urls(root)), (True, 200, was), 'at `run stopped` the page answers: same port, key, web.url')
+            # a start at once, the old run perhaps not gone yet
+            r = subprocess.run([sys.executable, str(RUN)], cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90)
+            check(until(lambda: S.run_up() and not plat.alive(pids[1]) and len(P.urls(root)) and get_code(page) == 200, 60),
+                  'a start at once has the page', r.stdout + r.stderr)
+            check(not said('is taken') and P.urls(root) == was, 'and never met a taken port', P.urls(root))
+            stop()
+            check(until(lambda: not S.run_up(), 60), 'a stop from the command line')
+            pids.append(pid_of(root))
+            snap = json.loads(get(f'http://127.0.0.1:{port}/snapshot?t={t}')[1])
+            eq((get(page)[0], snap.get('up'), S.run_up()), (200, False, False), 'the page answers, and says that no run is up')
         finally:
-            subprocess.run([sys.executable, str(RUN), 'stop', '--force'], cwd=root, capture_output=True, timeout=60)
-            check(until(lambda: not S.run_up(), 60), 'the run ended')
-            if plat.alive(pid):
-                plat.terminate(pid)
+            if S.run_up():
+                stop()
+                check(until(lambda: not S.run_up(), 60), 'the run ended')
+            if P.serving(root):
+                pids.append(pid_of(root))
+            for p in pids:
+                if plat.alive(p):
+                    plat.terminate(p)
+
+
+def get_code(url: str) -> int:
+    try:
+        return get(url)[0]
+    except OSError:
+        return 0
+
+
+def test_hand_over(tmp: Path) -> None:
+    print('F402b3a: a stop hands the page over; failed, suspend, [run] web off: none; the https rule stays or goes with it')
+    env: dict = {}
+    root, port = project(tmp, env)
+    said: list[str] = []
+    pids: list[int] = []
+    with mock.patch.dict(os.environ, env), mock.patch.object(S, 'log'), mock.patch.object(page_https, 'https_off') as off:
+        CF._cfg.cache_clear()
+        S.init(root)
+        t = W.web_token()
+
+        def stop(keep=True, private=False, https=False):
+            """A run's page, its run stopped: (its port, the link)."""
+            lock = until(lambda: plat.lock(S.C.notes('run.lock')))
+            said.clear()
+            off.reset_mock()
+            with mock.patch.object(W, 'home_only', lambda: private):
+                srv = W.start_web()
+            p = srv.server_address[1]
+            if https:
+                page_https.keep_rule({'host': 'no.such.host', 'https': p + 1, 'port': p, 'run': page_https.owner()})
+                srv.https = True
+            teardown.PAGE.append(srv)
+            was = P.urls(root)
+            try:
+                teardown.end_own(lambda: None, said.append, keep_page=keep)
+                eq(teardown.PAGE, [], 'the run has no page any more')
+                if P.serving(root):
+                    pids.append(pid_of(root))
+                    eq(P.urls(root), was, 'web.url is the same')
+            finally:
+                lock.close()
+            return p, f'http://127.0.0.1:{p}/?t={t}'
+
+        def gone(page, what):
+            eq((P.held(root), P.serving(root), get_code(page), S.C.notes('page.hand').exists()), (False, False, 0, False), what)
+        try:
+            p, page = stop(https=True)
+            eq((p, get_code(page), S.run_up(), pid_of(root) == os.getpid()), (port, 200, False, False), 'the page answers, up false')
+            check('stays up' in said[-1], 'the log says so', said)
+            check(page_https.made_rule() and not off.called, 'its https rule stays')
+            # the next run takes it back; an ask to end of its own that is still there does not end what it hands over to
+            serve_web = W.start_web
+
+            def slow():
+                srv = serve_web()
+                S.C.notes('page.stop').write_text(str(os.getpid()), encoding='utf-8')
+                return srv
+            with mock.patch.object(W, 'start_web', slow):
+                p, page = stop()
+            check(until(lambda: not plat.alive(pids[0])) and pids[0] != pids[1], 'the next run ended the first')
+            eq((p, get_code(page)), (port, 200), 'had its port, and handed it over again')
+            p, page = stop(private=True)
+            eq((get_code(page), P.urls(root)), (200, [page]), "for Home: the run's own 127.0.0.1 address")
+            if sys.platform == 'linux':  # which has every 127.x address
+                eq(get_code(page.replace('127.0.0.1', '127.0.0.2')), 0, 'and on no other')
+
+            print('  none stays')
+            p, page = stop(keep=False)
+            gone(page, 'a suspend or a shutdown')
+            eq(said, [], 'nothing to say')
+            with mock.patch.object(P, 'argv', lambda: [sys.executable, '-c', 'print("no luck"); raise SystemExit(3)']):
+                p, page = stop(https=True)
+            gone(page, 'a process that ends at once')
+            check('could not be handed' in said[-1] and 'no luck' in said[-1], 'the log says why', said)
+            check(off.called, 'its https rule is turned off')
+            (tmp / 'mute.py').write_text(f'import sys, time\nsys.path.insert(0, {str(Path(P.__file__).parent.parent)!r})\n'
+                                         'from agent_runner import plat\nfrom pathlib import Path\n'
+                                         f'x = plat.lock(Path({str(S.C.notes("page.lock"))!r}))\ntime.sleep(60)\n', encoding='utf-8')
+            with mock.patch.object(P, 'argv', lambda: [sys.executable, str(tmp / 'mute.py')]), mock.patch.object(P, 'HAND_WAIT', 1.0):
+                p, page = stop(https=True)
+            gone(page, 'a process that never answers is ended')
+            check('did not answer' in said[-1] and off.called, 'the log says why, and the https rule is off', said)
+            with mock.patch.object(P, 'argv', lambda: [str(tmp / 'no-such-program')]):
+                p, page = stop()
+            gone(page, 'a process that cannot be started')
+            check('could not be handed' in said[-1], 'the log says why', said)
+            toml = (root / 'runner.toml').read_text(encoding='utf-8')
+            (root / 'runner.toml').write_text(toml + 'web = false\n', encoding='utf-8')
+            CF._cfg.cache_clear()
+            p, page = stop()
+            gone(page, '[run] web = false, set while the run was up')
+        finally:
+            for pid in pids:
+                if plat.alive(pid):
+                    plat.terminate(pid)
+
+
+def test_lock_look(tmp: Path) -> None:
+    print("F402b3a: a start is not refused for the moment a page's look holds run.lock")
+    env: dict = {}
+    root, _ = project(tmp, env)
+    with mock.patch.dict(os.environ, env):
+        CF._cfg.cache_clear()
+        S.init(root)
+        page, look = plat.lock(S.C.notes('page.lock')), plat.lock(S.C.notes('run.lock'))
+        try:
+            with mock.patch.object(teardown.time, 'sleep', lambda s: look.close()):
+                got = teardown.wait_last_run(5)
+            check(got is not None, 'it takes the lock at the next try')
+            got.close()
+        finally:
+            page.close()
+            look.close()
+
+
+def test_power(tmp: Path) -> None:
+    print('F402b3a: only a stop with no suspend or shutdown keeps the page')
+    import test_loop as TL
+    from agent_runner import loop
+    for power, keep in (('', True), ('suspend', False), ('shutdown', False)):
+        with TL.ExitStack() as st:
+            TL.stubs(st, [], stopping=True)
+            st.enter_context(mock.patch.object(loop, 'POWER', power))
+            own = st.enter_context(mock.patch.object(loop, 'end_own'))
+            now = st.enter_context(mock.patch.object(loop, 'power_now'))
+            eq(TL.new_run().end(), 0, f'the run ends ({power or "a stop"})')
+            eq((own.call_args.kwargs.get('keep_page'), now.called), (keep, bool(power)), 'its page')
+    root, _ = project(tmp, {})
+    with TL.ExitStack() as st:
+        CF._cfg.cache_clear()
+        S.init(root)
+        TL.stubs(st, [])
+        st.enter_context(mock.patch.object(loop.shared_tools, 'pending', lambda tried: False))
+        st.enter_context(mock.patch.object(loop, 'splitting', lambda *a: False))
+        close = st.enter_context(mock.patch.object(loop, 'close_page'))
+        eq((TL.new_run(once=True).end(), close.call_args.args[0]), (0, True), '`once` with nothing to start: its page stays')
 
 
 def post_long(url: str, body: dict) -> dict:
@@ -262,7 +423,7 @@ def test_private(tmp: Path) -> None:
             # the person sees Home's address once Home routes the project
             with mock.patch.object(W, 'site_urls', lambda *a, **k: ['http://h:1/p/proj/?t=k']):
                 eq(P.links(root), ['http://h:1/p/proj/?t=k'], "Home's address when it routes the project")
-            lock = plat.lock(S.C.notes('run.lock'))
+            lock = until(lambda: plat.lock(S.C.notes('run.lock')))
             try:
                 srv = W.start_web()
                 eq(W.page_url(srv.server_address[1], srv.token, W.LOCAL), got[0], 'the run has the same address')
@@ -288,4 +449,5 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    sys.exit(report([in_tmp(test_serves), in_tmp(test_start_from_page), in_tmp(test_ends), in_tmp(test_private)]))
+    sys.exit(report([in_tmp(test_serves), in_tmp(test_start_from_page), in_tmp(test_ends), in_tmp(test_private),
+                     in_tmp(test_hand_over), in_tmp(test_lock_look), in_tmp(test_power)]))

@@ -811,10 +811,10 @@ _In code_: .pastjump, pastDown
 _Avoid_: scroll button, pill
 
 **Page-only process**:
-A background process of one project that serves its whole run page while no run is up, so chats and the plan work there; it starts no work, and ends when a run starts or after some time with no page open
+A background process of one project that serves its whole run page while no run is up, so chats and the plan work there; it starts no work, and ends when a run starts or after some time with no page open; a run's stop hands its page to one
 _Said_: open the page without starting the run
 _On screen_: opening the run page…
-_In code_: page_only.serve, page_only.open_page, web.start_web(only=True)
+_In code_: page_only.serve, page_only.open_page, page_only.hand_over, web.start_web(only=True)
 _Avoid_: page server, idle run, light run
 
 **Recorded**:
