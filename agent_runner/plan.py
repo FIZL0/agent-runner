@@ -349,6 +349,7 @@ def subtasks(tid: str, line: str, ids) -> set[str]:
 
 def _dropped(ls: list[str], i: int) -> bool:
     """Whether the closed task at ls[i] was dropped (`drop` noted it), so it never landed."""
+    from agent_runner.plan_drop import DROPPED  # C52: the module imports this one
     return DROPPED in _item_block(ls, i)[-1]  # where `note` appends
 
 
@@ -1493,6 +1494,7 @@ FREED: list[str] = []  # the held tasks the last `approve` reopened, for its mes
 def ui_task(line: str, globs=None) -> bool:
     """Does the task line touch the interface: its `files:` meet `globs` (UI_FILES), or, naming no files, its
     words do (a page, a screen, a button, the style)."""
+    from agent_runner.plan_concepts import title_of  # C52: the module imports this one
     files = fields(line).get('files', [])
     if files:
         return bool(overlap(set(files), set(globs or UI_FILES)))
@@ -1502,6 +1504,7 @@ def ui_task(line: str, globs=None) -> bool:
 def restyle_targets(globs=None, ids=None, todo=None) -> list[tuple[str, str]]:
     """(id, title) of each queued task the restyle holds: open ([ ]) top-level tasks that touch the interface
     (`ui_task`), or exactly `ids` when given; concepts and releases never (they build no interface)."""
+    from agent_runner.plan_concepts import concept, title_of  # C52: the module imports this one
     todo, _ = ensure(todo)
     out = []
     for _, box, tid, rest, i in iter_tasks(lines(todo)):
@@ -1552,6 +1555,7 @@ def restyle(style: str, page: str, frm: str = '', globs=None, ids=None, files=No
     run does with a task ('s2', 'merging', '': `run_on`). Returns {'rid', 'build', 'held', 'park', 'landing'}:
     the restyle's id (its concept, or its build where the kinds lack K), its build task, the queued tasks held,
     the running ones held for the run to park, and the merging ones left to land (noted on the restyle)."""
+    from agent_runner.plan_concepts import CONCEPT, build_kind, concept_done  # C52: the module imports this one
     todo, done = ensure(todo, done)
     targets = restyle_targets(globs, ids, todo)
     ui = files or sorted({f for t, _ in targets for f in fields(lines(todo)[_find(lines(todo), t)]).get('files', [])
@@ -1581,6 +1585,7 @@ def restyle(style: str, page: str, frm: str = '', globs=None, ids=None, files=No
 
 def restyle_build(rid: str, todo=None) -> str:
     """The build task of restyle `rid` still waiting for its OK (where a landed task is listed), else `rid`."""
+    from agent_runner.plan_concepts import waiting  # C52: the module imports this one
     return next((w[0] for w in waiting(todo, all=True) if rid in (w[0], w[1])), rid)
 
 
@@ -1713,6 +1718,7 @@ def asks(todo=None, all: bool = False) -> list[tuple[str, str, str, str, str, st
     """Everything waiting on a person, in TODO.md order: (label, task id, its concept id or '', what to do, link
     or '', the task's title, shelved). Label CONCEPT is a build task waiting on a concept page (`waiting`);
     label STUCK a block with no caps label that waits on no task (B35). Shelved ones only with `all`."""
+    from agent_runner.plan_concepts import FROM_CONCEPT, title_of  # C52: the module imports this one
     todo, _ = ensure(todo)
     ls, out = lines(todo), []
     for i, l in enumerate(ls):
@@ -1814,6 +1820,7 @@ def project_in() -> str:
 def confirm(tid: str, said: str = '', todo=None, done=None) -> str:
     """The person's yes ("it worked", or what they saw): a CONFIRM is ticked with it noted, a DECIDE or BLOCKED
     reopens with the answer noted (so a run picks it up), a concept is approved. Returns what happened."""
+    from agent_runner.plan_concepts import approve  # C52: the module imports this one
     todo, done = ensure(todo, done)
     label, t, k, what, _, _, _ = _ask_or_parked(tid, todo)
     if label == 'CONCEPT':
@@ -1831,6 +1838,7 @@ def confirm(tid: str, said: str = '', todo=None, done=None) -> str:
 
 def change(tid: str, instead: str, todo=None, done=None) -> str:
     """'Do X instead': the task reopens with `instead` noted; a concept is sent back (`revise`)."""
+    from agent_runner.plan_concepts import revise  # C52: the module imports this one
     todo, done = ensure(todo, done)
     try:
         label, t, k, what, _, _, _ = _ask_or_parked(tid, todo)
@@ -2156,6 +2164,7 @@ def tell(c, tid: str, text: str, how: str = 'tell', wait: float | None = None) -
     """Ask the run to type `text` into the pane of the slot running `tid`. (True, 'told s1 (F297)') when it
     did; (False, why) when it could not (no live pane, or no slot of a run runs it: then why is ''); (None,
     what was asked) when the run did not answer within `wait` s."""
+    from agent_runner.plan_concepts import told_file  # C52: the module imports this one
     import json
     where = run_on(c, tid)
     if not where or where == 'merging':
@@ -2281,6 +2290,7 @@ def too_big(tid: str, c, todo) -> str:
 
 def _big(blk: list[str], tid: str, c) -> str:
     """`too_big` of a task's lines `blk`."""
+    from agent_runner.plan_concepts import concept  # C52: the module imports this one
     try:
         most = int(c.run.get('task_size') or 0)
     except (TypeError, ValueError):
@@ -2884,6 +2894,7 @@ def _p_tick(a, x):
 
 
 def _p_drop(a, x):
+    from agent_runner.plan_drop import drop  # C52: the module imports this one
     from agent_runner import release_moves
     if a.id == release_moves.NEXT:
         print(release_moves.drop_next(x.todo, _text(a)))
@@ -2897,6 +2908,7 @@ def _p_drop(a, x):
 
 
 def _p_restore(a, x):
+    from agent_runner.plan_drop import restore  # C52: the module imports this one
     from agent_runner import release_moves
     if a.id == release_moves.NEXT:
         print(release_moves.restore_next())
@@ -2957,6 +2969,7 @@ def _p_move(a, x):
 
 
 def _p_approve(a, x):
+    from agent_runner.plan_concepts import approve  # C52: the module imports this one
     bid = approve(a.id, _text(a))
     return x.say(f'approved: {bid} is open now, and a run starts it' + freed_line() + big_note(bid, x))
 
@@ -2969,6 +2982,7 @@ def _filed_here(c, *ids):
 
 def _p_concept(a, x):
     """`plan concept "TITLE" --page URL [--files A,B]` (F108): file a concept page shown inline, waiting for an OK."""
+    from agent_runner.plan_concepts import concept_shown  # C52: the module imports this one
     words, opts, it = [], {}, iter(a.rest)
     for w in it:
         if w in ('--page', '--files'):
@@ -3057,6 +3071,7 @@ def park_running(c, wait: float | None = None) -> list[str]:
 
 
 def _p_revise(a, x):
+    from agent_runner.plan_concepts import revise  # C52: the module imports this one
     k = revise(a.id, _text(a))
     return x.say(f'{k} is open again with your changes noted; its build task is dropped until the next round')
 
@@ -3297,6 +3312,7 @@ def _p_newid(a, x):
 
 
 def _p_brief(a, x):
+    from agent_runner.plan_brief import brief  # C52: the module imports this one
     return x.say('\n'.join(brief(a.id)))
 
 
@@ -3420,22 +3436,18 @@ def decide_question(text: str) -> str:
     return q if len(head) <= room else head[:room].rsplit(' ', 1)[0] + '…' + end
 
 
-# --- C52: the areas moved to modules of their own; every name stays here too. They import this module, so these
-# lines come last.
-from agent_runner.plan_drop import (  # noqa: E402,F401
-    DROPPED, _split_ids, drop, restore,
-)
-from agent_runner.plan_concepts import (  # noqa: E402,F401
-    ASKED_FOR, CONCEPT, FROM_CONCEPT, MERGE_ANYWAY, QUEUE, RESEARCH,
-    RESEARCH_BUTTONS, SHIP, WAITING, _NOT, _NOT_MERGE, _PERSON_NOTE,
-    _QUEUE_WORDS, _SHIP_NAME, _SHIP_WORDS, _drop_asides, _note_parts, _own_words,
-    _waiter, approve, asked_for, build_kind, concept, concept_done,
-    concept_shown, person_words, research, research_choice, research_ships, revise,
-    short_title, title_of, titles, told_file, waiting,
-)
-from agent_runner.plan_brief import (  # noqa: E402,F401
-    DATE, OUTLINE_MAX, brief, outline,
-)
+# --- C52: the areas moved to modules of their own. Each imports this module, so this one reaches them only when a
+# name is asked for (`plan.drop`, `from agent_runner.plan import short_title`), never at import (no import cycle).
+MOVED = ('plan_drop', 'plan_concepts', 'plan_brief')
+
+
+def __getattr__(name: str):
+    import importlib
+    if not name.startswith('__'):
+        for mod in MOVED:
+            if name in vars(m := importlib.import_module(f'agent_runner.{mod}')):
+                return vars(m)[name]
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 
 if __name__ == '__main__':

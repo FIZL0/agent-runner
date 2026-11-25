@@ -56,14 +56,15 @@ def test_drop_parts():
         import io
         from contextlib import redirect_stdout
         from types import SimpleNamespace
-        out, real = io.StringIO(), plan.drop
+        from agent_runner import plan_drop
+        out, real = io.StringIO(), plan_drop.drop
         x = SimpleNamespace(say=lambda s: print(s) or 0)
         try:
-            plan.drop = lambda *a: real(*a, **kw)
+            plan_drop.drop = lambda *a: real(*a, **kw)
             with redirect_stdout(out):
                 plan._p_drop(SimpleNamespace(id='U1a', rest=['no']), x)
         finally:
-            plan.drop = real
+            plan_drop.drop = real
         has(out.getvalue(), r'^dropped U1a\nno part of U1 landed, so U1 is one whole task again', 'plan drop says it')
 
 
