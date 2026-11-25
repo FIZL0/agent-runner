@@ -465,7 +465,7 @@ def decide_words(ask: str, summary: str) -> tuple[str, list[str], list[str]]:
 
 
 # B794: a BLOCKED's own words. A statement is why it stopped, an order is a step, and what a run does next is neither.
-BACK = re.compile(r'\s+— back for you: [^—]*?(?:landed|passed)(?=\s+—|\s+- |\s*$)')
+BACK = re.compile(r'\s+— back for you: [^—]*?(?:landed|passed)(?=\s+—|\s+- |[;.]|\s*$)')
 ORDER = re.compile(r"(?:please\s+|just\s+|also\s+|you\s+(?:need to|should|can|must)\s+)?(?:add|allow|answer|approve|ask|attach|be|bring|"
                    r'build|buy|change|charge|check|choose|clear|click|close|come|confirm|connect|copy|create|crop|delete|do|download|drop|'
                    r'enable|disable|ensure|enter|fill|find|finish|fix|free|get|give|go|grant|hold|install|keep|let|link|log|login|look|'
@@ -475,7 +475,7 @@ ORDER = re.compile(r"(?:please\s+|just\s+|also\s+|you\s+(?:need to|should|can|mu
                    r'update|upgrade|upload|use|verify|visit|wait|wake|watch|wire|write)\b', re.I)
 STATES = (r"(?:is|are|was|were|has|had|does|did|isn't|aren't|wasn't|doesn't|didn't|cannot|can't|could not|couldn't|may not|"
           r'failed|fails|needs|gets?|gives|got|holds|left|lacks|returned|returns|said|says|shows?|ran|found|ended|hangs|hung|refused|'
-          r'refuses|denied|expired|timed out|times out|offline|missing|not found|still|only \w+s)\b')
+          r'refuses|denied|expired|timed out|times out|offline|missing|not found|not \w+ed|full(?=\s*(?:[;:.,(]|$))|still|only \w+s)\b')
 STATE = re.compile(r'(?!(?:if|when|once|after|before)\b)(?:(?!\b(?:that|which|who|what|when|if|where|whether|once|until|while|so|because|'
                    r'after|before|as|it|you|they)\b)[^,;:])*?[^\s,;:]\s+' + STATES, re.I)
 ABOUT = re.compile(r"(?:the|it|its|they|each|both|nothing|no|none|there|an?|your|this|that|these|those|every|some|we|I|needs?|"
@@ -485,12 +485,15 @@ THING = re.compile(r"(?:release|run|test|build|update|upgrade|install|sign|login
 WENT_WRONG = re.compile(r"\b(?:fail(?:s|ed)?|not|no|none|nothing|cannot|can't|timed out|offline|missing|expired|refused|denied|errors?|still)\b", re.I)
 _GO = r're-?runs?|reopens?|resumes?|restarts?|retries|retry|continues?|goes on|go on|carries on|carry on|follows?|picks? (?:this|it) up'
 _DO = _GO + r'|can|will|does|do|runs?|checks?|opens?|finish(?:es)?|takes?|tests?|builds?|publish(?:es)?|merges?|starts?|installs?'
-_AGENT = r'(?:I|the agent|an agent|[A-Z]{1,2}\d+[a-z0-9]*)'
-NEXT = re.compile(rf"(?:(?:this|it|the (?:task|run|slot|check))(?: task| run)?(?: then| will| can)? (?:{_GO})\b|"
-                  rf"{_AGENT}(?: then| also)? (?:will |can )?(?:{_DO})\b(?! not\b)|{_AGENT} then\s|"
-                  r're-?(?:opens?|runs?)(?: (?:this|it|the task|[A-Z]{1,2}\d+[a-z0-9]*))? (?:when|after|once|as soon as)\b)')
+_AGENT = r'(?:I|(?i:the agent|an agent)|[A-Z]{1,2}\d+[a-z0-9]*)'
+_IT = r'(?i:this|it|the (?:task|run|slot|check))(?: task| run)?'
+_AFTER = r'(?:(?i:and|so|then|after that|afterwards),?\s+)'
+NEXT = re.compile(rf"{_AFTER}*(?:(?i:after|once|when)\s[^,;:]*,\s+)?(?:{_IT}(?: then| will| can)* (?:{_GO})\b|"
+                  rf"{_AGENT}(?: then| also| will| can)* (?:{_DO})\b(?! not\b)|{_AGENT} then\s|"
+                  r'(?i:re-?(?:opens?|runs?))(?: (?:this|it|the task|[A-Z]{1,2}\d+[a-z0-9]*))? (?:when|after|once|as soon as)\b)')
+NEXT_WHO = re.compile(rf'(?:^|[,;.]\s+|\band\s+)(?:{_IT}|{_AGENT})(?: will| can)?\s+$')  # 'the run will', before its 'then'
 NEXT_THEN = re.compile(rf'(?:and\s+)?then,?\s+(?:this|the|{_AGENT})\s', re.I)
-NEXT_AT = re.compile(r'(,?\s+)((?:and|so)\s+)?')
+NEXT_AT = re.compile(rf'(,?\s+)({_AFTER})?')
 ERROR = re.compile(r'\b(?:fail(?:s|ed)?|errors?|says|said|gets|got|ended)(?: \S+)?:\s*$', re.I)  # its colon is followed by the error
 
 
@@ -503,7 +506,7 @@ def _outside(text: str, at: int) -> bool:
 def _blocked_kind(text: str, kind: str) -> str:
     """What a BLOCKED's piece `text` is: 'next' (what the run does after), 'why' or 'do'; else `kind`, the plain one."""
     s = re.sub(r'^(?:\(\d+\)|\d+[.)])\s+|^—\s+', '', ' '.join(text.split()))
-    if NEXT_THEN.match(s) or NEXT.match(re.sub(r'^(?:and|so|then)\s+', '', s, flags=re.I)):
+    if NEXT_THEN.match(s) or NEXT.match(s):
         return 'next'
     if kind in ('note', 'lead'):
         return kind
@@ -524,14 +527,20 @@ def blocked_pieces(ask: str) -> list[tuple[str, str]]:
     if m := BACK.search(ask):
         return blocked_pieces(ask[:m.start()]) + [('back', m[0])] + blocked_pieces(ask[m.end():])
     parts: list[tuple[str, str]] = []
-    for kind, text in split_ask(ask):  # cut again before a reason after a dash or that starts in lower case, and before what the run does
+    whole: list[tuple[str, str]] = []
+    for kind, text in split_ask(ask):
+        if whole and NEXT_WHO.search(whole[-1][1]) and THEN.match(text):  # 'the agent then checks' is one
+            whole[-1] = (whole[-1][0], whole[-1][1] + text)
+        else:
+            whole.append((kind, text))
+    for kind, text in whole:  # cut again before a reason after a dash or that starts in lower case, and before what the run does
         at = [0]
-        if kind != 'note':
+        if _blocked_kind(text, kind) not in ('note', 'next'):
             for c in re.finditer(r'\s+(?=— )|(?<=[^\s.]\.)\s+(?=[a-z])', text):
                 if _outside(text, c.start()) and _blocked_kind(text[c.end():], '') in ('why', 'next'):
                     at.append(c.end())
             for c in NEXT_AT.finditer(text):
-                if c.start() and (c[1][0] == ',' or c[2]) and _outside(text, c.start()) and NEXT.match(text[c.end():]):
+                if c.start() and (c[1][0] == ',' or c[2]) and _outside(text, c.start()) and NEXT.match(text[c.end(1):]):
                     at.append(c.end(1))
         at = sorted(set(at))
         parts += [(kind, text[a:b]) for a, b in zip(at, [*at[1:], len(text)])]
@@ -541,9 +550,6 @@ def blocked_pieces(ask: str) -> list[tuple[str, str]]:
         ended = not before or bool(re.search(r'[.?!;]["\'”’)]*\s*$', before))
         colon = before.rstrip().endswith(':')
         new = _blocked_kind(text, kind)
-        if re.fullmatch(rf'(?:[Tt]he agent|{_AGENT})\s+', before) and THEN.match(text):  # 'the agent then checks'
-            out[-1] = ('next', before + text)
-            continue
         if was == 'why' and ERROR.search(before):
             new = 'why'
         elif colon and was in ('why', 'next') and new not in ('do', 'note'):
@@ -577,7 +583,7 @@ def blocked_words(ask: str) -> dict[str, list[str]]:
             s = re.sub(r'^.*?back for you: ', '', s, flags=re.I)
             s = re.sub(r'\s(landed|passed)$', lambda m: f' {"have" if ", " in s else "has"} {m[1]}', s)
         elif kind == 'next':
-            s = re.sub(r'^(?:and|so|then)\s+', '', s, flags=re.I)
+            s = re.sub(rf'^{_AFTER}+', '', s)
             s = re.sub(r'^(re-?(?:open|run))s?\s', lambda m: f'it {m[1].lower()}s ', s, flags=re.I)  # no order to the person
             s = 'After that: ' + (s if re.match(r'I\b', s) else P._lower_first(s))
         s = s[:1].upper() + s[1:]

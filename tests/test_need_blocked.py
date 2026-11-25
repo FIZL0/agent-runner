@@ -85,6 +85,19 @@ def test_next(tmp: Path) -> None:
         eq((d['why'], d['steps'], d['notes'][0]), (['The login expired'], ['Log in on the Mac'], f'After that: {note}'), after)
     d = blocked('Log in on the Mac, then reply. The agent then checks the name, and asks once more')
     eq((d['steps'], d['notes'][0]), (['Log in on the Mac', 'Reply.'], 'After that: the agent then checks the name, and asks once more'), 'the agent then')
+    d = blocked('Log in on the Mac, the run will then continue')
+    eq((d['steps'], d['notes'][0]), (['Log in on the Mac'], 'After that: the run will then continue'), 'will then')
+    d = blocked('Renew the login, after that the run continues')
+    eq((d['steps'], d['notes'][0]), (['Renew the login'], 'After that: the run continues'), 'after that')
+    for ask, why in (('the login expired. This reruns', 'The login expired.'), ('V5 not released. Reopens after V5', 'V5 not released.'),
+                     ('disk full; after you free it, this reruns', 'Disk full')):
+        d = blocked(ask)
+        eq((d['why'], d['steps'], d['notes'][0][:12]), ([why], [], 'After that: '), ask)
+    for ask, why, step in (('disk full; free 5 GB', 'Disk full', 'Free 5 GB'),
+                           ('Xcode license not accepted: run `x`', 'Xcode license not accepted', 'Run `x`'),
+                           ('the login expired; log in — back for you: V5 landed; then tap Done', 'The login expired', 'Log in')):
+        d = blocked(ask)
+        eq((d['why'], d['summary'], d['expect']), ([why], step, []), ask)
     d = blocked('Open Home: the list shows; tap Undo, then restart the app')
     eq((d['why'], d['steps'], d['expect']), ([], ['Open Home', 'Tap Undo', 'Restart the app'], ['The list shows']), "what follows a step's colon is still to see")
     for odd in ('', 'x', '  a; b  ', ' — back for you: V5 landed', 'Read (a; b: c', '`a; b`, then c — no d', '1) a. 2) the b failed: c'):
