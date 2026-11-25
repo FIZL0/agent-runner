@@ -220,7 +220,7 @@ function taskRow(q,title,more='',list='queue',lead=''){
   const text=()=>t&&t.text?`<pre class="tasktext" data-k="text:${esc(k)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>';
   const words=q.release?(open?relWaits:relWords)(q.release):planWords(q,S.snap.sessions);
   // B846: the words that name the chat that took it open that chat: a button of their own, under the head
-  const way=q.way&&q.way.chat&&words===q.way.words?`<button class="waychat small" data-thread="${esc(q.way.chat)}" data-k="state:${esc(k)}"><span class="ell">${esc(words)}</span>${I.chev}</button>`:'';
+  const way=q.way&&q.way.chat&&words===q.way.words?`<button class="waychat small" data-way="1" data-thread="${esc(q.way.chat)}" data-k="state:${esc(k)}"><span class="ell">${esc(words)}</span>${I.chev}</button>`:'';
   return `<button class="fold" data-task="${esc(q.id)}" data-list="${esc(list)}" aria-expanded="${open}">${taskChip(q.id)}<span class="grow"><b class="ell">${esc(title)}</b>${way?'':`<span class="small" data-k="state:${esc(k)}" data-v="${esc(q.state||'')}">${esc(words)}</span>`}</span><span class="chev">${I.chev}</span></button>${way}${open?foldIn(k,(lead||text())+more):''}`;
 }
 async function openTask(id,list='queue'){

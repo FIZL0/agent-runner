@@ -73,7 +73,7 @@ document.addEventListener('click',async e=>{
     const pins=p.includes(n)?p.filter(m=>m!==n):p.concat([n]);savePins(pins);return}
   if(x=q('[data-del]')){S.undo={names:[x.dataset.del],bar:false};S.sel=[];render(true);return}
   if(q('[data-delsel]')){if(S.sel.length){S.undo={names:S.sel,bar:true};S.sel=[]}render(true);return}
-  if((x=q('[data-thread]'))&&!x.matches('.waychat')&&/^c\d+$/.test(x.dataset.thread)){  // F118: Ctrl/Cmd+click picks, Shift+click a range
+  if((x=q('[data-thread]'))&&!x.dataset.way&&/^c\d+$/.test(x.dataset.thread)){  // F118: Ctrl/Cmd+click picks, Shift+click a range
     const how=e.shiftKey?'range':e.ctrlKey||e.metaKey?'toggle':'';
     const p=chatPick(chatNames(),S.sel,S.selLast,x.dataset.thread,how);S.sel=p.sel;S.selLast=p.last;
     if(how){e.preventDefault();render(true);return}

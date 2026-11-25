@@ -146,8 +146,7 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
     if (a.merge or a.drop) and (a.kind or a.files or a.here):
         ap.error('--merge and --drop take only an ID')
     init()
-    tid, branch = a.id, default_branch()
-    d = SLOTS_DIR / f'take-{tid}'
+    tid, branch, d = a.id, default_branch(), SLOTS_DIR / f'take-{a.id}'
     if a.merge or a.drop:
         if not d.is_dir():
             print(f'{tid}: not taken (no {d})', file=sys.stderr)
