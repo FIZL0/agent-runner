@@ -17,12 +17,12 @@ const needTitle=n=>{const d=needD(n);if(needText(n)&&needWho(n))return needWho(n
 const needText=n=>needD(n).text||'';
 const needWho=n=>{const d=needD(n);return [d.session,d.project].filter(Boolean).join(' · ')};
 /* its blocks: {k: 'p' | 'h' | 'li' | 'pre' | 'table', s: words, deep, n: an ordered item's number}. Pictures are shown below it, so
-   their markup is only its caption; a link that is no web address is only its words */
+   their markup is only its caption (a web one's a link); a link that is no web address is only its words */
 function explainBlocks(src){
   const out=[];let code=null,gap=true;
-  const say=s=>s.replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\((?!https?:\/\/)[^)]*\)/gi,'$1');
+  const say=s=>s.replace(/!\[([^\]]*)\]\((https?:[^)]*)\)/gi,(_,w,u)=>`[${w||'Picture'}](${u})`).replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\((?!https?:\/\/)[^)]*\)/gi,'$1');
   for(const raw of String(src||'').replace(/\t/g,'  ').split('\n')){
-    const l=raw.trim(), last=out[out.length-1];let m;
+    const l=raw.trim().replace(/^>\s?/,''), last=out[out.length-1];let m;
     if(code!==null){if(/^(```|~~~)/.test(l)){out.push({k:'pre',s:code.join('\n')});code=null;gap=true}else code.push(raw);continue}
     if(/^(```|~~~)/.test(l)){code=[];continue}
     if(!l||/^([-*_])(\s*\1){2,}$/.test(l)){gap=true;continue}
@@ -31,7 +31,7 @@ function explainBlocks(src){
     else if(m=/^#{1,6}\s+(.*)$/.exec(l))out.push({k:'h',s:say(m[1])});
     else if(m=/^(?:[-*+•]|(\d{1,3})[.)])\s+(.*)$/.exec(l))out.push({k:'li',n:m[1]?+m[1]:0,deep,s:say(m[2])});
     else if(last&&(!gap&&/^(p|li)$/.test(last.k)||inList&&deep))last.s+=(last.k==='li'?' ':'\n')+say(l);
-    else if(say(l))out.push({k:'p',s:say(l.replace(/^>\s?/,''))});
+    else if(say(l))out.push({k:'p',s:say(l)});
     gap=false;
   }
   if(code)out.push({k:'pre',s:code.join('\n')});
@@ -83,14 +83,27 @@ const EXPLAIN_LONG=600, EXPLAIN_HEAD=320;
 function explainCut(src){
   const bs=explainBlocks(src), size=b=>b.s.length;
   if(bs.reduce((n,b)=>n+size(b),0)<=EXPLAIN_LONG)return[bs,[]];
-  let n=0,i=0;while(i<bs.length&&(!i||n+size(bs[i])<=EXPLAIN_HEAD)){n+=size(bs[i]);i++}
-  const head=bs.slice(0,i), rest=bs.slice(i), b=head[0];
-  if(i===1&&/^(p|li)$/.test(b.k)&&size(b)>EXPLAIN_LONG){
-    const ends=explainEnds(b.s), at=ends.filter(e=>e<=EXPLAIN_HEAD).pop()||ends[0];
-    if(at)return[[{...b,s:b.s.slice(0,at)}],[{...b,k:'p',s:b.s.slice(at).trim()},...rest]];
+  let n=0,i=0;while(i<bs.length&&n+size(bs[i])<=EXPLAIN_HEAD){n+=size(bs[i]);i++}
+  const head=bs.slice(0,i), rest=bs.slice(i), b=rest[0];
+  if(head.every(x=>x.k==='h')){  // no words yet: the next block's first part
+    const [a,z]=explainSplit(b);
+    return[[...head,a],z?[z,...rest.slice(1)]:rest.slice(1)];
   }
   while(head.length>1&&head[head.length-1].k==='h')rest.unshift(head.pop());  // a heading stays with its words
   return[head,rest];
+}
+/* a long block in two: code and a table at a line (a table's head on both), words at a sentence, else a space; [b] when it cannot be */
+function explainSplit(b){
+  if(b.s.length<=EXPLAIN_LONG)return[b];
+  if(b.k==='pre'||b.k==='table'){
+    const ls=b.s.split('\n'), top=b.k==='table'&&/^\|[\s:|-]+\|$/.test(ls[1]||'')?2:0;let k=top,n=0;
+    while(k<ls.length&&(k===top||n+ls[k].length<=EXPLAIN_HEAD))n+=ls[k++].length;
+    return k<ls.length?[{...b,s:ls.slice(0,k).join('\n')},{...b,s:[...ls.slice(0,top),...ls.slice(k)].join('\n')}]:[b];
+  }
+  const ends=explainEnds(b.s).filter(e=>e<=EXPLAIN_LONG), whole=a=>a.split('`').length%2&&a.split('**').length%2&&!/\[[^\]]*$|\]\([^)]*$/.test(a);
+  let at=ends.filter(e=>e<=EXPLAIN_HEAD).pop()||ends[0]||0;
+  if(!at)for(const m of b.s.slice(0,EXPLAIN_LONG).matchAll(/\s/g))if(whole(b.s.slice(0,m.index)))at=m.index;
+  return at&&b.s.slice(at).trim()?[{...b,s:b.s.slice(0,at)},{...b,k:'p',s:b.s.slice(at).trim()}]:[b];
 }
 /* on: the rest is open */
 function needExplain(n,on,chev=''){

@@ -63,6 +63,8 @@ def test_popup(tmp: Path) -> None:
     check('<table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td><b>2</b></td></tr></table>' in body('| a | b |\n|---|:-:|\n| 1 | **2** |'), 'a table')
     check('<li value="1">a</li><li value="2">b</li></ol>' in body('1. a\n\n2. b'), 'one list over an empty line')
     check('<p>The look</p>' in body('![The look](shots/a.png)'), 'a picture is its caption: it is under Pictures')
+    check('<p>One<br>two</p>' in body('> One\n> two'), 'a quote without its marks')
+    check('<a href="https://a.b/c.png"' in body('![Look](https://a.b/c.png)'), 'a picture on the web is a link')
     eq(logic_js([['needBody', {**row(''), 'detail': {**row('')['detail'], 'text': t}}, ''] for t in ('', None)]), ['', ''], 'none: as it was')
     shots = logic_js([['needBody', row(shots=[]), '']])[0]
     check('Pictures' not in shots, 'no pictures, no heading', shots)
@@ -77,6 +79,15 @@ def test_fold(tmp: Path) -> None:
     eq(words.count('It goes on and on.'), 60, 'nothing is lost or said twice')
     listed = body('Intro words.\n\n' + '\n'.join(f'{i}. ' + 'word ' * 20 for i in range(1, 21)), True)
     eq([f'<li value="{i}">' in listed for i in range(1, 21)], [True] * 20, 'a list cut by the fold keeps its numbers')
+
+    p = 'It goes on. ' * 70
+    shut = body('## Head\n\n' + p)
+    check('<h3>Head</h3><p>It goes' in shut and 'aria-expanded="false"' in shut, 'a heading has words under it', shut)
+    for t in ('word ' * 200, '```\n' + 'code line\n' * 100 + '```', '| a |\n|---|\n' + '| row words |\n' * 80):
+        shut, opened = body(t), body(t, True)
+        check('aria-expanded="false"' in shut and len(shut) < len(opened) * .8, f'folded: {t[:12]!r}', shut)
+        w = next(x for x in ('code line', 'row words', 'word') if x in t)
+        eq(opened.count(w), t.count(w), f'all of it is there: {t[:12]!r}')
 
 
 def test_full_task(tmp: Path) -> None:
