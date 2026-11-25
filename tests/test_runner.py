@@ -4691,9 +4691,10 @@ def test_limit_falls_back(repo: Path, tmp: Path):
     git(repo, 'checkout', '-q', 'main')
     ts, opened = {}, []
     ask = {'type': 'user', 'message': {'role': 'user', 'content': 'do it'}}
+    # a fixed epoch far off, not a time of day ("resets 3pm"): a run across that time found the cap already reset
     limit = {'type': 'assistant', 'isApiErrorMessage': True, 'error': 'rate_limit',
              'message': {'stop_reason': 'stop_sequence',
-                         'content': [{'type': 'text', 'text': "You've hit your limit · resets 3pm"}]}}
+                         'content': [{'type': 'text', 'text': 'Claude AI usage limit reached|9999999999'}]}}
     end = {'type': 'assistant', 'message': {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'ok'}]}}
 
     class Mux:
