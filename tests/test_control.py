@@ -1504,6 +1504,47 @@ def test_wrong_agent_b764c():
     CF._cfg.cache_clear()
 
 
+def test_settings_two_writers_b806():
+    print('B806: two starts that write the control settings at the same moment both get the file')
+    from agent_runner import runner as R
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-settings-'))
+    git(d, 'init', '-q')
+    R.init(d)
+    f = R.C.notes('control-settings.json')
+    f.unlink(missing_ok=True)
+    real, tmps = os.replace, []
+
+    def replace(src, dst):  # the second writer runs whole between the first one's write and its replace
+        tmps.append(str(src))
+        if len(tmps) == 1:
+            f.unlink(missing_ok=True)
+            K.control_settings()
+        real(src, dst)
+
+    def left():
+        return [p.name for p in f.parent.glob('control-settings.json*') if p != f]
+
+    data = mock.patch.object(K, 'control_settings_data', lambda: {'hooks': {}})  # the theme it reads is written with os.replace too
+    with data, mock.patch.object(K.os, 'replace', replace):
+        try:
+            got = K.control_settings()
+        except FileNotFoundError as e:
+            got = e
+    eq(got, f, 'the first writer does not crash')
+    eq(len(set(tmps)), 2, 'each wrote a temp file of its own')
+    eq(json.loads(f.read_text(encoding='utf-8')), {'hooks': {}}, 'the file is whole')
+    eq(left(), [], 'no temp file is left')
+    f.unlink()
+    said = ''
+    with data, mock.patch.object(K.os, 'replace', side_effect=PermissionError('held')):
+        try:
+            K.control_settings()
+        except PermissionError as e:
+            said = str(e)
+    eq(said, 'held', 'a replace that fails still says so')
+    eq(left(), [], 'and its temp file is removed')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
@@ -1512,4 +1553,4 @@ if __name__ == '__main__':
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once,
                              test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing,
-                             test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c]))
+                             test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c, test_settings_two_writers_b806]))
