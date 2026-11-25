@@ -143,7 +143,7 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   holds(); await settle(); await opens(); sound(0.2); now += 2000; answer = ''; up(); await tail(); out.holdLong = TK.note;
   anew(); may = 'granted'; await shown(); before(1, 0.1); TS.mic = 'hold'; down(); out.holdOpen = shows()[4]; sound(0.2); now += 271; answer = ''; up(); await tail(); out.holdShort = TK.note;
   // a stream gone mute is opened afresh in the hold: not Listening meanwhile
-  anew(); may = 'granted'; await shown(); before(1, 0.1); TS.mic = 'hold'; hold = new Promise(y => yes = y); down(); const l1 = shows()[4]; await tick(3000); await tick(500); const l2 = shows()[4]; await opens(); const l3 = shows()[4]; sound(0.2); out.afresh = [l1, l2, l3, shows()[4]]; answer = ''; now += 100; up(); await tail(); out.afreshNote = TK.note;
+  anew(); may = 'granted'; await shown(); before(1, 0.1); TS.mic = 'hold'; hold = new Promise(y => yes = y); down(); const l1 = shows()[4]; await tick(3000); const l2 = shows()[4]; await opens(); const l3 = shows()[4]; sound(0.2); out.afresh = [l1, l2, l3, shows()[4]]; answer = ''; now += 100; up(); await tail(); out.afreshNote = TK.note;
   console.log(JSON.stringify(out, (k, v) => v === undefined ? null : v));
 })();`);
 """)
