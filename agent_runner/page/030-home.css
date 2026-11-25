@@ -16,4 +16,4 @@
 .meter .bar{height:6px;background:var(--line);border-radius:var(--r-xs);overflow:hidden} .meter .bar i{display:block;height:100%;background:var(--ok)}
 .meter .bar i.w{background:var(--warn)} .meter .bar i.b{background:var(--bad)} .meter .r{color:var(--muted)}
 .v-ok{color:var(--ok)} .v-warn{color:var(--warn)} .v-bad{color:var(--bad)}
-
+.card[data-k^="ask:"]>.row .ell2{display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}  /* B840a: a whole question, up to 2000 characters, is read by Open; a row with no Open has it whole */
