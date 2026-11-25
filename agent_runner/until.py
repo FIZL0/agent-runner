@@ -23,12 +23,13 @@ import tempfile
 import time
 from pathlib import Path
 
-from agent_runner import plat
+from agent_runner import plan as P, plat
 from agent_runner import state as S
 
 PASSED, NOT_YET, CANNOT = 'passed', 'not yet', 'cannot run'
 EXITS = {0: PASSED, 75: NOT_YET}  # sysexits' TEMPFAIL, as a shared tool's busy
 KINDS = ('version', 'login', 'tool', 'check')
+CLAUDE_KEYS = ('CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN')
 CHECK_TIMEOUT = 10.0  # s a named check may take, as shared_tools.CHECK_TIMEOUT
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
@@ -147,15 +148,17 @@ def _claude(c) -> tuple[str, str]:
     if agent != 'claude':
         return CANNOT, f'the login of [run] agent = {agent!r} cannot be read here'
     if not watch.own_claude_login(agent):
-        return PASSED, "sessions use a key or another provider, not Claude Code's login"
+        key = next((k for k in CLAUDE_KEYS if os.environ.get(k)), '')
+        return (PASSED, f'env {key}') if key else (CANNOT, "sessions do not use Claude Code's own login, and theirs cannot be read here")
     path = Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / '.credentials.json'
     said = watch.claude_login(path=path, agent=agent)
     if said and not said.startswith('Claude login expires in'):  # that one still works
         return NOT_YET, said
     try:
-        path.read_bytes()
-    except OSError:
-        # claude_login says nothing then: macOS keeps the login in the Keychain
+        there = bool(json.loads(path.read_text(encoding='utf-8'))['claudeAiOauth'].get('refreshToken'))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        there = False
+    if not there:  # claude_login says nothing then on macOS, which keeps the login in the Keychain
         return CANNOT, 'the Claude login cannot be read on this machine' + (
             ' (it is in the Keychain)' if sys.platform == 'darwin' else '')
     return PASSED, said or 'logged in'
@@ -164,6 +167,8 @@ def _claude(c) -> tuple[str, str]:
 def _tool(name: str, c) -> tuple[str, str]:
     from agent_runner import shared_tools as T
     state, who = T.check(name, c)
+    if state == T.FREE and (u := T.used(P.lines(c.todo), T._state()).get(name)):
+        state, who = T.BUSY, u[0]  # a running task has it, whatever its check says
     if state == T.BUSY:
         return NOT_YET, f'held by {who}' if who else 'in use'
     return {T.FREE: (PASSED, 'free'), T.MISSING: (NOT_YET, who or 'not connected')}.get(state, (CANNOT, who or 'unknown'))

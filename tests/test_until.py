@@ -14,7 +14,7 @@ from pathlib import Path
 
 from _check import check, eq, git, has, report
 
-from agent_runner import __version__, config as CF, plat, runner as R, shared_tools as T, until as U, watch  # noqa: E402
+from agent_runner import __version__, config as CF, devices as D, plat, runner as R, shared_tools as T, until as U, watch  # noqa: E402
 
 
 def line(code: str) -> str:
@@ -25,7 +25,7 @@ def make_repo(tmp: Path) -> Path:
     repo = tmp / 'proj'
     (repo / 'plan').mkdir(parents=True)
     git(repo, 'init', '-q', '-b', 'main')
-    (repo / 'plan/TODO.md').write_text('# TODO\n', encoding='utf-8')
+    (repo / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **T1** x | files: a.py | needs: phone\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
     scripts = {'good': 'print("up")', 'quiet': '', 'later': 'import sys; print("still booting"); sys.exit(75)',
                'broken': 'import sys; print("out"); print("no route", file=sys.stderr); sys.exit(1)',
@@ -36,7 +36,7 @@ def make_repo(tmp: Path) -> Path:
         f = tmp / f'{n}.py'
         f.write_text(code, encoding='utf-8')
         toml += f'[run.checks.{n}]\ncmd = {json.dumps(line(str(f)))}\n'
-    toml += 'label = "the folder"\n[run.tools.phone]\ncheck = "true"\nlabel = "iPhone 15"\n'
+    toml += 'label = "the folder"\n[run.tools.phone]\ncheck = "exit 0"\nlabel = "iPhone 15"\n'
     toml += '[models.providers.mine]\nkind = "openai"\nurl = "https://example.invalid/v1"\nkey_env = "MINE_KEY"\n'
     (repo / 'runner.toml').write_text(toml, encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
@@ -107,13 +107,21 @@ def test_login(tmp: Path):
         sys.platform = 'linux'
         eq(U.run('login:claude')[0], U.NOT_YET, 'no Claude login')
         sys.platform = 'darwin'
+        cred.write_text('{}', encoding='utf-8')
+        eq(U.run('login:claude')[0], U.CANNOT, 'nor from a file with no login')
+        cred.unlink()
         eq(U.run('login:claude')[0], U.CANNOT, 'in the Keychain: not guessed')
         for days, got in ((30, U.PASSED), (1, U.PASSED), (-1, U.NOT_YET)):
             cred.write_text(json.dumps({'claudeAiOauth': {'refreshToken': 'r', 'refreshTokenExpiresAt':
                                                           (time.time() + days * 86400) * 1000}}), encoding='utf-8')
             eq(U.run('login:claude')[0], got, f'it ends in {days} days')
         watch.own_claude_login = lambda agent='claude': False
-        eq(U.run('login:claude')[0], U.PASSED, 'a key or another provider')
+        for k in U.CLAUDE_KEYS:
+            os.environ.pop(k, None)
+        eq(U.run('login:claude')[0], U.CANNOT, 'another provider: not guessed')
+        os.environ['ANTHROPIC_API_KEY'] = 'secret-key'
+        eq(U.run('login:claude'), (U.PASSED, 'env ANTHROPIC_API_KEY'), 'a key')
+        del os.environ['ANTHROPIC_API_KEY']
         keep_agent, R.C.run['agent'] = R.C.run['agent'], '/opt/wrapper'
         eq(U.run('login:claude')[0], U.CANNOT, "a wrapper's login cannot be read")
         R.C.run['agent'] = keep_agent
@@ -123,6 +131,15 @@ def test_login(tmp: Path):
 
 def test_tool():
     print('tool: free passes, busy and missing do not yet, unknown cannot run')
+    eq(U.run('tool:phone'), (U.PASSED, 'free'), 'its own command, run')
+    keep = T._state
+    T._state = lambda: {'running': {'1': 'T1'}}
+    eq(U.run('tool:phone'), (U.NOT_YET, 'held by T1'), 'a running task that needs it has it')
+    T._state = keep
+    D._write(D._folder() / 'devices.json', json.dumps({'devices': {'rig': {'kind': 'other', 'reach': 'git', 'description': '', 'exclusive': False}},
+                                           'uses': {D.project(R.C): ['rig']}}).encode())
+    eq(U.run('tool:rig'), (U.PASSED, 'free'), 'a device')
+    eq(U.problem('tool:phone') + U.problem('tool:rig'), '', 'both are names it takes')
     keep = T.check
     try:
         for said, want in (((T.FREE, ''), (U.PASSED, 'free')), ((T.BUSY, 'F9'), (U.NOT_YET, 'held by F9')),
@@ -171,6 +188,7 @@ def test_config(repo: Path):
 
 def main() -> int:
     tmp = Path(tempfile.mkdtemp())
+    os.environ['AGENT_RUNNER_DEVICES'] = str(tmp / 'devices')
     repo = make_repo(tmp)
     R.init(repo)
     return report([test_read, test_version, lambda: test_login(tmp), test_tool, test_named, lambda: test_config(repo)])

@@ -1229,11 +1229,11 @@ task can wait on. Written `kind:value`; four kinds, and anything else is refused
 - **`version:X.Y.Z`** is passed when the agent-runner serving this run is at least that. With no run up, the installed
   one counts.
 - **`login:PROVIDER`** is passed when that login works, read from this machine's files and environment only. For
-  `claude` that is Claude Code's credentials file: missing or expired is not yet, and an API key or another provider
-  set up for sessions counts as passed. A login kept in the macOS Keychain, or behind a wrapper as `[run] agent`,
-  cannot run. The others are read as `run login` lists them; an OAuth login that has expired and cannot be renewed is
+  `claude` that is Claude Code's credentials file: missing or expired is not yet, and an API key or token in the
+  environment counts as passed. A login kept in the macOS Keychain, behind a wrapper as `[run] agent`, from an
+  apiKeyHelper or with another provider (Bedrock) cannot be read, so the check cannot run. The others are read as `run login` lists them; an OAuth login that has expired and cannot be renewed is
   not yet.
-- **`tool:NAME`** is passed when a shared tool or device is free; busy or missing is not yet; unknown cannot run.
+- **`tool:NAME`** is passed when a shared tool or device is free; busy, held by a running task or missing is not yet; unknown cannot run.
 - **`check:NAME`** is `[run.checks.NAME]` in runner.toml: exit 0 is passed, 75 not yet, anything else or a run past
   10 s cannot run. It runs in the main checkout, and its first output line is the words shown.
 
