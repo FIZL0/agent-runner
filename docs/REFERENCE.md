@@ -603,7 +603,7 @@ The run page sends them with `POST /give` {tid, values, confirm}. Whether it may
 connection (https, also through Tailscale Serve or Runner Home, or localhost), never from what the page sends: over
 plain http text and links are still sent, and an item with a secret is refused. The claude.ai copy has no fields.
 A secret goes only to `<notes>/asks/ID.env` as `NAME='value'`, owner-only (on Windows, as its folder is) and kept out of git, and the answer names its
-NAME and that path. It is kept while the task is open and removed when it lands or is dropped, and is taken only over
+NAME and that path. It is kept while the task is open and removed when it lands or is dropped (a drop keeps it 1 day, see below), and is taken only over
 https or from this computer or the terminal UI:
 
 ```json
@@ -626,11 +626,13 @@ The file is optional, and the brief asks for it only for length: a CONFIRM, DECI
 question, stays one short sentence (about 100 characters at most), and the rest goes in `<notes>/asks/ID.json` with
 pictures under `<notes>/asks/ID/`. A `done --blocked` line over 200 characters that waits on a person and has no ask
 file is not refused: it says so once, names the file, and blocks. The file and its pictures are removed when the item
-is answered (confirm, change, unblock), the task is ticked or dropped, it blocks again (any block but `done --blocked`
+is answered (confirm, change, unblock), the task is ticked or dropped (a drop keeps a copy, see below), it blocks again (any block but `done --blocked`
 and `run ask`, which may have written it), or a new session starts on the task. A block that waits on a task first and
 then returns to the person keeps the file. `plan confirm ID` and `plan change ID` also settle an ask the run has not blocked yet (its block is held, e.g. by a merge): the answer is noted, the item never shows under Needs you, and the session resumes with the answer.
 
 The task's pick sheet (`<notes>/sheets/ID.json`, with its published URL in `sheets/ID.url` and its copy `sheets/ID.html`) goes in the same cases, so a later `sheet ID --go` cannot run an old one; one written just before its own block (`done --blocked`, `run ask`) is kept, and a second `done --blocked` while still blocked removes a sheet not written since the last block, whether or not the ask file goes, and a block that waits on a task first keeps it.
+
+A drop keeps a copy in `<notes>/dropped/ID` (git-ignored, on this machine only): the task's ask file and pictures, its pick sheet, its secrets file (1 day; the rest 30 days), and which tasks were blocked `(after ID)` on it. `plan restore ID` of a dropped blocked task puts it back blocked, with its BLOCKED text, and its ask and secrets back in place; the tasks the drop freed wait on it again as they were, except one changed since it reopened or one something works on. On another machine, or after 30 days, it still comes back blocked, without the ask file and the freed tasks. A ticked task comes back open as before.
 
 ### Approve to push
 

@@ -305,6 +305,8 @@ def clear_env(tid: str, todo: str | Path | None = None) -> None:
 def sweep_env(branch: str) -> None:
     """F175: take away the secrets of each task that is no longer open or blocked, neither on `branch` nor in the main
     checkout: it landed or was dropped. A task its session only ticked on its own branch keeps them."""
+    from agent_runner.plan_drop import sweep_kept  # here: it imports this module
+    sweep_kept(C)
     files = list(C.notes('asks', 'x').parent.glob('*.env'))
     if not files:
         return

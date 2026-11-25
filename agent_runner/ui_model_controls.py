@@ -105,7 +105,7 @@ RUN_CONTROLS = (
      'said': '{id} is at the top', 'fits': lambda r: menu_on(r)},
     {'key': 'menu_remove', 'label': 'Remove', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': '', 'where': 'queuemenu',
      'why': 'removed from the Plan queue', 'said': '{id} is removed',
-     'fits': lambda r: menu_on(r) and not r.get('blocked')},  # a restored task is open: Undo would lose what it waits for
+     'fits': lambda r: menu_on(r)},
     {'key': 'menu_restore', 'label': 'Put back', 'argv': ('plan', 'restore', '{id}'), 'tui': '', 'where': 'queuemenu',
      'said': '{id} is back', 'fits': lambda r: False},
     # F184: a shelved task's, in the Parked group; never Unpark, which would not reopen it
