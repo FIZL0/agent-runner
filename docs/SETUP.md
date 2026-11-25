@@ -89,6 +89,33 @@ From a clone on Windows, use `python -m agent_runner run once`; an installed run
 `agent-runner run once`. Normal terminal selection, parallel worktrees, `done`, test gates, and merging
 are unchanged.
 
+### With no Claude Code at all
+
+A project needs no Claude Code when no session can run on it. That is when every one of these names another
+provider: `[models] code`, `review`, `fix`, `control` and `feed`; every kind in `[models.kinds]`;
+and the model given to `run --model`. `[models] docs` does not count: it is a
+subagent of a Claude Code task session, so with none it never runs. A Claude entry in `[models] fallback` counts only
+while Claude Code is on the machine; a cap passes over it otherwise. If any of the others is left on its
+default (opus, sonnet or haiku), the project still needs Claude Code, and a missing `claude` holds new
+sessions as before.
+
+```toml
+[models]
+code = "codex:<model>"
+fix = "codex:<model>"
+review = "codex:<model>"
+control = "codex:<model>"
+feed = "codex:<model>"
+kinds = { F = "codex:<model>", B = "codex:<model>", T = "codex:<model>", V = "codex:<model>", K = "codex:<model>", D = "codex:<model>", C = "codex:<model>", R = "codex:<model>" }
+```
+
+Then there is no missing-`[run] agent` line or hold. The run also shows no Claude login line (in status, on the
+run page, on Home, or as a push), reads no usage and applies no cap (`session_max`, `weekly_max`), makes no API
+check and has no headroom usage limit. A removed value such as `agent = "pi"` is still said.
+
+A task given its own Claude model (`plan add --model opus`) still waits alone, blocked under Needs you, when
+Claude Code is not on the machine.
+
 ## Provider logins: run login
 
 `run login` gives a provider its login. It serves a role in `[models]` that names a provider other than claude,
@@ -146,15 +173,19 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    `claude auth login` for Claude Code, `agent-runner login PROVIDER` for the others. Copilot first asks for
    a GitHub Enterprise domain (blank for github.com); one already logged in can log in again, on another domain.
    The first pick runs the tasks. Its model goes to
-   `[models] code` and `fix` in `runner.local.toml`. Claude Code needs no model id; another provider asks for
+   `[models] code` and `fix` in `runner.local.toml`. With no Claude Code here, the pick also takes `review`,
+   `control`, `feed` and `docs` where those were on Claude. Claude Code needs no model id; another provider asks for
    one, and Ollama also sets `local = true`. A kind in `[models.kinds]` on another provider moves to the
    pick too, because a kind wins over `code`. A failed login is said, and the models are still written: the pick's tasks wait for the login. With no terminal it
    asks nothing and prints the login commands. `--yes` does not answer it.
 5. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
    lean brief) that reads the repo, checks the gate, writes the goal and a first task list with
    `agent-runner plan goal` and `plan add`, adds a short `## Agent notes` section to CLAUDE.md or AGENTS.md,
-   and commits it all. With no Claude Code here, setup does not fail. It says in one line what cannot run
-   yet (the setup session, chats, spec reviews, tasks on a claude model) and starts no session.
+   and commits it all. With no Claude Code here, setup does not fail. If no role or kind needs Claude
+   Code, the session runs on the harness loop instead, in chat mode on `[models] control` (Ctrl-D ends it). That
+   needs Node.js and the provider's login; if either is missing, setup says so in one line and starts no session.
+   If a role still needs Claude Code, setup says in one line what cannot run yet (the setup session, chats, spec
+   reviews, tasks on a claude model) and starts no session.
 6. It prints what it set up; `agent-runner` then opens the run picker, where `s` starts the run.
 
 Run again on a repo that has a plan, it asks before the session touches it (`--yes`: go on without asking).

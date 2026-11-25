@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 from agent_runner.config import RUNNER
@@ -188,15 +189,36 @@ End with a few lines: the gate, the goal, how many tasks, and what a person shou
 """
 
 
+def harness_argv(root: Path, text: str) -> list[str]:
+    """F406h: the setup session on [models] control's provider: the harness loop's chat, `text` its first message. No git
+    fence, as the Claude one has none: it commits the setup."""
+    from agent_runner.config import cfg, runner_cmd
+    from agent_runner.slots import HARNESS
+    c = cfg(root)
+    model = c.models['control']
+    pf = c.notes('setup.prompt')
+    pf.parent.mkdir(parents=True, exist_ok=True)
+    pf.write_text(text, encoding='utf-8')
+    flags = ['--chat', '--session-id', str(uuid.uuid4()), '--model', model, '--notes', str(c.notes()),
+             '--runner-cmd', json.dumps(runner_cmd())]
+    if own := c.providers.get(model.partition(':')[0]):
+        flags += ['--provider', json.dumps(own)]
+    print('agent-runner setup: Ctrl-D ends the session')
+    return HARNESS.argv('', pf, '', flags)
+
+
 def launch(root: Path, text: str) -> int | None:
     """One full interactive Claude session in the repo with `text` as its first message (normal tools and
-    settings, not a slot's lean ones); waits for it to end. None: this machine has no Claude Code (F406d)."""
+    settings, not a slot's lean ones); waits for it to end. F406h: with no Claude Code here, a chat on the harness loop
+    when no role needs it. None: neither can start here (`no_claude` says why)."""
     from agent_runner.setup_models import claude_program
     agent = claude_program(root)
-    if not agent:
+    if not agent and no_claude(root):
         return None
+    argv = [agent, text] if agent else harness_argv(root, text)
+    agent = argv[0]
     try:
-        return subprocess.run([agent, text], cwd=str(root)).returncode
+        return subprocess.run(argv, cwd=str(root)).returncode
     except OSError as e:
         print(f'agent-runner setup: cannot start {agent}: {e}', file=sys.stderr)
         return 127
@@ -256,9 +278,15 @@ def offer_models(root: Path) -> list[str]:
 def no_claude(root: Path) -> str:
     """F406d: what cannot run while this machine has no Claude Code, in one line; '' when it has one."""
     from agent_runner import setup_models as M
+    from agent_runner.claude_use import uses
     if M.claude_program(root):
         return ''
     c = M.config(root)
+    if c and not uses(c):  # F406h: no role needs it: the setup session runs on [models] control's provider
+        from agent_runner.login import missing
+        out = missing(c.models['control'], c)
+        why = f'{out} has no login (`{RUNNER} login {out}`)' if out else '' if shutil.which('node') else 'Node.js is not on PATH'
+        return why and f'{why}, so the setup session, chats and tasks cannot run yet (`{RUNNER} plan add` files tasks by hand)'
     why = c.agent_problem if c and c.run['agent'] != 'claude' else 'no Claude Code here'
     return (f'{why}, so these cannot run yet: the setup session that writes the plan, chats, spec reviews and tasks on '
             f'a claude model (`{RUNNER} plan add` files tasks by hand)')

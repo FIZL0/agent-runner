@@ -441,7 +441,11 @@ LIMIT_WORDS = {'memory': 'memory is nearly full', 'cpu': 'the CPU is busy',
 
 def free_fallback(c) -> bool:
     """F142: `c`'s [models] fallback has an entry a new task can start on past the usage caps: not claude's, its
-    provider not capped and logged in (fallback.chain_next, for any project's config)."""
+    provider not capped and logged in (fallback.chain_next, for any project's config). F406h: or none of its sessions runs on
+    claude, so the caps hold nothing."""
+    from agent_runner.claude_use import uses
+    if not uses(c):
+        return True
     from agent_runner.config import harness_model
     from agent_runner.login import missing
     try:
@@ -821,8 +825,10 @@ class Project:
             c = Config(root)
             home, notes = c.home, c.notes()
             main = c.master_branch or git_out(root, 'branch', '--show-current') or 'main'
-            mff, caps = c.run.get('min_free_gb', 10), {k: c.run.get(k) for k in ('weekly_max', 'session_max')}
-            fallback, agent = free_fallback(c), c.run.get('agent') or 'claude'
+            from agent_runner.claude_use import uses
+            used = uses(c)  # F406h: no session on claude: its login and caps are nothing to it
+            mff, caps = c.run.get('min_free_gb', 10), {k: c.run.get(k) for k in ('weekly_max', 'session_max')} if used else {}
+            fallback, agent = free_fallback(c), (c.run.get('agent') or 'claude') if used else ''
         except (OSError, SystemExit, ValueError, KeyError, TypeError):
             return None
         if info is None:
@@ -1224,7 +1230,8 @@ def login_now(now: float) -> str:
 
 def login_banner(roots: list[Path], now: float | None = None) -> str:
     """F126a: Home's banner about this machine's Claude login: `login_now`, when a project at `roots` has [run] agent
-    claude; '' when it is fine, or when no project runs on it."""
+    claude and a role on it; '' when it is fine, or when no project runs on it."""
+    from agent_runner.claude_use import account
     from agent_runner.config import Config
     try:
         said = login_now(time.time() if now is None else now)
@@ -1232,7 +1239,7 @@ def login_banner(roots: list[Path], now: float | None = None) -> str:
         return ''
     for root in roots if said else ():
         try:
-            if (Config(root).run.get('agent') or 'claude') == 'claude':
+            if account(Config(root)):
                 return said
         except (Exception, SystemExit):  # noqa: BLE001 - settings that cannot be read
             pass
@@ -1309,7 +1316,8 @@ class Vitals:
         self.history.add(point(snap))
         self.snap = snap
         if now - self.usage_at > 300:
-            self.usage, self.usage_at = self.usage_fn(), now
+            # F406h: not read when no project runs on claude
+            self.usage, self.usage_at = self.usage_fn() if not projs or any(p.agent for p in projs) else {}, now
         if self.foot is None or now - self.foot_at > FOOTPRINT_EVERY:
             if walk:
                 self.refresh_footprint(projs, now)
@@ -1369,7 +1377,7 @@ class Vitals:
 
     def push_login(self, projs: list[Project], now: float) -> None:
         """F126c: while the Claude login is ending, has ended or is missing, push that once a day (local date), as a
-        device alert, to the running projects whose [run] agent is claude. The day is kept over a restart, and
+        device alert, to the running projects whose [run] agent is claude, with a role on it. The day is kept over a restart, and
         forgotten once the login is fine, so a new warning is pushed again. Two samples in a row must agree: one
         read while Claude Code rewrites its credentials file neither warns nor counts as a renewal."""
         try:
@@ -1410,7 +1418,10 @@ class Vitals:
         projs = self.projects()
         mff, caps = self.limits(projs)
         # a project past its own caps starts tasks down its chain: one whose run is up; with none up, any
-        fell = any(p.fallback and past_caps(self.usage, p.caps) for p in [p for p in projs if p.up] or projs)
+        mine = [p for p in projs if p.up] or projs
+        if not any(p.caps for p in mine):  # F406h: no run here runs on claude: its caps hold none
+            caps = {}
+        fell = any(p.fallback and past_caps(self.usage, p.caps) for p in mine)
         room = headroom(self.snap, mff, self.usage, caps, fell)
         found = alerts(self.snap, mff, self.foot)
         try:

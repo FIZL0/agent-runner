@@ -3,7 +3,7 @@
 At a terminal it lists the built-in providers with what is found and logged in here. The person picks; each pick is
 logged in there (`agent-runner login PROVIDER`; `claude auth login` for Claude Code), and [models] code and fix are written to
 this machine's runner.local.toml for the first pick. A kind ([models.kinds]) on another provider goes to the pick too:
-it would win over `code`. Nothing picked changes nothing; no terminal asks nothing and gives the login commands.
+it would win over `code`. With no Claude Code here the other roles do too (F406h). Nothing picked changes nothing; no terminal asks nothing and gives the login commands.
 """
 from __future__ import annotations
 
@@ -143,6 +143,14 @@ def ask_model(provider: str, models: dict, providers: dict) -> tuple[str, str]:
     return f'{provider}:{got}', now['fix'] if got == had and 'fix' in now else f'{provider}:{got}'
 
 
+def other_roles(root: Path, provider: str, code: str, models: dict, providers: dict) -> dict[str, str]:
+    """F406h: with no Claude Code here, the other roles that name it go to the pick too, or the run would wait for it."""
+    if provider == 'claude' or claude_program(root):
+        return {}
+    return {r: code for r in ('review', 'control', 'feed', 'docs')
+            if isinstance(m := models.get(r), str) and login.provider_of(m, providers) == 'claude'}
+
+
 def write(root: Path, provider: str, code: str, fix: str, models: dict, providers: dict) -> str:
     """Write [models] for the pick to runner.local.toml; the line that says so."""
     base = CF.DEFAULTS['models']['kinds']
@@ -156,9 +164,13 @@ def write(root: Path, provider: str, code: str, fix: str, models: dict, provider
             CF.save_local_setting(root, 'models', 'kinds', to)
         CF.save_local_setting(root, 'models', 'code', code)
         CF.save_local_setting(root, 'models', 'fix', fix)
+        for role, m in (more := other_roles(root, provider, code, models, providers)).items():
+            CF.save_local_setting(root, 'models', role, m)
     except (OSError, ValueError, SystemExit) as e:
         return f'[models] code and fix are not written to {CF.LOCAL}: {e}'
-    return f'{CF.LOCAL}: [models] code = "{code}", fix = "{fix}"' + (', and every kind of task on it' if to != kinds else '')
+    CF._cfg.cache_clear()  # the setup session starts on them
+    return f'{CF.LOCAL}: [models] code = "{code}", fix = "{fix}"' + (', and every kind of task on it' if to != kinds else '') + \
+        (f'; {", ".join(more)} too, as Claude Code is not here' if more else '')
 
 
 def offer(root: Path, terminal: bool) -> list[str]:

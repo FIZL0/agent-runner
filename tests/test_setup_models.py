@@ -114,21 +114,23 @@ def test_ghe_no_claude():
         eq(words(runs), [['login', 'copilot', '--enterprise=corp.ghe.com']], 'the login, with the bare host')
         eq(len(runs), 1, 'no session is started')
         check(not any('plan' in q for q in asked), 'nor asked about', asked)
-        has(out, 'no Claude Code here, so these cannot run yet', 'it says what cannot run')
+        has(out, 'copilot has no login .*cannot run yet', 'it says what cannot run')
+        eq({c_ for r, c_ in CF.Config(root).models.items() if r in ('code', 'fix', 'review', 'control', 'feed', 'docs')}, {'copilot:gpt-x'},
+           'F406h: every role is on it')
         check('127' not in out and 'cannot start' not in out, 'and does not fail', out)
         c = CF.Config(root)
         eq((c.models['code'], c.models['fix']), ('copilot:gpt-x',) * 2, 'models')
         eq({c.task_model(k + '1') for k in 'FBTVKDCR'}, {'copilot:gpt-x'}, 'every kind of task runs on it')
         (root / 'plan').mkdir()
         (root / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
-        out, asked, runs = setup(root, ['2', '', ''], creds={'github-copilot': {'type': 'oauth', 'enterpriseUrl': 'corp.ghe.com'}})
+        out, asked, runs = setup(root, ['2', '', '', ''], creds={'github-copilot': {'type': 'oauth', 'enterpriseUrl': 'corp.ghe.com'}})
         eq(runs, [], 'logged in already: no login')
         has(out, r'logged in: .*GitHub Enterprise corp.ghe.com', 'the list names the domain')
         eq(CF.Config(root).models['code'], 'copilot:gpt-x', 'Enter keeps the model')
         _, _, again = setup(root, ['2', 'y', '', 'gpt-y'], creds={'github-copilot': {'type': 'oauth'}}, code=1)
         eq(words(again), [['login', 'copilot', '--enterprise=']], 'a login on another domain, when asked for')
         eq(CF.Config(root).models['code'], 'copilot:gpt-y', 'a failed login keeps the pick: its tasks wait for the login')
-        eq(len(asked), 3, 'a repo with a plan is not asked about a session that cannot start')
+        eq(len(asked), 4, 'a repo with a plan is asked before the session adds to it')
 
 
 def test_several():

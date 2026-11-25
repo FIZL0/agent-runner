@@ -751,7 +751,8 @@ class Config:
     def agent_problem(self) -> str:
         """B764b: why no session can start with this `[run] agent` on this machine, and the fix, in one line; '' when
         one can. Looked up each time: installing the program mends it too."""
-        return agent_problem(self.root, self.run['agent'])
+        from agent_runner.claude_use import uses
+        return agent_problem(self.root, self.run['agent'], uses(self))
 
     def resolve_models(self, given: dict) -> dict:
         """F101: `[models]`, each role settled: a role the files set wins, else the default. `C.run['model']` and
@@ -1044,13 +1045,14 @@ def agent_missing(root: Path, v: str) -> str:
     return f'[run] agent = {v!r}: no such command on PATH on this machine, and no such file'
 
 
-def agent_problem(root: Path, v) -> str:
-    """B764b: `Config.agent_problem` of the value `v`. Short, as a status line: the fix must not be cut off."""
+def agent_problem(root: Path, v, used: bool = True) -> str:
+    """B764b: `Config.agent_problem` of the value `v`. Short, as a status line: the fix must not be cut off. F406h: not
+    `used` (no role runs on it, claude_use.uses), a missing program is no problem."""
     if isinstance(v, str) and v.strip() and agent_value_problem(v):
         return f'[run] agent = {v!r} was removed: set it to "claude"; other models go in [models] as "<provider>:<model>"'
     if problem := setting_problem('run', 'agent', v):
         return problem if isinstance(v, str) else f'{problem}: set it to "claude"'
-    if agent_missing(root, v):
+    if used and agent_missing(root, v):
         return f'[run] agent = {v!r} is not on this machine: install it, or set it to the path of Claude Code'
     return ''
 
@@ -1384,7 +1386,8 @@ def read_again(c: Config) -> tuple[Config, dict, list]:
     changed = {k: v for k, v in now.items() if v != was[k] or type(v) is not type(was[k])}
     if problem := _problem(was, now):  # only of the changed ones: what the run started with it goes on with
         raise ValueError(problem)
-    if ('run', 'agent') in changed and (problem := agent_missing(c.root, new.run['agent'])):  # B764a: every session would fail
+    from agent_runner.claude_use import uses
+    if ('run', 'agent') in changed and uses(new) and (problem := agent_missing(c.root, new.run['agent'])):  # B764a: every session would fail
         raise ValueError(problem)
     waits = {k: c.raw[k[0]][k[1]] for k in changed if k in SETTING_NEXT}
     _keep(new, waits)
