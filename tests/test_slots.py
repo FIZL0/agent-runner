@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from _check import check, eq, report
-from agent_runner import control as K, inbox_lock, plat, session_theme as T, slots, state as S, web as W
+from agent_runner import brief as B, control as K, inbox_lock, plat, session_theme as T, slots, state as S, web as W
 
 
 def test_theme(tmp: Path) -> None:
@@ -37,6 +37,25 @@ def test_theme(tmp: Path) -> None:
         K.hidden_shim('control7', ['x'])
     S.C.notes('control7.live').write_text('1', encoding='utf-8')
     check(W.frame_look('c7') != 'page', 'not without the theme file')
+
+
+def test_artifact_c48(tmp: Path) -> None:
+    """C48: only a concept task's session loads the Artifact tool."""
+    def tools(**kw):
+        got = slots.lean(**kw)
+        return got[got.index('--tools') + 1].split(',')
+    check('Artifact' not in tools(), 'a slot has no Artifact tool')
+    check('Artifact' in tools(artifact=True), 'a concept has it')
+    for a in (False, True):
+        fl = slots.Claude().flags('sid', 'opus', 90, True, False, a)
+        eq('Artifact' in fl[fl.index('--tools') + 1].split(','), a, f'a resumed session keeps what it had ({a})')
+    eq(B.concept_at(None), False, 'no worktree')
+    with mock.patch.object(B, 'git', return_value=mock.Mock(stdout='task/K5\n')), \
+            mock.patch.object(B.P, 'concept', lambda t: t.startswith('K')):
+        eq(B.concept_at(tmp), True, 'a K branch')
+    with mock.patch.object(B, 'git', return_value=mock.Mock(stdout='task/C48\n')), \
+            mock.patch.object(B.P, 'concept', lambda t: t.startswith('K')):
+        eq(B.concept_at(tmp), False, 'a C branch')
 
 
 def test_one_sender_b161(tmp: Path) -> None:
@@ -89,6 +108,7 @@ def test_one_sender_b161(tmp: Path) -> None:
 def run() -> None:
     with tempfile.TemporaryDirectory() as d:
         test_theme(Path(d))
+        test_artifact_c48(Path(d))
     with tempfile.TemporaryDirectory() as d:
         test_one_sender_b161(Path(d))
 

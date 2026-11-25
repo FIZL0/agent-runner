@@ -475,3 +475,14 @@ def has_sheet(tid: str) -> bool:
         return C.notes('sheets', f'{tid}.json').is_file()
     except (OSError, SystemExit, AttributeError, NameError):
         return False
+
+
+def concept_at(cwd: Path | None) -> bool:
+    """C48: is the worktree `cwd` on a concept task's branch (`task/<ID>`): the one session that gets the Artifact tool."""
+    if cwd is None:
+        return False
+    try:
+        head = (git('rev-parse', '--abbrev-ref', 'HEAD', cwd=cwd).stdout or '').strip()
+    except Exception:
+        return False
+    return head.startswith('task/') and P.concept(head[5:])
