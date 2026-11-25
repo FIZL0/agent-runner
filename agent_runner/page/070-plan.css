@@ -13,7 +13,7 @@
 .thread.ob.failed .t{color:var(--bad)}
 /* F426b: Plan's search stays in view while the queue scrolls; outside .col: a grid item sticks only in its own row */
 .planq{position:sticky;top:0;z-index:2;background:var(--bg);padding:var(--s1) var(--s4) var(--s2)} .planq>.row{max-width:688px;margin:0 auto}
-.body:has(>.planq){scroll-padding-top:60px} .srow.relph{opacity:.6}
+.body:has(>.planq){scroll-padding-top:60px} .card.relph{opacity:.6;border:1px dashed var(--line2)}
 .waits{display:grid;gap:var(--s3);border-left:2px solid var(--line2);padding-left:var(--s3);min-width:0} .waits>.srow{grid-template-columns:minmax(0,1fr)}
 
 @container (min-width:760px){

@@ -39,16 +39,12 @@ function planDraw(el,h){
   if(el._h!==h&&el._gone)for(const g of el._gone)g.remove();  // leaving() puts them back
   return fieldHTML(el,h,'planq');
 }
-/* F426b: the one card of releases: the open ones (a landed one is past), the auto release's count, then New release */
-function releasesCard(){
-  const rs=releasesOn(S.snap)?planReleases(S.snap).filter(q=>!q.placeholder||q.state!=='released'):[];
-  return newReleaseCard(rs.map(q=>`<div class="srow${q.placeholder?' relph':''}" data-k="${q.placeholder?'rel:'+esc(q.id||'next'):'task:'+esc(q.id)}">${q.placeholder?nextReleaseRow(q):releaseRow(q)}</div>`).join(''));
-}
+/* F195c: New release, then the Queue with the releases as rows at their place; a landed one is past (History) */
 function planHTML(){
   planAsk();
-  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=planQueue(S.snap);
+  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=planRows(S.snap);
   if(planWant())return `${planField()}<div class="col">${planFound(planWant())}</div>`;
-  return `${planField()}<div class="col">${releasesOn(S.snap)?'<div class="sec">Releases<span class="ln"></span></div>':''}${releasesCard()}<div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>planCard(q)).join(''):emptyCard('The queue is empty.')}
+  return `${planField()}<div class="col">${newReleaseCard()}<div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(queueCard).join(''):emptyCard('The queue is empty.')}
     ${obCards(x=>obActs(x,'queue'))}${pk.length||sh.length||shOb?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(q=>parkedCard(q)).join('')}${shOb}${sh.map(q=>shelvedCard(q)).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */

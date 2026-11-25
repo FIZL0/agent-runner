@@ -322,17 +322,16 @@ def test_concepts_view(tmp: Path) -> None:
 
 
 def test_release_row_f131(tmp: Path) -> None:
-    """F131, F185: the Plan view's Releases group, above the Queue: each open release once, in its row's words, then the
-    dimmed rows that are no task."""
+    """F131, F185, F195c: the releases, each open one once in its row's words, then the rows that are no task; the Queue
+    has them at their place, the auto release's count dimmed."""
     page = W.PAGE.read_text(encoding='utf-8')
-    check('planReleases(S.snap).filter(' in page and 'q.placeholder?nextReleaseRow(q):releaseRow(q)' in page
-          and '.srow.relph{opacity' in page, 'the Plan view draws planReleases, a placeholder dimmed')
+    check('qs=planRows(S.snap)' in page and '.card.relph{opacity' in page, 'the Plan view draws planRows, a placeholder dimmed')
     if not shutil.which('node'):
         print('  (no node here: the release row script test is skipped)')
         return
     task, parked = {'id': 'F1', 'state': 'ready'}, {'id': 'F9', 'state': 'parked'}
     ph = {'id': '', 'title': 'Next release', 'words': 'auto at 10 landed: 6/10', 'placeholder': True}
-    done = {'id': 'V4', 'title': 'Release 1.2.0', 'words': 'released 10:00', 'placeholder': True}
+    done = {'id': 'V4', 'title': 'Release 1.2.0', 'words': 'released 10:00', 'state': 'released', 'placeholder': True}
     row = lambda t, w: {'id': t, 'title': 'Release', 'words': w, 'placeholder': False}  # noqa: E731
     r5, r6 = row('V5', 'releasing now'), row('V6', 'waits for 1: V5 Release')
     v5, v6 = {'id': 'V5', 'state': 'running s2 6m', 'release': r5}, {'id': 'V6', 'state': 'after', 'release': r6}
@@ -343,6 +342,12 @@ def test_release_row_f131(tmp: Path) -> None:
                     ['planReleases', two], ['planQueue', two], ['planWords', v5, []]])
     eq(got, [[], [], [ph], [v5], [v5, v6, done], [task], 'releasing now'],
        'none, none from an older run, auto, one running, two; the Queue without them (Parked is its own group)')
+    f2, at = {'id': 'F2', 'state': 'ready'}, dict(ph, before='F2')
+    got = logic_js([['planRows', {'queue': [task, v6, f2, parked, v5], 'releases': [r5, r6, done]}], ['planRows', {'queue': [task, f2], 'releases': [at]}],
+                    ['planRows', {'queue': [task, v6, f2], 'releases': [r6, at]}], ['planRows', {'queue': [task], 'releases': [ph]}],
+                    ['planRows', {'queue': [task], 'releases': [dict(at, before='F9')]}], ['planRows', {'queue': [task, f2], 'releases': [at], 'manage_releases': False}], ['planRows', {}]])
+    eq(got, [[task, v6, f2, v5], [task, at, f2], [task, v6, at, f2], [task, ph], [task, dict(at, before='F9')], [task, f2], []],
+       'plan order, no landed one; the count before its task, beside a waiting release too, else last; releases off: none; no plan yet')
 
 
 RELEASE_DRIVER = r"""
@@ -449,9 +454,9 @@ const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf
 const S = {ob: [], taskOpen: {}, sure: null, snap: null, f: {}};
 const no = () => '', env = {S, planField: no, planWant: no, planAsk: no, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
   ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}, upNext: () => S.snap.queue, LOGO: no, greeting: no, box: no, keysLine: no, homeChips: no, runPill: () => ({text: ''}), esc: no};
-const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const planQueue=', 'const releasesOn='].map(line).join('')
+const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
   + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto')
-  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + ['relCard', 'newReleaseCard', 'statusHTML', 'releasesCard', 'planHTML', 'homeStatus', 'homePlan', 'homeHTML'].map(f => grab(`function ${f}(`)).join('') + line('const homeSums=');
+  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + slice('const planRows=', '/* F87') + ['relCard', 'newReleaseCard', 'statusHTML', 'planHTML', 'homeStatus', 'homePlan', 'homeHTML'].map(f => grab(`function ${f}(`)).join('') + line('const homeSums=');
 const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), statusHTML(), homeHTML()]}')(env);
 const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw() });
 console.log(JSON.stringify(out));
@@ -483,11 +488,11 @@ def test_manage_releases_f193(tmp: Path) -> None:
                        capture_output=True, text=True, encoding='utf-8', timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     (plan_on, st_on, home_on), (plan_off, st_off, home_off), (plan_sent, st_sent, home_sent), back, older = json.loads(r.stdout)
-    check('>Releases<' in plan_on and '<b>New release</b>' in plan_on and 'data-ctl="release_now"' in plan_on, 'on: Plan has them', plan_on)
+    check('>Releases<' not in plan_on and '<b>New release</b>' in plan_on and 'data-ctl="release_now"' in plan_on, 'on: Plan has them', plan_on)
     check('>Release<' in st_on and 'data-ctl="release_now"' in st_on and 'V5' in st_on, 'on: Status too', st_on)
     check('data-ctl="release_now"' not in home_on and 'release_take' not in home_on, 'F426a: no release card on Home', home_on)
     queue = plan_on.split('>Queue<', 1)[1]
-    check('V5' not in queue and 'V5' in plan_on, 'on: V5 in Releases only', plan_on)
+    eq((plan_on.count('task:V5'), queue.count('task:V5')), (1, 1), 'on: V5 is a row of the Queue')
     for name, html in (('Plan', plan_off), ('Status', st_off), ('Home', home_off)):
         check(not re.search(r'release', html, re.I), f'off: {name} says nothing of releases', html)
     check('V5 Ship 1.2.0' in plan_off.split('>Queue<', 1)[1], 'off: V5 is in the Queue', plan_off)
@@ -574,7 +579,7 @@ const kbFocus = e => e.focus(), $ = () => root, grow = () => {}, calls = []; let
 const setTimeout_ = setTimeout, fetch = url => new Promise((ok, no) => calls.push({url, say: j => ok({json: async () => j}), fail: () => no(Error('down'))}));
 { const setTimeout = f => timers.push(f), clearTimeout = i => { timers[i - 1] = null };
 eval(logic + line('const esc=') + line('const tq=') + slice('const actBtns=', '\n') + '\n' + slice('function setHTML(', '/* F83') + slice('function keepFields(', '/* a press under way')
-  + slice('function fieldHTML(', '/* F189b: a press in the sheet') + line('const taskIsOpen=') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + line('const chatBtn=') + slice('const taskBtns=', '/* F186: a release') + line('const planCard=') + grab('function parkedCard(') + grab('function shelvedCard(')
+  + slice('function fieldHTML(', '/* F189b: a press in the sheet') + line('const taskIsOpen=') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + line('const chatBtn=') + slice('const taskBtns=', '/* F186: a release') + line('const planCard=') + line('const queueCard=') + grab('function parkedCard(') + grab('function shelvedCard(')
   + line('const obActs=') + slice('/* F212: the search', '/* F87: the Concepts view') + grab('function setqClear(') + line("document.addEventListener('input',") + slice("/* F114, F204a", "document.addEventListener('visibilitychange'")
   + "function render() { const keep = keepFields(body), h = planHTML(); " + slice('const drew=', '\n').replace("!n&&S.view==='settings'?settingsDraw(body,h):", '') + " if (drew) keep() }"
   + "press = q => { " + slice("if(q('[data-planqclear]'))", "if(q('[data-setqclear]'))") + " };"
@@ -659,7 +664,7 @@ const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf
 const S = {f: {}, ob: [], taskOpen: {}, tasks: {}, sure: null, snap: JSON.parse(process.argv[3])}, I = {chev: '', x: 'x'}, MO = {}, T = 't', HKEY = '';
 const obCards = () => '', oldRunHTML = x => x, emptyCard = t => t, taskInView = () => {}, working_ = () => [], render = () => { root.innerHTML = planHTML() };
 const fetch = async () => ({json: async () => ({ok: true, text: 'whole text'})});
-eval(logic + ['const esc=', 'const tq=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const taskIsOpen=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow='].map(line).join('')
+eval(logic + ['const esc=', 'const tq=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const taskIsOpen=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard='].map(line).join('')
   + slice('const taskBtns=', '/* F186: a release') + line('const relDrop=') + slice('/* F426b: an open release', '/* F131: the auto') + ['function taskRow(', 'async function openTask(', 'function parkedCard(', 'function shelvedCard(', 'function newReleaseCard('].map(grab).join('')
   + slice('/* F212: the search', '/* F87: the Concepts view') + "const cutsOff=()=>'';Object.assign(globalThis, {render, openTask});");
 const opened = () => root.querySelectorAll('[data-task]').filter(e => e.getAttribute('aria-expanded') === 'true').map(e => e.dataset.list + ' ' + e.dataset.task);
@@ -667,17 +672,26 @@ const btns = () => root.querySelectorAll('[data-k]').filter(e => e.dataset.k.sta
 (async () => {
   const out = {}; render(); out.shut = [opened(), planHTML()];
   await openTask('F1', 'queue'); await openTask('B2', 'queue'); await openTask('D3', 'parked'); await openTask('F83', 'parked'); out.lists = [opened(), btns()];
-  await openTask('V5', 'release'); out.rel = [opened(), btns(), planHTML()];
+  await openTask('V5', 'queue'); out.rel = [opened(), btns(), planHTML()];
   await openTask('F7', 'wait:V5'); out.unseen = btns(); await openTask('B2', 'wait:V5'); S.sure = 'queue_drop:B2'; render(); out.waits = [opened(), root.querySelectorAll('[data-k]').map(e => e.dataset.k)];
-  await openTask('V6', 'release'); out.other = [opened(), root.text];
-  await openTask('V6', 'release'); out.closed = opened();
+  await openTask('V6', 'queue'); out.other = [opened(), root.text];
+  await openTask('V6', 'queue'); out.closed = opened();
+  // F195c: through the page's own click line, closest() from the pressed element up
+  const up = (e, p = root, way = []) => p === e ? way : p.childNodes ? p.childNodes.map(c => up(e, c, way.concat([p]))).find(Boolean) : null;
+  const tap = async el => { const way = [...up(el), el].reverse(), q = s => way.find(e => e.hasAttribute && e.hasAttribute(s.slice(1, -1))); let x;
+    await eval('(async()=>{' + line("  if(x=q('[data-task]'))").replace('openTask(', 'await openTask(') + '})()') };
+  const shut = () => { S.taskOpen = {}; render() }, head = id => root.querySelectorAll('[data-task]').find(e => e.dataset.task === id);
+  out.taps = {}; for (const id of ['F1', 'V5', 'V6']) { shut(); const h = head(id), words = h.all.find(e => e.nodeName === 'b'); await tap(words); out.taps[id] = [opened(), h.nodeName, h.getAttribute('tabindex'), h.hasAttribute('disabled'), h.all.filter(e => e !== h && ['button', 'a', 'input'].includes(e.nodeName)).length] }
+  shut(); out.off = [];
+  for (const cls of ['grip', 'rowmenu', 'ico']) for (const id of ['F1', 'V5']) { shut(); const b = new Node(1, 'button'); b.setAttribute('class', cls); const c = root.querySelectorAll('[data-k]').find(e => e.dataset.k === 'task:' + id); c.insertBefore(b, null); await tap(b); out.off.push(opened()) }
+  shut(); await tap(head('F1')); for (const b of root.querySelectorAll('[data-ctl]').concat(root.querySelectorAll('[data-about]'))) await tap(b); out.acts = opened();
   console.log(JSON.stringify(out));
 })();
 """
 
 
 def test_plan_lists_f426b(tmp: Path) -> None:
-    """F426b: the Plan view's one card of releases; an open release opens to the tasks it waits for, each opening too; one
+    """F426b, F195c: the Plan view's Queue has the releases at their place; an open release opens to the tasks it waits for, each opening too; one
     row of a list is open; Chat is the last button; the search sticks."""
     page = W.PAGE.read_text(encoding='utf-8')
     plan = page.split('const planField=', 1)[1].split('\n', 1)[0]
@@ -691,9 +705,9 @@ def test_plan_lists_f426b(tmp: Path) -> None:
     waits = [{'id': 'F1', 'title': 'Board'}, {'id': 'B2', 'title': 'Retry'}, {'id': 'F7', 'title': 'Unseen'}]
     r5, r6 = row('V5', waits, 'waits for 3: F1 Board, B2 Retry, F7 Unseen'), row('V6', [], 'next')
     acts = ['queue_priority', 'queue_take', 'queue_drop']
-    q = [{'id': 'F1', 'title': 'Board', 'state': 'ready', 'acts': acts}, {'id': 'B2', 'title': 'Retry', 'state': 'ready', 'acts': acts},
+    q = [{'id': 'F1', 'title': 'Board', 'state': 'ready', 'acts': acts},
+         {'id': 'V5', 'title': 'Release', 'state': 'after', 'acts': acts, 'release': r5}, {'id': 'B2', 'title': 'Retry', 'state': 'ready', 'acts': acts},
          {'id': 'F83', 'title': 'Later', 'state': 'parked', 'acts': ['queue_unpark', 'queue_drop']},
-         {'id': 'V5', 'title': 'Release', 'state': 'after', 'acts': acts, 'release': r5},
          {'id': 'V6', 'title': 'Release', 'state': 'running', 'acts': ['queue_take'], 'release': r6}]
     old = {'id': 'V4', 'title': 'Release 1.2.0', 'state': 'released', 'words': 'released 10:00', 'placeholder': True}
     snap = {'queue': q, 'shelved': [{'id': 'D3', 'title': 'Shelf', 'state': 'shelved', 'acts': ['shelved_back']}], 'releases': [r5, r6, old],
@@ -705,25 +719,30 @@ def test_plan_lists_f426b(tmp: Path) -> None:
         return
     o = json.loads(r.stdout)
     html = o['shut'][1]
-    releases = html.split('>Releases<', 1)[1].split('>Queue<', 1)[0]
-    eq((o['shut'][0], releases.count('class="card'), 'V4' in html), ([], 1, False), 'one card of releases, none landed, all shut')
-    check(releases.index('V5') < releases.index('V6') < releases.index('New release') and 'queue_drop' not in releases, 'V5, V6, then New release', releases)
+    top, queue = html.split('>Queue<', 1)
+    eq((o['shut'][0], top.count('class="card'), 'V4' in html), ([], 1, False), 'New release above the Queue, none landed, all shut')
+    at = [queue.index(f'data-task="{t}"') for t in ('F1', 'V5', 'B2', 'V6')]
+    eq((at, 'queue_drop' in queue.split('>Parked<')[0]), (sorted(at), False), 'the releases at their place')
     eq(o['lists'][0], ['queue B2', 'parked F83'], 'one row open in each list')
     for k, labels in o['lists'][1] + o['rel'][1]:
         eq((labels[-1], labels.count('Chat')), ('Chat', 1), f'{k}: Chat is last')
     drop = {c['key']: c['label'] for c in U.controls()}['queue_drop']
-    eq(o['rel'][0], ['release V5', 'queue B2', 'parked F83'], 'the release opens with them')
+    eq(o['rel'][0], ['queue V5', 'parked F83'], 'the release opens, in the Queue, where it is the one row')
     eq(dict(map(tuple, ((k, tuple(v)) for k, v in o['rel'][1])))['acts:V5'], (drop, 'Chat'), 'a release has Drop, then Chat')
     for t in ('F1', 'B2', 'F7'):
         check(f'data-task="{t}" data-list="wait:V5"' in o['rel'][2], f'it lists {t}')
     check('waits for 3 (not B9)' in o['rel'][2], 'its line is the count, as the list names them')
-    eq(o['waits'][0], ['release V5', 'wait:V5 B2', 'parked F83'], 'and its tasks open, one at a time; a task is open in one list')
+    eq(o['waits'][0], ['queue V5', 'wait:V5 B2', 'parked F83'], 'and its tasks open, one at a time; a task is open in one list')
     check(not any('F7' in k for k, _ in o['unseen']), 'one the snapshot does not have: its text alone', o['unseen'])
     check('sure' in o['waits'][1], 'its question is asked there')
     eq(len(o['waits'][1]), len(set(o['waits'][1])), 'no key is drawn twice')
-    eq(o['other'][0], ['release V6', 'parked F83'], 'another release shuts the first')
+    eq(o['other'][0], ['queue V6', 'parked F83'], 'another release shuts the first')
     check('whole text' in o['other'][1], 'one that waits for nothing opens to its text', o['other'][1])
     eq(o['closed'], ['parked F83'], 'a second press shuts it')
+    for t in ('F1', 'V5', 'V6'):  # F195c: a <button>: Enter and Space press it
+        eq(o['taps'][t], [['queue ' + t], 'button', None, False, 0], f'a tap on the words of {t} opens it; its one focusable control')
+    eq(o['off'], [[]] * 6, "a press on a grip, a menu button or an icon beside a task's or release's words opens nothing")
+    eq(o['acts'], ['queue F1'], "nor do the actions and Chat change what is open")
 
 
 if __name__ == '__main__':

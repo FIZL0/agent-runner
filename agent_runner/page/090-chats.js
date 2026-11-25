@@ -516,12 +516,12 @@ function relCard(){
 }
 /* F193: with releases off, only a New release sent before that, until it is settled */
 /* F186: New release: says which release is open already, and then asks before it queues another */
-function newReleaseCard(rows=''){
+function newReleaseCard(){
   if(!releasesOn(S.snap))return obCards(x=>obActs(x,'release'));
   const ws=working_(), said=S.snap.release_said||'';
   const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait').map(controlOf).filter(Boolean);
   const sure=acts.filter(c=>c.confirm&&S.sure===c.key).map(c=>ctlSure(c)).join('');
-  return obCards(x=>obActs(x,'release'))+card(`${rows}<div class="srow"><div class="row"><div class="grow"><b>New release</b>${sure?'':`<div class="small" data-k="relsaid" data-v="${esc(said)}">${esc(said?said+'.':ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')}</div>`}</div></div>${sure||`<div class="btns">${acts.map((c,i)=>`<button class="btn ${i===0?'acc':''}${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`}</div>`,'','data-k="release"')}
+  return obCards(x=>obActs(x,'release'))+card(`<div class="srow"><div class="row"><div class="grow"><b>New release</b>${sure?'':`<div class="small" data-k="relsaid" data-v="${esc(said)}">${esc(said?said+'.':ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')}</div>`}</div></div>${sure||`<div class="btns">${acts.map((c,i)=>`<button class="btn ${i===0?'acc':''}${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`}</div>`,'','data-k="release"')}
 /* F124: the Status view: one scroll in the TUI's order: the run (its slots and controls), usage, landed lately, the
    release, then the run log. C50: no Needs you here; Home has it */
 const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};

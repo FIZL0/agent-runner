@@ -195,8 +195,8 @@ RELEASE_SHOWN = 5  # how many of the tasks a release waits for its line names; t
 
 def release_rows(ls: list[str], st: dict | None = None, landed: int | None = None, now: float | None = None) -> list[dict]:
     """F185: the releases, one row each, the same words on the run page, the TUI, `status` and `plan`: each
-    release task (kind V) open in TODO.md's lines `ls` (`release_tasks`), one releasing now first; with none
-    open and `[run] auto_release` on, a placeholder 'Next release · auto at 10 landed: 6/10 · when the run goes
+    release task (kind V) open in TODO.md's lines `ls` (`release_tasks`), one releasing now first; while
+    `[run] auto_release` counts (none open, or F195a: they only wait), a placeholder 'Next release · auto at 10 landed: 6/10 · when the run goes
     idle' (F131; `landed`: tasks landed since the last release, counted when None); last, the newest release
     that landed (`last_release`). `text` is a whole row, `note` what it does not wait on; `placeholder` True for a
     row that is no open task. [] with `[run] releases` off (F193)."""
@@ -204,8 +204,8 @@ def release_rows(ls: list[str], st: dict | None = None, landed: int | None = Non
         return []
     st = st or {}
     rows = release_tasks(ls, st)
-    if not rows and (ph := auto_release_row(ls, landed)):
-        rows = [ph]
+    if ph := auto_release_row(ls, landed, rows):
+        rows.append(ph)
     done = last_release(now)
     return rows + ([done] if done and done['id'] not in {r['id'] for r in rows} else [])
 
@@ -295,11 +295,26 @@ def _no_tag(rest: str) -> str:
     return re.sub(r'^\s*(?:\(follow-up, \w+\)\s*)?\(alone\)\s*', '', rest)
 
 
-def auto_release_row(ls: list[str], landed: int | None = None) -> dict | None:
-    """F131: the placeholder row while `[run] auto_release` counts and no release is queued, else None."""
+def _counts_on(ls: list[str], rows: list[dict]) -> bool:
+    """F195c: do all the open releases (`release_tasks`' `rows`) only wait for open tasks, so that a count goes on beside
+    them (as `autorelease.waiting_releases` says)? A shelved, Parked, blocked or taken one stops it."""
+    from agent_runner.sched import taken
+    boxes = {tid: box for _, box, tid, _, _ in P.iter_tasks(ls)}
+    waits = {r['id'] for r in rows if r['state'] == 'waits' and boxes[r['id']] == ' '}
+    return not {t for t in P.open_ids(ls) if P.release(t)} - waits and not (waits and waits & set(taken()))
+
+
+def auto_release_row(ls: list[str], landed: int | None = None, rows: list[dict] | None = None) -> dict | None:
+    """F131: the placeholder row while `[run] auto_release` counts, else None. F195c: beside open releases (`rows`,
+    `release_tasks`') that only wait it is the count alone (idle queues none then). `left`: how many more must land
+    (None: not counted)."""
     from agent_runner.autorelease import auto_release_of
     every, idle = auto_release_of(S.C.run.get('auto_release', False) if S.C else False)
-    if not (every or idle) or P.open_release(ls):  # a shelved or Parked release: none is queued by itself
+    if P.open_release(ls):
+        idle = False
+        if not _counts_on(ls, rows or []):
+            return None
+    if not (every or idle):
         return None
     if every and landed is None:
         landed = landed_count()
@@ -307,7 +322,7 @@ def auto_release_row(ls: list[str], landed: int | None = None) -> dict | None:
     words = ' · '.join(([f'auto at {every} landed{count}'] if every else []) +
                        (['when the run goes idle'] if idle else []))
     return {'id': '', 'title': 'Next release', 'state': 'auto', 'words': words, 'all': words, 'placeholder': True,
-            'waits': [], 'text': f'Next release · {words}', 'note': ''}
+            'left': max(every - landed, 0) if every and landed is not None else None, 'before': '', 'waits': [], 'text': f'Next release · {words}', 'note': ''}
 
 
 _LAST_RELEASE: list = [None, None]  # `last_release`: the event log's mark when last read, and (stamp, id, title)
@@ -364,11 +379,15 @@ def landed_count() -> int | None:
 
 
 def pin_releases(queue: list[dict], rows: list[dict]) -> list[dict]:
-    """The queue with the release tasks `rows` stand for moved to its end, each carrying `release`: its row. The
-    plan views show them in the Releases group above the queue (F185). A placeholder row is not a task: not added."""
+    """The queue with each release task `rows` stand for carrying `release`: its row, at its place (F195c). The auto
+    release's row, which is no task, gets `before`: the id of the task it stands before, after as many that may land as
+    it still needs ('' for the queue's end)."""
     by = {r['id']: r for r in rows if not r.get('placeholder')}
-    at = {q['id']: q for q in queue}
-    return [q for q in queue if q['id'] not in by] + [dict(at[t], release=r) for t, r in by.items() if t in at]
+    for r in rows:
+        if r.get('state') == 'auto' and r.get('left') is not None:
+            tasks = [q['id'] for q in queue if q['id'] not in by and q['state'] not in ('parked', 'blocked')]
+            r['before'] = tasks[r['left']] if r['left'] < len(tasks) else ''
+    return [dict(q, release=by[q['id']]) if q['id'] in by else q for q in queue]
 
 
 def _need_devices(text: str) -> list[dict]:

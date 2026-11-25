@@ -64,7 +64,7 @@ def test_snapshot(tmp: Path) -> None:
     eq((s2['task'], s2['minutes'], s2['state'], s2['link']), ('B2', 1, 'merging', ''), 'slot 2 merging, no link')
 
     q = {t['id']: t for t in snap['queue']}
-    eq(list(q), ['F1', 'B2', 'D3', 'F4', 'T7', 'R8', 'V6'], 'every open task, in plan order, the release last (F131)')
+    eq(list(q), ['F1', 'B2', 'D3', 'F4', 'V6', 'T7', 'R8'], 'every open task, in plan order, the release at its place (F195c)')
     eq(q['B2']['after'], ['F1'], 'after')
     eq(q['B2']['files'], ['b.py'], 'files')
     check(q['F1']['kind'].startswith('feature'), 'kind from the id letter', q['F1']['kind'])
