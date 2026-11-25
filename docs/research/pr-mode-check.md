@@ -8,7 +8,9 @@ with `[git] pr = true` and `[plan] repo` set.
 Every case of the trial reached its end on a real GitHub repo, but not all at the first try: an answer given with
 `plan unblock` did not reach the session (B820), so one task asked again and one opened the same pull request again.
 An answer given with `plan confirm` works. Four bugs are filed. B820 has landed, and the lost answer is fixed and
-checked again on 2026-11-25. B821 and B823 have landed too (not rechecked live). B826 is still open. PR mode stays off everywhere for now, the person's answer on 2026-11-25.
+checked again on 2026-11-25. B821 and B823 have landed since; T26 did not recheck them live after their fix. Only B826
+(stale pull request text) is still open. PR mode stays off everywhere for now, the person's answer on
+2026-11-25.
 
 ## Earlier blocker
 
@@ -60,8 +62,8 @@ chose a public scratch repo, and the run below used it. Task D10 (open) is to sa
 - **B820** (answer lost, fixed): an answer given with `plan unblock` is lost in a PR round. The log says "It is open
   again; no answer was noted". F3's session blocked again on the same question. F5's #7 was opened identical to the
   closed #1. `plan confirm` works. B820 has landed and was rechecked; see Recheck after B820.
-- **B821** (landed, not rechecked live): `run plan` with no arguments, under `[plan] repo`, ends in an IndexError traceback.
-- **B823** (low, landed, not rechecked live): the log says "its round on pull request #0 is over". A new PR keeps the old one's time in Needs you.
+- **B821** (fixed, landed 2026-11-25, not rechecked live): `run plan` with no arguments, under `[plan] repo`, ends in an IndexError traceback.
+- **B823** (low, fixed, landed 2026-11-25, not rechecked live): the log says "its round on pull request #0 is over". A new PR keeps the old one's time in Needs you.
   During an outage the same log line repeats each minute, as gh's message holds a changing request id.
 - **B826** (open): #8's body still said "six" when its file held "SIX". The session is not told to rewrite its pitch in a round;
   F4's did anyway.
@@ -83,7 +85,7 @@ file does not end with "end".
 - #3's new body said SIX in what and how to try it, so the stale body of B826 did not show in this run. B826 is
   still open.
 - B821 (IndexError of `run plan` with no arguments) and B823 ("pull request #0" in the log) were seen again. Both
-  were still open then; both have landed since.
+  were open at that run and have landed since.
 - Needs you was empty at the end.
 
 ## Seen, not filed
@@ -109,7 +111,7 @@ A repo needs:
 - a ruleset on main with no bypass;
 - to be public, unless the account has a paid plan.
 
-On 2026-11-25 the person was asked which repo should turn on PR mode. The first answer was "No repo yet, wait for the lost-answer fix". B820 landed and was rechecked, and the person was asked again. The second answer was "Leave it off everywhere for now", so no repo's config is changed.
+On 2026-11-25 the person was asked which repo should turn on PR mode, and answered "No repo yet, wait for the lost-answer fix". B820 landed and was rechecked; the person was asked again on 2026-11-25, and answered "Leave it off everywhere for now". So PR mode stays off in every repo; no config was changed.
 
 No runner.toml in `~/repos` sets `[plan] repo` yet. GitHub lists no rules on main for agent-runner, openmx, opentennis,
 partyboard and iFizBox; classic protection was not looked at, nor were the other repos. Clay is private and the logins

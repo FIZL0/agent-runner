@@ -80,7 +80,7 @@ def test_trusted_networks_f136(tmp: Path) -> None:
             eq(asked(f'{base}/t//s1/?x=1', ts, srv), 200, 'and opens on a trusted network')
         eq(got, [f'/t/{token}/s1/?x=1'], "at the ttyd's own path")
         eq(W.shown_links([], [f'http://100.101.1.1:8770/?t={token}', f'http://10.0.0.5:8770/?t={token}'], https=lambda p, t: []),
-           ['http://100.101.1.1:8770/', f'http://10.0.0.5:8770/?t={token}'], 'status drops the key of a trusted link only')
+           ['http://100.101.1.1:8770/', f'http://10.0.0.5:8770/?t={token}', f'http://localhost:8770/?t={token}'], 'status drops the key of a trusted link only')
     finally:
         S.C.raw['ui']['trusted_networks'] = []
         srv.stop()
@@ -106,7 +106,7 @@ def test_https_link_b130(tmp: Path) -> None:
     W.url_file().write_text('http://box:8770/?t=TK\nhttp://10.0.0.5:8770/?t=TK\n', encoding='utf-8')
     with mock.patch.object(S, 'run_up', return_value=True), \
             mock.patch.object(W, 'tailscale_https_urls', lambda port, t: W.serve_https_urls(serve, port, t)):
-        eq(W.page_line(), 'run page: https://box.tail.ts.net:8771/?t=TK (or http://box:8770/?t=TK)',
+        eq(W.page_line(), 'run page: https://box.tail.ts.net:8771/?t=TK (or http://box:8770/?t=TK or http://localhost:8770/?t=TK)',
            'status prints the https link first')
     # B129: the run log's address line at the start names the https link first too; web.url keeps the http ones
     with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: ''), \
@@ -222,7 +222,7 @@ def test_tailnet_https_f96(tmp: Path) -> None:
         with mock.patch.object(W, 'site_urls', lambda: []):
             check(W.page_line().startswith(f'run page: {own} (or http://'), 'and so has status', W.page_line())
         with mock.patch.object(W, 'site_urls', lambda: ['http://box:1/p/a/?t=H']):
-            eq(W.page_line(), f'run page: {own} (or http://box:1/p/a/?t=H)', "ahead of Runner Home's http one")
+            eq(W.page_line(), f'run page: {own} (or http://box:1/p/a/?t=H or http://localhost:1/p/a/?t=H)', "ahead of Runner Home's http one")
         check(W.url_file().read_text(encoding='utf-8').startswith('http://'), 'web.url stays http')
         srv.stop()
         eq((changes()[1:], web_rules()), ([off], other['Web']), 'the stop turns it off, and no other rule')

@@ -771,6 +771,8 @@ class Config:
             self.raw['plan']['dir'] = str(self.home / 'plan')
         self.run = self.raw['run']
         self.run.update(FIXED)
+        from agent_runner import working_branch  # F447b: a saved one waits for the run's next start
+        self.raw['git']['master_branch'] = working_branch.in_force(root, self.run['notes'], self.raw['git']['master_branch'])
         if isinstance(self.run['remote_slots'], bool):
             self.warnings.append('[run] remote_slots is now "open" (a slot is listed once you open it) or "always"')
         self.run['remote_slots'] = slots_in_apps(self.run['remote_slots'], old_sessions(sessions))
@@ -951,9 +953,9 @@ class Config:
     def master_branch(self) -> str | None:
         value = self.raw['git']['master_branch']
         if not isinstance(value, str):
-            raise SystemExit('[git] master_branch must be a branch name string (or empty for automatic discovery)')
+            raise SystemExit('the working branch ([git] master_branch) must be a branch name string (or empty for automatic discovery)')
         if value != value.strip():
-            raise SystemExit('[git] master_branch must not have leading or trailing whitespace')
+            raise SystemExit('the working branch ([git] master_branch) must not have leading or trailing whitespace')
         return value or None
 
     @property
@@ -1345,6 +1347,12 @@ def setting_check(root: Path, table: str, key: str, v, device: bool = False) -> 
         snap = {(t['table'], k['key']): k['value'] for t in settings_snapshot(root)['tables'] for k in t['keys']}
         snap[table, key] = v
         return both_problem({'git': {'pr': snap['git', 'pr']}, 'run': {'approve': snap['run', 'approve']}})
+    if (table, key) == ('git', 'master_branch'):  # F447b
+        from agent_runner import working_branch
+        try:
+            return working_branch.problem(main_checkout(root), v)
+        except SystemExit as e:  # another setting the files hold is refused
+            return str(e).removeprefix('agent-runner: ')
     if device and (table, key) == ('run', 'agent'):  # B764a
         return agent_missing(root, v)
     if table != 'models':

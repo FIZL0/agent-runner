@@ -144,6 +144,23 @@ def own_links(urls: list[str]) -> list[str]:
     return [u for u in urls if urlsplit(u).hostname != LOCAL]
 
 
+def local_link(urls: list[str]) -> str:
+    """B815b: the page by localhost, for this machine's own browser (a secure context, so Talk's mic works there): the
+    first http address of `urls` (a run's own_links, or Runner Home's) with that host, its key kept (a loopback client is
+    never trusted). '' for none: a page only Home opens has no own_links."""
+    for x in sorted(urls, key=lambda x: urlsplit(x).hostname != 'localhost'):  # one listed already: it has its key
+        u = urlsplit(x)
+        if u.scheme == 'http' and u.port and u.hostname != LOCAL:
+            return u._replace(netloc=f'localhost:{u.port}').geturl()
+    return ''
+
+
+def with_local(shown: list[str], urls: list[str]) -> list[str]:
+    """B815b: the addresses `shown`, then `urls`' localhost one: the ones ahead of it are for other devices too."""
+    here = local_link(urls)
+    return shown + ([here] if here and here not in shown else [])
+
+
 def closed_line() -> str:
     """F165: why nothing opens this run's page, and what opens it (home.why_closed)."""
     from agent_runner.home import why_closed
@@ -157,14 +174,14 @@ def run_trusted() -> list[str]:
 
 def shown_links(site: list[str], own: list[str], https=None) -> list[str]:
     """F136: the page's addresses as they are printed: Runner Home's (`site`) when it routes the run, else the run's
-    own, https first, each without its key where the page's network is trusted (trust.shown)."""
+    own, https first, each without its key where the page's network is trusted (trust.shown); B815b: localhost last."""
     if site:
         from agent_runner.home import load_registry
         got = trust.shown(https_first(site, https), load_registry()['trusted_networks'])
         if own and not any(u.startswith('https://') for u in got):  # F96: the run's own https address, ahead of http
             got = [u for u in shown_links([], own, https) if u.startswith('https://')] + got
-        return got
-    return trust.shown(https_first(own, https), run_trusted())
+        return with_local(got, site)
+    return with_local(trust.shown(https_first(own, https), run_trusted()), own)
 
 
 def https_first(urls: list[str], https=None) -> list[str]:
@@ -184,13 +201,14 @@ def page_line(site=None) -> str:
     """`run page: URL` while a run serves the page (what `status` prints), else ''. B146: the device site's
     /p/KEY/ address when one routes this project (site_urls), else the run's own; F165: with neither, why; B130: a Tailscale Serve https
     address for that port comes first (Safari's mic needs https); <notes>/web.url keeps the run's own http ones,
-    which Home reads its port from."""
+    which Home reads its port from. B815b: the localhost one is always the last."""
     try:
         if S.run_up() and (us := url_file().read_text(encoding='utf-8').split()):
             us = shown_links((site or site_urls)(), own_links(us))
             if not us:
                 return f'run page: {closed_line()}'
-            return f'run page: {us[0]}' + (f' (or {us[1]})' if len(us) > 1 else '')
+            more = us[1:2] + [u for u in us[2:] if urlsplit(u).hostname == 'localhost']
+            return f'run page: {us[0]}' + (f' (or {" or ".join(more)})' if more else '')
     except (OSError, ValueError):
         pass
     return ''

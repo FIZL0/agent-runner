@@ -387,7 +387,8 @@ function feedPlace(){
   if(!FD.slim||!FD.bar)FD.bar=top+say;
   const dock=document.querySelector('.dockwrap').offsetHeight, f=feedScreen(true);
   const cell=f?f.cell:17, pad=f?f.el.getBoundingClientRect().top:12;
-  const row=slimRow(), full=feedRoom(main), high=FD.whole?Math.max(60,full-FD.bar-dockRest(dock)):Math.round(full-row+FOOT_ROWS*cell);
+  const card=document.querySelector('#dock .qcard');
+  const row=slimRow(), full=feedRoom(main), high=FD.whole?feedWholeHigh(full-FD.bar-dockRest(dock),pad,cell,card?card.offsetHeight:0):Math.round(full-row+FOOT_ROWS*cell);
   const size=[full,cell].join(), above=main.clientHeight-dock+dockRest(dock), hold=(FD.jump||FD.off>0)&&FD.held===size?FD.t+above-FD.above:null;  // scrolled up: where it was over the box; a chip or a file that comes moves nothing
   const o={main:main.clientHeight,bar:FD.bar,dock,row,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,top:FD.top,hold};
   let at=feedSpot(o);if(!FD.jump&&hold!=null&&!at.off)at=feedSpot({...o,off:0,hold:null});

@@ -325,6 +325,8 @@ While no run is up, the run page is served by a **page-only process**: `agent-ru
 
 The browser gives the microphone (Talk) only to https or localhost, so a run on every interface with Tailscale connected also gets an https address (the Tailnet address): it runs `tailscale serve --bg --https=<web_port+1> http://127.0.0.1:<web_port>` and prints `https://<host>.<tailnet>.ts.net:8771/?t=…` first in `status` and the run log. `[run] web_https = false` makes none. The rule is recorded in `serve/<web_port>.json` in Home's config folder; the run turns it off at its stop, and the next start of that project, or of a run on that port, takes over or turns off a rule a crashed run left; rules the runner did not make are left alone. Behind Home the run makes none (Home has its own https). Without tailscale, when not connected, when HTTPS certificates are not enabled on the tailnet, when `web_port+1` is taken, or when serve is refused (e.g. it needs `sudo tailscale set --operator=$USER`), the run log says `run page: http only, <why>`. So `web_port`'s next port is used by default; another project's `web_port` should not be that port. A Tailnet address is offered only while `tailscale status --json` says BackendState Running; otherwise the plain http links are given, with no error, and the saved rule is left alone.
 
+The run's printed addresses (the run log and `agent-runner status`) end with a localhost link, `http://localhost:<port>/?t=…`, for this machine's own browser, whenever the run page listens on every interface. It keeps its token even where a network is trusted, since loopback is never trusted, and localhost is a secure context, so Talk's mic works there without https. Behind Runner Home it is Home's link, `http://localhost:<Home's port>/p/<project>/?t=…`, and the 127.0.0.1 port only Home opens is never linked. Other addresses stay ahead of it, so with Tailscale connected the https one is still first; the launcher's `w` and the page-only process open the localhost link here, `c` still copies the ordinary link for other devices, and with no browser here the ordinary link is named instead.
+
 - **Talk.** The first view in the sidebar, for running the run hands-free: tap the mic, speak, and the
   reply is read aloud (the browser's own speech recognition; the reading is run speech when an engine is installed, else the browser's own). The speaker button left of the
   mic turns reading aloud on and off; while a reply is read it is the stop (stop icon, "Stop speaking"), and a tap ends that
@@ -574,7 +576,7 @@ answered in that project's control session; a project that needs another's state
 The card and popup of a Needs you item say what the ask is in short. Optionally, `<notes>/asks/ID.json` gives them
 their own words, each field standing in for what the ask's text gives: `summary` (the card's line), `where`, `steps`
 (What to do; each a words string, or `{text, link, cmd, on}`: `link` a web address, `cmd` a command for the machine
-`on` names, this one when none is named), `expect` (What you should see), `shots` (pictures, each with a `caption`) and
+`on` names, this one when none is named), `expect` (What you should see), `shots` (pictures or videos, each with a `caption`) and
 `inputs` (below). A BLOCKED item's steps, links, commands and inputs all go here, and a secret in `<notes>/asks/ID.env`;
 an old script left in `<notes>/wizards/ID.sh` shows as text steps in the detail and is never run:
 
@@ -589,9 +591,9 @@ A DECIDE is a question, not steps: its heading is the question (the last sentenc
 
 A missing, broken or over 64 KB file is ignored. Without one, the ask is split by rule (at sentences, numbered steps,
 `;`, `then` and colons), with nothing lost and no AI. A `file` is relative to `<notes>/asks`, or `uploads/NAME`, or an
-absolute path inside one of those two folders. A picture is png, jpg, gif or webp, served by a token-checked
-`GET /shot/uploads/…` or `/shot/asks/…` and never from anywhere else; a picture under `<notes>/uploads` that the task's
-line names shows too. The TUI's Needs you pane shows the same steps, expected list and picture paths.
+absolute path inside one of those two folders. A picture is png, jpg, gif or webp, and a video is mp4 or webm (same 50 MB limit, content checked against its suffix), served by a token-checked
+`GET /shot/uploads/…` or `/shot/asks/…` and never from anywhere else, answering Range requests (206, 416; several ranges or a malformed one get the whole file), which Safari needs; a picture under `<notes>/uploads` that the task's
+line names shows too, but only a picture. The TUI's Needs you pane shows the same steps, expected list, picture paths and, under Videos, video paths with their captions.
 
 A control session's filed question also gets `text` in its ask file (the lines kept, cut at 12000 characters), `session` and `project`, written by the run for that question and cleared with the file. `need_detail.detail` returns them, `''` when absent. Its local pictures are copied to `<notes>/asks/ID/explained-N.*` and added to `shots`, allowed types only (png, jpg, gif, webp).
 

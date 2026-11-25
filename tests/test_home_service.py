@@ -1132,7 +1132,8 @@ def test_device_site_link(tmp: Path) -> None:
             H.save_registry({**H.load_registry(), 'port': hp})
             site = f'http://{socket.gethostname()}:{hp}/p/proj/?t={H.home_token()}'
             eq(H.site_links(root), [site], 'Home serves and lists the project: its /p/KEY/ link')
-            eq(W.page_line(), f'run page: {site}', 'status gives the device site link')
+            here = site.replace(socket.gethostname(), 'localhost', 1)  # B815b
+            eq(W.page_line(), f'run page: {site} (or {here})', 'status gives the device site link')
             eq(M.run_facts(root, {'up': True}, nots)['link'], site, 'and so does run_facts (the picker)')
             ts = lambda p, t: [f'https://box.tail.ts.net/?t={t}'] if p == hp else []  # noqa: E731
             eq(M.run_facts(root, {'up': True}, ts)['link'], f'https://box.tail.ts.net/p/proj/?t={H.home_token()}',
@@ -1258,7 +1259,8 @@ def test_one_address(tmp: Path) -> None:
         srv.stop()
         srv = start(web_port=port)
         eq(srv.server_address[0], '127.0.0.1', 'Home installed and serving: 127.0.0.1 from the start')
-        eq(log, [f'run page: http://{socket.gethostname()}:{hp}/p/proj/?t={H.home_token()}' +
+        at = f':{hp}/p/proj/?t={H.home_token()}'
+        eq(log, [f'run page: http://{socket.gethostname()}{at} or http://localhost{at}' +
                  ('' if U.find_ttyd() else ' (ttyd is not installed, so a chat cannot show its session)')],
            "one line: Home's link")
         srv.stop()
@@ -1337,8 +1339,9 @@ def test_trusted_networks(tmp: Path) -> None:
         H.install('linux', call=lambda c: (0, ''), out=said.append, check=lambda p: True, https=fake_tailscale(SERVE_STATUS))
         check('QR[https://box.tail1.ts.net:8771/]' in said, 'the QR code', said)
         site = [f'https://box.tail1.ts.net:8771/p/a/?t={token}', f'http://192.168.1.5:8770/p/a/?t={token}']
-        eq(W.shown_links(site, [], https=lambda p, t: []), ['https://box.tail1.ts.net:8771/p/a/', site[1]],
-           "status names a run by Home's trusted networks when Home routes it")
+        eq(W.shown_links(site, [], https=lambda p, t: []), ['https://box.tail1.ts.net:8771/p/a/', site[1],
+                                                               f'http://localhost:8770/p/a/?t={token}'],
+           "B815b: the http one by localhost after them; status names a run by Home's trusted networks when Home routes it")
 
 
 if __name__ == '__main__':

@@ -74,8 +74,11 @@ def missing_remote(cwd: Path) -> str | None:
 
 def shared_name(cwd: Path, remote: str, default: str | None = 'main') -> str | None:
     """The shared branch: configured `[git] master_branch`, remote HEAD, main/master/trunk, then `default`."""
-    if branch := cfg(cwd).master_branch:
-        return branch
+    return cfg(cwd).master_branch or found_name(cwd, remote, default)
+
+
+def found_name(cwd: Path, remote: str, default: str | None = 'main') -> str | None:
+    """F447b: the shared branch as found by itself, with no working branch set."""
     g = _git(cwd)
     r = g('symbolic-ref', '--short', f'refs/remotes/{remote}/HEAD')
     if not r.returncode and (head := r.stdout.strip()):
