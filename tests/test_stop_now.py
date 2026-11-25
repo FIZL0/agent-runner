@@ -19,7 +19,7 @@ from unittest import mock
 
 from _check import check, eq, git, report, RUN
 
-from agent_runner import freeze, plat, state as S, stop_now  # noqa: E402
+from agent_runner import freeze, loop, plat, state as S, stop_now  # noqa: E402
 from agent_runner import runner as R  # noqa: E402
 
 SOON = 25.0  # s a stop that takes seconds may take on a busy machine (a gate or hook here sleeps for minutes)
@@ -363,6 +363,26 @@ def test_page(tmp: Path) -> None:
     eq(said, ['stopping the run now'], 'said')
 
 
+def test_state_merging(tmp: Path) -> None:
+    print('STATE: the helper that builds a merge ahead is no merging task')
+    root = tmp / 'proj'
+    root.mkdir()
+    git(root, 'init', '-q', '-b', 'main')
+    R.init(root)
+    go = threading.Event()
+    ts = [threading.Thread(target=go.wait, args=(60,), name=n, daemon=True) for n in ('merge:ahead', 'merge:T0')]
+    for t in ts:
+        t.start()
+    try:
+        loop.write_state({}, ['T9'])
+        got = json.loads(S.C.notes('STATE').read_text(encoding='utf-8'))['merging']  # test_freeze's threads are there too
+        check({'T0', 'T9'} <= set(got) and 'ahead' not in got, 'the tasks, not the helper', got)
+    finally:
+        go.set()
+        for t in ts:
+            t.join(10)
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
@@ -373,4 +393,4 @@ def in_tmp(f):
 
 if __name__ == '__main__':
     runs = [] if plat.WINDOWS else [test_long_gate, test_key, test_hung, test_busy_loop, test_landing, test_gentle]
-    sys.exit(report([test_freeze, *map(in_tmp, [test_half_merge, test_page, *runs])]))
+    sys.exit(report([test_freeze, *map(in_tmp, [test_half_merge, test_page, test_state_merging, *runs])]))
