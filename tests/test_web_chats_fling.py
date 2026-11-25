@@ -24,7 +24,7 @@ const performance = {now: () => clock}, matchMedia = () => ({matches: false});
 Date.now = () => now;
 const setTimeout = () => 0, clearTimeout = () => {};
 let SW = null, steps = 0, FEED_LINES = 1, opened = 0;
-const feedScreen = () => ({cell: 17}), feedScroll = px => { steps++; return px }, feedSteps = () => [1, 0], feedWheel = () => {}, feedClick = () => {}, feedText = () => {}, feedTake = () => {};
+const feedScreen = () => ({cell: 17}), feedScroll = px => { steps++; return px }, feedSteps = () => [1, 0], feedWheel = () => {}, feedClick = () => {}, feedText = () => {}, feedTake = () => {}, pastStop = () => {};
 BLOCK
 const layer = $('feedtouch'), slim = $('slimbox');
 const run = n => { for (let i = 0; i < n; i++) { clock += 16; const f = [...frames.values()]; frames.clear(); for (const g of f) g(clock) } };

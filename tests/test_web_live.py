@@ -497,6 +497,7 @@ const document = {get hidden() { return hidden }, activeElement: null, documentE
 const S = {view: 'talk', thread: 'c6', pin: true, sheet: ''}, TOUCH = () => touch, seeRoom = () => {}, seeBar = () => {}, toEnd = () => {};
 const MO = {fly: new Map()}, shiftOf = () => ({m42: 0}), FD = {frame: {}, shown: true, foot: {top: 40}, whole: false, off: 0, jump: false, held: '', t: 0, above: 0, last: 0, full: 0, wide: 0, doc: 0, short: 0}, CELL = 17;
 const feedScreen = () => ({cell: CELL, el: {getBoundingClientRect: () => ({top: 12})}, t: {buffer: {active: {type: 'alternate'}}}});
+global.pastPlace = global.pastGlide = () => {}; global.pastUp = () => false;  // F191b: tests/test_web_history.py
 eval(line('const SLIM_H=') + line('const KB_PAD=') + line('const FOOT_ROWS=') + slice('function feedSpot(', '/* B192') + slice('function moAnim(', 'const shiftOf=') + slice('function growGlide(', '/* B119') + line('const calm=') + line('const chatShown=')
   + slice('function feedRoom(', '/* the bars and the box away') + slice('const VV=', 'function grow(') + `
 kbNow = () => kbH;
@@ -1289,6 +1290,7 @@ const S = {sheet: ''}, FD = {foot: {text: '', bash: false}, whole: false, slim: 
 const ta = {value: 'ab', selectionStart: 1, selectionEnd: 1, focus() { focused++ }, dispatchEvent() { inputs++ },
   setRangeText(t, a, b) { this.value = this.value.slice(0, a) + t + this.value.slice(b); this.selectionStart = this.selectionEnd = a + t.length }};
 const document = {querySelector: () => ta}, feedSlim = on => { FD.slim = on }, sessType = x => { sent.push(x); return true };
+const pastPress = () => false;  // F191b
 const key = (key, o) => feedTyped(Object.assign({key}, o)), SE = ['Enter', {shiftKey: true}], out = {};
 out.many = [key('x'), key(...SE), key(...SE), key('/'), feedTyped({}, 'p1\np2'), ta.value, sent.length, inputs, focused, FD.slim];
 out.own = [key('Enter'), key('Escape'), key('c', {ctrlKey: true}), key('v', {metaKey: true}), key('Tab', {shiftKey: true}),
