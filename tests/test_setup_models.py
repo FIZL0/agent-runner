@@ -98,8 +98,12 @@ def test_claude_only():
         eq((c.models['kinds']['F'], c.models['kinds']['D']), ('opus', 'haiku'), 'the kinds too')
     with tempfile.TemporaryDirectory() as t:
         root = repo(t, local='[models.kinds]\nF = "copilot:m"\n')
+        setup(root, ['claude'], claude=CLAUDE, logged=True)
+        eq(CF.Config(root).models['kinds']['F'], 'opus', 'F448a: kinds in a section of their own too')
+    with tempfile.TemporaryDirectory() as t:
+        root = repo(t, local='[models]\nkinds.F = "copilot:m"\n')
         out, _, _ = setup(root, ['claude'], claude=CLAUDE, logged=True)
-        has(out, 'not written.*kinds.*by hand', 'kinds in a section of their own are left to the person, and said')
+        has(out, 'not written.*kinds.*by hand', 'kinds as dotted keys are left to the person, and said')
         check('code' not in (root / CF.LOCAL).read_text(encoding='utf-8'), 'and nothing is half done')
 
 
