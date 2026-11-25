@@ -108,6 +108,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   (`084-walk.logic.js`) and the terminal UI share: each step has the page's words and the keys' words, and each view shows
   only its own. The TUI draws it as a 'Walkthrough' box above the bottom line, keys as buttons, with ◂ after the pointed
   panel's name; on a small screen only the focused panel shows with it.
+- **Home** (`homeHTML()`, `.talkbig`, `homeChips()`, `.sumrow`, `homeSums()`): the run page's Home, about the person: Talk as one full-width `.acc` (`.talkbig`), the message box with no dictation button, the shortcut chips (`homeChips()`), Needs you, then one card of `.sumrow` rows that open Status and Plan (`homeSums()`).
 - **Badge** (`.n`): a count of what waits on the person, never of anything else. **Dot** (`.bdot`): something
   waits, no count. **Pill** (`.pill`): a state in a word or two. Same words on every page: Running, Paused,
   Stopping, Caps forced, Not up.
