@@ -81,12 +81,12 @@ new Function('known', 'env', 'with (known) {' + logic + line('const DRAFT_KEY=')
   + grab('function about(') + grab('async function upload(') + grab('function homeHTML(') + grab('function conceptsHTML(') + grab('function conceptCard(') + line('const actBtns=') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
 const type = t => { ta.value = t; env.store.set('ar-draft:' + env.boxKey(), t) };
 const S = env.S, out = {press: []};
+  env.working_ = () => [];
 (async () => {
   for (const [view, a] of [['plan', 'plan:F1'], ['concepts', 'concept:0'], ['settings', 'setting:ui.x'], ['home', 'new'], ['home', 'newconcept'], ['concepts', 'newconcept']]) {
     env.goView(view); log.focus = 0; env.about(a);
     out.press.push([S.view, S.thread, env.threadTitle(S.thread), log.focus]);
   }
-  env.working_ = () => [];
   out.bad = []; for (const a of ['plan:F9', 'concept:7', 'setting:no']) { env.goView('plan'); env.about(a); out.bad.push([S.thread, S.ctx]) }
   // unsent: a draft, an empty Enter, Back by Esc, and press again
   env.goView('plan'); env.about('plan:F1'); out.body = env.feedHTML(S.thread); out.box = env.box('x');
