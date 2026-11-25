@@ -210,7 +210,9 @@ def write_state(running: dict, held=()) -> None:
     for k in [k for k in RUNNING_SINCE if work.get(k[0]) != k[1]]:
         RUNNING_SINCE.pop(k)
     since = {n: RUNNING_SINCE.setdefault((n, tid), now) for n, tid in work.items()}
-    merging = sorted({t.name[6:] for t in threading.enumerate() if t.name.startswith('merge:') and t.is_alive()} | set(held))
+    # B834: merge:ahead is the helper that builds a merge ahead, no task; its name has the prefix for `freeze._merges`
+    merging = sorted({t.name[6:] for t in threading.enumerate()
+                      if t.name.startswith('merge:') and t.name != 'merge:ahead' and t.is_alive()} | set(held))
     # what the cap last read (`capped`, the start line); never a fetch of its own from here
     got = _account[1] if isinstance(_account[1], dict) and claude_use.account(C) else {}
     use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
