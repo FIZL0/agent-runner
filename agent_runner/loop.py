@@ -1330,7 +1330,7 @@ class Run:
 
     def resume_queued(self, n: int) -> None:
         """Resume the session queued for this slot (cut off, or ended on a usage limit) once the API answers."""
-        if agent_held() or api_down(self.stall_said):
+        if agent_held() or api_down(self.stall_said) or claude_use.resume_held(self, n):  # B799
             return
         tid, sid, why = self.waiting.pop(n)
         fb = FB.queued_model(tid)  # F106g: a new session on the chain's next model, not this one resumed

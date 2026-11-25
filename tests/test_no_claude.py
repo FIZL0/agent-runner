@@ -282,6 +282,50 @@ def test_task_held(tmp: Path) -> None:
            'no task on claude: no usage and no API is read')
 
 
+def test_resume_held(tmp: Path) -> None:
+    print('a cut-off session on a claude model waits for the Claude API, any other resumes')
+    from agent_runner import fallback as FB
+    env = {k: v for k, v in os.environ.items() if k.lower() != 'https_proxy'}
+
+    def ticks(name: str, was: str, api: list[bool], fallback: str = '', **run) -> tuple:
+        """(how many resumes after each tick of slot 1, whether it still waits, the log), `api` up or not at each"""
+        c = load(repo_at(tmp / name))
+        c.run.update(run)
+        FB.note_model('sid', was)
+        if fallback:
+            FB.queue_fallback('F1', 1, 'sid', 'cut', fallback)
+        else:
+            c.notes('F1.resume').write_text(json.dumps({'slot': 1, 'sid': 'sid', 'why': 'cut'}), encoding='utf-8')
+        resumed, logs, counts = [], [], []
+        r = loop.Run.__new__(loop.Run)
+        r.__dict__.update(procs={}, running={}, slots=1, branch='main', model=MODEL, idle=30, tried=set(),
+                          waiting={1: ('F1', 'sid', 'cut')}, stall_said=set(), idle_said=False)
+
+        def resume(n, tid, sid, why, branch, model, idle, fallback='', slots=1):
+            resumed.append(fallback)
+            return (n, sid, None)
+
+        for up in api:
+            W._api[:] = [-1e9, True]
+            with mock.patch.object(W.socket, 'create_connection', mock.Mock(side_effect=None if up else OSError('no network'))), \
+                    mock.patch.object(loop, 'resume', resume), mock.patch.object(S, 'log', lambda s, *a, **k: logs.append(s)):
+                if r.waiting:
+                    r.resume_queued(1)
+            counts.append(len(resumed))
+        W._api[:] = [-1e9, True]
+        eq(c.notes('F1.resume').exists(), bool(r.waiting), f'{name}: its queue mark goes only when it resumes')
+        return counts, bool(r.waiting), ' '.join(logs), resumed
+    with mock.patch.dict(os.environ, env, clear=True):
+        got = ticks('r-own', 'opus', [False, False, True])
+        eq(got[:2], ([0, 0, 1], False), 'on opus: held while the API is down, resumed once it is up')
+        eq(got[2].count('F1 cannot resume'), 1, 'which is said once')
+        eq(ticks('r-other', MODEL, [False])[:3], ([1], False, ''), 'on the other provider: resumed')
+        eq(ticks('r-to', MODEL, [False], 'opus')[:2], ([0], True), 'queued to go on with opus: held')
+        got = ticks('r-from', 'opus', [False], MODEL)
+        eq((got[0], got[3]), ([1], [MODEL]), 'queued to go on from opus with the other: resumed')
+        eq(ticks('r-agent', 'opus', [False], agent='other')[0], [1], 'another [run] agent: the Claude API holds nothing')
+
+
 # --- end to end ----------------------------------------------------------------------------------------------------
 
 def calls(tmp: Path) -> list[dict]:
@@ -392,7 +436,7 @@ def main() -> int:
     here = os.getcwd()
     logged_in(tmp)
     assert not shutil.which('claude')
-    tests = [test_uses, test_lines, test_vitals, test_task_model, test_task_held]
+    tests = [test_uses, test_lines, test_vitals, test_task_model, test_task_held, test_resume_held]
     if shutil.which('node'):
         tests += [test_setup, test_run, test_chat]
     else:
