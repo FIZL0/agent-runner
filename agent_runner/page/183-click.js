@@ -28,6 +28,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-sheet]')){openSheet(x.dataset.sheet);return}
   if(x=q('[data-rowmenu]')){rowExpand(x.dataset.rowmenu);return}
   if(q('[data-chats]')){openSheet('chats');chatsLoad();return}  // F206
+  if(q('[data-rencancel]')){cancelRename();return}  // F446
   if(x=q('[data-ren]')){if(S.sheet)closeSheet();startRename(x.dataset.ren);return}
   if(x=q('[data-fix]')){S.fixOpen=S.fixOpen===x.dataset.fix?'':x.dataset.fix;S.sure=null;render(true);return}
   if(x=q('[data-slashpick]')){slashTake(+x.dataset.slashpick);return}  // B119

@@ -198,6 +198,57 @@ def test_row_buttons_f187(tmp: Path) -> None:
     eq(o['sheets'], 0, 'no sheet opened')
 
 
+# F446: the same page, with the real open() and submit, and a chat opened at once
+RENAME_DRIVER = ROW_DRIVER.split('env.render(); out.closed')[0].replace(
+    "'env.row=chatRow;", "line('function open(n,named)') + line('function newChat(') + line('  S.waitNew={known,at:Date.now(),ph:') "
+    "+ slice(\"document.addEventListener('submit'\", 'function selectedText(') + 'env.row=chatRow;env.openReal=open;env.chatNew=newChat;") + r"""
+env.viewGo = go => go(); env.chats = () => S.snap.sessions; let clock = 1e12;
+env.Date = {now: () => clock}; env.S.feeds = {}; env.outbox = (n, a) => { sent.push([n, a]); return {cid: 'z'} };
+const box = () => [S.ren, (env.html.match(/data-renform/g) || []).length], start = n => { S.thread = null; sent.length = 0; clock += 5000; env.ren(n); S.f.ren = 'New name' };
+const key = (k, sel) => on.false.keydown.forEach(f => f({key: k, preventDefault() {}, target: {closest: () => null, matches: s => s.split(',').includes(sel)}}));
+start('c1'); out.open = [box(), row('c1')];
+tap(['[data-rencancel]']); out.cancel = [box(), sent.length, row('c1').includes('>c1<'), S.drawer];
+start('c1'); thread('c2'); out.other = [box(), sent.length, S.thread];
+start('c1'); S.drawer = false; thread('c2'); clock += 100; S.drawer = false; thread('c2'); out.twice = [box(), S.f.ren, sent.length]; S.drawer = true;
+start('c1'); tap(['.renform']); tap(['[data-f="ren"]']); env.render(); out.inside = [box(), S.f.ren];
+start('c1'); env.openReal('c3'); out.switcher = [box(), sent.length, S.thread];
+start('c1'); env.openReal('c1'); out.same = box();
+start('c1'); env.openReal('c3', true); out.named = box();
+start('c1'); env.chatNew('new_control', {}, 'New chat'); out.fresh = [box(), sent.map(s => s[0]), S.thread];
+start('c1'); key('Escape', '[data-f="ren"]'); out.esc = [box(), sent.length];
+start('c1'); key('Escape', '[data-rencancel]'); out.escCancel = [box(), sent.length, S.drawer];
+start('c1'); on.false.submit.forEach(f => f({preventDefault() {}, target: {matches: s => s === '[data-renform]'}})); out.enter = [S.ren, sent.slice()];
+console.log(JSON.stringify(out));
+"""
+
+
+def test_rename_cancel_f446(tmp: Path) -> None:
+    """F446: a rename is cancelled by its Cancel button, by opening another chat any way, or Esc; Enter still saves."""
+    if not shutil.which('node'):
+        print('  (no node here: the rename script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(RENAME_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the rename row', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    gone, kept = [None, 0], ['c1', 1]
+    eq(o['open'][0], kept, 'the rename row')
+    check('type="button" data-rencancel aria-label="Cancel rename"' in o['open'][1] and '<i>x</i>' in o['open'][1], 'it has a Cancel button', o['open'][1])
+    eq(o['cancel'], [gone, 0, True, True], 'Cancel closes it, keeps the old name and the drawer, sends nothing')
+    eq(o['other'], [gone, 0, 'c2'], 'one press on another chat cancels and opens it')
+    eq(o['twice'], [['c2', 1], 'c2', 0], 'a double-click on another chat moves the rename to it')
+    eq(o['inside'], [kept, 'New name'], 'a press inside the row or a redraw keeps it')
+    eq(o['switcher'], [gone, 0, 'c3'], 'another chat opened any other way cancels it')
+    eq(o['same'], kept, 'its own chat opened does not')
+    eq(o['named'], kept, 'nor a starting chat that gets its name')
+    eq(o['fresh'], [gone, ['new_control'], '@z'], 'a new chat cancels it')
+    eq(o['esc'], [gone, 0], 'Esc cancels')
+    eq(o['escCancel'], [gone, 0, True], 'Esc on the Cancel button cancels, and leaves the drawer')
+    eq(o['enter'], [None, [['rename_chat', {'chat': 'c1', 'title': 'New name'}]]], 'Enter saves')
+
+
 def test_chats_f128(tmp: Path) -> None:
     """F128, F129: the menu button's dot, a badge on a chat that needs a reply, quiet chats last and gray, and Rename."""
     fake_repo(tmp)
@@ -340,4 +391,4 @@ def test_drop_confirm_id_b191(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_card_chat_b139), in_tmp(test_row_buttons_f187), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))
+    raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_card_chat_b139), in_tmp(test_row_buttons_f187), in_tmp(test_rename_cancel_f446), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))
