@@ -53,7 +53,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             continue
         f = P.fields(ls[i])
         after, pri = P.waits_on(ls, i), task_pri(rest, section)
-        everything = P.ALL in f.get('after', [])
+        everything = P.ALL in f.get('after', []) and 'ahead' not in f  # F435: a listed one names them
         out.append({'id': tid, 'kind': task_kind(tid, names), 'title': titles[tid],
                     'files': f.get('files', []), 'after': after, 'pri': pri,
                     'section': section, 'blocked': box == '~',

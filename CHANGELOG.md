@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a release auto release queues on idle waits only for the tasks ahead of it when it was queued and their parts; a task later put above it no longer holds it, its work lands in the next release. Before, `after: all` was worked out live, so it could wait longer each time work was queued above it. Releases by count already start at once (F195a, shipped), and a release a person queues (`plan add V`) or moves still waits live for everything above its place (F435).
 - Added: in PR mode, a review comment or change request by someone with write access, or red CI or a conflict with main, resumes the task's session on its pull request, with at most 3 tries each before Needs you; a pull request closed without a merge goes to Needs you instead of only being logged (F423).
 - Added: PR mode (`[git] pr = true`) for a repository on GitHub: each finished task opens one pull request for a person to merge, and the runner never merges or pushes main (F419).
 - Added: `done` runs a removal check before its gate (F416): when a task's diff deletes or renames a file, test, setting or command, it lists what still names it, and a dead path in code, config or CI refuses `done` until it is gone; the rest is answered once with `done --named "1 filed B12; 2-3 kept because …"`.
