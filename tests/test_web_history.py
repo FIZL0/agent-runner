@@ -114,7 +114,7 @@ function El() {
     setAttribute(k, v) { e.attrs[k] = v }, getAttribute: k => e.attrs[k], removeAttribute(k) { delete e.attrs[k] }, getBoundingClientRect: () => ({left: 0, top: 0, width: 390, height: VIEW}),
     appendChild(k) { e.kids.push(k); k.parent = e }, insertBefore(k, n) { const i = n ? e.kids.indexOf(n) : e.kids.length; e.kids.splice(i, 0, k); k.parent = e }, remove() { e.parent.kids = e.parent.kids.filter(k => k !== e) }, contains: () => false,
     get children() { return e.kids }, get lastChild() { return e.kids[e.kids.length - 1] }, get firstElementChild() { return e.kids[0] },
-    set textContent(v) { e.kids = [] }, get innerHTML() { return e._html }, set innerHTML(v) { e._html = v }, querySelectorAll: () => [], querySelector: () => null, clientHeight: VIEW};
+    set textContent(v) { e.kids = [] }, get innerHTML() { return e._html }, set innerHTML(v) { e._html = v }, querySelectorAll: () => spans(e), querySelector: () => null, clientHeight: VIEW};
   return e;
 }
 const els = {}, $ = k => els[k] = els[k] || El();
@@ -131,15 +131,19 @@ const FD = {n: 'c6', shown: true, up: true, drawn: true, whole: false, foot: {to
 const feedSlim = on => { FD.slim = on };
 const rowEl = t => ({textContent: t, innerHTML: '<span>' + t + '</span>', getBoundingClientRect: () => ({})});
 let screen = [];
-const term = {cols: 48, rows: ROWS, options: {}, element: {className: 'xterm', querySelector: () => ({style: {}, children: screen.map((t, y) => ({textContent: t, innerHTML: '<span>' + t + '</span>', getBoundingClientRect: () => ({top: 12 + y * CELL})}))})}};
-const feedTerm = () => term, feedScreen = () => ({t: term, cell: CELL, el: {getBoundingClientRect: () => ({left: 14, top: 12, width: 346}), querySelectorAll: () => []}, win: {document: {styleSheets: []}, getComputedStyle: () => ({})}});
+let tint = '';  // the contrast colour the terminal puts inline on its rows
+const term = {cols: 48, rows: ROWS, options: {}, element: {className: 'xterm', querySelector: () => ({style: {}, children: screen.map((t, y) => ({textContent: t, innerHTML: '<span' + (tint && ` style="color:${tint}"`) + '>' + t + '</span>', getBoundingClientRect: () => ({top: 12 + y * CELL})}))})}};
+const feedTerm = () => term, feedScreen = () => ({t: term, cell: CELL, el: {getBoundingClientRect: () => ({left: 14, top: 12, width: 346}), querySelectorAll: () => [{textContent: sheet}]}, win: {document: {styleSheets: []}, getComputedStyle: () => ({color: ink})}});
+// the terminal's sheet and computed colour; a row's one span, as the page computes its colours
+let sheet = '.x{color:#f3f1ea}', ink = '#f3f1ea';
+const getComputedStyle = s => ({color: s.color, backgroundColor: 'rgba(0, 0, 0, 0)'});
+const spans = box => box.kids.flatMap(d => { const m = /style="color:([^"]+)"/.exec(d.innerHTML); return m ? [{color: m[1], style: {set color(v) { d.innerHTML = d.innerHTML.replace(m[1], v) }}}] : [] });
 const fetch = async q => { asked.push(q); const j = pages[q.replace(/history\/c\d/, "")]; return {ok: true, status: 200, json: async () => j || {ok: false}} };
 const settle = async () => { for (let i = 0; i < 30; i++) await null };
 const msgs = (a, b) => Array.from({length: b - a}, (x, i) => ({kind: 'say', text: `message ${a + i}`}));
 const show = (last, extra = []) => { const l = []; for (let i = last - 30; i < last; i++) l.push('', `● message ${i}`); screen = [...l, ...extra].slice(-36).concat(['rule', '❯', 'rule', 'foot']) };
 (async () => {
 eval(logic + code + `
-pastLook = () => {};
 /* where a line stands on screen now: in the history when it is drawn, else in the session */
 const where = t => { if (HX.st) { const i = HX.L.findLastIndex(x => x.t.trim() === t); return i < 0 ? null : HX.pad + i * HX.cell - past.scrollTop } const y = screen.findIndex(x => x.trim() === t); return FD.t + 12 + y * CELL };
 const scroll = by => { past.scrollTop += by; pastScrolled() };
@@ -192,6 +196,15 @@ screen = ['', '❯ hello', '● on it', ...Array(31).fill(''), '● Churning… 
 const g0 = [where('❯ hello'), where('● Churning… (7s)')]; past.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}); scroll(-50); pastPlace();
 out.gap = [HX.st, where('❯ hello') - g0[0], where('● Churning… (7s)') - g0[1], pastEnd(), $('pastjump').classList.contains('on')]; past.fire('touchend');
 FD.t = 20; pastPlace(); out.gapOver = [HX.st, past.scrollTop === pastEnd(), $('pastjump').classList.contains('on')];
+// B787: the look; two sheets of the same length
+const look = (css, c, bg, own) => { sheet = css; ink = c; tint = own; term.options = {theme: {background: bg, foreground: c}} }, LIGHT = ['.x{color:#141413}', '#141413', '#faf9f5', 'rgb(20, 20, 19)'], DARK = ['.x{color:#f3f1ea}', '#f3f1ea', '#262624', 'rgb(243, 241, 234)'];
+const inks = () => [$('pastrows').style.color, $('pastcss')._css, [...new Set(HX.L.filter(l => l.own != null).map(l => (/color:([^"]+)/.exec(l.h) || [])[1]))].map(c => c.match(/[0-9]+/g).map(Number)).every(c => (c[0] > 120) === (ink === '#f3f1ea'))];
+FD.n = 'c1'; FD.t = -100; FD.short = FD.gap = 0; pages[''] = {ok: true, entries: msgs(100, 200), before: '', since: 'i:1'}; show(200);
+look(...LIGHT); pastSee(); await settle(); run(); out.restLight = inks(); look(...DARK); pastSee(); run(); out.restDark = inks();
+pastWheel(-400); show(204); pastSee();
+const l0 = where('● message 170'), y0 = past.scrollTop; out.upOld = HX.L.filter((l, i) => l.own != null && i < HX.at).length > 0;
+out.flips = []; for (const to of [LIGHT, DARK, LIGHT]) { look(...to); pastSee(); out.flips.push([...inks(), where('● message 170') - l0, past.scrollTop - y0, HX.st]) }
+FD.whole = true; FD.foot = null; look(...DARK); pastSee(); out.flipMenu = [...inks(), where('● message 170') - l0];
 console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1) });
 function histMay0() { return pastMay() }
@@ -235,6 +248,11 @@ def test_swap(tmp: Path) -> None:
     eq(o['key'], [True, 'up', True, '', False, False], 'PageUp and Ctrl+End scroll it, other keys are the session\'s')
     eq((o['soon'], o['late']), (True, [False, 1]), 'a transcript that comes later is found')
     eq((o['gap'], o['gapOver']), (['armed', 0, 0, 0, False], ['', True, False]), 'B786: a new chat that works rests the same, with no up and no button')
+    light, dark = ['#141413', '.x{color:#141413}', True], ['#f3f1ea', '.x{color:#f3f1ea}', True]
+    eq((o['restLight'], o['restDark']), (light, dark), 'B787: a look whose sheet is as long as the last one\'s is taken whole')
+    check(o['upOld'], 'lines of an earlier screen are drawn')
+    eq(o['flips'], [[*x, 0, 0, 'up'] for x in (light, dark, light)], 'B787: scrolled up, a look change draws every line anew, and nothing moves')
+    eq(o['flipMenu'], [*dark, 0], 'and under a menu')
     eq(o['notranscript'], [True, True], 'a session with no transcript: as before')
 
 

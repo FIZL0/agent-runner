@@ -79,7 +79,7 @@ function pastPut(){
 function pastScreen(){
   const f=feedScreen(), rows=f&&f.t.element.querySelector('.xterm-rows');if(!rows||!FD.foot)return null;
   const n=Math.min(FD.foot.top,!FD.gap&&FD.short||FD.foot.top,rows.children.length), out=[];
-  for(let y=0;y<n;y++){const r=rows.children[y];out.push({t:r.textContent.replace(/ /g,' ').trimEnd(),h:r.innerHTML})}
+  for(let y=0;y<n;y++){const r=rows.children[y];out.push({t:r.textContent.replace(/ /g,' ').trimEnd(),h:r.innerHTML,own:r.innerHTML})}
   return out;
 }
 /* the lines drawn are these, from `at` on the screen's; patch: what was drawn stays, and only what changed is drawn */
@@ -132,17 +132,42 @@ function pastToEnd(){const el=$('feedpast');el.scrollTop=pastEnd();HX.y=el.scrol
 /* the look is the terminal's own: its style sheets, and the colours it has now */
 function pastLook(){
   const f=feedScreen();if(!f)return;
-  const el=$('pastrows'), rows=f.t.element.querySelector('.xterm-rows'), css=[...f.el.querySelectorAll('style')].map(s=>s.textContent).join('\n'), key=[css.length,FD.info&&FD.info.look,feedLook(),rows.style.cssText,f.t.element.className].join('|');
+  const el=$('pastrows'), rows=f.t.element.querySelector('.xterm-rows'), css=[...f.el.querySelectorAll('style')].map(s=>s.textContent).join('\n'), key=[css,FD.info&&FD.info.look,feedLook(),rows.style.cssText,f.t.element.className].join('|');
   const sheet=$('pastcss');if(sheet._css!==css){sheet._css=css;sheet.textContent=css}
   if(!$('pastfont'))for(const s of f.win.document.styleSheets){let r=[];try{r=[...s.cssRules]}catch(e){}
     const t=r.filter(x=>x.type===5).map(x=>x.cssText).join('\n');if(t){const st=document.createElement('style');st.id='pastfont';st.textContent=t;document.head.appendChild(st);break}}
-  if(HX.look===key)return;HX.look=key;
+  if(HX.look===key)return false;HX.look=key;
   const owner=(f.t.element.className.match(/xterm-dom-renderer-owner-\d+/)||[''])[0], c=f.win.getComputedStyle(rows);
   $('pastterm').className='xterm '+owner;el.className='xterm-rows';
   Object.assign(el.style,{fontFamily:c.fontFamily,fontSize:c.fontSize,fontKerning:c.fontKerning,color:c.color,letterSpacing:c.letterSpacing});
   const w=rows.children[0]&&f.el.getBoundingClientRect().width/f.t.cols;if(w)el.style.setProperty('--hw',w+'px');
   el.style.setProperty('--hleft',f.el.getBoundingClientRect().left+'px');el.style.width='';
   for(const [k,v] of Object.entries(pastColors(f.t.options.theme||{},feedSkinOf(FD.info).replace('page-','')||'dark')))el.style.setProperty('--'+k,v);
+  return true;
+}
+/* B787: the look changed while the history is drawn: the rows cloned from the screen have colours of the old look inline,
+   for its contrast. A colour that does not read on its ground now is drawn lighter or darker, to the terminal's contrast
+   (half for dim words); one that reads stays. The rows still on the screen get the terminal's own colours in pastSee */
+function pastInked(){
+  const f=feedScreen(), bg=pastRgb(f&&f.t.options.theme&&f.t.options.theme.background||'#1f1e1d');
+  const rows=HX.L.filter(l=>l.own!=null);if(!bg||!rows.length)return;
+  const box=document.createElement('div');box.className='hchunk';box.style.visibility='hidden';
+  for(const l of rows){const d=document.createElement('div');d.innerHTML=l.own;box.appendChild(d)}
+  $('pastrows').appendChild(box);
+  const put=[];
+  for(const s of box.querySelectorAll('span')){
+    const c=getComputedStyle(s), fg=pastRgb(c.color), on=pastRgb(c.backgroundColor)||bg, ink=fg&&pastInk(fg,on,/xterm-dim/.test(s.className)?2.25:4.5);
+    if(ink&&ink!==fg)put.push([s,`rgb(${ink.join(',')})`]);
+  }
+  for(const [s,c] of put)s.style.color=c;
+  const now=new Map();rows.forEach((l,i)=>now.set(l,box.children[i].innerHTML));
+  box.remove();
+  pastSet(HX.L.map(l=>now.has(l)&&now.get(l)!==l.h?{...l,h:now.get(l)}:l),HX.at,true);
+}
+/* a colour as [r,g,b]; null for one that is see-through, in part too (dim words) */
+function pastRgb(c){
+  const h=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c);if(h)return h.slice(1).map(x=>parseInt(x,16));
+  const m=/^rgb\((\d+), ?(\d+), ?(\d+)\)$/.exec(c);return m?m.slice(1).map(Number):null;
 }
 function pastColors(theme,look){
   const hex=s=>[1,3,5].map(i=>parseInt(s.slice(i,i+2),16)), ext=theme.extendedAnsi, light=look==='light', base=S.snap.session_look==='light';
@@ -200,6 +225,7 @@ function pastScrolled(){
 function pastSee(){
   if(HX.n!==FD.n||HX.none){pastLoad();if(HX.n!==FD.n||HX.none)return}  // a new chat's transcript comes a little later
   if(!HX.st){pastClass();if(!$('feedpast').hidden){pastWarm();pastNewSoon()}return}
+  if(pastLook())pastInked();
   if(FD.whole||!FD.foot){if(pastUp()&&!HX.news){HX.news=true;pastJumpDraw()}return}
   if(FD.foot.text||FD.foot.bash||FD.jump||HX.gap)return;
   if((feedTerm()||{}).cols!==HX.cols){pastWidth();return}
