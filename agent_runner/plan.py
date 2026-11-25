@@ -987,6 +987,28 @@ def add_release(todo=None) -> str:
     return add(RELEASE, RELEASE_BRIEF + f' | after: {ALL}', 'bottom', todo=todo)
 
 
+def cut_release(tid: str = '', todo=None) -> str:
+    """File a release that starts at once, as `plan add V --now` does (F195a, `[run] auto_release` by count): or,
+    with `tid`, make that waiting release one (critical, at the top, no `after:`). Its id."""
+    if not tid:
+        return add(RELEASE, RELEASE_BRIEF, pri='critical', todo=todo)
+    todo, _ = ensure(todo)
+    ls = list(lines(todo))
+    i = _find(ls, tid)
+    ls[i] = FIELD.sub(lambda m: '' if m.group(1) == 'after' else m.group(0), ls[i])
+    _write(todo, ls)
+    edit(tid, pri='critical', todo=todo)
+    return tid
+
+
+def waiting_default(ls: list[str], ids, queued=()) -> str:
+    """The first of the waiting releases `ids` in `ls` that waits by `after: all` alone, whatever its level or place,
+    and has the default brief, as `plan add V` with no text files it, or is one auto release `queued` (an older
+    version's brief). '' for none."""
+    return next((tid for _, box, tid, _, i in iter_tasks(ls) if tid in ids and box == ' '
+                 and (RELEASE_BRIEF in ls[i] or tid in queued) and fields(ls[i]).get('after') == [ALL]), '')
+
+
 def kinds() -> tuple[dict[str, str], bool]:
     """What each id prefix means, and whether the repo set them (then `add` refuses any other prefix)."""
     k = cfg().raw['plan'].get('kinds') or {}

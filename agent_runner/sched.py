@@ -198,7 +198,8 @@ def clash(t: tuple, b: tuple, shared: set[str], alone: frozenset = frozenset()) 
     that must stay apart (`kin_clash`), a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V)
     clashes like any other task: it starts once what it waits for (`after:`) has landed, beside running tasks,
     and tasks start beside it; while it is busy the merge holds every other merge (`merge.hold_for_release`,
-    F99), so it still releases exactly what was on the shared branch when it started. A task tagged `(alone)`
+    F99), so it still releases exactly what was on the shared branch when it started. Two releases always clash
+    (F195a). A task tagged `(alone)`
     (its id in `alone`, F130; a release or any other) clashes with everything, either way round: it starts only
     when nothing else runs or waits to merge, and nothing starts beside it; `holds` then lets it pass over a task
     taken by hand or claimed by another runner (`passes`, B107): only this run's tasks hold it."""
@@ -206,6 +207,8 @@ def clash(t: tuple, b: tuple, shared: set[str], alone: frozenset = frozenset()) 
     if kin_clash(t, b, shared):
         return True
     if tid in alone or b[0] in alone:  # F130: it runs alone
+        return True
+    if P.release(tid) and P.release(b[0]):  # F195a: one releasing at a time
         return True
     return (ordered(section) and section == b[1]) or bool(file_overlap(files, b, shared))
 
@@ -218,6 +221,8 @@ def clash_why(t: tuple, b: tuple, shared: set, alone: frozenset = frozenset()) -
         return 'runs alone', f'{b[0]} is running or waiting to merge in this run'
     if b[0] in alone:
         return 'runs alone', f'{b[0]} runs alone'
+    if P.release(t[0]) and P.release(b[0]):
+        return 'one release at a time', f'{b[0]} is releasing'
     if ordered(t[1]) and t[1] == b[1]:
         return f'one at a time in "{t[1]}"', b[0]
     return 'waiting for files', f'{", ".join(sorted(file_overlap(t[2], b, shared))[:3])} held by {b[0]}'

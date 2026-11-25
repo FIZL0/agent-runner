@@ -398,7 +398,8 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
                                  'with the picks sent from the page (or the recommended ones).')
     ap.add_argument('id', help='the task id, as Needs you shows it')
     do = ap.add_mutually_exclusive_group()
-    do.add_argument('--html', metavar='FILE', help='check the sheet and write its page to FILE, to publish')
+    do.add_argument('--html', metavar='FILE', help='check the sheet and write its page to FILE, to look at')
+    do.add_argument('--publish', action='store_true', help='publish its page and print the URL')
     do.add_argument('--picks', metavar='REPLY', help="the line the sheet's Send gave ('ID picks: a=b …'), or 'go'")
     do.add_argument('--go', action='store_true', help='answer with the recommended picks')
     do.add_argument('--path', action='store_true', help='print where the sheet is')
@@ -415,12 +416,13 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
     except ValueError as e:
         print(f'{prog}: {e}', file=sys.stderr)
         return 1
-    if a.html:
+    if a.html or a.publish:
         from agent_runner import web
         link = web.pick_base(a.id)  # F138: Send's link to the run
+        if a.publish:
+            return sheet.cmd_publish(spec, a.id, link, prog)
         Path(a.html).write_text(sheet.render(spec, a.id, pick=link), encoding='utf-8')
-        print(f'{a.html}: {len(sheet.questions(spec))} questions; publish it with the Artifact tool, with '
-              f'capabilities {json.dumps(sheet.CAPABILITIES)} (F54: Send writes the picks to its db)')
+        print(f'{a.html}: {len(sheet.questions(spec))} questions; publish it with `{prog} {a.id} --publish`')
         print('F138: Send also gives a link that answers the run directly' if link else
               'F138: ' + NO_PICK_HTTPS.format(why=web.no_https_why()).replace('put no option buttons on the page and ', ''))
         return 0
