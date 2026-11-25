@@ -24,7 +24,8 @@ function menuRows(rows){
       put({...d.q,removed:true},d);
     }else if(!q)continue;
     else if(d.k==='menu_top'){out.splice(i,1);out.unshift(q)}
-    else if(d.k==='menu_unhold')out[i]={...q,held:false};
+    else if(d.k==='menu_unhold'){if(q.held)out[i]={...q,held:false,  // what it waits for now is the next snapshot's to say
+      ...(q.placeholder?{words:q.words.replace(/^held · /,'')}:q.state==='held'?{state:'tool',tool_wait:'no longer held'}:{}),...(q.release?{release:{...q.release,words:'no longer held'}}:{})}}
     else if(!q.held)out[i]={...q,held:true,state:q.placeholder?q.state:'held',...(q.placeholder?{words:`held · ${q.words}`}:{}),...(q.release?{release:{...q.release,words:'held',waits:[],note:''}}:{})};
   }
   return PM.rows=out;

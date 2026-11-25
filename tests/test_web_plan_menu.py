@@ -204,7 +204,7 @@ const settle = (ok = true) => { const x = S.ob[S.ob.length - 1]; if (ok) S.ob = 
   await tap(icon('B2', 'menu_hold')); out.held = [opened(), sent.slice(), cardOf('B2').text, icons('B2').map(e => e.text), S.planMenu, obRun(S.ob[0]), planHTML().includes('[sending')];
   settle(false); out.failed = [cardOf('B2').text.includes('Held'), icons('B2')[0].text, planHTML().includes('[failed Hold: B2]')]; S.ob = []; render();
   await tap(icon('B2', 'menu_hold')); settle(); out.kept = cardOf('B2').text.includes('Held'); S.snap.queue[1] = {...S.snap.queue[1], held: true, state: 'held', menu: ['menu_unhold', 'menu_top', 'menu_remove']}; now += 9000; render();
-  await tap(icon('B2', 'menu_unhold')); out.unheld = [sent[sent.length - 1], icons('B2')[0].text]; settle();
+  await tap(icon('B2', 'menu_unhold')); out.unheld = [sent[sent.length - 1], icons('B2')[0].text, cardOf('B2').text.includes('No longer held') && !cardOf('B2').text.includes('Held:')]; settle();
   now += 9000; await tap(icon('B2', 'menu_top')); out.top = [rows(), sent[sent.length - 1], S.planMenu, opened()]; settle(); now += 9000; render();
   await tap(dots('B2')); await tap(icon('B2', 'menu_remove')); out.twice = rows().includes('B2') && !undo('B2'); now += 600;
   await tap(icon('B2', 'menu_remove')); out.removed = [rows(), sent[sent.length - 1], cardOf('B2').text, planHTML().includes('data-sure'), !!dots('F1'), opened()];
@@ -251,7 +251,7 @@ def test_page(tmp: Path) -> None:
     check("Held: a run won't start it" in held[2] and held[3] == ['PLAY', 'TOP', 'TRASH'], 'held at once, with play', held)
     eq(held[4:], ['B2', False, False], 'the icons stay; no stand-in of its own, here or on the Run card')
     eq(o['failed'], [False, 'PAUSE', True], 'one that failed is taken back, and says so')
-    eq((o['kept'], o['unheld']), (True, [{'key': 'menu_unhold', 'tid': 'B2'}, 'PAUSE']), 'until the snapshot has it; play ends it')
+    eq((o['kept'], o['unheld']), (True, [{'key': 'menu_unhold', 'tid': 'B2'}, 'PAUSE', True]), 'until the snapshot has it; play ends it')
     eq(o['top'], [['B2', 'F1', 'F3', 'V6', 'rel:next', 'F8'], {'key': 'menu_top', 'tid': 'B2'}, '', []], 'to the top at once')
     eq(o['twice'], True, 'a double tap on the dots removes nothing')
     gone = o['removed']
