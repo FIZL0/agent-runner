@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from agent_runner import asks, control_settled, need_detail, plan as P, state as S
-from agent_runner.plan import cut_question, decide_question
+from agent_runner.plan import cut_question, decide_question, on_a_line
 
 TEXT_MAX = 12_000  # characters: below need_detail.FILE_MAX in any script
 TYPES = '|'.join(re.escape(x) for x in need_detail.SHOT_TYPES)
@@ -42,7 +42,11 @@ def explained(rows: list, q: str) -> tuple[str, str]:
     said = [(d, t) for d in rows if isinstance(d, dict) and d.get('type') == 'assistant' and not d.get('isSidechain')
             and not d.get('isApiErrorMessage') and (d.get('message') or {}).get('model') != '<synthetic>'
             and (t := message_text(d).strip())]
-    asks_q = lambda t: (asked := decide_question(t)) == q or bool(asked) and cut_question(asked) == q  # noqa: E731 - B840: filed cut
+    q = on_a_line(q)  # B840: one filed before may hold its marks, and be cut
+
+    def asks_q(t: str) -> bool:
+        asked = decide_question(t)
+        return bool(asked) and q in (asked, cut_question(asked))
     at = next((i for i in range(len(said) - 1, -1, -1) if asks_q(said[i][1])), -1)
     for d, t in reversed(said[:at + 1]):
         if text := _above(t):

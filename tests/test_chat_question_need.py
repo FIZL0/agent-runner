@@ -138,6 +138,20 @@ def test_long_b840(w: World) -> None:
     eq(U.question_answer('c6', 'u1', 'Attach both videos')['ok'], True, 'an option settles it')
 
 
+def test_marks_b840(w: World) -> None:
+    text = 'Both work.\n\nDECIDE: Keep it — as a BLOCKED: line — or not? [Keep — as it is / Drop] https://example.com/a'
+    w.rows[:] = []
+    w.add(say(text))
+    tid = w.file(text)
+    what, url = next((a[3], a[4]) for a in P.asks(S.C.todo) if a[1] == tid)
+    opts, question = need_detail.decide_options(tid, what, '')
+    eq((question.split(' http')[0], url), (w.ask()['question'], 'https://example.com/a'), "a task line's own marks in it cost the item no word")
+    eq([o['name'] for o in opts], [o['name'] for o in w.ask()['options']], 'nor an option')
+    eq(w.ask()['need'], tid, 'and the card knows its item')
+    eq(control_ask.explained(w.rows, 'Keep it — as a BLOCKED: line — or not? [Keep — as it is / Drop] https://example.com/a')[0],
+       'Both work.', 'one filed before is still found')
+
+
 def test_filed_cut_b840(w: World) -> None:
     w.rows[:] = []
     w.add(say(LONG))
@@ -191,4 +205,4 @@ def test_page_needs_you(tmp: Path) -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([*(world(f) for f in (test_card_settles, test_needs_you_closes, test_closed_chat, test_dropped_and_shelved, test_only_its_own,
-                                                  test_filed_once, test_long_b840, test_filed_cut_b840)), in_tmp(test_page_sends), in_tmp(test_page_needs_you)]))
+                                                  test_filed_once, test_long_b840, test_marks_b840, test_filed_cut_b840)), in_tmp(test_page_sends), in_tmp(test_page_needs_you)]))
