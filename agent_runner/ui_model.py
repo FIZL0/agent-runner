@@ -37,6 +37,8 @@ copy, and the actions they share.
     claude_login  F126a: the Claude login warning (`watch.claude_login_line`), the page's banner, else ''
     no_settings  F178: the warning when no settings file was found (`no_settings`), else ''
     agent_problem  B764b: what is wrong with `[run] agent` and the fix (`agent_problem`), else ''
+    responses  F425a: the sent responses kept (`sent_responses`), newest first: id, item, title, question, ask, answer,
+              note, at (epoch s); `response_chat` (id, words) starts the chat about one
     chat_quiet  F128: `[ui] chat_quiet` in seconds (0 off)
     version   the run's agent-runner version, from STATE ('' when no run is up or an older run wrote none);
               F90: the TUI restarts and the run page reloads when it changes

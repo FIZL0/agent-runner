@@ -446,8 +446,18 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'agent_problem': agent_problem(st=st if up else None),  # B764b
             'claude_login': login,  # F126a
             'unpushed': unpushed_line(),  # F98
+            'responses': kept_responses(),  # F425a
             'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(), 'chat_model': new_chat_model(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
+
+
+def kept_responses() -> list[dict]:
+    """F425a: the kept Needs you responses that opened no chat, newest first."""
+    try:
+        from agent_runner import sent_responses as R
+        return R.recent()
+    except Exception:  # noqa: BLE001 - costs the rows, not the snapshot
+        return []
 
 
 def tools_line(tools: list[dict]) -> str:
