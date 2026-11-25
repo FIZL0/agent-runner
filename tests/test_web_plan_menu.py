@@ -183,7 +183,7 @@ const outbox = (name, args, more) => { const it = {cid: 'c' + sent.length, name,
 const fetch = async () => ({json: async () => ({ok: true, text: 'whole text'})});
 eval(logic + ['const esc=', 'const taskChip=', 'const tq=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const obRun=', 'const actBtns=', 'const actSure=', 'const taskIsOpen=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard='].map(line).join('')
   + slice('const taskBtns=', '/* F186: a release') + line('const relDrop=') + slice('/* F426b: an open release', '/* F131: the auto') + ['function taskRow(', 'async function openTask(', 'function parkedCard(', 'function shelvedCard(', 'function newReleaseCard('].map(grab).join('')
-  + slice('/* F429b: the menu on a Plan', 'I.top=') + slice('/* F212: the search', '/* F87: the Concepts view')
+  + slice('/* F429b: the menu on a Plan', 'I.top=') + slice('/* F429c: the grip of a Plan queue row (a', '/* the drag: the row goes') + slice('/* F212: the search', '/* F87: the Concepts view')
   + "const cutsOff=()=>'';Object.assign(globalThis, {render, openTask, PM, obRun, planFound});");
 const opened = () => root.querySelectorAll('[data-task]').filter(e => e.getAttribute('aria-expanded') === 'true').map(e => e.dataset.task);
 const rows = () => root.querySelectorAll('[data-k]').map(e => e.dataset.k).filter(k => /^(task:|rel:next)/.test(k)).map(k => k.replace('task:', ''));
