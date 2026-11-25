@@ -82,5 +82,4 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 - [~] **R17** (follow-up, low) Check F170's chat controls on the iPhone 15 (its remote rig, ACCESS.md): the hidden bottom lines stay hidden with no flicker while the agent redraws, the bars go and come with the finger with no jump, the keyboard opens and closes cleanly, and box lines join in Safari | files: docs/STYLE.md | after: F170 — your answer (BLOCKED the run served to the phone is 0.62.0 without F170; release V5 and run agent-runner upgrade, then this reruns): Done BLOCKED: The iPhone 15 UI lock is held by iFizBox task B440 (busy 25+ min); rerun when 'tools/ui-15.sh state' exits 0 (asked 2026-11-25 00:09)
 
 ### Parked
-- [ ] **B763** (follow-up, later) Run page Status: the run's controls read as the last slot's and have no icons (split into B763a, B763b) | files: agent_runner/page/070-plan.js
 - [ ] **F427** (follow-up, later) Self-unblocking checks: a blocked task reopens by itself once a check passes, with no agent and no usage. The person agreed, 2026-11-24 (split into F427a, F427b, F427c, F427d) | files: agent_runner/until.py
