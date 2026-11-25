@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""B795: `done --blocked` refuses an ask line that does not say what the person does.
+
+    python3 tests/test_done_asks.py        (no network; a few seconds, mostly git)
+"""
+from __future__ import annotations
+
+import os
+import re
+import tempfile
+from pathlib import Path
+
+from _check import check, eq, git, has, report, run
+
+from agent_runner import asks as A  # noqa: E402
+from agent_runner import runner as R  # noqa: E402
+
+LONG = 'press the button ' * 15
+
+
+def make(t: Path) -> tuple[Path, dict]:
+    root = t / 'proj'
+    root.mkdir()
+    git(root, 'init', '-q')
+    # the gate leaves a mark: a refusal comes before it
+    (root / 'runner.toml').write_text('[run]\nremote = false\ntest = "touch .runner/gate-ran"\n[git]\npush = false\n',
+                                      encoding='utf-8')
+    (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    (root / '.runner').mkdir()
+    (root / 'plan').mkdir()
+    (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Queue\n\n' + ''.join(
+        f'- [ ] **{t}** job {t} | files: {t}.py\n' for t in ('F1', 'F2', 'F3', 'F4', 'V5', 'R17')), encoding='utf-8')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'start')
+    R.init(root)
+    return root, {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+
+
+def test_waits() -> None:
+    print('which words make a named task a wait')
+    live = {'V5', 'F1', 'F2', 'F12a', 'R17'}
+    for why, ids in (('BLOCKED: the run is 0.62.0; release V5 and upgrade, then this reruns', ['V5']),
+                     ('BLOCKED: waits for the next release V5', ['V5']),
+                     ('CONFIRM: once F1 and F2 land, look at the list', ['F1', 'F2']),
+                     ('BLOCKED: F12a (the list) must land first', ['F12a']),
+                     ('BLOCKED: Needs task F1', ['F1']),
+                     ('BLOCKED: R17 waits for V5', ['V5']),  # never on itself
+                     ('CONFIRM: after F9 the list is short', []),  # not open
+                     ('CONFIRM: the list F1 made is short', []),
+                     ('CONFIRM: Press Save on the F1 page; it has a tick', []),
+                     ('BLOCKED: Open https://x.test/waits for/F1 and log in', []),
+                     ('BLOCKED: Log in to Codex on the Mac: codex login failed', [])):
+        eq(A.waits_named('R17', why, live), ids, why)
+
+
+def test_done(root: Path, env: dict) -> None:
+    todo, ran = root / 'plan' / 'TODO.md', root / '.runner' / 'gate-ran'
+    done = lambda tid, why, *more: run(root, 'done', tid, f'{tid}: x', '--blocked', why, *more, env=env)  # noqa: E731
+
+    def refused(tid: str, why: str, *pats: str, more=()) -> None:
+        before, head = todo.read_text(encoding='utf-8'), git(root, 'rev-parse', 'HEAD')
+        ran.unlink(missing_ok=True)
+        r = done(tid, why, *more)
+        eq(r.returncode, 2, f'refused: {why[:60]}')
+        for p in (*pats, r'Nothing blocked\.'):
+            has(r.stderr, p, f'says {p}')
+        eq((todo.read_text(encoding='utf-8'), git(root, 'rev-parse', 'HEAD'), ran.exists()), (before, head, False),
+           'nothing is blocked or committed, and the gate did not run')
+
+    def blocked(tid: str, why: str, *more: str) -> None:
+        r = done(tid, why, *more)
+        check(r.returncode == 0 and f'blocked {tid}' in r.stdout, f'blocks: {why[:60]} {more}', r.stdout + r.stderr)
+
+    f = root / '.runner' / 'asks' / 'F1.json'
+    print('a long CONFIRM or BLOCKED with no ask file')
+    for label in ('CONFIRM', 'BLOCKED'):
+        refused('F1', f'{label}: {LONG}', rf'{label} line is \d+ characters, over 200', re.escape(str(f)),
+                'starts with what the person does')
+    refused('F1', f'CONFIRM: {LONG}', 'over 200', more=('--after', 'F2'))
+    refused('F1', 'CONFIRM: ' + 'x' * 192, '201 characters')
+    blocked('F1', 'CONFIRM: ' + 'x' * 191)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text('{"steps": ["Press Save"]}', encoding='utf-8')
+    blocked('F1', f'CONFIRM: {LONG}')
+    refused('F1', f'CONFIRM: {LONG}', 'no ask file')  # the file is the last ask's
+    blocked('F2', f'BLOCKED: {LONG}', '--after', 'F4')  # asks the person nothing
+    blocked('F3', f'DECIDE: {LONG}')  # noted, as before
+
+    print('a CONFIRM or BLOCKED that waits on an open task or release')
+    refused('R17', 'BLOCKED: the run is 0.62.0; release V5 and upgrade, then this reruns',
+            r'waits for V5', r'--blocked "<why, with no label>" --after V5')
+    refused('R17', 'CONFIRM: once F4 lands, look at the list', r'the same CONFIRM with --after F4')
+    refused('R17', 'CONFIRM: once F4 lands, look at the list', 'waits for F4', more=('--after', ''))
+    blocked('R17', 'CONFIRM: once F4 lands, look at the list', '--after', 'F4')
+    blocked('R17', 'BLOCKED: waits for V5', '--until', 'version:9.9.9')
+    blocked('R17', 'release V5 lands')  # no label: the wait is read off the words
+    has(todo.read_text(encoding='utf-8'), r'R17.*BLOCKED: \(after V5\) .*release V5 lands', 'and waits on it')
+
+    print('a good line')
+    blocked('F4', 'BLOCKED: Log in to Codex on the Mac; `codex login` says: not signed in')
+    blocked('F4', 'CONFIRM: Press Save on the F3 page and see that it stays saved')
+
+
+def test_prompt(root: Path) -> None:
+    print('the brief says it')
+    p = R.prompt_for('F3', 1, 1, root, 'main')
+    for k in ('It starts with what the person does, in words a person who never saw the task understands, and the reason '
+              'comes second; it names no task id without that task\'s title.',
+              'A wait on a task or a release is `--after <ID>`, and a wait a check can read is `--until <CHECK>` '
+              '(`version:X.Y.Z`, `login:PROVIDER`, `tool:NAME`, `check:NAME`): never `BLOCKED:`',
+              f'over {A.LINE_MAX} characters with no ask file', 'names, after what the person does, the exact command'):
+        check(k in p, k[:60], p)
+
+
+def main() -> int:
+    test_waits()
+    with tempfile.TemporaryDirectory() as t:
+        root, env = make(Path(t).resolve())
+        test_done(root, env)
+        test_prompt(root)
+    return report([])
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

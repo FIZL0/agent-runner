@@ -40,8 +40,8 @@ what you ask of them: `CONFIRM: <what to check by hand>`, `DECIDE: <the question
 goes in the ask file (under "What you ask of a person"). It lists under Needs you until they answer. `CONFIRM:` is only for a check by hand you cannot do yourself, never \
 to have a finished task marked done: run `done` without `--blocked` for that. Before a `BLOCKED:` on access, check what this machine already has \
 and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `ssh -T`, and \
-~/.claude/ACCESS.md if it exists; the `BLOCKED:` line then names the exact command that failed and its error \
-(e.g. `wrangler OAuth login cannot change Workers Builds settings: Authentication error`).
+~/.claude/ACCESS.md if it exists; the `BLOCKED:` line then names, after what the person does, the exact command that failed and its error \
+(e.g. `BLOCKED: Log in to Cloudflare again; wrangler OAuth login cannot change Workers Builds settings: Authentication error`).
 
 Once `done` has run (or `done --blocked`), run `{runner} finish "<one line: what you did>"` and stop: it \
 records the summary and ends this session at once. If you hit a question only a person can answer and the work \
@@ -317,7 +317,12 @@ class _Keep(dict):
 # F156: what an agent asks of a person, in short steps: <notes>/asks/<ID>.json, read by need_detail (F162)
 ASKS_PROMPT = """\
 What you ask of a person (a CONFIRM, DECIDE or BLOCKED, or `ask`) is read in Needs you, often on a phone. The line is \
-one short sentence, at most about 100 characters. When there is more to say, write it first to the ask file {path}, as \
+one short sentence, at most about 100 characters. It starts with what the person does, in words a person who never saw \
+the task understands, and the reason comes second; it names no task id without that task's title. \
+A wait on a task or a release is `--after <ID>`, and a wait a check can read is `--until <CHECK>` (`version:X.Y.Z`, \
+`login:PROVIDER`, `tool:NAME`, `check:NAME`): never `BLOCKED:`, as no person is needed. `done --blocked` refuses a \
+CONFIRM or BLOCKED line over 200 characters with no ask file, or one that waits on an open task or release with no \
+`--after`. When there is more to say, write it first to the ask file {path}, as \
 JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place>, "steps": [<what to do>, …], \
 "expect": [<what they should see>, …], "shots": [{{"file": <a picture's path>, "caption": <what it shows>}}]}}; leave out \
 what you do not need. One action per step, in words the person sees on screen, no file names or code (the command that failed and its error, \

@@ -624,8 +624,13 @@ item is selected, and is never in the drafts a restart hands on (an upgrade rest
 
 The file is optional, and the brief asks for it only for length: a CONFIRM, DECIDE or BLOCKED line, and a `run ask`
 question, stays one short sentence (about 100 characters at most), and the rest goes in `<notes>/asks/ID.json` with
-pictures under `<notes>/asks/ID/`. A `done --blocked` line over 200 characters that waits on a person and has no ask
-file is not refused: it says so once, names the file, and blocks. The file and its pictures are removed when the item
+pictures under `<notes>/asks/ID/`. The line starts with what the person does, in words a person who never saw the task
+understands, the reason second, with no task id without its title. `done --blocked` refuses, before its gate runs and
+with nothing blocked, a CONFIRM or BLOCKED over 200 characters with no ask file (one the last block took does not
+count), and a CONFIRM or BLOCKED that says it waits for an open task or release ("release V5 …", "once F4 lands") with
+no `--after`; a wait a check can read is `--until`. A BLOCKED with `--after` or `--until` asks the person nothing, so
+neither refusal applies; a CONFIRM with one can still be too long. A DECIDE over 200 characters with no ask file is not
+refused: it says so once, names the file, and blocks. The file and its pictures are removed when the item
 is answered (confirm, change, unblock), the task is ticked or dropped (a drop keeps a copy, see below), it blocks again (any block but `done --blocked`
 and `run ask`, which may have written it), or a new session starts on the task. A block that waits on a task first and
 then returns to the person keeps the file. `plan confirm ID` and `plan change ID` also settle an ask the run has not blocked yet (its block is held, e.g. by a merge): the answer is noted, the item never shows under Needs you, and the session resumes with the answer.
