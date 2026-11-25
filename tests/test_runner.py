@@ -2843,10 +2843,13 @@ def test_prompt_and_hooks(repo: Path):
                 R.cmd_status(['-n', '0'])
         check('run up: 1 slot' in out.getvalue() and re.search(r'^  s1  tests T3( .+)?  0 min$', out.getvalue(), re.M),
               '`status` shows the state and each slot\'s task and minutes', out.getvalue())
-        run(repo, 'stop', '--force', '--shutdown')
+        r = run(repo, 'stop', '--force', '--shutdown')
+        check(r.returncode == 1 and 'no run is up' in r.stderr and not R.forced() and not (repo / '.runner/POWER').exists(),
+              '`stop --force --shutdown` with no run up says so and asks for nothing', r.stdout + r.stderr)
+        run(repo, 'stop', '--shutdown')
         R.take_keys()
-        check(R.forced() and R.POWER == 'shutdown' and not (repo / '.runner/POWER').exists(),
-              '`stop --force --shutdown` reaches the run through the same files')
+        check(R.stopping() and not R.forced() and R.POWER == 'shutdown' and not (repo / '.runner/POWER').exists(),
+              '`stop --shutdown` reaches the run through the same files')
         R.clear_stop()
         p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
         procs, running = {2: (p.pid, 'sid-x', 0.0)}, {2: ('T9', '', set(), set())}

@@ -257,7 +257,7 @@ def stopping() -> bool:
 
 
 def forced() -> bool:
-    """`s!` or `./run stop --force`: the agent sessions are ended now, each queued to resume in the next run."""
+    """`s!` or `./run stop --force`: the whole run ends now (`stop_now`)."""
     return C.notes('STOP.force').exists()
 
 
