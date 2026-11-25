@@ -273,9 +273,11 @@ def needs_count(root: Path, call=runner) -> int | None:
 
 
 def run_link(root: Path) -> tuple[int, str] | None:
-    """(port, token) of the page the project's run serves (its <notes>/web.url), None while it serves none."""
+    """(port, token) of the page the project's run serves (its <notes>/web.url), or F402b1 its page-only process; None
+    while neither does."""
+    from agent_runner import page_only
     from agent_runner.cmds import run_info
-    if not run_info(root).get('up'):
+    if not run_info(root).get('up') and not page_only.serving(root):
         return None
     try:
         from agent_runner.config import Config

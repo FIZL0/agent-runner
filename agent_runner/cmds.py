@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_harness, control_held, no_push, plan as P, plansync, plat, shared_tools, stack
+from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, shared_tools, stack
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -1395,9 +1395,9 @@ def open_ui(root: Path) -> str:
 
 def home_link(root: Path) -> str:
     """F402a: Runner Home's /p/KEY/ for the project at `root` while no run serves its page; '' when Home does not
-    route it."""
+    route it: then the page-only process's (F402b1), while one serves."""
     from agent_runner.home import site_links
-    return (site_links(root) or [''])[0]
+    return (site_links(root) or page_only.links(root) or [''])[0]
 
 
 def start_row(root: Path) -> str:
@@ -1429,7 +1429,7 @@ def started_row(row: dict, since: str) -> None:
     row.update({'run': run, **run_facts(root, run)})
 
 
-LAUNCHER_ACTIONS = {'w': open_link, 'c': copy_link, 't': open_ui, 's': start_row}
+LAUNCHER_ACTIONS = {'w': open_link, 'c': copy_link, 't': open_ui, 's': start_row, 'page': lambda root: page_only.open_page(root, open_link)}
 
 
 def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint | None = None) -> str:
@@ -1468,6 +1468,9 @@ def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint 
                 said = acts['t'](Path(row['root'])) or ''
                 if said == PICK:
                     return 'back'
+            elif k == 'w' and not up:
+                show(launcher_text(row, 'opening the run page…', paint, no_tui))
+                said, row['link'] = (got := acts['page'](Path(row['root'])))[0], got[1] or row['link']
             elif k in ('w', 'c'):
                 said = acts[k](row['link']) if row['link'] else 'no run page link to use' if up else no_link_words(row)
     finally:

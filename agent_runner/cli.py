@@ -219,6 +219,7 @@ COMMANDS = {
     'wait-for': ('shared_tools', 'cmd_wait_for'),  # F168: a slot's agent gives up its slot for a shared tool
     'device': ('devices', 'cmd_device'),  # F169: the devices this project uses
     'publish-page': ('page_copy', 'cmd_publish_page'),  # F106f: a page for the person, on any engine
+    'page-only': ('page_only', 'main'),  # F402b1: the run page while no run is up; the launcher's w starts it
     'review': ('review', 'cmd_review'),  # F406e: the spec review as a one-shot, on any provider
     'login': ('login', 'main'),  # F106e: the provider logins the harness loop runs on
 }
