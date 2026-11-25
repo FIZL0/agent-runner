@@ -66,6 +66,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from agent_runner import devices, home_screen, trust
 from agent_runner.session_frame import send_app, tunnel
+from agent_runner.whole_write import one_change, write_whole
 
 PORT = 8770
 SERVICE = 'agent-runner-home'  # the systemd unit's and the scheduled task's name
@@ -114,9 +115,11 @@ def load_registry() -> dict:
 def save_registry(reg: dict) -> None:
     f = registry_file()
     f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_name(f.name + '.tmp')
-    tmp.write_text(json.dumps(reg, indent=2) + '\n', encoding='utf-8')
-    os.replace(tmp, f)
+    write_whole(f, (json.dumps(reg, indent=2) + '\n').encode('utf-8'))
+
+
+def _registry_lock() -> Path:
+    return registry_file().with_name('home.lock')
 
 
 def home_token() -> str:
@@ -165,6 +168,7 @@ def projects(reg: dict | None = None) -> list[Path]:
     return sorted(seen.values(), key=lambda p: (p.name.lower(), str(p)))
 
 
+@one_change(_registry_lock)
 def add_project(path: str) -> tuple[bool, str]:
     p = Path(path).expanduser().resolve()
     if not p.is_dir():
@@ -179,6 +183,7 @@ def add_project(path: str) -> tuple[bool, str]:
     return True, f'Home lists {p.name} ({p})'
 
 
+@one_change(_registry_lock)
 def remove_project(path: str) -> tuple[bool, str]:
     """Unlist a project: one added by hand is dropped, a scanned one is hidden."""
     p = Path(path).expanduser().resolve()
@@ -1160,6 +1165,7 @@ def home_on() -> bool:
         return False
 
 
+@one_change(_registry_lock)
 def mark_installed(on: bool) -> None:
     save_registry({**load_registry(), 'installed': on})
 
@@ -1361,6 +1367,7 @@ USAGE = ('agent-runner home [slots|plan] | home install|uninstall|status|list|se
          'home peer add|remove LINK | home trust add|remove NETWORK')
 
 
+@one_change(_registry_lock)
 def peer_change(op: str, link: str) -> tuple[bool, str]:
     """F95: list (`add`) or unlist another machine's Home by its link (http://host:8770/?t=TOKEN), so this
     Home's Devices list shows that machine too."""
@@ -1378,6 +1385,7 @@ def peer_change(op: str, link: str) -> tuple[bool, str]:
     return (True, f'Home no longer shows {urlsplit(link).hostname}') if had else (False, f'not listed: {link}')
 
 
+@one_change(_registry_lock)
 def trust_change(op: str, name: str) -> tuple[bool, str]:
     """F136: let a network in without the key (`add`), or stop. Home reads it on each request: no restart."""
     name = name.strip()

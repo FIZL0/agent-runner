@@ -29,6 +29,7 @@ from typing import NamedTuple
 
 from agent_runner import plat
 from agent_runner.gitops import _net, git
+from agent_runner.whole_write import write_whole
 
 PULL_EVERY = 20  # s: reads within this of the last fetch use the clone as it is
 LOCK_WAIT = 300  # s an edit waits on another process's plan edit before giving up
@@ -184,11 +185,7 @@ def commit_file(root: Path, f: Path, edit, branch: str) -> tuple[bool, str]:
 
 
 def _write(path: Path, data: bytes, new: bool = False) -> None:
-    tmp = path.with_name(path.name + '.tmp')
-    tmp.write_bytes(data)
-    if not new:
-        os.chmod(tmp, path.stat().st_mode & 0o777)
-    os.replace(tmp, path)
+    write_whole(path, data, None if new else path.stat().st_mode & 0o777)
 
 
 def _undo(path: Path, old: bytes, new: bool, g, rel: str) -> None:

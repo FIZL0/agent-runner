@@ -25,6 +25,8 @@ import os
 import sys
 from pathlib import Path
 
+from agent_runner.whole_write import one_change, write_whole
+
 PROG = 'agent-runner voice'
 NAME = 'voice.md'
 HEAD = """\
@@ -176,11 +178,16 @@ def slot(prompt: str, c=None) -> str:
 
 def _write(p: Path, text: str) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + '.tmp')
-    tmp.write_text(text, encoding='utf-8')
-    os.replace(tmp, p)
+    write_whole(p, text.encode('utf-8'))
 
 
+def _lock_file() -> Path:
+    """One lock for both voice files, in the person's config folder: never a file beside one `[run] voice` names."""
+    base = os.environ.get('XDG_CONFIG_HOME', '').strip()
+    return (Path(base) if base else Path.home() / '.config') / 'agent-runner' / 'voice.lock'
+
+
+@one_change(_lock_file)
 def add(c, line: str, project: bool = False) -> str:
     """Append one line; what was done, naming the file. A file that does not exist yet gets a heading first, and
     a project file starting out gets the global lines too: it is read instead of them, so none is lost."""
@@ -207,6 +214,7 @@ def add(c, line: str, project: bool = False) -> str:
     return out
 
 
+@one_change(_lock_file)
 def forget(c, words: str) -> str:
     """Remove the one line holding `words` (case ignored) from the file in effect; what was removed, naming the
     file. Several lines holding it: nothing removed, unless one is exactly `words`; they are listed instead."""

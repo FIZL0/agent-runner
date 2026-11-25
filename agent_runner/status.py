@@ -20,6 +20,7 @@ from agent_runner.state import EV_AUTO_RELEASE, EV_FILE_SPLIT
 from agent_runner.brief import has_sheet
 from agent_runner.land import wip_lines
 from agent_runner.land import no_gate_line
+from agent_runner.whole_write import write_whole
 
 
 def tasks_left(ls: list[str]) -> tuple[int, int]:
@@ -431,9 +432,7 @@ def move_since_mark(stamp: str) -> None:
             return
     except (OSError, ValueError):
         pass
-    tmp = f.with_name(f.name + '.tmp')
-    tmp.write_text(stamp + '\n', encoding='utf-8')
-    os.replace(tmp, f)
+    write_whole(f, f'{stamp}\n'.encode('utf-8'))
 
 
 def what_changed(tid: str) -> str:

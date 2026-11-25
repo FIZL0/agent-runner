@@ -42,6 +42,7 @@ from functools import cache
 from pathlib import Path
 
 from agent_runner import plat
+from agent_runner.whole_write import write_whole
 
 HERE = Path(__file__).resolve().parent
 CLONE_ENTRY = HERE.parent / 'run'  # `./run` in a clone; an installed package has no such file
@@ -1302,10 +1303,7 @@ def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool
         ensure_local(f.parent)
     f = f.resolve()
     out = setting_edit(f.read_bytes(), table, key, value, unset, f.name)
-    tmp = f.with_name(f.name + '.tmp')
-    tmp.write_bytes(out)
-    os.chmod(tmp, f.stat().st_mode & 0o777)
-    os.replace(tmp, f)
+    write_whole(f, out, f.stat().st_mode & 0o777)
     keep_local_ignored(f.parent)
     return f
 
