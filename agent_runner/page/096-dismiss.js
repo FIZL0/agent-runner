@@ -1,17 +1,26 @@
-/* F192b: Dismiss on the question card: the card goes and stays gone over a reload (per browser and project, the latest
-   100). Nothing is sent or answered: the run still files the question under Needs you, and a later question has its card */
-const QGONE_KEY='ar-qgone'+(HKEY?':'+HKEY:'');
-const questionGoneGet=()=>{try{const l=JSON.parse(store.get(QGONE_KEY)||'[]');return Array.isArray(l)?l.filter(x=>typeof x==='string'):[]}catch(e){return[]}};
-QN.gone=new Set(questionGoneGet());
-function questionDismiss(n,id){
+/* F437a: Minimize on the question card: the card becomes one line with Show question, kept over a redraw and a reload (per
+   browser and project, the latest 100; other tabs follow). Nothing is sent or answered; a later question comes open.
+   F192b's Dismiss is gone from the card: what it dismissed stays gone (QN.gone, only read now) */
+const QGONE_KEY='ar-qgone'+(HKEY?':'+HKEY:''), QMIN_KEY='ar-qmin'+(HKEY?':'+HKEY:'');
+const questionKept=k=>{try{const l=JSON.parse(store.get(k)||'[]');return Array.isArray(l)?l.filter(x=>typeof x==='string'):[]}catch(e){return[]}};
+QN.gone=new Set(questionKept(QGONE_KEY));
+QN.min=new Set(questionKept(QMIN_KEY));
+function questionMinimize(n,id,on){
   const ask=questionAsk(n);if(!ask||ask.id!==id||questionState(ask,QN.held.get(n),QN.sent.get(n))!=='ask'||Date.now()-QN.back<QUESTION_AGAIN)return;
-  QN.gone=new Set([...new Set([...questionGoneGet(),...QN.gone,questionGoneKey(n,id)])].slice(-100));
-  store.set(QGONE_KEY,JSON.stringify([...QN.gone]));
+  const k=questionKey(n,id), l=new Set([...questionKept(QMIN_KEY),...QN.min]);
+  l.delete(k);if(on)l.add(k);
+  QN.min=new Set([...l].slice(-100));
+  store.set(QMIN_KEY,JSON.stringify([...QN.min]));
+  QN.back=Date.now();  // a double tap on either does not press what came under the finger
   questionDraw();
 }
 document.addEventListener('click',e=>{
-  const el=e.target.closest('[data-qdismiss]');if(!el)return;
-  questionDismiss(S.thread,el.dataset.qdismiss);
-  if(!e.detail){const ta=document.querySelector('[data-in]');if(ta)ta.focus({preventScroll:true})}  // pressed with a key: the focus stays near
+  const el=e.target.closest('[data-qmin],[data-qshow]');if(!el)return;
+  const on=!!el.dataset.qmin;
+  questionMinimize(S.thread,el.dataset.qmin||el.dataset.qshow,on);
+  if(!e.detail){const b=document.querySelector('#dock [data-qshow],#dock [data-qmin]');if(b)b.focus({preventScroll:true})}  // pressed with a key: the focus stays with the card
 });
-addEventListener('storage',e=>{if(e.key===QGONE_KEY){QN.gone=new Set(questionGoneGet());render(true)}});  // another tab
+addEventListener('storage',e=>{  // another tab
+  if(e.key!==QGONE_KEY&&e.key!==QMIN_KEY)return;
+  QN.gone=new Set(questionKept(QGONE_KEY));QN.min=new Set(questionKept(QMIN_KEY));render(true);
+});
