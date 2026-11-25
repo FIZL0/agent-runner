@@ -311,7 +311,7 @@ _In code_: allSide, allRow, goUp, goDown
 _Avoid_: project switcher, switcher
 
 **Off page**:
-The page of a project with no run up: its name and state, Start run, what it needs and its queue; it becomes the run's app once the run is up
+The fallback page of a project with no run up, shown by Runner Home only when the page-only process cannot start: its name and state, Start run, what it needs and its queue; it becomes the run's app once the run is up
 _Said_: off page
 _On screen_: the project's name and state, Start run
 _In code_: offHTML, HomeHandler.off_page
@@ -927,8 +927,15 @@ _In code_: liftRow, liftUp, liftMove, liftEnd, LF
 _Avoid_: long press, drag mode
 
 **Run-off banner**:
-A bar under the top bar that says The run is not running, with one Start the run button, while no run is up and the page-only process serves the run page. It shows on every view but Status (whose Run card says it), not on Home's page or All projects, and only from a fresh snapshot.
+A bar under the top bar that says The run is not running, with one Start the run button, while no run is up and the page-only process serves the run page. It shows on every view but Home and Status (whose Start card and Run card say it), and on those two only while a chat is open; not on All projects, and only from a fresh snapshot.
 _Said_: the not running bar
 _On screen_: The run is not running
 _In code_: runOff, offDraw, #runoff
 _Avoid_: stopped notice, off bar
+
+**Start card**:
+The card at the top of the run page's Home while no run is up: Not running, one Start the run button, then Starting the run… while it starts, or Not started: why with Retry and Discard in its place after a failure. It goes once the run is up, and the view stays as it was.
+_Said_: start card
+_On screen_: Not running, Start the run
+_In code_: homeStart, runStarts
+_Avoid_: run-off banner, start bar, off page, Start run card
