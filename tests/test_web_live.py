@@ -1450,5 +1450,15 @@ def test_send_waits_f205(tmp: Path) -> None:
     check(o.get('asked'), 'F190c: after the delay what is queued is asked again')
 
 
+def test_banner_f402c(tmp: Path) -> None:
+    """F402c: the run-off banner is not on Home, whose Start card says it; every other view but Status has it."""
+    if not shutil.which('node'):
+        return
+    s = {'up': False, 'boot': 'b', 'shown': U.controls_shown(False, {}, {})['shown']}
+    got = logic_js([['runOff', s, {'view': v}] for v in ('home', 'status', 'plan', 'talk')]
+                   + [['runOff', s, {'view': 'home', 'thread': 'c1'}], ['runStarts', s], ['runStarts', {**s, 'up': True}]])
+    eq(got, [False, False, True, True, True, True, False], 'where the banner shows')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c)]))
