@@ -1125,6 +1125,8 @@ check = "tools/ui-15.sh state"   # exit 0 free, 75 busy (first line: the holder)
 label = "iPhone 15"              # what the screens say; default: the name
 connect = "Connect iPhone 15"    # the Needs you wording while it is missing; default: "Connect <label>"
 description = "the phone on the shelf, for app tests"  # what it is, for agents; default: none
+page = ":8080"                   # optional: its web page (A web page, below)
+start = "tools/serve.sh"         # optional: the command that serves it
 ```
 
 - **The check** runs in the main checkout. Exit 0 is free, 75 busy, 69 missing; any other status, or a run past
@@ -1155,6 +1157,16 @@ description = "the phone on the shelf, for app tests"  # what it is, for agents;
 - **Without the setting** no tool is checked and nothing else changes; a command stopped for low memory still waits
   (### Waiting for memory). The run keeps its readings in `.runner/TOOLS.json`, so a restart goes on
   with them (a file older than 10 min is not used).
+- **A web page.** `page` is an http or https address, with no sign-in in it, or `:PORT` for this machine, at the host
+  the run page was opened on. `start` needs a page: one line of shell text, 1000 characters at most. It runs in the
+  project's main checkout, read fresh from that checkout's runner.toml only (not a worktree's, not runner.local.toml,
+  not AGENT_RUNNER_CONFIG's file, and never text the page sends). Start, stop, state, output and the https, token and
+  same-origin rule are as for a device's web page (### Devices). A change to `start` does not stop what runs: Stop (or
+  `run device stop NAME`) still ends the old command, also when `start` or the tool itself was taken out (once the tool
+  is gone, only the command can stop it, as it has no card); the next start uses the new one. `run device start|stop|show
+  NAME` take it and `run device list` lists it; when a device has the same name, these commands take the runner.toml
+  tool. POST /tools ops `start` and `stop` take an optional `"source"` (`"device"` or `"runner.toml"`), the device when
+  not given. GET /tools gives `page`, `start` and `run` (its state). The Tools page does not show it yet.
 
 ### Devices
 
@@ -1215,7 +1227,7 @@ command on this machine. A person adds it on the run app's Tools page. Each proj
     SSH_ASKPASS helper. Neither is on the command line or in the environment.
   - `run device copy FROM TO`: one side is `NAME:path`, the other a local path; `-r` for a folder.
   - `run device take NAME`: has a one-task device until the task's session ends; `run device release NAME`: frees a one-task device before its task ends.
-  - `run device start NAME` and `run device stop NAME`: start or stop an other device's web page command (see A web page); by agents of a project that uses the device.
+  - `run device start NAME` and `run device stop NAME`: start or stop an other device's web page command (see A web page), or a runner.toml tool's (### Shared tools); by agents of a project that uses the device.
 - **Output.** What the command prints has each stored secret replaced by `[secret hidden]`, so a chat, a log or a
   transcript does not carry it. Only the exact bytes are caught: an encoded or transformed copy of a secret is not.
 - **Host key.** The first host key an SSH device shows is accepted only by a person, on the page, from its fingerprint.
@@ -1643,7 +1655,7 @@ run device ssh NAME -- CMD             run CMD on a device (SSH; the runner sign
 run device copy FROM TO                copy to or from a device (one side NAME:path; -r for a folder)
 run device take NAME                   have a one-task device until this task's session ends
 run device release NAME                a one-task device is free for other tasks again, before its task ends
-run device start NAME                  start a device's web page command, detached; a second start says it is running
+run device start NAME                  start a device's or a runner.toml tool's web page command, detached; a second start says it is running
 run device stop NAME                   stop what `run device start` began (its whole process group)
 run device link                        the Tools page's address (a run app must be up)
 agent-runner cost [--days N] [--files] where the workers' tokens went, by kind of tool call (--files: by
@@ -1845,7 +1857,7 @@ needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "n
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
 
 
-[run.tools]               # shared tools, one [run.tools.<name>] each: check, label, connect, description (### Shared tools)
+[run.tools]               # shared tools, one [run.tools.<name>] each: check, label, connect, description, page, start (### Shared tools)
 [run.checks]              # checks a blocked task can wait on, one [run.checks.<name>] each: cmd, label (### Until checks)
 ```
 
