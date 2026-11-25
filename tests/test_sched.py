@@ -515,7 +515,7 @@ def test_agent_held(tmp: Path):
 
     with mock.patch.object(settings_live, 'SETTINGS_STILL', 0), mock.patch.object(loop, 'start', start), \
             mock.patch.object(loop, 'resume', resume), mock.patch.object(state, 'log', lambda m, *a, **k: said.append(m)), \
-            mock.patch.object(loop, 'MUX', mock.Mock(panes=lambda: {})), mock.patch.object(loop, 'capped', lambda f: None), \
+            mock.patch.object(loop, 'MUX', mock.Mock(panes=lambda: {})), mock.patch.object(loop, 'capped', lambda *a: None), \
             mock.patch.object(loop, 'api_down', lambda s: False), mock.patch.object(loop, 'unlogged', lambda *a: False), \
             mock.patch.object(loop, 'ask_stop', lambda w: None), mock.patch.object(loop, 'stopping', lambda: False), \
             mock.patch.object(loop, 'queue_cut_off', lambda *a: {}), mock.patch.object(merge, 'fix_session', lambda *a: fixes.append(a) or 0):
