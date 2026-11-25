@@ -39,7 +39,7 @@ export default function ({ provider, model }) {
         said: context.messages.filter((m) => m.role === 'user').map((m) => m.content) }) + '\n');
       const base = { role: 'assistant', api: 'fake', provider, model, timestamp: Date.now(), usage: { input: 10, output: 5,
         cacheRead: 0, cacheWrite: 0, cost: { total: 0 } } };
-      if (last.role === 'user' && text === 'slow') await new Promise((r) => setTimeout(r, 60000));
+      if (last.role === 'user' && (text === 'slow' || text.endsWith('(not my answer): slow'))) await new Promise((r) => setTimeout(r, 60000));
       if (last.role === 'user' && text === 'fail') return { ...base, content: [], stopReason: 'error', errorMessage: '400 invalid request' };
       if (last.role === 'user' && text.startsWith('run 5 s: '))
         return { ...base, stopReason: 'toolUse', content: [{ type: 'toolCall', id: `c${Date.now()}`, name: 'bash', arguments: { command: text.slice(9), timeout: 5 } }] };

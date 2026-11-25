@@ -101,10 +101,12 @@ def queued(rec: dict, ops) -> int:
 
 def queue_answers(rec: dict, ops) -> bool:
     """F430: does what is queued in `rec`'s process answer its chat's question: any words not about it? The harness loop
-    counts its queue and does not say it, so there any do."""
+    says so itself ('answers', F433); one started before it did only counts its queue, so there any do."""
     if not queued(rec, ops):
         return False
-    return bool(rec.get('harness')) or not all(map(chat_question.is_about, queue_in(ops, (rec.get('startedAt') or 0) / 1000)))
+    if rec.get('harness'):
+        return bool(rec.get('answers', True))
+    return not all(map(chat_question.is_about, queue_in(ops, (rec.get('startedAt') or 0) / 1000)))
 
 
 def queued_now(name: str) -> int:

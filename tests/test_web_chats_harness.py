@@ -23,7 +23,7 @@ from _check import check, eq, has, report
 from _web import get, logic_js, post
 from test_control_harness import Env, answered, until
 
-from agent_runner import control as K, control_harness as CH, plat, status, ui_model as U, web as W
+from agent_runner import chat_question as Q, control as K, control_harness as CH, plat, status, ui_model as U, web as W
 from agent_runner.attach import attach_size_frame
 
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
@@ -178,6 +178,33 @@ def test_decide(page: Page) -> None:
     check(r['ok'] and 'Small' in K.C.todo.read_text(encoding='utf-8'), 'a press answers it', r)
 
 
+def test_about(page: Page) -> None:
+    print('words about its question, queued')
+    chat = started(page, 'hi about')
+    sid = sid_of(chat)
+    page.act('chat_to', text='x\n\nDECIDE: Which hue? [Red / Blue]', to=chat)
+    check(answered(sid, 'DECIDE: Which hue?'), 'the chat ends on a question')
+    page.rests(chat)
+    qid = (page.live(chat)['ask'] or {}).get('id')
+    check(qid, 'which it asks', page.live(chat))
+    about = f'{Q.ABOUT}Which hue?{Q.NOT}'
+
+    def says() -> tuple:
+        d = page.live(chat)
+        return (d['ask'] or {}).get('id'), d['queued']
+    page.act('chat_to', text=f'{about}slow', to=chat)
+    check(page.rests(chat, 'busy'), 'a reply to words about it is under way')
+    page.act('chat_to', text=f'{about}and why?', to=chat)
+    check(until(lambda: page.live(chat)['queued'] == 1), 'more of them are queued')
+    eq((says(), CH.now(sid)['answers']), ((qid, 1), False), 'it is still asked')
+    page.act('chat_to', text='Blue', to=chat)
+    check(until(lambda: page.live(chat)['queued'] == 2), 'an answer is queued after them')
+    eq((says(), CH.now(sid)['answers']), ((None, 2), True), 'it is asked no more')
+    check(page.act('chat_to', text='', to=chat, force=True)['ok'] and answered(sid, 'answer to Blue'), 'the answer goes in')
+    page.rests(chat)
+    eq((says(), CH.now(sid)['answers']), ((None, 0), False), 'answered, nothing queued')
+
+
 def test_talk(page: Page) -> None:
     print('Talk')
     r = page.act('talk', text='what is up', to='')
@@ -258,7 +285,7 @@ def main() -> int:
         try:
             if shutil.which('node') and not plat.WINDOWS:
                 page = Page(env)
-                tests += [lambda f=f: f(page) for f in (test_chat, test_screen, test_images, test_decide, test_talk, test_resume)]
+                tests += [lambda f=f: f(page) for f in (test_chat, test_screen, test_images, test_decide, test_about, test_talk, test_resume)]
             else:
                 print('SKIP: the sessions need node and a hidden terminal')
             return report(tests)
