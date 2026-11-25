@@ -362,19 +362,20 @@ def long_line(tid: str, why: str, c=None) -> str:
 
 # B795: the words that make a task named beside them a wait, not a mention ("the list F12 made")
 _IDS = r'(?P<ids>[A-Z]+\d+[a-z0-9]*(?:(?:, (?:and )?| and | or |/)[A-Z]+\d+[a-z0-9]*)*)\b'
-_FILL = r'(?:(?:the|task|tasks|release|open|both|for|on|of|merge|landing) )*'
+_FILL = r'(?:(?:the|task|tasks|release|open|both|for|on|of|merge|landing|list|work|fix|from|in|to) )*'
 _WAIT_FOR = re.compile(
     r'(?:\b(?i:wait(?:s|ing)?(?: for| on)?|until|depends? on|blocked (?:on|by))\b[^.,;:?!]{0,40}?\b'
-    r'|\b(?i:after|once|when|needs?|requires?|release|land|merge|publish|ship|finish|cut|run|start) (?i:' + _FILL + r'))'
-    + _IDS + r"(?!['’]s)")
+    r'|\b(?i:wait(?:s|ing)? (?:for|on))\b[^;:?!]{0,40}?\b'
+    r'|\b(?i:after|once|when|needs?|requires?|pending|upgrade|release|land|merge|publish|ship|finish) (?i:' + _FILL + r'))'
+    + _IDS + r"(?!['’]s| (?:opens?|shows?|loads?|appears?)\b)")
 _WAIT_THEN = re.compile(
-    r'\b' + _IDS + r'(?: \([^)]*\))? (?i:(?:release )?(?:(?:has|have|is|are|must|to|be|been|gets?|first|not|yet) )*'
-    r'(?:lands?|landed|merges?|merged|ships?|shipped|released?|releases|published|finish(?:es|ed)?|done|first)\b)')
+    r'\b' + _IDS + r'(?: \([^)]*\))? (?i:(?:release )?(?:(?:has|have|is|are|must|to|be|been|gets?|first|not|yet|both) )*'
+    r'(?:lands?|landed|merges?|merged|ships?|shipped|released|releases|release(?! \w)|published|finish(?:es|ed)?|first|needed|(?<=is )done|(?<=are )done|(?<=be )done)\b)')
 
 
 def waits_named(tid: str, why: str, live: set[str]) -> list[str]:
     """The open tasks and releases (`live`) that task `tid`'s ask line `why` says it waits for."""
-    why = P.URL.sub('', why)
+    why = re.sub(r'[`*]', '', P.URL.sub('', why))
     found = [t for r in (_WAIT_FOR, _WAIT_THEN) for m in r.finditer(why) for t in P.TASK_ID.findall(m['ids'])]
     return [t for t in dict.fromkeys(found) if t in live and t != tid]
 
