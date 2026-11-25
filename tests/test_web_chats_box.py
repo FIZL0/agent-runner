@@ -424,12 +424,13 @@ def test_interrupt_c1_b141(tmp: Path) -> None:
 SWIPE_DRIVER = r"""
 const fs = require('fs'), page = fs.readFileSync(0, 'utf8');
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
-const on = {}, els = {}, S = {}, PD = {}, HB = '', render = () => {}, getComputedStyle = () => ({overflowX: 'auto'});
+let coarse = true, drawn;  // B813: drawn is what had the focus at the last render
+const on = {}, els = {}, S = {}, PD = {}, HB = '', render = () => { drawn = document.activeElement }, TOUCH = () => coarse, getComputedStyle = () => ({overflowX: 'auto'});
 let DR = null, noClick = false, skip = '';
 const dragEnd = () => { DR = null }, closeSheet = () => { S.sheet = '' };
 const cls = () => ({add() {}, remove() {}});
 const $ = k => els[k] = els[k] || {style: {}, classList: cls(), offsetWidth: 280, scrollTop: 0};
-const document = {body: {}, querySelector: () => ({offsetParent: {}}),
+const document = {body: {}, activeElement: null, querySelector: () => ({offsetParent: {}}),
   addEventListener(t, f, o) { (on[t] = on[t] || []).push(f) }};
 const box = {scrollTop: 500, scrollHeight: 3000, clientHeight: 600, scrollWidth: 400, clientWidth: 400, parentElement: document.body};
 const el = {scrollHeight: 20, clientHeight: 20, parentElement: box, closest: s => skip && s.includes(skip) ? {} : null};
@@ -438,7 +439,8 @@ const fire = (t, x, y, o = {}) => { let stopped = false;
   on[t].forEach(f => f({target: el, touches: Array(o.n || (t === 'touchstart' || t === 'touchmove' ? 1 : 0)).fill().map((_, i) => ({identifier: i, clientX: x, clientY: y})), timeStamp: now += 100,
     cancelable: o.cancelable !== false, preventDefault() { if (o.cancelable !== false) stopped = true }}));
   return stopped };
-eval(logic + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'", page.indexOf('/* F124: a swipe right anywhere'))) + `
+const lineOf = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+eval(logic + lineOf('const typingIn=') + "function menuClick(q) {" + lineOf("  if(q('[data-menu]')){") + "}\n" + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'", page.indexOf('/* F124: a swipe right anywhere'))) + `
 // a touch from (100, 300) through these [dx, dy, options]: the moves it kept from scrolling, and where the drawer ends
 function touch(open, moves, end = 'touchend') {
   S.drawer = open; S.sheet = ''; DR = null; skip = ''; box.scrollTop = 500; box.scrollHeight = 3000; fire('touchstart', 100, 300);
@@ -465,6 +467,22 @@ const out = {
   held: touch(false, [[2, 0], [20, 0, {hold: true}], [220, 0]]),
   tap: touch(false, [[4, 3]]),
 };
+// B813: a focused text field when the drawer is moved: [kept the focus, kept it at the render, its draft, the drawer]
+function focused(go, field = true) {
+  const f = {value: 'draft', matches: () => field, blur() { document.activeElement = document.body }};
+  document.activeElement = f; drawn = null; go();
+  return [document.activeElement === f, drawn === f, f.value, !!S.drawer];
+}
+const menu = open => () => { S.drawer = open; menuClick(s => s === '[data-menu]') };
+out.kb = {
+  open: focused(() => touch(false, [[20, 0], [220, 0]])),
+  cancel: focused(() => touch(false, [[20, 0], [220, 0]], 'touchcancel')),
+  back: focused(() => touch(false, [[20, 0], [220, 0], [15, 0]])),
+  close: focused(() => touch(true, [[-20, 0], [-220, 0]])),
+  stays: focused(() => touch(true, [[-20, 0], [-220, 0], [-15, 0]])),
+  menu: focused(menu(false)), menuOpen: focused(menu(true)), noField: focused(menu(false), false),
+};
+coarse = false; out.kb.mouse = focused(menu(false)); out.kb.mouseSwipe = focused(() => touch(false, [[20, 0], [220, 0]])); coarse = true;
 const from = k => { skip = k; S.drawer = false; S.sheet = ''; DR = null; fire('touchstart', 100, 300);
   const r = fire('touchmove', 200, 300); fire('touchend'); return r };
 out.box = from('textarea'); out.mic = from('.mic.hold');
@@ -501,6 +519,13 @@ def test_swipe_or_scroll_b167(tmp: Path) -> None:
     eq(got['tap'][0::3], ['0', False], 'a tap stays a tap')
     eq([got['box'], got['mic'], got['sideways']], [False] * 3, 'text boxes, the held mic and sideways scrollers are left alone')
     eq(got['sheet'], [False, 'translateY(120px)', ''], "the sheet's swipe down")
+    kb = got['kb']
+    for k, what in (('open', 'a swipe that opens the drawer'), ('menu', 'the menu button')):
+        eq(kb[k], [False, False, 'draft', True], f'B813: {what} drops the focus before the render, and the draft stays')
+    for k, drawer, what in (('cancel', False, 'a cancelled swipe'), ('back', False, 'a swipe that springs back'), ('close', False, 'a swipe that closes'),
+                            ('stays', True, 'a swipe on an open drawer that stays open'), ('menuOpen', True, 'the menu button with the drawer open'),
+                            ('noField', True, 'a focus that is no text field'), ('mouse', True, 'the menu button with no touch'), ('mouseSwipe', True, 'a swipe with no touch pointer')):
+        eq(kb[k], [True, True, 'draft', drawer], f'B813: {what} leaves the focus')
 
 
 if __name__ == '__main__':

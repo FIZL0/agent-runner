@@ -80,7 +80,7 @@ document.addEventListener('click',async e=>{
   if(q('[data-spk]')){if(talkReads())return hush();if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);unlockAudio();talkSet('read',!TS.read);return}
   if(x=q('[data-talkmode]'))return talkMode(x.dataset.talkmode);
   if(x=q('[data-speak]'))return playReply(x.dataset.speak);
-  if(q('[data-menu]')){S.drawer=true;render();return}
+  if(q('[data-menu]')){if(!S.drawer)drawerBlur();S.drawer=true;render();return}
   if(q('#scrim')){S.drawer=false;render();return}
   if(x=q('[data-view]')){const v=x.dataset.view;return viewGo(()=>goView(v),S.thread)}
   if(q('[data-home]')){viewGo(()=>{S.thread=null;S.ctx=null;render(true)},S.thread);return}
