@@ -68,8 +68,8 @@ PASTE = re.compile(r'<pasted_content[^>]*>\n?(.*?)</pasted_content[^>]*>\n?', re
 
 
 def is_about(text) -> bool:
-    """Are the words `text` of one message about the question, not its answer? Every message in them, when Claude Code
-    put several together."""
+    """Are the words `text` of one message about the question, not its answer? Of several pastes in one message, each
+    must be; words that begin so with no paste around them are one message, whatever follows."""
     def one(t: str) -> bool:
         return t.startswith(ABOUT) and NOT in t
     if not isinstance(text, str):
