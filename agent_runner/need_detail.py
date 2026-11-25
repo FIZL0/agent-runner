@@ -12,6 +12,7 @@ import os
 import platform
 import re
 import shlex
+import sys
 from pathlib import Path
 
 from agent_runner import plan as P
@@ -437,16 +438,16 @@ def question_of(ask: str) -> str:
     return _said(ss[at]) if (at := _asked(ss)) >= 0 else ''
 
 
-def decide_words(ask: str, summary: str, short) -> tuple[str, list[str], list[str]]:
+def decide_words(ask: str, summary: str) -> tuple[str, list[str], list[str]]:
     """B223a: a DECIDE's (question, background as paragraphs, notes). Without a question mark the question is
-    `summary`, else the first sentence, `short`; what it says whole is not in the background."""
+    `summary`, else the first sentence, whole (B793b); what it says is not in the background."""
     ss = _sentences(ask)
     at = _asked(ss)
     if at >= 0:
         question = _said(ss[at])
     else:
         first = _said(next((s for s in ss if s[0][0] != 'note'), ss[0] if ss else [('do', ask)]))
-        question = summary or short(first)
+        question = summary or first
         at = next((i for i, s in enumerate(ss) if _said(s).rstrip('.') == question.rstrip('.')), -1)
     paras, notes = [''], []
     for i, s in enumerate(ss):
@@ -463,10 +464,10 @@ def decide_words(ask: str, summary: str, short) -> tuple[str, list[str], list[st
     return question, [p for x in paras if (p := _said([('do', x)]))], [n for n in notes if n]
 
 
-def detail(label: str, tid: str, ask: str, title: str, text: str, short) -> dict:
+def detail(label: str, tid: str, ask: str, title: str, text: str) -> dict:
     """What the card and the popup of one item say: said, title, where, summary, lead, steps, expect, notes and shots;
     B223a: `question`, what a DECIDE asks ('' for the others), which is its summary too; it has steps only from its ask file.
-    F175: `step_more` (each step's link, cmd and on) and `inputs` (what the person gives, `ui_model.need_give`). `text` is its task's text, `short` ui_model's ask_short."""
+    F175: `step_more` (each step's link, cmd and on) and `inputs` (what the person gives, `ui_model.need_give`). `text` is its task's text. B793b: the title and the summary are whole; a view with one line shortens them itself."""
     d = asks_file(tid)
     pieces = split_ask(ask, label in ('CONFIRM', 'BLOCKED'))
     of = lambda kind: [s for k, p in pieces if k == kind and (s := shown(p))]  # noqa: E731
@@ -474,15 +475,15 @@ def detail(label: str, tid: str, ask: str, title: str, text: str, short) -> dict
     if old[0]:
         d = {**d, 'steps': old[0], 'step_more': old[1]}
     steps, expect = d.get('steps') or of('do'), d.get('expect') or ([] if d.get('steps') else of('see'))
-    summary, lead = d.get('summary') or short((steps or expect or [ask])[0]), [] if d.get('steps') else of('lead')
+    summary, lead = d.get('summary') or (steps or expect or [ask])[0], [] if d.get('steps') else of('lead')
     notes, question = of('note'), ''
     if label == 'DECIDE':
-        question, lead, notes = decide_words(ask, d.get('summary') or '', short)
+        question, lead, notes = decide_words(ask, d.get('summary') or '')
         summary, steps = question, d.get('steps') or []
         lead = [] if steps else lead
     shots = d.get('shots') or []
     shots = shots + [s for s in named_shots(text) if s['path'] not in {x['path'] for x in shots}]
-    return {'said': SAID.get(label, label), 'title': P.short_title(title) if title else tid,
+    return {'said': SAID.get(label, label), 'title': P.short_title(title, sys.maxsize) if title else tid,
             'where': d.get('where') or place(ask), 'summary': summary, 'question': question,
             'lead': lead, 'steps': steps, 'expect': expect, 'notes': notes,
             'shots': shots, 'step_more': d.get('step_more') or [],

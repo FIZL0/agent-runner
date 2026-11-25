@@ -382,7 +382,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
                       'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
                       'age': P.age(stamps.get(tid, ''), now),
-                      'detail': need_detail.detail(label, tid, ask, title, texts.get(tid, ''), ask_short)})  # F162
+                      'detail': need_detail.detail(label, tid, ask, title, texts.get(tid, ''))})  # F162
         if devs := _need_devices(texts.get(tid, '')):  # F408
             needs[-1]['devices'] = devs
         if label == 'DECIDE' and not url:

@@ -1919,6 +1919,14 @@ def test_short_ask_b152() -> None:
     row = p.row(4, n)
     check(all('\n' not in t for t, _ in row) and 'Glint downloads.' in ''.join(t for t, _ in row),
           'the panel row is the short ask on one line', row)
+    eq(row[1][0], n['ask_short'], 'B793b: the row is short though its detail is whole')
+    for label, what in (('DECIDE', 'The log (done.log) is old. Pick one'), ('CONFIRM', 'Open the log (done.log); tap Undo')):
+        m = U.needs_rows([(label, 'R45', '', what, '', 'T', False, '')], dt.datetime(2026, 11, 23))[0][0]
+        check('(done.log)' in m['detail']['summary'] and 'log' in p.row(4, m)[1][0] and '(' not in p.row(4, m)[1][0],
+              f'B793b: {label}: the row drops the aside its detail keeps', (m['detail']['summary'], p.row(4, m)))
+    own = dict(n, detail=dict(n['detail'], summary='Try it (on the phone)'))
+    eq(p.row(4, own)[1][0], 'Try it (on the phone)', "an ask file's summary stays as written")
+    check('(iFizBox' in n['detail']['summary'], 'and the detail keeps the aside', n['detail']['summary'])
     lines = drawn(p).lines()
     at = [i for i, l in enumerate(lines) if 'R45 ' in l and 'Sign in to Chariz' in l]
     eq(len(at), 1, 'R45 shows on one panel line')
@@ -1944,7 +1952,7 @@ def test_need_question_b223b() -> None:
     the steps of its ask file."""
     from agent_runner import need_detail as N
     ask = 'The port is taken. Both work. Which port do we use?'
-    d = N.detail('DECIDE', 'D3', ask, 'On the 15 Pro with Tailscale selected as the VPN, check the port', '', U.ask_short)
+    d = N.detail('DECIDE', 'D3', ask, 'On the 15 Pro with Tailscale selected as the VPN, check the port', '')
     row = dict(SNAP['needs'][0], label='DECIDE', detail=d)
     said = lambda row, w=80: [''.join(t for t, _ in x).rstrip() for x in page(SNAP).need_lines(row, w)]  # noqa: E731
     lines = said(row)
@@ -1971,7 +1979,7 @@ def give_page(ask: dict, tid: str = 'F2', **kw):
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(ask), encoding='utf-8')
     row = {'label': 'DECIDE', 'id': tid, 'concept': '', 'title': 'pick a database', 'what': '', 'url': '', 'ask': 'yes or no?',
-           'age': '1m', 'detail': N.detail('DECIDE', tid, 'yes or no?', 'pick a database', '', U.ask_short)}
+           'age': '1m', 'detail': N.detail('DECIDE', tid, 'yes or no?', 'pick a database', '')}
     row['answers'] = U.need_answers(row)
     row.update(acts=U.row_acts('need', row), labels=U.row_labels('need', row))
     p = page(dict(SNAP, needs=[row, SNAP['needs'][2]]), **kw)

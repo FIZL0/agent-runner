@@ -182,7 +182,7 @@ def test_need_detail_f162(tmp: Path) -> None:
     for tid, (label, ask) in ASKS_F162.items():
         pieces = N.split_ask(ask, label in ('CONFIRM', 'BLOCKED'))
         eq(''.join(p for _, p in pieces), ask, f'{tid}: the pieces joined are the ask')
-        got[tid] = N.detail(label, tid, ask, 'A task', '', U.ask_short)
+        got[tid] = N.detail(label, tid, ask, 'A task', '')
     for odd in ('', 'x', '  a; b  ', 'Pick: 1) a 2) b', 'Read (a; b: c', 'See https://x.y/z: ok. e.g. This one; then\nthat', '`a; b` then c'):
         eq(''.join(p for _, p in N.split_ask(odd)), odd, f'joined back: {odd!r}')
     b = got['B160']
@@ -198,7 +198,7 @@ def test_need_detail_f162(tmp: Path) -> None:
     eq((got['B163']['said'], got['B163']['steps']), ('Stuck', ['Waits for its Windows run']), 'B163')
     eq((len(got['B177']['steps']), len(got['B177']['expect'])), (3, 1), 'B177: then is a step, the colon what to see')
     eq((len(got['R6']['steps']), got['R6']['expect']), (3, ['Is the run still going?']), 'R6: (1) and (2)')
-    eq(N.detail('DECIDE', 'F1', 'Which look: Full, Small?', '', '', U.ask_short)['question'], 'Which look: Full, Small?', 'a question is one piece')
+    eq(N.detail('DECIDE', 'F1', 'Which look: Full, Small?', '', '')['question'], 'Which look: Full, Small?', 'a question is one piece')
     for semi, do, see in (  # F162a1: after a colon each piece after a ';' is classed again
             ('Tap Save: it says Saved; tap Undo; the list returns', ['Tap Save', 'Tap Undo'], ['It says Saved', 'The list returns']),
             ('Tap Save: it says Saved; and the list returns; and tap Undo', ['Tap Save', 'And tap Undo'], ['It says Saved', 'And the list returns']),
@@ -259,8 +259,8 @@ def test_decide_question_b223a(tmp: Path) -> None:
     old = ('R90 is research, but its diff changes code (done.log), so it did not merge. Answer `follow-up` (the code is filed) or '
            '`merge anyway` (the code lands); the attempt is parked on wip/R90')
     d = row(old)['detail']
-    eq((d['question'], d['steps']), ('R90 is research, but its diff changes code, so it did not merge.', []), 'an old ask: its first sentence')
-    eq((d['summary'], d['lead'], d['notes']), (d['question'], [old], ['Reply with your answer']), 'all of it is kept as background')
+    eq((d['question'], d['steps']), ('R90 is research, but its diff changes code (done.log), so it did not merge.', []), 'an old ask: its first sentence, whole')
+    eq((d['summary'], d['lead'], d['notes']), (d['question'], [old.split('did not merge. ')[1]], ['Reply with your answer']), 'the rest of it is its background')
     eq(need('pick a layout. Full is larger'), 'D9 - pick a layout', 'needs: the first sentence when nothing is asked')
     d = row('Pick a layout')['detail']
     eq((d['question'], d['lead']), ('Pick a layout', []), 'said whole in the question, so not again')
@@ -297,6 +297,25 @@ def test_decide_question_b223a(tmp: Path) -> None:
            (['Open Home', 'Tap Undo'], ['The list returns'], [], '', 'Open Home'), f'{label}: unchanged')
 
 
+def test_whole_b793b(tmp: Path) -> None:
+    """B793b: detail's title is the task's first sentence whole, and its summary the whole first step or question, for each label, every step whole; the
+    row's ask_short stays cut."""
+    fake_run(tmp)
+    title = 'Show the whole title of a task ' + 'that has many words ' * 6 + 'up to here'
+    step = 'Open the settings of the app (the gear at the top) and read docs/a/b.md ' + 'and look at each row ' * 8 + 'to the end'
+    check(len(title) >= 150, 'the fixture is long', len(title))
+    for label in ('CONFIRM', 'DECIDE', 'BLOCKED', 'STUCK'):
+        for ask in (step, step + '?') if label == 'DECIDE' else (step,):
+            row = U.needs_rows([(label, 'D9', '', ask, '', title + '. More words here', False)], NOW)[0][0]
+            d = row['detail']
+            eq(d['title'], title, f'{label}: the title')
+            eq(d['summary'], ask, f'{label}: the summary')
+            check(len(row['ask_short']) <= U.ASK_SHORT, f'{label}: ask_short is cut', row['ask_short'])
+        if label in ('CONFIRM', 'BLOCKED'):
+            d = U.needs_rows([(label, 'D9', '', f'1) {step}. 2) {step}', '', title, False)], NOW)[0][0]['detail']
+            eq((d['summary'], d['steps']), (step + '.', [step + '.', step]), f'{label}: two long steps, each whole')
+
+
 def test_old_script_c37a(tmp: Path) -> None:
     """C37a: a BLOCKED item with an old <notes>/wizards/ID.sh shows its steps and links, read as text, nothing run."""
     from agent_runner import need_detail as N
@@ -307,12 +326,12 @@ def test_old_script_c37a(tmp: Path) -> None:
     (w / 'D3.sh').write_text(f'#!/bin/bash\nstage() {{ touch {mark}; }}\n# STAGES: author this section.\n'
                              f'stage "Get the key"\nopen_url https://example.com/keys\nsay "Create a key, see https://example.com/help"\n'
                              f'step "Copy it"\ntouch {mark}\n', encoding='utf-8')
-    d = N.detail('BLOCKED', 'D3', 'Give the key', 'T', '', U.ask_short)
+    d = N.detail('BLOCKED', 'D3', 'Give the key', 'T', '')
     eq(d['steps'], ['Get the key', 'Open this', 'Create a key, see https://example.com/help', 'Copy it'], 'its steps')
     eq([m.get('link') for m in d['step_more']], [None, 'https://example.com/keys', 'https://example.com/help', None], 'its links')
     check(not mark.exists(), 'nothing ran')
     check(not any('cmd' in m for m in d['step_more']), 'no run line')
-    eq(N.detail('CONFIRM', 'D3', 'Check it', 'T', '', U.ask_short)['steps'], ['Check it'], 'only a BLOCKED item reads it')
+    eq(N.detail('CONFIRM', 'D3', 'Check it', 'T', '')['steps'], ['Check it'], 'only a BLOCKED item reads it')
 
 
 def test_part_of_part_b199(tmp: Path) -> None:
@@ -336,4 +355,4 @@ def test_part_of_part_b199(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
+    raise SystemExit(report([in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
