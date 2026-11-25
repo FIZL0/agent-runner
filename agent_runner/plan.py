@@ -50,6 +50,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  plan edit; an error when no slot runs ID, with the question it asks the person and the
                                  command that answers it, or the `note` to run
     ./run plan shelve <ID>       later: stays blocked, off Needs you; `unshelve <ID>` brings it back
+    ./run plan hold <ID>         it keeps its place in the queue and no run starts it; `unhold <ID>` ends it
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
     ./run plan concept "TITLE" --page URL [--files A,B]   a concept page a chat showed inline: filed as a K task
@@ -194,7 +195,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-KEYS = ('files', 'after', 'test', 'journal', 'model', 'needs', 'split-by')  # B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
+KEYS = ('files', 'after', 'test', 'journal', 'model', 'needs', 'split-by', 'held')  # F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
 # ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
 FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
@@ -242,7 +243,7 @@ def section(path, name: str, exact: bool = False) -> list[str]:
     if name == 'next':
         for i, line in enumerate(ls):
             m = ITEM.match(line)
-            if m and m.group(2) == ' ' and not m.group(1):
+            if m and m.group(2) == ' ' and not m.group(1) and 'held' not in fields(line):  # F429
                 return _item_block(ls, i)
         return []
     for i, line in enumerate(ls):
@@ -607,6 +608,8 @@ def _split_skipped(ls: list[str], at: list[int]) -> tuple[list[str], dict[str, l
             person[tid] = []
         elif checks := until_of(ls, j):  # F427b: it may wait for the very release this is
             stuck[tid] = [until_label(checks)]
+        elif 'held' in fields(ls[j]):  # F429
+            stuck[tid] = [HELD_ROW]
         elif roots := _stuck_on(ls, j, where, never):
             stuck[tid] = roots
         else:
@@ -660,13 +663,14 @@ def _stuck_on(ls: list[str], i: int, where: dict[str, int], never: set[int]) -> 
         if j is None or j in seen:
             continue
         seen.add(j)
-        if j in never or _on_person(ls, j) or _shelved(ls, j) or until_of(ls, j):
+        if j in never or _on_person(ls, j) or _shelved(ls, j) or until_of(ls, j) or 'held' in fields(ls[j]):
             out.append(ITEM.match(ls[j]).group(3).rstrip('.'))
         else:
             todo += _held_by(ls, j, where)
     return out
 
 
+HELD_ROW = ''  # F429: the root a held task itself is stuck on: no task, the person's hold
 ALL = 'all'  # an `after:` (or `block --after`) value: every task before it in TODO.md not done yet (F35)
 
 
@@ -767,7 +771,8 @@ def not_waiting(skipped) -> str:
     skipped = skipped or {}
     person = [t for t, roots in skipped.items() if not roots]
     said = [f'{", ".join(person)} (needs you)'] if person else []
-    said += [f'{t} (after {", ".join(roots)})' for t, roots in skipped.items() if roots]
+    said += [f'{t} (held)' if roots == [HELD_ROW] else f'{t} (after {", ".join(roots)})'
+             for t, roots in skipped.items() if roots]
     return f'; not waiting on: {", ".join(said)}' if said else ''
 
 
@@ -1146,7 +1151,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
             force = True
         elif a == '--last':  # F43: at the end of the leading section, `after: all above`
             last, after_flag, in_where = True, False, False
-        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--') and a != f'--{SPLIT_BY}':
+        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--') and a not in (f'--{SPLIT_BY}', '--held'):
             if k + 1 >= len(rest) or rest[k + 1].startswith('--'):
                 no(f'{a} needs a value')
             if a in vals or (a == '--pri' and pri):
@@ -1301,7 +1306,8 @@ def add(prefix: str, text: str, where: str | None = None, ref: str | None = None
     if pri and not PRI_TAG.search(text):
         text = f'(follow-up, {pri}) {text}'
     j = _place_pri(ls, pri) if pri and not where else _place(ls, where or 'top', ref)
-    line = _unheld(f'- [ ] **{tid}** {text}')  # only this sets a hold
+    from agent_runner import row_hold  # here: row_hold imports this module
+    line = row_hold.cleared(_unheld(f'- [ ] **{tid}** {text}'))  # only this sets a split hold, `hold` a held task
     if split_c and _big([line], tid, split_c):  # in the same write: no run reads the task without it
         line += f' | {SPLIT_BY}: {split_stamp()}'
     ls[j:j] = [line]
@@ -1422,6 +1428,7 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
         desc = prose(text).strip()
         new = dict(FIELD.findall(text))
         new.pop(SPLIT_BY, None)
+        new.pop('held', None)  # F429: `hold` alone writes it
         # continuation lines before the first sub-item are description too (and `note` appends to a block's
         # last line): they go, sub-items stay, and a BLOCKED on a dropped last line moves to the first line
         k = next((n for n, l in enumerate(rest_blk) if ITEM.match(l)), len(rest_blk))
@@ -3125,7 +3132,8 @@ def _push(root: Path) -> str:
 
 
 EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise',
-         'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit', 'restyle', 'concept')
+         'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit', 'restyle', 'concept',
+         'hold', 'unhold')
 
 
 WORKTREE_ENV = 'AGENT_RUNNER_WORKTREE'  # B103: a slot's own worktree, set in its pane (slots.slot_env)
@@ -3478,6 +3486,26 @@ def _p_unshelve(a, x):
     return x.say(f'{unshelve(a.id)} is back on {needs_cfg()["heading"]}')
 
 
+def _p_hold(a, x):
+    from agent_runner import row_hold
+    _find(lines(x.todo), a.id)
+    if why := row_hold.under_way(x.c, a.id):
+        print(f'{PROG}: {a.id} cannot be held: {why}', file=sys.stderr)
+        return 1
+    if not row_hold.hold_task(a.id, x.todo):
+        print(f'{a.id} is held already')
+        return 0
+    return x.say(f'held {a.id}: it keeps its place and no run starts it (`{PROG} unhold {a.id}` ends it)')
+
+
+def _p_unhold(a, x):
+    from agent_runner import row_hold
+    if not row_hold.unhold_task(a.id, x.todo):
+        print(f'{a.id} is not held')
+        return 0
+    return x.say(f'{a.id} is no longer held')
+
+
 def _p_kinds(a, x):
     k, own = kinds()
     return x.say('\n'.join(f'{p}  {m}' for p, m in k.items())
@@ -3692,6 +3720,8 @@ SUBCOMMANDS = {
     'change': (('id',), 1, _p_change),
     'shelve': (('id',), None, _p_shelve),
     'unshelve': (('id',), None, _p_unshelve),
+    'hold': (('id',), None, _p_hold),
+    'unhold': (('id',), None, _p_unhold),
     'kinds': ((), None, _p_kinds),
     'add': (('kind',), 1, _p_add),
     'note': (('id',), 1, _p_note),

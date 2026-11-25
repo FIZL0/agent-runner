@@ -568,7 +568,7 @@ class RunPage:
         '⧗ after <id title>' (dim) while it waits, '⧗ waits for iPhone 15, …' (dim) while a shared tool keeps it, 'parked' (dim) at level later (B123: a run never starts it),
         'shelved' (dim: F184), 'ready' (green)."""
         state = str(it.get('state') or '')
-        if state in ('parked', 'shelved'):  # F184
+        if state in ('parked', 'shelved', 'held'):  # F184, F429
             return state, 'dim'
         if state.startswith('running'):
             return state[len('running'):].strip() or 'running', 'yellow'

@@ -64,6 +64,11 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1]['tool_wait'] = tool_waits[tid]
         if tid in untils and tid not in where:  # F427b: neither the person nor a slot: it says what it waits for
             out[-1].update(state='tool', tool_wait=untils[tid])
+        if 'held' in f:  # F429
+            out[-1]['held'] = True
+            from agent_runner import row_hold
+            if row_hold.shows_held(ls, i) and out[-1]['state'] != 'parked' and tid not in where:
+                out[-1]['state'] = 'held'
         if P.release(tid) and releases_on():  # F186: one that started cannot be dropped from its row
             out[-1]['started'] = release_started(tid, st or {})
     return out
@@ -83,8 +88,8 @@ def release_started(tid: str, st: dict) -> bool:
 
 # F74: a queue row's state, first word. 'blocked' (beyond the design's four): a [~] task waits on a person or
 # a fix, and 'ready' would say it can start. B118: 'parked' (level later, TODO.md's Parked section): a run never
-# starts it, so it must not say 'ready' either.
-QUEUE_STATES = ('running', 'blocked', 'critical', 'after', 'tool', 'parked', 'ready')
+# starts it, so it must not say 'ready' either. F429: 'held' (`plan hold`; its row also carries `held`).
+QUEUE_STATES = ('running', 'blocked', 'held', 'critical', 'after', 'tool', 'parked', 'ready')
 
 
 def done_ids() -> set[str]:
@@ -227,6 +232,8 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
             state = 'releasing'
         elif box == '~' and not waits:
             state = 'blocked'
+        elif 'held' in P.fields(ls[i]) and (box == ' ' or waits):  # F429
+            state = 'held'
         else:
             if P._waits_all(ls, i):
                 held = [t for t in P.before_all(ls, i) if t in live and t != tid]
@@ -244,7 +251,7 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
             state = 'waits' if held else 'next'
         names = [f'{t} {titles.get(t, "")}'.rstrip() for t in held]
         more = len(names) - RELEASE_SHOWN
-        words = full = {'releasing': 'releasing now', 'blocked': 'blocked', 'next': 'next'}.get(state, '')
+        words = full = {'releasing': 'releasing now', 'blocked': 'blocked', 'held': 'held', 'next': 'next'}.get(state, '')
         if checks and state == 'blocked':  # F427b
             words = full = f'waits for {P.until_label(checks, S.C)}'
         if held:
@@ -385,7 +392,7 @@ def pin_releases(queue: list[dict], rows: list[dict]) -> list[dict]:
     by = {r['id']: r for r in rows if not r.get('placeholder')}
     for r in rows:
         if r.get('state') == 'auto' and r.get('left') is not None:
-            tasks = [q['id'] for q in queue if q['id'] not in by and q['state'] not in ('parked', 'blocked')]
+            tasks = [q['id'] for q in queue if q['id'] not in by and q['state'] not in ('parked', 'blocked', 'held')]
             r['before'] = tasks[r['left']] if r['left'] < len(tasks) else ''
     return [dict(q, release=by[q['id']]) if q['id'] in by else q for q in queue]
 

@@ -864,3 +864,10 @@ _Said_: answer buttons in a chat
 _On screen_: the question and one button per option above a chat's message box, or the Sending row with Undo while an answer waits
 _In code_: chat_question.ask, /live's ask, questionCard, questionHTML, .qcard
 _Avoid_: poll, prompt card, quick replies
+
+**Held task**:
+A queued task or release that keeps its place and is skipped until the person ends the hold
+_Said_: hold
+_On screen_: Held: a run won't start it
+_In code_: plan hold, plan unhold, row_hold.py, held
+_Avoid_: paused task, parked, shelved
