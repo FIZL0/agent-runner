@@ -861,6 +861,6 @@ _Avoid_: Activity, archive, timeline
 **Question card**:
 The question a chat's last answer ends on, when it has options to pick from, shown as a card above the message box; it goes once the person answers
 _Said_: answer buttons in a chat
-_On screen_: the question and one button per option above a chat's message box
-_In code_: chat_question.ask, /live's ask
+_On screen_: the question and one button per option above a chat's message box, or the Sending row with Undo while an answer waits
+_In code_: chat_question.ask, /live's ask, questionCard, questionHTML, .qcard
 _Avoid_: poll, prompt card, quick replies
