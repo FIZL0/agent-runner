@@ -41,6 +41,10 @@
 .feed iframe.blank{opacity:0}
 .feedstand{position:absolute;left:0;right:0;top:var(--feedbar,0px);bottom:var(--feeddock,0px);overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;background:var(--bg);pointer-events:none;padding-bottom:var(--s3)}
 .feedstand .col{flex:none;width:100%}
+/* B819: as the terminal draws them (standCells(): its size, its columns, its rows); 14px is session_frame.PAD's */
+.main .feedstand{font-family:ar-box,var(--mono);--hmuted:var(--muted);--hcode:var(--t-blue);--hlink:var(--t-accent);--hminebg:var(--bubble);--hmine:var(--fg);--hmmuted:var(--muted)}
+.standrows{flex:none;padding:0 14px} .standrows>div{height:var(--hcell);line-height:var(--hcell);white-space:pre}
+.standrows .hy{display:inline-block;height:100%;vertical-align:top} .standrows b{display:inline-block;width:calc(var(--w)*var(--hw));font-weight:inherit;letter-spacing:0}
 .feedline{position:absolute;left:0;right:0;top:var(--feedbar,0px);height:2px;overflow:hidden;pointer-events:none}
 .feedline::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:feedline var(--pulse) linear infinite}
 @keyframes feedline{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
