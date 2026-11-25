@@ -27,14 +27,14 @@ const pass = async ms => { const end = now + ms;
   now = end };
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const document = {querySelector: () => null, addEventListener: (k, f) => { clicks.push(f) }};
-const S = {thread: 'c1', ob: [], sent: {}}, SEND_HOLD = 1000, toasts = [], sent = [], holds = [];
+const S = {thread: 'c1', ob: [], sent: {}}, SEND_HOLD = 1000, toasts = [], sent = [], holds = [], HKEY = 't', tabStore = {get: () => '', set: () => {}};
 const FD = {n: 'c1', shown: true, foot: null, live: null};
 const feedTop = () => 0, feedGlide = () => {}, feedRest = () => {}, moAnim = () => {}, liveLoad = async () => {}, threadTitle = n => n;
 const toast = t => toasts.push(t), sendHold = k => holds.push(k);
 const render = () => { dock = questionCard(S.thread) };
 const outbox = (name, args, more) => { const it = {cid: 'k' + sent.length, name, args, ...more}; sent.push(it); S.ob.push(it); render(); return it };
 const live = ask => { FD.live = {ok: true, ask}; if (FD.n) questionSee(FD.n); render() };
-const tap = (data, detail = 1) => clicks[0]({detail, target: {closest: () => ({dataset: data})}});
+const tap = (data, detail = 1) => clicks.forEach(f => f({detail, target: {closest: s => Object.keys(data).some(k => s.includes(`[data-${k}]`)) ? {dataset: data} : null}}));
 const pick = (i, id = 'u1') => tap({qpick: String(i), q: id}), undo = () => tap({qundo: 'c1'});
 const went = text => { S.ob = []; S.sent.c1 = {at: now, pending: [{text}]}; render() };
 const kind = () => dock.includes('data-qundo') ? 'held' : dock.includes('data-qpick') ? 'card' : '';
@@ -50,7 +50,7 @@ def run(tmp: Path, steps: str) -> list | None:
     if not shutil.which('node'):
         print('  (no node here: the question card test is skipped)')
         return None
-    js = ''.join((W.PAGE_DIR / f).read_text(encoding='utf-8') for f in ('023-question.logic.js', '095-question.js'))
+    js = ''.join((W.PAGE_DIR / f).read_text(encoding='utf-8') for f in ('023-question.logic.js', '024-questionchat.logic.js', '095-question.js'))
     f = tmp / 'question.js'
     f.write_text(DRIVER.replace('PAGE', js).replace('STEPS', steps), encoding='utf-8')
     r = subprocess.run(['node', str(f), json.dumps(ASK)], capture_output=True, text=True, timeout=60)
@@ -67,7 +67,7 @@ def test_drawing(tmp: Path) -> None:
     none, card, bare, gone, slot, other = (x[0] for x in out)
     eq((none, bare, gone, slot, other), ('',) * 5, 'no card before /live, with no options, once `ask` goes, in a slot, in another chat')
     check('Which &lt;look>?' in card and 'role="group"' in card, 'the question, escaped', card)
-    eq([card.count('<button'), card.count(' pri')], [2, 1], 'one button per option, one main')
+    eq([card.count('<button'), card.count('data-qpick'), card.count(' pri')], [3, 2, 1], 'one button per option, one main, and Chat about this')
     check('class="btn pri" data-qpick="0" data-q="u1">Full (recommended)<' in card, 'the recommended one is first and marked', card)
     check('class="btn" data-qpick="1" data-q="u1">Small &amp; flat<' in card, 'the other as it is', card)
 

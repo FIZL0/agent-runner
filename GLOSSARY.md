@@ -861,7 +861,7 @@ _Avoid_: Activity, archive, timeline
 **Question card**:
 The question a chat's last answer ends on, when it has options to pick from, shown as a card above the message box; it goes once the person answers
 _Said_: answer buttons in a chat
-_On screen_: the question and one button per option above a chat's message box, or the Sending row with Undo while an answer waits
+_On screen_: the question and one button per option above a chat's message box, a Chat about this button last among them, or the Sending row with Undo while an answer waits
 _In code_: chat_question.ask, /live's ask, questionCard, questionHTML, .qcard
 _Avoid_: poll, prompt card, quick replies
 
@@ -871,3 +871,10 @@ _Said_: hold
 _On screen_: Held: a run won't start it
 _In code_: plan hold, plan unhold, row_hold.py, held
 _Avoid_: paused task, parked, shelved
+
+**Marked question**:
+A question card's question while the person writes about it: what they send is an ordinary message about it, never its answer, and its card comes back after the send
+_Said_: chat about this
+_On screen_: Chat about this, not your answer, with the question, above the message box
+_In code_: questionMark, questionMarkHTML, QN.mark, .qabout
+_Avoid_: quoted question, reply context

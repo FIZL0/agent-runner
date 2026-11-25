@@ -3,3 +3,7 @@
 .app.kb .qcard{max-height:40cqh}
 .qcard .btn{min-height:var(--tap);text-align:left;overflow-wrap:anywhere;min-width:0} .qcard>.btn{width:100%}
 .qheld .grow{min-width:0;overflow-wrap:anywhere} .qheld .row{flex-wrap:nowrap} .qheld .btn{flex:none}
+/* F192a2: Chat about this, and the question marked above the box */
+.qcard .qchat{background:none;border-color:transparent;color:var(--muted)}
+.qcard.qabout{flex:none;max-height:min(140px,25dvh)} .qabout .row{flex-wrap:nowrap;align-items:flex-start} .qabout .grow{min-width:0} .qabout .small,.qabout .q{display:block}
+.qabout .q{overflow-wrap:anywhere} .qabout .icon{flex:none;min-width:var(--tap);min-height:var(--tap)}
