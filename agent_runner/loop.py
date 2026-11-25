@@ -578,7 +578,8 @@ CI_AT = [0.0]  # when `watch_ci` last asked GitHub
 
 
 def watch_ci(branch: str, force: bool = False) -> list[str]:
-    """`[run] ci_watch`: file one critical task for a red workflow run on the shared branch (see `ci`).
+    """`[run] ci_watch`: file one critical task for a red workflow run on the shared branch, or put the run on the task
+    that has its failing test (see `ci`, `ci.file_red`).
 
     Every `ci.CI_POLL` s from the run loop, and only when MERGE is free: the task is committed in the main
     checkout like `reopen_landed`'s, and a loop that waited out a gate here would start nothing for an hour.
@@ -617,26 +618,26 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
             was = seen.read_text() if seen.exists() else ''
             if not (got := ci.to_file(gh, wf, branch, seen, open_text, event, CI_RERUN, log)):
                 continue
-            text, long = got
-            tid = P.add(ci.CI_KIND, text, todo=ROOT / rel, pri='critical')
-            if len(earlier := ci.closed_repeats(P.lines(ROOT / plan_rel('DONE.md')), ci.marker(wf, branch))) \
-                    >= ci.REPEAT_LIMIT - 1:  # B34: the third in a week waits on a person, not ahead of all work
-                P.block(tid, ci.repeat_ask(f'`{wf}` on {branch}', earlier), todo=ROOT / rel, after=[])
-            own = plan_rel(f'{P.TASKS}/{tid}.md')
-            (ROOT / own).parent.mkdir(parents=True, exist_ok=True)
-            (ROOT / own).write_text('\n'.join([f'# {tid} — CI: {ci.marker(wf, branch)}', '', *long, '']),
-                                    encoding='utf-8')
+            todo, done = ROOT / rel, ROOT / plan_rel('DONE.md')
+            put = ci.file_red(got, todo, done, git)
+            if not put:
+                continue
+            rels = [plan_rel(os.path.relpath(p, C.plan_dir)) for p in put.paths]
+            own = rels[-1]
             git('add', '--', own)
-            if not commit_plan(f'Plan: {tid}, {ci.marker(wf, branch)}', rel, own):
+            mark = ci.marker(wf, branch)
+            if not commit_plan(f'Plan: {put.tid}, {mark}', *rels):
                 git('reset', '-q', '--', own)
-                git('checkout', '-q', '--', rel)
-                (ROOT / own).unlink(missing_ok=True)
+                for r in rels:
+                    if git('checkout', '-q', '--', r).returncode:
+                        (ROOT / r).unlink(missing_ok=True)  # a long form that was not there before
                 seen.write_text(was)  # not filed: the next look tries that run again
                 continue
-            filed.append(tid)
-            how = f'blocked on a person, after {", ".join(earlier)}' if len(earlier) >= ci.REPEAT_LIMIT - 1 else 'critical'
-            note(f'{tid}: filed ({how}), {ci.marker(wf, branch)}')
-            log(f'{tid}: filed ({how}), {ci.marker(wf, branch)}: {text[:200]}')
+            filed.append(put.tid)
+            if put.how.startswith('reopened'):
+                REOPENED.add(put.tid)  # a new attempt, though this run tried it before
+            note(f'{put.tid}: {put.how}, {mark}')
+            log(f'{put.tid}: {put.how}, {mark}: {got.text[:200]}')
     finally:
         hold.close()
         MERGE.release()
