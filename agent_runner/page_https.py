@@ -100,6 +100,26 @@ def used(status: dict, https: int) -> bool:
                for one in (status, *(status.get('Foreground') or {}).values()))
 
 
+def tailnet_host() -> str:
+    """B844: this machine's name on the tailnet, '' while Tailscale is not connected (or not here)."""
+    if os.environ.get('AGENT_RUNNER_NO_SERVE') or not shutil.which('tailscale'):
+        return ''
+    ok, out = tailscale('status', '--json')
+    st = as_json(out) if ok else {}
+    return str((st.get('Self') or {}).get('DNSName') or '').rstrip('.') if st.get('BackendState') == 'Running' else ''
+
+
+def next_ports(port: int, many: int = 20) -> list[int]:
+    """B844: the ports to try for a page whose web_port (`port`) is taken: every second one, since the next port of
+    each is for its https address, without those Tailscale Serve has or a run recorded a rule on."""
+    rules = {r['https'] for f in rules_dir().glob('*.json') if (r := read_rule(f))}
+    serves = {}
+    if not os.environ.get('AGENT_RUNNER_NO_SERVE') and shutil.which('tailscale'):
+        ok, out = tailscale('serve', 'status', '--json')
+        serves = as_json(out) if ok else {}
+    return [p for p in range(port + 2, min(port + 2 * many, 65535) + 1, 2) if p not in rules and not used(serves, p)]
+
+
 def is_ours(status: dict, rule: dict) -> bool:
     """Is the recorded `rule` still there as the run made it: its address, with only / and proxied to its port?"""
     handlers = ((status.get('Web') or {}).get(f'{rule["host"]}:{rule["https"]}') or {}).get('Handlers')

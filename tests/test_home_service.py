@@ -991,13 +991,12 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
         with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
                 mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
             srv = W.start_web()
-        try:  # F165: another run holds the port, no Home: no port of its own, and Home's install is offered
-            eq((srv.server_address[0], srv.server_address[1] != port), ('127.0.0.1', True),
-               'F165: Home off, the port taken: served on 127.0.0.1 only')
+        try:  # B844: another run holds the port, no Home: on another port, for every interface
+            eq((srv.server_address[0], srv.server_address[1] != port), ('0.0.0.0', True),
+               'B844: Home off, the port taken: served on another, every interface')
             logged = ' '.join(str(c) for c in lg.call_args_list)
             has(logged, f'port {port} is taken', 'and the run log says why')
-            has(logged, 'agent-runner home install', "and offers Home's install")
-            check(f':{srv.server_address[1]}' not in logged, 'no port of its own in the run log', logged)
+            check(f':{srv.server_address[1]}/' in logged and 'nothing opens it' not in logged, 'with its link', logged)
         finally:
             if srv:
                 srv.stop()
@@ -1108,6 +1107,7 @@ def test_device_site_link(tmp: Path) -> None:
         S.C.todo.write_text('- [ ] **B1** one\n', encoding='utf-8')  # run_facts counts the tasks left first
         H.save_registry({**H.load_registry(), 'scan': [str(tmp / 'none')]})
         H.add_project(str(root))
+        H.mark_installed(True)  # at the start only: a page served behind a Home that is uninstalled below
         with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: ''), \
                 mock.patch.object(W, 'tailscale_https_urls', nots), \
                 mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log'):
@@ -1115,6 +1115,7 @@ def test_device_site_link(tmp: Path) -> None:
         check(srv is not None and srv.server_address[1] != port, 'another run holds the port: served on a free one', srv)
         mine = srv.server_address[1]
         eq(srv.terms.port, mine, "the terminal tab's ttyd ports follow the port it got")
+        H.mark_installed(False)
         bare = f'http://127.0.0.1:{mine}/?t={W.web_token()}'
         eq(W.url_file().read_text(encoding='utf-8').split(), [bare], 'web.url keeps its own port (Home routes to it)')
         with mock.patch.object(S, 'run_up', return_value=True), mock.patch.object(W, 'tailscale_https_urls', nots), \

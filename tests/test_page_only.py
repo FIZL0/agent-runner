@@ -546,7 +546,7 @@ def test_open_page(tmp: Path) -> None:
 
 
 def test_private(tmp: Path) -> None:
-    print('F402b1: the port taken and no Home: on 127.0.0.1, opened there; the run keeps that port')
+    print('F402b1: the port taken and Home installed: on 127.0.0.1, opened there; the run keeps that port')
     env: dict = {}
     root, port = project(tmp, env)
     taken = socket.socket()
@@ -555,6 +555,7 @@ def test_private(tmp: Path) -> None:
     with mock.patch.dict(os.environ, env), mock.patch.object(S, 'log'), mock.patch.object(P, 'held_messages'):
         CF._cfg.cache_clear()
         S.init(root)
+        H.mark_installed(True)
         go = threading.Event()
         th = threading.Thread(target=lambda: P.serve(go), daemon=True)
         th.start()

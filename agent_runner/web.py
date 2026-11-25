@@ -1,7 +1,8 @@
 """F66: the run page on the web. A run serves it from this machine (`[run] web`, on by default) on
 `[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it. F165: one address
-for every project: with Runner Home installed (and no web_port set by the person), or with that port taken, it
-listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); the link shown is Home's /p/KEY/.
+for every project: with Runner Home installed (and no web_port set by the person, or that port taken) it listens
+on 127.0.0.1 only, on a free port that only Home opens (`start_web`); the link shown is Home's /p/KEY/. B844: without
+Home, that port taken, it is on the next free one for every interface.
 
     GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
                                  and dark by the browser's setting, laid out for a phone and a desktop

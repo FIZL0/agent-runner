@@ -77,7 +77,7 @@ def urls(root: Path | None = None) -> list[str]:
 
 def links(root: Path) -> list[str]:
     """The addresses that open the page a page-only process serves for `root`: Home's when it routes the project, else its
-    own; the 127.0.0.1 one only where nothing else does (the launcher opens it on this machine). [] while none serves."""
+    own; the 127.0.0.1 one only behind a Home that does not route it (the launcher opens it here). [] while none serves."""
     if not serving(root):
         return []
     from agent_runner import web

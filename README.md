@@ -86,8 +86,8 @@ per-user service that starts at boot: systemd `--user` with linger on Linux, a l
 scheduled task at logon on Windows. It is on once you install it (`home install` in the Quick start). Like the run page it is token-gated and
 listens on port 8770 on every interface, for a phone on your network or Tailscale; never expose it to the
 internet. With Home on that port, a run serves its own page on 127.0.0.1 only, on a free one that only Home
-opens; with Home off, the first run up keeps port 8770 and a second run listens on 127.0.0.1 only, its status
-and run log offering `agent-runner home install`. Its projects and token are in `~/.config/agent-runner` (`%APPDATA%\agent-runner`).
+opens; with Home off, the first run up keeps port 8770 and a second run serves on every interface on the next free port (8772, 8774, …), its status
+and run log listing its links. Its projects and token are in `~/.config/agent-runner` (`%APPDATA%\agent-runner`).
 
 #### Trusted networks
 

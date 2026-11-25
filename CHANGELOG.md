@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a run whose `web_port` is taken without Runner Home serves its page on every interface on the next free port (every second one, 8772, 8774, …, skipping Tailscale Serve's and recorded rules' ports), its run log saying which port it is on, instead of 127.0.0.1 only; the page-only process and a run that takes that page over keep the port (`web.fell`) (B844).
 - Changed: the run app's Talk code, agent_runner/page/170-talk.js, is split by area into 170-talk.js and 171-talk-clips/kept/mic/send/speak/words.js, with no change in behaviour (C54).
 - Fixed: the test of a task that goes on with the next provider at a usage cap (its fallback chain, in tests/test_runner.py) no longer fails when it runs across 15:00 local time: its fake cap said "resets 3pm", so the cap had already reset by the check; it now names a fixed far-off epoch (B837).
 - Changed: a Yes with words on a Needs you CONFIRM that closes its task now also starts a new control session with the words, which lists at the top of Chats and keeps no sent response; a chat that cannot start keeps the sent response and the toast and run log say so (F452).
