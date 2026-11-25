@@ -218,7 +218,7 @@ const taskIsOpen=(list,id)=>S.taskOpen[list]===id;
 function taskRow(q,title,more='',list='queue',lead=''){
   const open=taskIsOpen(list,q.id), t=S.tasks[q.id], k=list.startsWith('wait:')?list+':'+q.id:q.id;
   const text=()=>t&&t.text?`<pre class="tasktext" data-k="text:${esc(k)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>';
-  return `<button class="fold" data-task="${esc(q.id)}" data-list="${esc(list)}" aria-expanded="${open}">${taskChip(q.id)}<span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(k)}" data-v="${esc(q.state||'')}">${esc(open&&q.release?relWaits(q.release):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(k,(lead||text())+more):''}`;
+  return `<button class="fold" data-task="${esc(q.id)}" data-list="${esc(list)}" aria-expanded="${open}">${taskChip(q.id)}<span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(k)}" data-v="${esc(q.state||'')}">${esc(q.release?(open?relWaits:relWords)(q.release):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(k,(lead||text())+more):''}`;
 }
 async function openTask(id,list='queue'){
   const on=!taskIsOpen(list,id);
@@ -250,6 +250,9 @@ const relDrop=q=>(q.acts||[]).filter(k=>k==='queue_drop');
 const planCard=(q,list='queue')=>card(taskRow(q,q.title||q.id,taskBtns(q),list)+rowMenu(q,list)+rowGrip(q,list),'',`data-k="task:${esc(q.id)}"`);
 /* F426b: an open release: it opens to the tasks it waits for, each a row that opens too; one that waits for none, to its text */
 const relWaits=r=>((r.waits||[]).length?`waits for ${r.waits.length}`:r.words)+(r.note||'');
+/* B825: shut, its row never names them: on a phone they took seven lines */
+const WAITS_ALL='Waits for everything above';
+const relWords=r=>{const n=(r.waits||[]).length;return !n?r.words:r.everything?WAITS_ALL:`Waits for ${n} ${n===1?'task':'tasks'}`};
 function releaseRow(q,list='queue'){
   const r=q.release, in_='wait:'+q.id;
   const one=w=>{const t=(S.snap.queue||[]).concat(S.snap.shelved||[]).find(x=>x.id===w.id);
