@@ -62,11 +62,13 @@ function agentOptions(k,now){
 }
 const agentSays=p=>p.bad?p.bad:p.path?`At ${p.path}${p.version?`, version ${p.version}`:''}`:'';
 const LOGIN_SAYS={in:'Logged in',out:'Not logged in',none:'No login needed'};  // claude's own is not checked here, and `says` so
-/* F406c: the providers other than claude that setting `key` of [models] names in value `v`, of those in `names` */
-function modelProviders(key,v,names){
-  if(key==='providers'||key==='local')return [];
+/* F406c: the providers other than claude that setting `key` of [models] names in value `v`, of those in `names`; F443: a bare
+   model name is `base`'s, the [models] provider */
+function modelProviders(key,v,names,base){
+  if(key==='providers'||key==='local'||key==='tiers')return [];
+  if(key==='provider')return typeof v==='string'&&v!=='claude'&&names.includes(v)?[v]:[];
   const ms=typeof v==='string'?[v]:v&&typeof v==='object'?Object.values(v):[];
-  return [...new Set(ms.filter(m=>typeof m==='string'&&m.includes(':')).map(m=>m.slice(0,m.indexOf(':')).trim()))].filter(p=>p!=='claude'&&names.includes(p));
+  return [...new Set(ms.filter(m=>typeof m==='string'&&(m.includes(':')||base)).map(m=>m.includes(':')?m.slice(0,m.indexOf(':')).trim():base))].filter(p=>p!=='claude'&&names.includes(p));
 }
 /* a provider's login: its row in the settings with what /logins (`logins`, none where it is refused) says of it now */
 function loginNow(p,logins){
@@ -75,12 +77,12 @@ function loginNow(p,logins){
 }
 const loginsNow=(d,logins)=>(d&&d.providers||[]).map(p=>loginNow(p,logins));
 /* what a setting's model does while its provider has no login */
-const loginLater=key=>key==='fallback'?'It is passed over until the login.':key==='code'||key==='kinds'?'Its tasks wait for the login.':'What runs on it needs the login.';
-/* what the last Save left waiting for a login, in words; '' for nothing (`undo`: what it replaced) */
-function loginWaits(undo,rows){
+const loginLater=key=>key==='fallback'?'It is passed over until the login.':key==='code'||key==='kinds'||key==='provider'?'Its tasks wait for the login.':'What runs on it needs the login.';
+/* what the last Save left waiting for a login, in words; '' for nothing (`undo`: what it replaced; `base`: the [models] provider) */
+function loginWaits(undo,rows,base){
   const names=rows.map(p=>p.name), out=rows.filter(p=>p.state==='out').map(p=>p.name);
-  const by=keys=>[...new Set(undo.filter(x=>x.table==='models'&&keys(x.key)&&x.now&&x.now.has).flatMap(x=>modelProviders(x.key,x.now.value,names)))].filter(p=>out.includes(p));
-  const tasks=by(k=>k==='code'||k==='kinds'), rest=by(()=>true).filter(p=>!tasks.includes(p));
+  const by=keys=>[...new Set(undo.filter(x=>x.table==='models'&&keys(x.key)&&x.now&&x.now.has).flatMap(x=>modelProviders(x.key,x.now.value,names,base)))].filter(p=>out.includes(p));
+  const tasks=by(k=>k==='code'||k==='kinds'||k==='provider'), rest=by(()=>true).filter(p=>!tasks.includes(p));
   return [tasks.length?`Tasks on ${tasks.join(', ')} wait for the login`:'',rest.length?`${rest.join(', ')} ${rest.length===1?'has':'have'} no login yet`:''].filter(Boolean).join('. ');
 }
 /* what a login's terminal shows: the link to open (the last one) and the code to enter there */
