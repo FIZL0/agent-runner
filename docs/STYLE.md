@@ -259,7 +259,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form and a typed secret (`givesec:` keys) are not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
 - **The off page turns into the app.** An off project's page (see Off page in GLOSSARY.md) becomes its run's app once the
   run is up, at the same address (`turnIntoApp()`), but not while a sheet is open on it.
-- A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box. The one exception is Recorded's open mic where the permission is already `granted`, which listens to nothing.
+- A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box. The one exception is Recorded's open mic where the permission is already `granted`, which starts no listen.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll. In a Needs you sheet the field in use stays the same element (`sheetHTML()` patches around it), and so do the Settings search and a text field typed in on a Settings row (`settingsDraw()`), because a new one under the phone's keyboard loses its autocorrect; never put a typed value in markup: `keepFields()` puts it back.
 - A notice (`.notice`) floats over the top of the view and never pushes it down, except in a chat: there it has its own

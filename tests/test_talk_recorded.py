@@ -117,7 +117,8 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   // a press opened it and a new stream could ask: it only rests while a reply plays
   fresh(); click('[data-mic]'); await settle(); sound(1); click('[data-mic]'); await tail(); TK.wait = null; TK.state = ''; before(1, 0.1); k1 = REC.open; lands('A reply.'); before(1, 0.1); out.rests = [REC.open === k1, k1.track.enabled, k1.ctx.state, k1.kept, types[types.length - 1], asks]; us[us.length - 1].onend({type: 'end'}); await shown(); out.wakes = [REC.open === k1, k1.track.enabled, k1.ctx.state, asks, types[types.length - 1]];
   // a press with only what came before it sends nothing; the browser's way opens nothing
-  fresh(); may = 'granted'; await shown(); before(2, 0.1); answer = 'stray'; click('[data-mic]'); click('[data-mic]'); await tail(); out.onlyBefore = [posts.length, sent.length];
+  fresh(); may = 'granted'; await shown(); before(2, 0.1); answer = 'stray'; click('[data-mic]'); click('[data-mic]'); sound(0.2); await tail(); out.onlyBefore = [posts.length, sent.length];
+  fresh(); may = 'granted'; await shown(); REC.engine = {engine: false, why: 'x'}; await tick(500); out.gone = REC.open;
   fresh(); may = 'granted'; TS.way = 'browser'; await shown(); out.wayBrowser = [asks, REC.open];
   console.log(JSON.stringify(out, (k, v) => v === undefined ? null : v));
 })();`);
@@ -129,6 +130,7 @@ def test_recorded_f161b(tmp: Path) -> None:
     page = W.page_html().decode()
     check('${recRow()}' in page.split('  talk(){', 1)[1].split('\n  },', 1)[0], 'Talk settings has the setting')
     check('recFree()' in page.split('function dictate(', 1)[1].split('\n}\n', 1)[0], 'dictation releases the mic first')
+    check('recLoad();REC.timer=setTimeout(recLook,0)' in page, 'F161c: a reload on Talk looks whether the mic may open')
     if not shutil.which('node'):
         print('  (no node here: the recording script test is skipped)')
         return
@@ -190,6 +192,7 @@ def test_recorded_f161b(tmp: Path) -> None:
     eq((g.get('taken'), g.get('takenBack')), ([1, None], 2), 'the mic taken away: open again only when Talk shows anew')
     eq((g.get('rests'), g.get('wakes')), ([True, False, 'suspended', 0, 'playback', 1], [True, True, 'running', 1, 'play-and-record']), 'where a new stream could ask: it rests while a reply plays, and wakes')
     eq(g.get('onlyBefore'), [0, 0], 'sound from before a press is not sent alone')
+    eq(g.get('gone', 1), None, 'the engine gone: released')
     eq(g.get('wayBrowser'), [0, None], "the browser's recognition: no open mic")
 
 

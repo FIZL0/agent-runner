@@ -69,8 +69,8 @@ function recQuiet(){
   o.rest=true;o.ring=[];o.kept=0;o.track.enabled=false;
   try{const p=o.ctx.suspend();if(p)p.catch(()=>{})}catch(e){}
 }
-/* Talk's mic is on screen, and nothing else uses the mic. A listen under way goes on beside the message box */
-const recShown=()=>!document.hidden&&S.view==='talk'&&!S.thread&&S.sheet!=='mictest'&&(!!REC.now||!talkTyping());
+/* Talk's mic is on screen, Recorded can be used, and the Mic test is closed. A listen under way goes on beside the message box */
+const recShown=()=>!document.hidden&&S.view==='talk'&&!S.thread&&S.sheet!=='mictest'&&(!!REC.now||(talkRec()&&!talkTyping()));
 /* F161c: the mic is open while Talk shows: opened with no press only where the browser already allows it, closed while a
    reply plays. Talk left or hidden, or the Mic test: a recording ends with its words, then the mic is released */
 function recLook(){
@@ -148,7 +148,7 @@ class Recorder{
   stop(){
     if(this.done||this.stopping)return;
     if(TK.rec!==this)return this.abort();  // dropped (New Talk chat, a play button): nothing is posted
-    this.stopping=true;
+    this.stopping=true;this.said=this.n-this.pre;
     if(!this.on)return this.end();
     const o=REC.open, go=()=>this.post();
     setTimeout(()=>{if(o&&REC.open===o)o.node.port.postMessage('flush');setTimeout(go,20)},REC_TAIL);
@@ -162,7 +162,7 @@ class Recorder{
   async post(){
     if(this.done||this.posted)return;
     this.posted=true;if(REC.now===this)REC.now=null;recLook();
-    if(this.mute||this.n-this.pre<REC_MIN*this.rate){this.parts=[];if(this.mute&&this.onerror)this.onerror({error:'no-speech',message:''});return this.end()}
+    if(this.mute||(this.pre?this.said:this.n)<REC_MIN*this.rate){this.parts=[];if(this.mute&&this.onerror)this.onerror({error:'no-speech',message:''});return this.end()}
     const t=TK.ear;if(t&&TK.rec===this){t.reading=true;talkDraw()}
     const wav=recWav(this.parts,this.rate), at=Date.now(), log=x=>{if(t)micLog(x,false,t.trail)};
     this.parts=[];log(`clip, ${(this.n/this.rate).toFixed(1)} s`);
