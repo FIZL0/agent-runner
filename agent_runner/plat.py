@@ -289,6 +289,21 @@ def spawn_detached(argv: list[str], out: Path | None = None, cwd: Path | None = 
             f.close()
 
 
+def service_scope() -> list[str]:
+    """What takes a process out of the service it would be started in (Runner Home's): systemd ends all of a stopped
+    service's processes. [] when this is in none, or systemd does not do it."""
+    if not sys.platform.startswith('linux'):
+        return []
+    try:
+        if not Path('/proc/self/cgroup').read_text().strip().endswith('.service'):
+            return []
+        argv = ['systemd-run', '--user', '--scope', '--quiet', '--collect', '--']
+        r = sp.run([*argv, 'true'], stdin=sp.DEVNULL, capture_output=True, timeout=2)
+        return argv if r.returncode == 0 else []
+    except (OSError, sp.SubprocessError):
+        return []
+
+
 STARTF_USESHOWWINDOW = 0x00000001
 SW_HIDE, SW_RESTORE = 0, 9
 

@@ -458,11 +458,13 @@ def test_started_by_logged():
                 mock.patch.object(M, 'run_up', lambda: False), mock.patch.object(M, 'remote_ready', lambda: True), \
                 mock.patch.object(M, 'C', mock.Mock(notes=lambda n: notes / n)), mock.patch.object(M, 'events_file', lambda: ev), \
                 mock.patch.object(M, 'background_argv', lambda: ['run']), \
+                mock.patch.object(M.plat, 'service_scope', lambda: ['scope']), \
                 mock.patch.object(M.plat, 'spawn_detached', spawn), mock.patch.object(M, 'started_note', lambda *a: ''), \
                 mock.patch.dict(M.os.environ, {M.STARTED_BY_ENV: 'Home start'}):
             eq(M.cmd_background([], by='picker'), 0, 'the run comes up')
             check(M.STARTED_BY_ENV not in M.os.environ, 'the marker is not passed on to the run')
             eq(M.cmd_background([], by='picker'), 0, 'and again, with no marker set')
+        eq(spawned, [['scope', 'run']] * 2, 'B800: out of the service it is started in')
         recs = [r for l in ev.read_text().splitlines() if (r := json.loads(l))['kind'] == M.EV_STARTED_BY]
         eq([r['by'] for r in recs], ['Home start', 'picker'], 'AGENT_RUNNER_STARTED_BY wins over the caller\'s `by`')
         eq(recs[0]['ppid'], M.os.getppid(), 'with the parent pid')

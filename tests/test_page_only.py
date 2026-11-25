@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -451,6 +452,63 @@ def test_private(tmp: Path) -> None:
             th.join(10)
 
 
+def test_service_scope() -> None:
+    print('B800: only in a service is a process taken out of it, and only where systemd-run does it')
+    real, text = Path.read_text, ['']
+    ran: list[list[str]] = []
+
+    def read(p, *a, **k):
+        return text[0] if str(p).replace(os.sep, '/') == '/proc/self/cgroup' else real(p, *a, **k)
+
+    def run(argv, **k):
+        ran.append(argv)
+        return subprocess.CompletedProcess(argv, rc)
+    with mock.patch.object(Path, 'read_text', read), mock.patch.object(plat.sys, 'platform', 'linux'), \
+            mock.patch.object(plat.sp, 'run', run):
+        rc = 0
+        text[0] = '1:net_cls:/\n0::/user.slice/user@1000.service/app.slice/tmux-1.scope\n'
+        eq((plat.service_scope(), ran), ([], []), 'a terminal: as it was')
+        text[0] = '1:net_cls:/\n0::/user.slice/user@1000.service/app.slice/agent-runner-home.service\n'
+        got = plat.service_scope()
+        eq((got[:3], ran), (['systemd-run', '--user', '--scope'], [[*got, 'true']]), 'a service: a scope of its own, tried first')
+        rc = 1
+        eq(plat.service_scope(), [], 'systemd refuses: started as before')
+
+
+def test_outlives_service(tmp: Path) -> None:
+    print('B800: a page-only process started in a systemd service goes on when the service is stopped')
+    if not (sys.platform.startswith('linux') and shutil.which('systemd-run') and subprocess.run(
+            ['timeout', '10', 'systemd-run', '--user', '--scope', '--quiet', '--collect', '--', 'true'],
+            capture_output=True).returncode == 0):
+        print('  skip - no systemd user manager here')
+        return
+    env: dict = {}
+    root, _ = project(tmp, env)
+    unit = f'agent-runner-test-{os.getpid()}-{os.urandom(4).hex()}.service'
+    code = ('import sys, time; sys.path.insert(0, sys.argv[1]); from pathlib import Path\n'
+            'from agent_runner import page_only as P\n'
+            'print(P.start(Path(sys.argv[2])), flush=True); time.sleep(300)')
+    pid = 0
+    with mock.patch.dict(os.environ, env):
+        CF._cfg.cache_clear()
+        S.init(root)
+        try:
+            r = subprocess.run(['systemd-run', '--user', '--quiet', '--collect', f'--unit={unit}',
+                                *(f'--setenv={k}={v}' for k, v in env.items()), sys.executable, '-c', code,
+                                str(RUN.resolve().parent), str(root)], capture_output=True, text=True)
+            eq(r.returncode, 0, 'the service starts')
+            check(until(lambda: P.serving(root), 60), 'it starts one')
+            pid = pid_of(root) if P.serving(root) else 0
+            check(pid and not (Path('/proc') / str(pid) / 'cgroup').read_text().strip().endswith('.service'),
+                  'which is not in the service')
+            subprocess.run(['systemctl', '--user', 'stop', unit], capture_output=True, timeout=120)
+            check(plat.alive(pid) and P.serving(root), 'the service is stopped, and the page goes on', pid)
+        finally:
+            subprocess.run(['systemctl', '--user', 'stop', unit], capture_output=True, timeout=120)
+            S.C.notes('page.stop').write_text(str(os.getpid()), encoding='utf-8')  # also one too slow to serve above
+            check(until(lambda: not P.held(root)) and (not pid or ended(root, pid)), 'it ends when asked')
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
@@ -461,4 +519,4 @@ def in_tmp(f):
 
 if __name__ == '__main__':
     sys.exit(report([in_tmp(test_serves), in_tmp(test_start_from_page), in_tmp(test_ends), in_tmp(test_private),
-                     in_tmp(test_hand_over), in_tmp(test_lock_look), in_tmp(test_power)]))
+                     in_tmp(test_hand_over), in_tmp(test_lock_look), test_service_scope, in_tmp(test_outlives_service), in_tmp(test_power)]))
