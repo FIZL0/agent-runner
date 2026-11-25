@@ -60,7 +60,7 @@ const last = () => sent[sent.length - 1], land = () => { S.ob = []; GR.did.lengt
 const at = id => els().indexOf(cardOf(id));
 const start = id => { const g = grip(id); fire('pointerdown', {target: g, clientY: 125 + 60 * at(id)}); return 125 + 60 * at(id) };
 const move = y => fire('pointermove', {clientY: y, buttons: 1});
-const drop = async (id, by) => { const n = sent.length; noClick = false; const y = start(id); if (Math.abs(by) > 5) move(y + Math.sign(by) * 5); move(y + by); fire('pointerup', {clientY: y + by}); const swallowed = noClick; later.splice(0).forEach(f => f()); return [rows(), sent.slice(n), opened(), swallowed, GR.d] };
+const drop = async (id, by) => { const n = sent.length; noClick = false; const y = start(id); if (Math.abs(by) > 5) move(y + Math.sign(by) * 5); move(y + by); fire('pointerup', {clientY: y + by}); const swallowed = noClick; later.splice(0).forEach(f => f()); await tap(grip(id) || cardOf(id)); return [rows(), sent.slice(n), opened(), swallowed, GR.d] };
 (async () => {
   const out = {}; S.planMenu = ''; render();
   out.grips = rows().map(r => r === 'rel:next' ? 'next-release' : r).map(id => { const g = grip(id); return [id, g ? g.nodeName + '|' + g.getAttribute('aria-label') : '', !!g && cardOf(id).childNodes.includes(g)] });
@@ -72,7 +72,7 @@ const drop = async (id, by) => { const n = sent.length; noClick = false; const y
   out.past = [key('V6', 'ArrowDown'), rows(), last()]; land();  // the Next release row between is no place of the plan's
   out.twice = [key('F1', 'ArrowDown'), key('F1', 'ArrowDown'), rows(), sent.slice(-2)]; land();
   key('B2', 'ArrowUp'); S.ob[S.ob.length - 1].state = 'failed'; render(); out.failed = [rows(), planHTML().includes('[failed Move B2 before F1]')]; land();
-  out.next = [key('next-release', 'ArrowUp'), rows(), last(), key('next-release', 'ArrowUp'), sent.length]; land();
+  out.next = [key('next-release', 'ArrowUp'), rows(), last(), !grip('next-release'), sent.length]; land();
   out.dragDown = await drop('F1', 130); land();
   out.dragUp = await drop('V6', -190); land();
   out.dragNext = await drop('next-release', -190); land();

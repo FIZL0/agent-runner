@@ -3,7 +3,7 @@
    drawn at once and until the snapshot has it ({id,cid,at,ms,down: the rows below it, seen: the row menu's presses before
    it}); GR.rows: the rows last drawn; GR.d: the drag under way */
 const GR={did:[],rows:[],d:null}, GRIP_PX=4, GRIP_EDGE=56;
-const gripOn=q=>!q.removed&&(q.menu||[]).includes('menu_top');
+const gripOn=q=>!q.removed&&(q.menu||[]).includes('menu_top')&&!(q.placeholder&&GR.did.some(d=>d.id===menuId(q)));  // moved once, that one is a release of its own
 const gripReal=q=>!q.placeholder&&!q.removed;  // a row the plan can name
 /* as plan.child(): a task's subtasks move with it */
 const gripChild=(id,t)=>t.length>id.length&&t.startsWith(id)&&/\d/.test(t[id.length])!==/\d/.test(id[id.length-1]);
@@ -32,7 +32,7 @@ const rowGrip=(q,list='queue')=>list==='queue'&&gripOn(q)?`<button class="grip" 
 /* row `id` to place `g` among the others: true when that moves it */
 function gripMove(id,g){
   const rows=GR.rows, q=rows.find(x=>menuId(x)===id);
-  if(!q||!gripOn(q)||!gripNew(rows,id,g)||q.placeholder&&GR.did.some(d=>d.id===id))return false;  // moved once, it is a release of its own
+  if(!q||!gripOn(q)||!gripNew(rows,id,g))return false;
   const block=gripBlock(rows,id), rest=rows.filter(x=>!block.includes(x));
   const above=rest.slice(0,g).reverse().find(gripReal), below=rest.slice(g).find(gripReal), by=above||below;
   if(!by)return false;
