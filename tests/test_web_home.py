@@ -878,8 +878,10 @@ def test_status_view_f124(tmp: Path) -> None:
     Run card and the More… sheet from the one list of controls, and the swipe that follows the finger."""
     page = W.page_html().decode()
     body = page.split('function statusHTML(){', 1)[1].split('\n}\n', 1)[0]
-    at = [body.find(x) for x in ('needsSec()', '>Run<', '>Usage<', '>Landed lately<', '>Release<', '>Run log<')]
-    check(all(i >= 0 for i in at) and at == sorted(at), 'Needs you, Run, Usage, Landed lately, Release, Run log', at)
+    at = [body.find(x) for x in ('>Run<', '>Usage<', '>Landed lately<', '>Release<', '>Run log<')]
+    check(all(i >= 0 for i in at) and at == sorted(at), 'Run, Usage, Landed lately, Release, Run log', at)
+    check('needsSec' not in body, 'C50: Status has no Needs you section')
+    check('needsSec()' in page.split('function homeHTML(){', 1)[1].split('\n}\n', 1)[0], 'C50: Home still has it')
     check('data-quick="since"' in body and 'data-quick="yesterday"' in body, 'the Since chips stay')
     for gone in ('agentsHTML', 'activityHTML', "['agents','Agents']", "['activity','Activity']"):
         check(gone not in page, f'no {gone}: one Status view')

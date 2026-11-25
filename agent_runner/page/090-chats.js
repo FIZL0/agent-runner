@@ -522,12 +522,12 @@ function newReleaseCard(rows=''){
   const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait').map(controlOf).filter(Boolean);
   const sure=acts.filter(c=>c.confirm&&S.sure===c.key).map(c=>ctlSure(c)).join('');
   return obCards(x=>obActs(x,'release'))+card(`${rows}<div class="srow"><div class="row"><div class="grow"><b>New release</b>${sure?'':`<div class="small" data-k="relsaid" data-v="${esc(said)}">${esc(said?said+'.':ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')}</div>`}</div></div>${sure||`<div class="btns">${acts.map((c,i)=>`<button class="btn ${i===0?'acc':''}${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`}</div>`,'','data-k="release"')}
-/* F124: the Status view: one scroll in the TUI's order: needs you, the run (its slots and controls), usage, landed
-   lately, the release, then the run log */
+/* F124: the Status view: one scroll in the TUI's order: the run (its slots and controls), usage, landed lately, the
+   release, then the run log. C50: no Needs you here; Home has it */
 const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};
 function statusHTML(){
   const log=(S.snap.log||[]).slice().reverse(), use=S.snap.usage||[], late=S.snap.lately||[];
-  return `<div class="col">${ttydLine()}${needsSec()}
+  return `<div class="col">${ttydLine()}
     <div class="sec">Run<span class="ln"></span></div>${controlsCard()}
     <div class="sec">Usage<span class="ln"></span></div>${use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):emptyCard('No usage read yet.')}
     <div class="sec">Landed lately<span class="ln"></span></div>${late.length?card(late.map(l=>`<div class="lrow" data-k="late:${esc(l.at+l.text)}"><span>${esc(l.text)}</span><span class="small">${esc(agoWords(l.at))}</span></div>`).join(''),'','data-k="late"'):emptyCard('Nothing has landed yet.')}
