@@ -252,7 +252,7 @@ const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = ()
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, historyHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, settingsDraw = (el, h) => setHTML(el, h), planDraw = settingsDraw, histDraw = settingsDraw, projectsHTML = () => VIEW;
 const DRAFT_KEY = k => k, toast = () => {}, open = n => { S.thread = n; render(true) }, outboxed = [];
-const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, keepPlace = () => {}, settingsTrip = () => {};
+const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, talkBack = () => {}, talkLate = () => true, keepPlace = () => {}, settingsTrip = () => {};
 const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };
 eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('function keysIn(').split('\nfunction enter')[0]
   + grab('function enter(') + page.slice(page.indexOf('const MO='), page.indexOf('\nconst shiftOf=')) + '\nconst flying=()=>0,glideSpot=()=>null,glide=()=>{},leaving=()=>{},freshWords=()=>{},sentFrom=()=>{},sentMark=()=>{},loopsInStep=()=>{},sendFly=()=>{},viewSlide=()=>{};' + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
