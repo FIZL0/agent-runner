@@ -1131,6 +1131,11 @@ connect = "Connect iPhone 15"    # the Needs you wording while it is missing; de
 description = "the phone on the shelf, for app tests"  # what it is, for agents; default: none
 page = ":8080"                   # optional: its web page (A web page, below)
 start = "tools/serve.sh"         # optional: the command that serves it
+
+[[run.tools.iphone15.buttons]]   # optional, any number: tool buttons (Buttons, below)
+label = "Reset app"              # the button's text: 60 characters, unique in the tool (ignoring case)
+cmd = "tools/ui-15.sh reset"     # one line, 1000 characters: runs once and ends
+confirm = "Reset the app on the phone?"  # optional: a question asked first, 300 characters
 ```
 
 - **The check** runs in the main checkout. Exit 0 is free, 75 busy, 69 missing; any other status, or a run past
@@ -1172,6 +1177,7 @@ start = "tools/serve.sh"         # optional: the command that serves it
   NAME` take it and `run device list` lists it; when a device has the same name, these commands take the runner.toml
   tool. POST /tools ops `start` and `stop` take an optional `"source"` (`"device"` or `"runner.toml"`), the device when
   not given. GET /tools gives `page`, `start` and `run` (its state). On the Tools page such a tool's card shows its address and state and has Start, Use and Stop as a device's does (### Devices), Use alone with no start command; a Needs you item whose task names it in `needs:` has Use LABEL, or Open LABEL in Tools while it is not running. Without `page` the card is unchanged.
+- **Buttons.** A tool's buttons are read fresh from the main checkout's runner.toml only, and each runs there, one at a time per tool, with a 30 s limit (then its process group is ended, and also when it prints over 16 MB). A press is POST /tools `{"op":"press","name","button":label,"source"(optional, as start/stop),"confirm","holder"}`, under the https, token and same-origin rule of the Tools page. It answers `{ok,out,exit,lines}` (exit null when stopped; `lines` is the last 20 output lines, stored secrets hidden, none shown if a secret cannot be read). `{ok:false,ask:question}` when the button has a `confirm` and the request's `confirm` is not that exact text; `{ok:false,busy:{holder,key}}` when someone has the tool (its check, run then, says busy, or a running task needs it). Sending `holder` = `key` runs it anyway, only for that same holder; a new holder asks again, so a check's first line should stay the same for one holder. A missing or unknown tool is not busy. GET /tools gives `buttons` (`[{label,cmd,confirm}]`) when there are some. The Tools page does not show them yet (F428d).
 
 ### Devices
 
@@ -1207,6 +1213,7 @@ command on this machine. A person adds it on the run app's Tools page. Each proj
   start command it has Use only. Over plain http Start and Stop are disabled, Use works. A Needs you item whose task names such a
   device in `needs:` (one this project uses) shows Use NAME on its card and sheet or, while it is stopped or failed, Open NAME in
   Tools, which goes to the device's Tools card.
+- **Buttons.** A device has buttons too, the same as a tool's (### Shared tools), kept in devices.json: `op save`'s `buttons` list sets them (absent keeps them, `[]` removes them). A button runs in the device's working directory, the home folder by default; only a one-task device can be busy.
 - **One task at a time.** A device marked so is held by one task. An agent's first `run device ssh` or `run device copy`
   (or `run device take NAME`, for a device reached another way) takes it, until that task's session ends or `run device release NAME`. The hold covers every project on this
   machine: another project's running task that names the device in `needs:` holds it too. An agent that finds it held
@@ -1864,7 +1871,7 @@ needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "n
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
 
 
-[run.tools]               # shared tools, one [run.tools.<name>] each: check, label, connect, description, page, start (### Shared tools)
+[run.tools]               # shared tools, one [run.tools.<name>] each: check, label, connect, description, page, start, buttons (### Shared tools)
 [run.checks]              # checks a blocked task can wait on, one [run.checks.<name>] each: cmd, label (### Until checks)
 ```
 

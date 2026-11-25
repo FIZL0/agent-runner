@@ -109,7 +109,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.on_exit': ('commands', 'After a session', "Runs in the slot's folder when its session ends. Empty: nothing runs."),
     'run.slot_clean': ('commands', 'Clean a worktree', 'Runs in place of the built-in cleaning when disk is short. Empty: the built-in one runs.'),
     'run.command': ('commands', 'Runner command', 'What sessions type to reach the runner. Empty: this runner.'),
-    'run.tools': ('commands', 'Shared tools', 'Things only one task can use at a time, like a test phone, how to check each, and the web page and buttons one may have. Empty: none.'),
+    'run.tools': ('commands', 'Shared tools', 'Things only one task can use at a time, like a test phone: how to check each, its web page and buttons. Empty: none.'),
     'run.checks': ('commands', 'Until checks', 'Commands that say whether what a blocked task waits on has come. Empty: none.'),
     'run.join': ('commands', 'Join a file', 'Commands that join a conflict in a kind of file by themselves. Empty: a fix session does it.'),
     'plan.brief_extra': ('commands', 'Added to a brief', "A command whose output ends each task's brief. Empty: nothing is added."),

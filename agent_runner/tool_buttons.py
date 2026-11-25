@@ -136,7 +136,7 @@ def press(a: dict, c) -> dict:
         buttons, cwd, lock = of_tool(t), devices.project(c), 'toml-' + _key(devices.project(c), name)
     else:
         dev = devices._get({'devices': known}, name)
-        buttons, lock = dev.get('buttons') or [], f'dev-{name}'
+        buttons, lock = checked(dev.get('buttons') or []), f'dev-{name}'
         cwd = str(Path(dev.get('folder') or '~').expanduser())
     b = next((b for b in buttons if b['label'] == a.get('button')), None)
     if not b:
