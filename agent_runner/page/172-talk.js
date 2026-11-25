@@ -17,7 +17,7 @@ function recWake(o){
 function recOpen(){
   const o=REC.open;
   if(o&&o.track.readyState==='live')return recWake(o);
-  if(o)recFree();
+  if(o)recFree('track ended by the browser');
   const on=REC.asking;
   if(on){
     if(on.ctx)try{Promise.resolve(on.ctx.resume()).catch(()=>{})}catch(e){}  // in the press: iOS starts it only there
@@ -27,7 +27,7 @@ function recOpen(){
 }
 /* own: opened by the page, not by a press */
 function recBegin(own){
-  const box={}, p=REC.asking=recAsk(REC.gen,own,box), done=()=>{if(REC.asking===p)REC.asking=null};
+  const box=REC.took={at:Date.now(),gum:null,no:'',up:null,ctx:null}, p=REC.asking=recAsk(REC.gen,own,box), done=()=>{if(REC.asking===p)REC.asking=null};
   p.own=own;p.ctx=box.ctx;p.then(done,done);
   return p;
 }
@@ -35,20 +35,23 @@ async function recAsk(gen,own,box){
   let ctx=null, stream=null;
   try{
     ctx=box.ctx=new (window.AudioContext||window.webkitAudioContext)();  // in the press: iOS starts it only there
-    const up=Promise.resolve(ctx.resume()).catch(()=>{});
-    stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    const t0=Date.now(), ran=()=>{if(box.up==null&&ctx.state==='running')box.up=Date.now()-t0};
+    const up=Promise.resolve(ctx.resume()).then(ran).catch(()=>{});
+    try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}})}
+    catch(e){box.no=(e&&e.name)||'failed';throw e}finally{box.gum=Date.now()-t0}
     const url=URL.createObjectURL(new Blob([REC_WORKLET],{type:'text/javascript'}));
     try{await ctx.audioWorklet.addModule(url)}finally{URL.revokeObjectURL(url)}
-    const on=Promise.resolve(ctx.resume()).catch(()=>{});  // again: a page with the mic may start it with no press
+    const on=Promise.resolve(ctx.resume()).then(ran).catch(()=>{});  // again: a page with the mic may start it with no press
     if(!own)await Promise.race([up,on,new Promise(r=>setTimeout(r,REC_WAKE))]);  // with no press it may never settle
     if(gen!==REC.gen)throw new Error('the mic was closed meanwhile');
-    const node=new AudioWorkletNode(ctx,'rec'), track=stream.getAudioTracks()[0], o={ctx,stream,node,track,ring:[],kept:0,rest:false};
+    const node=new AudioWorkletNode(ctx,'rec'), track=stream.getAudioTracks()[0], o={ctx,stream,node,track,ring:[],kept:0,rest:false,box};
     ctx.createMediaStreamSource(stream).connect(node);node.connect(ctx.destination);
     node.port.onmessage=e=>{if(REC.now&&REC.now.on)REC.now.take(e.data);else recRing(o,e.data)};
-    track.onended=()=>{if(REC.open!==o)return;const r=REC.now;recFree();REC.shut=true;if(r)r.cut();recLook()};
-    REC.open=o;recLook();
+    track.onended=()=>{if(REC.open!==o)return;const r=REC.now;recFree('track ended by the browser');REC.shut=true;if(r)r.cut();recLook()};
+    REC.why='';REC.open=o;recLook();
     return o;
   }catch(e){
+    if(gen===REC.gen)REC.why=`opening failed: ${(e&&e.name)||e}`;
     if(stream)for(const t of stream.getTracks())t.stop();
     if(ctx)try{const q=ctx.close();if(q)q.catch(()=>{})}catch(x){}
     throw e;
@@ -65,12 +68,14 @@ function recRing(o,x){
    with no mic; where a new one could ask again it only rests */
 function recQuiet(){
   const o=REC.open;if(!o||REC.now||o.rest)return;
-  if(REC.may)return recFree();
+  if(REC.may)return recFree('freed for a reply');
   o.rest=true;o.ring=[];o.kept=0;o.track.enabled=false;
   try{const p=o.ctx.suspend();if(p)p.catch(()=>{})}catch(e){}
 }
 /* Talk's mic is on screen, Recorded can be used, and the Mic test is closed. A listen under way goes on beside the message box */
 const recShown=()=>!document.hidden&&S.view==='talk'&&!S.thread&&S.sheet!=='mictest'&&(!!REC.now||(talkRec()&&!talkTyping()));
+/* B804a: why recShown() does not hold, for the mic report */
+const recGone=()=>document.hidden?'page hidden':S.view!=='talk'||S.thread?'Talk left':S.sheet==='mictest'?'freed for the Mic test':talkTyping()?'freed for typing':'Recorded could not be used';
 /* F161c: the mic is open while Talk shows: opened with no press only where the browser already allows it, closed while a
    reply plays. Talk left or hidden, or the Mic test: a recording ends with its words, then the mic is released */
 function recLook(){
@@ -81,8 +86,8 @@ function recLook(){
     if(!recShown()){
       REC.shut=false;
       if(REC.now){if(REC.open)REC.now.over('Talk left')}
-      else if(REC.open){recFree();soundAs('playback')}
-      else if(REC.asking&&REC.asking.own){recFree();soundAs('playback')}
+      else if(REC.open){recFree(recGone());soundAs('playback')}
+      else if(REC.asking&&REC.asking.own){recFree(recGone());soundAs('playback')}
     }else if(talkReads())recQuiet();
     else if(REC.open&&REC.open.rest){soundAs('play-and-record');recWake(REC.open).catch(()=>{})}
     else recAhead();
@@ -95,7 +100,7 @@ async function recAhead(){
   if(REC.query||!recMayOpen())return;
   REC.query=true;
   let st='';try{st=(await navigator.permissions.query({name:'microphone'})).state}catch(e){}  // a browser that cannot say: the first press opens it
-  REC.query=false;
+  REC.query=false;REC.perm=st||'the browser cannot say';
   if(!recMayOpen())return;
   REC.may=st==='granted';
   if(!REC.may)return;
@@ -103,12 +108,24 @@ async function recAhead(){
   const gen=REC.gen;
   recBegin(true).catch(()=>{if(gen===REC.gen)REC.shut=true;soundAs('playback')});  // not tried again by itself until Talk shows anew
 }
+/* B804a: the permission at a press, for the mic report */
+function recAsked(log){
+  try{navigator.permissions.query({name:'microphone'}).then(p=>{REC.perm=p.state;log(`permission: ${p.state}`)},()=>log('permission: the browser cannot say'))}
+  catch(e){log('permission: the browser cannot say')}
+}
 class Recorder{
   constructor(){this.recorded=true;this.parts=[];this.n=this.pre=0;this.came=false;this.level={floor:null,spoke:false,quiet:0,all:0}}
   start(again){
     REC.now=this;
     if(recLive())return this.begin(REC.open,again);  // F161c: in the press itself
-    recOpen().then(o=>{if(!this.done&&!this.stopping)this.begin(o,again)}).catch(e=>this.refused(e));
+    /* B804a: the mic report: why it was not open, and what the opening took, also where the listen ended meanwhile */
+    const t=TK.rec===this?TK.ear:null, log=x=>{if(t)micLog(x,false,t.trail)}, at=Date.now(), kept=REC.open;
+    log(recNotOpen(kept,REC.asking,REC.why,document.hidden,REC.perm,REC.shut));
+    if(t)recAsked(log);
+    recOpen().then(o=>{
+      log(o===kept?`mic woken: context ${o.ctx.state} after ${Date.now()-at} ms`:`mic opened: ${recTook(o.box,at)}`);
+      if(!this.done&&!this.stopping)this.begin(o,again);
+    },e=>{log(`mic not opened${REC.took?': '+recTook(REC.took,at):''}`);throw e}).catch(e=>this.refused(e));
   }
   /* it listens, from the second before the press */
   begin(o,again){
@@ -118,7 +135,7 @@ class Recorder{
     if(this.n){if(TK.ear)micLog(`kept ${Math.round(1000*this.n/this.rate)} ms from before`,false,TK.ear.trail);if(this.onaudiostart)this.onaudiostart()}
     clearTimeout(this.first);
     this.first=setTimeout(()=>{if(this.came||this.done||this.stopping)return;
-      recFree();this.on=false;
+      recFree('no sound came from it');this.on=false;
       if(!again)this.start(true);else this.fail('No sound came from the mic',true)},REC_FIRST);  // a kept stream can go mute: it is opened afresh once
   }
   refused(e){
@@ -177,7 +194,7 @@ class Recorder{
       }
     }
     if(this.done)return;
-    log(`words came after ${Date.now()-at} ms`);
+    log(got?`words came after ${Date.now()-at} ms`:`no words after ${Date.now()-at} ms: an empty answer`);
     if(got&&this.onresult)this.onresult({resultIndex:0,results:[Object.assign([{transcript:got}],{isFinal:true})]});
     this.end();
   }
@@ -199,7 +216,7 @@ class Recorder{
   }
 }
 /* Talk settings: the way speech becomes words is picked (talkSet): Recorded is tried afresh, the browser's needs no stream */
-function recPick(){REC.no='';REC.shut=false;if(TS.way==='recorded')recLoad();else if(!REC.now)recFree();recLook()}
+function recPick(){REC.no='';REC.shut=false;if(TS.way==='recorded')recLoad();else if(!REC.now)recFree('Recorded was not picked');recLook()}
 /* the setting's row in Talk settings */
 function recRow(){
   if(!REC.asked)recLoad();

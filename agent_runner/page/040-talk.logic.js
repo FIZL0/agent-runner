@@ -33,8 +33,9 @@ const micPast=()=>{const s=t=>Math.round((Date.now()-t)/1000)+' s';
 /* F161b: Recorded: the page records a clip and the run's machine makes the words (172-talk.js). REC: engine, the run's /recorded
    answer (null until it came); asked, it was asked for; no, why the mic was refused; open, the kept stream; asking, its
    Allow under way; now, the Recorder that takes sound; gen counts releases. F161c: may, the browser allows the mic for good; shut, no
-   opening by itself until Talk shows anew; query, timer, sign: recLook()'s */
-const REC={engine:null,asked:false,no:'',open:null,asking:null,now:null,gen:0,may:false,shut:false,query:false,timer:0,sign:false};
+   opening by itself until Talk shows anew; query, timer, sign: recLook()'s. B804a, for the mic report: why, what closed the
+   last stream; perm, the permission last seen; took, the last opening's times */
+const REC={engine:null,asked:false,no:'',open:null,asking:null,now:null,gen:0,may:false,shut:false,query:false,timer:0,sign:false,why:'',perm:'',took:null};
 /* why Recorded cannot be used here, '' when it can */
 function recProblem(secure,can,engine,refused){
   if(!secure)return 'it needs https or localhost, and this address is plain http';
@@ -54,11 +55,23 @@ function recLoad(){
   fetch(tq('recorded')).then(r=>r.ok?r.json():null).then(j=>{if(j&&typeof j.engine==='boolean'){REC.engine=j;render(true)}}).catch(()=>{});
 }
 /* the kept stream closes, and with it the browser's sign that the mic is open */
-function recFree(){
-  const o=REC.open;REC.gen++;REC.open=REC.asking=null;if(!o)return;
+function recFree(why){
+  const o=REC.open;if(o||REC.asking)REC.why=why||"freed for the browser's recognition or dictation";
+  REC.gen++;REC.open=REC.asking=null;if(!o)return;
   o.track.onended=null;o.node.port.onmessage=null;
   for(const t of o.stream.getTracks())t.stop();
   try{const p=o.ctx.close();if(p)p.catch(()=>{})}catch(e){}
+}
+/* B804a: why no stream was open at a press, for the mic report: o the kept stream, on its opening under way */
+function recNotOpen(o,on,why,hidden,perm,shut){
+  const was=why||'none yet', ctx=o?o.ctx:on&&on.ctx;
+  const x=o?(o.track.readyState!=='live'?'track ended by the browser':o.rest?'resting':`its context is ${o.ctx.state}`)
+    :on?`opening under way${on.own?', begun by the page':''}; before it: ${was}`:was;
+  return `mic not open: ${x}${hidden?'; page hidden':''}${shut?'; not opened by itself until Talk shows anew':''}; permission last seen: ${perm||'not asked'}; context: ${ctx?ctx.state:'none'}`;
+}
+/* B804a: what an opening took: b = {at, gum, no, up, ctx}, its begin, ms of getUserMedia and of the context's start, press: when the press came */
+function recTook(b,press){
+  return `${b.at<press?`opening begun ${press-b.at} ms before: `:''}getUserMedia ${b.gum==null?'not answered':`${b.gum} ms`}${b.no?`, ${b.no}`:''}, context start ${b.up==null?`not seen (${b.ctx?b.ctx.state:'none'})`:`${b.up} ms`}`;
 }
 /* where the sound stands after a piece of `ms` with loudness `rms`: s = {floor, spoke, quiet, all}; floor follows the room's
    noise. Returns 'pause' (words, then pauseMs of quiet), 'silence' (nothing said in silentMs) or '' */

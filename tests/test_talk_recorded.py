@@ -120,6 +120,19 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   fresh(); may = 'granted'; await shown(); before(2, 0.1); answer = 'stray'; click('[data-mic]'); click('[data-mic]'); sound(0.2); await tail(); out.onlyBefore = [posts.length, sent.length];
   fresh(); may = 'granted'; await shown(); REC.engine = {engine: false, why: 'x'}; await tick(500); out.gone = REC.open;
   fresh(); may = 'granted'; TS.way = 'browser'; await shown(); out.wayBrowser = [asks, REC.open];
+  // B804a: the mic report says why the mic was not open at a press, what its opening took, and an empty answer
+  const why = async () => { TK.wait = null; TK.state = ''; click('[data-mic]'); const t = TK.ear.trail; await settle(); await settle(); if (TK.rec) TK.rec.abort(); await settle(); return t.ev.map(x => x.replace(/^\\d+ ms /, '')).filter(x => /^(mic |permission)/.test(x)) };
+  const anew = () => { fresh(); REC.why = REC.perm = ''; REC.took = null; TK.trail = null };
+  anew(); hold = new Promise(y => yes = y); click('[data-mic]'); const tr = TK.ear.trail; await settle(); now += 900; yes(); await settle(); await settle(); out.none = tr.ev.join(' | '); answer = ''; sound(1); click('[data-mic]'); await tail(); out.empty = tr.ev.join(' | ');
+  anew(); hold = new Promise(y => yes = y); click('[data-mic]'); const tr2 = TK.ear.trail; now += 50; click('[data-mic]'); now += 400; yes(); await settle(); await settle(); out.letGo = tr2.ev.join(' | ');
+  anew(); may = 'granted'; await shown(); TK.wait = null; lands('A reply.'); out.whyReply = await why();
+  anew(); click('[data-mic]'); await settle(); sound(1); click('[data-mic]'); await tail(); TK.wait = null; TK.state = ''; lands('A reply.'); out.whyRest = await why();
+  anew(); may = 'granted'; await shown(); REC.open.track.onended(); out.whyEnded = await why();
+  anew(); may = 'granted'; await shown(); REC.open.track.readyState = 'ended'; out.whyDead = await why();
+  anew(); may = 'granted'; await shown(); document.hidden = true; fire('visibilitychange', {}); document.hidden = false; out.whyHidden = await why();
+  anew(); may = 'granted'; await shown(); REC.open.ctx.state = 'interrupted'; out.whyCtx = await why();
+  anew(); may = 'granted'; hold = new Promise(y => yes = y); await shown(); now += 300; TK.wait = null; click('[data-mic]'); const tr3 = TK.ear.trail; now += 100; yes(); await settle(); await settle(); out.whyOpening = tr3.ev.join(' | ');
+  anew(); deny = 'NotReadableError'; out.whyFailed = await why();
   console.log(JSON.stringify(out, (k, v) => v === undefined ? null : v));
 })();`);
 """)
@@ -144,7 +157,7 @@ def test_recorded_f161b(tmp: Path) -> None:
     eq(g.get('wav'), ['RIFF', 16000, 1, 16, True, 10, 20], 'a 16 kHz mono 16-bit WAV of the second, as loud as it was')
     eq(g.get('tap'), [['what is running'], 'thinking', 0, None, 'play-and-record'], 'Tap: its words are sent, and the session stays the open mic\'s')
     eq(g.get('rest'), [True, 'running', 1], 'between listens the stream stays open')
-    check('running' not in (g.get('report') or 'running') and 'clip, ' in g['report'], 'the mic report has no words', str(g.get('report')))
+    check('what is' not in (g.get('report') or 'what is') and 'clip, ' in g['report'], 'the mic report has no words', str(g.get('report')))
     eq((g.get('again'), g.get('two')), ([True, 1], [2, 1]), 'one ask for two listens')
     eq(g.get('stray'), 2, 'sound outside a listen goes nowhere')
     eq((g.get('notYet'), g.get('pause')), (False, ['hello run']), 'a pause of 2 s ends a Tap')
@@ -194,6 +207,20 @@ def test_recorded_f161b(tmp: Path) -> None:
     eq(g.get('onlyBefore'), [0, 0], 'sound from before a press is not sent alone')
     eq(g.get('gone', 1), None, 'the engine gone: released')
     eq(g.get('wayBrowser'), [0, None], "the browser's recognition: no open mic")
+    none, empty = g.get('none') or '', g.get('empty') or ''
+    check('mic not open: none yet; permission last seen: not asked; context: none' in none, 'B804a: none yet', none)
+    check('permission: prompt' in none and 'mic opened: getUserMedia 900 ms, context start 0 ms' in none, 'its opening, with the ms', none)
+    check('no words after' in empty and 'an empty answer' in empty and 'words came' not in empty, 'an empty answer is no words', empty)
+    check('getUserMedia 450 ms' in (g.get('letGo') or ''), 'a press let go meanwhile has the ms too', str(g.get('letGo')))
+    for k, says in (('whyReply', 'freed for a reply; permission last seen: granted; context: none'), ('whyRest', 'resting; permission last seen: prompt; context: suspended'),
+                    ('whyEnded', 'track ended by the browser; not opened by itself until Talk shows anew; permission last seen: granted; context: none'),
+                    ('whyDead', 'track ended by the browser; permission last seen: granted; context: running'), ('whyHidden', 'page hidden; permission last seen: granted; context: none'),
+                    ('whyCtx', 'its context is interrupted; permission last seen: granted; context: interrupted'), ('whyFailed', 'none yet; permission last seen: not asked; context: none')):
+        eq((g.get(k) or [''])[0], 'mic not open: ' + says, k)
+    check(any(x.startswith('mic woken: context running after ') for x in g.get('whyRest') or []), 'a resting mic: its wake', str(g.get('whyRest')))
+    o = g.get('whyOpening') or ''
+    check('mic not open: opening under way, begun by the page; before it: ' in o and 'mic opened: opening begun 300 ms before: getUserMedia 400 ms' in o, "the page's own opening, joined", o)
+    check(any(x.startswith('mic not opened: getUserMedia 0 ms, NotReadableError') for x in g.get('whyFailed') or []), 'a refused opening', str(g.get('whyFailed')))
 
 
 if __name__ == '__main__':
