@@ -228,6 +228,7 @@ _WARNS: dict[str, str] = {
     'run.failures': 'A pattern that misses names takes a test that failed from load as a real failure.',
     'run.flaky': 'A pattern that matches too much files an urgent task for each name it finds.',
     'run.not_attempt': 'A pattern that matches too much starts the same task again and again.',
+    'run.rules': 'Sessions that start from now on follow that file, and no longer the one before.',
     'run.prompt': 'It replaces all that sessions are told: what it leaves out, they do not know.',
     'run.prompt_extra': 'Every task that starts from now on gets it.',
     'plan.kinds': 'A letter that goes away takes no new tasks.',

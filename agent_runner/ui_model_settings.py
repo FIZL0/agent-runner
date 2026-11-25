@@ -172,7 +172,7 @@ def _value_problem(side: str, table: str, key: str, value, unset: bool) -> str:
     """Why this value, or the reset (`unset`), is not saved in `side`'s file; '' when it is."""
     from agent_runner import config as CF, setting_checks
     return setting_checks.reset_problem(S.ROOT, side, table, key) if unset else \
-        CF.setting_check(S.ROOT, table, key, value, device=side == 'device')
+        CF.setting_check(S.ROOT, table, key, value, **({'device': True} if side == 'device' else {}))
 
 
 def _plan_moved(table: str, key: str) -> None:
