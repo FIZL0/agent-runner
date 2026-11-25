@@ -81,3 +81,4 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 
 ### Parked
 - [ ] **F427** (follow-up, later) Self-unblocking checks: a blocked task reopens by itself once a check passes, with no agent and no usage. The person agreed, 2026-11-24 (split into F427a, F427b, F427c, F427d) | files: agent_runner/until.py
+- [ ] **B763** (follow-up, later) Run page Status: the run's controls read as the last slot's and have no icons (split into B763a, B763b) | files: agent_runner/page/070-plan.js
