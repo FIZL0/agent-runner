@@ -23,7 +23,7 @@ function planHit(h){
   if(!done&&q)return q.state==='parked'?['parked',parkedCard(q,'found:parked')]:['open',(q.release?releaseCard:planCard)(q,'found:open')];
   if(!done&&obHidden(S.ob,'shelved').includes(h.id))return null;
   const sec=done?'done':h.state==='open'?'open':'parked';
-  return [sec,card(taskRow(h,h.title||h.id,'','found:'+sec),'',`data-k="task:${esc(h.id)}"`)];
+  return [sec,card(taskRow(h,h.title||h.id,sec==='done'?'':taskBtns(h,[]),'found:'+sec),'',`data-k="task:${esc(h.id)}"`)];
 }
 function planFound(q){
   const g=PQ.got, err=PQ.err?card(`${PQ.old?oldRunHTML(PQ.err):`<div class="small v-bad">${esc(PQ.err)}</div>`}<div class="btns"><button class="btn" data-planqload>Try again</button></div>`):'';

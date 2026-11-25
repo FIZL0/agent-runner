@@ -225,6 +225,8 @@ function taskRow(q,title,more='',list='queue',lead=''){
 }
 async function openTask(id,list='queue'){
   const on=!taskIsOpen(list,id);
+  delete S.taskOpen['wait:'+(S.taskOpen[list]||'')];  // a release that shuts shuts its tasks
+  for(const l of Object.keys(S.taskOpen))if(taskIsOpen(l,id))delete S.taskOpen[l];  // a task is open in one list: its question is asked once
   if(on)S.taskOpen[list]=id;else delete S.taskOpen[list];
   render(true);
   if(!on)return;
@@ -251,8 +253,8 @@ const planCard=(q,list='queue')=>card(taskRow(q,q.title||q.id,taskBtns(q),list),
 const relWaits=r=>((r.waits||[]).length?`waits for ${r.waits.length}`:r.words)+(r.note||'');
 function releaseRow(q,list='release'){
   const r=q.release, in_='wait:'+q.id;
-  const one=w=>{const t=(S.snap.queue||[]).find(x=>x.id===w.id);
-    return `<div class="srow" data-k="${esc(in_)}:${esc(w.id)}">${taskRow(t||{...w,state:'open'},(t||w).title||w.id,t?taskBtns(t).replace('data-k="acts:',`data-k="acts:${esc(in_)}:`):'',in_)}</div>`};
+  const one=w=>{const t=(S.snap.queue||[]).concat(S.snap.shelved||[]).find(x=>x.id===w.id);
+    return `<div class="srow" data-k="${esc(in_)}:${esc(w.id)}">${taskRow(t||{...w,state:'open'},(t||w).title||w.id,taskBtns(t||w).replace('data-k="acts:',`data-k="acts:${esc(in_)}:`),in_)}</div>`};
   return taskRow(q,r.title||q.title||q.id,taskBtns(q,relDrop(q)),list,(r.waits||[]).length?`<div class="waits">${r.waits.map(one).join('')}</div>`:'');
 }
 const releaseCard=(q,list)=>card(releaseRow(q,list),'',`data-k="task:${esc(q.id)}"`);

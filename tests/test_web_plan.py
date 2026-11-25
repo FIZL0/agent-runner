@@ -668,7 +668,7 @@ const btns = () => root.querySelectorAll('[data-k]').filter(e => e.dataset.k.sta
   const out = {}; render(); out.shut = [opened(), planHTML()];
   await openTask('F1', 'queue'); await openTask('B2', 'queue'); await openTask('D3', 'parked'); await openTask('F83', 'parked'); out.lists = [opened(), btns()];
   await openTask('V5', 'release'); out.rel = [opened(), btns(), planHTML()];
-  await openTask('F1', 'wait:V5'); await openTask('B2', 'wait:V5'); out.waits = [opened(), root.querySelectorAll('[data-k]').map(e => e.dataset.k)];
+  await openTask('F7', 'wait:V5'); out.unseen = btns(); await openTask('B2', 'wait:V5'); S.sure = 'queue_drop:B2'; render(); out.waits = [opened(), root.querySelectorAll('[data-k]').map(e => e.dataset.k)];
   await openTask('V6', 'release'); out.other = [opened(), root.text];
   await openTask('V6', 'release'); out.closed = opened();
   console.log(JSON.stringify(out));
@@ -683,6 +683,7 @@ def test_plan_lists_f426b(tmp: Path) -> None:
     plan = page.split('const planField=', 1)[1].split('\n', 1)[0]
     check('<div class="planq">' in plan and re.search(r'\.planq\{position:sticky;top:0;[^}]*background:var\(--bg\)', page), 'the search sticks', plan)
     check('`${planField()}<div class="col">' in page, 'outside the grid, where a sticky row would go with its own cell')
+    check(".find(x=>x.id===v)||{id:v,title:''}" in page, 'Chat works on a task the snapshot lacks')
     check('openTask(x.dataset.task,x.dataset.list)' in page, 'a press names its list')
     if not shutil.which('node'):
         print('  (no node here: the Plan lists script test is skipped)')
@@ -717,11 +718,13 @@ def test_plan_lists_f426b(tmp: Path) -> None:
     for t in ('F1', 'B2', 'F7'):
         check(f'data-task="{t}" data-list="wait:V5"' in o['rel'][2], f'it lists {t}')
     check('waits for 3 (not B9)' in o['rel'][2], 'its line is the count, as the list names them')
-    eq(o['waits'][0], ['release V5', 'wait:V5 B2', 'queue B2', 'parked F83'], 'and its tasks open, one at a time')
-    eq(len(o['waits'][1]), len(set(o['waits'][1])), 'a task open in two lists has keys of its own in each')
-    eq(o['other'][0], ['release V6', 'queue B2', 'parked F83'], 'another release shuts the first')
+    eq(o['waits'][0], ['release V5', 'wait:V5 B2', 'parked F83'], 'and its tasks open, one at a time; a task is open in one list')
+    check(['acts:wait:V5:F7', ['Chat']] in o['unseen'], 'one the snapshot does not have: Chat', o['unseen'])
+    check('sure' in o['waits'][1], 'its question is asked there')
+    eq(len(o['waits'][1]), len(set(o['waits'][1])), 'no key is drawn twice')
+    eq(o['other'][0], ['release V6', 'parked F83'], 'another release shuts the first')
     check('whole text' in o['other'][1], 'one that waits for nothing opens to its text', o['other'][1])
-    eq(o['closed'], ['queue B2', 'parked F83'], 'a second press shuts it')
+    eq(o['closed'], ['parked F83'], 'a second press shuts it')
 
 
 if __name__ == '__main__':
