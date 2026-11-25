@@ -35,7 +35,7 @@ const micPast=()=>{const s=t=>Math.round((Date.now()-t)/1000)+' s';
    Allow under way; now, the Recorder that takes sound; gen counts releases. F161c: may, the browser allows the mic for good; shut, no
    opening by itself until Talk shows anew; query, timer, sign: recLook()'s. B804a, for the mic report: why, what closed the
    last stream; perm, the permission last seen; took, the last opening's times */
-const REC={engine:null,asked:false,no:'',open:null,asking:null,now:null,gen:0,may:false,shut:false,query:false,timer:0,sign:false,why:'',perm:'',took:null};
+const REC={engine:null,asked:false,no:'',open:null,asking:null,now:null,gen:0,shut:false,query:false,timer:0,sign:false,why:'',perm:'',took:null};
 /* why Recorded cannot be used here, '' when it can */
 function recProblem(secure,can,engine,refused){
   if(!secure)return 'it needs https or localhost, and this address is plain http';

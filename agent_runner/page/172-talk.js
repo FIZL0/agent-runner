@@ -75,19 +75,18 @@ function recRing(o,x){
   if(!keep||o.ear!==t){o.ring=[];o.kept=0;o.ear=keep?t:null}
   if(keep&&!cut){o.ring.push(x);o.kept+=x.length}
 }
-/* while a reply plays no sound is taken. Where the browser allows the mic for good the stream closes, so the sound is as
-   with no mic; where a new one could ask again it only rests */
+/* F161c3: while a reply plays the stream rests: its track is off, so no sound is taken. The stream and its context stay up:
+   on an iPhone 15 (Safari 27.0.1) a press after it is heard in about 50 ms and one that cuts it in 80. A stream opened again
+   took 460 to 1140 ms, and one whose context was suspended over 800 ms, then was mostly silent */
 function recQuiet(){
   const o=REC.open;if(!o||REC.now||o.rest)return;
-  if(REC.may)return recFree('freed for a reply');
   o.rest=true;o.ring=[];o.kept=0;o.ear=null;o.came=false;o.track.enabled=false;
-  try{const p=o.ctx.suspend();if(p)p.catch(()=>{})}catch(e){}
 }
 /* Talk's mic is on screen, Recorded can be used, and the Mic test is closed. A listen under way goes on beside the message box */
 const recShown=()=>!document.hidden&&S.view==='talk'&&!S.thread&&S.sheet!=='mictest'&&(!!REC.now||(talkRec()&&!talkTyping()));
 /* B804a: why recShown() does not hold, for the mic report */
 const recGone=()=>document.hidden?'page hidden':S.view!=='talk'||S.thread?'Talk left':S.sheet==='mictest'?'freed for the Mic test':talkTyping()?'freed for typing':'Recorded could not be used';
-/* F161c: the mic is open while Talk shows: opened with no press only where the browser already allows it, closed while a
+/* F161c: the mic is open while Talk shows: opened with no press only where the browser already allows it, resting while a
    reply plays. Talk left or hidden, or the Mic test: a recording ends with its words, then the mic is released */
 function recLook(){
   clearTimeout(REC.timer);REC.timer=0;
@@ -115,8 +114,7 @@ async function recAhead(){
   let st='';try{st=(await navigator.permissions.query({name:'microphone'})).state}catch(e){}  // a browser that cannot say: the first press opens it
   REC.query=false;REC.perm=st||'the browser cannot say';
   if(!recMayOpen())return;
-  REC.may=st==='granted';
-  if(!REC.may)return;
+  if(st!=='granted')return;
   REC.denied=false;  // allowed meanwhile
   soundAs('play-and-record');
   const gen=REC.gen;
@@ -128,9 +126,9 @@ function recPress(){
   if(document.hidden||S.view==='talk'&&!S.thread)return;
   REC.shut=false;REC.ends=0;
   if(REC.denied||!recFits())return;
-  REC.coming=Date.now()+REC_COMES;REC.may=false;
+  REC.coming=Date.now()+REC_COMES;
   soundAs('play-and-record');
-  try{navigator.permissions.query({name:'microphone'}).then(p=>{REC.perm=p.state;REC.may=p.state==='granted'},()=>{REC.perm='the browser cannot say'})}  // as it was before the ask: a reply closes or rests the stream by it
+  try{navigator.permissions.query({name:'microphone'}).then(p=>{REC.perm=p.state},()=>{REC.perm='the browser cannot say'})}  // as it was before the ask, for the mic report
   catch(e){REC.perm='the browser cannot say'}
   const gen=REC.gen;
   recBegin('talk').catch(e=>{if(recDenied(e))REC.denied=true;if(gen===REC.gen)REC.shut=true;soundAs('playback')});

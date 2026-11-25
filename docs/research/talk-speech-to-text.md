@@ -22,7 +22,7 @@ No product code changed; research only. Feeds F161.
 6. **Default: keep Safari's recognition as the default until the phone check (section 6) shows Recorded gets first words;
    then make Recorded the default on iPhone.** Both stay selectable, as the person asked.
 
-Not tried: anything on a real iPhone (Safari recording, the pre-roll buffer, playback with the mic open, the Allow prompt).
+Not tried: anything on a real iPhone (Safari recording, the pre-roll buffer, playback with the mic open, the Allow prompt), except the timings in section 4 (F161c3).
 Audio here is the Kokoro voice only, clean and with no room noise, so word accuracy is a best case; real phone-mic speech
 will be worse and the ranking between models may move.
 
@@ -147,6 +147,20 @@ From sources, **not verified on a phone**:
   the stream more than once per Talk opening.
 - AudioContext on iOS starts `suspended` and must be `resume()`d in a tap handler; it runs at the hardware rate (48 kHz or 44.1 kHz),
   not 16 kHz.
+
+### Measured on an iPhone 15 (F161c3)
+
+A standalone test page over https with the same stream and worklet setup (not the run app itself): iPhone 15 Pro, Safari 27.0.1, 2026-11-25.
+Real taps by WebDriverAgent, speaker, reply = a 4 s clip. Time = press to the first non-silent 2048-sample piece.
+
+- Fresh open, page already allowed: 377-434 ms; second press on the open stream: 42-46 ms.
+- After a reply: closed, then reopened by the press: 461 ms (1 run). Closed, then reopened when the reply ended: the reopening takes about 0.5 s, then the press 46-49 ms (2 runs).
+- Kept (track off, AudioContext running, audio session playback): 47, 51, 48 ms. Track off, session play-and-record: 47, 46, 45. Stream untouched, session playback: 48, 47.
+- Cutting a reply off: closed 1133-1141 ms (3 runs, 2 of them of the reopen variant; all reopened in the press); kept 77-80 ms.
+- Context suspended (the old rest): first piece after 822-1009 ms (one 122 ms, with the track left on), and only silence (exact zeros for 4 s) in 6 of 8 presses, in all 4 with the track off too (the old rest). Two fresh opens just after a load were as silent, so what causes the silence is not known; none of the 9 presses whose context kept running, after a reply, and none of the 9 that cut one off, were silent.
+- Reply start delay: 64-81 ms kept; 87-316 ms closed; 745-821 ms suspended.
+
+Not measured: loudness of replies while the stream rests, earbuds (hands-free profile), and a person speaking. The 1.57 s report is not reproduced by these numbers; the closest is 1.14 s for a cut. An early run whose taps hit the wrong buttons was discarded.
 
 ## 5. Why Safari's own recognition misses the first word (not a finding about the engine)
 
