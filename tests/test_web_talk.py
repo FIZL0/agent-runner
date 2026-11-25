@@ -176,7 +176,7 @@ const HOME_PAGE = false, document = {};  // B153: takeSnap sets the window title
 const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
 const chats = () => S.snap.sessions.filter(s => /^c\d+$/.test(s.name)), working_ = () => [];
 const feedOf = n => (S.feeds[n] || {}).entries || [];
-const chatShown = () => false;
+const chatShown = () => true, toEnd = () => {};
 const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: '', gen: 0, starting: [], later: []};
 const MIC = {rec: null, next: null};  // B174
 let feeds = {}, actDone = null, actResult = null;
@@ -489,13 +489,13 @@ const AU = {el: null, got: null, ok: false};  // F158
 const boxKey = () => 'c3', DRAFT_KEY = k => k, store = {set() {}}, grow = () => {};
 const talkSend = t => { sent.push(t); TK.state = TK.note = '' };
 const els = {}, el = () => ({classList: {toggle() {}}, setAttribute(k, v) { this[k] = v }, removeAttribute(k) { delete this[k] }});
-let copied = '', sheet = '', RUN_VERSION = '9.9'; const openSheet = n => { sheet = n };
+let copied = '', sheet = '', RUN_VERSION = '9.9', PAGE_PRINT = 'aaa'; const openSheet = n => { sheet = n };
 const $ = k => els[k] = els[k] || el();
 let micEl = null;  // a redraw of the mic's markup makes a new element
 eval(logic + `
 function render() { if (setHTML($('talkmic'), talkMic())) els.mic = micEl = {...el(), setPointerCapture(id) { this.cap = id }}; talkDraw() }
 let TS = talkSetParse('');
-` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'holdLost', 'micStop', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
+` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'holdLost', 'micStop', 'micPage', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
   + page.slice(page.indexOf('/* B162: the mic report\'s pointer'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {}; render();
 // two aborts: one retry by itself, then the words
@@ -691,7 +691,9 @@ starts = 0; listen(); hears(['so', true]); S.view = 'home'; last().end(); S.view
 listen(); for (const w of ['s', 'se', 'sec', 'secret']) hears([w, false]); cut.grow = TK.trail.ev.filter(x => /result/.test(x)).length;
 for (let i = 0; i < 130; i++) micLog('x'); listen(); last().end(); cut.full = [ended(), TK.trail.ev.join().includes('sec')]; sent.length = 0; cut.most = most; TS.mic = 'hold';
 navigator.userAgent = 'UA iPhone'; TK.hold = false; TK.report = TK.trail; let holdReport = '';
-navigator.clipboard = {writeText: async t => { holdReport = t }}; micCopy().then(() => { out.holdReport = holdReport });
+navigator.clipboard = {writeText: async t => { holdReport = t }};
+S.snap = {page: 'aaa'}; out.pages = [micPage()]; PAGE_PRINT = '/' + '*PAGE_PRINT*/'; out.pages.push(micPage()); PAGE_PRINT = 'aaa'; S.snap = {}; out.pages.push(micPage());
+S.snap = {page: 'bbb'}; micCopy().then(() => { out.holdReport = holdReport });
 TS.mic = 'tap'; TK.state = ''; render();
 TK.trail = null; for (let i = 0; i < 130; i++) micLog('x'); out.cap = micReport(TK.trail, ['h']).split('\n').slice(-1)[0];
 // the copy, and what shows where it is refused
@@ -811,7 +813,11 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(b.get('auto'), [1, ['yes'], 'sent 3 letters, ended by the recognizer'], 'auto listen ends at a silence')
     eq((b.get('network'), b.get('left')), ([[], 'kept 2 letters, not sent: nothing heard after them, ended by error network'], [1, ['so']]), 'a failed restart keeps, Talk left sends')
     eq((b.get('grow'), b.get('full'), b.get('most')), (1, ['sent 6 letters, ended by a tap', False], 1), 'the report has its end, and no words')
-    check('mic hold, version' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
+    check("mic hold, the run's version 9.9, open page aaa, not the run's (bbb): not reloaded since it changed, audio session" in got['holdReport'],
+          "the report names the open page and the run's: a page not reloaded is told apart", got['holdReport'][:300])
+    eq(got.get('pages'), ["open page aaa, the same as the run's", "open page not known, the run's page aaa", "open page aaa, the run's page not known"],
+       'the open page is the run\'s, or one of the two is not known')
+    check('mic hold' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
     eq(got.get('cap'), 'and 10 more', 'the report has an end')
     eq(got.get('copied')[:2] + got.get('copied')[3:4], ['Mic report', 'the note', 'UA'], 'the copy names the note and the browser')
     check('page open ' in got['holdReport'] and 'without' in got['holdReport'], 'B162b1: the report says what the page did before', got['holdReport'][:400])
@@ -948,7 +954,7 @@ const awaitReply = () => { TK.wait = {n: 'c5', since: 0, at: now, last: '', said
 const lands = t => { if (!TK.wait) awaitReply(); S.feeds.c5.entries = [{kind: 'you', text: 'x'}, {kind: 'say', text: t}]; talkHear('c5'); talkHear('c5') };
 const press = k => { const b = {}, e = {target: {closest: s => s === k ? b : null}, button: 0, pointerId: 1, pointerType: 'touch', detail: 1}; return e };
 eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run speech:'), page.indexOf('const talkTyping='))
- + line('const talkTyping=') + line('function setHTML(') + line('const MIC=')
+ + line('const chatShown=') + grab('function talkAway(') + line('const talkTyping=') + line('function setHTML(') + line('const MIC=')
  + ['micWhenFree', 'micFree', 'talkDraw', 'talkHear', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('') + line('function hush(')
  + page.slice(page.indexOf("document.addEventListener('visibilitychange',()=>{if(TK.ear)"), page.indexOf('/* F124: a swipe right anywhere'))
  + `const click = k => { const e = press(k), q = s => e.target.closest(s); ` + ['data-mic', 'data-spk'].map(k => line("  if(q('[" + k + "]'))").trim()).map(x => '(() => {' + x.replace(/\/\/ F93.*/, '') + '})();').join('') + ` };
@@ -1101,6 +1107,61 @@ def test_talk_settings_f124(tmp: Path) -> None:
     eq(got.get('autoHeld'), 'auto', 'holding the mic while it already listens: letting go sends')
 
 
+AWAY_DRIVER = READ_DRIVER.split('(async () => {')[0].replace('addEventListener = () => {};', 'addEventListener = document.addEventListener;') + r"""
+` + line("addEventListener('pagehide',talkAway)") + `
+const go = (v, t) => { S.view = v; S.thread = t || null; ` + line('  if(!HOME_PAGE&&!chatShown())talkAway()') + ` };
+(async () => {
+  const out = {}; await settle(); const run = AU.got; AU.ok = true;
+  for (const kind of ['own', 'run']) {
+    AU.got = kind === 'run' ? run : null; const o = out[kind] = {ways: []};
+    const begin = async () => { if (kind === 'run') await settle(); else { us[0].onstart(); ss.speaking = true } };
+    const count = () => kind === 'run' ? plays.length : us.length;
+    for (const [v, t] of [['home'], ['plan'], ['talk', 'c1']]) {
+      over(); TS.auto = true; lands('One here. Two.'); await begin(); lands('Second reply.'); const n = count(), starts = recs.length; order.length = 0;
+      go(v, t); const quiet = kind === 'run' ? AU.el.paused !== false : order.includes('cancel'); ss.speaking = false;
+      if (kind === 'own') us[0].onend({type: 'end'});
+      await settle(); await look(4); const away = [TK.state, TK.later.length, count() - n];
+      go('talk'); await settle(); await look(4); o.ways.push([quiet, ...away, TK.state, count() - n, recs.length - starts]); TS.auto = false;
+    }
+    // a clip on its way when Talk is left is not played
+    over(); lands('One here. Two.'); go('home'); await settle(); await look(3); o.early = [TK.state, kind === 'run' ? plays.length : order.includes('cancel')]; go('talk');
+    // a reply that lands while away: not read, nor on the way back; seen away once and then back: the same
+    over(); go('home'); lands('Late reply.'); await settle(); const at = [TK.state, count()]; go('talk'); await settle(); await look(3); o.late = [...at, TK.state, count(), TK.wait];
+    over(); go('home'); awaitReply(); S.feeds.c5.entries = [{kind: 'you', text: 'x'}, {kind: 'say', text: 'Late.'}]; talkHear('c5'); go('talk'); talkHear('c5'); await settle(); o.seen = [TK.state, count()];
+    // gone and back before it lands: read; and a play button's reading stops too
+    over(); awaitReply(); go('home'); go('talk'); lands('In time.'); await begin(); o.inTime = TK.state;
+    over(); speak('By hand.', 'k'); await begin(); go('home'); o.hand = [TK.playing, kind === 'run' ? AU.el.paused !== false : order.includes('cancel')]; go('talk');
+    over(); lands('One here. Two.'); await begin(); order.length = 0; fire('pagehide', {}); o.page = [TK.state, kind === 'run' ? AU.el.paused !== false : order.includes('cancel')];
+    // nothing is read: leaving does not touch the browser's voice (B132)
+    over(); go('home'); o.none = order.length; go('talk');
+  }
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_talk_left_b836(tmp: Path) -> None:
+    """B836: leaving Talk for another view or chat stops the reply being read, by the run's clips or the browser's voice;
+    the rest of it, what waits and what lands while away are not read, then or on the way back."""
+    if not shutil.which('node'):
+        print('  (no node here: the leaving Talk script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(AWAY_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the way out of Talk', r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    for kind in ('own', 'run'):
+        o = got.get(kind) or {}
+        eq(o.get('ways'), [[True, '', 0, 0, '', 0, 0]] * 3, f'{kind}: to a view or a chat: the sound stops, nothing more is read, nor back in Talk, and no auto listen')
+        eq(o.get('early'), ['', 0 if kind == 'run' else True], f'{kind}: nor a sound not begun yet')
+        eq(o.get('late'), ['', 0, '', 0, None], f'{kind}: a reply that lands while away is not read')
+        eq(o.get('seen'), ['', 0], f'{kind}: nor one first seen while away')
+        eq(o.get('inTime'), 'speaking', f'{kind}: back before it lands: it is read')
+        eq(o.get('hand'), ['', True], f"{kind}: a play button's reading stops too")
+        eq(o.get('page'), ['', True], f"{kind}: another project's page stops it too")
+        eq(o.get('none'), 0, f'{kind}: with nothing read, leaving makes no speechSynthesis call')
+
+
 HOME_TALK_DRIVER = r"""
 const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
 const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
@@ -1228,7 +1289,7 @@ def test_mic_test_b162b1(tmp: Path) -> None:
     eq((o.get('toast'), o.get('spoke')), ('Mic test copied: paste it into your reply', 0), 'copied; speechSynthesis not touched')
 
 
-BACK_DRIVER = SCROLL_DRIVER.split('eval(logic')[0].replace('talkBack = () => {}, talkLate = () => true, ', '') \
+BACK_DRIVER = SCROLL_DRIVER.split('eval(logic')[0].replace('talkBack = () => {}, talkLate = () => true, talkAway = () => {}, ', 'talkAway = () => { S.aways = (S.aways || 0) + 1 }, ') \
     .replace("store = {get: () => '', set() {}}", "kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }}") \
     .replace("boxKey = () => S.thread || 'home'", "boxKey = () => S.thread || (S.view === 'talk' ? 'talk' : 'home')") + r"""
 const feedHTML = () => CHAT, feedEnd = () => '', sessRow = feedEnd, keysRow = feedEnd, isNew = () => false, modelOf = () => '';
@@ -1248,6 +1309,9 @@ const hide = ms => { document.hidden = true; fire('visibilitychange'); now += ms
 type(); out.typing = at();
 render(); CHAT += ' m3:40'; render(); render(true); out.redrawn = at();
 go('home'); go('talk'); out.view = at(); out.put = ta.value;
+const left = (v, t) => { go('talk'); S.aways = 0; render(); S.sheet = 'talk'; render(); S.sheet = ''; const on = S.aways; go(v, t); return [on, S.aways > 0] };
+out.ways = [left('home'), left('plan'), left('talk', 'c1'), left('talk', '@s1')]; type();
+
 talkMode('type'); out.again = [...at(), ta.value];
 type(); go('talk', 'c1'); document.activeElement = ta; go('talk'); out.chat = at();
 go('talk', 'c1'); document.activeElement = ta; go('talk'); out.chatBox = at();
@@ -1277,6 +1341,7 @@ def test_talk_back_b802(tmp: Path) -> None:
     got = json.loads(r.stdout or '{}')
     words = 'half a mess'
     on, box, mic = [True, True, words], [True, words], [False, False, words]
+    eq(got.get('ways'), [[0, True]] * 4, "B836: each way out of Talk says it was left, a redraw or a sheet over it does not")
     eq((got.get('typing'), got.get('redrawn')), (on, on), 'a redraw, or a reply landing, leaves typing on and the focus in the box')
     eq((got.get('view'), got.get('put')), (mic, words), 'from another view: the mic, no focus, the words kept')
     eq(got.get('again'), [*on, words], 'and they come back with the keyboard button')
@@ -1292,4 +1357,4 @@ def test_talk_back_b802(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
+    raise SystemExit(report([in_tmp(test_talk_left_b836), in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))

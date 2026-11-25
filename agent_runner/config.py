@@ -1252,9 +1252,10 @@ def _toml_inner(lines: list[str]) -> list[str]:
 
 def toml_edit(text: str, table: str, key: str, value=None, unset: bool = False) -> str:
     """F97: `text` (a settings file) with `[table] key` set to `value` (`unset`: taken out), every other line
-    and comment as it was. ValueError when it cannot be done on its own line (a key written as a [table.key]
-    section, an inline table); the result is read back, and only that key may differ."""
+    and comment as it was; a table written as [table.key] sections keeps them (F448a). ValueError when it cannot be
+    done on its own line (a dotted key, an inline table); the result is read back, and only that key may differ."""
     import re
+    from agent_runner import toml_sections
     before = tomllib.loads(text)
     wrapped = isinstance(before.get('agent-runner'), dict)
     name = f'agent-runner.{table}' if wrapped else table
@@ -1283,7 +1284,15 @@ def toml_edit(text: str, table: str, key: str, value=None, unset: bool = False) 
         i += n
         if at is not None and end is None:
             last = i
-    if unset:
+    path = (*(('agent-runner',) if wrapped else ()), table, key)
+    if where is None and toml_sections.written(lines, path):  # F448a
+        if unset:
+            lines = toml_sections.drop(lines, path)
+        elif isinstance(value, dict) and value:
+            lines = toml_sections.change(lines, path, _table_of(before, table, wrapped).get(key) or {}, value)
+        else:  # an empty table is said on a line
+            return toml_edit('\n'.join(toml_sections.drop(lines, path)), table, key, value)
+    elif unset:
         if where is None:
             return text if key not in _table_of(before, table, wrapped) else _toml_refuse(table, key)
         lines[where[0]:where[0] + where[1]] = _toml_inner(lines[where[0]:where[0] + where[1]])
@@ -1355,6 +1364,9 @@ def setting_check(root: Path, table: str, key: str, v, device: bool = False) -> 
             return str(e).removeprefix('agent-runner: ')
     if device and (table, key) == ('run', 'agent'):  # B764a
         return agent_missing(root, v)
+    from agent_runner import setting_checks  # F448a
+    if problem := setting_checks.problem(root, table, key, v):
+        return problem
     if table != 'models':
         return ''
     snap = {(t['table'], k['key']): k['value'] for t in settings_snapshot(root)['tables'] for k in t['keys']}
@@ -1369,6 +1381,11 @@ def setting_check(root: Path, table: str, key: str, v, device: bool = False) -> 
             if not isinstance(m, str) or not m:
                 return f'[models] {key}: {m!r} is not a model name'
             claude_model(m, providers, local, f'[models] {key}')
+        if key == 'providers':  # F448a: a role that still names one that goes would stop the run
+            for k, m in ((k, m) for (t, k), m in snap.items() if t == 'models' and k not in ('local', 'providers')):
+                for x in m.values() if isinstance(m, dict) else m if isinstance(m, list) else [m]:
+                    if isinstance(x, str) and x:
+                        claude_model(x, providers, local, f'[models] {k}')
     except SystemExit as e:
         return str(e).removeprefix('agent-runner: ')
     return ''
@@ -1399,6 +1416,9 @@ def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool
         raise ValueError(problem)
     if unset and (table not in DEFAULTS or key not in DEFAULTS[table]):
         raise ValueError(f'[{table}] {key} is not a setting')
+    from agent_runner import setting_checks  # F448a
+    if unset and (problem := setting_checks.reset_problem(root, 'device', table, key)):
+        raise ValueError(problem)
     f = local_settings_file(root)
     if not f.exists():
         if unset:
@@ -1458,6 +1478,7 @@ def settings_snapshot(root: Path) -> dict:
                    'off': 'off' in SETTING_ALSO.get((t, k), ()), 'also': list(SETTING_ALSO.get((t, k), ())),
                    'name': W.name(t, k), 'desc': W.desc(t, k), 'group': W.group(t, k), 'home': W.home(t, k),
                    'parent': W.parent(t, k), 'words': W.words(t, k), 'parts': W.parts(t, k), 'unit': W.unit(t, k), 'order': W.order(t, k),
+                   'warn': W.warn(t, k),  # F448a
                    'applies': 'next run' if (t, k) in SETTING_NEXT else 'now', 'value': d, 'source': 'default'}
             for side in ('project', 'device'):
                 have = raws[side].get(t)

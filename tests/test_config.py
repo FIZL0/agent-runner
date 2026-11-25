@@ -81,7 +81,7 @@ def test_one_key(tmp: Path) -> None:
     check(r['ok'] and 'weekly_max' not in (repo / 'runner.toml').read_text(encoding='utf-8'), 'a reset takes it out', r)
     r = save(value='a | files: b')
     check(not r['ok'], 'still checked')
-    check(save(key='test', value='a | files: b — BLOCKED: x')['ok'], 'no task line: any text value is fine')
+    check(save(key='prompt_extra', value='a | files: b — BLOCKED: x')['ok'], 'no task line: any text value is fine')
 
 
 def test_line_ends(tmp: Path) -> None:

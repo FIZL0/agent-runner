@@ -394,7 +394,9 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 
 - A finger's target is at least `--tap`. Hover only adds: whatever it reveals, touch shows or puts in a row's sheet. A chat row's
   three dots open its buttons in the row itself (`.rowacts`): Rename, Pin, and Delete where the dots were, so two taps on
-  that spot delete, with Undo. One row is open at a time, and a tap elsewhere only closes it. A
+  that spot delete, with Undo. One row is open at a time, and a tap elsewhere only closes it. The rename row (`.renform`)
+  has a Cancel button (✕, at least `--tap` on touch) beside its field: Cancel, Esc or opening another chat (`renameLeave()`)
+  keeps the old name and sends nothing, and that same press opens the other chat; Enter saves. A
   small button that must be 44px with any pointer gets its target from an `::after` over it (Home's Talk chip), so it
   still looks like the ones beside it.
 - Text boxes are 16px or more, so a phone does not zoom.
@@ -460,6 +462,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   When the browser blocks it, the talk line says what to tap.
 - One button stops the reading: the speaker (and the reply's own play button). The mic is never a stop for it; a press on the mic
   cuts a reading and listens in that press.
+- Leaving Talk stops the reading too: `render()` calls `talkAway()` whenever Talk is not the shown view (`chatShown()`), so a new way out needs nothing of its own.
 - Every reading must be watched with `soundWatch()`, since iOS can skip a sound's end event.
 - The browser's voice (`speechSynthesis`) is not called before `rec.start()` in a press (B132); run speech clips may be stopped before it.
 - Every mic use goes through `MIC`: a Recorder stands in as a recognizer (`micRec()`), so one recognizer or recording runs at a time.

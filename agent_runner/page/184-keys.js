@@ -28,8 +28,8 @@ document.addEventListener('keydown',e=>{
      B120: in the message box Esc closes the menu, then interrupts a working chat (never goes back), else leaves
      the box; out of the box Esc never interrupts, it goes back */
   if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='c'||e.key==='C')&&!selectedText(e.target)){const n=shownSession();if(n&&busy(n)){e.preventDefault();act('interrupt',{session:n});return}}  // B141
-  if(e.target.matches&&e.target.matches('[data-f="ren"]')){  // F129: Enter keeps the name (its form), Esc does not
-    if(e.key==='Escape'){e.preventDefault();S.ren=null;render(true)}
+  if(e.target.matches&&e.target.matches('[data-f="ren"],[data-rencancel]')){  // F129: Enter keeps the name (its form), Esc does not
+    if(e.key==='Escape'){e.preventDefault();cancelRename()}
     return}
   if(e.key==='Escape'&&S.sheet==='need'&&S.askShot>=0){e.preventDefault();shotGo(-1);return}  // F162
   if(e.key==='Escape'&&S.sheet){e.preventDefault();closeSheet();return}  // the topmost thing only

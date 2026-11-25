@@ -39,6 +39,7 @@ function render(force){
   if(HOME_PAGE){S.thread=null;if(!HKEY||S.view!=='projects')S.view=HKEY?'home':'projects'}
   const place=HOME_PAGE?'home page:'+S.view+(H.tab||'')+(H.dev?':'+H.dev:''):n?'t:'+n:'v:'+S.view+(S.view==='projects'&&H.tab?':'+H.tab+(H.dev?':'+H.dev:''):''), moved=place!==lastPlace, chatOn=!!n||S.view==='talk';
   if(moved&&(lastPlace||talkLate())&&!HOME_PAGE&&chatShown())talkBack();  // B802
+  if(!HOME_PAGE&&!chatShown())talkAway();  // B836
   const put=keepScroll(body), had=keysIn(body), hadTop=keysIn($('top')), keep=keepFields(body);
   if(moved)scrollStop(body);
   if(moved&&lastPlace)S.at[lastPlace]=body.scrollTop;

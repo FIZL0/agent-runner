@@ -284,10 +284,11 @@ function talkHear(n){
   const w=TK.wait;if(!w||talkWaitName()!==n)return;
   if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking'){TK.state='';toast('No spoken reply came in five minutes: its chat shows where it is.',true);render(true)}return}
   const said=talkReply(feedOf(n),w.since,w.said);
+  if(said&&!chatShown())w.away=true;  // B836: it landed while Talk was left, so it is not read, then or on the way back
   if(!said||said!==w.last){w.last=said;return}
   TK.wait=null;
   if(TK.state==='thinking')TK.state='';
-  if(TS.read){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off
+  if(TS.read&&!w.away){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off
   render(true);
 }
 function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
@@ -330,6 +331,15 @@ function speak(text,key){
 }
 /* the reading stops: by the person (replies still waiting keep their play buttons), or, keep, by itself: the next is read */
 function hush(keep){TK.playing='';if(!keep)TK.later=[];if(TK.state==='speaking')TK.state=talkRest();TK.turn=(TK.turn||0)+1;shush();render(true);if(keep)talkNext()}
+/* B836: Talk was left (render() says so, whatever the way out): what is read stops and what waits to be read is
+   dropped; their play buttons stay. No render() here, as one is under way */
+function talkAway(){
+  TK.later=[];
+  if(!talkReads())return;
+  if(TK.trail)micLog('sound: Talk was left');
+  TK.playing='';if(TK.state==='speaking')TK.state=talkRest();TK.turn=(TK.turn||0)+1;shush();
+}
+addEventListener('pagehide',talkAway);  // B836: another project's page, or Home's: the browser's voice can outlive this one
 /* a Talk reply's play button: reads that reply, or stops it */
 function playReply(k){
   if(TK.playing===k)return hush();
@@ -464,11 +474,16 @@ function micStop(by){
   rec.stop();
   if(TK.rec===rec&&!rec.recorded)setTimeout(()=>{if(TK.rec===rec&&TK.ear===t&&t.stopped){micLog('no end came: ended by force');micWhenFree(()=>{})}},MIC_END);  // B162: else the listen never ends
 }
+/* B216b1: which page is open, and the one the run serves: an open page not reloaded since a fix is told apart */
+function micPage(){
+  const mine=PAGE_PRINT.startsWith('/*')?'':PAGE_PRINT, run=S.snap&&S.snap.page||'';
+  return `open page ${mine||'not known'}${!run?', the run\'s page not known':!mine?`, the run's page ${run}`:run===mine?", the same as the run's":`, not the run's (${run}): not reloaded since it changed`}`;
+}
 /* B162: the mic report to the clipboard, or shown to copy by hand where that is refused */
 async function micCopy(){
   const rep=TK.report||TK.trail;if(!rep)return;
   let au='';try{au=navigator.audioSession?`${navigator.audioSession.type}, ${navigator.audioSession.state||''}`:'none'}catch(e){}
-  const text=micReport(rep,['Mic report',TK.note,`mic ${TS.mic}, version ${RUN_VERSION}, audio session ${au}, media session ${navigator.mediaSession?navigator.mediaSession.playbackState:''}`,navigator.userAgent,...(rep.past?[rep.past]:[])]);
+  const text=micReport(rep,['Mic report',TK.note,`mic ${TS.mic}, the run's version ${RUN_VERSION}, ${micPage()}, audio session ${au}, media session ${navigator.mediaSession?navigator.mediaSession.playbackState:''}`,navigator.userAgent,...(rep.past?[rep.past]:[])]);
   return micCopyText('Mic report',text);
 }
 async function micCopyText(title,text){
