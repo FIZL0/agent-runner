@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: on the run page's Tools page, each tool's and device's card shows its tool buttons: a button is busy while its command runs (the tool's others wait, another tool's do not); its question is asked in place, and "Use it anyway" names the holder when someone has the tool; the result or failure, with its last output lines, is at the foot of the card; the device Add/Edit sheet adds, edits and removes a device's buttons (F428d).
 - Added: a conflict in the glossary file (`[plan] glossary`, GLOSSARY.md) is joined by term entry with no setting: terms added on either side are both kept, and an entry changed on one side takes that side; one changed differently on both sides, or a side that does not parse, goes to a fix session and the run log says why (T31).
 ## 0.69.0 (2026-11-25)
 

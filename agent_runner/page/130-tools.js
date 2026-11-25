@@ -36,9 +36,9 @@ function toolCard(t){
     <div data-k="toolstate:${n}" data-v="${esc(t.state)}"><span class="${cls?'v-'+cls:'small'}">${esc(toolWords(t))}</span></div>
     ${t.description?`<div class="tooltext">${esc(t.description)}</div>`:''}
     <div class="small tooltext">${esc(toolWhere(t))}${dev&&t.exclusive?' · one task at a time':''}</div>
-    ${dev?`${t.kind==='ssh'?toolHostKey(t):''}${toolPage(t)}${toolSaid(t.name)}
+    ${dev?`${t.kind==='ssh'?toolHostKey(t):''}${toolPage(t)}${pressHTML(t)}${toolSaid(t.name)}
     ${S.sure==='tool:'+t.name?`<div class="small">Remove ${n} for every project, its keys and password too?</div><div class="btns"><button class="btn bad" data-tool="remove" data-name="${n}">Yes, remove</button><button class="btn" data-unsure>No</button></div>`
-    :`<div class="btns"><button class="btn${toolBusy('test',t.name)}" data-tool="test" data-name="${n}" ${S.tools.secure?'':'disabled'}>Test connection</button><button class="btn" data-tool="edit" data-name="${n}">Edit…</button>${t.kind==='ssh'&&!t.alias?`<button class="btn" data-tool="secrets" data-name="${n}">Keys and password…</button>`:''}<button class="btn" data-tool="ask" data-name="${n}" ${S.tools.secure?'':'disabled'}>Remove</button></div>`}`:t.page?toolPage(t)+toolSaid(toolKey(t)):''}`,'',`data-k="tool:${esc(t.source)}:${n}"`);
+    :`<div class="btns"><button class="btn${toolBusy('test',t.name)}" data-tool="test" data-name="${n}" ${S.tools.secure?'':'disabled'}>Test connection</button><button class="btn" data-tool="edit" data-name="${n}">Edit…</button>${t.kind==='ssh'&&!t.alias?`<button class="btn" data-tool="secrets" data-name="${n}">Keys and password…</button>`:''}<button class="btn" data-tool="ask" data-name="${n}" ${S.tools.secure?'':'disabled'}>Remove</button></div>`}`:toolPage(t)+pressHTML(t)+(t.page?toolSaid(toolKey(t)):'')}${pressSaid(t)}`,'',`data-k="tool:${esc(t.source)}:${n}"`);
 }
 /* F428b: a device's name, or a runner.toml tool's with its source: the two may have one name, and a device's has no ':' */
 const toolKey=t=>t.source==='device'?t.name:`${t.source}:${t.name}`;
@@ -53,6 +53,19 @@ function toolPage(t){
   return `<div class="small tooltext" data-k="pagestate:${esc(k)}" data-v="${esc(s||'')}">Web page ${esc(pageAt(t.page)||t.page)}${s?` · <span class="${{running:'v-ok',failed:'v-bad'}[s]||''}">${esc(s)}</span>`:''}</div>
     ${lines.length?`<pre class="tasktext">${esc(lines.join('\n'))}</pre>`:''}
     <div class="btns">${s&&s!=='running'?b('start','Start',' pri'):useLink(t.page,'Use',' pri')+(s?b('stop','Stop',''):'')}</div>`;
+}
+/* F428d: a tool's own buttons (GLOSSARY: tool button). S.press[toolKey]: {busy: the label that is sent, ask: the question
+   in the buttons' place, said: what the last press answered}; its own, as one tool's press may take a while */
+const pressOf=t=>(S.press||{})[toolKey(t)]||{};
+function pressHTML(t){
+  const bs=t.buttons||[], p=pressOf(t), n=esc(t.name), at=`data-name="${n}" data-source="${esc(t.source)}"`, k=esc(toolKey(t)), off=S.tools.secure?'':'disabled';
+  if(!bs.length)return '';
+  if(p.ask&&bs.some(b=>b.label===p.ask.label))return `<div class="sure toolbtns" data-k="pressask:${k}" role="group"><div class="small tooltext" role="status">${esc(p.ask.q)}</div><div class="btns"><button class="btn bad" data-tool="pressyes" ${at} ${off}>${p.ask.busy?'Use it anyway':`Yes, ${esc(p.ask.label)}`}</button><button class="btn" data-tool="pressno" ${at}>No</button></div></div>`;
+  return `<div class="btns toolbtns" data-k="press:${k}">${bs.map(b=>`<button class="btn${p.busy===b.label?' busy':''}" data-tool="press" ${at} data-label="${esc(b.label)}" ${off||(p.busy&&p.busy!==b.label?'disabled':'')}>${esc(b.label)}</button>`).join('')}</div>`;
+}
+function pressSaid(t){
+  const s=pressOf(t).said;
+  return s?`<div class="pressed" data-k="pressed:${esc(toolKey(t))}" role="status"><div class="small tooltext${s.ok?'':' v-bad'}">${esc(s.out)}${s.https?` <a href="${esc(s.https)}">${esc(s.https.split('?')[0])}</a>`:''}</div>${s.lines.length?`<pre class="tasktext">${esc(s.lines.join('\n'))}</pre>`:''}</div>`:'';
 }
 /* the web pages of the devices and tools a Needs you item's task needs: Use, or the way to the card while it is not running */
 function needDevices(n){
@@ -85,6 +98,11 @@ function toolsHTML(){
 /* B222b: no typed word is in a device sheet's markup: keepFields() puts it back */
 const devText=(k,label,o={})=>`<label class="small">${label}${o.area?`<textarea class="fld" rows="${o.area}" data-f="${toolField(k)}" ${o.hint?`placeholder="${o.hint}"`:''}></textarea>`:`<input class="fld" data-f="${toolField(k)}" ${o.num?'inputmode="numeric"':''} ${o.hint?`placeholder="${o.hint}"`:''} autocomplete="off" autocapitalize="off" spellcheck="false">`}</label>`;
 const devPick=(k,label,opts)=>`<label class="small">${label}<select class="fld" data-f="${toolField(k)}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===toolVal(k)?'selected':''}>${esc(l)}</option>`).join('')}</select></label>`;
+/* F428d: the buttons in a device's sheet: S.devBtns has a key for each, whose fields are dev:b<key>-label, -cmd, -confirm */
+const BTN_FIELDS=['label','cmd','confirm'], btnField=(i,k)=>`b${i}-${k}`;
+const devButtons=()=>`<div class="sec">Buttons<span class="ln"></span></div><div class="small">Each runs its command once on this machine, 30 s at most.</div>
+    ${(S.devBtns||[]).map((i,at)=>`<div class="devbtn" data-k="devbtn:${i}" role="group" aria-label="Button ${at+1}"><div class="row setline"><b class="grow">Button ${at+1}</b><button class="btn" data-tool="btndel" data-i="${i}" aria-label="Remove button ${at+1}">Remove</button></div>${devText(btnField(i,'label'),'Label',{hint:'Restart'})}${devText(btnField(i,'cmd'),'Command (no secrets here)')}${devText(btnField(i,'confirm'),'Question asked first, if it needs one')}</div>`).join('')}
+    <div class="btns"><button class="btn" data-tool="btnadd">Add a button</button></div>`;
 SHEETS.device=()=>{
   const edit=S.sheetArg, d=S.tools||{aliases:[]}, ssh=toolVal('kind')!=='other', n=edit||'';
   return `<h2>${edit?`Edit ${esc(edit)}`:'Add a device'}</h2>${devText('name','Name, as tasks name it',{hint:'macmini'})}${edit?'<div class="small">If you rename it, a task that needs it keeps the old name until it is edited.</div>':''}
@@ -93,6 +111,7 @@ SHEETS.device=()=>{
     ${ssh?`${d.aliases.length||toolVal('alias')?devPick('alias','Host',[['','Its own host, below'],...[...new Set([...(toolVal('alias')?[toolVal('alias')]:[]),...d.aliases])].map(a=>[a,`${a}, in ~/.ssh/config`])]):''}${toolVal('alias')?'<div class="small">Signs in as ~/.ssh/config says. No secret is copied.</div>':devText('host','Host name or address',{hint:'macmini.local'})+devText('user','User')+devText('port','Port',{num:true,hint:'22'})}`
     :devText('reach','The command or address it uses',{hint:'vnc://rig.local:5900'})+devText('page','Web page to open, if it has one',{hint:'http://rig.local:8080'})+devText('start','Command that starts the page, if it needs one',{hint:'npm start'})+devText('folder','Working directory of that command',{hint:'~/repos/rig'})}
     <label class="row setline"><span class="grow">Only one task may use it at a time</span><input type="checkbox" role="switch" class="sw" data-f="${toolField('exclusive')}" aria-label="Only one task may use it at a time" ${toolVal('exclusive')==='true'?'checked':''}></label>
+    ${devButtons()}
     ${toolSaid(n)}<div class="btns"><button class="btn pri${toolBusy('save',n)}" data-tool="save" data-name="${esc(n)}">Save</button><button class="btn" data-closesheet>Cancel</button></div>`;
 };
 SHEETS.devsecrets=()=>{
@@ -114,12 +133,50 @@ function toolEdit(t){
   toolForget();S.toolSaid={};
   for(const k of ['name','description','alias','host','user','reach','page','start','folder'])S.f[toolField(k)]=t&&t[k]||'';
   S.f[toolField('kind')]=t?t.kind:'ssh';S.f[toolField('port')]=t&&t.port?String(t.port):'';S.f[toolField('exclusive')]=String(!!(t&&t.exclusive));
+  S.devBtns=(t&&t.buttons||[]).map((b,i)=>{for(const k of BTN_FIELDS)S.f[toolField(btnField(i,k))]=b[k]||'';return i});
   openSheet('device',t?t.name:'');
+}
+/* one of a tool's own buttons, straight to the run as toolPost() does. `a`: what the person answered, the question as it
+   was asked and the key of the holder they were told of; the run asks again when either is another one now */
+async function toolPress(name,source,label,a={}){
+  const key=toolKey({source,name}), all=S.press=S.press||{};
+  if((all[key]||{}).busy)return;
+  const mine=all[key]={busy:label};render(true);
+  let j;
+  try{const r=await fetch(tq('tools'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'press',name,button:label,source,...a})});j=await r.json()}
+  catch(e){j={ok:false,out:'Could not reach the run page. The command may have run; check before you press again.'}}
+  if(all[key]!==mine)return;  // the device was removed or renamed meanwhile
+  const t=S.tools&&S.tools.tools.find(t=>t.name===name&&t.source===source), ask=o=>({ask:{...a,label,at:Date.now(),...o}});
+  all[key]=j.ask?ask({q:j.ask,confirm:j.ask}):j.busy?ask({q:`${t?t.label:name} is held by ${j.busy.holder}.`,holder:j.busy.key,busy:true})
+    :{said:{ok:!!j.ok,out:plainOut(j,'That failed.'),lines:j.lines||[],https:j.https||''}};
+  render(true);await loadTools();
+}
+function pressClick(tool,name,source,label){
+  const key=toolKey({source,name}), all=S.press=S.press||{}, {ask}=all[key]||{};
+  if(tool==='pressno'){delete all[key];render(true);return}
+  if(tool==='pressyes'){  // not by the second tap of the press that asked
+    if(ask&&Date.now()-ask.at>=QUESTION_AGAIN)return toolPress(name,source,ask.label,{...(ask.confirm?{confirm:ask.confirm}:{}),...(ask.holder?{holder:ask.holder}:{})});
+    return}
+  const t=S.tools.tools.find(t=>t.name===name&&t.source===source), b=t&&(t.buttons||[]).find(b=>b.label===label);
+  if(b&&b.confirm&&!(all[key]||{}).busy){all[key]={ask:{label,q:b.confirm,confirm:b.confirm,at:Date.now()}};render(true);return}
+  return toolPress(name,source,label);
+}
+/* what a device's last press said goes when it is changed or removed: another one may take its name */
+function pressForget(name,same){const p=(S.press||{})[name];if(p&&!(same&&p.busy))delete S.press[name]}
+/* a button more or less in a device's sheet; saved with it */
+function btnClick(x){
+  if(x.dataset.tool==='btnadd'){
+    const i=Math.max(-1,...S.devBtns)+1;S.devBtns=[...S.devBtns,i];for(const k of BTN_FIELDS)S.f[toolField(btnField(i,k))]='';
+    render(true);const el=$('sheet').querySelector(`[data-f="${toolField(btnField(i,'label'))}"]`);if(el)el.focus();return}
+  const i=+x.dataset.i;S.devBtns=S.devBtns.filter(b=>b!==i);for(const k of BTN_FIELDS)delete S.f[toolField(btnField(i,k))];
+  render(true);const el=$('sheet').querySelector('[data-tool="btnadd"]');if(el)el.focus({preventScroll:true});
 }
 async function toolClick(x){
   const {tool,name,what,fp,source}=x.dataset, key=source?toolKey({source,name}):name;
   if(tool==='load')return loadTools();
   if(tool==='show'){if(S.sheet)closeSheet();viewGo(()=>{S.toolGo=key;goView('tools')},S.thread);return}
+  if(tool.startsWith('press'))return pressClick(tool,name,source,x.dataset.label);
+  if(tool==='btnadd'||tool==='btndel')return btnClick(x);
   if(tool==='add')return toolEdit(null);
   if(tool==='edit'){const t=toolOf(name);if(t)toolEdit(t);return}
   if(tool==='secrets'){toolForget();S.toolSaid={};openSheet('devsecrets',name);return}
@@ -133,7 +190,8 @@ async function toolClick(x){
     const a={op:'save',name:toolVal('name').trim(),...(name?{edit:name}:{})};
     for(const k of ['description','kind','alias','host','user','port','reach','page','start','folder'])a[k]=toolVal(k);
     a.exclusive=toolVal('exclusive')==='true';
-    const j=await toolPost(a,name);if(j&&j.ok){closeSheet();toast(j.out)}return}
+    a.buttons=S.devBtns.map(i=>Object.fromEntries(BTN_FIELDS.map(k=>[k,toolVal(btnField(i,k))])));
+    const j=await toolPost(a,name);if(j&&j.ok){pressForget(name,a.name===name);closeSheet();toast(j.out)}return}
   if(tool==='secret'){
     const a={op:'secret',name,what,[what]:toolVal(what)};if(what==='key')a.passphrase=toolVal('passphrase');
     for(const f of SECRET_FIELDS)delete S.f[f];for(const el of document.querySelectorAll('#sheet [data-f^="dev:"]'))el.value='';
@@ -141,5 +199,6 @@ async function toolClick(x){
   S.sure=null;
   if(tool==='start'||tool==='stop'){const j=await toolPost({op:tool,name,...(source?{source}:{})},key);
     if(j&&j.state&&(j.ok||j.state==='failed')){S.toolSaid={};render(true)}return}  // the card's state says it, and stays true
+  if(tool==='remove'){const j=await toolPost({op:tool,name},name);if(j&&j.ok)pressForget(name);return}
   toolPost({op:tool,name,...(what?{what}:{}),...(fp?{fp}:{})},name);
 }
