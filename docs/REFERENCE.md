@@ -1493,11 +1493,7 @@ nothing new starts, the running tasks finish and merge, and then the run logs `r
 `run stopped (./run stop)`) and exits with 0. Typing `s` again before then takes the stop back, and tasks
 start again. The run's page stays up after it exits: the page-only process takes it over (see The run app), except after a stop with suspend or shutdown, or with `[run] web = false`; `agent-runner page-only stop` ends that page.
 
-`s!` + Enter (or `agent-runner stop --force`) stops now: every agent session is ended and queued to resume
-in its slot when a run next starts (its worktree stays as it was, nothing of it is merged). `[run] on_exit`
-then runs in that slot for each ended session. The merges already under way finish, then the run exits. The
-run waits for every on_exit still running, also one from a session that ended just before, at most 60 s from
-`s!` (or `[run] command_timeout` if that comes sooner): one that still runs is stopped, and the log says so.
+`s!` + Enter (or `agent-runner stop --force`, Stop now on the run page, or `X` pressed twice in `agent-runner ui`) ends the whole run at once: every agent session, merge and merge gate or fix session under way is ended, and the run exits within a few seconds without waiting for any of them. Each ended session is queued to resume in its slot when a run next starts (its worktree stays as it was, nothing of it is merged). A merge ended leaves main, its checkout and the merge worktree as they were: a half merge the run began in the main checkout is taken back, a person's own merge there stays, and `task/ID` stays so the next run merges it again. The run waits only, for a few seconds at most, for a git command that is already moving the main checkout and for recording what landed. `[run] on_exit` still runs in each ended session's slot, but detached: the run does not wait for it or stop it, and the next run holds that slot until it has ended, stopping it past `[run] command_timeout`. `agent-runner stop --force` waits until the run's process is gone and prints `run stopped`; if the run has not begun the stop in 5 s (or is not gone in about 13 s), the command ends it itself (SIGTERM, then SIGKILL 2 s later), ends its sessions and gates, says so, and prints `run stopped`. With no run up it prints `no run is up here: nothing to stop` and exits 1. Asked from the run's own page the answer comes at once (`stopping the run now`), and a detached command does the stop.
 
 The other keys, listed by `?` + Enter (and printed when the run starts), ruled off from the log:
 
@@ -1521,7 +1517,7 @@ the key list. Each key is acted on as it is typed; ending sessions and adding a 
 `agent-runner pause` (`--off` goes on), `force` (`--off`), `slots 4` (or `+1`, `-1`), `stop --undo` (takes a
 gentle stop back), and `key <k>` for any other (`key z`, `key u`). Unlike a typed key, `pause`, `force` and
 `stop` say which way they go, so asking twice does not undo them. They append to `.runner/KEYS`, which the
-loop reads on every pass, so the run acts within 10 s; with no run up they say so and exit 1.
+loop reads and wakes for at once, so the run acts on them without waiting for its next 10 s tick; with no run up they say so and exit 1.
 `agent-runner status` is short enough for a phone: whether a run is up and what the keys have set, each
 slot's task id, title and minutes running (from `.runner/STATE`, rewritten every pass), what is merging, the
 last five merged, blocked or parked tasks from `run.log`, and the account's usage as the caps last read it.
@@ -1788,7 +1784,8 @@ agent-runner review [ID] [--base BRANCH]
 agent-runner run [N|once] [--dry-run] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
 agent-runner stop [--force] [--suspend|--shutdown]
                                        finish what's running, start nothing new, exit (or s + Enter in the
-                                       run view); --force ends the sessions now, to resume next run
+                                       run view); --force ends the whole run now (sessions and merges
+                                       under way; see Stopping a run), the sessions to resume next run
 agent-runner take ID [--merge|--drop]  one task in your own session or a subagent: a worktree on task/ID
                                        and its prompt; a run keeps off it. --merge after `done` there
 agent-runner take "TEXT" --kind K [--files A,B] [--here]
@@ -2330,7 +2327,7 @@ server on a port. Give each slot its own copy and let the runner tell it which:
 - `slot_env` hands every slot its number, so the project's tools pick their copy: a port, a profile
   directory, a lock file. `EMU_SLOT={n}` and a launcher that reads it is all it takes.
 - `pass_env` passes on what the whole run shares (a cap on how long one session may hold the program).
-- `on_exit` closes the slot's copy when its session ends, with that slot's env. It also runs when a drop, `plan change --restart`, a take back, a cancel or `s!` stops the session (with `s!` the run waits for it, at most 60 s, see above), and the slot starts nothing until it has ended.
+- `on_exit` closes the slot's copy when its session ends, with that slot's env. It also runs when a drop, `plan change --restart`, a take back, a cancel or `s!` stops the session (with `s!` it runs detached: the run does not wait for it, and the next run holds the slot until it has ended, stopping it past `[run] command_timeout`, see above), and the slot starts nothing until it has ended.
 - `before_start` holds new sessions while the program cannot run (no display, device unplugged). The run
   logs it once, rings the bell, and resumes once the check passes.
 - `prompt_extra` tells the session it has its own copy and how to drive it (`{n}` is the slot).
