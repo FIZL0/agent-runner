@@ -81,7 +81,7 @@ TWO_COLUMNS = 70  # narrower than this: one column, the panels or the main pane
 SHORT = 3  # rows an unfocused panel shows
 BOX_LINES = 6  # most lines a typing box grows to
 DIFF_LINES = 3000  # most lines of a slot's diff shown
-RUN_START_WAIT = 10  # s F402c2: a run whose start worked but is not up by then: the panel says Not running again
+RUN_START_WAIT = 10  # s F402c2: a run whose start worked but is not up by then: the panel says Not started
 STARTING_WAIT = 60  # s F112: a new chat that started but is not listed by then: its 'starting...' row goes
 
 PANELS = [(1, 'Status', 'status'), (2, 'Sessions', 'sessions'), (3, 'Queue', 'queue'),
@@ -1660,8 +1660,15 @@ class RunPage:
         """The run came up or stopped, so rows came and went: each panel's selection stays on the row it was on."""
         for n, name in picked.items():
             names = [self.row_name(it) for it in self.items(n)]
-            if name and name in names:
+            if name in names and name and name not in names[self.cur[n]:self.cur[n] + 1]:
                 self.cur[n] = names.index(name)
+
+    def key_up(self, k: str) -> bool:
+        """Can Status's key `k` work now? A run control's can while ui_model shows it, or while a run is up."""
+        c = next((c for c in self.control_list('run') if c['tui'] == k), None)
+        return bool(self.snap.get('up')) or not c or \
+            c['key'] in U.controls_shown(False, self.snap.get('run') or {}, self.snap.get('fixups') or {})['shown'] or \
+            bool(c.get('fix'))
 
     def start_run(self) -> None:
         """T: start the run on a thread, as the start takes seconds; `poll_run_start` says how it went. The view stays."""
@@ -1698,7 +1705,8 @@ class RunPage:
             self.run_failed = (r.get('out') or '').strip() or 'it did not work'
             self.msg, self.msg_ok = f'Not started: {self.run_failed.splitlines()[0]}', False
         elif time.time() > st['until']:
-            self.run_start = None
+            self.run_start, self.run_failed = None, 'it started, but no run is up: the log says why'
+            self.msg, self.msg_ok = f'Not started: {self.run_failed}', False
 
     # --- F112: the session beside the TUI, a new chat on its way up -------------------------------------------
 
@@ -2192,6 +2200,8 @@ class RunPage:
         elif self.panel == 1 and (q := next((q for q, c in QUICK_KEYS.items() if c == k), '')):
             self.done(r := U.quick_ask(q))  # B139: a new control session answers
             self.say_new_session(r)
+        elif self.panel == 1 and not self.key_up(k):  # F402c2: what needs a run, with none up
+            self.msg, self.msg_ok = 'Not running: T starts the run', True
         elif self.panel == 1 and k == '=':
             self.set_tab('controls')
             self.typing = 'slots:n'

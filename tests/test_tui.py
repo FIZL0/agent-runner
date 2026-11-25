@@ -1249,6 +1249,9 @@ def test_start_run_f402c2() -> None:
         text = drawn(p).text()
         check('[T start the run]' in text and 'No task starts until the run does.' in text and 'slot' not in text.split('Sessions')[0]
               and '[P pause]' not in text and '[S stop' not in text and 'C cancels it' not in text, 'the controls tab has Start alone', text)
+        for k in '+-=PGSXUZBVY':
+            p.key(k)
+            check('T starts the run' in p.msg and not (ran or p.typing or p.confirm), f'{k} does nothing but say so', p.msg)
         p.key('T')
         text = drawn(p).text()
         check('Starting the run…' in text and '[T start' not in text and 'Not running' not in text, 'T: starting', text)
@@ -1285,7 +1288,7 @@ def test_start_run_f402c2() -> None:
             p = fresh()
             p.key('T')
             ended(p)
-            eq((p.run_start, p.off_said()), (None, 'Not running'), 'not up in time: Not running, T again')
+            eq((p.run_start, p.off_said()), (None, 'Not started: it started, but no run is up: the log says why'), 'not up in time: it says so')
 
         go.set()
         ran.clear()
@@ -1307,7 +1310,11 @@ def test_start_run_f402c2() -> None:
             for c in 'hello':
                 p.key(c)
             p.key('ENTER')
-        eq(sent, ['change Q9: hello'], 'a message goes to a chat with no run up')
+        eq(sent, ['change Q9: hello'], 'a message goes to a new chat with no run up')
+        p = fresh()
+        p.socket = lambda name: name == 'c1'
+        p.key('2')
+        eq((p.sel()['name'], p.want_side()), ('c1', 'c1'), 'an open chat still shows as itself, to type in')
     with mock.patch.object(U.sp, 'run', return_value=mock.Mock(returncode=0, stdout='', stderr='')) as sp_run, \
             mock.patch.object(U.S, 'ROOT', Path('.')), mock.patch.object(U, 'runner_cmd', lambda: ['runner']):
         U._run([])
