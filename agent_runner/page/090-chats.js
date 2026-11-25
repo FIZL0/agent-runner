@@ -131,7 +131,7 @@ function feedEnd(n){return feedNow(n)==='ended'&&FD.old?`<div class="feedend">${
 function responseHTML(n){
   const r=responseOf(n), part=(head,words)=>`<div><div class="small">${head}</div><div class="said">${esc(words)}</div></div>`;
   if(!r)return `<div class="col feeds">${card(S.snap.at?`<div class="q">${esc(threadTitle(n))}</div><div class="small">This response is no longer kept, or a chat about it was started.</div>`:'<div class="small">Loading…</div>','',`data-k="feed:${esc(n)}"`)}</div>`;
-  const ago=agoWords(r.at*1000), when=ago?ago==='now'?' · now':` · ${ago} ago`:'';
+  const ago=agoWords(r.at*1000,' ago'), when=ago&&` · ${ago}`;
   return `<div class="col feeds">${card(`<div class="q said">${esc(r.question||r.label)}</div>${part('Your answer'+when,r.answer)}${r.note?part('Your note',r.note):''}<div class="small">It is sent. A chat about it starts with your first message${modelOf(n)?`, on ${esc(modelOf(n))}`:''}.</div>`,'',`data-k="feed:${esc(n)}"`)}</div>`;
 }
 /* what a chat or slot with no session to show says */
@@ -515,7 +515,7 @@ function homePlan(snap){
 }
 /* B120: without ttyd, one line says a chat needs it to show its session, with this machine's install command */
 const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>A chat shows the real session with ttyd, which this machine lacks: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
-const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`,'','data-k="noneed"')}`;
+const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):emptyCard('Nothing needs you.')}`;
 /* F193: with releases off, only a New release sent before that, until it is settled */
 /* F186: New release: says which release is open already, and then asks before it queues another */
 function newReleaseCard(){
@@ -524,7 +524,8 @@ function newReleaseCard(){
   const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait').map(controlOf).filter(Boolean);
   const sure=acts.filter(c=>c.confirm&&S.sure===c.key).map(c=>ctlSure(c)).join('');
   return obCards(x=>obActs(x,'release'))+card(`<div class="srow"><div class="row"><div class="grow"><b>New release</b>${sure?'':`<div class="small" data-k="relsaid" data-v="${esc(said)}">${esc(said?said+'.':ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')}</div>`}</div></div>${sure||`<div class="btns">${acts.map((c,i)=>`<button class="btn ${i===0?'acc':''}${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`}</div>`,'','data-k="release"')}
-const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};
+/* F426f: the page's one age helper; `tail` (' ago', in a sentence) follows every age but now */
+const agoWords=(at,tail='')=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':(m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`)+tail};
 
 /* F206: the title's switcher: the chats in the sidebar's order, each with its last line */
 function chatsSheet(){

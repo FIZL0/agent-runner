@@ -142,7 +142,8 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 
 Every list and view has all four, drawn the same way:
 
-- **Empty:** one calm sentence saying so (`emptyCard()`), and the way to add one when there is a way. Never a blank.
+- **Empty:** one calm sentence with its full stop (`emptyCard()`), and the way to add one when there is a way. Never a blank.
+  Needs you has the same line in every view that lists it, `Nothing needs you.`, with no icon and no second line.
 - **Loading:** `Loading…` in `.small`, only where nothing is there yet. Old content stays while new loads.
 - **Working:** `.livedot` beside the words; a button that is sending is `.busy` and stays where it is.
 - **Opening:** a press that leaves for another project's page marks it at once (`openProject()`, `.opening`): Opening… with
@@ -175,6 +176,7 @@ saved secret is shown only as `set, changed <date>`.
 - A task is named by its title. Its id is the kind chip (Kind chip), not a small id after the title.
 - Say what happens, in the person's terms: "Stop (running tasks finish)".
 - Numbers with their unit: `6 min`, `2 of 3 slots`, `week 62%`.
+- How long ago is `agoWords()` everywhere: `now`, `5 min`, `3 h` (hours until 48 h), `2 d`. A sentence adds `ago` (`checked 5 min ago`), never after `now` (`checked now`).
 
 ## Drawing
 
