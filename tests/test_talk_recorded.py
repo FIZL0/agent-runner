@@ -134,6 +134,16 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   anew(); may = 'granted'; hold = new Promise(y => yes = y); await shown(); now += 300; TK.wait = null; click('[data-mic]'); const tr3 = TK.ear.trail; now += 100; yes(); await settle(); await settle(); out.whyOpening = tr3.ev.join(' | ');
   anew(); deny = 'NotReadableError'; out.whyFailed = await why();
   anew(); may = 'granted'; hold = new Promise(y => yes = y); deny = 'NotReadableError'; await shown(); now += 300; TK.wait = null; click('[data-mic]'); const tr4 = TK.ear.trail; now += 100; yes(); await settle(); await settle(); out.lost2 = tr4.ev.join(' | ');
+  // B804b: the mic still opening is said, and a hold let go before or just after it opened
+  const holds = () => { anew(); TS.mic = 'hold'; hold = new Promise(y => yes = y); down(); };
+  const opens = async () => { yes(); await settle(); await settle() };
+  holds(); await settle(); out.holdOpening = shows()[4]; now += 800; up(); await opens(); out.holdBefore = [TK.note, posts.length, TK.state];
+  holds(); await settle(); now += 1500; await opens(); out.noSoundYet = shows()[4]; sound(0.2); out.holdOn = shows()[4]; now += 271; answer = ''; up(); await tail(); out.holdAfter = [TK.note, posts.length, sent.length];
+  holds(); await settle(); now += 1500; await opens(); sound(0.2); now += 271; up(); await tail(); out.holdWords = sent.slice();
+  holds(); await settle(); await opens(); sound(0.2); now += 2000; answer = ''; up(); await tail(); out.holdLong = TK.note;
+  anew(); may = 'granted'; await shown(); before(1, 0.1); TS.mic = 'hold'; down(); out.holdOpen = shows()[4]; sound(0.2); now += 271; answer = ''; up(); await tail(); out.holdShort = TK.note;
+  // a stream gone mute is opened afresh in the hold: not Listening meanwhile
+  anew(); may = 'granted'; await shown(); before(1, 0.1); TS.mic = 'hold'; hold = new Promise(y => yes = y); down(); const l1 = shows()[4]; await tick(3000); const l2 = shows()[4]; await opens(); const l3 = shows()[4]; sound(0.2); out.afresh = [l1, l2, l3, shows()[4]]; answer = ''; now += 100; up(); await tail(); out.afreshNote = TK.note;
   console.log(JSON.stringify(out, (k, v) => v === undefined ? null : v));
 })();`);
 """)
@@ -224,6 +234,19 @@ def test_recorded_f161b(tmp: Path) -> None:
     o = g.get('lost2') or ''
     check('mic not opened by the page: opening begun 300 ms before: getUserMedia 400 ms, NotReadableError' in o and 'mic not opened: getUserMedia 0 ms' in o, "the page's own opening failed, and the press's", o)
     check(any(x.startswith('mic not opened: getUserMedia 0 ms, NotReadableError') for x in g.get('whyFailed') or []), 'a refused opening', str(g.get('whyFailed')))
+
+    early = 'The mic was still starting. Allow it if the browser asks, hold until this line says Listening…, then speak.'
+    eq(g.get('holdOpening'), 'Starting the mic…', 'B804b: while it opens the line says so')
+    b = g.get('holdBefore') or ['', 1, '']
+    check(b[0].startswith(early) and b[1:] == [0, ''], 'let go before it opened', str(b))
+    eq((g.get('noSoundYet'), g.get('holdOn')), ('Starting the mic…', 'Listening…'), 'Listening once sound comes')
+    b = g.get('holdAfter') or ['', 0, 1]
+    check(b[0].startswith(early) and b[1:] == [1, 0], 'let go just after it opened, with no words', str(b))
+    eq(g.get('holdWords'), ['hello run'], 'its words, where there are some, are sent')
+    for k in ('holdLong', 'holdShort'):
+        check((g.get(k) or '').startswith('Heard nothing'), f'{k}: the mic was on long enough, or open at the press', str(g.get(k)))
+    eq((g.get('holdOpen'), g.get('afresh')), ('Listening…', ['Listening…', 'Starting the mic…', 'Starting the mic…', 'Listening…']), 'a stream opened afresh in the hold')
+    check((g.get('afreshNote') or '').startswith(early), 'let go just after that', str(g.get('afreshNote')))
 
 
 if __name__ == '__main__':

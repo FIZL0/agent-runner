@@ -249,7 +249,7 @@ function talkDraw(){
   if(stop)stop.hidden=!reads;
   if(!mic)return;
   const ear=TK.ear, again=ear&&ear.again&&TK.hold&&!ear.stopped;  // B216a1: a restart in a hold
-  const now=again&&!ear.on?'The mic is off, wait until it is on again':again&&ear.deaf?`Nothing is heard. Let go and press again${ear.gapAt||ear.kept?', these words are kept':''}`:TK.ear&&TK.ear.reading?'Getting the words…':TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…';
+  const now=again&&!ear.on?'The mic is off, wait until it is on again':again&&ear.deaf?`Nothing is heard. Let go and press again${ear.gapAt||ear.kept?', these words are kept':''}`:TK.ear&&TK.ear.reading?'Getting the words…':TK.ear&&(!TK.ear.on||micOpening(TK.rec))?'Starting the mic…':'Listening…';
   /* B216a1: after a pause in a hold the mic can be off for a moment, so the line says when it is on again */
   line.textContent=why||(st==='listening'?(TK.heard?TK.heard+(TK.ear&&(TK.ear.gapAt||TK.ear.kept||(again&&!ear.on))?' … '+now:''):now):st==='thinking'?'Thinking…':st==='speaking'?'Speaking…':(TK.kept?`“${TK.kept.length>90?'…'+TK.kept.slice(-90):TK.kept}” Not sent: nothing was heard after these words. ${hold?'Hold':'Tap'} to go on from them, or send them as they are. `+TK.note:TK.note||(hold?'Hold to talk':'Tap to talk')+(open?', the mic is open':'')).trim());
   $('micrep').hidden=!!why||!!st||!TK.report;$('keptsend').hidden=!!st||!TK.kept;
@@ -347,7 +347,7 @@ function listen(){
   if(cut)shush(!MIC.rec);else unlockEnd();
   TK.note=TK.held='';if(!(TK.report&&TK.report.sound))TK.report='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   /* B162: the listen: its tries, the words so far, and whether the person ended it (stopped) or held the mic again */
-  const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:TK.kept||'',kept:!!TK.kept,gapAt:0,waited:false,failed:false,stopAt:0,spoke:false,again:false,deaf:false,idle:null,err:'',ms:null,stopped:false,more:false,on:false,was:false,fails:0,msg:'',by:'',until:0,timer:0,longer:false,cut:cut&&!MIC.rec};
+  const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:TK.kept||'',kept:!!TK.kept,gapAt:0,waited:false,failed:false,stopAt:0,spoke:false,again:false,deaf:false,idle:null,err:'',ms:null,stopped:false,more:false,on:false,was:false,fails:0,msg:'',by:'',early:false,onAt:0,until:0,timer:0,longer:false,cut:cut&&!MIC.rec};
   if(!TK.trail||TK.trail.used)micLog('listen',true);  // a press began it already
   TK.trail.used=true;t.trail=TK.trail;micLog(`listen ${t.mode}${MIC.rec?', waits for the last one to end':''}`);
   TK.state='listening';TK.heard=t.words;render(true);
@@ -360,14 +360,14 @@ function hear(t){
   const cut=()=>{if(t.cut&&window.speechSynthesis)speechSynthesis.cancel();t.cut=false};  // B174
   let rec;try{rec=micRec(t)}catch(e){cut();t.failed=true;micLog(`no recognizer: ${e.message||e}`,false,t.trail);TK.report=t.trail;TK.ear=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);if(t.words)micSent(t,'no recognizer');return talkNext()}
   if(!rec.recorded)recFree();  // F161b: one use of the mic at a time
-  t.reading=false;MIC.rec=TK.rec=rec;t.tries++;t.err=t.msg='';t.ms=null;t.on=t.deaf=false;talkDraw();
+  t.reading=false;MIC.rec=TK.rec=rec;t.tries++;t.err=t.msg='';t.ms=null;t.on=t.deaf=t.early=false;t.late=false;talkDraw();
   rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=TK.hold&&!rec.recorded;
   /* B216a1: one recognizer stays through a Hold's pauses, for the next one may hear nothing (iOS); should it end all the
      same, it is started again as before */
   micLog(`try ${t.tries}${rec.recorded?'':rec.continuous?', continuous':', not continuous'}`);
   const log=x=>micLog(x,false,t.trail);  // a dropped one's late events stay in its own report
-  const at=Date.now();let parts=[], got='', begun=false, slots=[], heardAt=at;
-  const live=()=>{t.failed=false;if(!t.on&&TK.ear===t){t.on=t.was=true;talkDraw();if(t.again)setTimeout(deaf,MIC_DEAF)}};  // the mic takes sound: now is the time to speak
+  const at=Date.now();let parts=[], got='', begun=false, slots=[], heardAt=at, opened=false;
+  const live=()=>{t.failed=false;if(!t.on&&TK.ear===t){t.on=t.was=true;t.onAt=Date.now();talkDraw();if(t.again)setTimeout(deaf,MIC_DEAF)}};  // the mic takes sound: now is the time to speak
   /* B216a1: the one started again in a hold takes no speech: said while the button is held */
   const deaf=()=>{if(begun||TK.ear!==t||TK.rec!==rec||t.stopped||!TK.hold)return;t.deaf=true;log(`no speech ${MIC_DEAF} ms after the restart: said on the line`);talkDraw()};
   const hears=()=>{begun=true;if(t.deaf&&TK.ear===t&&TK.rec===rec){t.deaf=false;talkDraw()}};
@@ -378,7 +378,7 @@ function hear(t){
   const goesOn=()=>{if(TK.ear===t){t.until=t.gapAt=0;t.kept=t.spoke=t.waited=false;clearTimeout(t.timer)}};
   const wait=()=>{t.until=Date.now()+MIC_PAUSE;clearTimeout(t.timer);
     t.timer=setTimeout(()=>{if(TK.ear===t&&t.until&&!t.stopped&&!TK.hold)micStop('a pause')},MIC_PAUSE)};
-  for(const k of ['start','audiostart','soundstart','speechstart','speechend','soundend','audioend','nomatch'])rec['on'+k]=()=>{log(k);if(/^(audio|sound|speech)start$/.test(k))live();if(k==='speechstart'){hears();if(TK.ear===t)t.idle()}if(k==='speechstart'&&(t.gapAt||t.waited))t.spoke=true;if(k==='speechstart'&&TK.ear===t&&t.until&&!t.longer){t.longer=true;wait()}};
+  for(const k of ['start','audiostart','soundstart','speechstart','speechend','soundend','audioend','nomatch'])rec['on'+k]=()=>{log(k);if(k==='start'&&rec.recorded){if(opened)t.late=true;opened=true;t.on=false;talkDraw()}if(/^(audio|sound|speech)start$/.test(k))live();if(k==='speechstart'){hears();if(TK.ear===t)t.idle()}if(k==='speechstart'&&(t.gapAt||t.waited))t.spoke=true;if(k==='speechstart'&&TK.ear===t&&t.until&&!t.longer){t.longer=true;wait()}};
   /* B216: all the results, each time: a piece not yet final counts as heard, and an empty final or an empty list does not unsay it */
   rec.onresult=e=>{live();const was=parts, had=got;parts=[];let fin=0;got='';
     for(let i=0;i<e.results.length;i++){const x=e.results[i], w=x[0].transcript, p=parts[i]=x.isFinal&&!w.trim()?was[i]||'':w;
@@ -419,7 +419,7 @@ function hear(t){
     else earEnd(t);
   };
   soundAs('play-and-record');
-  try{rec.start();cut()}catch(e){
+  try{rec.start();t.late=!!rec.recorded&&!rec.on;cut()}catch(e){
     cut();log(`start failed: ${e.message||e}`);t.failed=true;
     /* B216a1: a restart the browser refused is tried once more */
     if(t.words&&!t.kept&&TK.ear===t&&!t.stopped&&(TK.hold||Date.now()<t.until)&&++t.fails<2){
@@ -451,7 +451,7 @@ function earEnd(t){
   if(!t.words&&t.tries)PAST.none++;  // B162b1
   if(t.words){const sent=micSent(t,t.stopped?t.by:t.err?`error ${t.err}`:'the recognizer');if(TK.kept)PAST.none++;else PAST.words++;talkNext();return sent}  // B174: what waited is read now
   if(t.tries&&!(t.mode==='auto'&&(!t.err||t.err==='no-speech')))TK.report=t.trail;  // the Copy mic report button
-  TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.err==='recorded'?t.msg:t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.was,t.msg):'';
+  TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.err==='recorded'?t.msg:t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.was,t.msg,t.early):'';
   render(true);talkNext();
 }
 /* a hold the system took: the mic goes on, and stops at a silence */
@@ -460,7 +460,7 @@ function holdLost(){TK.hold=false;const t=TK.ear;if(t&&t.idle)t.idle();talkNext(
 function micStop(by){
   const t=TK.ear;if(!t)return;
   t.stopped=true;t.stopAt=Date.now();t.more=false;t.by=by;micLog(`stop by ${by}`);
-  const rec=TK.rec;if(!rec)return earEnd(t);
+  const rec=TK.rec;t.early=micEarly(t,rec,by);if(!rec)return earEnd(t);
   rec.stop();
   if(TK.rec===rec&&!rec.recorded)setTimeout(()=>{if(TK.rec===rec&&TK.ear===t&&t.stopped){micLog('no end came: ended by force');micWhenFree(()=>{})}},MIC_END);  // B162: else the listen never ends
 }

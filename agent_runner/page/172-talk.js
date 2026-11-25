@@ -137,7 +137,7 @@ class Recorder{
     if(this.n){if(TK.ear)micLog(`kept ${Math.round(1000*this.n/this.rate)} ms from before`,false,TK.ear.trail);if(this.onaudiostart)this.onaudiostart()}
     clearTimeout(this.first);
     this.first=setTimeout(()=>{if(this.came||this.done||this.stopping)return;
-      recFree('no sound came from it');this.on=false;
+      recFree('no sound came from it');this.on=false;talkDraw();
       if(!again)this.start(true);else this.fail('No sound came from the mic',true)},REC_FIRST);  // a kept stream can go mute: it is opened afresh once
   }
   refused(e){
