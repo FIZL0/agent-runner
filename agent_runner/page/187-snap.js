@@ -32,6 +32,7 @@ if(HB){loadProjects();homeDrain();let tick=0;  // F134: every 5 s while All proj
   setInterval(()=>{if(atAll()||++tick%6===0)loadProjects()},5000);
   setInterval(()=>{if(atAll())loadDevices()},30000);loadDevices()}
 }
+devPlace(history.state);if(HB)setInterval(()=>{if(devOn())devLoad()},30000);  // B818a
 /* B179: a concept's page in the Home Screen app, where a new tab would be iOS's browser over the app */
 function conceptOpen(src,title){
   const el=$('cview');if(el._bye)el._bye();

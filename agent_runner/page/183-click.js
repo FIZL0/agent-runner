@@ -44,8 +44,12 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-obedit]')){obEditBack(x.dataset.obedit);return}
   // F150: the levels of the sidebar, and All projects' buttons (Runner Home's /act and /remove)
   if(q('[data-up]')){goUp(false,!e.detail);return}
-  if(x=q('[data-alltab]')){H.tab=x.dataset.alltab;tabStore.set('ar-alltab',H.tab);S.drawer=false;render(true);loadDevices();return}
+  if(x=q('[data-alltab]')){H.tab=x.dataset.alltab;tabStore.set('ar-alltab',H.tab);devLeave();S.drawer=false;render(true);loadDevices();return}
   if(q('[data-pmore]')){H.more=!H.more;render(true);return}
+  if(x=q('[data-devopen]')){devOpen(x.dataset.devopen);return}  // B818a: a device's page, and what is on it
+  if(q('[data-devback]')){devBack();return}
+  if(q('[data-devload]')){devLoad();render(true);return}
+  if(x=q('[data-devmore]')){DV.more[x.dataset.devmore]=!DV.more[x.dataset.devmore];render(true);return}
   if(q('[data-pload]')){loadProjects();loadDevices();return}
   if(q('[data-addproject]')){H.said='';openSheet('addproject');const i=$('sheet').querySelector('input');if(i)kbFocus(i);return}
   if(x=q('[data-projmore]')){openSheet('project',x.dataset.projmore);return}
