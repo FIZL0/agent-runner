@@ -18,6 +18,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from unittest import mock
 
@@ -1211,6 +1212,116 @@ def test_row_ground_and_fill() -> None:
        'no run up: no idle slots are made up')
 
 
+def test_start_run_f402c2() -> None:
+    """With no run up: Status names T and says Not running, with no slot keys; starting, failing and coming up show
+    on the panel and the view stays; a task is added and a chat started."""
+    off = dict(SNAP, up=False, slots=0, run={}, status=['no run is up'] + SNAP['status'][1:],
+               sessions=[s for s in SNAP['sessions'] if s['name'].startswith('c')], shown=['start'], card=['start'])
+    off['queue'] = [{**off['queue'][8], 'state': 'tool', 'tool_wait': 'waits for the run to start', 'waits_run': True}]
+    now = [off]
+    ran: list = []
+    go, answer = threading.Event(), [(1, 'the gate is red\nsecond line')]
+
+    def run(argv):
+        ran.append(argv)
+        go.wait(10)
+        return answer[0]
+
+    def fresh() -> T.RunPage:
+        p = page(off)
+        p.get_snap = lambda: now[0]
+        return p
+
+    def ended(p) -> None:
+        go.set()
+        p.run_start['thread'].join(10)
+        p.poll_run_start()
+        go.clear()
+
+    with mock.patch.object(U, 'RUN', [run]):
+        p = fresh()
+        text = drawn(p).text()
+        check('Not running · T start' in text, 'Status says Not running and names T', text)
+        foot = ''.join(t for t, _ in p.footer())
+        check(not any(w in foot for w in ('slots', 'pause', 'stop')), 'no slot, pause or stop keys', foot)
+        eq([k for k, _ in p.hint_keys()], ['⏎', 'T', 'R'], 'its keys')
+        p.set_tab('controls')
+        text = drawn(p).text()
+        check('[T start the run]' in text and 'No task starts until the run does.' in text and 'slot' not in text.split('Sessions')[0]
+              and '[P pause]' not in text and '[S stop' not in text and 'C cancels it' not in text, 'the controls tab has Start alone', text)
+        for k in '+-=PGSXUZBVY':
+            p.key(k)
+            check('T starts the run' in p.msg and not (ran or p.typing or p.confirm), f'{k} does nothing but say so', p.msg)
+        p.key('T')
+        text = drawn(p).text()
+        check('Starting the run…' in text and '[T start' not in text and 'Not running' not in text, 'T: starting', text)
+        p.key('T')
+        check('starting already' in p.msg and ran == [[]], 'T again starts nothing more', (p.msg, ran))
+        ended(p)
+        win = drawn(p)
+        check('Not started: the gate is red' in win.text() and 'second line' in win.text() and '[T start the run]' in win.text(),
+              'a failure: why, on the panel, and T again', win.text())
+        check(not p.msg_ok and 'the gate is red' in p.msg and p.tab()[0] == 'controls' and p.main, 'the view stays', p.msg)
+        p.main, p.msg = False, ''
+        text = drawn(p).text()
+        check('Not started: the gate is red' in text and 'T start' in text, 'the panel alone says it, T in its keys', text)
+
+        answer[0] = (0, 'started 3 slots')
+        p.set_tab('controls')
+        p.cur[2] = 2  # new chat, after c1 and c6
+        eq(p.sel(2), T.NEW_CHAT, 'Sessions is on new chat')
+        p.key('T')
+        eq((p.run_failed, p.off_said()), ('', 'Starting the run…'), 'a retry clears the failure')
+        now[0] = SNAP
+        ended(p)
+        eq((p.run_start, p.msg, p.panel, p.main, p.tab()[0]), (None, 'the run is up', 1, True, 'controls'),
+           'up: the panel, focus and tab stay')
+        eq(p.sel(2), T.NEW_CHAT, 'and each selection, though slot rows came in above it')
+        check('[P pause]' in drawn(p).text(), 'the slot controls are back')
+
+        now[0] = off
+        p = fresh()
+        p.key('T')
+        ended(p)
+        check(p.run_start is not None, 'started but not up yet: still starting')
+        with mock.patch.object(T, 'RUN_START_WAIT', -1):
+            p = fresh()
+            p.key('T')
+            ended(p)
+            eq((p.run_start, p.off_said()), (None, 'Not started: it started, but no run is up: the log says why'), 'not up in time: it says so')
+
+        go.set()
+        ran.clear()
+        answer[0] = (0, 'added B10')
+        p = fresh()
+        p.key('3')
+        check('waits for the run to start' in drawn(p, w=140).text(), 'a queued task says it waits for the run to start',
+              drawn(p, w=140).text())
+        p.cur[3] = len(p.items(3)) - 1
+        p.key('e')
+        for c in 'Fix it':
+            p.key(c)
+        p.key('^S')
+        eq((ran[0][:2], ran[0][3], p.msg_ok), (['plan', 'add'], 'Fix it', True), 'a task is added with no run up')
+        sent: list = []
+        with mock.patch.object(U, 'SEND', [lambda t: (sent.append(t), {'ok': True, 'code': 0, 'out': 'sent', 'argv': []})[1]]):
+            p.cur[3] = 0
+            p.key('E')
+            for c in 'hello':
+                p.key(c)
+            p.key('ENTER')
+        eq(sent, ['change Q9: hello'], 'a message goes to a new chat with no run up')
+        p = fresh()
+        p.socket = lambda name: name == 'c1'
+        p.key('2')
+        with mock.patch.object(T, 'in_tmux', lambda: True):
+            eq((p.sel()['name'], p.want_side()), ('c1', 'c1'), 'an open chat still shows as itself, to type in')
+    with mock.patch.object(U.sp, 'run', return_value=mock.Mock(returncode=0, stdout='', stderr='')) as sp_run, \
+            mock.patch.object(U.S, 'ROOT', Path('.')), mock.patch.object(U, 'runner_cmd', lambda: ['runner']):
+        U._run([])
+    eq(sp_run.call_args.kwargs.get('stdin'), U.sp.DEVNULL, "a start asks nothing on the TUI's terminal")
+
+
 def test_reorder() -> None:
     """F70: Shift+J on the second queue row runs plan move ID after <third>, and the cursor moves with it;
     Shift+K moves it back up; the first and last task go no further."""
@@ -1455,6 +1566,8 @@ def test_run_controls() -> None:
             ran.clear()
             with mock.patch.object(U, 'fixups', lambda st, ls: fix):
                 p.key(k)
+                if p.run_start:  # F402c2: T starts it on a thread
+                    p.run_start['thread'].join(10)
                 if k in double:
                     eq(ran, [], f'F124: {k} asks first')
                     p.key(k)
@@ -2391,7 +2504,7 @@ def test_walk_f194c() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_walk_f194c, test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_question_b223b, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_kinds_f195b, test_form_pane_v_task,
+    raise SystemExit(report([test_start_run_f402c2, test_walk_f194c, test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_question_b223b, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_kinds_f195b, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
