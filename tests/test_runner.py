@@ -6670,6 +6670,7 @@ def test_take_running_slot(repo: Path):
 def test_first_message_no_waiting_b790(repo: Path):
     """B790: a first message, typed or Talk, is the person's ask and files only, whatever waits under Needs you."""
     from agent_runner.control import talk_ask
+    R.init(repo)  # T32: control_argv writes the control settings file: the test's, never the real checkout's
     item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags? Reply on your phone', '', 'How should the site deploy')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
         for words in ('yes', 'B', 'R43: tags please', 'deploy only on tags', 'update runner, when is release?'):
@@ -6690,14 +6691,17 @@ def test_upgrade_cmd(repo: Path):
     from agent_runner import cli
     from agent_runner.guide import CONTROL
     calls = []
-    with mock.patch.object(cli, 'skill', lambda: None), \
+    # T32: the command's own init() takes the current directory, the real checkout here: it stays on the test's
+    R.init(repo)
+    with mock.patch.object(R, 'init'), mock.patch.object(cli, 'skill', lambda: None), \
             mock.patch.object(R, 'upgrade', lambda: calls.append(1) or True), \
             mock.patch.object(R, 'installed_version', lambda: __import__('agent_runner').__version__):
         rc = cli.main(['upgrade'])
     eq((rc, calls), (0, [1]), 'agent-runner upgrade calls upgrade() once and exits 0')
-    with mock.patch.object(cli, 'skill', lambda: None), mock.patch.object(R, 'upgrade', lambda: False), \
+    with mock.patch.object(R, 'init'), mock.patch.object(cli, 'skill', lambda: None), mock.patch.object(R, 'upgrade', lambda: False), \
             contextlib.redirect_stderr(io.StringIO()):
         eq(cli.main(['upgrade']), 1, 'a failed upgrade exits 1')
+    eq(R.ROOT, Path(repo).resolve(), 'T32: and the suite is still on the test repo')
     text = control_text()
     check('Update agent-runner: `./run upgrade`' in text, 'the rendered control brief names `upgrade`', text)
     check('agent-runner upgrade' in cli.USAGE, 'the command list names `upgrade`', cli.USAGE)
