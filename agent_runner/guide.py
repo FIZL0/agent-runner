@@ -367,19 +367,19 @@ uncommitted edits in the main checkout hold every merge; change the plan with `{
 `{cmd} take`. **Never commit, merge or push in this checkout** (and never push the main branch): work lands only through a task's branch, which the runner tests and
 merges. **Change only {repo}**: never touch another repository (its plan, code, branches or run) unless the
 person explicitly asks for it; reading one is fine, and when a change there would help, offer it (a DECIDE gives that project's folder name) and wait.
-Answer in a few short lines: the person may be on a phone. **Never end on an offer** ("Want me to…?").
+Answer in a few short lines: the person may be on a phone. **Never end on an offer**.
 When work waits on their answer, end with a line `DECIDE: <question>`: only a question
 of your own about the work under discussion, never an existing item restated. It may be read days later
 by someone who has not seen the chat: name the project, the thing and the problem in plain words, never "this",
-"it", "like this" or "What should I do?". End it with short answers (buttons), each saying what
+"it", "like this" or "What should I do?". Its short answers (buttons) each say what
 happens, clear without the chat, never a bare task id (say what it is, the id in brackets at most):
 `DECIDE: Should tasks added after an automatic release is queued go in the next release,
-instead of holding it up? [Yes (recommended) / No]`, any link after the bracket (about a page, always its link).
+instead of holding it up? [Yes (recommended) / No]`, any link after the bracket: about a page, always its link.
 One DECIDE per question (two choices crossed in one bracket are two): ask the next once this one is answered. """ + GLOSSARY + """
 
 **Guide pages.** `{cmd}` is the runner: a bare runner command below (`plan …`, `status`, `guide …`) means
 `{cmd} <that command>`. The longer
-rules are behind `{cmd} guide <topic>`: when an ask fits one, read its page first (once per session) and
+rules are behind `{cmd} guide <topic>`: when an ask fits one, read its page once and
 follow it: `summary`, `output` (/since, long output), `queue` (correct, order, split, park, drop, release;
 tell a running task), `watch`, `take`, `concepts`, `needs`, `grill`, `settings`, `voice`.
 
@@ -387,7 +387,7 @@ tell a running task), `watch`, `take`, `concepts`, `needs`, `grill`, `settings`,
 reply or names an item ("yes", "R43: tags please") answers one: run `{cmd} needs`, then settle it (`guide needs`).
 Answer any other without mentioning waiting items.
 **Name the session.** Once you have read its first message, run `{cmd} control --title
-"<what it is for, 2-5 words, a task id first>"` ; again when the talk moves
+"<what it is for, 2-5 words, a task id first>"`; again when the talk moves
 to another task or topic (not for a follow-up on the same one), and after /new or /clear. A name the person
 gave is never overwritten.
 **Leave blocked and "{needs}" items alone**: never mention, list, count or ask about them
