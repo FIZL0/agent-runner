@@ -249,7 +249,7 @@ let reduced = false, frames = []; const requestAnimationFrame = f => frames.push
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: {}, ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
-const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, offDraw = () => {}, walkDraw = () => {}, setBarDraw = () => {}, side = () => {}, rowSettle = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
+const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, offDraw = () => {}, walkDraw = () => {}, setBarDraw = () => {}, waitBarDraw = () => {}, side = () => {}, rowSettle = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, historyHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, settingsDraw = (el, h) => setHTML(el, h), planDraw = settingsDraw, histDraw = settingsDraw, projectsHTML = () => VIEW;

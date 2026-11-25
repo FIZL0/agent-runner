@@ -48,6 +48,7 @@ function render(force){
   offDraw();  // F402b3b
   walkDraw();  // F194b
   setBarDraw();  // F202b
+  waitBarDraw();  // F442
   rowSettle();side();sheetDraw();
   if(HOME_PAGE){  // F134: Home's own page: All projects, and F150 a project with no run up
     setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${devBackBtn()}<div class="title">${atAll()?allTitle():esc((projectOf(HKEY)||{}).name||HKEY)}</div>${plusBtn()||'<span class="icon"></span>'}`);

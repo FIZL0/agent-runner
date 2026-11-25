@@ -1,0 +1,5 @@
+/* F442: Wait for…: the Queue's rows as ticks, the row being set marked */
+.card.waitset{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)} .waitme{cursor:default;outline:none}
+.card.waitoff{opacity:.5} .waitoff>.fold{cursor:default}
+.waittick{flex:none;width:22px;height:22px;border:1.5px solid var(--line2);border-radius:var(--r-xs);display:grid;place-items:center;color:var(--onaccent)}
+.waittick svg{width:16px;height:16px;stroke-width:2.6} [aria-checked="true"]>.waittick{background:var(--accent);border-color:var(--accent)}
