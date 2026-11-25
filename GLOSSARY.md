@@ -967,3 +967,10 @@ _Said_: what still names it
 _On screen_: still named
 _In code_: stale.py, refusal, Gone, Mention
 _Avoid_: dead-reference scan, stale check
+
+**Feedback round**:
+One resumed session of a task on its open pull request's branch, to answer review comments, red CI, a conflict or a person's answer, ending with a push and replies
+_Said_: PR feedback
+_On screen_: resumes for pull request #N
+_In code_: pr_feedback, round
+_Avoid_: retry, review cycle

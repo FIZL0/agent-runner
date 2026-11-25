@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import inbox_lock, no_push, plan as P, plat, pr, session_theme, shared_tools, stack
+from agent_runner import inbox_lock, no_push, plan as P, plat, pr, pr_feedback, session_theme, shared_tools, stack
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -964,11 +964,12 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     if not fallback and on_harness(model) != bool(HARNESS.find_transcript(sid)):
         model = session_model(sid)  # F142: the chain started it on the other kind of agent: only that can resume it
     d = worktree(n, branch)
+    told, fresh = pr_feedback.told(n, tid, why, fallback, branch, d), why == pr_feedback.WHY  # F423
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if head != f'task/{tid}':
         if not vacate(n, d, head, branch, f'to resume {tid}'):
             return None
-        saved = git('log', '-1', '--format=%s', f'wip/{tid}', '--').stdout.startswith(f'{tid} wip: uncommitted')
+        saved = not fresh and git('log', '-1', '--format=%s', f'wip/{tid}', '--').stdout.startswith(f'{tid} wip: uncommitted')
         src = f'wip/{tid}' if saved else f'task/{tid}'
         if git('rev-parse', '--verify', '-q', src).returncode:
             log(f'slot {n}: nothing of {tid} to resume from (no task/{tid}, and no wip/{tid} the runner saved)')
@@ -981,8 +982,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
             git('branch', '-M', src, free_branch(f'resumed/{tid}'))  # kept, but no longer read as an earlier attempt
     if fallback:  # F106g: a new session on the next provider, the old one's work in the worktree
         sid = str(uuid.uuid4())
-        prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + \
-            prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch)
+        prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch) + told
         logfile, since = slot_header(n, f'{tid} session {sid} (fallback: {why})')
         note_model(sid, model)
         if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
@@ -990,9 +990,9 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
             return None
         log(f'slot {n}: {tid} goes on with {model} ({why})', EV_STARTED, tid)
         return pid, sid, since
-    logfile, since = slot_header(n, f'{tid} resume {sid} ({why})')
-    if not (pid := MUX.open(n, d, RESUME.format(why=why, tid=tid), sid, model, idle, slot_env(n), logfile,
-                            resume=True)):
+    logfile, since = slot_header(n, f'{tid} {"woken" if told else "resume"} {sid} ({why})')  # woken: no cut-off's resume
+    if told and not move_transcript(sid, d) or not (pid := MUX.open(
+            n, d, told or RESUME.format(why=why, tid=tid), sid, model, idle, slot_env(n), logfile, resume=True)):
         log(f'slot {n}: the session for {tid} did not resume in {MUX.where(n)}')
         return None
     log(f'slot {n}: {tid} resumed ({why})')

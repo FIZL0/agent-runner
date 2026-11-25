@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: in PR mode, a review comment or change request by someone with write access, or red CI or a conflict with main, resumes the task's session on its pull request, with at most 3 tries each before Needs you; a pull request closed without a merge goes to Needs you instead of only being logged (F423).
 - Added: PR mode (`[git] pr = true`) for a repository on GitHub: each finished task opens one pull request for a person to merge, and the runner never merges or pushes main (F419).
 - Added: `done` runs a removal check before its gate (F416): when a task's diff deletes or renames a file, test, setting or command, it lists what still names it, and a dead path in code, config or CI refuses `done` until it is gone; the rest is answered once with `done --named "1 filed B12; 2-3 kept because …"`.
 ## 0.71.0 (2026-11-25)
