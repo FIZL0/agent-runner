@@ -415,7 +415,7 @@ def clash_or_stack(t: tuple, h: Held) -> tuple[tuple | None, dict]:
     if not (first := next(clashing, None)):
         return None, {}
     from agent_runner.merge import under_way  # merge reads sched; imported here, not at the top
-    if not (merges := under_way()) or t[0] in h.alone or P.release(t[0]) or ordered(t[1]):
+    if C.pr or not (merges := under_way()) or t[0] in h.alone or P.release(t[0]) or ordered(t[1]):
         return first, {}
     bs = [first, *clashing]
     for b in bs:

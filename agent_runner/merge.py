@@ -287,10 +287,7 @@ UNDER: list[dict] = []  # the merge under test, until it lands or fails: one {'o
 
 def under_way() -> list[dict]:
     """F198: the merges a task may start on, as {'on', 'tids': every task they hold that has not landed}: the one
-    under test, then those built ahead on it whose own gate has not failed. F419: none in PR mode, where they land
-    only when a person merges them."""
-    if C.pr:
-        return []
+    under test, then those built ahead on it whose own gate has not failed."""
     return [m for u in UNDER[:] for m in [u, *({'on': a['merged'], 'tids': [*u['tids'], *a['tids']]}
                                                for a in AHEADS[:] if a['base'] == u['on'] and not a.get('failed'))]]
 
@@ -743,17 +740,15 @@ def merge(tid: str, branch: str) -> str | bool | None:
     The merge is built and tested in its own worktree (`[run] home`/merge), and the shared branch only
     moves once the tests pass. So the main checkout never holds an untested merge: whoever works there keeps
     committing the whole time, nothing is reset under them, and their edits are never stashed.
-
     Unless `[run] batch_max` is 1, the other finished branches waiting for the lock ride along: one gate run for all of
     them (the gate is often the slow part). A rider that conflicts beyond a join waits for its own turn, and
     a batch that fails the gate is split: this task tries again alone, the riders take their own turns.
 
-    Returns None when it landed, else why it was left alone. The shared branch is then as it was, and the
-    task branch is still there. F419: in PR mode nothing lands here: `pr.submit`, False once its pull request has it.
-    """
+    Returns None when it landed, else why it was left alone: the shared branch and the task branch stay as they were.
+    F419: in PR mode nothing lands: `pr.submit`, False once its pull request has it."""
     if C.pr:
         return pr.submit(tid, branch)
-    if s := stack.stacked(tid, branch):  # F198: `stack.settle` comes first; its branch holds what has not landed
+    if s := stack.stacked(tid, branch):  # F198: after `stack.settle`; its branch holds what has not landed
         return f'it was started on the merge of {", ".join(s["tids"])}, which has not landed'
     try:
         return merge_tries(tid, branch)
