@@ -945,9 +945,12 @@ event), and `ci_watch = false` turns it off. Every 5 min (and only when no merge
 (a cancelled run says nothing; the one before it decides; while a newer run is under way, nothing is judged)
 is first run again, its failed jobs only (`gh run rerun --failed`), since a runner GitHub
 never handed the job or a network outage reads as red too; only a red second attempt gets a single `critical` task, its failed jobs on the
-line and the last 40 lines of `gh run view --log-failed` in `plan/tasks/<ID>.md`. No second one while that task
-is open, and no run is judged twice (`<notes>/ci-<workflow>.seen`), so a broken workflow is one task, not
-an email per push. Landing never waits on CI.
+line (with the first five failing tests, when the log names any) and in `plan/tasks/<ID>.md` every failing test with
+the log's FAIL lines and tracebacks, then the last 40 lines of `gh run view --log-failed`. Tasks are keyed by workflow
+and failing test: while the workflow's task is open, a failing test it does not name is added to it, and one it
+already names files nothing; a closed task naming a failing test is opened again, with its earlier fixes' commits
+linked, and a dropped one stays dropped (a new task names the test). A log that names no test works as before.
+No run is judged twice (`<notes>/ci-<workflow>.seen`), so a broken workflow is one task, not an email per push. Landing never waits on CI.
 
 It can read the repository's GitHub issues as well, off by default. With `[run] issues_watch = true`, on the
 same 5 min cadence and only when no merge holds the lock, it asks `gh issue list` for the open issues and
