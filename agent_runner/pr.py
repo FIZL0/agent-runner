@@ -30,6 +30,7 @@ from agent_runner.whole_write import write_whole
 POLL = 60            # s between two looks at the pull requests
 BODY_MAX = 60_000    # GitHub takes 65536 characters
 REVIEW = re.compile(r'^review: *(\S.*)$', re.M)
+REQUEST = re.compile(r'\b[0-9A-F]+(?::[0-9A-F]+){2,}\b', re.I)  # GitHub's request id, or a time, in what gh says
 LOCK = threading.RLock()
 AT = [0.0]
 JOB: list[threading.Thread] = []
@@ -498,7 +499,7 @@ def _open(rec: dict, ls: list[str], branch: str, gh: ci.Gh) -> str:
         if got is None:
             return _why(r)
         if got:
-            rec.update(number=int(got[0]['number']), url=got[0]['url'])
+            rec.update(number=int(got[0]['number']), url=got[0]['url'], at=time.time())
     f = S.C.notes('prs', f'{rec["key"]}.md')
     f.write_text(body(rec, ls), encoding='utf-8')
     if rec['number']:
@@ -511,7 +512,7 @@ def _open(rec: dict, ls: list[str], branch: str, gh: ci.Gh) -> str:
            '--body-file', str(f))
     if r.returncode or not (m := re.search(r'https://\S+/pull/(\d+)', r.stdout)):
         return _why(r)
-    rec.update(number=int(m[1]), url=m[0], pushed=rec['head'], state='OPEN')
+    rec.update(number=int(m[1]), url=m[0], pushed=rec['head'], state='OPEN', at=time.time())
     ids = ', '.join(rec['ids'])
     S.note(f'{ids}: pull request #{m[1]} opened: {m[0]}')
     S.log(f'{ids}: pull request #{m[1]} opened, for a person to merge: {m[0]}')
@@ -519,8 +520,9 @@ def _open(rec: dict, ls: list[str], branch: str, gh: ci.Gh) -> str:
 
 
 def _say(key: str, line: str) -> None:
-    if SAID.get(key) != line:
-        SAID[key] = line
+    same = REQUEST.sub('', line)
+    if SAID.get(key) != same:
+        SAID[key] = same
         S.log(line)
 
 
