@@ -3,7 +3,7 @@ claims, and the sweep of branches that finished outside the slots."""
 
 from __future__ import annotations
 
-from agent_runner import no_commits, pr, undo
+from agent_runner import audit, no_commits, pr, undo
 from agent_runner.state import queued, stopping
 from agent_runner.autorelease import auto_release
 from agent_runner.sched import keep_claims, taken
@@ -28,6 +28,7 @@ def after(run) -> None:
     watch_issues(branch)
     if not stopping():
         auto_release(branch)  # F63: { every = N }
+        audit.tick(run)  # F417
     if not stopping():
         from agent_runner.control_held import controls_tick
         controls_tick(branch)  # B26, B53, B170

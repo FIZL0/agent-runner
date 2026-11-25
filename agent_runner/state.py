@@ -105,6 +105,7 @@ EV_DEVICE = 'device alert'      # F95/C27: Vitals saw a device alert (text: 'box
 EV_CONTEXT = 'context over'   # F25: task `id`'s session peaked past [run] context_warn (peak, warn, top: k tokens)
 EV_AUTO_RELEASE = 'auto release'  # F63: [run] auto_release queued release task `id` (why: '10 landed' or 'idle')
 EV_FILE_SPLIT = 'file split'    # F200b: the run queued task `id` to split `file` (waiters: the ready tasks that wait for it)
+EV_AUTO_AUDIT = 'auto audit'    # F417: [run] auto_audit queued audit task `id` (why: '50 landed')
 KIND_TONES = {EV_STARTED: '34', EV_LANDED: '32', EV_PART: '33', EV_PARKED: '31', EV_LEFT: '31', EV_HELD: '31',
               EV_STALLED: '31', EV_IDLE: '90', EV_DROPPED: '90', EV_NO_COMMITS: '90', EV_DEFERRED: '33',
               EV_STOP_ASKED: '33', EV_RELEASED: '32', EV_STOPPED: '31', EV_STOP_BACK: '0', EV_RUN_UP: '0'}

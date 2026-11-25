@@ -206,6 +206,10 @@ DEFAULTS: dict = {
         'auto_release': False,  # queue a release (`plan add V`) by itself: { every = 10 } once that many tasks
                                 # landed since the last release, { idle = true } when the run goes idle with
                                 # landed work; both may be set; false: off
+        'auto_audit': False,    # queue an audit task by itself: { every = 50 } once that many tasks landed since the last
+                                # audit and the run is idle; true: every 50; false: off
+        'audit_tokens': 1_000_000,  # tokens (as task_tokens counts them) an audit's session may use; past it, it lands
+                                # what it found; 0 = no cap
         'batch_max': 16,        # finished branches waiting for the merge go in together under one gate run, at
                                 # most this many (the rest take the next one); 0 = no cap, 1 = no batching
         'max_unmerged': 32,     # past this many finished tasks waiting for the merge, each half batch more holds one
@@ -278,6 +282,7 @@ DEFAULTS: dict = {
                                 # Remote Control, push or Artifact
         'feed': 'haiku',        # the one-shot that publishes the run page's claude.ai copy; another
                                 # provider's has no claude.ai page: the local copy stands
+        'audit': 'opus',        # an audit task's session ([run] auto_audit, or one added by hand)
         'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
                   'R': 'sonnet'},  # a task's session by its kind (the id's letters): a kind set here replaces
                                 # only that kind; one not listed runs on `code`; `plan add --model` wins for a task
@@ -722,7 +727,7 @@ class Config:
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
         if problem := setting_problem('git', 'pr', self.raw['git']['pr']) or both_problem(self.raw):  # F419
             raise SystemExit(f'agent-runner: {problem}')
-        for k in ('approve', 'approve_wait', 'approve_batch', 'releases', 'split_files'):  # F98, F193, F200b
+        for k in ('approve', 'approve_wait', 'approve_batch', 'releases', 'split_files', 'auto_audit', 'audit_tokens'):  # F98, F193, F200b, F417
             if problem := setting_problem('run', k, self.run[k]):
                 raise SystemExit(f'agent-runner: {problem}')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
@@ -968,7 +973,7 @@ SETTING_CHOICES: dict[tuple[str, str], tuple] = {
 # 'table')
 SETTING_ALSO: dict[tuple[str, str], tuple[str, ...]] = {
     ('plan', 'glossary'): ('off',), ('run', 'control_idle'): ('off',), ('run', 'control_ask'): ('off',), ('run', 'ci_watch'): ('off', 'list'),
-    ('run', 'issues_watch'): ('list',), ('run', 'auto_release'): ('table',), ('run', 'proc_max_gb'): ('number',),
+    ('run', 'issues_watch'): ('list',), ('run', 'auto_release'): ('table',), ('run', 'auto_audit'): ('table',), ('run', 'audit_tokens'): ('float',), ('run', 'proc_max_gb'): ('number',),
     ('git', 'push'): ('off',), ('ui', 'chat_quiet'): ('off',),
     ('models', 'docs'): ('off',), ('run', 'task_tokens'): ('float',), ('run', 'task_usd'): ('float',),
     ('run', 'weekly_max'): ('float',), ('run', 'session_max'): ('float',),

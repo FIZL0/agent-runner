@@ -7839,16 +7839,16 @@ def test_models_f101(repo: Path, tmp: Path):
     c = load('')
     eq({k: v for k, v in c.models.items() if k != 'kinds'},
        {'code': 'opus', 'review': 'opus', 'fix': 'opus', 'docs': 'haiku', 'control': 'opus',
-        'feed': 'haiku'}, 'the defaults every repo gets')
+        'feed': 'haiku', 'audit': 'opus'}, 'the defaults every repo gets')
     eq((c.run['model'], c.run['fix_model'], c.warnings), ('opus', 'opus', []), 'what the run reads matches, no warning')
     c = load('[run]\nmodel = "sonnet"\nfix_model = "haiku"\n')
     eq((c.models['code'], c.models['fix'], c.models['review']), ('sonnet', 'haiku', 'opus'),
        'the old keys still win when [models] does not set the role')
     c = load('[run]\nmodel = "sonnet"\nfix_model = "haiku"\n\n[models]\ncode = "opus"\nfix = "sonnet"\nreview = "haiku"\n'
-             'docs = "sonnet"\ncontrol = "sonnet"\nfeed = "sonnet"\n')
+             'docs = "sonnet"\ncontrol = "sonnet"\nfeed = "sonnet"\naudit = "sonnet"\n')
     eq({k: v for k, v in c.models.items() if k != 'kinds'},
        {'code': 'opus', 'review': 'haiku', 'fix': 'sonnet', 'docs': 'sonnet', 'control': 'sonnet',
-        'feed': 'sonnet'}, '[models] overrides each role')
+        'feed': 'sonnet', 'audit': 'sonnet'}, '[models] overrides each role')
     eq((c.run['model'], c.run['fix_model']), ('opus', 'sonnet'), 'and what the run reads follows it')
     check(any('[models] coder is not a setting' in w for w in load('[models]\ncoder = "x"\n').warnings),
           'an unknown role warns')

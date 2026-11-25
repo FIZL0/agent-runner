@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import inbox_lock, no_push, plan as P, plat, pr, pr_feedback, session_theme, shared_tools, stack
+from agent_runner import audit, inbox_lock, no_push, plan as P, plat, pr, pr_feedback, session_theme, shared_tools, stack
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -812,7 +812,7 @@ def free_gb() -> float:
 
 def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, kept: str = '') -> str:
     """F105: the model `tid`'s own session runs on: the task's `model:` field (`plan add --model`), else the
-    model the run was given on its command line (`run --model`), else its kind's (`[models.kinds]`), else
+    model the run was given on its command line (`run --model`), else `[models] audit` for an audit, else its kind's (`[models.kinds]`), else
     `model` (`[models] code`). Read afresh on every start and resume: a changed field or setting applies (F202a: not over `kept`).
     `branch` '' reads the plan file itself, not the branch's copy; `ls`: the plan's lines, when already read."""
     from agent_runner.state import plan_text
@@ -823,7 +823,7 @@ def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, k
         own = ''
     if not own and (flag := kept or C.run.get('model_flag')):
         return flag
-    return C.task_model(tid, own) or model
+    return not own and audit.model(tid, ls or []) or C.task_model(tid, own) or model
 
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: frozenset = frozenset()):
@@ -1471,23 +1471,22 @@ def budgets(procs: dict, running: dict, type_into) -> None:
     if time.time() - BUDGET_AT[0] < BUDGET_EVERY:
         return
     BUDGET_AT[0] = time.time()
-    from agent_runner.brief import BUDGET_STOP
     from agent_runner.cost import over_budget, spend_text
     from agent_runner import settings_live
     for k in [k for k in SPENT if not k.isdigit() or int(k) not in procs]:
         SPENT.pop(k)
     for n, (pid, sid, _) in [(n, p) for n, p in procs.items() if n in running]:
-        tid, caps = running[n][0], settings_live.caps(sid)
+        tid = running[n][0]
         tokens, usd = task_spend(sid)
         SPENT[str(n)] = [tokens, round(usd, 2)]
-        if not (why := over_budget(tokens, usd, *caps)) or ((m := finished_mark(n)) and m.exists()):
+        caps, why, stop, then = audit.budget(tid, settings_live.caps(sid), tokens, usd)  # F417
+        if not why or ((m := finished_mark(n)) and m.exists()):
             continue
         mark = C.notes(f'{tid}.budget')
         if not mark.exists():
             mark.write_text(why + '\n', encoding='utf-8')
-            if (said := type_into(n, procs, BUDGET_STOP.format(tid=tid, why=why, runner=C.command))) is None:
-                log(f'slot {n}: {tid} {why}: told it to stop at a clean point, commit and write its journal; '
-                    f'its branch is parked as wip/{tid} when the session ends', None, tid)
+            if (said := type_into(n, procs, stop.format(tid=tid, why=why, runner=C.command))) is None:
+                log(f'slot {n}: {tid} {why}: {then}', None, tid)
             else:
                 BUDGET_ENDED.add(sid)
                 plat.terminate(pid)
