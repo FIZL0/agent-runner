@@ -39,11 +39,11 @@ def state(queued: list[str], parked: list[str]) -> str:
 def test_queued() -> None:
     print('a split task at level later, with an open part that is not parked')
     got = rows(lines([part('c'), part('d')], [PARENT, part('a', 'later')]))
-    eq((got['F427']['state'], got['F427']['pri']), ('ready', 'normal'), "F427's shape: in the queue")
+    eq((got['F427']['state'], got['F427']['pri']), ('split', 'normal'), "F427's shape: in the queue")
     check('queue_unpark' not in U.row_acts('queue', got['F427']), 'with a queue row\'s actions, no Unpark')
     eq(got['F427a']['state'], 'parked', 'its parked part stays in Parked')
-    eq(state([PARENT, part('c')], []), 'ready', 'tagged later outside Parked')
-    eq(state([part('c', blocked=' BLOCKED: DECIDE: which one')], [PARENT]), 'ready', 'a blocked part is an open one')
+    eq(state([PARENT, part('c')], []), 'split', 'tagged later outside Parked')
+    eq(state([part('c', blocked=' BLOCKED: DECIDE: which one')], [PARENT]), 'split', 'a blocked part is an open one')
 
 
 def test_parked() -> None:
@@ -84,7 +84,7 @@ def test_guide() -> None:
         plan('add', 'F', 'Checks (split into parts)', '--files', 'a.js', '--pri', 'later')
         eq(of('F1'), 'parked', 'parked until a part is filed')
         plan('add', 'F1', 'the first', '--files', 'a.js', '--pri', 'normal')
-        eq(of('F1'), 'ready', 'a part is queued')
+        eq(of('F1'), 'split', 'a part is queued')
         plan('edit', 'F1', '--pri', 'normal')
         eq({tid: s for s, _, tid, _, _ in P.iter_tasks(P.lines(R.C.todo))}, {'F1a': 'Follow-ups', 'F1': 'Follow-ups'},
            'both stand in Follow-ups')

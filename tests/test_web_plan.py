@@ -56,6 +56,72 @@ def test_no_run_f402c1(tmp: Path) -> None:
              '2 tasks are queued: they wait for the run to start', '', '', ''], 'the row, and the toast for new ones alone')
 
 
+SPLIT_TODO = """# TODO
+
+### Next
+- [ ] **B763** Run card look (split into B763a, B763b, B763c, B763d) | files: a.py
+- [~] **B763c** Icons: each button | files: c.py BLOCKED: DECIDE: which one
+- [ ] **B763d** Merge rows | files: d.py
+- [ ] **B763d1** Merge rows, the words | files: d.py
+- [ ] **F9** Other | files: e.py
+- [ ] **F10** Not yet (split into parts) | files: e.py
+"""
+SPLIT_DONE = """# DONE
+- [x] **B763a** First | files: a.py
+- [x] **B763b** Second | files: b.py
+- [x] **B763e** Extra | files: b.py — dropped: not wanted
+"""
+
+
+def test_split_b811b(tmp: Path) -> None:
+    """B811b: a split task's row says how many of its parts landed, on the run page and in the terminal UI, and Drop on
+    it, parked too, first says which parts stay open."""
+    from agent_runner import tui
+    repo = fake_repo(tmp)
+    (repo / 'plan' / 'DONE.md').write_text(SPLIT_DONE, encoding='utf-8')
+    rows = lambda todo, st=None: {r['id']: r for r in U.queue_rows(todo.splitlines(), st)}  # noqa: E731
+    q, words = rows(SPLIT_TODO), 'Split: 2 of 4 parts landed'
+    b = q['B763']
+    eq((b['state'], b['split']['words'], [p['id'] for p in b['split']['open']]), ('split', words, ['B763c', 'B763d']),
+       'a blocked part is open; a dropped one is none; a part\'s own part is not counted')
+    eq([(q[t]['state'], 'split' in q[t]) for t in ('F9', 'F10', 'B763c')], [('ready', False), ('ready', False), ('blocked', False)], 'no other row')
+    ask = 'Drop B763? Its 2 open parts stay in the plan: B763c Icons, B763d Merge rows.'
+    eq((U.row_asks('queue', b)['queue_drop'], 'queue_drop' in U.row_asks('queue', q['F9'])), (ask, False), 'what Drop asks')
+    one = rows(SPLIT_TODO.replace('- [~] **B763c**', '- [x] **B763c**'))['B763']
+    eq(U.row_asks('queue', one)['queue_drop'], 'Drop B763? Its open part stays in the plan: B763d Merge rows.', 'one left')
+    parked = rows(SPLIT_TODO.replace('### Next\n', '### Parked\n'))['B763']
+    eq((parked['state'], U.row_asks('queue', parked)['queue_drop']), ('parked', ask), 'a parked one keeps its words, and asks too')
+    for was, state in (('- [ ] **B763** Run', '- [~] **B763** Run'), 'blocked'), (('| files: a.py', '| files: a.py | held: yes'), 'held'):
+        eq(rows(SPLIT_TODO.replace(*was, 1))['B763']['state'], state, f'{state} keeps its word')
+    eq(rows(SPLIT_TODO, {'running': {'1': 'B763'}})['B763']['state'], 'running s1', 'so does a running one')
+    run = rows(SPLIT_TODO.replace('Merge rows |', 'Merge rows (split into B763d1) |'), {'running': {'1': 'B763'}})['B763']
+    eq((U.row_asks('queue', run)['queue_drop'], U.split_ask(run, short=True)),
+       (ask.replace('?', '? A slot running it is stopped.'), 'Drop B763? A slot running it is stopped. B763c, B763d stay open.'),
+       'a running one says its slot is stopped; a part split itself is named without its list')
+    off = U.wait_for_run([dict(b)])[0]
+    eq((off['state'], 'waits_run' in off), ('split', False), 'with no run up too')
+    page = next(c for c in vars(tui).values() if hasattr(c, 'queue_tag'))
+    eq(page.queue_tag(None, b), (words, 'dim'), 'the terminal UI')
+    (repo / 'plan' / 'TODO.md').write_text(SPLIT_TODO, encoding='utf-8')
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+        p = tui.RunPage(dict(U.snapshot(up=False)))
+        p.run_control('queue_drop', tid='B763')
+        eq((p.confirm, p.confirm_ask, ran), ('queue_drop', 'Drop B763? B763c, B763d stay open.', []), 'its Drop asks first, on one line')
+        p.run_control('queue_drop', tid='B763', confirm=True)
+        eq(ran.pop()[-4:-1], ['plan', 'drop', 'B763'], 'D again drops it')
+        r = U.run_control('queue_drop', tid='B763')
+        eq((r['ok'], r['confirm'], ran), (False, ask, []), "and the page's")
+        U.run_control('queue_drop', tid='B763', confirm=True)
+        eq(ran[-1][-4:-1], ['plan', 'drop', 'B763'], 'a Yes drops it')
+    if not shutil.which('node'):
+        print('  (no node here: the split row script test is skipped)')
+        return
+    eq(logic_js([['planWords', b, []], ['planWords', parked, []], ['idleWhy', {'queue': [b]}, []], ['idleWhy', {'queue': [b, b]}, []]]),
+       [words, "Parked: a run won't start it", 'Of 1 queued task, 1 waits for its parts.', 'Of 2 queued tasks, 2 wait for their parts.'],
+       "the run page's words")
+
+
 def test_run_controls(tmp: Path) -> None:
     """F82: the run controls on the web: the page builds each control's request from the snapshot's one list
     (ui_model.RUN_CONTROLS), the server runs its runner command, and stop now runs only with the page's own
@@ -748,4 +814,4 @@ def test_plan_lists_f426b(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_no_run_f402c1), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_no_run_f402c1), in_tmp(test_split_b811b), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b)]))

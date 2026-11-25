@@ -44,6 +44,36 @@ def split_queued(ls: list[str], tid: str, i: int, tasks: list[tuple]) -> bool:
                and not P._shelved(ls, j) for section, _, t, rest, j in tasks)
 
 
+def split_parts(ls: list[str], tid: str, i: int, tasks: list[tuple], done: list[str]) -> dict | None:
+    """B811b: of the split task at ls[i], `parts` (how many), `landed` (how many of them), `open` ([{id, title}] of the
+    rest) and `words`; None for a task that was not split, or has no part yet. A dropped part is none, and one that was
+    split itself counts once, not its parts too. `done`: DONE.md's lines."""
+    if not P.SPLIT.search(ls[i]):
+        return None
+    known: dict[str, str | None] = {}  # its title while open, None once landed
+    for x, rows in ((done, P.iter_tasks(done)), (ls, tasks)):
+        for _, box, t, rest, j in rows:
+            if box in ' ~':
+                known[t] = after_name(P.SPLIT.sub('', rest))
+            elif not P._dropped(x, j):
+                known[t] = None
+    kids = P.subtasks(tid, ls[i], known)
+    own = [t for t in known if t in kids and not any(
+        P.child(p, t) and (known[p] is not None or known[t] is None) for p in kids)]
+    if not own:
+        return None
+    landed = sum(known[t] is None for t in own)
+    return {'parts': len(own), 'landed': landed, 'open': [{'id': t, 'title': known[t]} for t in own if known[t] is not None],
+            'words': f'Split: {landed} of {len(own)} part{"s" * (len(own) != 1)} landed'}
+
+
+def done_lines() -> list[str]:
+    try:
+        return P.lines(S.C.done)
+    except Exception:  # noqa: BLE001 - no DONE.md
+        return []
+
+
 def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) -> list[dict]:
     """Every open task ([ ] or [~]) of TODO.md's lines `ls`, in plan order. F74: each row also carries
     `after_title` (what it waits on, in words: `after_words`) and `state` (`queue_state`; STATE `st` says
@@ -58,6 +88,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     tool_waits, tool_names = split_wait_words(ls, st, now) | tool_wait_words(ls, st, now), project_tools()
     untils = until_wait_words(ls)
     busy = busy_ids(st or {})  # F429b
+    done = done_lines() if any(P.SPLIT.search(ls[t[-1]]) for t in tasks) else []
     for section, box, tid, rest, i in tasks:
         if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
             continue
@@ -86,6 +117,10 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1]['held'] = True
             if row_hold.shows_held(ls, i) and out[-1]['state'] != 'parked' and tid not in where:
                 out[-1]['state'] = 'held'
+        if split := split_parts(ls, tid, i, tasks, done):  # B811b
+            out[-1]['split'] = split
+            if box != '~' and out[-1]['state'] in ('ready', 'critical', 'after', 'tool'):
+                out[-1]['state'] = 'split'
         if P.release(tid) and releases_on():  # F186: one that started cannot be dropped from its row
             out[-1]['started'] = release_started(tid, st or {})
     return out
@@ -115,7 +150,8 @@ def release_started(tid: str, st: dict) -> bool:
 # F74: a queue row's state, first word. 'blocked' (beyond the design's four): a [~] task waits on a person or
 # a fix, and 'ready' would say it can start. B118: 'parked' (level later, TODO.md's Parked section): a run never
 # starts it, so it must not say 'ready' either. F429: 'held' (`plan hold`; its row also carries `held`).
-QUEUE_STATES = ('running', 'blocked', 'held', 'critical', 'after', 'tool', 'parked', 'ready')
+# B811b: 'split': its parts are the work (its row also carries `split`: `split_parts`).
+QUEUE_STATES = ('running', 'blocked', 'held', 'critical', 'after', 'tool', 'split', 'parked', 'ready')
 
 
 def done_ids() -> set[str]:

@@ -93,7 +93,7 @@ RUN_CONTROLS = (
     {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
      'fits': lambda r: not r.get('started'),
-     'confirm_of': lambda r: f'Drop {r["id"]}? It leaves the plan, and nothing is released.' if P.release(r['id']) and releases_on() else '',
+     'confirm_of': lambda r: f'Drop {r["id"]}? It leaves the plan, and nothing is released.' if P.release(r['id']) and releases_on() else split_ask(r),
      'confirm': 'It leaves the plan, and a slot running it is stopped. Drop it?'},
     # F429b: the row menu of a Plan queue row (the page alone: no TUI key), on the row's `menu`; a running one has none.
     # Restore is Undo's: the row is out of the plan, so it fits none and has its place as `text` (`menu_restore`)
@@ -253,6 +253,19 @@ def row_asks(where: str, row: dict) -> dict[str, str]:
     """F186: {key: question} of the actions allowed on `row` whose confirm is the row's own."""
     return {c['key']: q for c in RUN_CONTROLS if c['where'] == where and 'confirm_of' in c
             and c.get('fits', lambda r: True)(row) and (q := c['confirm_of'](row))}
+
+
+def split_ask(row: dict, short: bool = False) -> str:
+    """B811b: what Drop asks on a split task's queue row: which of its parts stay open ('' for any other); `short`: by
+    id alone, for the terminal UI's one line."""
+    parts = (row.get('split') or {}).get('open') or []
+    if not parts:
+        return ''
+    stops = ' A slot running it is stopped.' if str(row.get('state') or '').startswith('running') else ''
+    if short:
+        return f'Drop {row["id"]}?{stops} {", ".join(p["id"] for p in parts)} {"stays" if len(parts) == 1 else "stay"} open.'
+    n, names = len(parts), ', '.join(f'{p["id"]} {p["title"]}'.rstrip() for p in parts)
+    return f'Drop {row["id"]}?{stops} ' + ('Its open part stays' if n == 1 else f'Its {n} open parts stay') + f' in the plan: {names}.'
 
 
 def queue_row(tid: str) -> dict | None:
