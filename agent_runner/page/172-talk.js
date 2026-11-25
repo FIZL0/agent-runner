@@ -213,6 +213,7 @@ class Recorder{
   async post(){
     if(this.done||this.posted)return;
     this.posted=true;if(REC.now===this)REC.now=null;recLook();
+    if(REC.open&&!(TK.ear&&TK.ear.more))REC.open.cut=true;  // a later hold's first piece may begin before it
     if(this.mute||(this.ready?this.said:this.n)<REC_MIN*this.rate){this.parts=[];if(this.mute&&this.onerror)this.onerror({error:'no-speech',message:''});return this.end()}
     const t=TK.ear;if(t&&TK.rec===this){t.reading=true;talkDraw()}
     const wav=recWav(this.parts,this.rate), at=Date.now(), log=x=>{if(t)micLog(x,false,t.trail)};

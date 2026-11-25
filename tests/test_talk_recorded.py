@@ -243,7 +243,7 @@ def test_recorded_f161b(tmp: Path) -> None:
     check(9 <= p[0] <= 11, 'the clip is the second since the press', str(p))
     eq(p[1:], [20, 20, 0], 'no sound from before the press in it, also what the worklet had in hand; sent sound is not kept for the next')
     h = g.get('heldAgain') or [1]
-    check(h[0] == 0 and 9 <= h[1] <= 11 and h[2:4] == [True, 2] and 19 <= h[4] <= 22 and h[5:] == [30, ['first second']], 'held again while the last words are made: that hold is kept whole', str(h))
+    check(h[0] == 0 and 9 <= h[1] <= 11 and h[2:4] == [True, 2] and 19 <= h[4] <= 22 and h[5:] == [30, ['first second']], 'held again while the last words are made: that hold is kept, but for the piece that may begin before it', str(h))
     eq((g.get('letAgain') or [])[2:], [False, 1, 0, 0, ['first']], 'let go again before the words came: dropped')
     eq((g.get('reply'), g.get('during')), (['ended', None, 'playback', 'speaking'], None), 'a reply: the mic is released first')
     eq(g.get('afterReply'), [True, 0, 'play-and-record'], 'and open again after it, with none of its sound')
