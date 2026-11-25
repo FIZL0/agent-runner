@@ -312,7 +312,7 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
                 held = [t for t in dict.fromkeys(ids) if t in live and t != tid]
                 note = '' if waits else P.not_waiting(P.not_waiting_on(ls, i))  # B207: `after: all above`
             state = 'waits' if held else 'next'
-        everything = bool(held) and not release_ahead.is_listed(ls[i]) and (
+        everything = bool(held) and not release_ahead.is_listed(ls[i]) and not P._named_after(ls, i) and (
             P._waits_all(ls, i) or not waits and P.LAST in P.fields(ls[i]).get('after', []))  # B825
         names = [f'{t} {titles.get(t, "")}'.rstrip() for t in held]
         more = len(names) - RELEASE_SHOWN

@@ -17,12 +17,21 @@ function gripPut(rows,id,g){
 const gripOrder=(rows,id)=>rows.filter(q=>gripReal(q)||menuId(q)===id).map(menuId).join(' ');
 const gripNew=(rows,id,g)=>gripOrder(gripPut(rows,id,g),id)!==gripOrder(rows,id);
 /* B825: a moved release waits for what is above its new place: it says so before the snapshot does. What a person holds
-   up (blocked, held) keeps no release waiting */
+   up (blocked, held), and what waits for that, keeps no release waiting; its note says them, as plan.not_waiting() */
+function gripStuck(q,seen=[]){
+  if(q.held||q.state==='held')return ['held'];
+  if(q.state==='blocked')return ['needs you'];
+  if(seen.includes(q.id))return [];
+  const by=(q.after||[]).filter(t=>{const x=(S.snap.queue||[]).find(y=>y.id===t);return x&&(x.state==='parked'||gripStuck(x,seen.concat(q.id)).length)});
+  return by.length?[`after ${by.join(', ')}`]:[];
+}
 function gripWaits(q,above){
-  const r=q.release, waits=above.filter(x=>gripReal(x)&&!x.held&&!['blocked','held'].includes(x.state)).map(x=>({id:x.id,title:x.title}));
+  const r=q.release, rows=above.filter(gripReal), waits=rows.filter(x=>!gripStuck(x).length).map(x=>({id:x.id,title:x.title}));
   if(q.held||!q.placeholder&&!(r&&['waits','next'].includes(r.state)))return q;
   if(q.placeholder)return {...q,words:waits.length?WAITS_ALL:'next'};
-  return {...q,release:{...r,waits,everything:true,...(waits.length?{state:'waits'}:r.state==='next'?{}:{state:'next',words:'next'})}};
+  const off=rows.filter(x=>gripStuck(x).length).map(x=>`${x.id} (${gripStuck(x)[0]})`);
+  return {...q,release:{...r,waits,everything:true,note:off.length?`; not waiting on: ${off.join(', ')}`:'',
+    ...(waits.length?{state:'waits'}:r.state==='next'?{}:{state:'next',words:'next'})}};
 }
 function gripRows(rows){
   GR.did=GR.did.filter(menuLive);

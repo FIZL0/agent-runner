@@ -828,7 +828,7 @@ eval(logic + ['const esc=', 'const taskChip=', 'const card=', 'const controlsOf=
   const out = {cards: cards(), shut: Object.fromEntries(rows().map(q => [menuId(q), said(menuId(q))])), drag: {}};
   S.taskOpen.queue = 'V5'; out.open = cards().V5; S.taskOpen = {};
   const drag = (id, g) => { rows(); const ok = gripMove(id, g); const r = [ok, said(id)]; S.taskOpen.queue = id; r.push(cards()[id]); S.taskOpen = {}; GR.did = []; return r };
-  out.drag = {V6: drag('V6', 2), V7: drag('V7', 1), top: drag('V5', 0), D4: drag('V6', 1), held: drag('V8', 2), blocked: drag('V9', 2), next: drag('next-release', 2)};
+  out.drag = {V6: drag('V6', 3), V7: drag('V7', 2), top: drag('V5', 0), held: drag('V8', 3), blocked: drag('V9', 3), next: drag('next-release', 3)};
   console.log(JSON.stringify(out))`);
 """
 
@@ -841,7 +841,7 @@ def waits_rows(tmp: Path) -> dict:
     t = lambda i, title, **k: {'id': i, 'title': title, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, **k}  # noqa: E731
     def rel(i, stands, words, w=(), everything=False, **k):
         return t(i, 'Release', release={'id': i, 'title': 'Release', 'state': stands, 'words': words, 'waits': list(w), 'everything': everything, 'note': ' (not waiting on D4)', 'placeholder': False}, **k)
-    q = [t('D4', 'Pick', state='blocked', blocked=True), t('F1', waits[0]['title']), t('B2', 'Retry'), t('F3', 'Third'),
+    q = [t('D4', 'Pick', state='blocked', blocked=True), t('F5', 'Stuck', state='after', after=['D4']), t('F1', waits[0]['title']), t('B2', 'Retry'), t('F3', 'Third'),
          rel('V5', 'waits', f'waits for 3: {names}', waits, True), rel('V6', 'waits', f'waits for 3: {names}', waits),
          rel('V7', 'waits', 'waits for 1: F1 The A-Z index', waits[:1]), rel('V8', 'held', 'held', held=True, state='held'),
          rel('V9', 'blocked', 'blocked', blocked=True, state='blocked'), rel('V10', 'next', 'next'), rel('V11', 'releasing', 'releasing now')]
@@ -870,7 +870,8 @@ def test_release_waits_b825(tmp: Path) -> None:
     d = o['drag']
     eq([d[k][:2] for k in ('V6', 'V7', 'top', 'held', 'blocked', 'next')],
        [[True, every], [True, 'next'], [True, 'next'], [True, 'held'], [True, 'blocked'], [True, every]],
-       'dragged: under a task; under one only the person can free; to the top; held, blocked, the Next release row')
+       'dragged: under a task; under ones only the person can free; to the top; held, blocked, the Next release row')
+    check('waits for 1; not waiting on: D4 (needs you), F5 (after D4)' in d['V6'][2] and 'not waiting' not in d['top'][2], 'with the note of its new place', d['V6'][2])
     check('data-task="F1" data-list="wait:V6"' in d['V6'][2]
           and 'data-task="F3"' not in d['V6'][2] and 'data-task="D4"' not in d['V6'][2], 'opened, the tasks above its new place', d['V6'][2])
 

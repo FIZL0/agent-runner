@@ -221,7 +221,7 @@ def test_next_moved():
 def test_waits_row():
     print('B825: what the Plan queue row is told: it waits for everything above it, or for tasks its line names or lists')
     row = lambda t='V8': next(r for r in U.release_tasks(P.lines(R.C.todo), {}) if r['id'] == t)  # noqa: E731
-    for after, n, everything in (('all', 3, True), ('all above', 3, True), ('T1, T3', 2, False), ('T3', 1, False)):
+    for after, n, everything in (('all', 3, True), ('all above', 3, True), ('T1, T3', 2, False), ('T3', 1, False), ('all above, T1', 3, False)):
         fresh()
         R.C.todo.write_text(R.C.todo.read_text(encoding='utf-8').replace('\n### Parked', f'- [ ] **V8** My release | after: {after}\n\n### Parked'), encoding='utf-8')
         r = row()
