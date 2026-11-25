@@ -17,7 +17,7 @@ from unittest import mock
 from _check import check, eq, git, has, report
 from _web import fake_repo, in_tmp, logic_js
 
-from agent_runner import audit, config as CF, setting_words as SW, settings_live, setup as S, state, web as W
+from agent_runner import audit, config as CF, setting_words as SW, settings_live, setup as S, state, ui_model as U, web as W
 
 
 def ask(root: Path, answer, terminal: bool = True) -> tuple:
@@ -53,7 +53,7 @@ def test_setup(tmp: Path):
         has(asked[0], r'50 tasks.*\[y/N\]', 'default no')
         eq(CF.Config(root).run['auto_audit'], want, f'{answer!r}: {want}')
         check('slots = 2  # two' in f.read_text() and 'push = false' in f.read_text(), 'the rest is kept', f.read_text())
-        has(got, 'runner.toml', 'says where')
+        has(got, r'runner\.toml: commit it', 'says where, and that it is not committed yet')
         eq(ask(root, 'y'), (None, []), 'and not asked again')
     f.write_text(TOML, encoding='utf-8')
     (root / CF.LOCAL).write_text('[run]\nauto_audit = true\n', encoding='utf-8')
@@ -144,6 +144,23 @@ def test_settings(tmp: Path):
     eq(o['sheet'], [0, 1, '{"every":50}'], 'in More… it waits for the button, and the count shows at once')
 
 
+def test_save(tmp: Path):
+    print('Save writes the switch, the count and the model for everyone, as one commit')
+    repo = fake_repo(tmp)
+    (repo / 'runner.toml').write_text('[run]\nslots = 2\n\n[git]\npush = false\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'settings')
+    CF._cfg.cache_clear()
+    state.init(repo)
+    n = int(git(repo, 'rev-list', '--count', 'HEAD'))
+    got = U.settings_save([{'table': 'run', 'key': 'auto_audit', 'side': 'project', 'value': {'every': 25}},
+                           {'table': 'models', 'key': 'audit', 'side': 'project', 'value': 'sonnet'}])
+    check(got['ok'], 'saved', got)
+    c = CF.Config(repo)
+    eq((c.run['auto_audit'], c.models['audit']), ({'every': 25}, 'sonnet'), 'both are in runner.toml')
+    eq((int(git(repo, 'rev-list', '--count', 'HEAD')), git(repo, 'status', '--porcelain')), (n + 1, ''), 'one commit')
+
+
 def test_live(tmp: Path):
     print('a run that is up takes the switch, the count and the model')
     repo = fake_repo(tmp)
@@ -165,4 +182,4 @@ def test_live(tmp: Path):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(f) for f in (test_setup, test_setup_main, test_settings, test_live)]))
+    raise SystemExit(report([in_tmp(f) for f in (test_setup, test_setup_main, test_settings, test_save, test_live)]))

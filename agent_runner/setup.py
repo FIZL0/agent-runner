@@ -304,8 +304,8 @@ def offer_audit(root: Path) -> str | None:
     except (OSError, ValueError) as e:
         return f'[run] auto_audit is not written to {f.name}: {e}'
     CF._cfg.cache_clear()
-    return f'the run audits by itself every {audit.EVERY} tasks ([run] auto_audit in {f.name})' if yes else \
-        f'no audit by itself ([run] auto_audit = false in {f.name}; Settings on the run page turns it on)'
+    return f'the run audits by itself every {audit.EVERY} tasks ([run] auto_audit in {f.name}: commit it)' if yes else \
+        f'no audit by itself ([run] auto_audit = false in {f.name}: commit it; once committed, Settings on the run page can turn it on)'
 
 
 def no_claude(root: Path) -> str:

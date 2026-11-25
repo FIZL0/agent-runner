@@ -354,7 +354,7 @@ def test_setup(tmp: Path) -> None:
             return subprocess.CompletedProcess(cmd, (p.communicate()[0], p.returncode)[1])
         return real(cmd, *a, **kw)
     CF._cfg.cache_clear()
-    with mock.patch.object(SU, 'offer_ttyd', lambda: None), mock.patch.object(SU, 'at_terminal', lambda: True), \
+    with mock.patch.object(SU, 'offer_ttyd', lambda: None), mock.patch.object(SU, 'offer_audit', lambda root: None), mock.patch.object(SU, 'at_terminal', lambda: True), \
             mock.patch('builtins.input', lambda q='': answers.pop(0)), mock.patch.object(SU.subprocess, 'run', run), \
             contextlib.redirect_stdout(out):
         eq(SU.main([], cwd=root), 0, 'setup ends well')
