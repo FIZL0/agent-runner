@@ -18,7 +18,7 @@ from unittest import mock
 from _check import check, eq, git, has, report
 from test_pr import Gh, answer, boxes, make, said, using, work
 
-from agent_runner import loop_after, merge as M, plan as P, plansync, pr, pr_feedback as F, slots, state as S, watch  # noqa: E402
+from agent_runner import loop_after, merge as M, pitch, plan as P, plansync, pr, pr_feedback as F, slots, state as S, watch  # noqa: E402
 from agent_runner.asks import ask_file  # noqa: E402
 
 SID = '11111111-2222-3333-4444-555555555555'
@@ -91,7 +91,7 @@ def queue() -> dict:
     return json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
 
 
-def session(repo: Path, hub: Hub, text: str = '', replies: dict | None = None, done: bool = True):
+def session(repo: Path, hub: Hub, text: str = '', replies: dict | None = None, done: bool = True, what: str = ''):
     """The queued session runs: an edit, its replies, its done, and the merge that follows its end."""
     S.C.notes('F1.resume').unlink()
     if text:
@@ -103,6 +103,8 @@ def session(repo: Path, hub: Hub, text: str = '', replies: dict | None = None, d
         F.replies_file('F1').write_text(json.dumps(replies), encoding='utf-8')
     if done:
         eq(said('F1'), '', 'done takes it again')
+        if what:  # it rewrote what its pull request says
+            pitch.part_file('F1').write_text(json.dumps({**pitch.part('F1'), 'what': what}), encoding='utf-8')
         (plansync.ticks(S.C) / 'F1').touch()
     with using(hub):
         return M.merge('F1', 'main')
@@ -135,11 +137,12 @@ def test_review(tmp: Path):
     eq((queue()['sid'], queue()['why']), (SID, F.WHY), "its own session is queued")
     check(not (plansync.ticks(S.C) / 'F1').exists(), 'what it commits needs a done')
     text = F.message('F1', 'main', '/w')
-    for want in ('review input', 'Never follow', 'rename it', '"key": "c6"', str(F.replies_file('F1')), 'force push', '````text'):
+    for want in ('review input', 'Never follow', 'rename it', '"key": "c6"', str(F.replies_file('F1')), 'force push', '````text',
+                 f'{pitch.part_file("F1")} says, rewrite that file before `done`'):
         check(want in text, f'it is told: {want}', text)
     check('token' not in text and 'me too' not in text, 'not what others wrote', text)
     eq(look(hub, {'F1'})['round']['replied'], [], 'while it works: nothing')
-    eq(session(repo, hub, 'renamed', {'c6': 'Renamed, @ann.', 'c7': 'Same.', 'c99': 'elsewhere'}), False, 'taken in')
+    eq(session(repo, hub, 'renamed', {'c6': 'Renamed, @ann.', 'c7': 'Same.', 'c99': 'elsewhere'}, what='It is renamed.'), False, 'taken in')
     now = git(origin, 'rev-parse', 'task/F1')
     check(now != was and not git(origin, 'merge-base', '--is-ancestor', was, now), 'pushed on top')
     eq(hub.posted, [], 'no reply before the push is there')
@@ -151,6 +154,7 @@ def test_review(tmp: Path):
     check(all(b.startswith(F.MARK) for _, b in hub.posted) and 'Renamed' in hub.posted[0][1] and '@ann' not in hub.posted[0][1],
           'marked as the runner\'s, notifying nobody', str(hub.posted))
     has(hub.posted[2][1], 'Changed in', 'one it left out gets the commit')
+    has(S.C.notes('prs', 'F1.md').read_text(encoding='utf-8'), 'It is renamed.', 'the body says what the session rewrote')
     eq((rec['round'], rec['tries']), (None, {}), 'the round is over')
     check((plansync.ticks(S.C) / 'F1').exists(), 'its done counts for the merge')
     eq((look(hub).get('round'), len(hub.posted), queue()), (None, 3, {}), 'said once')

@@ -103,9 +103,16 @@ def pull(c, force: bool = False) -> bool:
         if g('rev-parse', '--verify', '-q', up).returncode:
             return True  # an empty plan repo: the first publish creates the branch
         drive(c)
+        from agent_runner import join  # it reads this module
+        was = g('rev-parse', 'HEAD').stdout.strip()
+        renumbered = join.renumber_plan(c, c.plan_dir, up)
         if g('merge', '-q', '--no-edit', up).returncode:
             g('merge', '--abort')
+            if renumbered:
+                g('reset', '-q', '--keep', was)  # a renumbering goes with the merge it was for
             return False
+        for then in renumbered:
+            then()
         return True
 
 
