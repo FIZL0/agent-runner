@@ -343,18 +343,23 @@ class Tells {
 
 // --- what a chat is doing now (F406g) ------------------------------------------------------------------------------
 
-// `<notes>/<sid>.now`, which the run page reads (session_now.record): busy or idle, since when, and how many messages
-// are queued. In Claude Code's words; gone once the chat ended.
+// How a message about a chat's question begins, not its answer: as chat_question.py's ABOUT and NOT (F433)
+const ABOUT = 'About your question “', NOT = '” (not my answer): ';
+const isAbout = (text) => text.startsWith(ABOUT) && text.includes(NOT);
+
+// `<notes>/<sid>.now`, which the run page reads (session_now.record): busy or idle, since when, how many messages are
+// queued, and whether any of them is not about the chat's question (answers, F433). In Claude Code's words; gone once
+// the chat ended.
 class Now {
   constructor(a) {
     this.file = path.join(a.notes, `${a.sid}.now`);
-    this.d = { pid: process.pid, sessionId: a.sid, startedAt: Date.now(), status: '', statusUpdatedAt: 0, queued: 0 };
+    this.d = { pid: process.pid, sessionId: a.sid, startedAt: Date.now(), status: '', statusUpdatedAt: 0, queued: 0, answers: false };
     process.on('exit', () => { try { fs.unlinkSync(this.file); } catch { /* not there */ } });
   }
 
-  set(status, queued) {
+  set(status, queue) {
     if (status !== this.d.status) this.d.statusUpdatedAt = Date.now();
-    Object.assign(this.d, { status, queued });
+    Object.assign(this.d, { status, queued: queue.length, answers: !queue.every(isAbout) });
     const part = `${this.file}.part`;
     try { fs.writeFileSync(part, JSON.stringify(this.d)); fs.renameSync(part, this.file); } catch { /* the next change writes it */ }
   }
@@ -871,7 +876,7 @@ async function main() {
     interrupt: () => { const going = Boolean(s.ctl && !s.ctl.signal.aborted); s.ctl?.abort(); return going; } } : null);
   if (a.chat) for (const sig of ['SIGTERM', 'SIGHUP']) process.on(sig, () => quit(0));
   const now = a.chat ? new Now(a) : null; // F406g
-  const is = (status) => now?.set(status, tells.queue.length);
+  const is = (status) => now?.set(status, tells.queue);
   tells.changed = () => is(now?.d.status);
   is(prompt.trim() ? 'busy' : 'idle');
   let provider = await loadProvider(a.model, a.provider);
