@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -403,6 +404,32 @@ def test_run(tmp: Path) -> None:
     check(r.returncode == 0 and 'claude' not in r.stdout.lower(), 'status says nothing of Claude', r.stdout + r.stderr)
 
 
+class chat_found:
+    """What there is of control session `n`, read only when a failed check prints it: its session id, pid and process,
+    its transcript's entries, what its terminal shows, its hidden terminal's own errors, the provider's calls."""
+
+    def __init__(self, tmp: Path, n: int):
+        self.tmp, self.n = tmp, n
+
+    def __str__(self) -> str:
+        def tail(f: Path) -> str:
+            try:
+                return f.read_text(encoding='utf-8', errors='replace')[-2000:]
+            except OSError as e:
+                return f'({e})'
+        n, notes = self.n, K.C.notes()
+        sid = K.control_kept_sid(n)
+        files = {x: tail(notes / f'control{n}.{x}') for x in ('sid', 'pid', 'live', 'exit')}
+        return '\n         '.join([
+            f'chat c{n}: session id {sid!r}, live pid {K.control_live(n)}, files {files}',
+            f'ids there: {sorted(f.name for f in notes.glob("control*.sid"))}',
+            f'transcript {K.transcript(sid) if sid else None}',
+            f'entries {[json.dumps(d)[:600] for d in K.entries(sid, skip_bad=True)] if sid else []}',
+            f'frame {tail(notes / f"control{n}.log")!r}',
+            f'its hidden terminal {tail(notes / f"control{n}.shim")!r}',
+            f'calls {[(c["kind"], c["n"], c["first"][:60]) for c in calls(self.tmp)]}'])
+
+
 def test_chat(tmp: Path) -> None:
     print('a control chat and the feed')
     root = tmp / 'repo'
@@ -410,11 +437,18 @@ def test_chat(tmp: Path) -> None:
     (tmp / 'script.json').write_text('{}', encoding='utf-8')
     r = subprocess.run([*runner_cmd(), 'control', '--new', '--ask', 'hello there'], cwd=root, capture_output=True, text=True, timeout=90)
     check(r.returncode == 0, 'a chat starts', r.stdout + r.stderr)
-    n = next((i for i in range(1, 9) if K.control_kept_sid(i)), 0)
+    # `control --new` is back once the hidden terminal is up, maybe before the `control N` in it wrote its session id: N is
+    # what it printed, never looked for among the ids there are by then.
+    m = re.search(r'^control (\d+) is up', r.stdout, re.M)
+    n = int(m[1]) if m else 0
+    check(n, 'and says its number', r.stdout + r.stderr)
     try:
-        check(until(lambda: 'answer to hello there' in K.control_state(K.entries(K.control_kept_sid(n), skip_bad=True))['text']), 'and answers')
+        check(until(lambda: K.control_live(n)), 'its session comes up', chat_found(tmp, n))
+        check(until(lambda: (sid := K.control_kept_sid(n)) and 'answer to hello there' in
+                    K.control_state(K.entries(sid, skip_bad=True))['text']), 'and answers', chat_found(tmp, n))
     finally:
-        K.end_control(n, 'the test is over')
+        if not K.end_control(n, 'the test is over') and (pid := K.marker_pid(K.C.notes(f'control{n}.live'))):
+            plat.terminate(pid)  # it never came up: end what is in its hidden terminal, so nothing outlives the test
     page = tmp / 'page.html'
     page.write_text('<p>hi</p>', encoding='utf-8')
     eq(PC.page_copy_publish(page, ''), '', 'the feed\'s one-shot runs, and the local copy stands')
