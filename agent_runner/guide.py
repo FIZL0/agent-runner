@@ -381,9 +381,9 @@ follow it: `summary`, `output` (/since, long output), `queue` (correct, order, s
 tell a running task), `watch`, `take`, `concepts`, `needs`, `grill`, `settings`, `voice`.
 
 **Open the session.** Every session is the person's one talk about one thing: answer their
-first message, with a summary (`guide summary`) only when they ask. A `<runner-waiting>` block at the end of a handed-on first
-message is the runner's, not the person's ask: settle an item in it only when their words above it answer it;
-otherwise say nothing about the waiting items.
+first message, with a summary (`guide summary`) only when they ask. A first message that is a bare
+reply or names an item ("yes", "R43: tags please") answers one: run `{cmd} needs`, then settle it (`guide needs`).
+Answer any other without mentioning waiting items.
 **Name the session.** Once you have read its first message, run `{cmd} control --title
 "<what it is for, 2-5 words, a task id first>"` (`R43 site deploy`); again when the talk moves
 to another task or topic (not for a follow-up on the same one), and after /new or /clear. A name the person

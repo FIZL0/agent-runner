@@ -36,7 +36,7 @@ def test_handed_ask_starts_fresh():
     R.C.notes('control1.title').unlink(missing_ok=True)
     ask = 'install IPAS looks wrong'
     with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: '/x.jsonl'), \
-            mock.patch.object(K, 'remote_on', lambda: True), mock.patch.object(K, 'ask_waiting', lambda: ''):
+            mock.patch.object(K, 'remote_on', lambda: True):
         check(K.control_sid(1)[0] != kept and not K.control_sid(1)[1], 'the kept session is not resumed')
         sid, resume, argv = K.control_open(1, ask=ask)
         check(not resume and sid != kept, 'the ask starts a new session', (sid, resume))
@@ -309,7 +309,7 @@ def test_reopen_after_shutdown():
     with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: f'/{s}.jsonl' if s in rows else ''), \
             mock.patch.object(K, 'transcript', lambda s: f'/{s}.jsonl' if s in rows else ''), \
             mock.patch.object(K, 'entries', lambda s, skip_bad=False: rows.get(s, [])), \
-            mock.patch.object(K, 'remote_on', lambda: True), mock.patch.object(K, 'ask_waiting', lambda: ''), \
+            mock.patch.object(K, 'remote_on', lambda: True), \
             mock.patch.object(CR, 'boot_time', lambda: booted):
         sid1, resume1, _ = K.control_open(1)
         rows[sid1] = []
@@ -454,27 +454,26 @@ def test_first_message_typed_after_remote_control():
     git(d, 'commit', '-qm', 'start')
     R.init(d)
     ask = 'hi'
-    with mock.patch.object(K, 'ask_waiting', lambda: ''):
-        with mock.patch.object(K, 'remote_on', lambda: True):
-            argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
-            check(ask not in argv and argv[1] == '--session-id', 'remote on + ask: no positional prompt', argv)
-            check('--remote-control' in argv, 'still on Remote Control', argv)
-            eq(KF.CONTROL_FIRST[0], K.control_ask(ask), 'the ask is kept to be typed in after start')
-            eq(K.control_argv(3, 'sid', False, typed=True)[1], '--session-id', 'no ask: no prompt')
-            eq(KF.CONTROL_FIRST[0], '', 'and nothing typed in')
-            with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': ''}):
-                argv = K.control_argv(3, 'sid', False, ask=ask)
-            eq(argv[1], K.control_ask(ask), 'not under a hidden shim (a terminal): the positional prompt stays')
-            eq(KF.CONTROL_FIRST[0], '', 'and nothing is left to type')
-            with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/slot1.live'}):
-                eq(K.control_argv(3, 'sid', False, ask=ask)[1], K.control_ask(ask), "a slot's marker is not c3's shim")
-            with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/control3.live'}), \
-                    mock.patch.object(K.plat, 'WINDOWS', False):
-                eq(K.control_argv(3, 'sid', False, ask=ask)[1], '--session-id', "under c3's own shim it is typed in")
-        with mock.patch.object(K, 'remote_on', lambda: False):
-            argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
-            eq(argv[1], K.control_ask(ask), 'Remote Control off: the positional prompt stays')
-            eq(KF.CONTROL_FIRST[0], '', 'nothing to type')
+    with mock.patch.object(K, 'remote_on', lambda: True):
+        argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
+        check(ask not in argv and argv[1] == '--session-id', 'remote on + ask: no positional prompt', argv)
+        check('--remote-control' in argv, 'still on Remote Control', argv)
+        eq(KF.CONTROL_FIRST[0], K.control_ask(ask), 'the ask is kept to be typed in after start')
+        eq(K.control_argv(3, 'sid', False, typed=True)[1], '--session-id', 'no ask: no prompt')
+        eq(KF.CONTROL_FIRST[0], '', 'and nothing typed in')
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': ''}):
+            argv = K.control_argv(3, 'sid', False, ask=ask)
+        eq(argv[1], K.control_ask(ask), 'not under a hidden shim (a terminal): the positional prompt stays')
+        eq(KF.CONTROL_FIRST[0], '', 'and nothing is left to type')
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/slot1.live'}):
+            eq(K.control_argv(3, 'sid', False, ask=ask)[1], K.control_ask(ask), "a slot's marker is not c3's shim")
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/control3.live'}), \
+                mock.patch.object(K.plat, 'WINDOWS', False):
+            eq(K.control_argv(3, 'sid', False, ask=ask)[1], '--session-id', "under c3's own shim it is typed in")
+    with mock.patch.object(K, 'remote_on', lambda: False):
+        argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
+        eq(argv[1], K.control_ask(ask), 'Remote Control off: the positional prompt stays')
+        eq(KF.CONTROL_FIRST[0], '', 'nothing to type')
 
     from agent_runner import cmds
     calls = []
@@ -485,7 +484,7 @@ def test_first_message_typed_after_remote_control():
     here = os.getcwd()
     os.chdir(d)  # cmd_control's init() reads the current directory
     try:
-        with mock.patch.object(K, 'ask_waiting', lambda: ''), mock.patch.object(K, 'remote_on', lambda: True), \
+        with mock.patch.object(K, 'remote_on', lambda: True), \
                 mock.patch.object(K.plat, 'WINDOWS', False), \
                 mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': str(R.C.notes('control3.live'))}), \
                 mock.patch.object(cmds, 'backend', lambda: types.SimpleNamespace(trust=lambda root: None)), \
@@ -854,6 +853,10 @@ def test_held_resent_and_runner():
     copy = 'agent-runner: the run changed. Publish the run page copy x. This is the runner, not the person'
     for t in (start, f'Say first, in one line: "c1 starts a fresh session: x." Then: {start}', copy):
         eq(H.walk([said(t, T0), limit(T0 + 1)])['asks'], [], 'the runner\'s own message')
+    block = '\n\n<runner-waiting>\nAdded by the runner.\n- R43: Deploy?\n</runner-waiting>'  # B790: an older runner's
+    got = H.walk([said('fix the deploy' + block, T0), limit(T0 + 1)])['asks']
+    eq([(a['text'], a['norm']) for a in got], [('fix the deploy', 'fix the deploy')],
+       'an old transcript\'s waiting block is left out: only the person\'s words')
     eq(H.walk(four() + [said('hello?', RESET), answer('all five then', RESET + 1)])['asks'], [],
        'a later turn of the person\'s that was answered takes them all')
     note = {'type': 'user', 'timestamp': stamp(RESET), 'origin': {'kind': 'task-notification'},
