@@ -857,3 +857,10 @@ _Said_: History
 _On screen_: History
 _In code_: historyHTML, histRow, past_releases, NAV
 _Avoid_: Activity, archive, timeline
+
+**Question card**:
+The question a chat's last answer ends on, when it has options to pick from, shown as a card above the message box; it goes once the person answers
+_Said_: answer buttons in a chat
+_On screen_: the question and one button per option above a chat's message box
+_In code_: chat_question.ask, /live's ask
+_Avoid_: poll, prompt card, quick replies
