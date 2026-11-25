@@ -17,13 +17,16 @@ function idleWhy(snap,merging){
   if(run.paused)return 'The run is paused: no new tasks start.';
   const qs=all.filter(q=>!on(q)&&q.state!=='parked'), of=f=>qs.filter(f).length, live=all.filter(on);
   if(!qs.length)return 'The queue is empty.';
-  const ready=qs.filter(q=>q.state==='ready'||q.state==='critical'), files=ready.filter(q=>live.some(b=>filesMeet(q.files,b.files))).length, rest=ready.length-files;
+  const left=new Set(all.concat(snap.shelved||[]).map(q=>q.id)), waits=q=>q.state==='after'||q.state==='critical'&&(q.after||[]).some(t=>left.has(t));
+  const ready=qs.filter(q=>(q.state==='ready'||q.state==='critical')&&!waits(q)), files=ready.filter(q=>live.some(b=>filesMeet(q.files,b.files))).length, rel=ready.filter(q=>q.release&&!live.some(b=>filesMeet(q.files,b.files))).length, rest=ready.length-files-rel;
+  const cap=run.forced?null:(snap.usage||[]).find(u=>u.pct>=((snap.usage_max||{})[u.name]||Infinity));
   const say=(n,one,many)=>n?`${n} ${n===1?one:many}`:'';
   const parts=[say(files,'shares files with a task under way','share files with a task under way'),
-    say(of(q=>q.state==='after'),'waits for another task','wait for another task'),
+    say(of(waits),'waits for another task','wait for another task'),
     say(of(q=>q.state==='blocked'),'is blocked','are blocked'),
     say(of(q=>q.state==='held'),'is held','are held'),
     say(of(q=>q.state==='tool'),'waits for a tool or a check','wait for a tool or a check'),
-    say(rest,'is ready but not started yet','are ready but not started yet')].filter(Boolean);
-  return `Of ${qs.length} queued ${qs.length===1?'task':'tasks'}, ${parts.join(', ')}.`;
+    say(rel,'is a release, which waits for merges or your approval','are releases, which wait for merges or your approval'),
+    say(rest,...(cap?['waits for the usage limit','wait for the usage limit']:['is ready and waits for its turn, or for a task that runs alone','are ready and wait for their turn, or for a task that runs alone']))].filter(Boolean);
+  return `Of ${qs.length} queued ${qs.length===1?'task':'tasks'}, ${parts.join(', ')}.${cap&&rest?` The ${cap.name} usage is at ${cap.pct}%.`:''}`;
 }

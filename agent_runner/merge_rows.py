@@ -9,6 +9,7 @@ from agent_runner import state as S
 
 TAIL = 65536  # bytes of the run log looked through for the steps
 LINE = re.compile(r'=== \S+ (.*)')
+RIDES = re.compile(r'(\S+): merging together with (.+?) \(')
 LINKS: dict[str, str] = {}  # {task: its session's link}, while it merges: reading one goes through every slot log
 
 
@@ -29,6 +30,9 @@ def step(tid: str, lines: list[str]) -> str:
     for line in reversed(lines):
         if re.match(rf'slot \S+: {re.escape(tid)}(?![\w-])', line):
             return ''
+        if m := RIDES.match(line):  # a batch: the log names the task that leads it
+            if tid in m[2].split(', '):
+                return f'Merging together with {m[1]} (one gate run)'
         if line.startswith(tid + ': '):
             said = re.sub(r'\s+[—–]\s+', ', ', line[len(tid) + 2:]).strip()
             return said[:1].upper() + said[1:]
@@ -41,10 +45,11 @@ def link_of(tid: str, bridge) -> str:
         try:
             from agent_runner.watch import last_session
             last = last_session(tid)
-            LINKS[tid] = bridge(last[1]) if last else ''
+            if link := bridge(last[1]) if last else '':
+                LINKS[tid] = link
         except Exception:  # noqa: BLE001 - costs the link, not the snapshot
-            LINKS[tid] = ''
-    return LINKS[tid]
+            pass
+    return LINKS.get(tid, '')
 
 
 def rows(st: dict, titles: dict[str, str], bridge, links=None) -> list[dict]:

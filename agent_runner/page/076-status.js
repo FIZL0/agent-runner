@@ -12,7 +12,7 @@ function slotRow(s){
 /* an idle slot: why, and Remove a slot (the run takes the last one) */
 function idleBody(s){
   const c=controlOf('slot_remove'), n=+S.snap.slots||0, last='s'+n;
-  return `<div class="small">${esc(idleWhy(S.snap,mergeRows(S.snap).map(m=>m.id)))}</div>${c&&n>0?`${s.name!==last&&sessionOf(last)&&sessionOf(last).task?`<div class="small">Removing one takes ${esc(last)}, which finishes its task first.</div>`:''}<div class="btns"><button class="btn${ctlBusy('slot_remove')?' busy':''}" data-ctl="slot_remove">Remove a slot</button></div>`:''}`;
+  return `<div class="small">${esc(idleWhy(S.snap,mergeRows(S.snap).map(m=>m.id)))}</div>${c&&n>1?`${s.name!==last&&sessionOf(last)&&sessionOf(last).task?`<div class="small">Removing one takes ${esc(last)}, which finishes its task first.</div>`:''}<div class="btns"><button class="btn${ctlBusy('slot_remove')?' busy':''}" data-ctl="slot_remove">Remove a slot</button></div>`:''}`;
 }
 function mergeRow(m){
   const list='merging', open=taskIsOpen(list,m.id), k='merge:'+m.id;

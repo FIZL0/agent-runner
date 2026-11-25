@@ -483,6 +483,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'responses': kept_responses(),  # F425a
             'kinds': theme.kind_table(_kind_names()),  # F195b
             'merging': merge_rows.rows(st, titles, _bridge_link, links) if up else [],  # F426e
+            'usage_max': {'session': S.C.run.get('session_max'), 'week': S.C.run.get('weekly_max')},  # F426e
             'usage': usage_rows(st), 'lately': lately(titles), 'past_releases': past_releases(titles), 'chat_quiet': chat_quiet(), 'chat_model': new_chat_model(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
 

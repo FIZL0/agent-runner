@@ -31,6 +31,8 @@ def test_merge_rows(tmp: Path) -> None:
     got = M.rows(st, {'F1': 'Board page'}, lambda sid: '', {})
     eq(got[0], {'id': 'F1', 'title': 'Board page', 'step': 'Conflicts in a.py need reading, handing them to a fix session', 'link': ''}, 'its step')
     eq(got[1]['step'], '', 'nothing said since its slot: no step')
+    lines = ['slot 1: F2 finished: x', 'F1: merging together with F2, F20 (one gate run)', 'F1: the gate passed']
+    eq([M.step(t, lines) for t in ('F1', 'F2')], ['The gate passed', 'Merging together with F1 (one gate run)'], 'a batch: its riders too')
     asked = []
     M.LINKS.clear()
     with mock.patch('agent_runner.watch.last_session', side_effect=lambda t: asked.append(t) or (1, 'sid-' + t)):
@@ -58,7 +60,11 @@ def test_logic() -> None:
              ({'queue': [run, q('F2', 'ready', 'b.py'), q('F3', 'after'), q('F4', 'after'), q('B5', 'blocked'), q('C1', 'held'),
                          q('T1', 'tool'), q('D1', 'critical', 'c.md')]},
               'Of 7 queued tasks, 1 shares files with a task under way, 2 wait for another task, 1 is blocked, 1 is held, '
-              '1 waits for a tool or a check, 1 is ready but not started yet.')]
+              '1 waits for a tool or a check, 1 is ready and waits for its turn, or for a task that runs alone.'),
+             ({'queue': [run, q('F2', 'critical', after=['F3']), q('F3', 'ready'), q('V1', 'ready', release={})],
+               'usage': [{'name': 'week', 'pct': 93}], 'usage_max': {'week': 90}},
+              'Of 3 queued tasks, 1 waits for another task, 1 is a release, which waits for merges or your approval, '
+              '1 waits for the usage limit. The week usage is at 93%.')]
     eq(logic_js([['idleWhy', s, []] for s, _ in cases]), [w for _, w in cases], 'why an idle slot starts nothing')
     eq(logic_js([['idleWhy', {'queue': [q('F2', 'ready', 'a/x.js'), q('F3', 'ready', 'a/**')]}, ['F2']]]),
        ['Of 1 queued task, 1 shares files with a task under way.'], 'a merging task is under way, not queued')
