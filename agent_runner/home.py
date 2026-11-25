@@ -1000,6 +1000,10 @@ def offer_https(port: int, urls: list[str], call=None, out=print, ask=None, whic
     if not (which or shutil.which)('tailscale'):
         out(f"No https link: Talk's mic needs one. With Tailscale installed, `{line}` gives Home one.")
         return urls
+    from agent_runner import page_https
+    if page_https.not_connected():  # B815a: a saved rule is left as it is
+        out("No https link while Tailscale is not connected: Talk's mic needs one.")
+        return urls
     if ask is None and sys.stdin.isatty():
         def ask(q: str) -> bool:
             try:
