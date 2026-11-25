@@ -1,8 +1,9 @@
 """B801: `[run] on_exit`, run once each time a slot's session ends: by itself (`Run.reap`), or stopped by a drop, a
-`plan change --restart`, a take back or a cancel (`loop.halts`), or by `s!` (`loop.end_sessions`, B803). It runs beside the loop, and nothing starts in its slot until it
+`plan change --restart`, a take back or a cancel (`loop.halts`), or by `s!` (`loop.end_sessions`, B803), after which it goes on without the run (B827). It runs beside the loop, and nothing starts in its slot until it
 has ended (`Run.held`): it may free a lock by AGENT_SLOT, which the slot's next task could have just taken."""
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess as sp
@@ -13,7 +14,7 @@ from agent_runner import plat, slots, state
 
 GOING: list[tuple[int, sp.Popen, float, str, str]] = []  # (slot, process, when it is stopped, command, why then)
 SOON = 5.0  # s a halt waits for it, so a quick one ends before the worktree is reset and the task starts again
-FORCED = 60.0  # s one may still run once `s!` was asked
+FORCED = 2.0  # s a session ended by `s!` gets after SIGTERM
 
 
 def gone(pid: int, seconds: float) -> bool:
@@ -23,10 +24,10 @@ def gone(pid: int, seconds: float) -> bool:
     return not plat.alive(pid)
 
 
-def end_session(pid: int) -> None:
+def end_session(pid: int, seconds: float = 10) -> None:
     """End a halted task's session before its `on_exit` starts, which must not free what the session still uses."""
     plat.terminate(pid)
-    if gone(pid, 10):
+    if gone(pid, seconds):
         return
     for p in [*(plat.descendants(pid) if plat.WINDOWS else []), pid]:  # it ignored SIGTERM: its tree gets one
         plat.terminate(p)
@@ -39,29 +40,64 @@ def end_session(pid: int) -> None:
 
 def end_all(pids: list[int]) -> None:
     """B803: `s!`: end these sessions side by side, so ones that ignore SIGTERM cost their wait once."""
-    ending = [threading.Thread(target=end_session, args=(pid,)) for pid in pids]
+    ending = [threading.Thread(target=end_session, args=(pid, FORCED), daemon=True) for pid in pids]
     for t in ending:
         t.start()
+    end = time.monotonic() + FORCED + 3  # B827: one that will not end does not hold the exit
     for t in ending:
-        t.join()
+        t.join(max(0, end - time.monotonic()))
 
 
 def end_forced(procs: dict, orphans) -> None:
     """B803: `s!`: end every session; with an `on_exit`, they and what they left (`orphans`) are gone before it starts."""
     pids = [pid for pid, *_ in procs.values()]
-    if not state.C.run['on_exit']:
-        for pid in pids:
-            plat.terminate(pid)
-    elif pids:
-        end_all(pids)
+    end_all(pids)
+    if pids and state.C.run['on_exit']:
         orphans()
 
 
 def start_forced(procs: dict) -> None:
-    """B803: `s!`: run `on_exit` in the ended sessions' slots (a cut-off session resumes after it too)."""
+    """B803: `s!`: run `on_exit` in the ended sessions' slots (a cut-off session resumes after it too). B827: nothing
+    waits for one; the next run holds its slot while it still runs (`adopt`)."""
     for n in procs:
         start(n)
-    hurry()
+    left = [{'slot': n, 'pid': p.pid, 'start': plat.started(p.pid), 'until': time.time() + end - time.monotonic(),
+             'cmd': cmd, 'why': why} for n, p, end, cmd, why in GOING if p.poll() is None]
+    if left:
+        state.C.notes(LEFT).write_text(json.dumps(left), encoding='utf-8')
+
+
+LEFT = 'on_exit.json'  # what a stop now left running
+
+
+class Left:
+    """An `on_exit` that an earlier run started, as the Popen the rest of this module reads."""
+
+    def __init__(self, pid: int, start: str | None):
+        self.pid, self.start, self.returncode = pid, start, None
+
+    def poll(self) -> int | None:
+        if self.returncode is None and not (plat.alive(self.pid) and plat.started(self.pid) == self.start):
+            self.returncode = 0
+        return self.returncode
+
+    def wait(self, seconds: float) -> None:
+        end = time.monotonic() + seconds
+        while self.poll() is None and time.monotonic() < end:
+            time.sleep(0.05)
+
+
+def adopt() -> None:
+    """B827: a run's start: an `on_exit` a stop now left running holds its slot until it ends, or is past its time."""
+    f = state.C.notes(LEFT)
+    try:
+        for r in json.loads(f.read_text(encoding='utf-8')):
+            p = Left(r['pid'], r['start'])
+            if p.poll() is None:
+                GOING.append((r['slot'], p, time.monotonic() + r['until'] - time.time(), r['cmd'], r['why']))
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    f.unlink(missing_ok=True)
 
 
 def start(n: int) -> None:
@@ -74,14 +110,6 @@ def start(n: int) -> None:
                  stdin=sp.DEVNULL, stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=not plat.WINDOWS)
     limit = state.C.run['command_timeout']
     GOING.append((n, p, time.monotonic() + limit, cmd, f'ran past [run] command_timeout ({limit}s)'))
-
-
-def hurry() -> None:
-    """B803: `s!` waits for each `on_exit` too, but at most FORCED from the first call; asked again, it changes nothing."""
-    end = time.monotonic() + FORCED
-    for i, (n, p, was, cmd, _) in enumerate(GOING):
-        if end < was:
-            GOING[i] = (n, p, end, cmd, f'still ran {FORCED:g}s after s!')
 
 
 def busy() -> set[int]:

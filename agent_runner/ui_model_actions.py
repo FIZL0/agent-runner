@@ -10,6 +10,7 @@ def _run(argv: list[str]) -> tuple[int, str]:
     env = {k: v for k, v in os.environ.items() if k != 'AGENT_RUNNER_CONTROL'}  # F160: the person's, not the session's
     if argv[:1] and argv[0] in ('plan', 'pitch', 'sheet'):  # that started the run or the TUI
         env['AGENT_RUNNER_BY'] = 'the person in the run app'
+    env['AGENT_RUNNER_ACT_OF'] = str(os.getpid())  # B827: `stop --force` asked by the run's own page
     r = sp.run(runner_cmd() + argv, cwd=S.ROOT, env=env, stdin=sp.DEVNULL, capture_output=True, text=True, encoding='utf-8',
                errors='replace')  # F402c2: no stdin, so nothing asks on (or reads keys from) the TUI's terminal
     return r.returncode, (r.stdout + r.stderr).strip()

@@ -16,7 +16,7 @@ from agent_runner import cancel
 # from (the snapshot's `fixups`; it shows only while there are some, and '{id}' is the one picked). A control with
 # `up` False starts a run, so it shows only while none is up.
 STOP_NOW_ASK = ('Stop now ends every agent session at once (each resumes in the next run); '
-                'the merges under way finish. The run stops, its page stays. Stop now?')
+                'merges under way are ended too and made again by the next run. The run stops, its page stays. Stop now?')
 SUSPEND_ASK = ('This computer suspends once the run stops or goes idle, and its sessions stop with it. Asked again, it '
                'is taken back. Suspend?')
 SHUTDOWN_ASK = ('This computer shuts down once the run stops or goes idle, and every session on it ends. Asked again, it '
