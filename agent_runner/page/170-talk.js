@@ -10,7 +10,7 @@ const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:
 const TS_KEY='ar-talkset', TM_KEY='ar-talkmode';
 let TS=talkSetParse(store.get(TS_KEY));
 TK.starting=talkStartsRead();  // F157
-function talkSet(k,v){TS=talkSetParse(JSON.stringify({...TS,[k]:v}));store.set(TS_KEY,JSON.stringify(TS));render(true)}
+function talkSet(k,v){TS=talkSetParse(JSON.stringify({...TS,[k]:v}));store.set(TS_KEY,JSON.stringify(TS));if(k==='way')recPick();render(true)}
 const voices=()=>{try{return window.speechSynthesis?speechSynthesis.getVoices():[]}catch(e){return[]}};
 if(window.speechSynthesis&&speechSynthesis.addEventListener)speechSynthesis.addEventListener('voiceschanged',()=>{if(S.sheet==='talk')render(true)});
 /* F158: run speech: clips made on the run's machine, played one after another in one audio element (`AU.el`), which a
@@ -162,7 +162,7 @@ function talkWaitName(){
   if(!w.n){const t=talkFind('');if(t){w.n=t;talkStarts(TK.starting.filter(x=>x!==w));talkKeep(t)}}
   return w.n;
 }
-const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR);
+const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR||talkRec());
 /* F115: dictation into the message box: DK.rec the recognizer while it listens, DK.key the box it fills, DK.base
    what that box held when it started. The words go into the box to edit; nothing is sent. */
 const DK={rec:null,key:'',base:''};
@@ -205,7 +205,7 @@ function dictate(){
   rec.onend=()=>{DK.rec=null;dictShow(final||heard);render(true);
     const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus({preventScroll:true});t.setSelectionRange(t.value.length,t.value.length)}micFree(rec);soundAs('playback')};
   render(true);
-  micWhenFree(()=>{MIC.rec=rec;soundAs('play-and-record');try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}},()=>{DK.rec=null});
+  micWhenFree(()=>{MIC.rec=rec;recFree();soundAs('play-and-record');try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}},()=>{DK.rec=null});
 }
 /* F115: a chat's terminal colours are the run app's own tokens */
 const TERM={mode:''};
@@ -231,7 +231,7 @@ function talkDraw(){
   $('dock').classList.toggle('typing',talkTyping());
   if(stop)stop.hidden=!reads;
   if(!mic)return;
-  line.textContent=why||(st==='listening'?(TK.heard||(TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…')):st==='thinking'?'Thinking…':st==='speaking'?'Speaking…':(TK.note||(hold?'Hold to talk':'Tap to talk')));
+  line.textContent=why||(st==='listening'?(TK.heard||(TK.ear&&TK.ear.reading?'Getting the words…':TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…')):st==='thinking'?'Thinking…':st==='speaking'?'Speaking…':(TK.note||(hold?'Hold to talk':'Tap to talk')));
   $('micrep').hidden=!!why||!!st||!TK.report;
   const label=why||(st==='listening'?'Stop listening':hold?'Hold to talk':'Talk');
   mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':'');mic.disabled=!!why;
@@ -322,6 +322,7 @@ function listen(){
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
      and recognition hears nothing (talkSend unlocks speech). B174: a press during a reply cuts it and listens: clips
      stop here, the browser's voice right after rec.start(), or here when this listen must wait for a recognizer. */
+  if(TS.way==='recorded'&&!talkRec())recLoad();  // F161b: an engine installed meanwhile
   const cut=talkReads();TK.playing='';TK.turn=(TK.turn||0)+1;
   if(cut)shush(!MIC.rec);else unlockEnd();
   TK.note=TK.held='';if(!(TK.report&&TK.report.sound))TK.report='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
@@ -337,8 +338,9 @@ function listen(){
 function hear(t){
   if(TK.ear!==t)return;  // ended while it waited
   const cut=()=>{if(t.cut&&window.speechSynthesis)speechSynthesis.cancel();t.cut=false};  // B174
-  let rec;try{rec=new SR()}catch(e){cut();micLog(`no recognizer: ${e.message||e}`,false,t.trail);TK.report=t.trail;TK.ear=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);if(t.words)micSent(t,'no recognizer');return talkNext()}
-  MIC.rec=TK.rec=rec;t.tries++;t.err=t.msg='';t.ms=null;t.on=false;talkDraw();micLog(`try ${t.tries}`);
+  let rec;try{rec=micRec(t)}catch(e){cut();micLog(`no recognizer: ${e.message||e}`,false,t.trail);TK.report=t.trail;TK.ear=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);if(t.words)micSent(t,'no recognizer');return talkNext()}
+  if(!rec.recorded)recFree();  // F161b: one use of the mic at a time
+  t.reading=false;MIC.rec=TK.rec=rec;t.tries++;t.err=t.msg='';t.ms=null;t.on=false;talkDraw();micLog(`try ${t.tries}`);
   rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
   const log=x=>micLog(x,false,t.trail);  // a dropped one's late events stay in its own report
   const at=Date.now();let parts=[], got='';
@@ -356,6 +358,7 @@ function hear(t){
     log(`result, ${got.length} letters${!fin?'':e.results[e.results.length-1].isFinal?', final':`, ${fin} final`}`);if(TK.ear===t){TK.heard=(t.words+' '+got).trim();render(true)}};
   rec.onerror=e=>{t.err=e.error||'';t.msg=e.message||'';t.ms=Date.now()-at;log(`error ${t.err}${t.msg?': '+t.msg:''}`);if(TK.ear!==t)return;
     if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type below.',true);
+    else if(e.error==='recorded')toast(e.message+'.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
   rec.onend=()=>{
     log('end');if(t.ms==null)t.ms=Date.now()-at;
@@ -373,11 +376,13 @@ function hear(t){
     if(said&&go&&!TK.hold&&t.mode!=='auto'&&(!t.err||t.err==='no-speech'||/no speech/i.test(t.msg))){
       log('a pause: listens on');t.longer=false;wait()}
     const waits=go&&!TK.hold&&Date.now()<t.until&&(quiet||(t.err==='aborted'&&t.fails<2));
+    const fall=go&&!!rec.falls;if(fall)t.noRec=true;  // F161b: no recording: the browser's recognition hears this listen
     const more=on&&t.more;
     if(more){t.more=t.stopped=false;t.tries=t.fails=0}
     micFree(rec);
     if(again)log('still held: starts again');
-    if(more||((again||waits)&&(said||t.ms>=1000)))micWhenFree(()=>hear(t));  // B216: at once after words: what is said meanwhile is lost
+    if(fall)micWhenFree(()=>hear(t));
+    else if(more||((again||waits)&&(said||t.ms>=1000)))micWhenFree(()=>hear(t));  // B216: at once after words: what is said meanwhile is lost
     else if(again||waits||retry)setTimeout(()=>{if(TK.ear===t)micWhenFree(()=>hear(t))},MIC_RETRY);
     else earEnd(t);
   };
@@ -397,7 +402,7 @@ function earEnd(t){
   if(t.words)PAST.words++;else if(t.tries)PAST.none++;  // B162b1
   if(t.words){const sent=micSent(t,t.stopped?t.by:t.err?`error ${t.err}`:'the recognizer');talkNext();return sent}  // B174: what waited is read now
   if(t.tries&&!(t.mode==='auto'&&(!t.err||t.err==='no-speech')))TK.report=t.trail;  // the Copy mic report button
-  TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.was,t.msg):'';
+  TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.err==='recorded'?t.msg:t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.was,t.msg):'';
   render(true);talkNext();
 }
 /* the person ends the listen: the recognizer gives its last words, or a start still waiting is off */
@@ -406,7 +411,7 @@ function micStop(by){
   t.stopped=true;t.more=false;t.by=by;micLog(`stop by ${by}`);
   const rec=TK.rec;if(!rec)return earEnd(t);
   rec.stop();
-  if(TK.rec===rec)setTimeout(()=>{if(TK.rec===rec&&TK.ear===t&&t.stopped){micLog('no end came: ended by force');micWhenFree(()=>{})}},MIC_END);  // B162: else the listen never ends
+  if(TK.rec===rec&&!rec.recorded)setTimeout(()=>{if(TK.rec===rec&&TK.ear===t&&t.stopped){micLog('no end came: ended by force');micWhenFree(()=>{})}},MIC_END);  // B162: else the listen never ends
 }
 /* B162: the mic report to the clipboard, or shown to copy by hand where that is refused */
 async function micCopy(){

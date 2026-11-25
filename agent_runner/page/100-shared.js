@@ -19,6 +19,7 @@ const SHEETS={
       <label class="it setrow"><span class="grow">Voice</span><select class="fld" data-ts="voice">${voiceOpts()}${vs.map(v=>`<option value="${esc(v.name)}" ${t.voice===v.name?'selected':''}>${esc(v.name)}${v.lang?` (${esc(v.lang)})`:''}</option>`).join('')}${runVoices().length?'</optgroup>':''}</select></label>
       ${AU.got&&!runVoices().length?'<div class="small">The run\'s machine has no voice installed, so this browser reads. Ask a chat to install one.</div>':''}
       <label class="it setrow"><span class="grow">Mic</span><select class="fld" data-ts="mic"><option value="tap" ${t.mic==='tap'?'selected':''}>Tap to start and stop</option><option value="hold" ${t.mic==='hold'?'selected':''}>Hold to talk</option></select></label>
+      ${recRow()}
       <label class="it setrow"><span class="grow">Auto listen<span class="small" style="display:block">Listens again once a reply was read; stops after one silent turn.</span></span><input type="checkbox" role="switch" class="sw" data-ts="auto" ${t.auto?'checked':''}></label>
       <div class="btns">${TK.trail?'<button class="btn" data-micreport>Copy mic report</button>':''}<button class="btn" data-sheet="mictest">Mic test…</button><button class="btn" data-closesheet>Done</button></div>`;
   },

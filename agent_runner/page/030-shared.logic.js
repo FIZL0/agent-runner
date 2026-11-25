@@ -111,10 +111,10 @@ function needChatAsk(n){const os=needInputs(n).length?[]:((n&&n.answers)||[]).ma
   return `This chat is about ${n.id}${n.title?` '${n.title}'`:''}, which needs me. What was put to me:\n\n${n.ask||n.what||''}${os.length?`\n\nPossible answers:\n${os.map(o=>'- '+o).join('\n')}`:''}`}
 /* F124: Talk's settings, kept per browser: read (read replies aloud), voice ('' the run's default, else the system's own; F158: an id of a run voice, 'system', or a
    device voice's name), mic 'tap' or 'hold',
-   auto (listen again once a reply was read) */
-const TALK_SET={read:true,voice:'',mic:'tap',auto:false};
+   auto (listen again once a reply was read), way: how speech becomes words, 'browser' or 'recorded' (F161b) */
+const TALK_SET={read:true,voice:'',mic:'tap',auto:false,way:'browser'};
 function talkSetParse(text){let o;try{o=JSON.parse(text||'{}')}catch(e){o={}}
   if(!o||typeof o!=='object')o={};
-  return{read:o.read!==false,voice:typeof o.voice==='string'?o.voice:'',mic:o.mic==='hold'?'hold':'tap',auto:o.auto===true}}
+  return{read:o.read!==false,voice:typeof o.voice==='string'?o.voice:'',mic:o.mic==='hold'?'hold':'tap',auto:o.auto===true,way:o.way==='recorded'?'recorded':'browser'}}
 /* F189b: what a fold shows, in one box that its button reveals; k: its key */
 const foldIn=(k,h)=>`<div class="foldin" data-k="fold:${E_(k)}">${h}</div>`;
