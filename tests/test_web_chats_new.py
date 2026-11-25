@@ -365,6 +365,8 @@ out.first = see(screen(words(5)));
 out.work = see(screen(words(5), spin)); out.grow = see(screen(words(20), spin)); out.done = see(screen(words(20)));
 out.over = see(screen(words(30), spin)); out.overDone = see(screen(words(30)));
 out.closed = see(screen(words(37), spin)); out.full = see(screen(words(39), ['x']));
+out.todos = see(screen(words(5), ['✻ Running all the tests… (12s)', ...Array.from({length: 12}, (x, i) => '  ☐ step ' + i), '']));
+out.named = see(screen(words(33), ['✻ Running tests… (12s)', '']));
 out.noted = see(screen(words(5), ['  Session renamed to: x', '']));
 out.code = see([...words(30), ...Array(5).fill(''), 'x', 'y', 'z', ...Array(1).fill(''), '', RULE, ...foot]);
 out.rate = see(screen(words(5), ['● How is Claude doing?', '  1: Bad  2: Fine', '']));
@@ -389,6 +391,7 @@ def test_rest_b786(tmp: Path) -> None:
     eq((o.get('work'), o.get('grow'), o.get('done')), ([60, 5, 0, 0, 0], [60, 20, 0, 0, 1], [60, 0, 0, 0, 0]), 'working, more words, at rest again: it stays there, and nothing is to pull')
     eq((o.get('over'), o.get('overDone')), ([8, 30, 0, 52, 1], [8, 0, 0, 52, 0]), 'words that no longer fit end on the box, the working line there or not')
     eq((o.get('closed'), o.get('full')[0]), ([-192, 0, 0, 124, 1], -192), 'the gap closes: all of it ends on the box, by a glide')
+    eq((o.get('todos')[:2], o.get('named')[1]), ([60, 5], 33), 'a list under the working line, a name of several words')
     eq(o.get('noted')[:2], [60, 5], 'a notice alone under the gap')
     eq((o.get('code')[1], o.get('rate')[1], o.get('older')[1]), (0, 0, 0), 'blank lines in an answer, a survey to answer, older lines: as a full one')
     eq(o.get('reading')[1], 0, 'while the history is read nothing glides')

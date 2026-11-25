@@ -76,7 +76,7 @@ function feedSpot(o){
    work: only a gap over the agent CLI's working line counts, or one no answer has */
 function feedGap(lines,top,work){
   for(let y=top-1,blank=0,seen=0;y>=0;y--){
-    if(lines[y].trim()){if(seen&&blank>3&&(!work||blank>7||lines.slice(y+1,top).some(l=>/^\S \S+… ?(\(|$)/.test(l))))return y+1;if(top-y>8)return 0;seen=1;blank=0}else blank++;
+    if(lines[y].trim()){if(seen&&blank>3&&(!work||blank>7||lines.slice(y+1,top).some(l=>/^\S [^…]+… ?(\(|$)/.test(l))))return y+1;if(top-y>(work?24:8))return 0;seen=1;blank=0}else blank++;
   }
   return 0;
 }
