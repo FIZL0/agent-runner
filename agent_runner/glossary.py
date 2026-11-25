@@ -257,8 +257,9 @@ def _outline(text: str) -> tuple[dict, dict]:
             if not closed:
                 sections[path].append('')
         elif line.startswith('#'):
-            if not (m := re.match(r'(#{1,6})\s+\S', line)):
-                raise CannotJoin(f'line {n} is no heading')
+            m = re.match(r'(#{1,6})\s+\S', line)
+            if not m or body is not None:  # right under an entry's line it may be part of that entry
+                raise CannotJoin(f'line {n} is no heading of its own')
             path = (*(h for h in path if len(h) - len(h.lstrip('#')) < len(m.group(1))), line)
             if path in sections:
                 raise CannotJoin(f'the section {line!r} is there twice')

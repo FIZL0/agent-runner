@@ -47,7 +47,8 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
      both sides' lines;
    - a conflict in the glossary file (`[plan] glossary`) is joined by term entry, not by line, with no
      setting: terms added on either side are both kept, an entry changed on one side takes that side; one
-     changed differently on both sides, or a side that does not parse, goes to a fix session;
+     changed differently on both sides, or a side that does not parse, goes to a fix session. As with
+     `joinable`, one other conflicted file that cannot be joined sends the whole conflict there;
    - any other conflict goes to a one-shot fix session (`claude -p`);
    - the gate runs again if the merged code differs from what `done` tested.
    Only then is the main checkout moved to the tested merge. That takes seconds, it never stashes, and it

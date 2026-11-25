@@ -38,7 +38,8 @@ def glossary_join(f: str, tid: str, cwd: Path) -> str | None:
     """The glossary `f` with both sides of its conflict joined by entry (`glossary.join3`), or None to refuse: an
     entry both sides changed differently, a side that does not parse, or one that has no such file any more."""
     base, ours, theirs = (git('show', f':{stage}:{f}', cwd=cwd) for stage in (1, 2, 3))
-    if ours.returncode or theirs.returncode:  # removed on one side (no base is fine: both sides started one)
+    if ours.returncode or theirs.returncode:  # no base is fine: both sides started one
+        log(f'{tid}: the conflict in {f} is not joined: one side removed the file')
         return None
     try:
         return glossary.join3('' if base.returncode else base.stdout, ours.stdout, theirs.stdout)

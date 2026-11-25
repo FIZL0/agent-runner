@@ -135,6 +135,7 @@ def test_unparseable(tmp: Path):
                       ('a term with no definition', BASE + '\n**Bare**:\n'),
                       ('an entry on one line', BASE + '\n**Take**: to take.\n'),
                       ('a section twice', BASE + '\n### Run\n\n' + entry('Take')),
+                      ('a # line in an entry', BASE.replace('What Run is.', 'What Run is.\n# odd')),
                       ('a code fence', BASE.replace('What Run is.', '```')),
                       ('bytes that are no text', BASE.replace('What Run is.', '�'))):
         refused(BASE, bad, BASE, f'{what} on our side')
