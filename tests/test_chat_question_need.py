@@ -148,7 +148,7 @@ def test_page_needs_you(tmp: Path) -> None:
       S.ob[0].state = 'failed'; render(); say(what()); S.ob = []; render();
       pick(0); outbox('run_control', {key: 'need_yes'}, {need: 'F9'}); await pass(6000); say(sent.map(x => x.name), toasts.length);
       S.ob = []; FD.live = null; live(need); await pass(600); chat(); say(what());
-      type('why?'); gone(); live(null); await clear(); say(what(), QN.kept.get('c1').need);
+      type('why?'); gone(); live(need); await clear(); say(what(), FD.live.ask.need);
       FD.live = {ok: true, ask: null, answered: ['u1']}; questionSee('c1'); render(); say(what());
       QN.mark.set('c1', need); questionSee('c1'); render(); say(what());""")
     if out is None:
@@ -157,7 +157,7 @@ def test_page_needs_you(tmp: Path) -> None:
     eq(out[1], ['card'], 'Later answers nothing')
     eq(out[3], [['run_control', 'run_control'], 1], 'and the held option is not sent as well')
     eq(out[4:6], [['mark'], ['card', 'F9']], 'talked about, it is still the item\'s')
-    eq(out[6:], [[''], ['']], 'answered there, the kept card and a mark go too')
+    eq(out[6:], [[''], ['']], 'answered there, the card and a mark go too')
 
 
 if __name__ == '__main__':

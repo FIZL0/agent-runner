@@ -1,13 +1,13 @@
 /* --- F192a1: the question card (questionHTML and the rest in the logic script) -----------------------------------
    held: chat -> the answer that waits out its hold {id, name, at, timer}; sent: chat -> the last one that went {id, name,
    cid}; back: when an Undo brought a card back. In memory only: a reload in the hold sends nothing, the card is there again.
-   F192a2: mark: chat -> the question marked above its box (over a reload too, as its draft is); kept: chat -> the question
-   talked about, its card back though /live no longer says it (in memory only); marked: when the mark came
+   F192a2: mark: chat -> the question marked above its box (over a reload too, as its draft is); marked: when the
+   mark came. F430: a question talked about stays /live's ask, so its card is back on its own, on every device
    F192a3: an ask with `need` is also that item under Needs you: its answer settles the item, and one given there takes the
-   card, the mark and what was kept (/live's `answered`) */
+   card and the mark (/live's `answered`) */
 const QMARK_KEY='ar-qmark:'+(HKEY||document.title);
-const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),kept:new Map(),marked:0};
-const questionAsk=n=>FD.n===n?questionNow(FD.live,QN.kept.get(n)):null;
+const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0};
+const questionAsk=n=>FD.n===n&&FD.live&&FD.live.ask||null;
 const questionSpoken=n=>questionSpoke(n,S.ob,(S.sent[n]&&S.sent[n].pending)||[],Date.now()-((S.sent[n]||{}).at||0));
 /* an answer to it, here or under Needs you, is on its way */
 const questionSettling=ask=>!!(ask&&ask.need)&&S.ob.some(x=>x.need===ask.need&&x.state!=='failed'&&(x.name==='question_answer'||x.name==='answer'||/^need_(yes|no|answer\d+|drop)$/.test((x.args||{}).key||'')));  // not Later
@@ -53,10 +53,8 @@ function questionUndo(n){
 /* /live was read: an answer held to a question that is gone (answered elsewhere or in words, the chat went on) is not sent */
 function questionSee(n){
   const live=FD.n===n&&FD.live, over=live&&live.answered||[];
-  if(over.includes((QN.kept.get(n)||{}).id))QN.kept.delete(n);
   if(over.includes((QN.mark.get(n)||{}).id))questionMark(n,null);
-  const kept=QN.kept.get(n);if(kept&&live&&live.ask&&live.ask.id!==kept.id)QN.kept.delete(n);  // another is asked
-  const h=QN.held.get(n);if(!h||!questionSpoken(n)&&!questionSettling(h)&&(FD.n!==n||questionOpen(FD.live&&{...FD.live,ask:questionAsk(n)},h.id)))return;
+  const h=QN.held.get(n);if(!h||!questionSpoken(n)&&!questionSettling(h)&&(FD.n!==n||questionOpen(FD.live,h.id)))return;
   clearTimeout(h.timer);QN.held.delete(n);toast(`“${h.name}” was not sent: the question is no longer open`,true);
 }
 async function questionSend(n,h){
@@ -95,15 +93,10 @@ function questionUnchat(n){
   questionMark(n,null);QN.back=Date.now();questionDraw();
 }
 /* a message from chat n's box goes (send()): with the question marked, it is about it, and the card comes back; else it
-   answers a question that was talked about, as any typed message does. go(words, more) puts it in the outbox */
+   answers the question, as any typed message does. go(words, more) puts it in the outbox */
 function questionGo(n,text,go){
   const mark=QN.mark.get(n);
-  if(mark&&(FD.n!==n||questionStill(FD.live,QN.kept.get(n),mark))){const ask=questionAsk(n);QN.kept.set(n,ask&&ask.id===mark.id?ask:mark)}  // as it is now: filed since, it has its need
-  if(!mark||!questionWraps(text)){
-    const kept=QN.kept.get(n), at=Date.now(), it=go(text,{});
-    if(kept&&questionWraps(text)){QN.sent.set(n,{id:kept.id,name:'',cid:it.cid,at});questionDraw()}
-    return;
-  }
+  if(!mark||!questionWraps(text)){go(text,{});return}
   const moved=questionMove(n,false);
   questionMark(n,null);QN.back=Date.now();
   go(questionAbout(mark,text),{about:mark});

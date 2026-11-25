@@ -61,7 +61,12 @@ TAG = re.compile(r'</?pasted_content[^>]*>\n?')  # Claude Code wraps a paste (ea
 
 
 def queued_in(rows, since: float = 0) -> int:
-    """F190b: how many sent messages transcript entries `rows` leave queued. Claude Code writes a queue-operation entry for
+    """F190b: how many sent messages transcript entries `rows` leave queued (`queue_in`)."""
+    return len(queue_in(rows, since))
+
+
+def queue_in(rows, since: float = 0) -> list:
+    """The sent messages transcript entries `rows` leave queued (None: one with images). Claude Code writes a queue-operation entry for
     each step: enqueue (its content; none for a message with images), dequeue (the oldest goes in as the next turn),
     remove (one went into the turn under way) and popAll (what can be edited is back in the input). An entry before
     `since` (epoch s) is of an earlier process, whose queue ended with it."""
@@ -82,7 +87,7 @@ def queued_in(rows, since: float = 0) -> int:
             line.remove(c)
         elif op == 'popAll':
             line = [x for x in line if not sent(x)]
-    return sum(map(sent, line))
+    return [x for x in line if sent(x)]
 
 
 def queued(rec: dict, ops) -> int:
@@ -92,6 +97,14 @@ def queued(rec: dict, ops) -> int:
     if rec.get('harness'):
         return int(rec.get('queued') or 0)
     return queued_in(ops, (rec.get('startedAt') or 0) / 1000)
+
+
+def queue_answers(rec: dict, ops) -> bool:
+    """F430: does what is queued in `rec`'s process answer its chat's question: any words not about it? The harness loop
+    counts its queue and does not say it, so there any do."""
+    if not queued(rec, ops):
+        return False
+    return bool(rec.get('harness')) or not all(map(chat_question.is_about, queue_in(ops, (rec.get('startedAt') or 0) / 1000)))
 
 
 def queued_now(name: str) -> int:
@@ -194,7 +207,7 @@ def live(name: str) -> dict:
     if rec.get('status') == 'idle':  # nothing of it runs any more, whatever the transcript missed
         run = [t for t in run if t['kind'] == 'agent']
     waits = queued(rec, rows[0]['ops'] if rows else ())
-    ask = rows[0]['ask'] if rows and not waits else None  # queued words: the person has spoken since
+    ask = rows[0]['ask'] if rows and not queue_answers(rec, rows[0]['ops']) else None  # queued words: the person has spoken since
     return {'ok': True, **({'harness': True} if rec.get('harness') else {}), 'status': str(rec.get('status') or ''), 'since': (rec.get('statusUpdatedAt') or 0) / 1000,
             'mode': mode, **chat_question.joined(ask, U.session_sid(name) if name[0] == 'c' and U.S.C else ''), 'queued': waits, 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
                                      **({'tail': output_tail(t['out'])} if t.get('out') else {})} for t in run + done]}

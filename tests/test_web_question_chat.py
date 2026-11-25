@@ -56,13 +56,13 @@ def test_mark(tmp: Path) -> None:
 def test_send(tmp: Path) -> None:
     out = run(tmp, """
       live(ASK); chat(); type('why?'); say(sent[0].args, sent[0].about.id, what(), tab);
-      gone(); say(what()); live(null); say(what()); await clear(); say(what());
+      gone(); say(what()); live(ASK); say(what()); await clear(); say(what());
       pick(1); say(what()); await pass(6000); say(sent.map(x => x.args.text), toasts.length, what());
       gone(); await clear(); live(null); say(what()); live({...ASK, id: 'u2'}); say(what());""")
     if out is None:
         return
     eq(out[0], [{'text': ABOUT + 'why?', 'to': 'c1'}, 'u1', 'card', ''], 'the words go as a message about the question, and the card is back')
-    eq([x[0] for x in out[1:4]], ['card'] * 3, 'it stays: sent, in the chat, and once /live says no question')
+    eq([x[0] for x in out[1:4]], ['card'] * 3, 'it stays: sent, in the chat, and while /live says it')
     eq(out[4], ['held'], 'an option of it can be picked then')
     eq(out[5], [[ABOUT + 'why?', 'Small & flat'], 0, ''], 'and goes as the answer')
     eq([x[0] for x in out[6:]], ['', 'card'], 'then the card is gone, until another question')
@@ -70,7 +70,7 @@ def test_send(tmp: Path) -> None:
 
 def test_other_question(tmp: Path) -> None:
     out = run(tmp, """
-      live(ASK); chat(); type('why?'); gone(); live(null); live({...ASK, id: 'u2', question: 'Second?'}); say(dock);
+      live(ASK); chat(); type('why?'); gone(); live({...ASK, id: 'u2', question: 'Second?'}); say(dock);
       live(null); say(what());
       live(ASK); await pass(600); chat(); live(null); type('and?'); gone(); await clear(); say(what(), sent.at(-1).args.text);""")
     if out is None:
@@ -82,8 +82,8 @@ def test_other_question(tmp: Path) -> None:
 
 def test_typed(tmp: Path) -> None:
     out = run(tmp, """
-      live(ASK); chat(); type('why?'); gone(); live(null); await clear();
-      type('blue'); say(what(), sent.at(-1).args.text); gone(); await clear(); say(what());""")
+      live(ASK); chat(); type('why?'); gone(); live(ASK); await clear();
+      type('blue'); say(what(), sent.at(-1).args.text); gone(); live(null); await clear(); say(what());""")
     if out is None:
         return
     eq(out, [['', 'blue'], ['']], 'a message typed with no mark is the answer, as before, and the card stays gone')
@@ -92,7 +92,7 @@ def test_typed(tmp: Path) -> None:
 def test_command(tmp: Path) -> None:
     out = run(tmp, """
       live(ASK); chat(); type('/compact'); say(sent[0].args.text, what());
-      gone(); live(null); await clear(); say(what()); type('why?'); gone(); await clear(); say(what());
+      gone(); await clear(); say(what()); type('why?'); gone(); await clear(); say(what());
       await pass(600); chat(); type('/etc/hosts is it?'); say(sent.at(-1).args.text); await pass(600); chat(); type('!important'); say(sent.at(-1).args.text);""")
     if out is None:
         return
@@ -108,6 +108,18 @@ def test_reload(tmp: Path) -> None:
     eq(out, [['mark'], [ABOUT + 'why?'], [[]]], 'a reload keeps the mark, as it keeps the draft; a broken one is left out')
 
 
+def test_talked_about(tmp: Path) -> None:
+    """F430: /live is the one word on it."""
+    out = run(tmp, """
+      say(what()); live(ASK); say(what()); pick(0); await pass(6000); say(sent.map(x => x.args.text));
+      S.ob = []; S.sent = {}; QN.sent.clear(); live(ASK); chat(); type('why?'); gone(); live(ASK); await clear(); say(what());
+      live(null); say(what()); await pass(20000); say(what());""")
+    if out is None:
+        return
+    eq(out[:3], [[''], ['card'], [['Full']]], 'a page just loaded has the card from /live, and its option is sent')
+    eq(out[3:], [['card'], [''], ['']], 'talked about here and answered elsewhere: the card goes')
+
+
 def test_called(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     send = page[page.index('async function send(by)'):]
@@ -117,4 +129,4 @@ def test_called(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(f) for f in (test_mark, test_send, test_other_question, test_typed, test_command, test_reload, test_called)]))
+    raise SystemExit(report([in_tmp(f) for f in (test_mark, test_send, test_other_question, test_typed, test_command, test_reload, test_talked_about, test_called)]))

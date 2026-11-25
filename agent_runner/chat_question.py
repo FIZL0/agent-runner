@@ -1,4 +1,5 @@
-"""F192a: the question a chat waits on, for the question card: the DECIDE line with options that its last answer ends on.
+"""F192a: the question a chat waits on, for the question card: the DECIDE line with options that its last answer ends on,
+or, talked about since (F430), an earlier one.
 
 Read from the session's transcript, as the run reads it to file the question under Needs you (`control.control_state`,
 `plan.decide_question`), so the card and Needs you ask the same words."""
@@ -61,16 +62,64 @@ def joined(ask: dict | None, sid: str) -> dict:
     return {'ask': ask, 'answered': [i for i, tid in ids.items() if not tid]}
 
 
+# F430: how a message about the question (Chat about this) begins, as 024-questionchat.logic.js words it
+ABOUT, NOT = 'About your question “', '” (not my answer): '
+PASTE = re.compile(r'<pasted_content[^>]*>\n?(.*?)</pasted_content[^>]*>\n?', re.S)  # Claude Code wraps a paste (each message typed in is one) in it
+
+
+def is_about(text) -> bool:
+    """Are the words `text` of one message about the question, not its answer? Every message in them, when Claude Code
+    put several together."""
+    def one(t: str) -> bool:
+        return t.startswith(ABOUT) and NOT in t
+    if not isinstance(text, str):
+        return False
+    if one(text.lstrip()):
+        return True
+    parts = [t.strip() for t in PASTE.split(text) if t.strip()]
+    return bool(parts) and all(map(one, parts))
+
+
+def _about(d: dict) -> bool:
+    """`is_about` of a person's transcript entry; an image in it changes nothing."""
+    c = (d.get('message') or {}).get('content')
+    texts = [c] if isinstance(c, str) else [x.get('text') for x in c or () if isinstance(x, dict) and x.get('type') == 'text']
+    texts = [t for t in texts if isinstance(t, str) and t.strip() and not t.startswith('[Image')]
+    return bool(texts) and all(map(is_about, texts))
+
+
 def ask(rows) -> dict | None:
-    """`ask_of` the last answer in transcript entries `rows`; None when the person has spoken since, or Claude's turn
-    goes on after it (a tool call)."""
+    """The question transcript entries `rows` leave open; None when the person has spoken since, or Claude's turn goes on
+    after it (a tool call). F430: messages about it (`is_about`) and Claude's replies to them leave it open, until a reply
+    ends on another DECIDE line."""
+    from agent_runner.control import message_text, person_turn
+    from agent_runner.feed import queued_message
+    parts: list[list] = [[]]  # what the person's last other words began, and then each message about the question
+    for d in rows:
+        if not isinstance(d, dict) or d.get('isSidechain'):
+            continue
+        d = queued_message(d) or d  # typed during a turn
+        if d.get('type') == 'user' and person_turn(d):
+            if _about(d):
+                parts.append([])
+            elif not (len(parts) > 1 and message_text(d).startswith('[Request interrupted')):  # a reply cut short answers nothing
+                parts = [[]]
+        parts[-1].append(d)
+    out = _ends_on(parts[0])[1]
+    for part in parts[1:]:
+        asks, new = _ends_on(part)
+        out = new if asks else out
+    return out
+
+
+def _ends_on(rows: list[dict]) -> tuple[bool, dict | None]:
+    """Whether the last answer in `rows` ends on a DECIDE line, and its `ask_of`."""
     from agent_runner.control import control_state, message_text
-    rows = [d for d in rows if isinstance(d, dict) and not d.get('isSidechain')]
     st = control_state(rows)
     if st['last'] != 'claude':
-        return None
+        return False, None
     said = next((d for d in reversed(rows) if d.get('type') == 'assistant' and message_text(d).strip()), {})
     items = (said.get('message') or {}).get('content')
     if any(isinstance(x, dict) and x.get('type') == 'tool_use' for x in (items if isinstance(items, list) else ())):
-        return None  # a call in the same entry; one after it is `control_state`'s to see
-    return ask_of(st['text'], str(said.get('uuid') or ''))
+        return False, None  # a call in the same entry; one after it is `control_state`'s to see
+    return bool(decide_question(st['text'])), ask_of(st['text'], str(said.get('uuid') or ''))

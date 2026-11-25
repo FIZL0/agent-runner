@@ -8,9 +8,9 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from _check import eq, report  # noqa: F401 (sets the suite's own environment first)
+from _check import check, eq, report  # noqa: F401 (sets the suite's own environment first)
 from _ui_model import fake_run, in_tmp
-from agent_runner import chat_question as Q, session_now as N
+from agent_runner import chat_question as Q, session_now as N, web as W
 
 ASK = 'Two ways to draw it.\n\nDECIDE: Which look? [Small / Full (recommended) / No change]'
 AT = '2026-11-24T10:00:00.000Z'
@@ -99,5 +99,82 @@ def test_live(tmp: Path) -> None:
         eq(N.live('c9')['ask'], None, 'no such session')
 
 
+ABOUT = 'About your question “Which look?” (not my answer): '
+
+
+def queued(text: str) -> dict:
+    return {'type': 'attachment', 'uuid': 'q', 'timestamp': AT,
+            'attachment': {'type': 'queued_command', 'prompt': text, 'commandMode': 'prompt'}}
+
+
+def test_about(tmp: Path) -> None:
+    """F430: messages about the question, and the replies to them, leave it open."""
+    fake_run(tmp)
+    q, why = say(ASK), you(ABOUT + 'why?')
+    stop = you('[Request interrupted by user]')
+    for what, rows in (
+            ('the message', [q, why]),
+            ('the reply under way', [q, why, tool()]),
+            ('the reply', [q, why, tool(), say('Because.', 'u3')]),
+            ('more of them', [q, why, say('Because.', 'u3'), you(ABOUT + 'and?'), say('So.', 'u4')]),
+            ('typed in as a paste', [q, you(f'\n\n<pasted_content id="1a2b">\n{ABOUT}why?\n</pasted_content id="1a2b">\n')]),
+            ('typed during the reply', [q, why, tool(), queued(ABOUT + 'and?'), say('So.', 'u4')]),
+            ('a reply that was stopped', [q, why, tool(), stop]),
+            ('a slash command', [q, why, say('Because.', 'u3'), you('<command-name>/compact</command-name>')])):
+        eq((Q.ask(rows) or {}).get('id'), 'u1', f'still asked after {what}')
+    for what, rows in (
+            ('an answer in other words', [q, why, say('Because.', 'u3'), you('blue')]),
+            ('one typed during the reply', [q, why, tool(), queued('blue'), say('Blue then.', 'u3')]),
+            ('an answer, then words about it', [q, you('Full'), say('Done.', 'u3'), why, say('Because.', 'u4')]),
+            ('a paste beside other words', [q, you(f'blue\n<pasted_content id="1">\n{ABOUT}why?\n</pasted_content id="1">\n')]),
+            ('the words later in a message', [q, you('I wrote: ' + ABOUT + 'why?')]),
+            ('only the first half of them', [q, you('About your question “Which look?”: Full')]),
+            ('a question with no options', [q, why, say('DECIDE: What should it be called?', 'u3')])):
+        eq(Q.ask(rows), None, f'no longer asked after {what}')
+    later = say('DECIDE: Which size? [Big / Little]', 'u5')
+    eq(Q.ask([q, why, later])['id'], 'u5', 'another question takes its place')
+    eq(Q.ask([q, why, later, you(ABOUT + 'and?'), say('So.', 'u6')])['id'], 'u5', 'and stays in it')
+
+
+def test_about_live(tmp: Path) -> None:
+    """F430: /live says it as the messages go in; a read of the file anew (a reload, another device) says the same."""
+    fake_run(tmp)
+    f = tmp / 't.jsonl'
+
+    def add(*rows: dict) -> None:
+        with open(f, 'a', encoding='utf-8') as o:
+            o.writelines(json.dumps(d) + '\n' for d in rows)
+
+    def op(what: str, text: str = '') -> dict:
+        return {'type': 'queue-operation', 'operation': what, 'timestamp': AT, **({'content': text} if text else {})}
+
+    def asked() -> tuple:
+        N._TASKS.clear()
+        d = N.live('c2')
+        return (d['ask'] or {}).get('id'), d['queued']
+    with mock.patch.object(N, 'transcript', lambda n, r: str(f)):
+        with mock.patch.object(N, 'record', lambda n: {'status': 'busy'}):
+            add(say(ASK), you(ABOUT + 'why?'), tool(), op('enqueue', ABOUT + 'and?'))
+            eq(asked(), ('u1', 1), 'words about it that are queued leave it open')
+            add(op('enqueue', 'blue'))
+            eq(asked(), (None, 2), 'an answer queued after them does not')
+            add(op('remove', 'blue'), op('dequeue'))
+            eq(asked(), ('u1', 0), 'the queue is empty: still asked')
+        with mock.patch.object(N, 'record', lambda n: {'status': 'busy', 'harness': True, 'queued': 1}):
+            eq(asked(), (None, 1), 'the harness loop does not say what is queued: taken as an answer')
+        with mock.patch.object(N, 'record', lambda n: {'status': 'idle'}):
+            add(say('Because.', 'u3'))
+            eq(asked(), ('u1', 0), 'the reply leaves it open')
+            add(you('blue'), say('Blue then.', 'u4'))
+            eq(asked(), (None, 0), 'answered in the terminal')
+
+
+def test_about_words(tmp: Path) -> None:
+    fake_run(tmp)
+    js = (W.PAGE_DIR / '024-questionchat.logic.js').read_text(encoding='utf-8')
+    check(f"QUESTION_ABOUT='{Q.ABOUT}', QUESTION_NOT='{Q.NOT}'" in js, 'the page words it as /live reads it')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_options), in_tmp(test_none), in_tmp(test_subagent), in_tmp(test_live)]))
+    raise SystemExit(report([in_tmp(test_options), in_tmp(test_none), in_tmp(test_subagent), in_tmp(test_live),
+                             in_tmp(test_about), in_tmp(test_about_live), in_tmp(test_about_words)]))
