@@ -417,7 +417,7 @@ words never show. `/terminal/NAME` says
   mouse press in it gives it the keyboard, and ttyd's focus on connect never does. A file dropped on it is attached. On
   a phone a touch layer over it scrolls it on a drag (a wheel steps it, and it glides; a drag scrolls the history first,
   while it stands in), a tap clicks in it without
-  opening the keyboard, and a long press (or the key row's Text) opens a sheet with the screen's text to select and
+  opening the keyboard, a long press selects the word under the finger, at the live end too (no sheet; where no history can be drawn it does nothing), and the key row's Text opens a sheet with the screen's text to select and
   copy; a horizontal swipe still opens the drawer. The message box's keyboard button folds out the key row (Esc, Tab, ↑,
   Enter, Ctrl-C, Text, ←, ↓, →) for the session's menus; touch only. The session's text is 12px on touch and 13px
   otherwise, drawn by ttyd's DOM renderer (its canvas is wrong at 2x). The terminal page is gzip-compressed (about 196 KB,
