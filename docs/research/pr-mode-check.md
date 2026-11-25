@@ -20,8 +20,9 @@ repo. PR mode is refused at start, and the refusal names the cause.
 2. **Other login, RyanAHayden.**
    - Reading rulesets and branch protection of its private clay-plan: the same 403.
    - Reading rulesets of its public iFizBox: `[]`, allowed.
-   - No repo was made under this login.
    - The plan field was not readable with these token scopes, so the plan is inferred from the 403.
+   - After the spec review, a private scratch repo `pr-mode-scratch2` was made under each login. Setting classic
+     branch protection on main and creating a ruleset both gave the same 403, on both. Both repos were deleted.
 
 3. **Live start.** `run setup` and `run run once` each exited 1 with:
    "agent-runner: PR mode ([git] pr = true) is refused: GitHub did not say how main is protected (gh: Upgrade to
@@ -50,4 +51,4 @@ repo. PR mode is refused at start, and the refusal names the cause.
   pull request. RyanAHayden could be invited, with `GH_TOKEN=$(gh auth token -u RyanAHayden)` per command so the
   active account stays.
 - Then: ask which repo to turn PR mode on for.
-- A consequence: PR mode cannot be on for a private repo of an account on the free plan.
+- A consequence: PR mode cannot be on for a private repo of an account on the free plan. D10 (filed) says so in REFERENCE.md.
