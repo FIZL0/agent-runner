@@ -458,10 +458,10 @@ _In code_: footprint
 _Avoid_: cache, junk
 
 **Clean**:
-Removing only what the runner made and no longer needs (ended sessions' temp folders, worktrees merged into the main branch (one holding git-ignored files that are no build output or link is left unticked), wip/ branches the person ticks), after listing it first; ended sessions' temp folders also go by themselves on Home's regular walk, while worktrees and wip/ branches wait for the person
+Removing only what the runner made and no longer needs (ended sessions' temp folders, worktrees merged into the main branch (one holding git-ignored files that are no build output or link is left unticked), wip/ branches the person ticks), after listing it first; ended sessions' temp folders also go by themselves on Home's regular walk, while worktrees and wip/ branches wait for the person; old build output in a runner worktree of a project whose run is off goes by itself on the same walk
 _Said_: clean up, free space
 _On screen_: Clean; Remove ticked
-_In code_: clean, clean_plan, /vitals/clean, auto_clean
+_In code_: clean, clean_plan, /vitals/clean, auto_clean, clean_builds
 _Avoid_: purge, wipe, prune
 
 **Peer**:

@@ -18,6 +18,7 @@ From a sample Home works out:
     footprint  what agent-runner keeps on disk: worktrees under each run home, session temp folders, logs,
                wip/ branches, each sized (`footprint`), and Clean's safe list (`clean_plan`, `clean`);
                each regular walk removes the ended sessions' temp folders on that list by itself (`auto_clean`)
+               and the old build output of projects whose run is off (`build_clean.clean_builds`)
     sessions   CPU and memory per slot and per control session (`session_rows`)
 
 Homes find each other (`peers`): links in the registry (`agent-runner home peer add LINK`) and, when Tailscale
@@ -43,6 +44,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from agent_runner.build_clean import clean_builds
 from agent_runner.build_output import held_files, held_key, held_names
 
 GB = 1024 ** 3
@@ -1248,7 +1250,8 @@ def login_banner(roots: list[Path], now: float | None = None) -> str:
 
 class Vitals:
     """This machine's vitals for Home: samples every EVERY s in a thread once started, walks the footprint every
-    FOOTPRINT_EVERY s and removes the ended sessions' temp folders it finds (`auto_clean`), pushes new alerts,
+    FOOTPRINT_EVERY s and removes the ended sessions' temp folders it finds (`auto_clean`) and old build output
+    (`build_clean`), pushes new alerts,
     and answers the page's calls (`handle`)."""
 
     def __init__(self, roots, store: Path | None, peers=lambda: [], token: str = '', tailscale: bool = True,
@@ -1329,13 +1332,17 @@ class Vitals:
 
     def refresh_footprint(self, projs: list[Project] | None = None, now: float | None = None,
                           auto: bool = True) -> dict:
-        """Walk the footprint again, remove the ended sessions' temp folders and log what that freed. Without
-        `auto` nothing is removed or kept: the answer is the person's Clean's fresh list."""
+        """Walk the footprint again, remove the ended sessions' temp folders, and old build output first, and
+        log what that freed. Without `auto` nothing is removed or kept: the answer is the person's Clean's fresh list."""
         with self.foot_lock:
             projs = self.projects() if projs is None else projs
             now = time.time() if now is None else now
             if auto:
                 self.foot_at = now  # a walk under way is not started again
+                try:
+                    self.clear_builds(projs, now)
+                except Exception as e:  # noqa: BLE001 - the walk goes on without it
+                    self.log(f'{time.strftime("%Y-%m-%d %H:%M:%S")} old build output not cleared: {e!r}')
             live, registry = self.look()
             foot = footprint(projs, live, now, registry=registry)
             if auto:
@@ -1345,6 +1352,20 @@ class Vitals:
                              f'freed {size_words(freed) or "0 B"}')
                 self.foot = foot
             return foot
+
+    def clear_builds(self, projs: list[Project], now: float) -> None:
+        """F424: remove the old build output of projects whose run is off, and log what that freed."""
+        def said(d: Path, count: int, freed: int) -> None:
+            self.log(f'{time.strftime("%Y-%m-%d %H:%M:%S")} removed {count} old build folders in {d}, '
+                     f'freed {size_words(freed) or "0 B"}')
+        clean_builds(projs, self.run_off, lambda: busy_dirs(self.sampler.proc), now, du, said=said)
+
+    def run_off(self, p: Project) -> bool:
+        """Is `p`'s run off now? Not when that cannot be told."""
+        info = self.info
+        if info is None:
+            from agent_runner.cmds import run_info as info
+        return (info(p.root) or {}).get('up') is False
 
     def look(self) -> tuple[set[str] | None, bool]:
         return live_now(self.sampler.proc, self.registry)
