@@ -11,7 +11,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import NamedTuple
 
-from agent_runner import no_commits, plan as P, plansync, row_hold, shared_tools, stack
+from agent_runner import no_commits, plan as P, plansync, pr, row_hold, shared_tools, stack
 from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log, MERGE, note, plan_rel, plan_text,
     queued, ROOT, SLOTS_DIR)
 from agent_runner.state import EV_LEFT
@@ -67,10 +67,11 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
         # Read by id and by its `(split into …)` list, never by the words alone, so prose that happens to say
         # "split into" is not taken for a split
-        if tid not in first and P.subtasks(tid, l, open_ids):
+        in_pr = pr.mates(tid, ls)  # F419: it starts on these, so it waits for none of them
+        if tid not in first and P.subtasks(tid, l, open_ids - in_pr):
             continue
         after = set(f.get('after', [])) - {tid}
-        if after & open_ids:
+        if after & (open_ids - in_pr):
             continue
         out.append((tid, section, set(f.get('files', [])), after))
     return by_waiters(ls, out)
@@ -409,11 +410,12 @@ def clash_or_stack(t: tuple, h: Held) -> tuple[tuple | None, dict]:
     clashes by files alone, and only with finished tasks all in one merge under way (under test, or built ahead on
     that one), starts on that merge instead of waiting for it to land; B805: not one filed since it was built, whose
     line its plan lacks. That one waits, and starts on the shared branch."""
-    clashing = (b for b in h.busy if clash(t, b, h.shared, h.alone) and not passes(t, b, h))
+    in_pr = pr.mates(t[0], plan_text('')) if C.pr else set()  # F419: finished parts, on whose branch it starts
+    clashing = (b for b in h.busy if b[0] not in in_pr and clash(t, b, h.shared, h.alone) and not passes(t, b, h))
     if not (first := next(clashing, None)):
         return None, {}
     from agent_runner.merge import under_way  # merge reads sched; imported here, not at the top
-    if not (merges := under_way()) or t[0] in h.alone or P.release(t[0]) or ordered(t[1]):
+    if C.pr or not (merges := under_way()) or t[0] in h.alone or P.release(t[0]) or ordered(t[1]):
         return first, {}
     bs = [first, *clashing]
     for b in bs:

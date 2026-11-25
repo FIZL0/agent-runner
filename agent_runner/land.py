@@ -285,6 +285,8 @@ def no_gate_line() -> str:
     run's start, printed by --dry-run and status, so untested merges never reach main without a word."""
     if C.run['test']:
         return ''
+    if C.pr:  # F419
+        return 'WARNING no test gate ([run] test is empty): pull requests open untested'
     push = ('and wait for your approval: [run] approve is set' if C.approve and C.push_merge else
             'and are pushed: [git] push_merge is set' if pushes_main() else
             'and stay local: set [git] push_merge = true to push them anyway' if C.push_merge else

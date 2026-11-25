@@ -576,6 +576,13 @@ _On screen_: N changes wait to be pushed
 _In code_: [run] approve, pitch.on
 _Avoid_: PR mode, gated push
 
+**PR mode**:
+A run mode where each finished task is a pull request on GitHub that a person merges, and the runner never merges or pushes the shared branch.
+_Said_: PR mode
+_On screen_: Pull requests
+_In code_: [git] pr, pr.py, prs.json
+_Avoid_: approve mode, gated push
+
 **Mic report**:
 What happened on Talk's mic from the press to the end of a listen that heard no words or sent words (with what ended it), and to the sound of replies, each event with its time, to copy and send; it holds no words
 _Said_: the mic log

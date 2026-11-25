@@ -292,6 +292,16 @@ def no_claude(root: Path) -> str:
             f'a claude model (`{RUNNER} plan add` files tasks by hand)')
 
 
+def pr_refused(root: Path) -> str:
+    """F419: why the config's PR mode may not be on here, '' when it may (or is off)."""
+    from agent_runner import pr
+    from agent_runner.config import Config
+    try:
+        return pr.refusal(Config(root), root)
+    except (SystemExit, Exception) as e:  # a config that does not load is the session's to mend, but for this
+        return str(e) if 'cannot both be on' in str(e) else ''
+
+
 def count_tasks(todo: Path) -> int:
     try:
         return sum(1 for l in todo.read_text(encoding='utf-8').splitlines() if l.lstrip().startswith('- [ ] **'))
@@ -306,6 +316,9 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     ap.add_argument('--yes', '-y', action='store_true', help='a repo that has a plan already: go on without asking')
     a = ap.parse_args(argv)
     root = repo_root(Path(cwd or Path.cwd()))
+    if why := pr_refused(root):  # F419
+        print(why, file=sys.stderr)
+        return 1
     said: list[str] = []
     name = backup(root)
     said.append(f'uncommitted work saved on branch {name} (your files are still here, unchanged)' if name

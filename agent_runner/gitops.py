@@ -119,6 +119,8 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
         return ''
     if not shared and shared_branch(cwd, remote, branch):
         return ''
+    if shared and cfg(cwd).pr:  # F419: only a person's merge moves it
+        return f'! {branch} is not pushed: PR mode is on'
     if not (first := net('push', '-q', remote, branch)).returncode:
         return f'pushed {branch} -> {remote}'
     why = (first.stderr.strip().splitlines() or ['no message'])[-1][:200]

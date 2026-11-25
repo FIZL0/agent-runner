@@ -2698,6 +2698,8 @@ def _push(root: Path) -> str:
         return ''  # a branch of your own: yours to push
     if c.approve:  # F98: it goes out with the next approved pitch
         return ''
+    if c.pr:  # F419
+        return f'PR mode never pushes {branch}'
     if why := _keeps_merges_local(c):  # B86: pushing would publish the merges a run kept local
         return f'{why}: merges stay local, and this edit with them; to publish them: git push {remote} {branch}'
     net = gitops._net(root)

@@ -18,7 +18,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, settings_live, ci, file_split, gitops, no_commits, no_push, plan as P, plansync, plat, shared_tools, stack, undo
+from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, settings_live, ci, file_split, gitops, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -646,6 +646,7 @@ def run(argv: list[str], prog: str) -> int:
 
     init()
     no_push.require(C, ROOT)
+    pr.require(C, ROOT)  # F419
     r = settings_live.start()  # F202a: what changes from here on is read by the loop
     if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
         a.model = claude_model(a.model, C.providers, C.models_local, 'run --model')

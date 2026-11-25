@@ -144,6 +144,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f'{PROG}: {why} before {a.id} is done: what a person reads before they approve the push (your brief '
                   f'says how). Nothing ticked.', file=sys.stderr)
             return 2
+    if c.pr and not a.blocked:  # F419: what its pull request says
+        from agent_runner import pr
+        if why := pr.done_problem(a.id, a.message, c):
+            print(f'{PROG}: {why} (your brief says how). {a.id} is not done. Nothing ticked.', file=sys.stderr)
+            return 2
     if why := gate_limit(a, cwd):
         print(why, file=sys.stderr)
         return 1
@@ -197,7 +202,7 @@ def record(a, c) -> int:
     after the code commit; in a runner's slot its tick waits for the merge to land (`runner.land_tick`)."""
     cwd = c.root
     kept = {p: p.read_bytes() for p in (c.todo, c.done, plan.long_form(c.plan_dir, a.id)) if p.exists()}
-    later = c.plan_external and not a.blocked and finished_mark() is not None
+    later = c.plan_external and not a.blocked and (finished_mark() is not None or c.pr)  # F419: a take's too
     again = not a.blocked and ticked(a.id, c)  # B172: `done` ran before; more work on top, or its mark is gone
     if a.artifact and not a.blocked and not again:
         journal_link(c, a.id, a.artifact)
@@ -219,7 +224,7 @@ def record(a, c) -> int:
         print(f'{a.id} is already ticked')
     elif later:
         (plansync.ticks(c) / a.id).touch()
-        print(f'{a.id} is ticked in {c.plan_dir} once its merge lands')
+        print(f'{a.id} is ticked in {c.plan_dir} once ' + ('a person merges its pull request' if c.pr else 'its merge lands'))
     else:
         plan.tick(a.id)
         print(f'ticked {a.id}')

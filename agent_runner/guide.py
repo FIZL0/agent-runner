@@ -723,8 +723,8 @@ def rules_file(c) -> Path | None:
 def point_rules(c, git) -> str:
     """Add POINTER to the rules file once, committed on its own, so every session in the repo (on a machine
     without the skill, or one that would not pick it) learns to work with the runner. Never into a file with
-    uncommitted edits, nor mid-merge. A line for the run log, or ''. Off with `[run] rules_pointer = false`."""
-    if not c.run['rules_pointer'] or not (f := rules_file(c)):
+    uncommitted edits, nor mid-merge, nor in PR mode (F419: no commit on main). A line for the run log, or ''. Off with `[run] rules_pointer = false`."""
+    if c.pr or not c.run['rules_pointer'] or not (f := rules_file(c)):
         return ''
     text = f.read_text(encoding='utf-8')
     rel = f.relative_to(c.root).as_posix()

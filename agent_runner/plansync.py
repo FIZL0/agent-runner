@@ -147,6 +147,9 @@ def commit_file(root: Path, f: Path, edit, branch: str) -> tuple[bool, str]:
     new = not f.exists()
     outside = not rel or not tracked and not g('check-ignore', '-q', '--', rel).returncode
     if not outside:
+        from agent_runner.config import cfg
+        if cfg(root).pr:  # F419: a commit here would reach main without a pull request, or never
+            return False, f'PR mode is on, so a change to {f.name} goes in a pull request. Nothing was changed'
         st = g('status', '--porcelain', '--', rel)
         if st.returncode:
             return False, f'git could not read {f.name}: {st.stderr.strip()}'

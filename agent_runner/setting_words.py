@@ -79,6 +79,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.repair_merges': ('merge', 'Repair failed merges', 'A merge that fails its test gets one session to repair it. Off: it goes back at once.'),
     'run.command_timeout': ('merge', 'Longest command', 'Seconds a test or command may take before it counts as failed. Too low fails slow tests.'),
     'git.no_push': ('merge', 'Never push', 'Nothing is pushed, and sessions are refused git push everywhere. Applies from the next run.'),
+    'git.pr': ('merge', 'Pull requests', 'Each finished task is a pull request you merge on GitHub; the run merges nothing. Applies from the next run.'),
     'git.push_merge': ('merge', 'Push each merge', 'The shared branch is pushed after each merge that passed. Off: you push.'),
     'run.review_min_lines': ('work', 'Smallest change to review', 'A change with fewer lines than this skips the review. Lower reviews more.'),
     'run.split_files': ('work', 'Split busy files', 'When slots stand free because 3 tasks wait for one file, a task to split that file is queued. Off: they wait.'),

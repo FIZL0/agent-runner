@@ -252,6 +252,9 @@ DEFAULTS: dict = {
         'no_push': False,       # the no-push policy: no push by the runner, and `git push` refused in every session
                                 # it starts, in any repository; applies from the next run
         'push_merge': True,     # push the shared branch after each merge that passed the gate
+        'pr': False,            # PR mode: each finished task is a pull request on GitHub that a person merges; the runner
+                                # never merges and never pushes the shared branch. Needs [plan] repo and branch
+                                # protection there that its token cannot bypass; refused with [run] approve. Next run
         'land_edited': 'wait',  # a tested merge blocked by uncommitted edits in the main checkout: "wait" for them,
                                 # or "wip": after LAND_WAIT_WIP move them to a wip/main-checkout-<time> branch and land
     },
@@ -717,6 +720,8 @@ class Config:
         self.run['remote_slots'] = slots_in_apps(self.run['remote_slots'], old_sessions(sessions))
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
+        if problem := setting_problem('git', 'pr', self.raw['git']['pr']) or both_problem(self.raw):  # F419
+            raise SystemExit(f'agent-runner: {problem}')
         for k in ('approve', 'approve_wait', 'approve_batch', 'releases', 'split_files'):  # F98, F193, F200b
             if problem := setting_problem('run', k, self.run[k]):
                 raise SystemExit(f'agent-runner: {problem}')
@@ -893,6 +898,11 @@ class Config:
         return bool(self.run['approve']) and bool(self.push_remote)
 
     @property
+    def pr(self) -> bool:
+        """F419: PR mode, `[git] pr`: a finished task is a pull request, and nothing merges or pushes the shared branch."""
+        return bool(self.raw['git']['pr'])
+
+    @property
     def land_edited(self) -> str:
         v = str(self.raw['git'].get('land_edited', 'wait')).lower()
         return v if v in ('wait', 'wip') else 'wait'
@@ -965,10 +975,10 @@ SETTING_ALSO: dict[tuple[str, str], tuple[str, ...]] = {
 }
 SETTING_DURATIONS = {('run', 'control_idle'), ('run', 'control_ask'), ('ui', 'chat_quiet')}
 # F202a: what a run that is up cannot change: the run page's server, and where its files, plan and worktrees are and
-# which branch it merges into (its lock, state and sessions are there already), and the no-push policy: the sessions that
-# are up would not be under it. Every other key applies live.
+# which branch it merges into (its lock, state and sessions are there already), the no-push policy: the sessions that
+# are up would not be under it, and PR mode, which the start checks. Every other key applies live.
 SETTING_NEXT = {('run', 'web'), ('run', 'web_port'), ('run', 'web_https'), ('run', 'home'), ('run', 'notes'),
-                ('plan', 'dir'), ('plan', 'repo'), ('git', 'master_branch'), ('git', 'no_push')}
+                ('plan', 'dir'), ('plan', 'repo'), ('git', 'master_branch'), ('git', 'no_push'), ('git', 'pr')}
 
 
 def setting_type(table: str, key: str) -> str:
@@ -1247,11 +1257,21 @@ def local_settings_file(root: Path) -> Path:
     return local_file(root) or main_checkout(root) / LOCAL
 
 
+def both_problem(raw: dict) -> str:
+    """F419: why [git] pr and [run] approve cannot both be on; '' when they are not."""
+    return ('[git] pr and [run] approve cannot both be on: either a person merges each pull request, or approves each '
+            'push. Turn one off') if raw['git']['pr'] and raw['run']['approve'] else ''
+
+
 def setting_check(root: Path, table: str, key: str, v, device: bool = False) -> str:
     """`setting_problem`, and for [models] whether each model named is one the runner takes ('' when all is well).
     `device`: a save to this machine's file, so [run] agent must be here too; other machines share the project's."""
     if problem := setting_problem(table, key, v):
         return problem
+    if (table, key) in (('git', 'pr'), ('run', 'approve')) and v:  # F419
+        snap = {(t['table'], k['key']): k['value'] for t in settings_snapshot(root)['tables'] for k in t['keys']}
+        snap[table, key] = v
+        return both_problem({'git': {'pr': snap['git', 'pr']}, 'run': {'approve': snap['run', 'approve']}})
     if device and (table, key) == ('run', 'agent'):  # B764a
         return agent_missing(root, v)
     if table != 'models':

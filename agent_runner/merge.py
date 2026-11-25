@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 from contextlib import ExitStack
 
-from agent_runner import pitch, plan as P, plat, plansync, stack
+from agent_runner import pitch, plan as P, plat, plansync, pr, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -734,21 +734,21 @@ def blame(tids: list[str], d: Path, base: str, names: list[str]) -> list[str]:
         git('checkout', '-q', '--detach', base, cwd=d)
 
 
-def merge(tid: str, branch: str) -> str | None:
+def merge(tid: str, branch: str) -> str | bool | None:
     """Merge task/<tid> into the shared branch: merge, archive ticks, test, land, push, delete the branch.
 
     The merge is built and tested in its own worktree (`[run] home`/merge), and the shared branch only
     moves once the tests pass. So the main checkout never holds an untested merge: whoever works there keeps
     committing the whole time, nothing is reset under them, and their edits are never stashed.
-
     Unless `[run] batch_max` is 1, the other finished branches waiting for the lock ride along: one gate run for all of
     them (the gate is often the slow part). A rider that conflicts beyond a join waits for its own turn, and
     a batch that fails the gate is split: this task tries again alone, the riders take their own turns.
 
-    Returns None when it landed, else why it was left alone. The shared branch is then as it was, and the
-    task branch is still there.
-    """
-    if s := stack.stacked(tid, branch):  # F198: `stack.settle` comes first; its branch holds what has not landed
+    Returns None when it landed, else why it was left alone: the shared branch and the task branch stay as they were.
+    F419: in PR mode nothing lands: `pr.submit`, False once its pull request has it."""
+    if C.pr:
+        return pr.submit(tid, branch)
+    if s := stack.stacked(tid, branch):  # F198: after `stack.settle`; its branch holds what has not landed
         return f'it was started on the merge of {", ".join(s["tids"])}, which has not landed'
     try:
         return merge_tries(tid, branch)
