@@ -298,13 +298,13 @@ def test_need_popup_f162(tmp: Path) -> None:
         return
     o = json.loads(r.stdout)
     card = o['card']
-    check('Check this · iPhone, Safari' in card and 'Keyboard &lt;b&gt;' in card and '<code>x</code> &lt;i&gt;' in card
-          and '2 steps · B160 · 20m' in card, 'the card: what is wanted and where, the title, what to do', card)
+    check('Check this · iPhone, Safari' in card and 'Keyboard &lt;b&gt;' in card and '<b class="q">Run <code>x</code> &lt;i&gt;</b><span class="small">Keyboard &lt;b&gt;</span>' in card
+          and '2 steps · B160 · 20m' in card, 'the card: what is wanted and where, what is asked, the title small under it', card)
     check('Close it' not in card and card.index('</button>') < card.index('data-ctl="need_yes"'), 'no steps on it, and its buttons are not inside its words', card)
     eq(o['opened'], ['need', 'B160', True, True], 'a press on its words opens the popup')
     eq(o['fetched'], ['task/B160?t=T', 'why/B160?t=T'], 'which asks for why it waits and the whole task')
     h = o['html']
-    parts = ['Keyboard &lt;b&gt;', 'Check this', '20m', 'On an iPhone', '<ol><li>Tap &lt;script&gt;</li><li>Close it</li></ol>',
+    parts = ['<h2>Run <code>x</code> &lt;i&gt;</h2><div class="small">Keyboard &lt;b&gt;</div>', 'Check this', '20m', 'On an iPhone', '<ol><li>Tap &lt;script&gt;</li><li>Close it</li></ol>',
              '<ul><li>No grey &quot;band&quot;</li></ul>', 'src="shot/uploads/a%20b.png?t=T"', 'Its page', 'Why it waits',
              'Full task', 'data-f="askre:B160"', 'class="btn pri" data-ctl="need_yes" data-tid="B160">Yes<', 'class="btn" data-ctl="need_no" data-tid="B160">No<', '>Later<', '>Open ']
     at = [h.find(x) for x in parts]
@@ -322,11 +322,11 @@ def test_need_popup_f162(tmp: Path) -> None:
           'F162a2: an opening sheet is visible at once, or it cannot take focus')
     check('data-reply="D7"' in o['reply'], 'an ask with no answers has Reply', o['reply'])
     q, t = 'Which <code>port</code> &lt;i&gt;?', 'Port &lt;b&gt;'
-    check(f'<b class="q">{q}</b><span class="small ell">{t}</span><span class="askdo">8765 is taken. Both &lt;work&gt;.</span>' in o['askCard'],
+    check(f'<b class="q">{q}</b><span class="small">{t}</span><span class="askdo">8765 is taken. Both &lt;work&gt;.</span>' in o['askCard'],
           "B223b: a DECIDE's card: the question, the title small, its background", o['askCard'])
     check(f'<h2>{q}</h2><div class="small">{t}</div>' in o['reply'] and '<p>8765 is taken.</p><p>Both &lt;work&gt;.</p>' in o['reply']
           and 'What to do' not in o['reply'], 'the popup: the same, its background as paragraphs', o['reply'])
-    check('askdo' not in o['steps'] and 'ell' not in o['steps'] and '2 steps' in o['steps'], 'no background, no title of its own: neither', o['steps'])
+    check('askdo' not in o['steps'] and '<span class="small">Press' in o['steps'] and '2 steps' in o['steps'], 'no background, no title of its own: neither', o['steps'])
     check('<h2>Which look?</h2>' in o['opts'] and 'What to do' not in o['opts'], 'a DECIDE with no detail too', o['opts'])
     eq(o['sent'], [['run_control', {'key': 'need_answer1', 'tid': 'F2', 'text': 'Done'}],
                    ['run_control', {'key': 'need_no', 'tid': 'B160', 'text': 'No', 'note': 'still grey'}],
