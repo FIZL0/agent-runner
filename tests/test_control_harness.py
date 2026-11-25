@@ -182,6 +182,17 @@ def test_stopped_tool(env: Env, p, sid: str):
     check(left, 'leaves its background process going')
     for pid in left:
         subprocess.run(['taskkill', '/F', '/PID', str(pid)], capture_output=True)
+    for n, how, end in ((7, 'Ctrl-D', lambda q: (q.stdin.write('\x04'), q.stdin.flush())),
+                        (8, 'a chat closed from outside', lambda q: subprocess.run(
+                            ['taskkill', '/T', '/F', '/PID', str(q.pid)], capture_output=True))):
+        before = msys_pids()
+        q, _ = env.start(n, ask='run: sleep 61 | cat')
+        check(until(lambda: len(msys_pids() - before) > 1), 'a chat with a tool call')
+        mine = msys_pids() - before
+        end(q)
+        check(until(lambda: not mine & msys_pids(), 10), f'{how} ends its children too', mine & msys_pids())
+        until(lambda: q.poll() is not None)
+        K.C.notes(f'control{n}.pid').unlink()
 
 
 def test_title(env: Env, sid: str):

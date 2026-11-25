@@ -13,8 +13,10 @@ from __future__ import annotations
 import shutil
 import subprocess as sp
 import sys
+import time
 
 KILL_ON_JOB_CLOSE = 0x2000
+NO_JOB = 47798  # exit code: no job could be made, so nothing was started (harness.mjs then runs the command itself)
 EXTENDED_LIMITS = 9  # JobObjectExtendedLimitInformation
 
 
@@ -65,8 +67,7 @@ class Job:
 
     def let_go(self):
         """What is left in the job goes on when this process ends."""
-        if self.ok:
-            self._set(0)
+        self._set(0)
 
 
 def main(argv: list[str]) -> int:
@@ -75,7 +76,11 @@ def main(argv: list[str]) -> int:
         print(f'{argv[0]}: not found on PATH', file=sys.stderr)
         return 127
     job = Job()
+    if not job.ok:
+        return NO_JOB
     code = sp.Popen(quoted([argv[0], *argv[1:]]), executable=exe, stdin=0, stdout=1, stderr=2).wait()
+    if code == 1:  # maybe taskkill's, on its way up a tree this process is in (a chat closed from outside): its turn is next
+        time.sleep(0.3)
     job.let_go()
     return code - 2 ** 32 if code >= 2 ** 31 else code
 

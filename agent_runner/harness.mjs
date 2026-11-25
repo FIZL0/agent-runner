@@ -630,7 +630,8 @@ const STOPPED = 130;
 
 function killTree(p) {
   if (process.platform === 'win32') { // no process groups: taskkill ends the tree; a child it missed must not hold the call
-    if (p.pid) spawnSync('taskkill', ['/T', '/F', '/PID', String(p.pid)], { stdio: 'ignore', windowsHide: true });
+    if (p.job) p.kill(); // B798: it alone, or it could see its command end first and let go of the rest
+    else if (p.pid) spawnSync('taskkill', ['/T', '/F', '/PID', String(p.pid)], { stdio: 'ignore', windowsHide: true });
     p.stdout?.destroy();
     p.stderr?.destroy();
     return;
@@ -638,18 +639,25 @@ function killTree(p) {
   try { process.kill(-p.pid, 'SIGKILL'); } catch { try { p.kill('SIGKILL'); } catch {} }
 }
 
-// B798: `argv` in a Windows job object (job_object.py), so killTree ends the Git Bash children too, whose parent is
-// gone and taskkill misses; as it is without a runner command, whose Python runs it
-function inJob(argv, runner) {
-  if (process.platform !== 'win32' || !runner) return argv;
-  return [runner[0], '-I', '-S', fileURLToPath(new URL('job_object.py', import.meta.url)), ...argv];
+const NO_JOB = 47798; // job_object.py's: no job could be made, and the command was not started
+
+// B798: `argv` in a Windows job object (job_object.py, on the runner's Python), so a stop ends the Git Bash children
+// too, whose parent is gone and taskkill misses
+async function runInJob(argv, python, cwd, timeout, signal) {
+  if (process.platform === 'win32' && python) {
+    const r = await run([python, '-I', '-S', fileURLToPath(new URL('job_object.py', import.meta.url)), ...argv],
+      cwd, '', timeout, signal, true);
+    if (r.code !== NO_JOB) return r;
+  }
+  return run(argv, cwd, '', timeout, signal);
 }
 
-function run(argv, cwd, input, timeout, signal) {
+function run(argv, cwd, input, timeout, signal, job = false) {
   return new Promise((resolve) => {
     const p = spawn(argv[0], argv.slice(1), { cwd, env: process.env, detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '', timedOut = false;
+    p.job = job;
     RUNNING.add(p);
     const t = setTimeout(() => {
       timedOut = true;
@@ -723,7 +731,7 @@ class Session {
 
   async tool_bash(a) {
     const timeout = Math.min(Math.max(Number(a.timeout) || BASH_TIMEOUT, 1), BASH_TIMEOUT_MAX);
-    const r = await run(inJob(['bash', '-c', String(a.command || '')], this.a.runner), this.cwd, '', timeout, this.ctl?.signal);
+    const r = await runInJob(['bash', '-c', String(a.command || '')], this.a.runner?.[0], this.cwd, timeout, this.ctl?.signal);
     const tail = r.timedOut ? `\n[timed out after ${timeout} s; the command was killed]` :
       r.code ? `\n[exit code ${r.code}]` : '';
     return [clip(r.out) + tail || '(no output)', Boolean(r.code)];
