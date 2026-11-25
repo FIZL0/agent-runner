@@ -190,7 +190,7 @@ def test_slow(hook: Hook):
         run.waiting = {1: ('H1', 'sid', 'cut off')}
         run.slot(1)
         eq(filled, [], 'the slot takes neither a new task nor a resume')
-        with mock.patch.object(loop, 'stopping', lambda: True), mock.patch.object(loop, 'forced', lambda: False):
+        with mock.patch.object(loop, 'stopping', lambda: True):
             run.waiting = {}
             eq(run.end(), None, 'and a stop waits for it')
         hook.hold(False)
@@ -227,25 +227,12 @@ def test_reap(hook: Hook):
 
 
 def force(run: loop.Run, pids: dict[int, int]) -> None:
-    """The run's next tick start with `s!` asked, its slots on these sessions."""
+    """`s!`'s part for these sessions (the whole stop: test_stop_now)."""
     run.procs = {n: (pid, f'sid{n}', 0.0) for n, pid in pids.items()}
     run.running = {n: (f'H{n}', 'Later', set(), set()) for n in pids}
     run.waiting = {}
-    with ExitStack() as st:
-        for k, v in dict(sweep_tmp=None, prune_wips=None, take_keys=None, write_state=None, end_orphans=None,
-                         tells=None, restyles=None, budgets=None, halts=None, stop_note='',
-                         transcript='/t.jsonl', forced=True).items():
-            st.enter_context(mock.patch.object(loop, k, mock.Mock(return_value=v)))
-        for m, k in ((loop.agent_hold, 'tick'), (loop.brief_arrives, 'check'), (loop.FB, 'caps')):
-            st.enter_context(mock.patch.object(m, k, mock.Mock()))
-        run.top()
-
-
-def stop_code(run: loop.Run):
-    with ExitStack() as st:
-        for k, v in dict(stopping=True, forced=True, end_own=None, clear_stop=None, log=None, POWER='').items():
-            st.enter_context(mock.patch.object(loop, k, v if k == 'POWER' else mock.Mock(return_value=v)))
-        return run.end()
+    with patched(end_orphans=lambda *a: None, transcript=lambda sid: '/t.jsonl'):
+        loop.end_sessions(run.procs, run.running)
 
 
 def sleeper(code: str = '') -> subprocess.Popen:
@@ -279,10 +266,9 @@ def test_forced(hook: Hook):
                 force(run, {1: agent.pid})
             eq((alive, run.procs, run.running), ([False], {}, {}), 'the session is gone first')
             eq(loop.queued().get(1), ('H1', 'sid1', 'stopped with s!'), 'and its resume is queued')
-            eq(stop_code(run), None, 'the run does not end while on_exit runs')
+            eq(exit_hook.busy(), {1}, 'nothing waits for on_exit')
             hook.hold(False)
             settle()
-            eq(stop_code(run), 0, 'it ends after it')
             eq(hook.ran(), ['1 p1 s1 True'], 'it ran once, with the slot\'s env')
             check((d / 'work.txt').exists(), 'and the work is still there')
         finally:
@@ -313,38 +299,43 @@ def test_forced_two(hook: Hook):
 
 
 def test_forced_slow(hook: Hook):
-    print('s!: one that runs long is stopped and logged, also one that ran before, and the run ends')
+    print('B827: s!: one that still runs is left to the next run, which holds its slot and stops it past its time')
     hook.fresh()
     hook.hold(True)
     exit_hook.start(1)  # slot 1's session ended by itself before s!
-    run, said = new_run(), []
-    with mock.patch.object(exit_hook, 'FORCED', 1.0), \
-            mock.patch.object(state, 'log', lambda m, *a, **k: said.append(m)):
-        force(run, {})
-        was = exit_hook.GOING[0][2]
-        time.sleep(0.05)
-        force(run, {})
-        eq(exit_hook.GOING[0][2], was, 'a later tick gives it no more time')
-        eq(stop_code(run), None, 'the run waits')
-        settle()
-    eq(stop_code(run), 0, 'then ends')
-    check(len(said) == 1 and 'after s!' in said[0], 'said once', said)
+    p = exit_hook.GOING[0][1]
+    t0 = time.monotonic()
+    force(new_run(), {})
+    check(time.monotonic() - t0 < 2 and p.poll() is None, 's! waits for none and stops none')
+    exit_hook.GOING.clear()  # the next run
+    exit_hook.adopt()
+    eq((exit_hook.busy(), state.C.notes(exit_hook.LEFT).exists()), ({1}, False), 'the next run holds its slot')
+    n, left, _, cmd, why = exit_hook.GOING[0]
+    exit_hook.GOING[0] = (n, left, 0.0, cmd, why)
+    said = []
+    with mock.patch.object(state, 'log', lambda m, *a, **k: said.append(m)):
+        eq(exit_hook.busy(), set(), 'past its time it is stopped')
+    check(p.wait(10) is not None and 'command_timeout' in said[0], 'and that is said', said)
+    state.C.notes(exit_hook.LEFT).write_text(json.dumps([{'slot': 1, 'pid': p.pid, 'start': 'x', 'until': time.time() + 60,
+                                                          'cmd': 'c', 'why': 'w'}]))
+    exit_hook.adopt()
+    eq(exit_hook.GOING, [], 'one that has ended holds nothing')
     hook.hold(False)
 
 
 def test_forced_none(hook: Hook):
-    print('s! with no on_exit: the session is ended and nothing is waited for')
-    run, agent = new_run(), sleeper()
-    try:
-        with mock.patch.dict(state.C.run, {'on_exit': ''}), mock.patch.object(exit_hook, 'end_all') as ended:
-            force(run, {1: agent.pid})
-        check(agent.wait(15) is not None and not ended.called, 'ended')
-        eq(stop_code(run), 0, 'and the run ends at once')
-    finally:
-        agent.kill()
-        agent.wait()
-        agent.stdout.close()
-        unqueue()
+    print('s! with no on_exit: the session is ended, one that ignores SIGTERM too, in seconds')
+    for code in ('', *(() if loop.plat.WINDOWS else ('signal.signal(signal.SIGTERM, signal.SIG_IGN)',))):
+        agent, t0 = sleeper(code), time.monotonic()
+        try:
+            with mock.patch.dict(state.C.run, {'on_exit': ''}):
+                force(new_run(), {1: agent.pid})
+            check(agent.wait(5) is not None and time.monotonic() - t0 < 8, 'ended')
+        finally:
+            agent.kill()
+            agent.wait()
+            agent.stdout.close()
+            unqueue()
 
 
 def test_timeout(hook: Hook):

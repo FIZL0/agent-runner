@@ -11,6 +11,7 @@ import subprocess
 from functools import partial
 from pathlib import Path
 
+from agent_runner import freeze
 from agent_runner.config import cfg, main_checkout
 
 
@@ -19,7 +20,8 @@ def git(*a: str, cwd, **kw) -> subprocess.CompletedProcess:
     garble names and fail on bytes it cannot map); `kw` goes to `subprocess.run` (env, input, timeout, …)."""
     kw.setdefault('encoding', 'utf-8')
     kw.setdefault('errors', 'replace')
-    return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True, **kw)
+    with freeze.git_step(a):
+        return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True, **kw)
 
 
 def _git(cwd: Path):
@@ -206,8 +208,8 @@ def shell(cmd: str, cwd, env: dict | None, timeout: float) -> tuple[int | None, 
     stderr), or (None, '') when it ran past and was stopped. The core of state.hook and done.gate (C16); each
     says in its own way that one ran past."""
     try:
-        r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace',
-                           env=env, timeout=timeout)
+        r = freeze.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace',
+                       env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
         return None, ''
     return r.returncode, (r.stdout or '') + (r.stderr or '')

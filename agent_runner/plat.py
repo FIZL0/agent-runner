@@ -256,6 +256,17 @@ def terminate(pid: int) -> None:
         pass
 
 
+def kill_tree(pid: int) -> None:
+    """End, at once, the process group `pid` leads (Windows: `pid` and everything below it)."""
+    if WINDOWS:
+        sp.run(['taskkill', '/T', '/F', '/PID', str(pid)], capture_output=True)
+        return
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
 def has_conpty() -> bool:
     """Windows 10 1809 and later: a session can run in a pseudo-console (`conpty.ConPty`). False elsewhere."""
     if not WINDOWS:

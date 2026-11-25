@@ -12,13 +12,14 @@ import re
 import shlex
 import signal
 import subprocess as sp
+import sys
 import threading
 import time
 import uuid
 from pathlib import Path
 from contextlib import ExitStack
 
-from agent_runner import audit_fix, pitch, plan as P, plat, plansync, pr, stack
+from agent_runner import audit_fix, freeze, pitch, plan as P, plat, plansync, pr, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -28,7 +29,7 @@ from agent_runner.state import (C, clean, commit_plan, EV_LANDED, EV_LEFT, EV_PA
 from agent_runner.slots import (backend, entries, env_vars, merge_env, MUX, slot_env, trim, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
 from agent_runner.land import (announce_release, BROKEN, flaky, land, land_tick, published, push_landed,
-    reopen_landed, UNPUSHED)
+    record_landed, reopen_landed, UNPUSHED)
 
 
 def left_merging() -> set[str]:
@@ -146,8 +147,8 @@ def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None, fork: str 
     timeout = C.run['fix_timeout']
     more = backend().fork_flags(fork) if fork else []
     env = {**os.environ, **env_vars(slot_env(None))}
-    return sp.run(fix_cmd(prompt) + more, cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
-                  env=env, timeout=timeout).returncode
+    return freeze.run(fix_cmd(prompt) + more, cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
+                      env=env, timeout=timeout).returncode
 
 
 def wait_session(pid: int, until: float) -> bool:
@@ -470,12 +471,12 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
     out.with_suffix('.rc').unlink(missing_ok=True)  # a gate killed before its end must not read as an old one's
     with GATE_DONE:
         GATE_RESULTS.pop(str(out), None)
-    with open(out, 'w', encoding='utf-8') as fh:
+    with freeze.held(), open(out, 'w', encoding='utf-8') as fh:  # B827: never started and not yet in its record
         p = sp.Popen(f'({cmd}\n); echo $? > {shlex.quote(str(out.with_suffix(".rc")))}', shell=True, cwd=str(d),
                      env=env, stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL, start_new_session=True)
-    s = {'tid': tid, 'pid': p.pid, 'start': plat.started(p.pid), 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec),
-         'full': full, **(batch or {}), 'head': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
-    rec.write_text(json.dumps(s), encoding='utf-8')
+        s = {'tid': tid, 'pid': p.pid, 'start': plat.started(p.pid), 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec),
+             'full': full, **(batch or {}), 'head': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
+        rec.write_text(json.dumps(s), encoding='utf-8')
     try:
         p.wait(timeout=timeout)
     except sp.TimeoutExpired:
@@ -484,6 +485,7 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
         gate_done(s)
         return 124, f'`{cmd}` ran past [run] command_timeout ({timeout}s): counted as failing'
     finally:
+        freeze.point()  # B827: ended by a stop now, which is no result
         rec.unlink(missing_ok=True)
     return gate_done(s) or (p.returncode or 1, f'`{cmd}` left no exit code')
 
@@ -812,20 +814,9 @@ def merge_tries(tid: str, branch: str) -> str | None:
                 if why:
                     forget(tid)
                     return why
-            base, merged = LANDED.pop(tid)
-            forget(tid)
-            git('branch', '-d', f'task/{tid}')
-            git('update-ref', '-d', TESTED + tid)
-            git('update-ref', '-d', PARTIAL + tid)
-            for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
-                git('update-ref', '-d', h)
-            land_tick(tid, merged)
-            line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
-            state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
-            msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
-            note(msg)
-            log(msg, EV_PART if state == 'blocked' else EV_LANDED, tid)
-            reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
+            with freeze.held():  # B827: a stop now lets it be recorded
+                base, merged = LANDED.pop(tid)
+                record_landed(tid, branch, base, merged, sys.modules[__name__])
             published(tid, branch)
             announce_release(base, merged)
             return None
@@ -1380,7 +1371,7 @@ def batch_test(t: BatchTurn):
     ahead_done = threading.Event()
     if C.run['merge_ahead']:
         threading.Thread(target=build_ahead, args=(branch, t.merged, ahead_done, {tid, *riders}),
-                         daemon=True).start()
+                         daemon=True, name='merge:ahead').start()
     try:
         why = tested(tid, d, base, [tid, *riders])
     finally:
@@ -1443,16 +1434,13 @@ def batch_land(t: BatchTurn, last: bool = False):
         return BATCH_RETRY
     t.base, t.merged = got
     pitch.landing([t.tid, *t.riders], t.base, t.merged)  # F98: nothing unless [run] approve
-    with LANDING:
-        why = land(t.tid, t.branch, t.merged)
-    pitch.landed(t.merged, not why)
-    if why == 'conflict' and not last:
-        return BATCH_RETRY
-    if why:
-        return why
-    for x in [t.tid, *t.riders]:
-        LANDED[x] = (t.base, t.merged)
-    return None
+    with freeze.held():  # B827: a stop now lets it land and be recorded
+        with LANDING:
+            why = land(t.tid, t.branch, t.merged)
+        pitch.landed(t.merged, not why)
+        if not why:
+            LANDED.update({x: (t.base, t.merged) for x in [t.tid, *t.riders]})
+    return BATCH_RETRY if why == 'conflict' and not last else why
 
 
 def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True) -> str | None:

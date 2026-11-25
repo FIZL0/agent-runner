@@ -11,12 +11,12 @@ import subprocess as sp
 import sys
 import time
 
-from agent_runner import ci, gitops, plan as P, plansync
+from agent_runner import ci, freeze, gitops, plan as P, plansync
 from agent_runner.config import RUNNER
 from agent_runner.gitops import drop_if_merged, push
 from agent_runner.state import (alarm, C, commit_plan, edited, git, init, log, newest, note, plan_rel, plan_text,
     ROOT, SLOTS_DIR)
-from agent_runner.state import EV_RELEASED
+from agent_runner.state import EV_LANDED, EV_PART, EV_RELEASED
 from agent_runner.watch import HOGS
 from agent_runner.join import (EDITED, ELSEWHERE, joined, LAND_WAIT, LAND_WAIT_WIP, LANDED, renumber_doubles,
     task_env, WAITING)
@@ -231,7 +231,7 @@ def land(tid: str, branch: str, merged: str) -> str | None:
             alarm(f'{tid} cannot land: {ROOT.name} is mid-merge',
                   f'the main checkout ({ROOT}) is in the middle of a merge of its own; finish or abort it, and '
                   f'{tid} lands on {branch}.')
-        time.sleep(10)
+        freeze.pause(10)
     cur = git('branch', '--show-current').stdout.strip()
     if cur != branch:
         return f'{ELSEWHERE} ({cur or "a detached HEAD"}, not {branch})'
@@ -252,7 +252,7 @@ def land(tid: str, branch: str, merged: str) -> str | None:
                   f'{tid} is tested and waits to land on {branch}, but the main checkout ({ROOT}) has uncommitted '
                   f'edits to {", ".join(files[:6])}{more}, which the merge changes. Commit them, or move them to a '
                   f'branch, and it lands within a minute. {here_hint()}')
-        time.sleep(10)
+        freeze.pause(10)
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         files = git('diff', '--name-only', '--diff-filter=U').stdout.split()
         if not joined(files, tid, ROOT):
@@ -261,6 +261,23 @@ def land(tid: str, branch: str, merged: str) -> str | None:
     if git('merge-base', '--is-ancestor', merged, 'HEAD').returncode:
         return f'the merge did not land in {branch}; merge it again'
     return None
+
+
+def record_landed(tid: str, branch: str, base: str, merged: str, M) -> None:
+    """Record that task/<tid> landed with the merge `merged` (`M`: merge.py): its branch and refs go, it is ticked."""
+    M.forget(tid)
+    git('branch', '-d', f'task/{tid}')
+    git('update-ref', '-d', M.TESTED + tid)
+    git('update-ref', '-d', M.PARTIAL + tid)
+    for h in git('for-each-ref', '--format=%(refname)', f'{M.HELD}{tid}/', f'{M.FIXED}{tid}/').stdout.split():
+        git('update-ref', '-d', h)
+    land_tick(tid, merged)
+    line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
+    state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
+    msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := M.suspect(base, merged)) else '')
+    note(msg)
+    log(msg, EV_PART if state == 'blocked' else EV_LANDED, tid)
+    reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
 
 
 def published(tid: str, branch: str) -> None:
