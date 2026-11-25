@@ -15,7 +15,7 @@ import subprocess as sp
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import plan as P, plansync, plat
+from agent_runner import no_commits, plan as P, plansync, plat
 from agent_runner import state as S
 from agent_runner.state import commit_plan, git, log, MERGE, plan_rel
 from agent_runner.sched import open_tasks, plan_text
@@ -215,6 +215,13 @@ def clear_ask(tid: str, todo: str | Path | None = None) -> None:
     for c in _plans(todo):
         _clear_file(c, tid)
         _clear_sheet(c, tid)
+
+
+def reopened(tid: str, todo: str | Path | None = None) -> None:
+    """B774: the plan unblocked `tid`: its runs that ended with no commits are counted afresh. Not `clear_ask`'s part:
+    every start of a task calls that."""
+    for c in _plans(todo):
+        no_commits.reopened(tid, c)
 
 
 def _clear_sheet(c, tid: str) -> None:

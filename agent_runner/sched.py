@@ -11,7 +11,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import NamedTuple
 
-from agent_runner import plan as P, plansync, shared_tools, stack
+from agent_runner import no_commits, plan as P, plansync, shared_tools, stack
 from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log, MERGE, note, plan_rel, plan_text,
     queued, ROOT, SLOTS_DIR)
 from agent_runner.state import EV_LEFT
@@ -279,6 +279,7 @@ class Held(NamedTuple):
     alone: frozenset = frozenset()  # F130: tasks tagged `(alone)`, whatever their box: they run alone
     needs: dict = {}  # F168: {task: the shared tools it needs}
     users: dict = {}  # F168: {shared tool: the task running here that has it}
+    no_commits: frozenset = frozenset()  # B774: open tasks whose runs end with no commits
     splits: dict = {}  # B196: {task held for its author to split it: seconds left}
     waits: dict = {}  # F168: {task that gave up its slot: (its tool, since when)}, longest first
 
@@ -313,6 +314,7 @@ def held(running: dict, branch: str) -> Held:
     return Held(todo, busy, busy_ids, mine, finished, parked, shared, away, frozenset(live),
                 critical_tasks(branch) if todo else frozenset(),
                 P.alone_ids(plan_text(branch)) if todo else frozenset(),
+                no_commits=frozenset(no_commits.stuck(branch)) if todo else frozenset(),
                 splits=split_holds(branch) if todo else {}, **tool_fields(todo, live, branch))
 
 
@@ -370,7 +372,7 @@ def critical_tasks(branch: str) -> frozenset:
 
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
-    ('busy', None), ('parked', None), ('split', None) (its author is splitting it: B196), ('merging', None) (a release, while a merge holds the turn: F99),
+    ('busy', None), ('parked', None), ('no commits', None), ('split', None) (its author is splitting it: B196), ('merging', None) (a release, while a merge holds the turn: F99),
     ('unpushed', None) (a release, while landed changes wait for a person's approval: F98),
     ('clash', the busy task it clashes with), or ('tool', (the shared tool it waits for, why)) (F168); None when it is free. A critical task never holds a slot
     for itself (B140): `choose` only tries it first; but see `turn_of` (F208) for an `(alone)` one."""
@@ -383,6 +385,8 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'busy', None
     if len(h.parked.get(tid, [])) >= PARK_LIMIT:  # B32: failed its merge that often; a person decides
         return 'parked', None
+    if tid in h.no_commits:  # B774: its runs end with no commits; a person decides
+        return 'no commits', None
     if tid in h.splits:  # B196
         return 'split', None
     if P.release(tid) and MERGE.locked():  # F99: a merge under way lands first, so the release starts from it
@@ -507,6 +511,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
                         'taken by hand (`take`)' if tid in taken() else '')
         elif kind == 'parked':
             why[tid] = (f'parked {len(h.parked[tid])} times, needs a person', ', '.join(sorted(h.parked[tid])))
+        elif kind == 'no commits':
+            why[tid] = (f'ended {no_commits.LIMIT} times with no commits, needs a person', '')
         elif kind == 'split':
             why[tid] = ('waiting to be split', P.split_in(h.splits[tid]))
         elif kind == 'merging':

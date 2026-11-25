@@ -797,6 +797,8 @@ def unblock(tid: str, note: str = '', todo=None) -> None:
     ls[end] = (_unblocked(ls[end]) if end == i else ls[end].split(' BLOCKED: ')[0]) + (f' — {note}' if note else '')
     _write(todo, ls)
     _clear_ask(tid, todo)
+    from agent_runner.asks import reopened  # here: asks imports this module
+    reopened(tid, todo)
 
 
 def _place(ls: list[str], where: str, ref: str | None) -> int:
