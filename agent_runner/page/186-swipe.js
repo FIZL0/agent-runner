@@ -22,6 +22,8 @@ const sideways=el=>{for(;el&&el!==document.body;el=el.parentElement)if(el.scroll
 const scrollers=el=>{const a=[];for(;el&&el!==document.body;el=el.parentElement)if(el.scrollHeight>el.clientHeight+1)a.push([el,el.scrollTop,el.scrollHeight]);return a};
 const scrolled=a=>a.some(s=>{const [el,top,h]=s;if(el.scrollHeight===h)return el.scrollTop!==top;s[1]=el.scrollTop;s[2]=el.scrollHeight;return false});
 const drawerOn=()=>{const m=document.querySelector('.top .menu');return !!(m&&m.offsetParent)};
+/* B813: the drawer opens without the keyboard; before render, which would hand the focus on. The draft stays */
+function drawerBlur(){if(TOUCH()&&typingIn(document.activeElement))document.activeElement.blur()}
 document.addEventListener('touchstart',e=>{
   if(SW&&SW.on&&!SW.sheet){if(e.touches.length>1&&!SW.pl)return;swipeEnd(false)}  // B167: a second finger does not end the lock
   SW=null;const t=e.touches[0], el=e.target;
@@ -89,7 +91,7 @@ function swipeEnd(done){
     if(drawerOn())springRun(el,springFrames(w.d,go?el.offsetHeight*1.03:0,v).map(x=>Math.max(0,x)),x=>({transform:`translateY(${x}px)`}));else el.classList.remove('drag');
     return}
   const side=$('side'), scrim=$('scrim');side.style.transform='';scrim.style.opacity='';
-  S.drawer=done?swipeOpens(w.d,v,w.w,w.open):w.open;
+  S.drawer=done?swipeOpens(w.d,v,w.w,w.open):w.open;if(S.drawer&&!w.open)drawerBlur();
   noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;render(true);
   const fs=springFrames(w.px||0,S.drawer?0:-w.w,v).map(x=>Math.max(-w.w,Math.min(0,x)));side._to=S.drawer;
   springRun(side,fs,x=>({transform:`translateX(${x}px)`}));springRun(scrim,fs,x=>({opacity:1+x/w.w}));

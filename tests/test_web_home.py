@@ -944,7 +944,7 @@ const page = require('fs').readFileSync(0, 'utf8').replace(/\r\n/g, '\n');
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const on = {}, els = {}, S = {}, PD = {}, HB = '', render = () => {}, atAll = () => false, getComputedStyle = () => ({overflowX: 'auto', transform: ''});
 let DR = null, noClick = false, inside = ['#body'], refreshes = 0, reduced = false, wide = false, ran = [];
-const calm = () => reduced, shiftOf = () => ({m41: 0, m42: 0}), dragEnd = () => { DR = null }, closeSheet = () => { S.sheet = '' };
+const calm = () => reduced, TOUCH = () => false, shiftOf = () => ({m41: 0, m42: 0}), dragEnd = () => { DR = null }, closeSheet = () => { S.sheet = '' };
 let said = [];
 const TK = {}, DK = {}, devTyped = () => false, keepTyped = () => true, toast = t => said.push(t), location = {reload() { refreshes++ }};
 const elem = () => ({style: {}, offsetWidth: 280, scrollTop: 0, set: new Set(), setAttribute(k, v) { this[k] = v }, append() {},

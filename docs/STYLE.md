@@ -430,6 +430,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   Safari does not pan; the caret goes to the end (a second tap places it). A box a script
   focused without a keyboard is blurred first. Every scripted `focus()` of a box passes `preventScroll:true`, with `kbReveal()` where it must come into view.
 - On touch, opening a chat never focuses its box, nor does the chat a first message starts; focus left in a text field is dropped (`open()`), so the keyboard goes and the box sits at the foot. Only a tap on the box, + Task or a card's Chat brings it. A starting chat that gets its name keeps its focus. A desktop pointer focuses the box on open.
+- On touch, a swipe that ends with the sidebar drawer newly open, or the menu button opening it, drops the focus of a text field (`drawerBlur()`), so the keyboard goes; the draft stays. A cancelled swipe, or one that springs back closed, keeps it, as does a drawer already open and the rename box (`startRename()` opens the drawer and focuses its field).
 - `.app` keeps full height until the visual viewport changes, and gets it back at once on blur. It must not stay shrunk
   with no keyboard: while the keyboard is open, `kbFit()` also runs every `KB_ASK` ms (any browser), as a resize event
   can be missing. On iOS, a focus no press caused, with no keyboard and more than `KB_MS` after the last field was left,
