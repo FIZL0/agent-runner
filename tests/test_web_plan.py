@@ -249,7 +249,7 @@ def test_start(tmp: Path) -> None:
         eq(by_ip, f'http://10.0.0.5{tail}', 'and its LAN address, for a phone that cannot resolve the hostname')
         check(any(url in str(c) for c in lg.call_args_list), 'the run log has the address', lg.call_args_list)
         with mock.patch.object(S, 'run_up', return_value=True):
-            eq(W.page_line(), f'run page: {url} (or {by_ip})', 'status prints it while the run is up')
+            eq(W.page_line(), f'run page: {url} (or {by_ip} or http://localhost{tail})', 'status prints it while the run is up')
         eq(U.SEND[0], U.to_new, "the run's chat goes through ui_model.to_new, a new chat each")
         eq(srv.server_address[0], '0.0.0.0', 'F165: no Home: on every interface')
     finally:
@@ -265,7 +265,7 @@ def test_start(tmp: Path) -> None:
             logged = ' '.join(str(c) for c in lg.call_args_list)
             check('http://box:8770/p/proj/?t=HT' in logged and str(own) not in logged, "the run log has Home's link only", logged)
             with mock.patch.object(S, 'run_up', return_value=True):
-                eq(W.page_line(), 'run page: http://box:8770/p/proj/?t=HT', 'and so has status')
+                eq(W.page_line(), 'run page: http://box:8770/p/proj/?t=HT (or http://localhost:8770/p/proj/?t=HT)', 'and so has status')
         finally:
             srv.stop()
 

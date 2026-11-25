@@ -100,7 +100,8 @@ def test_serves(tmp: Path) -> None:
         try:
             M.launch(row, lambda: next(it), shown.append, acts)
             live.append(pid_of(root))
-            check(len(opened) == 2 and opened[0] == opened[1] == row['link'] and f':{port}/?t=' in opened[0],
+            check(len(opened) == 2 and opened[0] == opened[1] and opened[0].startswith(f'http://localhost:{port}/?t=')
+                  and f':{port}/?t=' in row['link'] and 'localhost' not in row['link'],
                   'w starts it and opens its page, w again opens the same', (opened, shown[-1]))
             check('opened' in shown[-1] and 'not running' in shown[-1], 'the launcher says so; no run is up', shown[-1])
             check(plat.alive(live[0]) and live[0] != os.getpid(), 'it is a process of its own')
@@ -566,7 +567,7 @@ def test_private(tmp: Path) -> None:
             eq(P.open_page(root, lambda u: f'opened {u}'), (f'opened {got[0]}', got[0]), 'w opens it')
             # the person sees Home's address once Home routes the project
             with mock.patch.object(W, 'site_urls', lambda *a, **k: ['http://h:1/p/proj/?t=k']):
-                eq(P.links(root), ['http://h:1/p/proj/?t=k'], "Home's address when it routes the project")
+                eq(P.links(root), ['http://h:1/p/proj/?t=k', 'http://localhost:1/p/proj/?t=k'], "Home's address when it routes the project")
             lock = until(lambda: plat.lock(S.C.notes('run.lock')))
             try:
                 srv = W.start_web()
