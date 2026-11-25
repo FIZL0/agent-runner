@@ -270,6 +270,8 @@ def _carry(root: Path, to: str) -> str:
         return f'{f.name} on {to} could not take the setting: {e}'
     if new == old:
         return ''
+    if CF.Config(root).pr:  # as `commit_file`: a commit there would miss its pull request
+        return f'PR mode is on, so {f.name} on {to} has to get [git] master_branch in a pull request'
     tip = _out(root, 'rev-parse', ref)
     mode = _out(root, 'ls-tree', ref, '--', rel).split(' ')[0] or '100644'
     with tempfile.TemporaryDirectory() as tmp:

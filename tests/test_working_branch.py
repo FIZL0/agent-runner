@@ -93,6 +93,10 @@ def test_pr_mode() -> None:
     with mock.patch.object(pr, 'branch_problem', lambda c, root, b: f'{b} has no branch protection on GitHub'):
         config.Config.pr, was = property(lambda c: True), config.Config.__dict__['pr']
         try:
+            (d / 'runner.toml').write_text('[git]\nmaster_branch = "dev"\n', encoding='utf-8')
+            tip = out(d, 'rev-parse', 'dev')
+            has(W._carry(d, 'dev'), 'in a pull request', 'nor is the setting committed to the branch by the runner')
+            eq(out(d, 'rev-parse', 'dev'), tip, 'it has not moved')
             has(W.problem(d, 'dev'), 'PR mode could not go on with dev: dev has no branch protection', 'said')
         finally:
             config.Config.pr = was
