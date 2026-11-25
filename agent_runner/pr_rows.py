@@ -11,6 +11,7 @@ from agent_runner import plan as P, pr
 from agent_runner import state as S
 
 LABEL = 'PR'  # the Needs you label
+LIMIT_WAIT = 'waits for an open pull request to be merged'
 
 
 def seen(got: dict) -> dict:
@@ -44,7 +45,7 @@ def state_of(x: dict) -> str:
     """An open pull request's state in words: 'CI red, changes asked', else 'waits for review'."""
     asked = x.get('review') == 'CHANGES_REQUESTED' or bool((x.get('round') or {}).get('items'))
     said = [w for w, on in (('CI red', x.get('ci_red')), ('changes asked', asked),
-                            ('conflicts with main', x.get('conflict'))) if on]
+                            ('conflicts with the main branch', x.get('conflict'))) if on]
     return ', '.join(said) or ('approved, waits to be merged' if x.get('review') == 'APPROVED' else 'waits for review')
 
 
@@ -100,6 +101,8 @@ def mark(queue: list[dict], prs: list[dict], up: bool) -> list[dict]:
     limit = up and limit_line()
     on = started() if limit else ()
     for q in queue:
+        if (r := q.get('release')) and r['state'] == 'next' and limit and q['id'] not in on:  # its row's own words
+            q['release'] = {**r, 'words': LIMIT_WAIT, 'all': LIMIT_WAIT, 'text': f'{r["id"]} {r["title"]} · {LIMIT_WAIT}'}
         if q.get('release') or q.get('under_way') or q.get('state') not in ('ready', 'critical', 'after'):
             continue
         if r := of.get(q['id']):
@@ -108,5 +111,5 @@ def mark(queue: list[dict], prs: list[dict], up: bool) -> list[dict]:
             nums = ', '.join(f'#{n}' for n in dict.fromkeys(r['number'] for r in held))
             q.update(state='after', after_title=f'{q["after_title"]} (pull request {nums} is not merged)')
         elif limit and q['state'] != 'after' and q['id'] not in on:
-            q.update(state='tool', tool_wait='waits for an open pull request to be merged', pr_wait=True)
+            q.update(state='tool', tool_wait=LIMIT_WAIT, pr_wait=True)
     return queue

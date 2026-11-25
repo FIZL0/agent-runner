@@ -47,7 +47,7 @@ def queue(up: bool = True) -> dict[str, dict]:
 def test_states() -> None:
     print('the state in words')
     for got, want in (({}, 'waits for review'), ({'reviewDecision': 'CHANGES_REQUESTED'}, 'changes asked'),
-                      ({'statusCheckRollup': RED}, 'CI red'), ({'mergeable': 'CONFLICTING'}, 'conflicts with main'),
+                      ({'statusCheckRollup': RED}, 'CI red'), ({'mergeable': 'CONFLICTING'}, 'conflicts with the main branch'),
                       ({'statusCheckRollup': RED, 'reviewDecision': 'CHANGES_REQUESTED'}, 'CI red, changes asked'),
                       ({'reviewDecision': 'APPROVED'}, 'approved, waits to be merged'),
                       ({'reviewDecision': 'APPROVED', 'statusCheckRollup': RED}, 'CI red')):
@@ -71,6 +71,9 @@ def test_limit(tmp: Path) -> None:
     eq((q['F3']['state'], q['F3']['tool_wait'], q['F3']['pr_wait']),
        ('tool', 'waits for an open pull request to be merged', True), 'its row says so')
     eq(queue(up=False)['F3']['tool_wait'], 'waits for the run to start', 'no run up: that first')
+    rel = {'id': 'V1', 'title': 'Release', 'state': 'next', 'words': 'next'}
+    eq(R.mark([{'id': 'V1', 'state': 'ready', 'release': rel}], [], True)[0]['release']['text'],
+       'V1 Release · waits for an open pull request to be merged', "a release's row too")
     git(repo, 'branch', 'asked/F3')
     eq(free(), ['F3'], 'a session that goes on is not new')
     check('pr_wait' not in queue()['F3'], 'nor does its row say that it waits')

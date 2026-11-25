@@ -999,6 +999,6 @@ _Avoid_: parent task, umbrella task
 **Pull request state**:
 What an open pull request of PR mode waits for, in words: a review, a fix, or the person's merge.
 _Said_: waits for review, changes asked, CI red
-_On screen_: waits for review; changes asked; CI red; conflicts with main; approved, waits to be merged
+_On screen_: waits for review; changes asked; CI red; conflicts with the main branch; approved, waits to be merged
 _In code_: pr_rows.state_of
 _Avoid_: PR status, merge state

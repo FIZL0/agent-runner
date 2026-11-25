@@ -751,7 +751,7 @@ Limits and display:
   Status section Pull requests (a row opens it on GitHub), the terminal UI's Status panel (the selected line wraps to
   show the link) and its Needs you (label `PR`, id `pr-<number>`, nothing to answer, clears once merged or closed), and
   `plan waiting`.
-- A state (`pr_rows.state_of`) is "CI red", "changes asked", "conflicts with main" (joined by commas when several), else
+- A state (`pr_rows.state_of`) is "CI red", "changes asked", "conflicts with the main branch" (joined by commas when several), else
   "approved, waits to be merged" (GitHub's review decision is approved), else "waits for review". It is from the run's
   last look, every 60 s.
 - Status and the Run card say "5 pull requests are open: no new task starts until you merge or close one". A Plan queue
