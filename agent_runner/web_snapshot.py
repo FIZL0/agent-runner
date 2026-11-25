@@ -8,14 +8,16 @@ Part of `web`: `web` runs this file in its own namespace (see its PARTS), so the
 class Snapshots:
     """The snapshot, made at most once per TICK however many pages watch it."""
 
-    def __init__(self, make, state=None):
+    def __init__(self, make):
         self.make, self.lock, self.at, self.last = make, threading.Lock(), 0.0, ''
-        self.state = state if state is not None else state_path  # B850b: STATE, whose change makes one at once
+        self.state = state_path  # B850b: STATE, whose change makes one at once
+        self.gen = 0  # B850b: counts now() calls
         self.seen = None  # STATE's (mtime, size) at the last snapshot
         self.woken = threading.Condition()
 
     def now(self) -> None:
         """B850b: drop the cached snapshot and wake every events stream, so they send a fresh one at once."""
+        self.gen += 1
         self.at = 0.0
         with self.woken:
             self.woken.notify_all()
@@ -39,11 +41,13 @@ class Snapshots:
             if mark != self.seen:
                 self.seen, self.at = mark, 0.0
             if time.monotonic() - self.at >= TICK or not self.last:
+                gen = self.gen
                 try:
                     self.last = json.dumps(with_chat_order(self.make()), ensure_ascii=False)
                 except Exception as e:  # noqa: BLE001 - a bad read shows on the page, it does not end the stream
                     self.last = json.dumps({'error': f'{type(e).__name__}: {e}'})
-                self.at = time.monotonic()
+                # B850b: an action that ended while this one was being made keeps the cache dropped
+                self.at = time.monotonic() if self.gen == gen else 0.0
             return self.last
 
 
