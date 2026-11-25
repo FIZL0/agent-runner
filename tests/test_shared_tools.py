@@ -16,7 +16,7 @@ from pathlib import Path
 
 from _check import check, eq, git, report
 
-from agent_runner import config as CF, plan as P, runner as R, sched, slots, tools, ui_model as U  # noqa: E402
+from agent_runner import config as CF, plan as P, plat, runner as R, sched, slots, tools, ui_model as U  # noqa: E402
 from agent_runner import shared_tools as T, status  # noqa: E402
 
 CF.FIXED['merge_ahead'] = False
@@ -27,6 +27,11 @@ TODO = ('# TODO\n\n### Next\n\n- [ ] **T1** on the phone | files: a.py | needs: 
 
 def lock(said: str = '') -> None:
     LOCK.write_text(said, encoding='utf-8')
+
+
+def line(*words) -> str:
+    """A check's command line, each word quoted for the shell: Python's own path may have a space."""
+    return ' '.join(plat.quote(str(w).replace('\\', '/')) for w in words)
 
 
 def make_repo(tmp: Path) -> Path:
@@ -45,7 +50,7 @@ def make_repo(tmp: Path) -> Path:
     (repo / 'plan/TODO.md').write_text(TODO, encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
     (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n[run.tools.phone]\n'
-                                      f'check = {json.dumps(f"{sys.executable} {fake}".replace(chr(92), "/"))}\n'
+                                      f'check = {json.dumps(line(sys.executable, fake))}\n'
                                       'label = "iPhone 15"\nconnect = "Connect the iPhone 15 by USB"\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     for f in 'abc':
@@ -209,6 +214,29 @@ def agent(d: Path, *argv: str) -> tuple[int, str]:
     finally:
         os.chdir(cwd)
         os.environ.pop('AGENT_RUNNER_SLOT')
+
+
+def test_quoted(tmp: Path):
+    print('a check whose program and argument have a space in their quoted path')
+    repo = tmp / 'spaced'
+    (repo / 'plan').mkdir(parents=True)
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan/TODO.md').write_text(TODO, encoding='utf-8')
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    d = tmp / 'with space'
+    d.mkdir()
+    tool = d / ('tool.cmd' if plat.WINDOWS else 'tool')
+    tool.write_text('@type %1\n@exit 75\n' if plat.WINDOWS else '#!/bin/sh\ncat "$1"\nexit 75\n', encoding='utf-8')
+    tool.chmod(0o755)
+    who = d / 'the holder'
+    who.write_text('F9\n', encoding='utf-8')
+    # a literal string, as a person writes it: the quotes around each path, and backslashes on Windows
+    (repo / 'runner.toml').write_text('[run]\nremote = false\n[run.tools.phone]\n'
+                                      f"check = '\"{tool}\" \"{who}\"'\n", encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    fresh(repo)
+    eq(T.check('phone'), ('busy', 'F9'), 'it runs, with its argument and its exit code')
 
 
 def test_wait_for(repo: Path, tmp: Path):
@@ -489,7 +517,7 @@ def main() -> int:
         return report([lambda: test_config(repo), lambda: test_busy_and_together(repo), lambda: test_stale(repo),
                        lambda: test_missing(repo), lambda: test_unknown(repo), lambda: test_wait_for(repo, tmp),
                        lambda: test_order_and_drop(repo), lambda: test_background(repo), lambda: test_after_and_release(repo),
-                       lambda: test_without(tmp), lambda: test_memory(tmp)])
+                       lambda: test_without(tmp), lambda: test_quoted(tmp), lambda: test_memory(tmp)])
 
 
 if __name__ == '__main__':
