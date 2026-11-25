@@ -34,6 +34,16 @@ def task_pri(rest: str, section: str) -> str:
     return 'later' if section.startswith(P.PARKED) else 'normal'
 
 
+def split_queued(ls: list[str], tid: str, i: int, tasks: list[tuple]) -> bool:
+    """B811a: is the task at ls[i] a split one (`(split into …)`) with an open part neither parked nor shelved? Then it
+    stands in the queue, even at level later. `tasks`: `P.iter_tasks`' rows."""
+    if not P.SPLIT.search(ls[i]):
+        return False
+    parts = P.subtasks(tid, ls[i], [t for _, box, t, _, _ in tasks if box in ' ~'])
+    return any(t in parts and not section.startswith(P.PARKED) and task_pri(rest, section) != 'later'
+               and not P._shelved(ls, j) for section, _, t, rest, j in tasks)
+
+
 def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) -> list[dict]:
     """Every open task ([ ] or [~]) of TODO.md's lines `ls`, in plan order. F74: each row also carries
     `after_title` (what it waits on, in words: `after_words`) and `state` (`queue_state`; STATE `st` says
@@ -53,6 +63,8 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             continue
         f = P.fields(ls[i])
         after, pri = P.waits_on(ls, i), task_pri(rest, section)
+        if pri == 'later' and split_queued(ls, tid, i, tasks):
+            pri = 'normal'
         everything = P.ALL in f.get('after', []) and 'ahead' not in f  # F435: a listed one names them
         out.append({'id': tid, 'kind': task_kind(tid, names), 'title': titles[tid],
                     'files': f.get('files', []), 'after': after, 'pri': pri,
