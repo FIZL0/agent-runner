@@ -28,7 +28,7 @@ async function send(by){
   // F190a: never with force: while it works, the session queues the message; F190c: a second press forces, after a delay
   sendHold(key,SEND_HOLD);
   if(FD.shown){feedRest();sendFly()}  // the session draws it itself
-  outbox('chat_to',{text:msg,to,...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
+  questionGo(to,msg,(words,more)=>outbox('chat_to',{text:words,to,...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`,...more}));  // F192a2
 }
 /* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
    waiting, and its messages go once it has a name. B139: ask, its first message, shows in the stand-in. */

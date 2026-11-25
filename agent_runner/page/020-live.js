@@ -153,6 +153,7 @@ function obEditBack(cid){  /* a message that failed goes back in its box */
   obChange(b=>obDrop(b,cid));S.obOpen=false;
   if(!x.key||x.key==='home'){store.set(DRAFT_KEY('home'),x.text||'');return goView('home')}
   const to=obTo(x), t=to&&!to.startsWith('@')?to:x.key;  // a chat that came up since: its own box
+  if(x.about)questionMark(t,x.about);  // F192a2: still about its question
   store.set(DRAFT_KEY(t),x.text||'');open(t);
 }
 addEventListener('online',()=>drain());
