@@ -29,6 +29,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  nothing without --yes; refused while it lands
     ./run plan restore <ID> [WHERE]   undo a mistaken tick or drop: back from DONE.md as open [ ], same id, text
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
+                                 a dropped blocked task comes back blocked, with its ask file if this machine still has it
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
     ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--needs TOOL] [--pri LEVEL] [--alone | --no-alone]
@@ -2913,10 +2914,10 @@ def _p_restore(a, x):
     if a.id == release_moves.NEXT:
         print(release_moves.restore_next())
         return 0
-    restore(a.id, a.rest[0] if a.rest else 'top', ' '.join(a.rest[1:]) or None)
+    blocked = restore(a.id, a.rest[0] if a.rest else 'top', ' '.join(a.rest[1:]) or None)
     if release(a.id):
         release_moves.restored(a.id)
-    return x.say(f'restored {a.id}: open again in {Path(x.todo).name}')
+    return x.say(f'restored {a.id}: {"blocked again, as it was," if blocked else "open again"} in {Path(x.todo).name}')
 
 
 def _p_block(a, x):

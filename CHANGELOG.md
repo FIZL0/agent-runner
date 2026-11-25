@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: `plan restore` of a dropped blocked task puts it back blocked, with its BLOCKED text, its ask file and secrets (kept by `plan drop` on this machine only: secrets 1 day, the rest 30 days), and the tasks the drop freed wait on it again as they were, except one changed since it reopened or one something works on; on another machine or after 30 days it comes back blocked without the ask file and the freed tasks. The Plan queue's row menu has Remove on a blocked row too (B808).
+
 ## 0.69.0 (2026-11-25)
 
 - Fixed: `s!` (`stop --force`) now runs `[run] on_exit` for each session it ends, in its slot; before, it ended them without it, so e.g. a device lock it frees stayed held until the resumed session ended. The sessions still resume in the next run. The run waits for every on_exit still running, also one from a session that ended just before `s!`, at most 60 s from `s!` (or `[run] command_timeout` if that comes sooner); one still running is stopped and the log says so (B803).

@@ -88,9 +88,9 @@ def place(tid: str) -> str:
 def test_rows(tmp: Path) -> None:
     """Which row has which acts: none that is under way or parked; the existing row acts are as they were."""
     repo(tmp)
-    eq(menus(), {'F1': [HOLD, TOP, REMOVE], 'B2': [HOLD, TOP, REMOVE], 'F3': [HOLD, TOP, REMOVE], 'D4': [TOP], 'F5': [HOLD, TOP],
+    eq(menus(), {'F1': [HOLD, TOP, REMOVE], 'B2': [HOLD, TOP, REMOVE], 'F3': [HOLD, TOP, REMOVE], 'D4': [TOP, REMOVE], 'F5': [HOLD, TOP, REMOVE],
                  'V6': [HOLD, TOP, REMOVE], 'F7': [HOLD, TOP, REMOVE], 'F8': []},
-       'a task and a release; blocked: no remove, as Undo would open it; on the person: no hold, as plan hold refuses it')
+       'a task, a blocked one and a release; on the person: no hold, as plan hold refuses it')
     got = menus({'running': {'1': 'F1', '2': 'V6'}, 'merging': ['B2']})
     eq([got[t] for t in ('F1', 'V6', 'B2', 'F3')], [[], [], [], [HOLD, TOP, REMOVE]], 'running, releasing, merging: none')
     with mock.patch('agent_runner.sched.taken', lambda: {'F3': tmp}), mock.patch.object(S, 'queued', lambda: {1: ('B2', 's', 'w')}):
@@ -113,7 +113,7 @@ def test_commands(tmp: Path) -> None:
             eq((r['ok'], ran), (True, [['plan', *argv]]), key)
         check(r['out'] == 'B2 is removed', 'in plain words', r)
         ran.clear()
-        for key, tid in (('menu_unhold', 'B2'), (REMOVE, 'D4'), (TOP, 'F8'), (TOP, 'ZZ9'), (TOP, ''), ('menu_restore', 'x')):
+        for key, tid in (('menu_unhold', 'B2'), (REMOVE, 'F8'), (TOP, 'F8'), (TOP, 'ZZ9'), (TOP, ''), ('menu_restore', 'x')):
             eq((U.act('run_control', key=key, tid=tid)['ok'], ran), (False, []), f'{key} on {tid or "nothing"} is refused')
         with mock.patch.object(H, 'under_way', lambda c, t: 'it is finished and waits to merge'):
             r = U.act('run_control', key=REMOVE, tid='B2')
@@ -135,6 +135,23 @@ def test_undo(tmp: Path) -> None:
             r = U.act('run_control', key='menu_restore', tid=tid, text=at)
             check(r['ok'], f'{tid} back', r)
             eq((order(), [l for l in P.lines(S.C.todo) if f'**{tid}**' in l]), (start, [line]), f'{tid}: where it stood, as it was')
+        block = lambda t: P.section(S.C.todo, t)  # noqa: E731
+        asks = S.C.notes('asks', 'D4.json')
+        asks.write_text('{"summary": "which"}', encoding='utf-8')
+        before = {t: block(t) for t in ('D4', 'F5')}
+        for tid in ('D4', 'F5'):  # blocked: on the person, on a task
+            at = place(tid)
+            r = U.act('run_control', key=REMOVE, tid=tid)
+            check(r['ok'] and tid not in order() and asks.exists() != (tid == 'D4'), f'{tid} removed', r)
+            r = U.act('run_control', key='menu_restore', tid=tid, text=at)
+            eq((r['ok'], order(), block(tid)), (True, start, before[tid]), f'{tid}: blocked where it stood, as it was')
+        eq(asks.read_text(encoding='utf-8'), '{"summary": "which"}', 'its ask is back')
+        at = place('F1')
+        U.act('run_control', key=REMOVE, tid='F1')
+        P.reopen(S.C.todo)
+        check(block('F5') != before['F5'], 'what waited on it is freed')
+        U.act('run_control', key='menu_restore', tid='F1', text=at)
+        eq((order(), block('F5')), (start, before['F5']), 'and waits on it again')
         at = place('F3')
         U.act('run_control', key=REMOVE, tid='F3')
         P.move('B2', 'top', todo=S.C.todo)  # its neighbour above moved
