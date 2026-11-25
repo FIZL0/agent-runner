@@ -104,7 +104,7 @@ def test_after(tmp: Path) -> None:
         check('F2' not in free(), 'F2 does not start on the unmerged F1')
         eq(pr.mates('F2', S.plan_text('main')), set(), 'nor on its branch')
         q = queue()
-        eq(q['F1']['tool_wait'], 'pull request #1 waits for review', 'the row of the task itself')
+        eq(q['F1']['tool_wait'], 'pull request #1: waits for review', 'the row of the task itself')
         eq((q['F2']['state'], q['F2']['after_title']), ('after', 'F1 one (pull request #1 is not merged)'), 'the waiting row')
         gh.prs[0]['state'] = 'CLOSED'
         pr.look('main', gh)

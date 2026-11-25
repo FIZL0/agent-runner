@@ -995,3 +995,10 @@ _Said_: split task
 _On screen_: Split: 2 of 4 parts landed
 _In code_: (split into …), split_parts, split_ask, state 'split'
 _Avoid_: parent task, umbrella task
+
+**Pull request state**:
+What an open pull request of PR mode waits for, in words: a review, a fix, or the person's merge.
+_Said_: waits for review, changes asked, CI red
+_On screen_: waits for review; changes asked; CI red; conflicts with main; approved, waits to be merged
+_In code_: pr_rows.state_of
+_Avoid_: PR status, merge state

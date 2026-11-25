@@ -103,7 +103,7 @@ def mark(queue: list[dict], prs: list[dict], up: bool) -> list[dict]:
         if q.get('release') or q.get('under_way') or q.get('state') not in ('ready', 'critical', 'after'):
             continue
         if r := of.get(q['id']):
-            q.update(state='tool', tool_wait=f'pull request #{r["number"]} {r["state"]}', pr_wait=True)
+            q.update(state='tool', tool_wait=f'pull request #{r["number"]}: {r["state"]}', pr_wait=True)
         elif held := [of[t] for t in q.get('after') or [] if t in of]:
             nums = ', '.join(f'#{n}' for n in dict.fromkeys(r['number'] for r in held))
             q.update(state='after', after_title=f'{q["after_title"]} (pull request {nums} is not merged)')
