@@ -34,6 +34,8 @@ copy, and the actions they share.
     terminal_mode  how a session's terminal shows: 'ttyd', or 'install' (no ttyd yet)
     run       paused, stopping, forced, power, and `state`: the state pill's words (F124: `run_state`)
     merging   F426e: the tasks that merge now, [{'id', 'title', 'step', 'link'}] (`merge_rows`); step: the run log's last words
+    prs       F420: PR mode's open pull requests (`pr_rows.rows`): id (its Needs you item), number, url, ids, title, state;
+              pr_limit: why no new task starts for them, else ''; a queue row they keep has state 'tool' and `pr_wait`
     usage_max F426e: the usage percent past which new tasks wait, by usage name
     usage     F124: the account's usage, [{'name': 'session'|'week', 'pct'}]
     lately    F124: what landed lately, newest first, the words `status` lists under "lately": [{'at', 'text'}]; F426c: 'id'

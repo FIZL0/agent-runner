@@ -585,17 +585,17 @@ def look(branch: str, gh: ci.Gh | None = None, busy: set[str] = frozenset()) -> 
 
 
 def _look_at(rec: dict, branch: str, gh: ci.Gh, busy: set[str] = frozenset()) -> None:
-    from agent_runner import pr_feedback
+    from agent_runner import pr_feedback, pr_rows
     repo = slug(S.ROOT, S.C.push_remote or 'origin')
     r = gh('pr', 'view', str(rec['number']), '--repo', repo, '--json', 
-           'state,mergeCommit,headRefOid,baseRefName,mergeable,statusCheckRollup')
+           'state,mergeCommit,headRefOid,baseRefName,mergeable,statusCheckRollup,reviewDecision')
     got = _json(r)
     if not isinstance(got, dict):
         return _say(rec['key'], f'{rec["key"]}: GitHub did not say what became of pull request #{rec["number"]} ({_why(r)})')
     with edit() as d:
         for x in d:
             if x['branch'] == rec['branch']:
-                x['state'] = got['state']
+                x.update(state=got['state'], **pr_rows.seen(got))  # F420
     if got['state'] != 'MERGED':
         return pr_feedback.look(rec['branch'], got, branch, gh, busy)  # F423
     if pr_feedback.merged_waits(rec, busy):

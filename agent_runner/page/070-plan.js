@@ -38,6 +38,7 @@ function controlsCard(){
     ${S.snap.no_settings?`<div class="small" data-k="nosettings"><span class="v-warn">${esc(S.snap.no_settings)}</span></div>`:''}
     ${S.snap.agent_problem?`<div class="small" data-k="agentproblem"><span class="v-warn">${esc(S.snap.agent_problem)}</span></div>`:''}
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
+    ${S.snap.pr_limit?`<div class="small" data-k="prlimit" data-v="${esc(S.snap.pr_limit)}">${esc(S.snap.pr_limit)}</div>`:''}
     ${(S.snap.tools||[]).length?`<div class="small" data-k="tools" data-v="${esc(toolsWords(S.snap.tools))}">${esc(toolsWords(S.snap.tools))}</div>`:''}
     ${obCards(obRun)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">${I.dots}More…</button></div>`:''}`,'','data-k="run"');
 }
@@ -53,6 +54,7 @@ function needBtns(n,i,more=''){
   const open=a=>a?`<a class="btn" href="${esc(a)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:'';
   if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id];
     return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?foldIn('pitch:'+n.id,pitchNo(n,i)):''}`}
+  if(n.label==='PR')return `<div class="btns">${open(n.url)}</div>`;  // F420: a person merges it on GitHub, and then it clears
   if(n.label==='TOOL')return '';  // F168: nothing to answer, it clears once the tool is back
   return `<div class="btns">${needInputs(n).length?'':ansBtns(n)}${more}${restBtns(n)}${open(needPage(n))}${n.devices?needDevices(n):''}</div>${actSure(n.acts,n.id)}`;
 }
@@ -63,7 +65,7 @@ const needCard=(n,i)=>card(needTap(n,S.snap.kinds)+needBtns(n,i),'need',`data-k=
 const needOf=id=>((S.snap&&S.snap.needs)||[]).find(n=>n.id===id);
 const shotUrl=s=>tq('shot/'+s.src.split('/').map(encodeURIComponent).join('/'));
 const askField=id=>'askre:'+id;
-const askTask=id=>!/^(tool-|pitch)/.test(id);
+const askTask=id=>!/^(tool-|pr-|pitch)/.test(id);
 function askFold(key,label,got){
   const on=!!S.askFold[key];
   return `<button class="fold" data-k="askfold:${key}" data-askfold="${key}" aria-expanded="${on}"><span class="grow"><b>${label}</b></span><span class="chev">${I.chev}</span></button>${on?foldIn('ask:'+key,`<div class="asktext">${!got?'<div class="small">Loading…</div>':got.err?`<div class="small v-bad">${esc(got.err)}</div><div class="btns"><button class="btn" data-askload>Retry</button></div>`:taskParas(got.text).map(p=>`<p>${esc(p)}</p>`).join('')||'<div class="small">There are no words of it.</div>'}</div>`):''}`;
@@ -157,7 +159,7 @@ function needSheet(){
   const i=S.snap.needs.indexOf(n), d=needD(n), big=d.shots[S.askShot], rep=needReplies(n), f=askField(n.id), said=S.giveSaid&&S.giveSaid.id===n.id?S.giveSaid:{}, secure=window.isSecureContext!==false;
   const body=big?`<button class="shotbig" data-shotclose aria-label="Back to the details"><img src="${esc(shotUrl(big))}" alt="${esc(big.caption||'Picture')}"></button>${big.caption?`<p class="small">${esc(big.caption)}</p>`:''}`
     :`${needBody(n,shotUrl,giveHTML(n,{secure,...said,done:giveDone(n,said,secure)}),S.askFold.text,I.chev)}${needPage(n)?`<a class="asklink" href="${esc(needPage(n))}" target="_blank" rel="noopener">Its page ${I.ext}</a>`:''}${askTask(n.id)?askWhyFold(n.id)+(needText(n)?'':askFold('task','Full task',(S.askText||{})[n.id])):''}`;
-  const foot=needInputs(n).length?`<div class="askfoot end" data-k="askfoot">${needBtns(n,i)}</div>`:n.label==='TOOL'?'':`<div class="askfoot" data-k="askfoot"><input class="fld" data-f="${esc(f)}" aria-label="${rep?'Your reply':'A note with your answer'}" placeholder="${rep?'Your reply':'Add a note (optional)'}" autocomplete="off">${needBtns(n,i,rep?`<button class="btn ${answerOpts(n).length?'':'pri'}" data-reply="${esc(n.id)}">Reply</button>`:'')}</div>`;
+  const foot=needInputs(n).length?`<div class="askfoot end" data-k="askfoot">${needBtns(n,i)}</div>`:n.label==='TOOL'||n.label==='PR'?'':`<div class="askfoot" data-k="askfoot"><input class="fld" data-f="${esc(f)}" aria-label="${rep?'Your reply':'A note with your answer'}" placeholder="${rep?'Your reply':'Add a note (optional)'}" autocomplete="off">${needBtns(n,i,rep?`<button class="btn ${answerOpts(n).length?'':'pri'}" data-reply="${esc(n.id)}">Reply</button>`:'')}</div>`;
   return `<div class="asktop"><div class="grow"><h2>${needHead(n)}</h2>${needTitle(n)?`<div class="small">${esc(needTitle(n))}</div>`:''}</div>${big?'<button class="btn" data-shotclose>Back</button>':'<button class="btn" data-closesheet>Close</button>'}</div>
     <div class="small">${askChip(n,S.snap.kinds)?askChip(n,S.snap.kinds)+' ':''}<span class="asklab">${esc(needLab(n))}</span>${n.age?` · ${esc(n.age)}`:''}${askChip(n)?'':` · ${esc(n.id)}`}</div><div class="askbody">${body}</div>${foot}`;
 }

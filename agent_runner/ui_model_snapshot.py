@@ -200,6 +200,15 @@ def unpushed_line() -> str:
         return ''
 
 
+def pr_lines() -> list[str]:
+    """F420: the open pull requests' status lines (`pr_rows.lines`)."""
+    try:
+        from agent_runner import pr_rows
+        return pr_rows.lines()
+    except Exception:  # noqa: BLE001 - costs the lines, not the snapshot
+        return []
+
+
 NO_SETTINGS = 'no settings found, so no test gate and nothing is pushed'
 
 
@@ -258,6 +267,7 @@ def status_rows(up: bool, st: dict, progress: str, login: str | None = None) -> 
         out.append(login)
     if unpushed := unpushed_line():
         out.append(unpushed)
+    out += pr_lines()  # F420
     out += [l for l in progress.splitlines() if l]
     use = st.get('usage') or {}
     if parts := [f'{w} {use[k]:.0f}%' for k, w in (('five_hour', 'session'), ('seven_day', 'week'))
@@ -448,7 +458,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     """The run, as one JSON-ready dict (see the module doc). `up` and `now` default to the real ones; `links`,
     `terminal_base` and `windows` as `session_rows` (`windows` given: state is not read for titles).
     Call after `state.init`."""
-    from agent_runner import merge_rows
+    from agent_runner import merge_rows, pr_rows
     from agent_runner.status import progress_line, release_line, waiting_ok
     from agent_runner.watch import claude_login_line
     up = S.run_up() if up is None else up
@@ -474,6 +484,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
            'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
            'state': run_state(up, st)}  # F124
     queue = pin_releases(queue_rows(ls, st, now), releases)
+    prs = pr_rows.rows(titles=titles)  # F420
+    queue = pr_rows.mark(queue, prs, bool(up))
     if not up:
         queue = wait_for_run(queue)  # F402c1
     tools = tool_rows(bool(up), ls, st, now)  # F168
@@ -500,6 +512,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'agent_problem': agent_problem(st=st if up else None),  # B764b
             'claude_login': login,  # F126a
             'unpushed': unpushed_line(),  # F98
+            'prs': prs, 'pr_limit': pr_rows.limit_line(),  # F420
             'responses': kept_responses(),  # F425a
             'kinds': theme.kind_table(_kind_names()),  # F195b
             'merging': merge_rows.rows(st, titles, _bridge_link, links) if up else [],  # F426e

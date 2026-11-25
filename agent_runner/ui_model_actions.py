@@ -97,6 +97,9 @@ def need_label(tid: str) -> str:
     if (tid or '').startswith('tool-'):  # F168
         from agent_runner import shared_tools
         return shared_tools.LABEL if any(r[1] == tid for r in shared_tools.asks()) else ''
+    if (tid or '').startswith('pr-'):  # F420
+        from agent_runner import pr_rows
+        return pr_rows.LABEL if any(r[1] == tid for r in pr_rows.asks()) else ''
     try:
         return P._ask(tid, S.C.todo)[0]
     except (SystemExit, OSError, AttributeError):

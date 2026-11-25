@@ -611,6 +611,8 @@ class RunPage:
         show its whole title and its tag (the after line) under it."""
         if n == 1 and open_ and self.run_failed and self.off_row(it):  # F402c2: why, whole
             return [[('● ' if i == 0 else '  ', 'red')] + l for i, l in enumerate(text_lines(self.off_said(), 'fg', max(width - 2, 4)))]
+        if n == 1 and open_ and it.startswith('#'):  # F420: a pull request, its link too
+            return wrap(self.row(n, it), max(width, 4))
         if n != 3:
             return [self.row(n, it)]
         rel = it if it.get('placeholder') else it.get('release')
