@@ -128,6 +128,14 @@ function talkBack(){
   if(DK.rec&&DK.key==='talk'){DK.put=true;if(MIC.rec===DK.rec)DK.rec.stop();else{MIC.next=null;DK.rec=null}}  // its stop is in the box
   return true;
 }
+/* B836: Talk left for another view or chat: the reading stops, and what waited to be read keeps its play button. From
+   render(), so it draws nothing; no speechSynthesis call when nothing is read (B132) */
+function talkAway(){
+  TK.later=[];
+  if(!talkReads())return;
+  TK.playing='';TK.turn=(TK.turn||0)+1;if(TK.state==='speaking')TK.state=talkRest();
+  shush();
+}
 /* since when the tab is away, and from which project, kept over a reload. Back: true when that was too long, or another
    project's page was open since, or nothing says */
 function talkLate(){const [at,...of]=tabStore.get(TA_KEY).split(' ');tabStore.set(TA_KEY,'');return !at||of.join(' ')!==TALK_FOR||Date.now()-at>=TYPE_STAYS}
@@ -284,10 +292,10 @@ function talkHear(n){
   const w=TK.wait;if(!w||talkWaitName()!==n)return;
   if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking'){TK.state='';toast('No spoken reply came in five minutes: its chat shows where it is.',true);render(true)}return}
   const said=talkReply(feedOf(n),w.since,w.said);
-  if(!said||said!==w.last){w.last=said;return}
+  if(!said||said!==w.last){w.last=said;w.away=!chatShown();return}
   TK.wait=null;
   if(TK.state==='thinking')TK.state='';
-  if(TS.read){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off
+  if(TS.read&&chatShown()&&!w.away){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off; B836: or its last words landed with Talk not shown
   render(true);
 }
 function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
