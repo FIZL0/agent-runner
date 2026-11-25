@@ -14,5 +14,11 @@ prompt_extra = """
 A task that changes how the run app looks, moves or speaks (agent_runner/page/*, the parts of the run app's page; Runner Home's page): read
 docs/STYLE.md first and follow it; a change that needs a new rule writes the rule there in the same commit."""
 
+# The phone is iFizBox's: its script says who has it, with the same exits (0 free, 75 busy, 69 missing).
+[run.tools.iphone15]
+check = 's="$HOME/repos/iFizBox/tools/ui-15.sh"; [ -x "$s" ] || { echo "no iFizBox tools/ui-15.sh in ~/repos on this machine"; exit 69; }; "$s" state'
+label = "iPhone 15 Pro"
+description = "iFizBox's test phone, on this desktop's USB; drive it only through ~/repos/iFizBox/tools/ui-15.sh (lock it first, unlock it after)."
+
 [run.join]
 "CHANGELOG.md" = "python3 tools/changelog_join.py {ours} {base} {theirs} {out}"
