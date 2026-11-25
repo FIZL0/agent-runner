@@ -251,15 +251,17 @@ const relDrop=q=>(q.acts||[]).filter(k=>k==='queue_drop');
 const planCard=(q,list='queue')=>card(taskRow(q,q.title||q.id,taskBtns(q),list),'',`data-k="task:${esc(q.id)}"`);
 /* F426b: an open release: it opens to the tasks it waits for, each a row that opens too; one that waits for none, to its text */
 const relWaits=r=>((r.waits||[]).length?`waits for ${r.waits.length}`:r.words)+(r.note||'');
-function releaseRow(q,list='release'){
+function releaseRow(q,list='queue'){
   const r=q.release, in_='wait:'+q.id;
   const one=w=>{const t=(S.snap.queue||[]).concat(S.snap.shelved||[]).find(x=>x.id===w.id);
     return `<div class="srow" data-k="${esc(in_)}:${esc(w.id)}">${taskRow(t||{...w,state:'open'},(t||w).title||w.id,t?taskBtns(t).replace('data-k="acts:',`data-k="acts:${esc(in_)}:`):'',in_)}</div>`};
   return taskRow(q,r.title||q.title||q.id,taskBtns(q,relDrop(q)),list,(r.waits||[]).length?`<div class="waits">${r.waits.map(one).join('')}</div>`:'');
 }
 const releaseCard=(q,list)=>card(releaseRow(q,list),'',`data-k="task:${esc(q.id)}"`);
-/* F131: the auto release's count, which is no open task, dimmed */
+/* F131: the auto release's count, which is no open task, dimmed; F195c: in the Queue */
 const nextReleaseRow=r=>`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc((r.id?r.id+' · ':'')+(r.words||''))}</span></div></div>`;
+const nextReleaseCard=r=>card(nextReleaseRow(r),'relph','data-k="rel:next"');
+const queueCard=q=>q.placeholder?nextReleaseCard(q):q.release?releaseCard(q):planCard(q);
 function parkedCard(q,list='parked'){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
   return card(taskRow(q,q.title||q.id,'',list)+taskBtns(q),'',`data-k="task:${esc(q.id)}"`);
 }

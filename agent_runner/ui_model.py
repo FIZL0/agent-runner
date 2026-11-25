@@ -25,8 +25,9 @@ copy, and the actions they share.
     manage_releases  F193: `[run] releases`; False: `releases` and `release_acts` are empty, `release` and
               `release_said` '', and an open V task is an ordinary row of `queue`
     release   the release lines, one per release ('' for none)
-    releases  F185: the Releases group, one row each (`release_rows`): the open V tasks (also moved last in
-              `queue`, each with `release`: its row), or a placeholder while `[run] auto_release` counts, then
+    releases  F185: the releases, one row each (`release_rows`): the open V tasks (also in
+              `queue` at their place, each with `release`: its row), a placeholder while `[run] auto_release` counts (F195c:
+              `before`, the queue row it stands before), then
               the last one released
     quick_asks  the Status chat's quick asks, each a new chat: key, label, text
     terminal_mode  how a session's terminal shows: 'ttyd', or 'install' (no ttyd yet)
