@@ -73,6 +73,23 @@ def passed_over(run, own: dict[str, str], held: frozenset) -> tuple[set[str], se
     return passed, out
 
 
+def resume_held(run, n: int) -> bool:
+    """B799: the session queued for slot `n` of `run` would go on with a claude model while the Claude API cannot be
+    reached, in a project that needs the account for nothing else (else `api_down` holds it). Said once."""
+    from agent_runner import fallback as FB, state
+    from agent_runner.watch import api_up
+    tid, sid, _ = run.waiting[n]
+    key, c = f'api {tid}', state.C
+    if (c.run.get('agent') or 'claude') != 'claude' or account(c) or \
+            FB.provider(FB.queued_model(tid) or FB.session_model(sid)) != 'claude' or api_up(True):
+        run.stall_said.discard(key)
+        return False
+    if key not in run.stall_said:
+        run.stall_said.add(key)
+        state.log(f'the Claude API cannot be reached: {tid} cannot resume until it can')
+    return True
+
+
 def cap_alarm(w: str, own: str, detail: str) -> tuple[str, str]:
     """The usage-cap alarm's line and detail; `own`: the task it holds alone (B791)."""
     if not own:
