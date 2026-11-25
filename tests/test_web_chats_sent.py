@@ -153,7 +153,7 @@ def test_outbox_f137(tmp: Path) -> None:
                  'id="obbar"', 'id="obpop"', 'standRows()', 'obBubbles(n)', 'obCards(x=>x.concept)',
                  "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to,..."):
         check(part in page, f'the page has {part}')
-    send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
+    send = page.split('async function send(by){', 1)[1].split('\n}', 1)[0]
     check("act('chat_to'" not in send, 'a message no longer waits for chat_to before leaving the box', send)
     if not shutil.which('node'):
         print('  (no node here: the outbox script test is skipped)')
