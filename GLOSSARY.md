@@ -905,3 +905,10 @@ _Said_: cancel instead of take back
 _On screen_: Cancel on a running slot; Yes, cancel
 _In code_: cancel.py, task_cancel, plan cancel, cancels, keep_work
 _Avoid_: take back, abort, kill
+
+**Tool button**:
+A shared tool's own button on the Tools page: a label and a command that runs once and ends, with an optional question asked first; any tool or device can have any number
+_Said_: custom button
+_On screen_: the button's own label
+_In code_: tool_buttons.py, [[run.tools.<name>.buttons]], op press
+_Avoid_: action, macro, shortcut

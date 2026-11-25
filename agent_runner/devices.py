@@ -748,18 +748,38 @@ def _page_lines(d: Path) -> list[str]:
         stamp = tuple((s.st_mtime_ns, s.st_size) for s in (d.joinpath('log').stat(), *([saved.stat()] if saved.exists() else [])))
         if (hit := _LINES.get(str(d))) and hit[0] == stamp:
             return hit[1]
-        hide = [v for n, dev in load()['devices'].items() for w in dev.get('secrets') or {} if w in SECRETS
-                and (v := _secret(n, w, dev))]
+        hide = _all_secrets()
     except OSError:
         return []
     except Refused:
-        return ['(the output is not shown: a stored secret that may be in it cannot be read now)']
-    text = Redactor(hide).all(device_page.tail(d))
+        return [NOT_SHOWN]
+    got = _clean_lines(device_page.tail(d), hide)
+    _LINES[str(d)] = stamp, got
+    return got
+
+
+NOT_SHOWN = '(the output is not shown: a stored secret that may be in it cannot be read now)'
+
+
+def _all_secrets() -> list[str]:
+    return [v for n, dev in load()['devices'].items() for w in dev.get('secrets') or {} if w in SECRETS
+            and (v := _secret(n, w, dev))]
+
+
+def _clean_lines(data: bytes, hide: list[str]) -> list[str]:
+    text = Redactor(hide).all(data)
     text = re.sub(rb'\x1b\[[0-9;?]*[A-Za-z]|[\x00-\x08\x0b-\x1f\x7f]', b'', text)
     text = Redactor(hide).all(text).decode('utf-8', 'replace')  # again: colours may have stood inside one
     got = [l[:PAGE_WIDTH] for l in text.split('\n') if l.strip()]
-    _LINES[str(d)] = stamp, got[-PAGE_LINES:]
     return got[-PAGE_LINES:]
+
+
+def hidden_lines(data: bytes) -> list[str]:
+    """The last lines of a command's output, every device's stored secrets hidden in them (F428c)."""
+    try:
+        return _clean_lines(data, _all_secrets())
+    except Refused:
+        return [NOT_SHOWN] if data.strip() else []
 
 
 def _page_end(dev: dict) -> bool:
@@ -1016,7 +1036,7 @@ def refusal(why: str) -> dict:
 def _shown(name: str, dev: dict, uses: list[str]) -> dict:
     """A device as the page has it: what is set, never a secret."""
     out = {k: dev[k] for k in ('kind', 'description', 'exclusive', 'alias', 'host', 'user', 'port', 'reach', 'page', 'start',
-                               'folder') if k in dev}
+                               'folder', 'buttons') if k in dev}
     hk = dev.get('hostkey')
     return {**out, 'run': page_state(dev), 'name': name, 'label': name, 'source': 'device', 'used': name in uses,
             'hostkey': {'fp': hk['fp'], 'type': hk['type'], 'changed': hk.get('changed', '')} if hk else None,
@@ -1030,13 +1050,14 @@ def _tool_shown(dev: dict | None) -> dict:
 
 def page(c, why: str = '') -> dict:
     """GET /tools: every tool and device, F168's state of each, and whether this page may save."""
-    from agent_runner import shared_tools
+    from agent_runner import shared_tools, tool_buttons
     d = load()
     states = {r['name']: r for r in shared_tools.rows(checked=True)}
     toml = c.run.get('tools') or {}
-    uses, pages = d['uses'].get(project(c), []), tool_pages(c)
+    uses, pages, buttons = d['uses'].get(project(c), []), tool_pages(c), tool_buttons.in_toml(c)
     out = [{'name': n, 'label': t.get('label') or n, 'description': t.get('description', ''), 'source': TOML,
-            'check': t['check'], 'exclusive': True, 'used': True, **_tool_shown(pages.get(n))} for n, t in toml.items()]
+            'check': t['check'], 'exclusive': True, 'used': True, **_tool_shown(pages.get(n)),
+            **({'buttons': buttons[n]} if n in buttons else {})} for n, t in toml.items()]
     out += [_shown(n, dev, uses) for n, dev in d['devices'].items()]
     for t in out:
         r = states.get(t['name']) if t['used'] and not (t['source'] == 'device' and t['name'] in toml) else None
@@ -1118,13 +1139,16 @@ def _page_id(dev: dict) -> dict:
 
 def op_save(a: dict, c) -> dict:
     """Add a device, or edit one (`edit`: its name). A new place to connect to forgets the accepted host key."""
+    from agent_runner import tool_buttons
     name, edit = a.get('name'), a.get('edit')
-    new = checked(a)
+    new, more = checked(a), {}
+    if 'buttons' in a:  # F428c: a page that does not send them leaves them as they are
+        more = {'buttons': bs} if (bs := tool_buttons.checked(a['buttons'])) else {}
     with _edit() as d:
         if edit:
             old = _get(d, edit)
             moved = any(old.get(k) != new.get(k) for k in WHERE)
-            kept = {k: old[k] for k in ('secrets', 'hostkey') if k in old}
+            kept = {k: old[k] for k in ('secrets', 'hostkey', *(() if 'buttons' in a else ('buttons',))) if k in old}
             if moved:
                 kept.pop('hostkey', None)
             ended = False
@@ -1138,13 +1162,13 @@ def op_save(a: dict, c) -> dict:
             if new['kind'] == 'other' or new.get('alias'):
                 for w, m in (kept.pop('secrets', None) or {}).items():
                     _drop(edit, w, m)
-            d['devices'][edit] = {**_page_id(new), **kept}
+            d['devices'][edit] = {**_page_id(new), **more, **kept}
             if name not in (None, '', edit):
                 _rename(edit, name, d, c)
                 edit = name
             return {'out': f'{edit} is saved' + ('; its old command was stopped' if ended else '') + ('; test it to accept its host key' if moved and new['kind'] == 'ssh' else '')}
         _free_name(name, d, c)
-        d['devices'][name] = _page_id(new)
+        d['devices'][name] = {**_page_id(new), **more}
         d['uses'].setdefault(project(c), []).append(name)
     return {'out': f'{name} is added, and this project uses it'}
 
@@ -1281,8 +1305,13 @@ def op_stop(a: dict, c) -> dict:
     return page_stop(a.get('name'), _source(a), c)
 
 
+def op_press(a: dict, c) -> dict:
+    from agent_runner import tool_buttons
+    return tool_buttons.press(a, c)
+
+
 OPS = {'save': op_save, 'remove': op_remove, 'use': op_use, 'test': op_test, 'accept': op_accept,
-       'start': op_start, 'stop': op_stop, 'secret': op_secret, 'unsecret': op_unsecret, 'keypair': op_keypair}
+       'start': op_start, 'stop': op_stop, 'press': op_press, 'secret': op_secret, 'unsecret': op_unsecret, 'keypair': op_keypair}
 
 
 def post(body: bytes, c) -> tuple[int, dict]:

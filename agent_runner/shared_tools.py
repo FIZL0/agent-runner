@@ -194,14 +194,19 @@ def say_memory(t: float | None = None) -> None:
 
 def check(name: str, c=None) -> tuple[str, str]:
     """Run tool `name`'s check now, in the main checkout: (its state, who holds it or why it is not to be had)."""
-    from agent_runner.config import main_checkout
     c = c or S.C
     if specs(c)[name]['device']:
         return devices.check(name, c)
+    return run_check(specs(c)[name]['check'], c)
+
+
+def run_check(cmd: str, c) -> tuple[str, str]:
+    """A tool's `check` command, run now in the main checkout: its state, and who or why."""
+    from agent_runner.config import main_checkout
     # files, not pipes: a daemon the check leaves behind (adb's server) would hold a pipe open past the timeout
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
-            p = sp.Popen(specs(c)[name]['check'], shell=True, cwd=str(main_checkout(c.root)), stdin=sp.DEVNULL,
+            p = sp.Popen(cmd, shell=True, cwd=str(main_checkout(c.root)), stdin=sp.DEVNULL,
                          stdout=out, stderr=err, start_new_session=not plat.WINDOWS,
                          env={k: v for k, v in os.environ.items()
                               if k not in ('AGENT_RUNNER_SLOT', 'AGENT_RUNNER_WORKTREE')})
