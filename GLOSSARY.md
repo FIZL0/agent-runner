@@ -981,3 +981,10 @@ _Said_: auto audit
 _On screen_: Audit by itself
 _In code_: audit.py, (audit), auto_audit, audit_tokens
 _Avoid_: cleanup run, sweep, health check
+
+**Split task**:
+a task divided into parts that are tasks of their own; it is done once its parts are; dropping it leaves its open parts in the plan
+_Said_: split task
+_On screen_: Split: 2 of 4 parts landed
+_In code_: (split into …), split_parts, split_ask, state 'split'
+_Avoid_: parent task, umbrella task

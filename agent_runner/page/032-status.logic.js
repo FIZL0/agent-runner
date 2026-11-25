@@ -26,6 +26,7 @@ function idleWhy(snap,merging){
     say(of(q=>q.state==='blocked'),'is blocked','are blocked'),
     say(of(q=>q.state==='held'),'is held','are held'),
     say(of(q=>q.state==='tool'),'waits for a tool or a check','wait for a tool or a check'),
+    say(of(q=>q.state==='split'),'waits for its parts','wait for their parts'),
     say(rel,'is a release, which waits for merges or your approval','are releases, which wait for merges or your approval'),
     say(rest,...(cap?['waits for the usage limit','wait for the usage limit']:['is ready and waits for its turn, or for a task that runs alone','are ready and wait for their turn, or for a task that runs alone']))].filter(Boolean);
   return `Of ${qs.length} queued ${qs.length===1?'task':'tasks'}, ${parts.join(', ')}.${cap&&rest?` The ${cap.name} usage is at ${cap.pct}%.`:''}`;

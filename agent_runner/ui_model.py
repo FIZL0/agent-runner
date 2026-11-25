@@ -11,8 +11,8 @@ copy, and the actions they share.
     sessions_note  '' (kept for pages that read it: C26 has no older run to tell apart)
     queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked, after_title
               (what it waits on in words: 'F66 Run page: …', 'B109 (landed)', 'all: everything above it') and
-              state ('running s2 6m', 'critical', 'after', 'tool', 'parked', 'ready'); with shared tools set, needs
-              and tool_wait ('waits for iPhone 15, held by F389, 12 min')
+              state ('running s2 6m', 'critical', 'after', 'tool', 'split', 'parked', 'ready'); with shared tools set, needs
+              and tool_wait ('waits for iPhone 15, held by F389, 12 min'); B811b: a split task's `split` (`split_parts`)
     tools     the shared tools ([run.tools]; F168): name, label, state, words, waits; [] without them
     shelved   F184: the shelved tasks (`shelved_rows`), which queue, needs and concepts leave out: id, kind, title,
               ask in plain words, state 'shelved'
