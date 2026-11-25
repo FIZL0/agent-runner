@@ -89,6 +89,8 @@ def test_pitch(tmp: Path) -> None:
             eq(said()[0], ('pitch1', 'Not this: reopen', 'too soon'), 'a No')
             left.append({'id': 'F1', 'title': 'Board', 'state': 'waiting'})
             U.pitch_no('pitch1', 'drop', 'F1', confirm=True)
+            U.answer('pitch1', 'Not F1: drop', True)
+            left.clear()
             eq(len(said()), 2, 'a No to a part of it settles nothing yet')
         with ran_by([]), sends(sent, ok=False):
             U.answer('pitch1', 'Approve', True, 'lost words')
@@ -180,6 +182,8 @@ def test_state(tmp: Path) -> None:
     check(U.item_state('T7').startswith('open in the plan ('), 'reopened', U.item_state('T7'))
     todo.write_text(TODO.replace('- [ ] **B2**', '- [x] **B2**'), encoding='utf-8')
     eq(U.item_state('B2'), 'landed', 'ticked')
+    todo.write_text(TODO.replace('BLOCKED: DECIDE', 'BLOCKED: shelved: DECIDE'), encoding='utf-8')
+    eq(U.item_state('D3'), 'was shelved', 'set aside')
 
 
 if __name__ == '__main__':

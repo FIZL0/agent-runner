@@ -133,6 +133,15 @@ def need_row(tid: str) -> dict:
         return {}
 
 
+def pitch_waits(pid: str) -> bool:
+    """F425a: whether a change of pitch `pid` still waits for the person."""
+    try:
+        from agent_runner import pitch
+        return bool(pitch.changes_of(pid, state='waiting'))
+    except Exception:  # noqa: BLE001 - never fails the answer
+        return False
+
+
 def keep_response(tid: str, row: dict, said: str, note: str = '') -> None:
     """F425a: keep the sent response to the item `tid` (`row`: `need_row`, read before), which opened no chat. Never
     fails the answer."""
@@ -178,7 +187,7 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
                         S.log(f'{tid}: approved; the words with it went to no chat ({why}): {words}')
                         done += f'. Your words were not sent ({why}): {words}'
             r.update(said=done, gone=tid)
-            if not to_chat:
+            if not to_chat and not (argv[0] == 'pitch' and pitch_waits(tid)):  # a part of a pitch settles nothing yet
                 said = (text or '').strip()
                 keep_response(tid, row, sheet_said(tid, said) if argv[0] == 'sheet' else said, note)
         return r
