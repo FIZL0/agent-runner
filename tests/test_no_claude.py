@@ -247,7 +247,7 @@ def test_task_held(tmp: Path) -> None:
             return (n, 'sid', None)
         r = loop.Run.__new__(loop.Run)
         r.__dict__.update(procs={}, running={}, slots=2, r=c.run, a=mock.Mock(force=force), branch='main', model=MODEL,
-                          idle=30, pause=1, tried=set(), merging=[], waiting={}, foreign={}, stall_said=set(),
+                          idle=30, pause=1, tried=set(), merging=[], held_merges=[], waiting={}, foreign={}, stall_said=set(),
                           held_said=2, cap_said=False, cap_fell=False, once=True, idle_said=False, failed_starts={},
                           free_at={})
         W._api[:] = [-1e9, True]

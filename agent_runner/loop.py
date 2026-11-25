@@ -18,7 +18,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, settings_live, ci, file_split, gitops, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, undo
+from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -205,7 +205,7 @@ def run_version() -> str:
     return __version__
 
 
-def write_state(running: dict) -> None:
+def write_state(running: dict, held=()) -> None:
     """`<notes>/STATE`, for `agent-runner status`: what the keys have set, what each slot is on and since when,
     what is merging, and the account's usage (as the cap reads it, at most every 5 minutes)."""
     work = {str(n): t[0] for n, t in running.items()}
@@ -213,7 +213,7 @@ def write_state(running: dict) -> None:
     for k in [k for k in RUNNING_SINCE if work.get(k[0]) != k[1]]:
         RUNNING_SINCE.pop(k)
     since = {n: RUNNING_SINCE.setdefault((n, tid), now) for n, tid in work.items()}
-    merging = sorted({t.name[6:] for t in threading.enumerate() if t.name.startswith('merge:') and t.is_alive()})
+    merging = sorted({t.name[6:] for t in threading.enumerate() if t.name.startswith('merge:') and t.is_alive()} | set(held))
     # what the cap last read (`capped`, the start line); never a fetch of its own from here
     got = _account[1] if isinstance(_account[1], dict) and claude_use.account(C) else {}
     use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
@@ -350,6 +350,9 @@ def not_attempt(tid: str, branch: str) -> bool:
     return bool(rx and last and re.search(rx.replace('{id}', re.escape(tid)), last))
 
 
+ON_EDITS: set[str] = set()  # B227: tasks whose merge waits for a person's edits in the main checkout
+
+
 def finish(tid: str, n: int, sid: str, branch: str) -> None:
     """After a slot's session: merge its branch, or park it as wip/<ID> and say why."""
     try:
@@ -407,8 +410,10 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
               ('they are committed (or moved to a branch).' if why.startswith(EDITED) else
                f'{branch} is checked out in {ROOT} again.'))
         since = time.time()
+        ON_EDITS.add(tid)
         while blocked_by_edits(tid, branch):
             if stopping():
+                ON_EDITS.discard(tid)
                 log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it', EV_DEFERRED, tid)
                 return False
             if time.time() - since > REMIND_EVERY:  # still nobody: say it again, as loud
@@ -416,6 +421,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
                 alarm(f'{tid} is still not merging', f'{why}. task/{tid} has waited since '
                       f'{dt.datetime.fromtimestamp(since - REMIND_EVERY):%H:%M} or earlier.')
             time.sleep(EDITS_POLL)
+        ON_EDITS.discard(tid)
         log(f'{tid}: the main checkout is clear again; merging task/{tid} now')
     if why is False:  # B764c: it needed a fix session, and the wait for one ended
         return halted() and _finish(tid, n, sid, branch)  # dropped meanwhile: it goes as one dropped before its merge
@@ -729,6 +735,8 @@ class Run:
         self.idle_said, self.idle_at = False, 0.0
         self.free_at = {n: dt.datetime.min for n in range(1, slots + 1)}
         self.merging: list[threading.Thread] = []
+        self.restart_due = False  # B227: new merges wait for the restart on changed code
+        self.held_merges: list[tuple[str, int, str]] = []  # (task, slot, session id) of those
         self.stall_said: set[str] = set()
         self.failed_starts: dict[str, int] = {}  # task -> sessions that did not start
         self.cap_said = False
@@ -746,7 +754,9 @@ class Run:
         return code
 
     def merge_in(self, tid: str, n: int, sid: str) -> None:
-        """Merge a finished task in a thread of its own."""
+        """Merge a finished task in a thread of its own; while a restart is due, hold it for the restarted run."""
+        if loop_upgrade.hold_merge(self, tid, n, sid):
+            return
         t = threading.Thread(target=finish, args=(tid, n, sid, self.branch), name=f'merge:{tid}')
         t.start()
         self.merging.append(t)
@@ -810,7 +820,8 @@ class Run:
         prune_wips(self.branch)  # F23: now and then, for tasks ticked or dropped by hand while the run is up
         take_keys()
         IDLE[0] = self.idle_said
-        write_state(running)
+        loop_upgrade.start_asked(self)
+        write_state(running, [m[0] for m in self.held_merges])
         if SLOTS != self.slots:  # `+` or `-`: a slot past the count is watched to its end, never refilled
             self.slots = SLOTS
             for m in range(1, self.slots + 1):
@@ -825,7 +836,7 @@ class Run:
         halts(procs, running, self.free_at, self.tried, self.branch, self.model, self.idle,
               self.slots)  # B19: plan drop / change of a running task
         self.waiting = {n: q for n, q in queued().items() if n in self.free_at and n <= self.slots}
-        left = len(procs) + len(self.waiting) + len(self.foreign) + sum(t.is_alive() for t in self.merging)
+        left = len(procs) + len(self.waiting) + len(self.foreign) + len(self.held_merges) + sum(t.is_alive() for t in self.merging)
         if said := stop_note(stopping(), left, stopped_by()):
             if STOP_SAID[0]:
                 log(said, EV_STOP_ASKED, left=left)
@@ -974,9 +985,10 @@ class Run:
         else:
             self.say_cap(w)
             return
-        allowed = backlog_slots(slots, sum(t.is_alive() for t in self.merging))
+        behind = len(self.held_merges) + sum(t.is_alive() for t in self.merging)
+        allowed = backlog_slots(slots, behind)
         if allowed != self.held_said:
-            log(backlog_line(slots, allowed, sum(t.is_alive() for t in self.merging)))
+            log(backlog_line(slots, allowed, behind))
             self.held_said = allowed
         if allowed < slots and sum(m <= slots for m in procs) >= allowed:
             return

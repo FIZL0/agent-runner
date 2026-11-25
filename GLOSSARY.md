@@ -678,9 +678,9 @@ _In code_: newsDraw, pageNews, PAGE_PRINT, snapshot 'page', 'restart_needed'
 _Avoid_: banner, toast, update bar
 
 **Changed-code restart**:
-A run from a source checkout (a clone with .git beside agent_runner/) with auto_upgrade on restarts itself between merges once main's agent_runner code has held still for 10 min (at most 1 h after the first change), so one restart covers a batch. It keeps its slots and adopts its sessions.
+A run from a source checkout (a clone with .git beside agent_runner/) with auto_upgrade on restarts itself as soon as main's agent_runner code has changed, and holds new merges until then. It keeps its slots and adopts its sessions.
 _Said_: restart on changed code
-_In code_: watch_code, code_restart, CODE_QUIET
+_In code_: watch_code, code_restart, hold_merge
 _Avoid_: hot reload
 
 **Ask file**:

@@ -47,7 +47,8 @@ def land(*ids, kind=None):
 
 
 def run(**over):
-    d = dict(idle_said=True, once=False, procs={}, waiting={}, merging=[], running={}, tried=set(), branch='main')
+    d = dict(idle_said=True, once=False, procs={}, waiting={}, merging=[], running={}, tried=set(), branch='main',
+             restart_due=False, held_merges=[])
     return SimpleNamespace(**{**d, **over})
 
 
