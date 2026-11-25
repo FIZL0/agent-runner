@@ -125,15 +125,46 @@ def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tu
     return ['plan', 'confirm', tid, said + noted], f'{tid} answered ({said}): a run starts it'
 
 
+def need_row(tid: str) -> dict:
+    """F425a: the Needs you row of `tid` as the person sees it, read before its answer takes it off; {} for none."""
+    try:
+        return row_of('need', tid) or row_of('concept', tid) or {}
+    except (Exception, SystemExit):  # noqa: BLE001 - it is only for the record
+        return {}
+
+
+def keep_response(tid: str, row: dict, said: str, note: str = '') -> None:
+    """F425a: keep the sent response to the item `tid` (`row`: `need_row`, read before), which opened no chat. Never
+    fails the answer."""
+    try:
+        from agent_runner import sent_responses
+        ask = row.get('ask') or ''
+        sent_responses.keep(row.get('id') or tid, row.get('title') or P.titles(S.C.done, S.C.todo).get(tid, ''),
+                            (row.get('detail') or {}).get('summary') or ask, ask, said, note)
+    except (Exception, SystemExit):  # noqa: BLE001
+        pass
+
+
+def sheet_said(tid: str, said: str) -> str:
+    """F425a: a pick sheet's reply (go, or its Send line) in words: each question and its answer."""
+    try:
+        from agent_runner import sheet
+        spec = sheet.load(S.C.notes('sheets', f'{tid}.json'))
+        return sheet.picks_note(spec, sheet.parse_picks(spec, said)).split(': ', 1)[1]
+    except (Exception, SystemExit):  # noqa: BLE001 - a sheet that does not read: the reply as sent
+        return said
+
+
 def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
     """A reply to a Needs you item. B138: a button's answer, and the words typed for a DECIDE (F181a), run the
     plan command itself (`answer_argv`), with no AI session, and an ok result carries 'said' (what was done, for
     the toast) and 'gone' (the item, off Needs you); the words typed for any other label go to a new chat to
-    settle as its needs guide says."""
+    settle as its needs guide says. F425a: one that opened no chat is kept (`keep_response`)."""
     argv, done = answer_argv(tid, text, button, note)
     if button and not argv and not need_label(tid):  # answered already, or never asked: say so, no AI session
         return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
     if argv:
+        row, to_chat = need_row(tid), False
         r = call(argv)
         if r['ok']:
             if argv[0] == 'pitch':
@@ -141,11 +172,15 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
                 words = ' '.join((note or '').split())
                 if words and argv[1] == 'approve':  # F162a: its tasks are done, so the words go where a reply does
                     sent = SEND[0](f'{tid}: approved. {words}')
+                    to_chat = sent['ok']
                     if not sent['ok']:
                         why = (sent['out'].splitlines() or [''])[0]
                         S.log(f'{tid}: approved; the words with it went to no chat ({why}): {words}')
                         done += f'. Your words were not sent ({why}): {words}'
             r.update(said=done, gone=tid)
+            if not to_chat:
+                said = (text or '').strip()
+                keep_response(tid, row, sheet_said(tid, said) if argv[0] == 'sheet' else said, note)
         return r
     title = P.titles(S.C.todo).get(tid, '')
     return SEND[0](f'{tid}{f" ({title})" if title else ""}: {text}')
@@ -193,6 +228,7 @@ def need_give(tid: str, values: dict | None = None, confirm: bool = False, secur
     if asked and confirm is not True:
         return no(asked, 3, confirm=asked)
     from agent_runner import asks
+    row = need_row(tid)  # F425a
     secrets = {x['env']: got[x['key']] for x in inputs if x['kind'] == 'secret'}
     back = lambda: None  # noqa: E731
     if secrets:
@@ -211,6 +247,8 @@ def need_give(tid: str, values: dict | None = None, confirm: bool = False, secur
         r = no(str(e))
     if r['ok']:
         r.update(said=f'{tid} has what you gave: a run starts it', gone=tid)
+        keep_response(tid, row, '; '.join(f'{x["label"]}: ' + (f'{x["env"]} (a secret, not shown)' if x['kind'] == 'secret'
+                                                               else got[x['key']]) for x in inputs))
     else:
         try:
             back()

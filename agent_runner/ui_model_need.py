@@ -17,12 +17,14 @@ def pitch_no(pid: str, how: str = 'reopen', tid: str = '', confirm: bool = False
     if confirm is not True:
         return {'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'argv': []}
     why = ' '.join((why or '').split())
+    row = need_row(pid)  # F425a
     r = call((['pitch', 'no', pid, f'--{how}', tid] if tid else
               ['pitch', 'no', pid] + (['--drop', 'all'] if how == 'drop' else [])) + ([f'--why={why}'] if why else []))
     if r['ok']:
         r['said'] = f'{tid or pid}: the run undoes it'
         if not pitch.changes_of(pid, state='waiting'):  # the rest of it still waits otherwise
             r['gone'] = pid
+            keep_response(pid, row, f'Not {tid or "this"}: {how}', why)
     return r
 
 
@@ -259,6 +261,44 @@ def need_chat(tid: str, wait: bool = True) -> dict:
     if row is None:
         return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
     return new_control(need_chat_text(row), wait)
+
+
+def item_state(tid: str) -> str:
+    """F425a: where item `tid` stands now, in words, for the chat about a sent response."""
+    try:
+        from agent_runner import control_settled, pitch
+        if row := row_of('need', tid):
+            return f'it needs me again: {row["ask"]}'
+        if pitch.PITCH_ID.fullmatch(tid):
+            return ', '.join(f'{x["id"]} {x["state"]}' for x in pitch.changes_of(tid)) or 'the pitch is settled'
+        if q := queue_row(tid):
+            return 'blocked in the plan' if q['blocked'] else f'open in the plan ({q["state"]})'
+        return control_settled.outcome(tid)[0]
+    except (Exception, SystemExit):  # noqa: BLE001 - the session can read it itself
+        return 'not known'
+
+
+def response_chat(rid: str, text: str = '', wait: bool = True) -> dict:
+    """F425a: the person's words about the sent response `rid`: a new control session (`new_control`, `wait` as there)
+    whose first message is `sent_responses.first_message`. Only with words. The response goes as its chat starts, and
+    comes back if the chat does not."""
+    from agent_runner import sent_responses
+    if not isinstance(text, str) or not text.strip():
+        return {'ok': False, 'code': 2, 'out': 'response_chat: words, please', 'argv': []}
+    d = sent_responses.take(rid)
+    if d is None:
+        return {'ok': False, 'code': 1, 'out': 'That response is gone (a chat about it was started already?)', 'argv': []}
+    started = False
+    try:
+        r = new_control(sent_responses.first_message(d, item_state(d['item']), text), wait)
+        started = r['ok']
+        return r
+    finally:
+        if not started:
+            sent_responses.put_back(d)
+
+
+ACTIONS['response_chat'] = response_chat
 
 
 def close_session(tid: str, wait: bool = True) -> dict:
