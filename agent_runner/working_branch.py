@@ -3,12 +3,16 @@ of it is checked for, and the switch to it.
 
 A save moves nothing. `begin` notes it in <notes>/working-branch.json ({'was': the value in force, 'to': the one saved}),
 and while that note is there every process goes on with `was` (`in_force`). The next start of the run switches the main
-checkout (`at_start`), unless something holds it (`holds`): then it starts on the branch it was on and says why."""
+checkout (`at_start`), unless something holds it (`holds`): then it starts on the branch it was on and says why.
+
+B833: another machine that pulls a save for everyone has no note; what git has of the pull says the same (`pulled`)."""
 from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
+import tomllib
 from pathlib import Path
 
 from agent_runner import config as CF
@@ -44,7 +48,72 @@ def _read(f: Path) -> dict:
 def in_force(root: Path, notes: str, value):
     """The [git] master_branch a config reads: `value` (the files'), or the one before it while its switch waits."""
     d = _read(_file(root, notes))
-    return d['was'] if d and d['to'] == value else value
+    if not d or d['to'] != value:
+        d = pulled(root, value)
+    return d['was'] if d else value
+
+
+SAVE = re.compile(r'settings: .*\[git\] master_branch\b')  # the commit of a save for everyone
+PULL = re.compile(r'(pull|merge|rebase|commit \(merge\))(?!.*\((pick|reword|edit|squash|fixup|continue)\))')
+
+
+def pulled(root: Path, value) -> dict:
+    """{'was', 'to'}, as the note has them, when `value` is a save for everyone that another machine made and a pull
+    brought here while the branch before it was out, as it still is; {} otherwise (one changed by hand, say)."""
+    if not isinstance(value, str):
+        return {}
+    main = CF.main_checkout(root)
+    cur = _out(main, 'branch', '--show-current')
+    if not cur or value == cur:
+        return {}
+    try:
+        f, local = CF.config_file(main), CF.local_file(main)
+        mine = (CF._load(local) if local else {}).get('git', {})
+        git_ = {**(CF._load(f) if f else {}).get('git', {}), **mine}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+    if 'master_branch' in mine or f is None or not (rel := _rel(main, f)):
+        return {}
+    from agent_runner.gitops import found_name
+    push = git_.get('push')
+    auto = found_name(main, push if isinstance(push, str) else 'origin', None) or cur
+    if not value and auto == cur:
+        return {}
+    log = [l.split('\0') for l in _out(main, 'log', '-g', '-n', '5000', '--format=%H%x00%gs', 'HEAD', '--').splitlines()]
+    vals = _values(main, [e[0] for e in log], rel)
+    n = next((i for i, v in enumerate(vals) if v != value), 0)  # log[n - 1] is the move that brought the value
+    if not n or not PULL.match(log[n - 1][1]):
+        return {}
+    to = value or auto
+    if any(e[1].startswith(f'checkout: moving from {to} to ') for e in log[:n]):
+        return {}  # it was switched to, and left by hand
+    was = next((v for v in vals[n:] if v == cur or v == '' and auto == cur), None)
+    if was is None:  # the branch that is out is not one the setting named
+        return {}
+    for l in _out(main, 'log', '--format=%H%x00%s', f'{log[n][0]}..{log[n - 1][0]}', '--', rel).splitlines():
+        sha, subject = l.split('\0', 1)
+        now, *old = _values(main, [sha, f'{sha}^'], rel)
+        if now == value and old != [value]:
+            there = _out(main, 'for-each-ref', '--contains', sha, '--format=%(refname)', 'refs/remotes/').split()
+            return {'was': was, 'to': value} if SAVE.match(subject) and any(r.endswith(f'/{cur}') for r in there) else {}
+    return {}
+
+
+def _values(root: Path, revs: list[str], rel: str) -> list:
+    """The working branch that the settings file has in each of `revs`, '' where it sets none, None when unreadable."""
+    def value(blob: str):
+        try:
+            raw = tomllib.loads(_git(root, 'cat-file', 'blob', blob).stdout)
+            raw = raw['agent-runner'] if isinstance(raw.get('agent-runner'), dict) else raw
+            return raw.get('git', {}).get('master_branch', '')
+        except (ValueError, AttributeError):
+            return None
+    out, seen = [], {}
+    for l in _out(root, 'cat-file', '--batch-check=%(objectname)', input=''.join(f'{r}:{rel}\n' for r in revs)).splitlines():
+        if l not in seen:
+            seen[l] = '' if l.endswith(' missing') else value(l)
+        out.append(seen[l])
+    return out
 
 
 def saved(root: Path, side: str = '', value=None, unset: bool = False) -> str:
@@ -86,8 +155,11 @@ def _now(root: Path) -> str:
 
 def pending(root: Path) -> dict:
     """{'now', 'next'}: the branches a switch that waits goes from and to; {} when none waits."""
+    to = saved(root)
     d = _read(_file(root, CF.Config(root).run['notes']))
-    if not d or d['to'] != saved(root):
+    if not d or d['to'] != to:
+        d = pulled(root, to)
+    if not d:
         return {}
     return {'now': branch_of(root, d['was']), 'next': branch_of(root, d['to'])}
 
@@ -211,7 +283,7 @@ def _tasks(ids: set[str], one: str, many: str) -> str:
 
 def waits(root: Path) -> bool:
     """Is there a saved change the run's start has to look at?"""
-    return bool(_read(_file(root, CF.Config(root).run['notes'])))
+    return bool(_read(_file(root, CF.Config(root).run['notes'])) or pending(root))
 
 
 def at_start(root: Path) -> bool:
@@ -225,15 +297,26 @@ def at_start(root: Path) -> bool:
         return False
     now, to = d['now'], d['next']
     why = holds(root, now)
-    if not why and (bad := problem(root, saved(root))):
+    v, note = saved(root), _read(f)
+    ours = bool(note) and note['to'] == v and not note.get('pulled')  # saved on this machine
+    made = not why and not ours and _fetched(root, to)
+    if not why and (bad := problem(root, v)):
         why = [bad]
-    if not why and (bad := _switch(root, to)):
+    newer = None if why or ours else _newer(root, to)
+    if not why and (bad := _switch(root, to, newer is None)):
         why = [bad]
     if why:
+        if made:
+            _git(root, 'branch', '-q', '-D', to, '--')
         S.log(f'working branch: still {now}, not {to}: {"; ".join(why)}. It is tried again at the next start of the run')
         return False
     f.unlink(missing_ok=True)
     S.log(f'working branch: {to} (it was {now})')
+    if newer is not None:
+        from agent_runner.whole_write import write_whole
+        f.parent.mkdir(parents=True, exist_ok=True)
+        write_whole(f, json.dumps({'was': to, 'to': newer, 'pulled': True}).encode())
+        at_start(root)
     return True
 
 
@@ -242,9 +325,32 @@ def forget() -> None:
     CF._cfg.cache_clear()
 
 
-def _switch(root: Path, to: str) -> str:
-    """Give `to` the setting, then check it out in the main checkout: why not, or ''."""
-    if why := _carry(root, to):
+def _fetched(root: Path, to: str) -> bool:
+    """B833: a machine that never had the branch makes it from the remote's, and one behind it takes its commits, the
+    setting's own among them. Was it made?"""
+    ref, here = f'refs/remotes/{CF.Config(root).push_remote or "origin"}/{to}', f'refs/heads/{to}'
+    if not _git(root, 'show-ref', '--verify', '--quiet', here).returncode:
+        if to not in _elsewhere(root) and to != _out(root, 'branch', '--show-current') \
+                and not _git(root, 'merge-base', '--is-ancestor', here, ref).returncode:
+            _git(root, 'update-ref', here, _out(root, 'rev-parse', ref), _out(root, 'rev-parse', here))
+        return False
+    return not _git(root, 'branch', '-q', '--track', to, ref).returncode
+
+
+def _newer(root: Path, to: str):
+    """B833: the value `to`'s own settings file has when a later save there, after the one that named `to`, changed
+    it; None otherwise. That save goes before the one pulled on the old branch."""
+    f = CF.config_file(root)
+    rel = _rel(root, f) if f else ''
+    if not rel or _row(root)['has_device'] or not _has(root, f'refs/heads/{to}', rel):
+        return None
+    v, *old = _values(root, _out(root, 'log', '-n', '500', '--format=%H', f'refs/heads/{to}', '--', rel).split(), rel)
+    return v if isinstance(v, str) and v != to and to in old else None
+
+
+def _switch(root: Path, to: str, carry: bool = True) -> str:
+    """Give `to` the setting (`carry`), then check it out in the main checkout: why not, or ''."""
+    if carry and (why := _carry(root, to)):
         return why
     if _out(root, 'branch', '--show-current') == to:
         return ''
