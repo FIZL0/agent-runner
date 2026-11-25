@@ -18,6 +18,7 @@ from _check import FAILED, check, eq
 
 from agent_runner import home as H
 from agent_runner import login_hold as L
+from agent_runner import plat
 from agent_runner import session_frame as SF
 from agent_runner import state as S
 from agent_runner import ui_model as U
@@ -96,7 +97,7 @@ try:
     print("ttyd's command is the fixed one, with no word of a request")
     for terms, t in ((run.terms, token), (home.terms(), 'HT')):
         argv = terms.argv('login', 'login', 9)
-        eq(argv[-3:], ['claude', 'auth', 'login'], 'claude auth login')
+        eq(argv[-3:], [plat.exe('claude'), 'auth', 'login'], 'claude auth login')
         check('attach' not in argv and not {'-a', '--url-arg'} & set(argv), 'no other command, no arguments from the URL', argv)
         eq((argv[argv.index('-i') + 1], argv[argv.index('-b') + 1]), ('127.0.0.1', f'/t/{t}/login'), 'on 127.0.0.1, at its token')
 

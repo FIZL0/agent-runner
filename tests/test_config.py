@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 import threading
@@ -273,7 +274,7 @@ def test_wrong_agent_b764b(tmp: Path) -> None:
     wrapper.chmod(0o755)
     for v, said in (('pi', 'set it to "claude"'), ('/opt/bin/copilot', 'set it to "claude"'), ('nosuchagent', 'install it'),
                     ('', 'is empty'), (5, 'set it to "claude"'), ('./my-claude', ''), (str(wrapper), '')):
-        (repo / 'runner.local.toml').write_text(f'[run]\nagent = {v!r}\n', encoding='utf-8')
+        (repo / 'runner.local.toml').write_text(f'[run]\nagent = {json.dumps(v)}\n', encoding='utf-8')
         c = CF.Config(repo)
         eq(c.run['agent'], v, f'agent = {v!r} loads')
         got = c.agent_problem

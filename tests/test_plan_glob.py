@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -28,7 +29,7 @@ def test_expanded_glob() -> None:
         env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
 
         def plan(*a: str) -> subprocess.CompletedProcess:
-            return subprocess.run([str(RUN), 'plan', *a], cwd=root, env=env, capture_output=True, text=True, timeout=120)
+            return subprocess.run([sys.executable, str(RUN), 'plan', *a], cwd=root, env=env, capture_output=True, text=True, timeout=120)
 
         r = plan('add', 'R', 'the parser', '--files', 'p.py')
         eq(r.returncode, 0, 'a first add')
