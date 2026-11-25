@@ -712,8 +712,27 @@ After that, every 60 s the run asks gh about each pull request. A pull request m
 rebase ticks its tasks with that commit and removes their branches, once the local main has followed. A commit that was
 not in the merged pull request stays on `leftover/<ID>`. Local main
 moves fast-forward only. If uncommitted edits or local commits on main stop it, an alarm says so. A pull request
-closed without a merge is said in the run log, and its tasks stay open. If GitHub or the push cannot be reached, the
-run tries again.
+closed without a merge goes to Needs you, with who closed it and the last thing a person with write access wrote there.
+The answer resumes the session, and a new pull request opens after it. Opening the pull request again on GitHub takes
+the ask away. Or drop the task. If GitHub or the push cannot be reached, the run tries again.
+
+Feedback on an open pull request resumes the task's session on its branch:
+
+- A review comment on a line, a review with changes requested, or a comment review with text, by someone with write
+  access on GitHub (permission write, maintain or admin). Everyone else's comments are ignored, as are plain
+  conversation comments and approvals. The text reaches the session as quoted review input, never as other
+  instructions.
+- Red CI, or a conflict with main.
+
+The session commits on top and runs `done` again. The runner takes main in, runs the gate, pushes (never by force) and
+posts the session's replies, each on its thread; a review without a thread gets a comment on the pull request. Replies
+start with a hidden mark, so they are never read as feedback.
+
+Review comments that get neither a reply nor a change are tried again. Each kind (review, red CI, conflict) has at most
+3 tries; then the task goes to Needs you, and the answer starts new tries. The count starts again when the checks that
+were red passed, or when GitHub can merge the pull request. A round whose gate fails leaves the pull request as it was;
+its commits are kept on `wip/<ID>`, and the try counts. A round running when a person merges ticks its tasks once its
+session has ended.
 
 Nothing on main is pushed or committed by the runner. Settings for everyone are refused (this device's still save),
 and the rules pointer is not added. A task never starts on an unmerged task's merge. The state is in

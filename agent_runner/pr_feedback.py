@@ -194,6 +194,7 @@ def look(branch_name: str, got: dict, branch: str, gh: ci.Gh, busy: set[str]) ->
     box = next((b for _, b, t, _, _ in P.iter_tasks(ls) if t == tid), 'x')
     if box != 'x' and not pr.rev(f'refs/heads/task/{tid}'):  # parked: its budget ended, or a block of the plan's own
         kept(tid, rec, None)
+        _set(rec, failed='its session was ended and its work parked on wip/')
     if box == '~':
         need = rec.get('need')
         if not need:  # its session blocked it, or a person did
@@ -234,10 +235,11 @@ def look(branch_name: str, got: dict, branch: str, gh: ci.Gh, busy: set[str]) ->
         return
     tries = rec.get('tries') or {}
     if over := [k for k in kinds if tries.get(k, 0) >= MAX_TRIES]:
-        what = {'review': 'its review comments are not answered', 'ci': f'its CI is red: {", ".join(red)}',
+        what = {'review': 'its review comments are not answered', 'ci': 'its CI is red',
                 'conflict': f'it conflicts with {branch}'}[over[0]]
-        return ask(rec, tid, 'tries', f'What should {tid} do now? After {MAX_TRIES} tries {_line(what, 70)}',
-                   f'{MAX_TRIES} tries did not fix pull request #{rec["number"]}: {what}. {rec.get("failed") or ""}'.strip(),
+        names = f' ({", ".join(red)})' if over[0] == 'ci' else ''
+        return ask(rec, tid, 'tries', f'What should {tid} do now? After {MAX_TRIES} tries {what}',
+                   f'{MAX_TRIES} tries did not fix pull request #{rec["number"]}: {what}{names}. {rec.get("failed") or ""}'.strip(),
                    ['Answer with what to do: its session goes on with your answer, with new tries', 'Or drop the task'],
                    items=items, red=red, conflict=conflict)
     begin(rec, tid, items, red, conflict, branch, tries={**tries, **{k: tries.get(k, 0) + 1 for k in kinds}})
@@ -289,7 +291,8 @@ def begin(rec: dict, tid: str, items: list, red: dict, conflict: bool, branch: s
     replies_file(tid).unlink(missing_ok=True)
     _set(rec, tips={**rec['tips'], tid: start}, seen=list(dict.fromkeys([*rec.get('seen', []), *(x['key'] for x in items)])),
          round={'tid': tid, 'items': items, 'red': red, 'conflict': conflict, 'answer': answer, 'closed': closed,
-                'head': rec['head'], 'slot': last[0] if last else None, 'replied': []},
+                'head': rec['head'], 'slot': last[0] if last else None, 'replied': [], 'before': rec.get('failed') or ''},
+         failed='',
          **({} if tries is None else {'tries': tries}))
     (plansync.ticks(S.C) / tid).unlink(missing_ok=True)  # its commits need a `done` of their own
     if last and (slots.backend().find_transcript(last[1]) or slots.HARNESS.find_transcript(last[1])):
@@ -328,8 +331,22 @@ def message(tid: str, branch: str, where: str = 'your worktree') -> str:
         parts.append(CONFLICT.format(remote=S.C.push_remote, branch=branch))
     if r['red']:
         parts.append(RED_CI.format(quoted=pr._fence(json.dumps(r['red'], indent=1, ensure_ascii=False))))
-    wip = f'\n\nThe last try did not get into the pull request: {rec["failed"]}' if rec.get('failed') else ''
+    wip = f'\n\nThe last try did not get into the pull request: {r["before"]}' if r['before'] else ''
     return MESSAGE.format(tid=tid, url=rec['url'], where=where, parts='\n\n'.join(parts), wip=wip)
+
+
+def told(n: int, tid: str, why: str, fallback: str, branch: str, d) -> str:
+    """What `slots.resume` tells the session it opens in slot n's worktree `d` for a round; '' for none. The marks the
+    slot's last session left go: they are not this one's. One cut off in a round (no fallback) has been told."""
+    if not fallback and why != WHY:
+        return ''
+    if why == WHY:
+        from agent_runner.config import finished_mark
+        from agent_runner.tools import end_mark
+        for m in (finished_mark(n, S.C), end_mark(n, S.C)):
+            m.unlink(missing_ok=True)
+    text = message(tid, branch, str(d))
+    return f'\n\n{text}' if fallback and text else text
 
 
 def kept(tid: str, rec: dict, why: str | None) -> bool:
@@ -366,6 +383,9 @@ def _end(rec: dict, got: dict, gh: ci.Gh, repo: str) -> bool:
     except (OSError, ValueError):
         said = {}
     said = said if isinstance(said, dict) else {}
+    failed = bool(rec.get('failed')) and not moved  # what it says it did is not in the pull request
+    if failed:
+        said = {}
     left = []
     for x in r['items']:
         text = said.get(x['key'])
@@ -385,7 +405,7 @@ def _end(rec: dict, got: dict, gh: ci.Gh, repo: str) -> bool:
         tries.pop('review', None)
     _set(rec, tries=tries, seen=[k for k in rec.get('seen', []) if k not in left])
     _close(rec)
-    if r['closed'] and got['state'] == 'CLOSED':
+    if r['closed'] and got['state'] == 'CLOSED' and not failed:
         _set(rec, number=0, url='', pushed='', state='')  # `open_due` opens a new one
     return True
 
@@ -403,20 +423,31 @@ def _reply(gh: ci.Gh, repo: str, number: int, item: dict, text: str) -> str:
 
 def closed(rec: dict, tid: str, gh: ci.Gh, repo: str) -> None:
     """Closed without a merge: Needs you, with who closed it and the last thing a person with write access said."""
+    def wait() -> None:
+        pr._say(rec['key'], f'{tid}: why pull request #{rec["number"]} was closed could not be read; the run tries again')
     issue = pr._json(gh('api', f'repos/{repo}/issues/{rec["number"]}'))
-    who = ((issue or {}).get('closed_by') or {}).get('login', '') if isinstance(issue, dict) else ''
+    if not isinstance(issue, dict):
+        return wait()
+    who = (issue.get('closed_by') or {}).get('login', '')
     known: dict = {}
     words = []
     for path, at in ((f'issues/{rec["number"]}/comments', 'created_at'), (f'pulls/{rec["number"]}/reviews', 'submitted_at'),
                      (f'pulls/{rec["number"]}/comments', 'created_at')):
-        for x in _pages(gh, f'repos/{repo}/{path}') or []:
+        if (page := _pages(gh, f'repos/{repo}/{path}')) is None:
+            return wait()
+        for x in page:
             login, text = (x.get('user') or {}).get('login', ''), (x.get('body') or '').strip()
             if login and text and not text.startswith(MARK):
                 words.append((x.get(at) or '', login, text))
-    said = next((f'{login}: {text[:QUOTE_MAX]}' for _, login, text in sorted(words, reverse=True)
-                 if may_write(gh, repo, login, known)), '')
-    reason = said or 'no reason was given'
-    ask(rec, tid, 'closed', f'What now for {tid}? {_line(who or "Someone", 30)} closed its pull request: {_line(reason, 60)}',
+    reason = 'No reason was given.'
+    for _, login, text in sorted(words, reverse=True):
+        if (ok := may_write(gh, repo, login, known)) is None:
+            return wait()
+        if ok:
+            reason = f'{login}: {text[:QUOTE_MAX]}'
+            break
+    # the question comes back with the person's answer, so what others wrote is in the ask file alone
+    ask(rec, tid, 'closed', f'What now for {tid}? {_line(who or "Someone", 30)} closed its pull request without a merge',
         f'Pull request #{rec["number"]} was closed without a merge by {who or "someone"}. {reason}',
         ['Answer with what to change: the task goes on from there and opens a new pull request', 'Or drop the task',
          'Or open the pull request again on GitHub'])

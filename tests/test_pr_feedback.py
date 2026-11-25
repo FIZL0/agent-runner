@@ -266,6 +266,34 @@ def test_fails(tmp: Path):
     eq(git(repo, 'rev-parse', 'task/F1'), tip, 'and its branch is put back')
 
 
+def test_false_reply(tmp: Path):
+    print('a fix that did not get in is not said on the thread')
+    repo, _, hub = opened(tmp, 'false')
+    hub.comment(1, 'ann', 'rename it')
+    look(hub)
+    with mock.patch.object(M, 'tested', return_value='the gate fails'):
+        session(repo, hub, 'renamed', {'c1': 'Renamed.'})
+    look(hub)
+    rec = look(hub)
+    eq((hub.posted, rec['tries'], [x['key'] for x in rec['round']['items']]), ([], {'review': 2}, ['c1']), 'it is tried again')
+    session(repo, hub, 'renamed', {'c1': 'Renamed.'})
+    look(hub)
+    eq(len(hub.posted), 1, 'and said once it is in')
+
+
+def test_closed_unread(tmp: Path):
+    print('why it was closed cannot be read: it waits')
+    repo, _, hub = opened(tmp, 'unread')
+    hub.prs[0]['state'] = 'CLOSED'
+    hub.talk = [{'user': {'login': 'ann'}, 'body': 'too big', 'created_at': '1'}]
+    hub.may['ann'] = 'away'
+    look(hub)
+    eq(boxes()['F1'], ' ', 'not asked yet')
+    hub.may['ann'] = 'write'
+    look(hub)
+    eq(boxes()['F1'], '~', 'asked with the reason')
+
+
 def test_blocked(tmp: Path):
     print('a session that blocks its task in a round: its answer goes on with what was asked')
     repo, origin, hub = opened(tmp, 'blk')
@@ -293,13 +321,21 @@ def test_closed(tmp: Path):
     rec = look(hub)
     eq((boxes()['F1'], rec['need']['kind']), ('~', 'closed'), 'a person is asked')
     line = next(l for l in P.lines(S.C.todo) if '**F1**' in l)
-    check('ann closed its pull request' in line and 'We do not want' in line and 'spam' not in line, 'who and why', line)
-    eq(line.count('| files:'), 1, 'what they wrote is no field of the plan')
+    check('ann closed its pull request' in line and 'We do not want' not in line, 'who, and nothing they wrote: it comes back as the answer', line)
+    why = json.loads(ask_file('F1', S.C).read_text(encoding='utf-8'))['summary']
+    check('We do not want' in why and 'spam' not in why, 'the reason is in the ask file', why)
     look(hub)
     eq(len([l for l in P.lines(S.C.todo) if 'ann closed' in l]), 1, 'asked once')
     unblock('your answer (DECIDE: What now for F1? ann closed its pull request): make it smaller')
     check(look(hub)['round'], 'the answer starts a round')
     has(F.message('F1', 'main'), 'make it smaller', 'and is told')
+    with mock.patch.object(M, 'tested', return_value='the gate fails'):
+        session(repo, hub, 'bad')
+    look(hub)
+    look(hub)
+    eq((len(hub.prs), boxes()['F1']), (1, '~'), 'a failed round opens none, and asks again')
+    unblock('your answer (DECIDE: What now for F1? ann closed its pull request): once more')
+    look(hub)
     session(repo, hub, 'smaller')
     look(hub)
     look(hub)
@@ -384,7 +420,7 @@ def test_loop(tmp: Path):
     eq(tick.call_args.args, ('main', {'F7', 'F8', 'F9'}), 'running, queued and merging ones')
 
 
-TESTS = [test_review, test_unknown, test_no_reply, test_red, test_conflict, test_fails, test_blocked, test_closed, test_merged,
+TESTS = [test_review, test_unknown, test_no_reply, test_red, test_conflict, test_fails, test_false_reply, test_closed_unread, test_blocked, test_closed, test_merged,
          test_pushed_by_hand, test_resume, test_loop]
 
 if __name__ == '__main__':
