@@ -29,20 +29,22 @@ function pickOptions(k,now){
   return o;
 }
 /* F174: a setting set by two controls, a count and a switch ([run] auto_release): what its words `t` hold, as
-   autorelease.auto_release_of reads them; the count's options; and its words once one control changed */
+   autorelease.auto_release_of reads them; the count's options; and its words once one control changed. F422: where the
+   parts have `on` ([run] auto_audit, as audit.every_of reads it) the switch turns the count itself on and off; `true` is `on`'s count */
 const hasParts=k=>!!(k.parts&&k.parts.every);
-function partsNow(t){
+function partsNow(t,k){
   let v=null;try{v=JSON.parse(t)}catch(e){}
+  if(v===true&&k&&k.parts.on)v={every:k.parts.on.every};
   v=v||{};
   return{every:Number.isInteger(v.every)&&v.every>0?v.every:0,idle:v.idle===true};
 }
 const partCount=(k,n)=>`${n} ${n===1?k.parts.every.unit.replace(/s$/,''):k.parts.every.unit}`;
 function partOptions(k,t){
-  const n=partsNow(t).every, c=k.parts.every.counts;
-  return [[0,'Off'],...(n&&!c.includes(n)?[...c,n].sort((a,b)=>a-b):c).map(x=>[x,partCount(k,x)])];
+  const n=partsNow(t,k).every, c=k.parts.every.counts;
+  return [...(k.parts.on?[]:[[0,'Off']]),...(n&&!c.includes(n)?[...c,n].sort((a,b)=>a-b):c).map(x=>[x,partCount(k,x)])];
 }
-function partSet(t,part,x){
-  const v={...partsNow(t),[part]:x}, o={};
+function partSet(t,part,x,k){
+  const v={...partsNow(t,k),...(part==='on'?{every:x?k.parts.on.every:0}:{[part]:x})}, o={};
   if(v.every)o.every=v.every;
   if(v.idle)o.idle=true;
   return settingText(v.every||v.idle?o:false);
@@ -89,7 +91,7 @@ function loginAsks(text){
 /* a value as a person reads it */
 function settingSays(k,t){
   if(k.words&&k.words[t])return k.words[t];
-  if(hasParts(k)){const v=partsNow(t), p=k.parts, e=v.every?`${p.every.label} ${partCount(k,v.every)}`:'';
+  if(hasParts(k)){const v=partsNow(t,k), p=k.parts, e=v.every?`${p.every.label} ${partCount(k,v.every)}`:'';
     return e&&v.idle?`${e} and ${p.idle.label.toLowerCase()}`:e||(v.idle?p.idle.label:'Off')}
   if(k.type==='switch')return t==='true'?'On':'Off';
   if(t==='')return 'not set';

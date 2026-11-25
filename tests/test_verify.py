@@ -68,6 +68,7 @@ def test_setup_main():
         S.launch = lambda r, text: 0  # no Claude session in a test
         offer_ttyd, S.offer_ttyd = S.offer_ttyd, lambda: None  # F403: nor a question at a terminal without ttyd
         offer_models, S.offer_models = S.offer_models, lambda root: []  # F406d: nor one about providers
+        offer_audit, S.offer_audit = S.offer_audit, lambda root: None  # F422: nor one about audits
         try:
             eq(S.main(['--yes'], cwd=root), 0, 'setup ran')
             text = (root / 'CLAUDE.md').read_text(encoding='utf-8')
@@ -75,7 +76,7 @@ def test_setup_main():
             eq(S.main(['--yes'], cwd=root), 0, 'setup ran again')
             eq((root / 'CLAUDE.md').read_text(encoding='utf-8'), text, 'and left CLAUDE.md as it was')
         finally:
-            S.launch, S.offer_ttyd, S.offer_models = launch, offer_ttyd, offer_models
+            S.launch, S.offer_ttyd, S.offer_models, S.offer_audit = launch, offer_ttyd, offer_models, offer_audit
 
 
 if __name__ == '__main__':
