@@ -112,13 +112,28 @@ function grow(ta,drawn){
   ta.closest('.box')?.classList.toggle('has',sendHas(ta.value,S.atts[k]));ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';
   const h=ta.offsetHeight||0;boxWas={k,h};if(was&&h&&was!==h)growGlide(ta,h-was,drawn);
 }
-/* F190a: Send is the plain Send, while the session works too; gray while an attachment uploads. Changed in place, so nothing
-   is drawn again under a caret. box() draws it plain, and grow() runs after every draw and every change of the words. */
+/* F190a: Send is the plain Send, while the session works too; gray while an attachment uploads; F190c: Force send as sendIs()
+   says. Changed in place, so nothing is drawn again under a caret. box() draws it plain, and grow() runs after every draw
+   and every change of the words; liveLoad() and sendHold() draw it where only what is queued or the delay changed. */
 function sendDraw(ta){
   const b=ta.closest('.box')?.querySelector('[data-send]');if(!b)return;
-  const wait=sendWaits(S.atts[boxKey()]), say=wait?'Uploading…':'Send';
-  b.setAttribute('aria-label',say);b.title=say;
-  if(wait)b.setAttribute('aria-disabled','true');else b.removeAttribute('aria-disabled');  // F205: not disabled, so a tap or Enter still says why
+  const is=sendNow(ta), say=is==='wait'?'Uploading…':is==='force'?'Force send':'Send';
+  b.setAttribute('aria-label',say);b.title=say;b.classList.toggle('force',is==='force');
+  if(is==='wait'||is==='held')b.setAttribute('aria-disabled','true');else b.removeAttribute('aria-disabled');  // F205: not disabled, so a tap or Enter still says why
+}
+const sendHeld={};  // F190c: until when (ms) the arrow of a message box (its key) does not force
+function sendNow(ta){
+  const k=boxKey(), n=S.thread||'', on=!!n&&!isNew(n)&&FD.n===n;
+  return sendIs(ta.value,S.atts[k],on&&sessWorks(n),on&&FD.live?FD.live.queued:0,Date.now()<(sendHeld[k]||0));
+}
+function sendRedraw(){const ta=document.querySelector('[data-in]');if(ta)sendDraw(ta)}
+/* after a send: the arrow is disabled for ms; then what is queued is asked again */
+function sendHold(k,ms){sendHeld[k]=Date.now()+ms;sendRedraw();setTimeout(()=>{sendRedraw();liveLoad()},ms+20)}
+/* a press on Force send: what is queued goes in now, once. Not through the outbox: one kept and sent later would interrupt something else */
+async function forceQueued(k,to){
+  sendHold(k,FORCE_HOLD);
+  await act('chat_to',{text:'',to,force:true,...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})});
+  sendHold(k,SEND_HOLD);liveLoad();
 }
 /* F147: a box that grew by d: at the foot of the view it slides up into its new height (and the chat with it), on Home what is under its words slides down */
 function growGlide(ta,d,drawn){

@@ -62,6 +62,15 @@ const boxEnter=(e,touch)=>e.key!=='Enter'||composing(e)?'':(touch?e.ctrlKey||e.m
 /* F205: is there something to send (words or an uploaded attachment), and is an attachment still uploading? */
 const sendHas=(words,atts)=>!!String(words||'').trim()||(atts||[]).some(a=>a.path);
 const sendWaits=atts=>(atts||[]).some(a=>!a.path&&!a.err);
+/* F190c: what the send arrow is now: 'wait' (an attachment uploads), 'held' (the box is empty and a send was just made: gray,
+   does nothing), 'force' (the box is empty and a sent message is still queued while the session works) or 'send'.
+   held: the delay after a send is on. SEND_HOLD: that delay, ms, so a double tap never forces; FORCE_HOLD: the longest a force that has no answer yet holds it */
+const SEND_HOLD=1000, FORCE_HOLD=30000;
+function sendIs(words,atts,works,queued,held){
+  if(sendWaits(atts))return'wait';
+  if(!works||String(words||'').trim()||(atts||[]).length)return'send';
+  return held?'held':queued>0?'force':'send';
+}
 /* F406g: noSlash: a chat that takes no commands */
 const keysLine=noSlash=>'<span class="keysl">'+BOX_KEYS.filter(([k])=>!noSlash||k!=='/').map(([k,d])=>`${k} ${d}`).join(' · ')+'</span>';
 /* B120: the chat's message history (kept per chat): HIST_MAX the most it keeps; histPush the list once `text` is

@@ -407,7 +407,7 @@ async function liveLoad(){
   const j=await liveGet(n);
   if(turn!==FD.turn||FD.n!==n||!j)return;
   const same=JSON.stringify(FD.live)===JSON.stringify(j);FD.live=j;
-  if(!same)render();
+  if(!same){render();sendRedraw()}
 }
 const workFor=()=>FD.live&&FD.live.status==='busy'&&FD.live.since?'Working '+forWords(Date.now()/1000-FD.live.since):'Working';
 /* B192: the message box's one row while the reader is scrolled up: its words, Working (its sheet) and Stop */

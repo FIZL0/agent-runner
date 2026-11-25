@@ -1135,7 +1135,9 @@ def test_session_controls_f170(tmp: Path) -> None:
     eq([c['label'] for c in got[15]], ['Bypass', '2 agents', 'Update'], 'what the screen says')
     eq(([c['label'] for c in got[16]], got[17], got[18]), (['Session'], '1m 12s', '1h 2m'), 'nothing known; a clock')
     page = W.PAGE.read_text(encoding='utf-8')
-    check('data-halt' in page and 'force:true' not in page, 'F190a: Stop while it works; Send never forces')
+    check('data-halt' in page and page.count('force:true') == 1 and "{text:'',to,force:true" in page,
+          'F190a: Stop while it works; F190c: only what is queued is forced')
+    check('if(!same){render();sendRedraw()}' in page and '\n  send(e.submitter)});' in page, 'F190c: the arrow follows what is queued; a press says so')
     check('act force' not in page and '>Force send<' not in page and page.count('data-send aria-label="Send" title="Send">${I.send}') == 1,
           'B208: one Send arrow, never a wide text button')
     check('\n  sendDraw(ta);' in page.split('function grow(', 1)[1][:60], 'F205: it follows the attachments')
@@ -1369,8 +1371,14 @@ const outbox = (name, args) => sent.push([name, args]);
 const boxKey = () => S.thread, isNew = () => false, sessWorks = () => works, document = {querySelector: () => ta};
 const render = () => grow(ta, true), fetch = () => new Promise((ok, no) => asks.push({ok: j => ok({json: async () => j}), no}));
 const tick = () => new Promise(r => setTimeout(r, 0));
-eval(logic + slice('let boxWas=', '\n}\n') + slice('function sendDraw(', '\n}\n') + slice('async function send(){', '\n}\n')
-     + slice('async function upload(', '\n}\n') + `
+const timers = [], acts = [], act = (name, args) => new Promise(ok => acts.push({name, args, ok}));
+let clock = 1e12, lives = 0, liveLoad = () => { lives++ };
+Date.now = () => clock;
+eval(logic + slice('let boxWas=', '\n}\n') + slice('function sendDraw(', '\n}\n') + slice('const sendHeld=', '\n') + slice('function sendNow(', '\n}\n')
+     + slice('function sendRedraw(', '\n') + slice('function sendHold(', '\n').replace('setTimeout(', 'later(') + slice('async function forceQueued(', '\n}\n')
+     + slice('async function send(by){', '\n}\n') + slice('async function upload(', '\n}\n') + `
+const later = (f, ms) => timers.push([clock + ms, f]);
+const pass = ms => { clock += ms; for (const t of timers.splice(0)) if (t[0] <= clock) t[1](); else timers.push(t) };
 (async () => {
   const look = () => [attrs['aria-label'], btn.title, attrs['aria-disabled'] || '', !!cls.force, !!cls.has], out = {};
   const start = (v, w) => { S.atts = {}; asks.length = said.length = 0; ta.value = v; works = !!w; upload({name: 'a'}) };
@@ -1387,6 +1395,22 @@ eval(logic + slice('let boxWas=', '\n}\n') + slice('function sendDraw(', '\n}\n'
   start('hi'); upload({name: 'b'}); asks[0].ok({ok: true, path: '/a'}); await tick(); out.one = look();
   asks[1].ok({ok: true, path: '/b'}); await tick(); out.both = look();
   start('hi'); S.thread = 'c2'; render(); out.other = look();
+  // F190c: a press as the page makes it (the arrow), and an empty Enter (no button)
+  const by = {classList: {contains: n => !!cls[n]}}, press = () => send(by), words = v => { ta.value = v; render() };
+  const live = q => { FD.live = {status: 'busy', queued: q}; sendRedraw() }, n = () => [sent.length, acts.length];
+  S.thread = 'c1'; S.atts = {}; works = true; FD.foot = {text: ''}; sent.length = acts.length = 0; pass(60000); live(0);
+  words(''); out.nothing = look(); await press(); out.nothingN = n();
+  words('one'); await press(); words(''); out.after = look(); live(1); out.held = look(); await press(); out.heldN = n();
+  pass(500); words('two'); out.heldWords = look(); await press(); words(''); out.heldWordsN = n(); pass(600); out.again = look(); await press(); out.againN = n();
+  lives = 0; pass(500); out.force = look(); out.asked = lives > 0; await send(); out.enterN = n();
+  words('three'); out.queuedWords = look(); await press(); words(''); out.queuedWordsN = n(); pass(1100);
+  S.atts = {c1: [{path: '/a'}]}; render(); out.att = look(); S.atts = {c1: [{err: 'no'}]}; render(); out.attErr = look(); S.atts = {}; render();
+  press(); out.forced = [look(), acts.map(x => [x.name, x.args])]; await press(); pass(5000); await press(); out.twiceN = n();
+  acts[0].ok({ok: true}); await tick(); out.answered = look(); await press(); out.answeredN = n(); live(0); pass(1100); out.done = look();
+  live(1); FD.foot = {text: 'x'}; press(); out.unsentForce = acts[1].args; acts[1].ok({ok: true}); await tick(); pass(1100); FD.foot = {text: ''};
+  works = false; render(); out.idle = look(); await press(); out.idleN = n();
+  works = true; FD.live = null; for (const k in sendHeld) delete sendHeld[k]; render(); out.reload = look(); live(1); out.reloaded = look();
+  FD.n = 'c2'; render(); out.otherChat = look(); FD.n = 'c1'; S.thread = null; render(); out.home = look();
   console.log(JSON.stringify(out));
 })();`);
 """
@@ -1413,6 +1437,17 @@ def test_send_waits_f205(tmp: Path) -> None:
     eq((o.get('said'), o.get('kept')), (['Wait for the attachments to finish uploading'], ['hi', 1]), 'a tap or Enter says why, and nothing is lost')
     for k, args in (('words', ['text', 'to']), ('att', ['text', 'to']), ('idle', ['text', 'to']), ('unsent', ['text', 'to', 'unsent'])):
         eq(o.get(f'sent_{k}'), [ready(True), [['chat_to', args, True]]], f'F190a: {k}: the plain Send, sent once with no force')
+    held, force = ['Send', 'Send', 'true', False, False], ['Force send', 'Force send', '', True, False]
+    for k, want in (('nothing', ready(False)), ('after', held), ('held', held), ('heldWords', ready(True)), ('again', held), ('force', force),
+                    ('queuedWords', ready(True)), ('att', ready(True)), ('attErr', ready(False)), ('answered', held), ('done', ready(False)),
+                    ('idle', ready(False)), ('reload', ready(False)), ('reloaded', force), ('otherChat', ready(False)), ('home', ready(False))):
+        eq(o.get(k), want, f'F190c: {k}')
+    for k, want in (('nothingN', [0, 0]), ('heldN', [1, 0]), ('heldWordsN', [2, 0]), ('againN', [2, 0]), ('enterN', [2, 0]),
+                    ('queuedWordsN', [3, 0]), ('twiceN', [3, 1]), ('answeredN', [3, 1]), ('idleN', [3, 2])):
+        eq(o.get(k), want, f'F190c: {k}: messages sent, forces')
+    eq(o.get('forced'), [held, [['chat_to', {'text': '', 'to': 'c1', 'force': True}]]], 'F190c: a press forces once, with no text')
+    eq(o.get('unsentForce'), {'text': '', 'to': 'c1', 'force': True, 'unsent': True}, 'F190c: with words in its prompt')
+    check(o.get('asked'), 'F190c: after the delay what is queued is asked again')
 
 
 if __name__ == '__main__':
