@@ -42,7 +42,7 @@ function planDraw(el,h){
 /* F195c: New release, then the Queue with the releases as rows at their place; a landed one is past (History) */
 function planHTML(){
   planAsk();
-  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=planRows(S.snap);
+  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=menuRows(planRows(S.snap));
   if(planWant())return `${planField()}<div class="col">${planFound(planWant())}</div>`;
   return `${planField()}<div class="col">${newReleaseCard()}<div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(queueCard).join(''):emptyCard('The queue is empty.')}
     ${obCards(x=>obActs(x,'queue'))}${pk.length||sh.length||shOb?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(q=>parkedCard(q)).join('')}${shOb}${sh.map(q=>shelvedCard(q)).join('')}`:''}</div>`;

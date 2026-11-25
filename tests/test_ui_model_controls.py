@@ -34,6 +34,7 @@ def test_run_controls(tmp: Path) -> None:
                                                                              'argv': []})[1]]):
         for windows in (False, True):  # B163: no re-exec on Windows, so no restart there
             want = {*RUN_CONTROL_ARGV, 'task_take', 'queue_take', 'queue_drop', 'queue_priority', 'queue_unpark',
+                    'menu_hold', 'menu_unhold', 'menu_top', 'menu_remove', 'menu_restore',  # F429b
                     'shelved_back', 'shelved_drop', 'release_wait', 'release_now', 'need_later', 'need_chat', 'need_drop', 'concept_chat',
                     'need_yes', 'need_no', *(f'need_answer{j}' for j in range(1, U.ANSWER_MAX + 1)),  # F180
                     'concept_drop', 'session_close'} - ({'restart'} if windows else set())
