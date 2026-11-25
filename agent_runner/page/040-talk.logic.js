@@ -30,3 +30,58 @@ const micPast=()=>{const s=t=>Math.round((Date.now()-t)/1000)+' s';
   return `page open ${s(PAST.at)}; sounds started before: ${PAST.clips} clips, ${PAST.voice} of the browser's own voice, ${PAST.silent} silent${PAST.last?`, the last ${s(PAST.last)} ago`:''}; listens before: ${PAST.words} with words, ${PAST.none} without`};
 /* B134: where a feed ends at a send, so what comes after it is found in a later feed even once the feed is capped and
    its indexes move: the last entry's own id, else (a transcript without ids) all its entries */
+/* F161b: Recorded: the page records a clip and the run's machine makes the words (172-talk.js). REC: engine, the run's /recorded
+   answer (null until it came); asked, it was asked for; no, why the mic was refused; open, the kept stream; asking, its
+   Allow under way; now, the Recorder that takes sound; gen counts releases */
+const REC={engine:null,asked:false,no:'',open:null,asking:null,now:null,gen:0};
+/* why Recorded cannot be used here, '' when it can */
+function recProblem(secure,can,engine,refused){
+  if(!secure)return 'it needs https or localhost, and this address is plain http';
+  if(!can)return 'this browser cannot record in a page';
+  if(refused)return refused;
+  if(!engine)return 'the run has not said yet whether it can make words';
+  return engine.engine?'':(engine.why||'the run has no speech recognition');
+}
+const recCan=()=>!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.AudioWorkletNode);
+const recWhy=()=>recProblem(window.isSecureContext!==false,recCan(),REC.engine,REC.no);
+/* a listen records: Recorded is set and can be used, else the browser's recognition hears */
+const talkRec=()=>TS.way==='recorded'&&!recWhy();
+const micRec=t=>talkRec()&&!t.noRec?new Recorder():new SR();
+function recLoad(){
+  REC.asked=true;
+  if(HOME_PAGE){REC.engine={engine:false,why:'open a project first'};return}
+  fetch(tq('recorded')).then(r=>r.ok?r.json():null).then(j=>{if(j&&typeof j.engine==='boolean'){REC.engine=j;render(true)}}).catch(()=>{});
+}
+/* the kept stream closes, and with it the browser's sign that the mic is open */
+function recFree(){
+  const o=REC.open;REC.gen++;REC.open=REC.asking=null;if(!o)return;
+  o.track.onended=null;o.node.port.onmessage=null;
+  for(const t of o.stream.getTracks())t.stop();
+  try{const p=o.ctx.close();if(p)p.catch(()=>{})}catch(e){}
+}
+/* where the sound stands after a piece of `ms` with loudness `rms`: s = {floor, spoke, quiet, all}; floor follows the room's
+   noise. Returns 'pause' (words, then pauseMs of quiet), 'silence' (nothing said in silentMs) or '' */
+function recLevel(s,rms,ms,pauseMs,silentMs){
+  s.floor=s.floor==null?Math.min(rms,0.01):rms<s.floor?rms:Math.min(0.03,s.floor+(rms-s.floor)*Math.min(1,ms/8000));
+  s.all+=ms;
+  if(rms>Math.max(0.008,s.floor*3)){s.spoke=true;s.quiet=0}else s.quiet+=ms;
+  return s.spoke?s.quiet>=pauseMs?'pause':'':s.all>=silentMs?'silence':'';
+}
+/* Float32 pieces at `rate` as the 16 kHz mono 16-bit WAV the run takes; each sample a triangular mean, so what 16 kHz
+   cannot hold does not fold back */
+function recWav(parts,rate){
+  const n=parts.reduce((a,p)=>a+p.length,0), x=new Float32Array(n);let at=0;
+  for(const p of parts){x.set(p,at);at+=p.length}
+  const step=rate/16000, m=Math.floor(n/step), b=new Uint8Array(44+m*2), v=new DataView(b.buffer), s=(i,t)=>[...t].forEach((c,j)=>b[i+j]=c.charCodeAt(0));
+  s(0,'RIFF');v.setUint32(4,36+m*2,true);s(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,16000,true);v.setUint32(28,32000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);s(36,'data');v.setUint32(40,m*2,true);
+  const w=Math.max(1,step);
+  for(let i=0;i<m;i++){
+    const c=i*step;let sum=0, all=0;
+    for(let j=Math.max(0,Math.ceil(c-w));j<=c+w&&j<n;j++){const k=1-Math.abs(j-c)/w;if(k>0){sum+=x[j]*k;all+=k}}
+    const y=Math.max(-1,Math.min(1,all?sum/all:0));v.setInt16(44+i*2,Math.round(y*32767),true);
+  }
+  return b;
+}
+/* Safari, also on iOS; the other browsers there have their own place for the mic's permission */
+const isSafari=ua=>/Safari\//.test(ua||'')&&!/Chrome|Chromium|CriOS|FxiOS|Edg|OPiOS|Android/.test(ua||'');

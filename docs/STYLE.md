@@ -422,6 +422,9 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   cuts a reading and listens in that press.
 - Every reading must be watched with `soundWatch()`, since iOS can skip a sound's end event.
 - The browser's voice (`speechSynthesis`) is not called before `rec.start()` in a press (B132); run speech clips may be stopped before it.
+- Every mic use goes through `MIC`: a Recorder stands in as a recognizer (`micRec()`), so one recognizer or recording runs at a time.
+- Recorded keeps one stream, opened by a press that needs it, never one ask per press. Sound outside a listen is dropped, and the stream is released when Talk is left or hidden.
+- The talk line says `Starting the mic…`, `Listening…` or `Getting the words…`. A setting that cannot work says why under its row and what is used instead.
 
 ## Before you finish
 
