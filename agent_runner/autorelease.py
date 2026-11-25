@@ -64,14 +64,14 @@ LOOK_AGAIN = 600  # s: a release that stopped the count may have let go with no 
 
 def waiting_releases(branch: str, ls: list[str]) -> set[str]:
     """F195a: the open releases in `ls` that only wait in the queue for open tasks (`after: all` say), so a count goes
-    on beside them. Not one that may start, is releasing, is taken by a person or another runner, is blocked, or
-    stands in a section no run starts."""
-    from agent_runner import merge, sched
+    on beside them. Not one that may start, is releasing, is taken by a person or another runner, is blocked or held
+    (F429), or stands in a section no run starts."""
+    from agent_runner import merge, row_hold, sched
     ready = {t[0] for t in sched.tasks(branch)}
     busy = {merge.releasing('', branch), *sched.taken(), *(t for t, cl in plansync.claims(S.C).items() if not plansync.stale(cl)),
             *(q[0] for q in S.queued().values())}
     return {tid for section, box, tid, _, _ in P.iter_tasks(ls) if P.release(tid) and box == ' '
-            and not section.startswith(P.SKIPPED)} - ready - busy
+            and not section.startswith(P.SKIPPED)} - ready - busy - row_hold.held_ids(ls)
 
 
 def auto_release(branch: str, idle: bool = False) -> str:
