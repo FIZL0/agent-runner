@@ -348,7 +348,9 @@ def test_direct_edit() -> None:
         eq(p.form(p.sel())['kind'], 'V', 'K goes back (F, B, round to V)')
         p.key('k')
         p.key('p')
-        eq(p.form(p.sel())['pri'], 'normal', 'p toggles the priority (critical to normal)')
+        eq(p.form(p.sel())['pri'], 'high', 'p steps the priority (critical to high)')
+        p.key('p')
+        eq(p.form(p.sel())['pri'], 'normal', 'then to normal')
         p.key('a')
         for c in 'Q4':
             p.key(c)
@@ -913,7 +915,7 @@ def test_actions() -> None:
                                                    'session', ''),
            'n: the new control session selected on its session tab, its link said; no typing')
         p.key('ESC')
-    eq(ran, [['plan', 'edit', 'B2', '--pri', 'normal'],
+    eq(ran, [['plan', 'edit', 'B2', '--pri', 'high'],
              ['plan', 'drop', 'B2', 'dropped from agent-runner ui'],
              ['plan', 'move', 'Q1', 'after', 'B2'],
              ['plan', 'confirm', 'D3', 'Yes'],

@@ -83,7 +83,7 @@ shows one, and `{runner} plan add <KIND> "<text>" --files a,dir/** [--after ID] 
 follow-up you find but must not do now: `--files` the files it will change (the run keeps running tasks apart \
 by them; name the exact test file, not `tests/**`), `--after` the ids it must wait for; the text is never read for files or ids. Never hand-edit a checkbox. KIND is the id letter for the kind of work: {kinds}. LEVEL is where it queues: \
 `critical` only when it breaks or blocks other work (it goes ahead of everything, so its text says what it \
-breaks); `normal`, the default, after the work a person queued; `low` for a check or a small tidy-up, after \
+breaks); `high` only when a person asked for high priority (after critical, ahead of the rest); `normal`, the default, after the work a person queued; `low` for a check or a small tidy-up, after \
 normal; `later` for big future work, parked for a person to schedule and never started by a run. To split \
 your own task, give its id as KIND (`plan add P17 …` files P17a, P17b…), which keeps its place in the queue. `plan add` \
 refuses (exit 3, nothing filed) when an open task looks like the same work: `plan note` that task instead, or add again \

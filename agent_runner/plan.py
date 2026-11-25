@@ -79,6 +79,8 @@ given a `--pri` (and every follow-up a running agent files, which is `normal` un
 
     critical   the plan's Critical section if it has one, else the top of the leading section, behind
                earlier critical ones: it breaks or blocks other work
+    high       the top of the leading section, behind critical and earlier high ones: important, but blocks
+               nothing; a run tries it after the critical tasks and ahead of the rest, wherever its line stands
     normal     `### Follow-ups`, made after the person's sections (before Stretch/Parked): the usual follow-up
     low        the same section, behind every normal one: a check, a small tidy-up, a nice-to-have
     later      `### Parked`, which a run never starts: big future work for a person to schedule
@@ -962,7 +964,14 @@ def _other_checkouts(*plan_files) -> list[Path]:
     return [p for t in trees if t != here for rel in rels if (p := t / rel).is_file()]
 
 
-PRI = ('critical', 'normal', 'low', 'later')  # a follow-up's level, most urgent first
+PRI = ('critical', 'high', 'normal', 'low', 'later')  # a follow-up's level, most urgent first
+
+
+def next_pri(pri: str) -> str:
+    """F438: the level the Priority control sets on a task of level `pri`: critical, then high, then normal again
+    (down, so lowering a task never passes through a higher level)."""
+    return {'critical': 'high', 'high': 'normal'}.get(pri, 'critical')
+
 
 PRI_TAG = re.compile(r'\(follow-up, (' + '|'.join(PRI) + r')\)')
 FOLLOW_UPS, PARKED = 'Follow-ups', 'Parked'  # the sections `add` makes for levels normal/low and later
@@ -1215,6 +1224,20 @@ def _place_pri(ls: list[str], pri: str) -> int:
             return _section_end(ls, h)
         i = _place(ls, 'top', None)
         while i < len(ls) and ITEM.match(ls[i]) and (t := PRI_TAG.search(ls[i])) and t.group(1) == 'critical':
+            i += len(_item_block(ls, i))
+        return i
+    if pri == 'high':  # F438: behind the critical and earlier high ones that lead, never in a Critical section
+        i = _place(ls, 'top', None)
+        h = next((k for k in range(i - 1, -1, -1) if _level(ls[k])), None)
+        if h is not None and 'critical' in ls[h].lower():
+            h = next((k for k in range(h + 1, len(ls)) if 0 < _level(ls[k]) <= _level(ls[h])), None)
+            h = h if h is not None and _level(ls[h]) == 3 else None
+            if h is None or ls[h].lstrip('# ').startswith((FOLLOW_UPS, *SKIPPED)):
+                h = _make_section(ls, 'Next', (FOLLOW_UPS, *SKIPPED))
+            i = h + 1
+            while i < len(ls) and not ITEM.match(ls[i]) and not _level(ls[i]):
+                i += 1
+        while i < len(ls) and ITEM.match(ls[i]) and (t := PRI_TAG.search(ls[i])) and t.group(1) in ('critical', 'high'):
             i += len(_item_block(ls, i))
         return i
     if pri == 'later':

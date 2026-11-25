@@ -235,7 +235,7 @@ def test_add_pri():
             plan.add('T', 'x', pri='urgent', **kw)
             check(False, 'an unknown level is refused')
         except SystemExit as e:
-            has(str(e), 'critical | normal | low | later', 'an unknown level is refused, naming the four')
+            has(str(e), 'critical | high | normal | low | later', 'an unknown level is refused, naming the five')
 
 
 def test_add_subtask():
@@ -1166,7 +1166,7 @@ def test_edit():
             plan.edit('A1', 'x', pri='urgent', **kw)
             check(False, 'an unknown level is refused')
         except SystemExit as e:
-            has(str(e), 'critical \\| normal', 'an unknown level is refused')
+            has(str(e), 'critical \\| high \\| normal', 'an unknown level is refused')
         t, _, keyed, pri, _ = plan.add_args(['new words', '--files', 'x.py,y/**', '--pri', 'low'])
         plan.edit('A1', t, keyed, pri, **kw)
         has(Path(todo).read_text(encoding='utf-8'), r'- \[ \] \*\*A1\*\* \(follow-up, low\) new words \| files: x\.py, y/\*\*',
