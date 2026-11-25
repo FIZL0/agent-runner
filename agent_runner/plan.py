@@ -131,7 +131,7 @@ no text it gets the default release brief (RELEASE_BRIEF) and `after: all`. It s
 has landed, even with other tasks running (F99), and tasks start beside it; while it is busy the merge holds
 every other merge and push, so it releases exactly what was on the shared branch when it started. Tagged
 `(alone)` (below) it runs alone instead. `add V --now` (or `--pri critical`) is an interim release: critical, at
-the top, no `after: all`. A release is never refused as a duplicate of another.
+the top, no `after: all`. A release is never refused as a duplicate of another. One auto release queued on idle lists what was ahead of it (`| ahead: T1, T2`, F435), and its `after: all` counts only those.
 
 **A task that runs alone** (F130, any kind: a release, a major rewrite) is tagged `(alone)` first in its text:
 `add … --alone`, or `edit ID --alone` (`--no-alone` clears it). The run starts it only when nothing else runs or
@@ -202,7 +202,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-KEYS = ('files', 'after', 'test', 'journal', 'model', 'needs', 'split-by', 'held', 'moved')  # F429a: moved, written by `move` alone (release_moves); F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
+KEYS = ('files', 'ahead', 'after', 'test', 'journal', 'model', 'needs', 'split-by', 'held', 'moved')  # F435: ahead, written by auto release alone (release_ahead); F429a: moved, written by `move` alone (release_moves); F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
 # ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
 FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
@@ -642,7 +642,8 @@ def before_all(ls: list[str], i: int) -> list[str]:
     hold it, or it would never run: those in Parked (`--pri later`) and Stretch sections, shelved ones, and those
     blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK: B101), and those stuck on one
     of these (`_stuck_on`, B207, B209). `not_waiting_on` lists them; once the person answers and
-    such a task reopens, it holds it again."""
+    such a task reopens, it holds it again. On a line that lists what was ahead of it (F435), those and their parts
+    alone."""
     return _before_all(ls, i)[0]
 
 
@@ -658,12 +659,14 @@ def not_waiting_on(ls: list[str], i: int) -> dict[str, list[str]]:
 
 def _before_all(ls: list[str], i: int) -> tuple[list[str], dict[str, list[str]]]:
     """(the tasks `after: all` on ls[i] waits on, the ones it skips: `not_waiting_on`)."""
+    from agent_runner import release_ahead  # here: it imports this module
     at, section = [], ''
     for j in range(i):
         if ls[j].startswith('### '):
             section = ls[j][4:].strip()
         m = ITEM.match(ls[j])
-        if m and not m.group(1) and m.group(2) != 'x' and not section.startswith(SKIPPED):
+        if m and not m.group(1) and m.group(2) != 'x' and not section.startswith(SKIPPED) and \
+                release_ahead.counted(ls[i], m.group(3).rstrip('.')):  # F435
             at.append(j)
     return _split_skipped(ls, at)
 
@@ -709,11 +712,11 @@ def last_waits(todo=None) -> list[tuple[str, list[str]]]:
     return out
 
 
-def all_line(tid: str, n: int, skipped=None) -> str:
+def all_line(tid: str, n: int, skipped=None, listed: bool = False) -> str:
     """How `status` and `plan` say what an `after: all` task waits on: a count, not an id list (F35), then the
-    tasks it does not wait on (`not_waiting_on`), by id."""
-    line = (f'{tid} waits for everything before it ({n} open)' if n
-            else f'{tid} waits for everything before it: nothing left')
+    tasks it does not wait on (`not_waiting_on`), by id. `listed`: only what was ahead of it when it was queued (F435)."""
+    what = 'what was ahead when it was queued' if listed else 'everything before it'
+    line = f'{tid} waits for {what} ({n} open)' if n else f'{tid} waits for {what}: nothing left'
     return line + not_waiting(skipped)
 
 
@@ -737,7 +740,7 @@ def last_lines(todo=None) -> list[str]:
     out = []
     for t, ids in last_waits(todo):
         skipped = not_waiting_on(ls, at[t])
-        out.append(all_line(t, len(ids), skipped) if _waits_all(ls, at[t])
+        out.append(all_line(t, len(ids), skipped, 'ahead' in fields(ls[at[t]])) if _waits_all(ls, at[t])
                    else (f'{t} waits on all above: {", ".join(ids)} ({len(ids)} open)' if ids
                          else f'{t} waits on all above: nothing left above it') + not_waiting(skipped))
     return out
@@ -1024,8 +1027,12 @@ def open_release(ls: list[str]) -> str:
 
 def add_release(todo=None) -> str:
     """File a release as `plan add V` with no text does (F63, `[run] auto_release`): the default brief, after
-    everything ahead of it, at the end of the leading section. Its id."""
-    return add(RELEASE, RELEASE_BRIEF + f' | after: {ALL}', 'bottom', todo=todo)
+    everything ahead of it now (F435: not what is queued above it later), at the end of the leading section. Its id."""
+    from agent_runner import release_ahead  # here: it imports this module
+    todo, _ = ensure(todo)
+    tid = add(RELEASE, RELEASE_BRIEF + f' | after: {ALL}', 'bottom', todo=todo)
+    release_ahead.record(tid, todo)
+    return tid
 
 
 def cut_release(tid: str = '', todo=None) -> str:
@@ -1036,7 +1043,7 @@ def cut_release(tid: str = '', todo=None) -> str:
     todo, _ = ensure(todo)
     ls = list(lines(todo))
     i = _find(ls, tid)
-    ls[i] = FIELD.sub(lambda m: '' if m.group(1) == 'after' else m.group(0), ls[i])
+    ls[i] = FIELD.sub(lambda m: '' if m.group(1) in ('after', 'ahead') else m.group(0), ls[i])
     _write(todo, ls)
     edit(tid, pri='critical', todo=todo)
     return tid
@@ -1103,7 +1110,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
             force = True
         elif a == '--last':  # F43: at the end of the leading section, `after: all above`
             last, after_flag, in_where = True, False, False
-        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--') and a not in (f'--{SPLIT_BY}', '--held', '--moved'):
+        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--') and a not in (f'--{SPLIT_BY}', '--held', '--moved', '--ahead'):
             if k + 1 >= len(rest) or rest[k + 1].startswith('--'):
                 no(f'{a} needs a value')
             if a in vals or (a == '--pri' and pri):
@@ -1258,8 +1265,8 @@ def add(prefix: str, text: str, where: str | None = None, ref: str | None = None
     if pri and not PRI_TAG.search(text):
         text = f'(follow-up, {pri}) {text}'
     j = _place_pri(ls, pri) if pri and not where else _place(ls, where or 'top', ref)
-    from agent_runner import release_moves, row_hold  # here: they import this module
-    line = release_moves.cleared(row_hold.cleared(_unheld(f'- [ ] **{tid}** {text}')))  # only this sets a split hold, `hold` a held task
+    from agent_runner import release_ahead, release_moves, row_hold  # here: they import this module
+    line = release_ahead.cleared(release_moves.cleared(row_hold.cleared(_unheld(f'- [ ] **{tid}** {text}'))))  # only this sets a split hold, `hold` a held task
     if split_c and _big([line], tid, split_c):  # in the same write: no run reads the task without it
         line += f' | {SPLIT_BY}: {split_stamp()}'
     ls[j:j] = [line]
@@ -1382,6 +1389,7 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
         new.pop(SPLIT_BY, None)
         new.pop('held', None)  # F429: `hold` alone writes it
         new.pop('moved', None)  # F429a: `move` alone writes it
+        new.pop('ahead', None)  # F435: auto release alone writes it
         # continuation lines before the first sub-item are description too (and `note` appends to a block's
         # last line): they go, sub-items stay, and a BLOCKED on a dropped last line moves to the first line
         k = next((n for n, l in enumerate(rest_blk) if ITEM.match(l)), len(rest_blk))
@@ -1394,6 +1402,8 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
         desc, was_alone = desc[len(ALONE):].lstrip(), True
     flag = ALONE if (was_alone if alone_ is None else alone_) else ''
     vals = {**old, **new, **dict(FIELD.findall(keyed))}
+    if 'after' in {**new, **dict(FIELD.findall(keyed))}:  # F435: it waits for what the person says now
+        vals.pop('ahead', None)
     fieldtext = ''.join(f' | {k}: {vals[k]}' for k in KEYS if k in vals)
     line = ' '.join(x for x in (head, tag, flag, desc) if x) + fieldtext + tail
     blk = [line] + rest_blk
