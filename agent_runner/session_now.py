@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import plat
+from agent_runner import chat_question, plat
 from agent_runner import ui_model as U
 
 BUSY = 'busy'  # Claude Code's word; 'idle', 'shell' (idle, a background shell runs) and 'waiting' (a question) are others
@@ -163,11 +163,12 @@ _TASKS: dict[str, tuple[int, list[dict]]] = {}  # transcript -> (its size, its t
 
 def live(name: str) -> dict:
     """The page's word on session `name`: {'ok', 'status', 'since' (when it began, epoch s), 'mode' (its permission mode
-    as the transcript has it), 'queued' (F190b: how many sent messages are queued in it), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
+    as the transcript has it), 'queued' (F190b: how many sent messages are queued in it), 'ask' (F192a: the question a chat's last answer ends on,
+    `chat_question.ask`; None for none), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
     'tail'), 'harness' (F406g: on the harness loop)}."""
     rec = record(name)
     if not rec:
-        return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'queued': 0, 'tasks': []}
+        return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'queued': 0, 'ask': None, 'tasks': []}
     path = transcript(name, rec)
     rows: list[dict] = []
     if path:
@@ -183,7 +184,7 @@ def live(name: str) -> dict:
                 elif d.get('type') == 'queue-operation':
                     ops.append(d)
                 kept.append(d)
-            _TASKS[path] = (size, [{'mode': mode, 'ops': ops}, *tasks(kept)])
+            _TASKS[path] = (size, [{'mode': mode, 'ops': ops, 'ask': chat_question.ask(kept) if name[0] == 'c' else None}, *tasks(kept)])
             while len(_TASKS) > 20:
                 _TASKS.pop(next(iter(_TASKS)))
         rows = _TASKS[path][1]
@@ -192,8 +193,10 @@ def live(name: str) -> dict:
     done = [t for t in rows[1:] if not t['running']][-3:]
     if rec.get('status') == 'idle':  # nothing of it runs any more, whatever the transcript missed
         run = [t for t in run if t['kind'] == 'agent']
+    waits = queued(rec, rows[0]['ops'] if rows else ())
+    ask = rows[0]['ask'] if rows and not waits else None  # queued words: the person has spoken since
     return {'ok': True, **({'harness': True} if rec.get('harness') else {}), 'status': str(rec.get('status') or ''), 'since': (rec.get('statusUpdatedAt') or 0) / 1000,
-            'mode': mode, 'queued': queued(rec, rows[0]['ops'] if rows else ()), 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
+            'mode': mode, 'ask': ask, 'queued': waits, 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
                                      **({'tail': output_tail(t['out'])} if t.get('out') else {})} for t in run + done]}
 
 
