@@ -27,7 +27,8 @@ from agent_runner.sched import agent_held, AgentHeld
 from agent_runner.strays import drop_strays, new_empty
 from agent_runner.state import (C, clean, commit_plan, EV_LANDED, EV_LEFT, EV_PART, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR)
 from agent_runner.slots import (backend, entries, env_vars, merge_env, MUX, slot_env, trim, worktree)
-from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
+from agent_runner.join import (joined, LANDED, merge_into, renumber_doubles, renumber_upstream, task_env, TASK_SID,
+                               WAITING)
 from agent_runner.land import (announce_release, BROKEN, flaky, land, land_tick, published, push_landed,
     keep_landed, record_landed, reopen_landed, UNPUSHED)
 
@@ -1310,6 +1311,7 @@ def batch_build(t: BatchTurn):
             log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
     if up := upstream(branch, d):  # someone pushed to the remote: take it in, the gate tests it too
         msg = f"Merge {up.removeprefix('refs/remotes/')} into {branch}"
+        renumber_upstream(d, up, tid)
         if (files := merge_into(d, up, msg)) is None:
             return f'git refused to merge {up} into the merge of task/{tid} (see the merge worktree, {d})'
         if files and not joined(files, tid, d) and (why := refix(tid, branch, up, files, d, msg=msg)):

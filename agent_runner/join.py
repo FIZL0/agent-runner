@@ -124,14 +124,18 @@ def _next_free(k: str, taken: set[str]) -> str:
     return k + 'r'
 
 
-def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
+def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = False) -> str:
     """`ref`, or a commit on top of it that renumbers the tasks it added under an id `onto` already uses.
 
     A branch files a follow-up with the next id its own copy of the plan has free, while main, meanwhile,
     may have handed that id to another task. The merge keeps both lines (`plan.merge3`), but under one id, so a
     tick or a pick would take one for the other: P118's two follow-ups vanished that way. So before a merge the branch's
     new task gets the next id free on both sides, and every line the branch added or changed that names it
-    follows; the change is logged. Run before each merge, the tested one and the one onto main."""
+    follows; the change is logged. Run before each merge, the tested one and the one onto main.
+
+    With `remote` (`renumber_upstream`), `ref` is this side and `onto` the remote's branch it takes in: nothing is
+    folded, a task both sides have (one line, whatever was noted on it since) is no clash, and one that has a
+    branch keeps its id, since its session and its merge go by it; that is logged."""
     files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
     base = git('merge-base', onto, ref, cwd=cwd).stdout.strip()
     show = lambda rev, f: git('show', f'{rev}:{f}', cwd=cwd).stdout.splitlines() if rev else []
@@ -142,12 +146,24 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
 
     old, theirs, ours = ids(base), ids(ref), ids(onto)
     try:
-        folds, blocks = fold_doubles(show(base, files[0]), show(ref, files[0]), show(onto, files[0]), tid)
+        folds, blocks = ({}, {}) if remote else fold_doubles(show(base, files[0]), show(ref, files[0]), show(onto, files[0]), tid)
     except Exception as e:  # a fold is a nicety: odd plan text must not stop the merge
         log(f'{tid}: could not hold its follow-ups against {onto} ({e}); a follow-up may land twice')
         folds, blocks = {}, {}
     doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]
                and k not in folds]
+    if remote:
+        def said(line):  # its own words, without the notes and BLOCKED after them
+            return next((s.strip() for s in P.SEG.split(line.partition('**')[2].partition('**')[2]) if s.strip()), '')
+
+        if tid in theirs and tid not in old and tid in ours and theirs[tid] != ours[tid]:
+            doubled.append(tid)  # the task of this merge: logged below
+        doubled = [k for k in doubled if said(theirs[k]) != said(ours[k])]
+        if begun := [k for k in doubled if k == tid or any(not git('rev-parse', '-q', '--verify', f'refs/heads/{b}/{k}',
+                                                       cwd=cwd).returncode for b in ('task', 'wip'))]:
+            log(f'{tid}: {onto} uses {", ".join(begun)} for another task, but it is under way here, so it is not '
+                'renumbered: two tasks now have that id')
+            doubled = [k for k in doubled if k not in begun]
     if not doubled and not folds:
         return ref
     taken, new = set(old) | set(theirs) | set(ours) | P.reserved(cwd), {}
@@ -165,6 +181,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
         g('read-tree', ref)
         for f in files:
             was, now = set(show(base, f)), show(ref, f)
+            if remote:  # a line both sides have stays one line
+                was |= set(show(onto, f))
             if not now:
                 continue
             if f == files[0] and folds:
@@ -204,6 +222,14 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
             'noted there instead of adding it again')
         note(f'{tid}: folded {into} before the merge')
     return c
+
+
+def renumber_upstream(d: Path, up: str, tid: str) -> None:
+    """Before `d` merges in the remote's `up`: the tasks this side added under an id `up` uses for another task
+    get a new one (`renumber_doubles`), in a commit on `d`'s HEAD. What is pushed keeps its id."""
+    ref = renumber_doubles('HEAD', up, tid, d, remote=True)
+    if ref != 'HEAD' and (r := git('merge', '-q', '--ff-only', ref, cwd=d)).returncode:
+        log(f'{tid}: the renumbering does not apply in {d}; two tasks may have one id: {r.stderr.strip()[:200]}')
 
 
 class _Kept(str):
