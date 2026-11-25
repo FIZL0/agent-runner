@@ -1,25 +1,32 @@
-# R17: F170's chat controls on the iPhone 15 (not yet checked)
+# R17: F170's chat controls on the iPhone 15
 
-No product code changed; this is research only. **The check could not be done yet, because F170 is not on the page the phone can reach.**
+Checked 2026-11-25 on the iPhone 15 Pro (iOS 27, Safari) through the remote rig (`ui-15.sh`), against the live run page
+of this repo (0.71.0, which has F170), reached over the tailnet's https address. The phone could not load the LAN
+address (`http://192.168.0.118:8770`): the page hung at 0 %. The tailnet https address loaded at once.
 
-## What was found
+Two sessions were used: slot s1 (a control session, idle behind a gate) for the bars and the keyboard, and this task's
+own slot (s4, busy: spinner and tool output redrawing) for the flicker and the box lines.
 
-- The rig works: the iPhone 15 Pro (iOS 27.0.1) is attached and listed by `ios list`; the tools are `~/repos/iFizBox/tools/ui-15.sh` and `docs/iphone15.md` there (WebDriverAgent, take its lock first).
-- Runner Home (port 8770, the Tailscale https link from `agent-runner home status`) serves the installed run, **0.62.0**. Its page has no F170: none of `feedFoot`, `ar-box` or the Force send / Stop buttons are in it (8 matches in this branch's `agent_runner/web_page.html`, 0 in the served page). Judging it there would judge the old chat window.
-- Putting the new page in front of the phone needs either a release (V5 is open) with `agent-runner upgrade`, which restarts the person's running run, or a second run of this branch beside it. Neither is for an unattended task to do: the first restarts every session, the second needs its own ttyd sessions, tokens and ports on a machine with a live run.
+| Check | Result |
+|---|---|
+| Hidden bottom lines stay hidden with no flicker while the agent redraws | Pass. 14 screenshots, about 1 s apart, while the session redrew (spinner, tool output, a new line every 2 s): the text above the chips changed between frames, and the region from the chip row down to the message box was pixel-identical in all 14. The update notice, status line and mode line never showed under Claude's prompt; the chips (Working, Bypass, shells, agents) stood in their place. |
+| Bars go and come with the finger, no jump | Pass. A drag down (scroll up) took the top bar and chips away and slimmed the box; a drag back brought them back, and the session lay on the same pixels as before the scroll (full-screen compare by eye: same lines at the same heights). |
+| Keyboard opens and closes cleanly | Pass. Tapping the box raised it with the chips above the keyboard, nothing clipped, the top bar stayed; Done on the keyboard's bar closed it and the layout went back to the same one as before. |
+| Box lines join in Safari | Pass. A printed table (`┌┬┐├┼┤└┴┘│─`) drew joined corners and tees, with no gaps between rows. Only the first rows of the table showed (the tool result folds to 3 lines), so `╭╮╰╯`, `═║╔╗` and the block elements `▀▄█▌▐` were seen only in the command's echo: the blocks drew as solid squares, the double lines joined. |
 
-## Update, 2026-11-24 (second try)
+## Seen on the way, not asked
 
-- F170 is served now: Runner Home's `/p/agent-runner/` has `feedFoot` (7 matches) and Force send (4), from the installed 0.66.0. The earlier block is lifted.
-- The phone is not free: iFizBox's task B440 held the UI lock (`tools/ui-15.sh state` exit 75) for over 25 minutes of polling, touching it every minute, so the lock never went stale. Nothing was driven on the phone and no screenshot taken. Rerun when `tools/ui-15.sh state` exits 0.
+- Under the slim box (bars away), the half of one session line shows below the box's lower edge for a moment while
+  scrolled up (r17g in the run's screenshots: "Brewed for 5s" cut by the box). It is the history showing past the slim
+  box, and it was not there once the bars were back. Not filed: it is the session's own text, and the box is
+  see-through by design (F171). Look again if it bothers.
+- iOS's own password bar ("omarchy-desktop.beetal-ling.ts.net") sits above the keyboard when the box takes focus on a
+  session. It is Safari's, not the page's; `autocomplete="off"` does not remove it for a text box Safari takes for a
+  login field.
 
-## What to check once F170 is served (the task's list)
+## Not checked
 
-Open a chat with a real session at `/p/agent-runner/` in Safari on the phone (390 pt wide, Tailscale link), with Claude working:
-
-1. The hidden bottom lines stay hidden while the agent redraws (a working spinner, a long reply): no line flashes at the frame's edge.
-2. Scroll up in the session: chips, message box and top bar go with the finger and come back on scrolling down, with no jump.
-3. Tap the box: the keyboard opens and closes with the box, chips and frame gliding to their place, no gap, no pan of the page.
-4. Box lines (`ar-box` font) join with no gaps in Safari, in light and dark (`/wda/device/appearance`, and put it back).
-
-Record each as pass or fail with a screenshot (`ui-15.sh ME shot NAME`) in `docs/research/R17-samples/`, and queue a B task for each fail. Rules to confirm or correct in `docs/STYLE.md`: "Its bottom lines are past the edge", "The session", "Keyboard".
+- A redraw that moves the pill (Jump to bottom, N new messages) while scrolled up, and a long scroll with momentum: the
+  scroll test was one 600 px drag each way.
+- Dark mode only; light was not tried.
+- This used the run's own page, so nothing was changed on the phone besides Safari's tabs (the unlock closed them).
