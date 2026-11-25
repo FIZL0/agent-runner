@@ -469,7 +469,8 @@ def cmd_pick_links(argv: list[str], prog: str = f'{RUNNER} pick-links') -> int:
 
 def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     """`./run stop`: the running sessions finish and merge, nothing new starts, and the run exits."""
-    ap = argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then exit.')
+    ap = argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then the run stops. '
+                                 'Its run page stays up (`agent-runner page-only stop` ends it), except after --suspend or --shutdown.')
     ap.add_argument('--force', action='store_true',
                     help='end the agent sessions now (each resumes in the next run), as s! in the run view')
     power = ap.add_mutually_exclusive_group()
@@ -490,7 +491,7 @@ def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     print(f'asked the run to stop ({C.notes("STOP")}); it exits once '
           + ('its sessions are ended and the merges under way are done' if a.force else
              'the running tasks are merged')
-          + (f', then {"suspends" if a.suspend else "shuts down"} the computer' if a.suspend or a.shutdown else ''))
+          + (f', then {"suspends" if a.suspend else "shuts down"} the computer' if a.suspend or a.shutdown else '; its page stays up' if page_only.kept() else ''))
     return 0
 
 

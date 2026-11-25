@@ -15,6 +15,11 @@ function newsHTML(x){
 function newsDraw(){const x=newsNow(), el=$('news');el.hidden=!x;setHTML(el,x?newsHTML(x):'')}
 /* F126a: the run's own words on its pages, Home's on Home and All projects */
 function loginDraw(){const t=HOME_PAGE||atAll()?H.login:S.snap.claude_login, el=$('login'), was=!el.hidden;el.hidden=!t;setHTML(el,t?`${I.alert}<span>${esc(t)}</span><button class="btn" data-login>Log in again</button>`:'');if(!t&&was&&S.sheet==='login'){closeSheet();toast('The login is renewed')}}
+/* F402b3b: no run is up and the page-only process serves this page: said on every view, with Start */
+function offDraw(){
+  const el=$('runoff'), on=runOff(S.snap,{home:HOME_PAGE||atAll(),view:S.view,thread:S.thread}), c=on&&controlOf('start'), busy=c&&ctlBusy('start');
+  el.hidden=!c;setHTML(el,c?`<span>${busy?'Starting the run…':'The run is not running'}</span><button class="btn acc${busy?' busy':''}" data-ctl="start">${esc(c.label)}</button>`:'');
+}
 function newsLater(key){S.later=[...S.later.filter(k=>k!==key),key].slice(-20);tabStore.set(LATER_KEY,S.later.join(' '));S.sure=null;render(true)}
 const devTyped=()=>Object.keys(S.f).some(k=>k.startsWith('dev:'));
 /* the words no store has yet, for the page that comes next; false when this browser keeps nothing */
@@ -59,17 +64,19 @@ function takeSnap(s){
   const tw=talkWaitName();if(tw&&TK.wait.sent){addSent(tw,TK.wait.sent.text,TK.wait.sent.at,{talk:true,first:true},0);TK.wait.sent=null}if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
   render();S.live=true;if(S.needGo)needGo();
 }
-function connect(){
+let lost=0;  /* the banner shows only when no snapshot came for a while, not on every reconnect */
+function connect(n=0){
   let es;try{es=new EventSource(tq('events'))}catch(e){return poll()}
-  let lost=0;  /* the banner shows only when no snapshot came for a while, not on every reconnect */
-  const fine=()=>{clearTimeout(lost);lost=0;$('offline').hidden=true};
+  const fine=()=>{n=0;clearTimeout(lost);lost=0;$('offline').hidden=true};
   es.onmessage=e=>{fine();try{takeSnap(JSON.parse(e.data))}catch(x){}};
-  es.onerror=()=>{if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000)};
+  es.onerror=()=>{if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000);
+    if(es.readyState===2){es.onerror=null;setTimeout(()=>connect(n+1),dialWait(n))}};  // F402b3b
 }
 async function poll(){try{takeSnap(await (await fetch(tq('snapshot'))).json())}catch(e){}setTimeout(poll,4000)}
 async function loadFeed(n){
   if(String(n||'')[0]==='@'||isNew(n))return;  // F137: a chat still starting has no feed yet; F172: nor one not started
-  try{const f=await (await fetch(tq('feed/'+encodeURIComponent(n)))).json();
+  try{const r=await fetch(tq('feed/'+encodeURIComponent(n)));if(r.status>=500)return;  // F402b3b: nothing serves the page for a moment: the chat's words stay
+    const f=await r.json();
     const old=S.feeds[n];S.feeds[n]={...f,at:Date.now()};
     const sent=S.sent[n], had=JSON.stringify((sent&&sent.pending)||[]), se=sessionOf(n);
     if(sent){sent.pending=sentStep(sent.pending,f.entries,Date.now(),!!se&&se.state!=='off',!!f.more);keepSent()}  // B154

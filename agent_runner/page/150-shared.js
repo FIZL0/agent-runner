@@ -45,6 +45,7 @@ function render(force){
   obDraw();  // F137
   newsDraw();  // F149
   loginDraw();
+  offDraw();  // F402b3b
   walkDraw();  // F194b
   setBarDraw();  // F202b
   rowSettle();side();sheetDraw();

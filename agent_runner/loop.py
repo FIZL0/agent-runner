@@ -79,6 +79,7 @@ def keys_help(view: bool = False) -> str:
 runner keys: type one here and press Enter
 
     s        stop gently: no new tasks, the running ones finish and merge, then the run exits
+             (its run page stays up)
     s!       stop now: end the agent sessions (each resumes where it was in the next run),
              finish the merges under way, then exit
     p        pause: no new tasks, and the run stays up

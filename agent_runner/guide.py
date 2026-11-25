@@ -667,7 +667,7 @@ HINT_SKILLS = {
               'Run `{cmd} pause $ARGUMENTS` (`--off` goes on) and say in one line what it printed.'),
     'stop': ('Stop the agent-runner run (the person typed /stop).',
              'Run `{cmd} stop $ARGUMENTS` (bare: running tasks finish first; `--force` now; `--undo`) and say in one '
-             'line what it printed.'),
+             'line what it printed. The run stops, its run page stays up.'),
     'slots': ('More or fewer agent-runner agents (the person typed /slots).',
               'With an argument (`+1`, `-1`, `4`) run `{cmd} slots $ARGUMENTS` and say in one line what it printed; '
               'without one, say how many slots the run has (`{cmd} status`) and ask how many they want.'),
