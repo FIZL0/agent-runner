@@ -908,7 +908,7 @@ _Avoid_: tooltip, popover, help text
 **Row menu**:
 The three dots on a Plan queue row, and the icons they bring in on the row to hold it, move it to the top or remove it
 _Said_: the menu on the row
-_On screen_: ⋯ on a Plan queue row: Hold or End the hold, To the top, Remove with Undo
+_On screen_: ⋯ on a Plan queue row: Hold or End the hold, Wait for…, To the top, Remove with Undo
 _In code_: rowMenu, menuRows, menu_hold, menu_unhold, menu_top, menu_remove, menu_restore, queuemenu
 _Avoid_: context menu, kebab menu
 
@@ -1013,6 +1013,6 @@ _Avoid_: PR status, merge state
 **Wait for…**:
 Setting which tasks a queued task waits for: exactly the ones picked, or none
 _Said_: wait for, what it waits for
-_On screen_: Wait for…
-_In code_: plan edit --wait-for, plan_wait.py, set_waits
+_On screen_: Wait for…; ⋯ on a Plan queue row: Wait for…; What should B456 wait for?; Done, Cancel
+_In code_: plan edit --wait-for, plan_wait.py, set_waits, waitHTML, waitRows, data-waitset
 _Avoid_: block on, depend on
