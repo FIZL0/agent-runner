@@ -27,8 +27,7 @@ function toolForget(){for(const k of Object.keys(S.f))if(k.startsWith('dev:'))de
 const SECRET_NAME={key:'Private key',passphrase:'Key passphrase',password:'Password'};
 const toolSaid=n=>{const s=(S.toolSaid||{})[n];return s?`<div class="small ${s.ok?'':'v-bad'}" role="status">${esc(s.out)}${s.https?` <a href="${esc(s.https)}">${esc(s.https.split('?')[0])}</a>`:''}</div>`:''};
 const toolBusy=(op,n,what)=>S.toolBusy===`${op}:${n||''}:${what||''}`?' busy':'';
-function toolAgo(at){const m=Math.max(0,Math.floor((Date.now()/1000-at)/60));return m<1?'just now':m<60?`${m} min ago`:m<1440?`${Math.floor(m/60)} h ago`:`${Math.floor(m/1440)} d ago`}
-const toolWords=t=>(t.words||'not checked yet')+(t.at?` · checked ${toolAgo(t.at)}`:'');
+const toolWords=t=>(t.words||'not checked yet')+(t.at?` · checked ${agoWords(t.at*1000,' ago')}`:'');
 const toolWhere=t=>t.source==='runner.toml'?`[run.tools.${t.name}] in runner.toml, edited there`:t.kind==='other'?t.reach:t.alias?`SSH, ${t.alias} in ~/.ssh/config`:`SSH, ${t.user?t.user+'@':''}${t.host}${t.port===22?'':':'+t.port}`;
 function toolCard(t){
   const dev=t.source==='device', cls={free:'ok',busy:'warn',missing:'bad',unknown:'warn'}[t.state]||'', n=esc(t.name);

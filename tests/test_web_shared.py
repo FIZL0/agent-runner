@@ -715,6 +715,31 @@ def test_icon_hints_f195b(tmp: Path) -> None:
     eq((o['press'], o['pressed'], o['hoverWord']), (False, ['', 'Menu'], ''), 'a click presses and takes it away; none on a word')
 
 
+def test_small_fixes_f426f(tmp: Path) -> None:
+    """F426f: one age helper, and the same plain empty line wherever nothing needs the person."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('toolAgo' not in page, 'one age helper')
+    check('noneed' not in page and '<b>Nothing needs you' not in page, 'no card of its own for Nothing needs you')
+    eq(page.count("emptyCard('Nothing needs you.')"), 3, 'the plain empty line: Home, all projects and a project with no run up')
+    check("emptyCard('No devices.')" in page, 'No devices has its full stop')
+    if not shutil.which('node'):
+        return
+    ago = re.search(r'^const agoWords=.*$', page, re.M).group(0)
+    words = re.search(r'^const toolWords=.*$', page, re.M).group(0)
+    js = f"""Date.now = () => 1e12; {ago}
+{words}
+const at = min => 1e12 - min * 60000;
+console.log(JSON.stringify([[0, 5, 90, 47 * 60, 48 * 60].map(m => agoWords(at(m))), [0, 5, 48 * 60].map(m => agoWords(at(m), ' ago')),
+  agoWords('x', ' ago'), agoWords(new Date(at(5)).toISOString()), toolWords({{words: 'free', at: at(5) / 1000}}), toolWords({{words: 'free', at: at(0) / 1000}}), toolWords({{}})]));
+"""
+    r = subprocess.run(['node', '-e', js], capture_output=True, text=True, encoding='utf-8', timeout=60)
+    check(r.returncode == 0, 'node runs the age helper', r.stderr[-1200:])
+    if r.returncode:
+        return
+    eq(json.loads(r.stdout), [['now', '5 min', '1 h', '47 h', '2 d'], ['now', '5 min ago', '2 d ago'], '', '5 min',
+                              'free · checked 5 min ago', 'free · checked now', 'not checked yet'], 'ages, and a tool\'s words')
+
+
 def test_page_parts_c41a(tmp: Path) -> None:
     print('C41a: the page is one file per area, joined in the order of their names into one page')
     parts = sorted(W.PAGE_DIR.glob('*'))
@@ -732,4 +757,4 @@ def test_page_parts_c41a(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_kinds_f195b), in_tmp(test_icon_hints_f195b), in_tmp(test_page_parts_c41a)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_small_fixes_f426f), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_kinds_f195b), in_tmp(test_icon_hints_f195b), in_tmp(test_page_parts_c41a)]))
