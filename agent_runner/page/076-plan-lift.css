@@ -1,0 +1,2 @@
+/* F429d: a finger's hold on a Plan queue row lifts it, so it selects no words there; the opened details' words still can be */
+@media (any-pointer:coarse){.card:has(>.grip)>:is(.fold,.row){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}}

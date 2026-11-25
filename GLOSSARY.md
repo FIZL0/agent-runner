@@ -918,3 +918,10 @@ _Said_: the grip
 _On screen_: six dots at the left of a Plan queue row: Move ID: drag, or arrow up and down
 _In code_: rowGrip, gripRows, gripMove, gripDraw, data-grip
 _Avoid_: drag handle, gripper
+
+**Row lift**:
+On touch, a Plan queue row that a finger holds still until it lifts, so the finger then moves it like the grip; the touch is the row's until the finger lifts
+_Said_: hold and drag
+_On screen_: hold a Plan queue row until it lifts, then drag
+_In code_: liftRow, liftUp, liftMove, liftEnd, LF
+_Avoid_: long press, drag mode
