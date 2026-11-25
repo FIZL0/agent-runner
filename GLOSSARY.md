@@ -816,3 +816,10 @@ _Said_: open the page without starting the run
 _On screen_: opening the run page…
 _In code_: page_only.serve, page_only.open_page, web.start_web(only=True)
 _Avoid_: page server, idle run, light run
+
+**Recorded**:
+The way of Talk where the run's machine turns a clip the page recorded into words; the other way is the browser's own recognition.
+_Said_: have both as an option
+_On screen_: Recorded
+_In code_: recorded.py, /recorded
+_Avoid_: STT, transcription

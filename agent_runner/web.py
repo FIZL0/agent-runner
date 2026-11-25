@@ -39,6 +39,8 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
     GET  /speech?t=TOKEN         F158: the voices this machine can read Talk's replies with (`speech.voices`)
     POST /speech?t=TOKEN         F158: {"text", "voice"}: that text as a WAV clip (`speech.Speaker`)
+    GET  /recorded?t=TOKEN       F161a: whether a clip can be made into words here, and why not (`recorded.engine`)
+    POST /recorded?t=TOKEN       F161a: a 16 kHz mono WAV clip, as is: {"ok", "words"} (`recorded.Listener`)
     GET  /diff/NAME?t=TOKEN      F75: slot NAME's diff so far (`slot_diff`), for its diff tab
     POST /upload?t=TOKEN&name=N  F79: an attachment (the body, as is) kept under <notes>/uploads; its path on this
                                  machine comes back, for the message that hands it to a session
@@ -67,7 +69,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plan_search, plat, provider_login, session_frame, session_history, session_now, session_theme, speech, trust, watch
+from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plan_search, plat, provider_login, recorded, session_frame, session_history, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -181,6 +183,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(got, ensure_ascii=False))
         if path == '/speech':  # F158
             return self.send(200, json.dumps(speech.voices()))
+        if path == '/recorded':  # F161a
+            return self.send(200, json.dumps(recorded.engine()))
         if path.startswith('/task/'):  # F85
             return self.send(200, json.dumps(U.task_text(path.split('/')[2]), ensure_ascii=False))
         if path == '/plan-search':  # F212
@@ -204,12 +208,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.upload()
         if urlsplit(self.path).path == '/speech':
             return self.speech()
+        if urlsplit(self.path).path == '/recorded':
+            return self.recorded()
         if urlsplit(self.path).path == '/tools':
             return self.tools()
         if urlsplit(self.path).path == '/give':
             return self.give()
         if urlsplit(self.path).path != '/act':
-            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /give, /upload, /speech or /tools'}))
+            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /give, /upload, /speech, /recorded or /tools'}))
         try:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
             name, args = str(body.get('name', '')), body.get('args') or {}
@@ -341,6 +347,27 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(503, json.dumps({'ok': False, 'out': str(e)}))
         self.send(200, data, 'audio/wav')
 
+    def recorded(self) -> None:
+        """F161a: a recorded clip as words, for the page that sent it alone. 413 or 400: the clip is refused; 503: no words, and why."""
+        try:
+            size = int(self.headers.get('Content-Length') or 0)
+        except ValueError:
+            size = 0
+        if not 0 < size <= recorded.BYTES_MAX:
+            self.close_connection = True
+            left = size if size <= 4 * recorded.BYTES_MAX else 0  # a little too long: read and thrown away, so the page hears why
+            while left > 0 and (got := self.rfile.read(min(left, 1 << 16))):
+                left -= len(got)
+            return self.send(413 if size > 0 else 400, json.dumps({'ok': False, 'out': (
+                f'a clip is at most {recorded.SECONDS_MAX} seconds' if size > 0 else 'the clip is missing')}))
+        try:
+            words = self.server.listener.read(self.rfile.read(size))
+        except recorded.BadClip as e:
+            return self.send(400, json.dumps({'ok': False, 'out': str(e)}))
+        except speech.SpeechError as e:
+            return self.send(503, json.dumps({'ok': False, 'out': str(e)}))
+        self.send(200, json.dumps({'ok': True, 'words': words}, ensure_ascii=False))
+
     def concept(self, cid: str) -> None:
         """F74: a concept's local page copy (`ui_model.concept_copy`), for the page to show inline. Sandboxed:
         it runs as a page of its own origin, so its scripts never reach the run page or its token."""
@@ -406,6 +433,7 @@ class WebServer(ThreadingHTTPServer):
         self.token, self.snaps, self.stopped = token, Snapshots(snap), threading.Event()
         self.once = ActsOnce(S.C.notes('acts-once.jsonl') if S.C else None)  # F137
         self.speaker = speech.Speaker()  # F158
+        self.listener = recorded.Listener()  # F161a
         super().__init__((bind, port), Handler)
         self.terms = Terminals(token, self.server_address[1], bind)
         self.moving = threading.Lock()
@@ -445,6 +473,7 @@ class WebServer(ThreadingHTTPServer):
             self.server_close()
             self.terms.close()
         self.speaker.close()
+        self.listener.close()
 
 
 def serve(token: str, port: int, bind: str = '0.0.0.0', snap=run_snapshot) -> WebServer:
