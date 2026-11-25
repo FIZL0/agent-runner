@@ -2,7 +2,7 @@
 /* F201: the pinned chats in the order the run keeps (F133), then the others, newest first */
 const chatPins=()=>S.snap.chat_pins||[];
 const chats=()=>chatSort(S.snap.sessions.filter(s=>/^c\d+$/.test(s.name)),chatPins());
-const chatNames=()=>{const g=sideRows();return g.top.concat(g.quiet).filter(c=>!c.stand).map(c=>c.name)};
+const chatNames=()=>{const g=sideRows();return g.top.concat(g.quiet).filter(c=>!c.stand&&!c.response).map(c=>c.name)};
 /* F133: keep the pins, in their order: shown at once, then sent to the run so every page shows the same list */
 function savePins(pins){
   S.snap.chat_pins=pins;render(true);
@@ -38,7 +38,20 @@ function markSeen(){
 }
 const replyDue=s=>needsReply(s,(S.seen||{})[s.name])&&!(S.thread===s.name&&!s.needs_reply);
 const groupChats=rows=>chatGroups(rows,{pins:chatPins(),quiet:+S.snap.chat_quiet||0,now:Date.now()/1000,seen:S.seen||{},up:S.thread&&S.up});
-const shownChats=()=>groupChats(chats());
+const shownChats=()=>{const g=groupChats(chats());return{top:g.top,quiet:quietRows(g.quiet,responseRows(S.snap.responses,S.ob,S.responseGone))}};  // F425b: the sent responses rest in Quiet
+/* F425b: the sent responses with no chat yet; S.responseGone: those whose chat started, which an older snapshot may still list.
+   S.responseSeen: those opened once (per browser and project, the latest) */
+const responses=()=>responseRows(S.snap.responses,S.ob,S.responseGone);
+const responseOf=n=>responses().find(x=>x.name===n);
+const RESPONSE_SEEN_KEY='ar-seen-responses'+(HKEY?':'+HKEY:'');
+const responseSeenGet=()=>{try{const l=JSON.parse(store.get(RESPONSE_SEEN_KEY)||'[]');return Array.isArray(l)?l:[]}catch(e){return[]}};
+S.responseSeen=responseSeenGet();
+function responseOpened(id){
+  if(!S.responseSeen.includes(id))store.set(RESPONSE_SEEN_KEY,JSON.stringify(S.responseSeen=[...new Set([...S.responseSeen,...responseSeenGet(),id])].slice(-100)));
+}
+function responseOpen(n){const r=responseOf(n), id=n.slice('+response:'.length);S.ctx={kind:'response',id,label:r?r.label:'Sent response'};if(r)responseOpened(id)}
+const responseNew=x=>S.responseSeen.includes(x.id)?'':'<span class="newlabel">new</span>';
+addEventListener('storage',e=>{if(e.key===RESPONSE_SEEN_KEY){S.responseSeen=responseSeenGet();render()}});
 const threadTitle=n=>{if(isNew(n))return S.ctx?S.ctx.label:'New chat';if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
 const feedOf=n=>(S.feeds[n]||{}).entries||[];
 function lastWords(n){const e=feedOf(n).filter(x=>x.kind==='say');return e.length?plain(e[e.length-1].text):''}

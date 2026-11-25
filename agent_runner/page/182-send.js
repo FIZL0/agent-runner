@@ -1,7 +1,7 @@
 /* --- doing things ------------------------------------------------------------------------------------------ */
 /* B212: on touch a script's focus brings no keyboard, so open() gives none (about() does, in the tap) and drops one left from
    the box before; not when a starting chat gets its name (named): its box may be in use */
-function open(n,named){if(TOUCH()&&!isNew(n)&&!named&&typingIn(document.activeElement))document.activeElement.blur();const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;if(!isNew(n))S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet&&!TOUCH())setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
+function open(n,named){const resp=/^\+response:/.test(n);if(resp)responseOpen(n);if(TOUCH()&&(!isNew(n)||resp)&&!named&&typingIn(document.activeElement))document.activeElement.blur();const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;if(!isNew(n))S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet&&!TOUCH())setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
 function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);if(S.view==='settings')loadSettings();if(S.view==='tools')loadTools()}
 /* by: the button that was pressed; none for a key, so an empty Enter never forces (F190c) */
 async function send(by){
@@ -17,12 +17,13 @@ async function send(by){
     if(!await talkSend(compose(null,text,paths))){if(!store.get(DRAFT_KEY(key)))store.set(DRAFT_KEY(key),text);if(atts.length)S.atts[key]=[...atts,...(S.atts[key]||[])];render(true)}return}
   const ctx=S.ctx, to=S.thread||'';
   if(ctx&&ctx.kind==='concept'){const c=(S.snap.concepts||[]).find(x=>(x.concept||x.id)===ctx.id);if(c&&c.lead)ctx.lead=c.lead}  // B219a: its page as it is now, not as a kept view has it
+  if(ctx&&ctx.kind==='response'&&!responseOf(to))return toast(S.snap.at?'This response is no longer kept, or a chat about it was started':'Still loading: try again in a moment',true);  // F425b: the words stay
   const msg=compose(ctx,text,paths);
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
   delete S.atts[key];
   const rq=sendReq(ctx,to,msg);
-  if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx?ctx.label:text||`${paths.length} attachment(s)`,msg);return}  // B139, F176
+  if(rq.name!=='chat_to'){newChat(rq.name,rq.args,ctx?ctx.label:text||`${paths.length} attachment(s)`,msg);return}  // B139, F176
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
   // F190a: never with force: while it works, the session queues the message; F190c: a second press forces, after a delay
   sendHold(key,SEND_HOLD);

@@ -24,6 +24,7 @@
 .shadd{height:28px;border:0;border-radius:var(--r-s);padding:0 8px;background:none;color:var(--accent);font-size:var(--fs-m);font-weight:500;display:flex;align-items:center;gap:4px;cursor:pointer;flex:none}
 .shadd:hover{background:var(--bubble)} .shadd svg{width:14px;height:14px;stroke-width:2.2}
 .thread{display:flex;align-items:center;gap:8px;border:0;background:none;border-radius:var(--r-m);padding:7px 10px;cursor:pointer;text-align:left;width:100%;color:var(--fg);font-size:var(--fs-n)}
+.newlabel{flex:none;font-size:var(--fs-xs);color:var(--muted);opacity:.75} .crow.response .thread{padding-right:10px} .said{white-space:pre-wrap;overflow-wrap:anywhere}  /* F425b */
 .thread:hover{background:var(--bubble)} .thread.on{background:var(--bubble)}
 .thread .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thread .off{width:7px;height:7px;border-radius:50%;border:1px solid var(--faint);flex:none}

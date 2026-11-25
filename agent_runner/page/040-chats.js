@@ -19,9 +19,11 @@ function side(){
   ROWS={top:g.top.map(x=>x.name),quiet:g.quiet.map(x=>x.name)};S.came=(S.came||[]).filter(x=>!sessionOf(x.name));
   sideShow(`${allRow()}
    <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n" data-k="n:${k}" data-roll data-v="${count[k]}">${count[k]}</span>`:''}</button>`).join('')}</div>${walkRow()}
-   <div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button></div>${chatBar()}${cs.length?'':'<div class="none">No chats yet</div>'}${g.top.map(x=>sideRow(x)).join('')}${g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>sideRow(x,true)).join(''):''}
+   <div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button></div>${chatBar()}${cs.length?'':'<div class="none">No chats yet</div>'}${g.top.map(x=>sideRow(x)).join('')}${g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>x.response?responseRow(x):sideRow(x,true)).join(''):''}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}" data-k="ag:${esc(s.name)}"><span class="livedot"></span><span class="t"><span class="tt">${esc(s.title||s.task)}</span></span></button>`).join(''):'<div class="none">None right now</div>'}
    <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>`,'in');
 }
+/* F425b: a sent response's row in Quiet: opening it starts no chat */
+const responseRow=x=>`<div class="crow quiet response" data-k="chat:${esc(x.name)}"><button class="thread ${S.thread===x.name?'on':''}" data-thread="${esc(x.name)}"><span class="t"><span class="tt">${esc(x.label)}</span></span>${responseNew(x)}</button></div>`;
 /* the sidebar drawn again only when it changed, its scroll and a name being typed kept */
 function sideHTML(h,still){const box=$('side'), el=$('sidein'), new_=el._h!==h&&!still, spot=new_?glideSpot(el):null, had=new_?keysIn(el):null, put=keepScroll(box), f=keepFields(el);if(setHTML(el,h)){f();put();if(had)enter(el,had);glide(box,el,spot);loopsInStep(el);const t=el.querySelector('[data-f="ren"]');if(t&&S.renFocus){S.renFocus=false;kbReveal(t,true);kbFocus(t);t.select()}}}
