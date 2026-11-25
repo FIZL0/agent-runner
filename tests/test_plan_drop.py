@@ -176,6 +176,17 @@ def test_restore_blocked():
         plan.restore('D1', **kw)
         eq((plan.section(todo, 'D1'), here()), (start['D1'], {}), 'then it comes back blocked, less its ask file')
 
+        import shutil
+        for t in ('D1', 'F5'):  # dropped on another machine: no record here
+            plan.drop(t, 'no', **kw)
+            shutil.rmtree(n / 'dropped' / t)
+            eq(plan.restore(t, **kw), t == 'D1', f'{t}: as its line reads, not its prose')
+        (n / 'asks/F5.json').write_text('old', encoding='utf-8')
+        plan.drop('F5', 'no', **kw)
+        Path(done).write_text(Path(done).read_text(encoding='utf-8').replace('in its words', 'changed elsewhere'), encoding='utf-8')
+        plan.restore('F5', **kw)
+        check(not (n / 'asks/F5.json').exists(), "an older drop's record is not used")
+
 
 if __name__ == '__main__':
     sys.exit(report([test_drop_parts, test_restore, test_restore_blocked]))

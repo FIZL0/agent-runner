@@ -30,7 +30,8 @@ def drop(tid: str, why: str, todo=None, done=None) -> list[str]:
     todo, done = ensure(todo, done)
     was = _split_ids(todo)
     ls = lines(todo)
-    rec = {'blocked': ITEM.match(ls[_find(ls, tid)]).group(2) == '~', 'waits': _waiters(ls, tid)}
+    i = _find(ls, tid)
+    rec = {'blocked': ITEM.match(ls[i]).group(2) == '~', 'waits': _waiters(ls, tid), 'text': _text(_item_block(ls, i))}
     note(tid, f'dropped: {why}', todo=todo)
     kept = _keep(tid, rec, todo)
     try:
@@ -48,8 +49,15 @@ DROPPED = ' — dropped: '
 KEEP = 30 * 86400  # B808: how long a dropped task's ask and the waits on it are kept, in seconds,
 KEEP_ENV = 86400   # and its secrets
 KEPT = 'kept.json'
+# a block as `plan block` writes it, not a ` BLOCKED: ` the task's words quote
+BLOCK = re.compile(r' BLOCKED: (?:\((?:after|until) |shelved: |(?:CONFIRM|DECIDE|BLOCKED): |.*\(asked \d{4}-)')
 ASK_FILES = ('asks/{}.json', 'asks/{}.taken', 'asks/{}.said', 'asks/{}', 'asks/{}.env', 'sheets/{}.json',
              'sheets/{}.taken', 'sheets/{}.url', 'sheets/{}.html', 'concepts/{}_sheet.html')  # under the notes dir
+
+
+def _text(blk: list[str]) -> str:
+    """A task's block without its box."""
+    return '\n'.join([re.sub(r'^- \[.\] ', '', blk[0]), *blk[1:]])
 
 
 def _waiters(ls: list[str], tid: str) -> dict[str, dict]:
@@ -190,9 +198,11 @@ def restore(tid: str, where: str = 'top', ref: str | None = None, todo=None, don
         if DROPPED in ls[k]:
             ls[k] = ls[k][:ls[k].rindex(DROPPED)]
             dropped = True
-            blocked = k == here + len(blk) - 1 and (_unblocked(ls[k]) != ls[k] if k == here else ' BLOCKED: ' in ls[k])
+            blocked = k == here + len(blk) - 1 and bool(BLOCK.search(ls[k], max(_block_at(ls[k]), 0)))
             break
     recs = [(c, _kept(c, tid)) for c in _configs(todo)] if dropped else []
+    now = _text(ls[here:here + len(blk)])
+    recs = [(c, r) for c, r in recs if r.get('text') == now]  # another drop's record (restored elsewhere since): none of this
     blocked = next((r['blocked'] for _, r in recs if 'blocked' in r), blocked)  # else (dropped elsewhere) as its line reads
     _mark(ls, here, '~' if blocked else ' ')
     _write(todo, ls)
