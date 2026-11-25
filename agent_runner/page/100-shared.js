@@ -55,7 +55,13 @@ function closeSheet(){if(!S.sheet)return;MO.folded=0;runStop($('sheet'));S.sheet
    element: a new one under the keyboard loses its autocorrect and the letters on their way */
 function sheetHTML(el,h){
   const a=document.activeElement, f=S.sheet==='need'&&a&&a!==el&&el.contains(a)&&a.dataset&&a.dataset.f;
-  return f?fieldHTML(el,h,f):setHTML(el,h);
+  return f?fieldHTML(el,h,f):S.sheet==='need'&&el.querySelectorAll('[data-video]').length?videoHTML(el,h):setHTML(el,h);
+}
+/* F445a: el's markup, patched around its videos: one drawn again would stop and start over */
+function videoHTML(el,h){
+  if(el._h===h)return false;
+  const t=document.createElement('template');t.innerHTML=h;
+  patchKids(el,t.content,null,null);el._h=h;return true;
 }
 /* el's markup, patched around its field f when that is the one in use */
 function fieldHTML(el,h,f){
@@ -72,6 +78,8 @@ function fieldHTML(el,h,f){
 /* box's children become want's, but `stay` (want's is `at`) is left; one that did not change is left too */
 function patchKids(box,want,stay,at){
   const side=(olds,news,end)=>{
+    for(let j=0;j<news.length;j++){const i=olds.findIndex(x=>sameVideo(x,news[j]));if(i<0)continue;  // F445a: first, whatever is round it
+      side(olds.slice(0,i),news.slice(0,j),olds[i]);patchIn(olds[i],news[j]);return side(olds.slice(i+1),news.slice(j+1),end)}
     for(let j=0;j<news.length;j++){const i=olds.findIndex(x=>x.isEqualNode(news[j]));if(i<0)continue;
       side(olds.slice(0,i),news.slice(0,j),olds[i]);return side(olds.slice(i+1),news.slice(j+1),end)}
     if(olds.length===1&&news.length===1&&patchIn(olds[0],news[0]))return;
@@ -80,6 +88,12 @@ function patchKids(box,want,stay,at){
   const o=[...box.childNodes], n=[...want.childNodes], p=o.indexOf(stay), q=n.indexOf(at);
   if(!stay)return side(o,n,null);
   side(o.slice(0,p),n.slice(0,q),stay);side(o.slice(p+1),n.slice(q+1),null);
+}
+/* F445a: two drawings of one video, or of what holds it */
+function sameVideo(x,y){
+  if(x.nodeType!==1||x.nodeName!==y.nodeName||!x.querySelectorAll)return false;
+  const of=n=>n.hasAttribute('data-video')?[n]:[...n.querySelectorAll('[data-video]')], src=of(x).map(v=>v.getAttribute('src'));
+  return of(y).some(v=>src.includes(v.getAttribute('src')));
 }
 /* one thing that changed inside: patched in place, so what did not change in it (a picture) is not drawn again */
 function patchIn(x,y){
@@ -108,6 +122,7 @@ function sheetDraw(){
     const put=keepScroll(el), f=keepFields(el);
     if(sheetHTML(el,h)){f();put();if(spot)sheetMoves(el,box,spot,had)}
   }  // closing, it keeps its words while it slides
+  if(!S.sheet)for(const v of el.querySelectorAll('[data-video]'))v.pause();  // F445a: and its video is not heard
   if(S.sheet==='need')for(const x of el.querySelectorAll('[data-f^="askre:"]')){const v=S.f[x.dataset.f]||'';if(x.value!==v)x.value=v}  // B222a: a sent reply's words go
   if(S.sheet!=='device'&&S.sheet!=='devsecrets')toolForget();  // F169: a typed secret goes with its sheet
   giveForget(S.sheet==='need'?S.sheetArg:'');  // F175a

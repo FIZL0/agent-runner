@@ -75,7 +75,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   device's or tool's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: what is asked, its task's
   title small under it as on the card, label (with its kind chip, as on the card), age; the explanation first in the body (`.explain`, `needExplain()`: text over EXPLAIN_LONG, 600 characters, is cut at a block, else at a sentence, the rest in a fold, "The rest of the explanation"); Why (a BLOCKED item's, left out when the heading says it); where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
-  only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or
+  only when its ask file has steps); What you should see; notes; videos (`.shotvideo`, `needVideos()`, played in place above the pictures; a redraw leaves a playing one alone, `videoHTML()`, closing the sheet pauses it, and a swipe that starts on one is the video's); pictures (`.shot`, full size inside the sheet, Back or
   Esc goes back); the
   task text folded, left out of an item with an explanation (Full task). An item with inputs draws its steps with Open (a step's link) and the command as code, with
   "Run on <machine>" and Copy; then What you should see; then What to enter, one field per input (its label above it;

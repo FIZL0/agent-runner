@@ -136,7 +136,11 @@ function needBody(n,url,give='',on=false,chev=''){const d=needD(n), more=d.step_
   const why=(d.why||[]).filter(x=>needSame(x)!==needSame(needAsk(n)));  // B794: why a BLOCKED stopped; a run without it has none
   return needExplain(n,on,chev)+(why.length?`<section><h3>Why</h3>${why.map(x=>`<p>${askWords(x)}</p>`).join('')}</section>`:'')+d.lead.map(x=>`<p>${askWords(x)}</p>`).join('')+list('ol','What to do',d.steps)+list('ul','What you should see',d.expect)+give
     +d.notes.filter(x=>!needInputs(n).length||!/^Reply (done once it is|yes\/no)$/i.test(x)).map(x=>`<p class="small">${askWords(x)}</p>`).join('')
-    +(d.shots.length?`<section><h3>Pictures</h3><div class="shots">${d.shots.map((s,j)=>`<button class="shot" data-shot="${j}" aria-label="Open the picture: ${E_(s.caption||'no caption')}"><img src="${E_(url(s))}" alt="${E_(s.caption||'Picture')}" loading="lazy"></button>`).join('')}</div></section>`:'')}
+    +needVideos(d.shots,url)
+    +(d.shots.some(s=>!s.video)?`<section><h3>Pictures</h3><div class="shots">${d.shots.map((s,j)=>s.video?'':`<button class="shot" data-shot="${j}" aria-label="Open the picture: ${E_(s.caption||'no caption')}"><img src="${E_(url(s))}" alt="${E_(s.caption||'Picture')}" loading="lazy"></button>`).join('')}</div></section>`:'')}
+/* F445a: an item's videos, each in place with its caption. #t: an iPhone draws no first frame without it */
+function needVideos(shots,url){const vs=shots.filter(s=>s.video);
+  return vs.length?`<section><h3>${vs.length>1?'Videos':'Video'}</h3>${vs.map(s=>`<video class="shotvideo" data-video controls playsinline preload="metadata" src="${E_(url(s))}#t=0.001" aria-label="${E_(s.caption||'Video')}"></video>${s.caption?`<p class="small">${E_(s.caption)}</p>`:''}`).join('')}</section>`:''}
 /* a task's text as paragraphs: its fields, notes, block and numbered parts each on their own */
 function taskParas(text){return String(text||'').split(/\n+|(?= \| )|(?= — )|(?= BLOCKED: )|(?=\s\(?\d\)\s)/).map(x=>x.trim()).filter(Boolean)}
 /* whose reply box has a button of its own: nothing else answers it, or the answers take no words with them */
