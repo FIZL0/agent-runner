@@ -975,9 +975,9 @@ def test_talk_settings_f124(tmp: Path) -> None:
     r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, "node runs Talk's settings", r.stderr[-900:])
     got = json.loads(r.stdout or '{}')
-    eq(got.get('defaults'), {'read': True, 'voice': '', 'mic': 'tap', 'auto': False},
+    eq(got.get('defaults'), {'read': True, 'voice': '', 'mic': 'tap', 'auto': False, 'way': 'browser'},
        'defaults: replies read aloud, the system voice, tap, no auto listen')
-    eq(got.get('parsed'), {'read': False, 'voice': 'Ava', 'mic': 'hold', 'auto': True}, 'kept per browser')
+    eq(got.get('parsed'), {'read': False, 'voice': 'Ava', 'mic': 'hold', 'auto': True, 'way': 'browser'}, 'kept per browser')
     eq(got.get('junk'), got.get('defaults'), 'a broken store is the defaults')
     eq(got.get('tapStarts'), 0, 'tap mode: pointerdown starts nothing')
     eq(got.get('holdStarts'), [1, 'listening'], 'hold mode: pointerdown starts listening')
