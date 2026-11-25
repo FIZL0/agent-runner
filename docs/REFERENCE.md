@@ -716,7 +716,8 @@ rebase ticks its tasks with that commit and removes their branches, once the loc
 not in the merged pull request stays on `leftover/<ID>`. Local main
 moves fast-forward only. If uncommitted edits or local commits on main stop it, an alarm says so. A pull request
 closed without a merge goes to Needs you, with who closed it and the last thing a person with write access wrote there.
-The answer resumes the session, and a new pull request opens after it. Opening the pull request again on GitHub takes
+The answer resumes the session, and a new pull request opens after it. The
+answer, or any note given with `plan unblock`, is told to the session. Opening the pull request again on GitHub takes
 the ask away. Or drop the task. If GitHub or the push cannot be reached, the run tries again.
 
 Feedback on an open pull request resumes the task's session on its branch:
