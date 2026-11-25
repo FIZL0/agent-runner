@@ -32,6 +32,11 @@ function controlClick(c,o){return c.confirm&&!(o&&o.sure===true)?{ask:true}:cont
 const taskControlsOn=s=>!!(s&&s.task_controls);  // C33: ui_model.task_controls_on, on the row
 /* B118: the Queue's two groups: [the queue a run works through, the Parked tasks it never starts] */
 const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.state==='parked')];
+/* F402c1: with no run up, what is said of the tasks new in the queue since the last snapshot (was: the ids seen), '' for none */
+function addedWaits(was,snap){
+  const xs=snap&&snap.up===false&&was?((snap.queue)||[]).filter(q=>q.waits_run&&!was.includes(q.id)):[];
+  return !xs.length?'':xs.length===1?`${xs[0].id} is queued: it waits for the run to start`:`${xs.length} tasks are queued: they wait for the run to start`;
+}
 /* F193: [run] releases; on from a run that does not say */
 const releasesOn=snap=>!(snap&&snap.manage_releases===false);
 /* F185: the releases, as Status and Home say them: each open release (its queue task, which carries its row as `release`), then the

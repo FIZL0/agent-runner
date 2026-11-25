@@ -41,7 +41,22 @@ def _flags(files=None, after=None, pri: str = '', test: str = '', needs=None) ->
 
 def plan_add(kind: str, text: str, files=None, after=None, pri: str = '', test: str = '', needs=None) -> dict:
     """Queue a task: `plan add KIND TEXT --files … --after … --pri …`."""
-    return call(['plan', 'add', kind, text, *_flags(files, after, pri, test, needs)])
+    r = call(['plan', 'add', kind, text, *_flags(files, after, pri, test, needs)])
+    return said_waits(r) if r['ok'] else r
+
+
+def said_waits(r: dict) -> dict:
+    """F402c1: the result `r` of a `plan add`, which says (as `said` too) that its task waits for the run while none
+    is up and nothing else keeps it."""
+    try:
+        m = re.search(r'^added (\w+)', r['out'], re.M)
+        row = m and not S.run_up() and queue_row(m[1])
+        if row and wait_for_run([row])[0].get('waits_run'):
+            r['said'] = f'{m[0]}: {row["tool_wait"]}'
+            r['out'] = r['out'].replace(m[0], r['said'], 1)
+    except (Exception, SystemExit):  # noqa: BLE001 - the task is added all the same
+        pass
+    return r
 
 
 def plan_change(tid: str, text: str = '', files=None, after=None, pri: str = '', test: str = '', needs=None) -> dict:

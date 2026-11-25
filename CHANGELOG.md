@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: with no run up, a queued task that nothing else keeps says `Waits for the run to start` on its Plan row (`goes first` when critical), the run page's add toast and the TUI's add line say it waits, and Home, + Task, + Chat, message boxes and Plan queue actions keep working while slot controls stay hidden (F402c1).
 - Added: Home clears old build output by itself in a project whose run is off: a runner worktree no process works in and nothing wrote build output to for 3 days loses its recognised build output (git-ignored folders marked CACHEDIR.TAG or CMakeCache.txt, Cargo profile folders), never a repository, notes file or uncommitted file; no setting, and the Clean button stays (F424).
 - Added: on the run page, a question card has a ✕ (Dismiss question) at its top right that hides the card, kept per browser and project over a reload; it sends and answers nothing, so the question stays under Needs you (F192b).
 - Changed: with no run up, the run page's Home opens with a Start card (Not running, Start the run; Starting the run… while it starts; Not started: why, with Retry or Discard, after a failure), and Talk is a plain button; the run-off banner no longer shows on Home or Status unless a chat is open, and Runner Home's off page is only the fallback when the page-only process cannot start (F402c).
