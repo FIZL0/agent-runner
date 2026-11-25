@@ -277,6 +277,7 @@ def test_cap(tmp: Path):
         told, ended = [], []
         slots.BUDGET_AT[0] = 0.0
         with mock.patch.object(slots, 'task_spend', lambda sid: (tokens, 0.1)), \
+                mock.patch.object(slots, 'finished_mark', lambda n: None), \
                 mock.patch.object(slots.plat, 'terminate', ended.append):
             slots.budgets({1: (99999999, f'sid-{tid}', 0)}, {1: (tid, 'Next', set(), set())},
                           lambda n, procs, text: told.append(text))
