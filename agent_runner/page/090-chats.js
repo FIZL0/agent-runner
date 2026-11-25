@@ -406,8 +406,10 @@ async function liveLoad(){
   FD.liveAt=Date.now();
   const j=await liveGet(n);
   if(turn!==FD.turn||FD.n!==n||!j)return;
-  const same=JSON.stringify(FD.live)===JSON.stringify(j);FD.live=j;
+  const first=!FD.live, same=JSON.stringify(FD.live)===JSON.stringify(j);FD.live=j;
+  const moved=same?()=>{}:questionMove(n,first);  // F192a1
   if(!same){render();sendRedraw()}
+  moved();
 }
 const workFor=()=>FD.live&&FD.live.status==='busy'&&FD.live.since?'Working '+forWords(Date.now()/1000-FD.live.since):'Working';
 /* B192: the message box's one row while the reader is scrolled up: its words, Working (its sheet) and Stop */
@@ -423,11 +425,11 @@ const modelOf=n=>/^c\d+$/.test(n||'')?(sessionOf(n)||{}).model||(FD.n===n&&FD.li
 /* the row above the box: what there is to say, each a sheet; a menu or a question has the key row in its place */
 function sessRow(n){
   const st=feedNow(n);if(st!=='session'&&!(st==='loading'&&sessionOf(n)))return '';  // F206a: there from the first frame, so what stands over it does not move
-  const model=modelOf(n);
-  if(!model&&FD.foot===null&&FD.whole)return TOUCH()&&!S.keys?keyButtons():'';
+  const model=modelOf(n), ask=questionCard(n);
+  if(!model&&FD.foot===null&&FD.whole)return ask+(TOUCH()&&!S.keys?keyButtons():'');
   const w=sessWorks(n), icon={work:'<span class="livedot"></span>',update:'<span class="bdot"></span>'};
   setTimeout(slimDraw,0);
-  return `<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w,model}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
+  return ask+`<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w,model}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
 }
 const sessTasks=kind=>((FD.live||{}).tasks||[]).filter(t=>t.kind===kind);
 const taskWhen=t=>t.running?`running${t.at?' '+forWords(Date.now()/1000-t.at).replace(/ \d+s$/,''):''}`:'done';

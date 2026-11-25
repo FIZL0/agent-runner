@@ -431,7 +431,7 @@ def test_motion_f147(tmp: Path) -> None:
 JUMP_DRIVER = SCROLL_DRIVER.split("eval(logic")[0] + r"""
 const slice = (a, z) => page.slice(page.indexOf(a), page.indexOf(z, page.indexOf(a)));
 const hears = {}; document.addEventListener = (t, f) => { hears[t] = f };
-const TK = {state: '', gen: 0, starting: []}, TM_KEY = 't', talkName = () => '', modelOf = () => '', talkKept = () => '', talkStarts = () => {}, unlockSpeech = () => {}, loadVoices = () => {}, kbFocus = () => {};
+const TK = {state: '', gen: 0, starting: []}, TM_KEY = 't', tabStore = store, talkName = () => '', modelOf = () => '', talkKept = () => '', talkStarts = () => {}, unlockSpeech = () => {}, loadVoices = () => {}, kbFocus = () => {};
 const act = () => new Promise(() => {}), SL = {cmds: [{name: 'a'}, {name: 'ab'}, {name: 'abc'}], items: [], i: 0, at: Date.now(), of: ''};
 let P = 0, made = [];
 Box.prototype.animate = function (kf, o) { const a = {el: this, kf, o, playState: 'running', effect: {getComputedTiming: () => ({progress: P})}, cancel() { this.cancelled = true }}; made.push(a); return a };

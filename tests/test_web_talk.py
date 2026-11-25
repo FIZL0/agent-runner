@@ -27,6 +27,7 @@ from agent_runner import config as CF  # noqa: E402
 from agent_runner import state as S  # noqa: E402
 from agent_runner import ui_model as U  # noqa: E402
 from agent_runner import web as W  # noqa: E402
+from test_web_live import SCROLL_DRIVER  # noqa: E402
 from _web import TODO, fake_repo, get, post, LOGIC_DRIVER, logic_js, in_tmp  # noqa: E402
 
 
@@ -848,7 +849,7 @@ const tick = async ms => { for (const t of timers.splice(0)) if (t.f && t.ms ===
 const S = {view: 'talk', thread: null, sheet: ''}, MIC = {rec: null, next: null};
 const TK = {state: '', playing: '', note: '', held: '', later: [], ear: null, unlocked: true, trail: null, report: ''};
 let TS;
-const listen = () => {}, micWhy = () => '', store = {get: () => ''}, TM_KEY = 'tm';
+const listen = () => {}, micWhy = () => '', store = {get: () => ''}, tabStore = store, TM_KEY = 'tm';
 eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run speech:'), page.indexOf('const talkTyping='))
  + line('const talkTyping=') + grab('function speak(') + line('function hush(') + `
 (async () => {
@@ -939,7 +940,7 @@ const el = () => ({classList: {toggle() {}}, setAttribute(k, v) { this[k] = v },
 const $ = k => els[k] = els[k] || el(), I = {stop: 'STOP', talk: 'MIC', speak: 'SPEAKER', mute: 'MUTE', keys: ''};
 const S = {view: 'talk', thread: null, sheet: '', feeds: {}}, feedOf = n => (S.feeds[n] || {}).entries || [], kept = {};
 const TK = {state: '', playing: '', note: '', held: '', later: [], wait: null, watch: null, heard: '', hold: false, ear: null, unlocked: true, trail: null, report: ''};
-let TS; const micWhy = () => '', TM_KEY = 'tm', store = {get: k => kept[k] || ''}, talkWaitName = () => 'c5', talkSet = (k, v) => { TS = {...TS, [k]: v} };
+let TS; const micWhy = () => '', TM_KEY = 'tm', store = {get: k => kept[k] || ''}, tabStore = store, talkWaitName = () => 'c5', talkSet = (k, v) => { TS = {...TS, [k]: v} };
 const RUN_VERSION = '', DK = {};
 // a send waits for its reply, as talkSend does
 const talkSend = async t => { sent.push(t); if (TK.state !== 'speaking') TK.state = 'thinking'; awaitReply() };
@@ -1227,5 +1228,68 @@ def test_mic_test_b162b1(tmp: Path) -> None:
     eq((o.get('toast'), o.get('spoke')), ('Mic test copied: paste it into your reply', 0), 'copied; speechSynthesis not touched')
 
 
+BACK_DRIVER = SCROLL_DRIVER.split('eval(logic')[0].replace('talkBack = () => {}, talkLate = () => true, ', '') \
+    .replace("store = {get: () => '', set() {}}", "kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }}") \
+    .replace("boxKey = () => S.thread || 'home'", "boxKey = () => S.thread || (S.view === 'talk' ? 'talk' : 'home')") + r"""
+const feedHTML = () => CHAT, feedEnd = () => '', sessRow = feedEnd, keysRow = feedEnd, isNew = () => false, modelOf = () => '';
+const tab = {}, tabStore = {get: k => tab[k] || '', set: (k, v) => { tab[k] = v }}, ears = {}, hear = (t, f) => { (ears[t] = ears[t] || []).push(f) };
+const fire = (t, e) => (ears[t] || []).forEach(f => f(e || {})), DK = {rec: null, key: ''}, MIC = {rec: null, next: null}, TM_KEY = 'ar-talkmode'; let TALK_FOR = ':a run';
+let why = '', now = 1e6; const micWhy = () => why, kbFocus = t => { document.activeElement = t }; Date.now = () => now;
+document.addEventListener = hear; window.addEventListener = hear; HI.key = '';
+ta.matches = s => s === '[data-in]'; ta.blur = () => { document.activeElement = null }; ta.focus = () => { document.activeElement = ta };
+const slice = (a, z) => page.slice(page.indexOf(a), page.indexOf(z, page.indexOf(a)));
+""" + 'eval(logic' + SCROLL_DRIVER.split('eval(logic')[1].split("+ grab('async function send(')")[0] + r"""
+  + slice('const talkTyping=', '/* F157: the Talk chats left') + `
+const talkDraw = () => $('dock').classList.toggle('typing', talkTyping());
+const out = {}, at = () => [$('dock').cls.has('typing'), document.activeElement === ta, kept.talk || ''];
+const go = (v, t) => { S.view = v; S.thread = t || null; render(true) };
+const type = () => { go('talk'); talkMode('type'); ta.value = 'half a mess'; kept.talk = ta.value };
+const hide = ms => { document.hidden = true; fire('visibilitychange'); now += ms; document.hidden = false; fire('visibilitychange') };
+type(); out.typing = at();
+render(); CHAT += ' m3:40'; render(); render(true); out.redrawn = at();
+go('home'); go('talk'); out.view = at(); out.put = ta.value;
+talkMode('type'); out.again = [...at(), ta.value];
+type(); go('talk', 'c1'); document.activeElement = ta; go('talk'); out.chat = at();
+go('talk', 'c1'); document.activeElement = ta; go('talk'); out.chatBox = at();
+type(); hide(59999); out.moment = at();
+hide(60000); out.hidden = at();
+type(); fire('pagehide'); now += 60000; fire('pageshow', {persisted: true}); out.bfcache = at();
+const reload = ms => { type(); fire('pagehide'); now += ms; lastPlace = null; go('talk'); return at() };
+out.refresh = reload(2000); out.reopened = reload(60000);
+type(); fire('pagehide'); TALK_FOR = ':b'; lastPlace = null; go('home'); fire('pagehide'); TALK_FOR = ':a run'; lastPlace = null; go('talk'); out.project = at();
+type(); lastPlace = null; go('talk'); out.noStamp = at();
+type(); hide(1000); hide(59999); out.twice = at()[0];
+let stops = 0; DK.key = 'talk'; DK.rec = MIC.rec = {stop() { stops++ }}; go('home'); go('talk'); out.dictation = [stops, DK.put]; DK.rec = MIC.rec = null;
+why = 'no mic'; go('talk', 'c1'); document.activeElement = ta; go('talk'); out.noMic = at();
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_talk_back_b802(tmp: Path) -> None:
+    """B802: coming back to Talk, or to its tab after a minute, shows the mic and keeps the box's words as its draft;
+    a redraw on Talk, a moment in another app or a refresh of the page leaves typing on."""
+    if not shutil.which('node'):
+        print('  (no node here: the back to Talk script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(BACK_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the way back to Talk', r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    words = 'half a mess'
+    on, box, mic = [True, True, words], [True, words], [False, False, words]
+    eq((got.get('typing'), got.get('redrawn')), (on, on), 'a redraw, or a reply landing, leaves typing on and the focus in the box')
+    eq((got.get('view'), got.get('put')), (mic, words), 'from another view: the mic, no focus, the words kept')
+    eq(got.get('again'), [*on, words], 'and they come back with the keyboard button')
+    eq((got.get('chat'), got.get('chatBox')), (mic, mic), "from a chat too, and its box's focus is not handed on")
+    eq(got.get('moment'), on, 'a tab hidden for less than a minute is not left')
+    eq((got.get('hidden'), got.get('bfcache')), (mic, mic), 'back to the tab after a minute: the mic')
+    eq(got.get('refresh'), on, 'a refresh of the page while typing leaves it on')
+    eq((got.get('reopened'), got.get('noStamp')), (mic, mic), 'a page opened again later: the mic')
+    eq(got.get('project'), mic, "back from another project's page: the mic")
+    eq(got.get('twice'), True, 'two short trips are not one long one')
+    eq(got.get('dictation'), [1, True], 'dictation into the box stops, and takes no focus')
+    eq(got.get('noMic'), on, 'where the mic cannot be used the box stays as it was')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
+    raise SystemExit(report([in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
