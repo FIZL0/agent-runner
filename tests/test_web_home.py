@@ -819,7 +819,7 @@ const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].split('if(typeof module').join('if(false&&typeof module');
 const S = {ob: [], atts: {}, f: {}, view: 'home', thread: null, snap: null};
 const no = () => '', env = {S, I: {}, DK: {}, LOGO: no, greeting: no, keysLine: no, ttydLine: no, needsSec: () => '[needs]', dictWhy: no, micWhy: no,
-  shownSession: no, busy: no, sessWorks: no, modelOf: no, enterHint: no, boxKey: () => 'home', obCards: f => S.ob.filter(f).map(x => `[ob ${x.ctl}]`).join('')};
+  shownSession: no, busy: no, sessWorks: no, modelOf: no, keysShown: no, enterHint: no, boxKey: () => 'home', obCards: f => S.ob.filter(f).map(x => `[ob ${x.ctl}]`).join('')};
 const names = ['const esc=', 'const card=', 'const controlOf=', 'const ctlBusy=', 'const CTL_ICON=', 'const chatPins=', 'const chats=', 'const chatTitle=', 'const slots=', 'const working_=', 'const homeSums='];
 const src = logic + names.map(line).join('') + ['box', 'homeHTML', 'homeStart', 'homeChips', 'homeStatus', 'homePlan'].map(f => grab(`function ${f}(`)).join('');
 const at = new Function('env', 'with(env){' + src.replace(/^const /gm, 'var ') + '; return {home: homeHTML, box: () => box("x")}}')(env);
