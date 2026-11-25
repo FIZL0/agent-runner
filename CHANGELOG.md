@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: on the run page, a Plan queue row of a task no slot runs but which is under way no longer says only 'Being worked on'; it says 'Taken by the chat <its name>' (pressing the words opens that chat), 'Taken by a chat that has ended', 'Taken by hand' (taken from a terminal or unknown), 'Merging' or 'Waits to resume'; `take` now records the control session that ran it, in the git folder of its take worktree (B846).
 - Changed: the run app's Talk code, agent_runner/page/170-talk.js, is split by area into 170-talk.js and 171-talk-clips/kept/mic/send/speak/words.js, with no change in behaviour (C54).
 - Fixed: the test of a task that goes on with the next provider at a usage cap (its fallback chain, in tests/test_runner.py) no longer fails when it runs across 15:00 local time: its fake cap said "resets 3pm", so the cap had already reset by the check; it now names a fixed far-off epoch (B837).
 - Changed: a Yes with words on a Needs you CONFIRM that closes its task now also starts a new control session with the words, which lists at the top of Chats and keeps no sent response; a chat that cannot start keeps the sent response and the toast and run log say so (F452).

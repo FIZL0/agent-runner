@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -15,7 +16,7 @@ from unittest import mock
 
 from _check import RUN, check, eq, git, has, report
 
-from agent_runner import autorelease as A, plan as P, row_hold as H, runner as R, sched, tui, ui_model as U  # noqa: E402
+from agent_runner import autorelease as A, plan as P, row_hold as H, runner as R, sched, tui, ui_model as U, web as W  # noqa: E402
 from _web import logic_js  # noqa: E402
 
 TODO = """# TODO
@@ -243,6 +244,37 @@ def test_way():
     eq(way('T2'), None, 'free again')
 
 
+ROW_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const at = page.indexOf('function taskRow('), row = page.slice(at, page.indexOf('\n}\n', at) + 3);
+const S = {taskOpen: {}, tasks: {}, snap: {sessions: []}}, I = {chev: '>'}, esc = s => String(s), taskChip = id => id, foldIn = (k, h) => h, taskIsOpen = () => false;
+eval(logic + row + 'globalThis.taskRow = taskRow');
+console.log(JSON.stringify(JSON.parse(process.argv[3]).map(q => taskRow(q, q.id))));
+"""
+
+
+def test_way_button():
+    print('B846: on the page the words that name the chat open it')
+    if not shutil.which('node'):
+        print('  (no node here: skipped)')
+        return
+    way = {'words': 'Taken by the chat Mine', 'chat': 'c10'}
+    qs = [{'id': 'F1', 'state': 'ready', 'under_way': True, 'way': way}, {'id': 'F2', 'state': 'blocked', 'under_way': True, 'way': way},
+          {'id': 'F3', 'state': 'ready', 'under_way': True, 'way': {'words': 'Taken by a chat that has ended'}}]
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / 'row.js').write_text(ROW_DRIVER, encoding='utf-8')
+        r = subprocess.run(['node', str(Path(d) / 'row.js'), str(W.PAGE), json.dumps(qs)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the rows', r.stderr[-800:])
+    if r.returncode:
+        return
+    a, b, c = json.loads(r.stdout)
+    head, _, after = a.partition('</button>')
+    check('Taken by' not in head and 'data-thread="c10"' in after and 'Taken by the chat Mine' in after, 'a button under the head', a)
+    check('data-thread' not in b and 'Waits for you' in b, 'not on a row that says something else', b)
+    check('data-thread' not in c and 'Taken by a chat that has ended' in c, 'nor for an ended chat', c)
+
+
 def test_merge():
     print('the plan merge keeps it')
     base = TODO.split('\n')
@@ -265,7 +297,7 @@ def main() -> int:
     git(repo, 'commit', '-qm', 'start')
     os.environ['AGENT_RUNNER_REPO'] = str(repo)
     R.init(repo)
-    return report([test_commands, test_under_way, test_pick, test_release, test_auto_release, test_shown, test_way, test_merge])
+    return report([test_commands, test_under_way, test_pick, test_release, test_auto_release, test_shown, test_way, test_way_button, test_merge])
 
 
 if __name__ == '__main__':
