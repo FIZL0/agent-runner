@@ -72,6 +72,7 @@ from agent_runner import need_detail
 from agent_runner import plan as P
 from agent_runner import plansync
 from agent_runner import state as S
+from agent_runner import theme
 from agent_runner.config import runner_cmd
 
 LOG_TAIL = 20  # run log lines a snapshot carries

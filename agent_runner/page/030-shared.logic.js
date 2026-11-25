@@ -127,3 +127,19 @@ function talkSetParse(text){let o;try{o=JSON.parse(text||'{}')}catch(e){o={}}
   return{read:o.read!==false,voice:typeof o.voice==='string'?o.voice:'',mic:o.mic==='hold'?'hold':'tap',auto:o.auto===true,way:o.way==='recorded'?'recorded':'browser'}}
 /* F189b: what a fold shows, in one box that its button reveals; k: its key */
 const foldIn=(k,h)=>`<div class="foldin" data-k="fold:${E_(k)}">${h}</div>`;
+/* F195b: a task's id as a chip with its kind's word and colour: kinds, the snapshot's table (theme.kind_table); just the id
+   when it is no task's (a tool, a pitch) */
+function kindChip(id,kinds){
+  const m=/^([A-Za-z]+)\d/.exec(id||'');if(!m)return E_(id||'');
+  const k=(kinds||{})[m[1]]||{word:'',color:'gray'}, w=k.word?k.word.charAt(0).toUpperCase()+k.word.slice(1):'';
+  return `<span class="kind k-${E_(k.color)}">${w?`<i>${E_(w)}</i> `:''}${E_(id)}</span>`;
+}
+/* a lately line without the [id] its chip says */
+const landedText=l=>l.id&&l.text.endsWith(` [${l.id}]`)?l.text.slice(0,-l.id.length-3):l.text;
+/* F195b: what an icon-only control does: its label, '' when it has words of its own. A picture is no icon */
+const iconWords=(label,title,text,drawn)=>(drawn||text.trim())&&!/[\p{L}\p{N}]/u.test(text)?String(label||title||'').trim():'';
+/* where the hint stands: over its control r, under it with no room, inside the window (w, h the hint's size) */
+function hintSpot(r,w,h,vw,vh){
+  const gap=8, top=r.top-h-gap;
+  return{left:Math.round(Math.max(gap,Math.min(vw-w-gap,(r.left+r.right-w)/2))),top:Math.round(top>=gap?top:Math.min(vh-h-gap,r.bottom+gap))};
+}

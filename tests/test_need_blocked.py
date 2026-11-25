@@ -135,7 +135,7 @@ def test_shown(tmp: Path) -> None:
         check('Why' not in one, 'the heading says it', one)
         check('What to do' in was, "an older run's row has no why", was)
     lines = [''.join(t for t, _ in x) for x in tui.RunPage.need_lines(type('T', (), {
-        'step_lines': lambda *a: None, 'give_fields': lambda *a: None, 'give_inputs': lambda *a: []})(), row, 90)]
+        'kind_colour': lambda *a: 'red', 'step_lines': lambda *a: None, 'give_fields': lambda *a: None, 'give_inputs': lambda *a: []})(), row, 90)]
     check(lines.index(f'Why: {why}') < lines.index('What to do'), 'the terminal', lines)
 
 

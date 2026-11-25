@@ -477,7 +477,7 @@ full-screen between the UI's top and bottom bars, and again for side by side. In
 An entry has `key`, `label`, `tui` (the TUI key), `tui_also` (a second key that works while the panel, not the main pane, has focus; `tui_main` False means the key works only then), `where` (the panel), `argv` (the runner command: `{id}` the row's task, `{why}`, `{pri}` the other of critical/normal, `{n}`), `ask` (starts a new control session with that message) or `fn` (a `ui_model.ROW_FNS` function run with the row's id: `need_chat`, `concept_chat`, `session_close`; `chat: true` opens a new chat), `fits` (a function of the row: the rows it is allowed on), `confirm` (the question the page asks first; the TUI asks too unless `tui_sure` is False), `confirm_of` (a function of the row giving that row's own confirm question, '' for none, which then replaces `confirm`; the snapshot row carries them as `asks`, `ui_model.row_asks`, and the TUI and the page both ask it, as `queue_drop` does per release), `why` (the default reason for a drop) and `help` (the keys-list wording, if not the label; '' keeps it out of the keys list), with `help_keys` (the keys the list shows for it). While a release is open, `ui_model.controls` fills `confirm` and `seen` on the `where: 'release'` entries: `seen` is the ids the question names, which `run_control` takes as `text` on the Yes, so a Yes asks again if other releases are open by then. An answer entry also has `answer` (`run_control` runs `ui_model.answer` with its label), `label_of` (a function of the row giving that label; the snapshot row carries them all as `labels`, `ui_model.row_labels`) and `tab` (its TUI key works only in that main-pane tab: `answer`). `run_control` takes `text` (the label pressed) and `note` (the words beside it); when `text` is no longer the row's answer under that key, it is refused with "answers changed: look again". TUI keys are y, n and a to g, and answers past the seventh have none. The page draws them with `ansBtns` and `restBtns`, so a pitch draws Approve alone and Not this… holds the rest. The old `data-ans` handler and the TUI answer branches are gone; `/act` `answer` stays for typed replies and the concepts' option buttons.
 
 Each snapshot row of queue, needs, concepts, shelved and sessions has `acts`, the keys allowed on it now (`ui_model.row_acts`); the snapshot has `shelved` (`ui_model.shelved_rows`, apart from `queue`), `controls` (the list as data) and `release_acts`. `run_control` re-checks the row (`ui_model.row_of`) before it runs.
-The snapshot's `lately` rows have `id`, `kind` (`landed`, `part` or empty) and `title` for those two; up to 60 rows. `past_releases` lists the past releases for History, newest 20.
+The snapshot's `lately` rows have `id`, `kind` (`landed`, `part` or empty) and `title` for those two; up to 60 rows. `past_releases` lists the past releases for History, newest 20. The snapshot's `kinds` is the kind table (`theme.kind_table`): each id letter with its `word` and `color` (F195b), which the page's kind chips read.
 
 The TUI takes its hint keys, buttons, panel key branches and the Queue lines of the keys list (`tui.action_help`) from the list. The page draws the needs and concepts buttons from `acts` (`actBtns`, `actSure`) and sends them through the one `data-ctl` click handler (`controlReq`), with the confirm asked in place; the old per-button actions `need_drop`, `shelve` and `take` and the TUI `dropping` state are gone. So a new row action is one entry in RUN_CONTROLS and nothing in `tui.py` or `web_page.html`. Open (a link), pitch Approve / Not this, the typed boxes, chat edit, direct edit and reorder (J/K) are still hand-written.
 
@@ -487,9 +487,12 @@ The test: `tests/test_ui_model_controls.py` `test_row_actions` goes over the lis
 
 ### status and since
 
-`agent-runner status` and `agent-runner since` name each task by a short title, the first sentence of its line
-cut to about 60 characters, without its fields, quotes, dates or file lists, with the id in brackets at the
-end: `s1  Control session experience [F5]  12 min`.
+`agent-runner status` names each task by its kind's word and id, then a short title: the first sentence of its line
+cut to about 60 characters, without its fields, quotes, dates or file lists (F195b): `s1  feature F5 Control session experience  12 min`.
+Its slot, merging and lately lines use the same form, as in `10:02 landed: bug B215 Run page chats`. The words
+come from the one kind table (`theme.KINDS`); a project's own `[plan] kinds` name gets its meaning's first word and
+gray, and the same word under another letter keeps its colour. `agent-runner since` and `--follow` are unchanged: the
+id stays in brackets last.
 
 `agent-runner since [WHEN]` lists what happened, oldest first, one line each: started, landed, part landed
 with the rest stuck (`done --blocked`), stuck and not merged (parked on `wip/`), needs you (left for a human,

@@ -371,7 +371,7 @@ new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + `
   S.sure = null; S.ob = [{cid: 'a'}];
   obDone({cid: 'a', ctl: 'release_now:', name: 'run_control', args: {}}, {ok: false, confirm: 'V7 is already queued. Queue another release?', seen: 'V7'});
   out.stale = [S.ob, S.sure, newReleaseCard(), controlClick(controlOf('release_now'), {sure: true})];
-  console.log(JSON.stringify(out))}`)({S, working_, cutsOff, taskRow, obCards, toast, obChange, obDrop, v5, v6, tq: p => p, takeSnap: () => {}});
+  console.log(JSON.stringify(out))}`)({S, taskChip: id => `<kind ${id}>`, working_, cutsOff, taskRow, obCards, toast, obChange, obDrop, v5, v6, tq: p => p, takeSnap: () => {}});
 """
 
 
@@ -390,7 +390,7 @@ def test_new_drop_release_f186(tmp: Path) -> None:
                        capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     o = json.loads(r.stdout)
-    check('New release' in o['rel'] and 'V6 is already queued.' in o['rel'] and 'V5 · releasing now' in o['rel'], 'says so and shows it', o['rel'])
+    check('New release' in o['rel'] and 'V6 is already queued.' in o['rel'] and '<kind V5>' in o['rel'] and '>releasing now' in o['rel'], 'says so and shows it', o['rel'])
     eq((o['rel'].count('data-ctl="queue_drop"'), 'data-tid="V6"' in o['rel'], 'data-tid="V5"' in o['rel']), (1, True, False), 'Drop on V6 only')
     check('queue_drop' not in o['v5'] and 'queue_drop' in o['v6'], "the Plan view's cards: the same", o['v5'])
     check(ask in o['sure'] and 'data-sure' in o['sure'], 'New release asks in place', o['sure'])
@@ -452,7 +452,7 @@ const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)
 const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
 const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
 const S = {ob: [], taskOpen: {}, sure: null, snap: null, f: {}};
-const no = () => '', env = {S, planField: no, planWant: no, planAsk: no, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
+const no = () => '', env = {S, taskChip: no, landedText: no, planField: no, planWant: no, planAsk: no, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
   ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}, upNext: () => S.snap.queue, LOGO: no, greeting: no, box: no, keysLine: no, homeChips: no, runPill: () => ({text: ''}), esc: no};
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
   + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto')
@@ -511,7 +511,7 @@ const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)
 const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
 const icons = page.slice(page.indexOf('const I={'), page.indexOf('const LOGLINE_ICON='));
 const S = {ob: [], snap: null};
-const env = {S, lastWords: () => '', obCards: () => '[outbox]'};
+const env = {S, taskChip: id => `<kind ${id}>`, lastWords: () => '', obCards: () => '[outbox]'};
 const src = ['const esc=', 'const ic=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const obRun=', 'const slots=',
   'const working_=', 'const taskControlsOn=', 'const CTL_ICON=', 'function cardControls(', 'const toolsWords='].map(line).join('')
   + icons + grab('function slotRow(') + grab('function controlsCard(');
@@ -578,7 +578,7 @@ const ears = {}, n = null, body = root, document = {get activeElement() { return
 const kbFocus = e => e.focus(), $ = () => root, grow = () => {}, calls = []; let press, timers = [];
 const setTimeout_ = setTimeout, fetch = url => new Promise((ok, no) => calls.push({url, say: j => ok({json: async () => j}), fail: () => no(Error('down'))}));
 { const setTimeout = f => timers.push(f), clearTimeout = i => { timers[i - 1] = null };
-eval(logic + line('const esc=') + line('const tq=') + slice('const actBtns=', '\n') + '\n' + slice('function setHTML(', '/* F83') + slice('function keepFields(', '/* a press under way')
+eval(logic + line('const esc=') + line('const taskChip=') + line('const tq=') + slice('const actBtns=', '\n') + '\n' + slice('function setHTML(', '/* F83') + slice('function keepFields(', '/* a press under way')
   + slice('function fieldHTML(', '/* F189b: a press in the sheet') + line('const taskIsOpen=') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + line('const chatBtn=') + slice('const taskBtns=', '/* F186: a release') + line('const planCard=') + line('const queueCard=') + grab('function parkedCard(') + grab('function shelvedCard(')
   + line('const obActs=') + slice('/* F212: the search', '/* F87: the Concepts view') + grab('function setqClear(') + line("document.addEventListener('input',") + slice("/* F114, F204a", "document.addEventListener('visibilitychange'")
   + "function render() { const keep = keepFields(body), h = planHTML(); " + slice('const drew=', '\n').replace("!n&&S.view==='settings'?settingsDraw(body,h):", '') + " if (drew) keep() }"
@@ -639,7 +639,7 @@ def test_search_f212(tmp: Path) -> None:
     eq((secs, cards), (['Open', 'Parked', 'Done'], ['B2', 'F9', 'D3', 'F83', 'F0']), 'the matches, in the order found; a late answer is dropped')
     eq(acts, ['shelved_back D3', 'queue_unpark F83'], "each with the snapshot's actions")
     check('New & <i>one</i>' in text and 'Old <script>' in text and tags == 0, 'titles are escaped', text)
-    check('F0 · Done' in text and 'F9 · Open' in text and '2 more done tasks.' in text, 'what each is, and how many more', text)
+    check(re.search('F0.*Done', text) and re.search('F9.*Open', text) and '2 more done tasks.' in text, 'what each is, and how many more', text)
     eq(kept, still, 'the field is the same one')
     eq(o['same'], 0, 'a refresh with the same tasks asks nothing')
     eq(o['moved'][0], 1, 'one with other tasks asks again')
@@ -664,7 +664,7 @@ const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf
 const S = {f: {}, ob: [], taskOpen: {}, tasks: {}, sure: null, snap: JSON.parse(process.argv[3])}, I = {chev: '', x: 'x'}, MO = {}, T = 't', HKEY = '';
 const obCards = () => '', oldRunHTML = x => x, emptyCard = t => t, taskInView = () => {}, working_ = () => [], render = () => { root.innerHTML = planHTML() };
 const fetch = async () => ({json: async () => ({ok: true, text: 'whole text'})});
-eval(logic + ['const esc=', 'const tq=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const taskIsOpen=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard='].map(line).join('')
+eval(logic + ['const esc=', 'const taskChip=', 'const tq=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const taskIsOpen=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard='].map(line).join('')
   + slice('const taskBtns=', '/* F186: a release') + line('const relDrop=') + slice('/* F426b: an open release', '/* F131: the auto') + ['function taskRow(', 'async function openTask(', 'function parkedCard(', 'function shelvedCard(', 'function newReleaseCard('].map(grab).join('')
   + slice('/* F212: the search', '/* F87: the Concepts view') + "const cutsOff=()=>'';Object.assign(globalThis, {render, openTask});");
 const opened = () => root.querySelectorAll('[data-task]').filter(e => e.getAttribute('aria-expanded') === 'true').map(e => e.dataset.list + ' ' + e.dataset.task);
