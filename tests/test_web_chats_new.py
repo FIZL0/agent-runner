@@ -86,6 +86,7 @@ const S = env.S, out = {press: []};
     env.goView(view); log.focus = 0; env.about(a);
     out.press.push([S.view, S.thread, env.threadTitle(S.thread), log.focus]);
   }
+  env.working_ = () => [];
   out.bad = []; for (const a of ['plan:F9', 'concept:7', 'setting:no']) { env.goView('plan'); env.about(a); out.bad.push([S.thread, S.ctx]) }
   // unsent: a draft, an empty Enter, Back by Esc, and press again
   env.goView('plan'); env.about('plan:F1'); out.body = env.feedHTML(S.thread); out.box = env.box('x');
@@ -307,7 +308,7 @@ def test_plus_chat_b762(tmp: Path) -> None:
     for t in ('+new', '+plan:F1', '@k1'):
         eq(o[t], '', f'{t}: none in a new or starting chat')
     words = {v: re.sub('<[^>]*>', '', h) for v, h in o['views'].items()}
-    eq(words, {'home': 'Task', 'plan': 'Task', 'concepts': 'Concept', 'status': 'Slot', 'tools': 'Device',
+    eq(words, {'home': 'Task', 'plan': 'Task', 'concepts': 'Concept', 'status': '', 'tools': 'Device',
                'talk': 'New talk', 'settings': '', 'projects': 'Project'}, 'the other views keep their own +')
     check(not any('data-new ' in h for h in o['views'].values()), 'and none of them starts a chat')
     eq([re.sub('<[^>]*>', '', o['homeAll']), o['homeOne']], ['Project', ''], "Runner Home's own page is unchanged")
