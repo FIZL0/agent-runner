@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import inbox_lock, no_push, plan as P, plat, pr, pr_feedback, session_theme, shared_tools, stack
+from agent_runner import audit, inbox_lock, no_push, plan as P, plat, pr, pr_feedback, session_theme, shared_tools, stack
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -812,7 +812,7 @@ def free_gb() -> float:
 
 def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, kept: str = '') -> str:
     """F105: the model `tid`'s own session runs on: the task's `model:` field (`plan add --model`), else the
-    model the run was given on its command line (`run --model`), else its kind's (`[models.kinds]`), else
+    model the run was given on its command line (`run --model`), else `[models] audit` for an audit, else its kind's (`[models.kinds]`), else
     `model` (`[models] code`). Read afresh on every start and resume: a changed field or setting applies (F202a: not over `kept`).
     `branch` '' reads the plan file itself, not the branch's copy; `ls`: the plan's lines, when already read."""
     from agent_runner.state import plan_text
@@ -823,6 +823,8 @@ def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, k
         own = ''
     if not own and (flag := kept or C.run.get('model_flag')):
         return flag
+    if not own and audit.is_audit(tid, ls or []):  # F417
+        return C.models['audit']
     return C.task_model(tid, own) or model
 
 
@@ -1478,15 +1480,19 @@ def budgets(procs: dict, running: dict, type_into) -> None:
         SPENT.pop(k)
     for n, (pid, sid, _) in [(n, p) for n, p in procs.items() if n in running]:
         tid, caps = running[n][0], settings_live.caps(sid)
+        was, caps = caps, audit.caps(tid, caps)  # F417
         tokens, usd = task_spend(sid)
         SPENT[str(n)] = [tokens, round(usd, 2)]
         if not (why := over_budget(tokens, usd, *caps)) or ((m := finished_mark(n)) and m.exists()):
             continue
+        if is_audit := audit.is_audit(tid):
+            why = why.replace('task_tokens', 'audit_tokens') if caps != was else why
         mark = C.notes(f'{tid}.budget')
         if not mark.exists():
             mark.write_text(why + '\n', encoding='utf-8')
-            if (said := type_into(n, procs, BUDGET_STOP.format(tid=tid, why=why, runner=C.command))) is None:
-                log(f'slot {n}: {tid} {why}: told it to stop at a clean point, commit and write its journal; '
+            if (said := type_into(n, procs, (audit.STOP if is_audit else BUDGET_STOP).format(tid=tid, why=why, runner=C.command))) is None:
+                log(f'slot {n}: {tid} {why}: told it to stop and land what it found' if is_audit else
+                    f'slot {n}: {tid} {why}: told it to stop at a clean point, commit and write its journal; '
                     f'its branch is parked as wip/{tid} when the session ends', None, tid)
             else:
                 BUDGET_ENDED.add(sid)

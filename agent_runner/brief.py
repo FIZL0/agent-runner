@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent_runner import pitch, plan as P, shared_tools
+from agent_runner import audit, pitch, plan as P, shared_tools
 from agent_runner.gitops import missing_remote
 from agent_runner.guide import GLOSSARY, OWN_FILES, SAFE_SHELL, SPLIT_FILES, VERIFY
 from agent_runner.state import C, default_branch, git, ROOT
@@ -225,6 +225,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         policies.append(PR_PROMPT.format(path=C.notes('pitches', f'{tid}.json')))
     if P.concept(tid):
         prompt = f'{prompt.rstrip()}\n\n' + CONCEPT_PROMPT.format(runner=C.command, tid=tid)
+    elif audit.is_audit(tid, P.lines(plan_at(cwd) / 'TODO.md')):  # F417
+        prompt = f'{prompt.rstrip()}\n\n' + audit.prompt(tid, branch, cwd)
     elif research_task(tid):  # F36
         prompt = f'{prompt.rstrip()}\n\n' + RESEARCH_PROMPT.format(runner=C.command, tid=tid,
                                                                    findings=findings_where())
@@ -303,14 +305,14 @@ def research_task(tid: str) -> bool:
 
 def findings_globs() -> list[str]:
     """F36: the files a research task may change, the one list the brief names and the merge checks: the plan
-    directory (in the repo), the journal (in the repo) and `[run] findings`."""
+    directory (in the repo), the journal (in the repo), `[run] findings` and the audits' (F417)."""
     out = []
     if not C.plan_external:
         d = os.path.relpath(C.plan_dir, C.root).replace(os.sep, '/')
         out += ['TODO.md', 'DONE.md'] if d == '.' else [f'{d}/**']
     if C.journal and C.journal.is_relative_to(C.root):
         out.append(os.path.relpath(C.journal, C.root).replace(os.sep, '/') + '/**')
-    return out + list(C.run['findings'] or [])
+    return out + [f'{audit.folder()}/**'] + list(C.run['findings'] or [])
 
 
 def findings_where() -> str:

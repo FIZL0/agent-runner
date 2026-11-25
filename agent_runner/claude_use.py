@@ -7,13 +7,13 @@ def uses(c, flag: str = '') -> bool:
     """A session of config `c` may run on Claude Code: a role, a kind or `run --model` (`flag`, else the one `c`
     was given) names a claude model, or a [models] fallback entry does and Claude Code is here (a missing one is passed
     over: fallback.chain_next). Not [models] docs: that is a subagent of a Claude Code
-    task session, so with none it never runs. A claude model on a task's own line is not counted: only that task
+    task session, so with none it never runs. [models] audit, or a claude model on a task's own line, is not counted: only that task
     waits, for Claude Code (login.unlogged) or for its usage and API (`own_tasks`)."""
     from agent_runner.config import agent_missing, harness_model
     models = getattr(c, 'models', None)
     if not isinstance(models, dict):
         return True
-    named = [v for k, v in models.items() if k not in ('kinds', 'docs') and isinstance(v, str)]
+    named = [v for k, v in models.items() if k not in ('kinds', 'docs', 'audit') and isinstance(v, str)]
     named += (models.get('kinds') or {}).values()
     named += filter(None, [flag or c.run.get('model_flag')])
     if any(not harness_model(m, c.providers) for m in named):
