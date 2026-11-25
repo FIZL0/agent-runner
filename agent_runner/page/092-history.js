@@ -244,7 +244,7 @@ function pastPlace(){
 }
 /* and its lines glide with the frame (feedGlide) */
 function pastGlide(d){if(HX.st)moAnim($('pastterm'),[{translate:`0 ${d}px`},{translate:'0 0'}],{ease:'--ease',dur:'--dur-slow'})}
-/* the button back to the live session: it floats over a strip of its own just above the box, so it covers no line */
+/* the button back to the live session: it floats over the lines just above the box */
 function pastJumpDraw(){
   const j=$('pastjump');if(!j)return;
   const on=pastUp()&&pastEnd()-$('feedpast').scrollTop>PAST_BAND, dock=document.querySelector('.dockwrap'), say=HX.news?'Jump to bottom: there is something new':'Jump to bottom';

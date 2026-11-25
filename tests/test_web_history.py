@@ -212,7 +212,7 @@ def test_swap(tmp: Path) -> None:
     eq(o['path'], [7, 14, 21, 28, 35], 'a line goes with the finger, from the first pixel')
     eq(o['up'], ['up', True, True, None, 0], 'scrolled up: the bars away, and it is there for a reader and the keyboard')
     eq(o['stays'], ['up', 0], 'the finger lifts: it stays, and it was no tap')
-    eq(o['button'], [True, False, '56px', '124px'], 'the button, on a strip over the slim box, higher over the full one')
+    eq(o['button'], [True, False, '56px', '124px'], 'the button, just over the slim box, higher over the full one')
     eq(o['newer'], [0, True, 'Jump to bottom: there is something new', '● message 203'], 'new words move nothing, and it says so')
     eq(o['writing'], [0, '● being written', 1], 'a reply being written, from the screen, each line once')
     eq(o['more'], [0, '● being written, more', 1], 'as it goes on')
@@ -237,6 +237,9 @@ def test_page(tmp: Path) -> None:
     for part in ('overscroll-behavior:none', 'touch-action:pan-y pinch-zoom', 'overflow:hidden scroll', '.feedpast.up{pointer-events:auto;-webkit-user-select:text',
                  '@media (pointer:coarse){.feedpast{pointer-events:auto}}', 'width:var(--tap);height:var(--tap)', '.main.still .pastjump{transition:none}'):
         check(part in css, f'the scroller has {part}')
+    wrap, button = (css.split(sel + '{', 1)[1].split('}', 1)[0] for sel in ('\n.pastjump', '\n.pastjump button'))
+    check('background' not in wrap and 'pointer-events:none' in wrap, 'the jump button floats: nothing drawn beside it, and a press there is the text\'s (B788)', wrap)
+    check(all(x in button for x in ('background:var(--surface)', 'border:1px solid', 'pointer-events:auto')), 'its button has its own fill and border, and takes the press', button)
     check('.feedpast:not(.up) #pastterm{pointer-events:none}' in css, 'at rest the touch is on the scroller, never on a row that is drawn again')
     check('if(pastWheel(px))return true;' in page.split('function feedTake(', 1)[1][:60], 'a wheel over the frame is the history\'s first')
     check('pastStop()}return el}' in page, 'a press on the slim message box ends a fling (B218b1)')

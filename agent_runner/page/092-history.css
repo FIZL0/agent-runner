@@ -13,8 +13,8 @@
 .hc{color:var(--hcode)} .hl{color:var(--hlink)} .hr{color:var(--hbad)} .hk{color:var(--hok)} .hw{color:var(--hwarn)}
 .hy{background:var(--hminebg);color:var(--hmine)} .hy .hm{color:var(--hmmuted)}
 .hp{background:var(--haddbg);color:var(--hadd)} .hg{background:var(--hgonebg);color:var(--hgone)} .hpn{color:var(--haddn)} .hgn{color:var(--hgonen)}
-/* its button back to the live session, on a strip of its own just above the box, so it covers no line */
-.pastjump{position:absolute;left:0;right:0;bottom:56px;height:56px;display:grid;place-items:center;background:var(--feed);opacity:0;visibility:hidden;pointer-events:none;translate:0 calc(-1*var(--up,0px));transition:opacity var(--dur-fast) var(--ease),visibility var(--dur-fast),translate var(--dur-bars) var(--ease)}
+/* its button back to the live session floats over the lines just above the box; nothing is drawn beside it, and a press there is the text's (B788) */
+.pastjump{position:absolute;left:0;right:0;bottom:56px;height:56px;display:grid;place-items:center;opacity:0;visibility:hidden;pointer-events:none;translate:0 calc(-1*var(--up,0px));transition:opacity var(--dur-fast) var(--ease),visibility var(--dur-fast),translate var(--dur-bars) var(--ease)}
 .pastjump.on{opacity:1;visibility:visible} .main.slim .pastjump{translate:0 0} .main.still .pastjump{transition:none}
 .pastjump button{pointer-events:auto;position:relative;width:var(--tap);height:var(--tap);border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--fg);display:grid;place-items:center;cursor:pointer}
 .pastjump svg{width:18px;height:18px} .pastjump .bdot{display:none} .pastjump.fresh .bdot{display:block;position:absolute;top:2px;right:2px}

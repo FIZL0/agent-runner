@@ -804,7 +804,7 @@ _In code_: #setbar, setBarDraw, settings_save
 _Avoid_: save bar, footer
 
 **Jump button**:
-The round button on its own strip just above a chat's message box that glides a scrolled-back session to its live end. It shows once the reader is well above the end, with a dot when there is something new.
+The round button, with its own fill and border, that floats over the lines just above a chat's message box and glides a scrolled-back session to its live end. It shows once the reader is well above the end, with a dot when there is something new.
 _Said_: jump to bottom
 _On screen_: Jump to bottom
 _In code_: .pastjump, pastDown
