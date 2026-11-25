@@ -148,7 +148,18 @@ def test_busy(tmp: Path):
     finally:
         R.MERGE.release()
     check(tick(tried={'T1'}), 'idle: queued')
-    check('audit.tick(run)' in Path(loop_after.__file__).read_text(encoding='utf-8'), "the run's tick asks")
+    print("the run's own tick and idle queue it")
+    repo = project(tmp)
+    land('F1', 'F2', 'F3')
+    names = ('retry_reopened', 'upgrade_tick', 'watch_ci', 'watch_issues', 'auto_release', 'sweep_unmerged', 'keep_claims', 'block_asks')
+    with mock.patch.multiple(loop_after, **{n: lambda *a, **k: None for n in names}), \
+            mock.patch('agent_runner.control_held.controls_tick', lambda b: None), \
+            mock.patch('agent_runner.page_copy.page_copy_tick', lambda: None), mock.patch.object(loop, 'take_keys', lambda: None):
+        loop_after.after(run(closed=set(), free_at={}, slots=1, idle_said=False))
+        check('(audit)' not in (repo / 'plan/TODO.md').read_text(), 'busy: none')
+        loop_after.after(run(closed=set(), free_at={}, slots=1))
+        loop_after.after(run(closed=set(), free_at={}, slots=1))
+    eq((repo / 'plan/TODO.md').read_text().count('(audit) '), 1, 'idle: one, once')
 
 
 def test_off(tmp: Path):
@@ -189,6 +200,12 @@ def test_scope(tmp: Path):
     land('F4')
     # the events' stamps are minutes ahead of the commit: the first three count as later here
     eq(A.landed('main')[-1], 'F4', 'a task landed since')
+    said = A.prompt('R2', 'main', repo)
+    has(said, r'Not reached` is in scope too', 'what the last one did not reach is in it')
+    (repo / 'plan/audits/README.md').write_text('x')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'a readme')
+    eq((A.last('main'), A.audits('main')), (until[:12], {tid}), 'a README there is no audit')
     said = A.prompt('R2', 'main', repo)
     has(said, rf'`git diff --stat {until[:12]}\.\.{git(repo, "rev-parse", "main")[:12]}`', 'its range')
     check('beside.txt' in git(repo, 'diff', '--name-only', f'{until[:12]}..main'), 'what landed beside the audit is in it')

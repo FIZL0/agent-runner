@@ -32,10 +32,10 @@ file you change, and file or edit no task: what is done about a finding is decid
 there what you checked; nothing found is a finding too, so always write the file.
 
 Scope: only what changed since the last audit, {scope}. `git diff --stat {diff}` and `git log --oneline {log}` say \
-what. Read a file that did not change only to check whether something that did left it stale. {landed}
+what. Read a file that did not change only to check whether something that did left it stale. {left}{landed}
 Look at:
 - Tasks (`{runner} plan`, `{runner} plan <ID>`): stale, duplicate, about something a done task removed, or whose runs keep \
-ending with no commits ({notes}/no-commits.json counts them, and `no commits` in {notes}/run.log).
+ending with no commits ({notes}/no-commits.json counts them, now, and `no commits` in {notes}/run.log names the closed and blocked ones too).
 - Asks under Needs you not answered for over 7 days ((asked …) on the task's line; with none, the date the plan's git \
 history or {notes}/events.jsonl gives).
 - Docs, the glossary and lessons that name something gone or say what is no longer so; lessons that repeat or \
@@ -98,7 +98,7 @@ def findings_file(tid: str) -> str:
 def last(branch: str) -> str:
     """The commit the last audit that landed read up to: what its findings file says, else the commit before the one
     that added the file. '' when there was none."""
-    r = S.git('log', '-1', '--diff-filter=A', '--name-only', '--format=%H', branch, '--', folder() + '/*.md')
+    r = S.git('log', '-1', '--diff-filter=A', '--name-only', '--format=%H', branch, '--', f':(glob){folder()}/[A-Z]*[0-9]*.md')  # an id, not a README
     got = r.stdout.split()
     if r.returncode or len(got) < 2:
         return ''
@@ -111,7 +111,7 @@ def last(branch: str) -> str:
 def audits(branch: str) -> set[str]:
     """Ids of the audits that landed."""
     files = S.git('ls-tree', '-r', '--name-only', branch, '--', folder() + '/').stdout.splitlines()
-    return {posixpath.splitext(posixpath.basename(f))[0] for f in files}
+    return {m[1] for f in files if (m := re.fullmatch(r'([A-Z]+\d+[a-z]*)\.md', posixpath.basename(f)))}
 
 
 def stamp(commit: str) -> str:
@@ -210,6 +210,7 @@ def prompt(tid: str, branch: str, cwd: Path) -> str:
     scope = f'which read up to {since} ({stamp(since)[:10]})' if since else \
         'and there was none: start at what changed last and go back until the cap'
     cap = S.C.run.get('audit_tokens') or 0
+    left = (f'What the newest file in {folder()}/ lists under `## Not reached` is in scope too. ') if since else ''
     said = f'Tasks landed since ({len(ids)}{", the newest" if len(ids) > NAMED else ""}): {", ".join(ids[-NAMED:])}.\n' if ids else ''
-    return PROMPT.format(tid=tid, file=findings_file(tid), scope=scope, range=span, diff=diff, log=log, landed=said, runner=S.C.command,
+    return PROMPT.format(tid=tid, file=findings_file(tid), scope=scope, range=span, diff=diff, log=log, left=left, landed=said, runner=S.C.command,
                          notes=S.C.notes(), days=days, cap=CAP.format(cap=int(cap)) if cap else '')
