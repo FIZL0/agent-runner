@@ -136,13 +136,26 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
         return f'! {branch} did not push (it is committed locally): {why}'
     if g('rev-parse', '--verify', '-q', f'refs/remotes/{remote}/{branch}').returncode:
         return f'! {branch} did not push (it is committed locally): {why}'  # refused, not moved: nothing to merge
+    was = g('rev-parse', 'HEAD').stdout.strip()
+    _renumber(cwd, f'refs/remotes/{remote}/{branch}', branch)
     if g('merge', '--no-edit', f'{remote}/{branch}').returncode:
         g('merge', '--abort')
+        g('reset', '-q', '--keep', was)  # a renumbering goes with the merge it was for
         return (f'! {branch} did not push: {remote}/{branch} has moved and merging it conflicts. '
                 f'Nothing is lost — resolve it by hand, then push.')
     if net('push', '-q', remote, branch).returncode:
         return f'! {branch} did not push (it is committed locally; push it by hand)'
     return f'pushed {branch} -> {remote}, after merging {remote}/{branch} into it'
+
+
+def _renumber(cwd: Path, up: str, branch: str) -> None:
+    """`join.renumber_upstream` for a push from `cwd`; join and state read this module, so they load here."""
+    from agent_runner import join, state
+    main = main_checkout(cwd)
+    if state.C is None:
+        state.init(cwd)
+    if Path(state.ROOT).resolve() == Path(main).resolve():  # a repository the run does not work on has no plan of its
+        join.renumber_upstream(cwd, up, branch.rsplit('/', 1)[-1])
 
 
 def push_sha(cwd: Path, sha: str, branch: str) -> str:

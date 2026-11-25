@@ -380,6 +380,8 @@ def build(tid: str, branch: str, rec: dict, M) -> tuple[str | None, str, str, st
         for ref, msg in ((tip, M.merge_message(tid, f'task/{tid}')), (there, f'Merge {rec["branch"]} as it is on GitHub'), (base, f'Merge {branch} into {rec["branch"]}')):
             if not ref or not g('merge-base', '--is-ancestor', ref, 'HEAD').returncode:
                 continue
+            if ref != tip:  # what is on GitHub keeps its ids (B822a)
+                M.renumber_upstream(d, ref, tid)
             if (files := M.merge_into(d, ref, msg, tid)) is None:
                 return f'git refused to merge {ref[:10]} into {rec["branch"]} (see the merge worktree, {d})', '', '', ''
             if files and not M.joined(files, tid, d) and (why := M.refix(tid, branch, ref, files, d, msg=msg)):
