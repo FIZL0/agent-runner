@@ -417,6 +417,31 @@ def test_task_text_f85(tmp: Path) -> None:
         srv.stop()
 
 
+def test_need_heading_b793a(tmp: Path) -> None:
+    """B793a: a Needs you card is headed by what is asked, whole, its task's title small under it unless it is the same;
+    no ellipsis or line clamp on either, nor on what to do."""
+    if not shutil.which('node'):
+        print('  (no node here: the heading script test is skipped)')
+        return
+    none = {k: [] for k in ('lead', 'expect', 'notes', 'shots')}
+    ask = 'Release V5 and run `agent-runner upgrade`, then ' + 'look at it again ' * 12 + 'once'
+    title = 'Check F170 on the iPhone 15: ' + 'the hidden lines stay hidden ' * 4 + 'in Safari'
+    row = {'id': 'R17', 'label': 'BLOCKED', 'age': '20m', 'ask': ask, 'ask_short': 'Release…',
+           'detail': {**none, 'said': 'Do this', 'where': '', 'title': title, 'summary': ask, 'question': '', 'steps': [ask, 'This reruns']}}
+    same = {**row, 'detail': {**row['detail'], 'title': ask.replace('`', '')}}  # a title comes without its quote marks
+    untitled = {**row, 'detail': {**row['detail'], 'title': 'R17'}}
+    got = logic_js([['needTap', r] for r in (row, same, untitled, {k: v for k, v in row.items() if k != 'detail'})])
+    head = '<b class="q">' + ask.replace('`agent-runner upgrade`', '<code>agent-runner upgrade</code>') + '</b>'
+    foot = '<span class="small">Press for details'
+    check(head + f'<span class="small">{title}</span>' + foot in got[0], 'the whole ask, then the whole title', got[0])
+    for g, why in zip(got[1:], ('a title that says the same', 'no title', 'no detail: the ask, not ask_short')):
+        check(head + foot in g, f'{why}: the ask alone', g)
+    css = W.PAGE.read_text(encoding='utf-8')
+    rules = [m for m in re.findall(r'[^{}]*\{[^{}]*\}', css) if re.search(r'ellipsis|line-clamp', m)]
+    cut = [m for m in rules if re.search(r'\.asktap|\.asktop|\.askbody|\bh2\b|\.q(?![\w-])|\.small(?![\w-])|(?<!\.card>)\.askdo', m.split('{')[0])]
+    eq(cut, [], 'no rule cuts the heading, the title or what to do')
+
+
 MANAGE_DRIVER = r"""
 const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
 const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1);
@@ -627,4 +652,4 @@ def test_search_f212(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_run_card_b763a), in_tmp(test_search_f212)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212)]))

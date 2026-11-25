@@ -53,14 +53,14 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Card** (`.card`, `card()`): one thing. `.tap` opens something; `.need` waits on the person. Title, one line of
   second text, then `.btns`.
 - **Needs you item** (`.asktap`, `needTap()`): one button, not a card of buttons. What is wanted and where in everyday
-  words (`.asklab`), the title on one line, at most two lines of what to do (`.askdo`), then Press for details, the
-  steps count, the id and the age. A DECIDE's heading is its question, whole (`needHead()`, `.q`), with its task's title
-  small on one line under it and at most two lines of its background in place of what to do. Its answer buttons sit
-  below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
+  words (`.asklab`), what is asked (`needHead()`, `.q`: a DECIDE's question, any other item's summary), its task's
+  title small under it (`needTitle()`, left out when it says the same), a DECIDE's background (`.askdo`), then Press for
+  details, the steps count, the id and the age. Nothing of it is cut: no ellipsis and no line clamp, on the card or in
+  the sheet. Its answer buttons sit below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
   sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way. A
   device's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
-- **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: title (a DECIDE's question, its task's
-  title small under it), label, age, id; where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
+- **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: what is asked, its task's
+  title small under it as on the card, label, age, id; where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
   only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or
   Esc goes back); the
   task text folded. An item with inputs draws its steps with Open (a step's link) and the command as code, with
