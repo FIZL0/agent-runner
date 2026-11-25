@@ -108,8 +108,10 @@ def check_clip(data: bytes) -> bool:
 
 
 def clean(text: str) -> str:
-    """The engine's answer on one line, without its marks for what is not speech ([BLANK_AUDIO], (buzzing))."""
+    """The engine's answer on one line, without its marks for what is not speech ([BLANK_AUDIO], (buzzing)); '' for no speech."""
     text = ' '.join(re.sub(r'\[[^\]]*\]|\([^)]*\)|♪', ' ', text).split())
+    if text.casefold().startswith(('task ids like', 'words:')):  # noise with no speech: it says the prompt back
+        return ''
     return text if re.search(r'\w', text) else ''
 
 

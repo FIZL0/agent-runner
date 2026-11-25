@@ -152,7 +152,7 @@ mode = os.environ.get('STUB', '')
 json.dump({'argv': argv, 'size': os.path.getsize(clip), 'clip': clip}, open(os.environ['STUB_SEEN'], 'w'))
 sys.stdout.reconfigure(encoding='utf-8')
 if mode == 'hang': time.sleep(60)
-print({'blank': ' [BLANK_AUDIO]', 'noise': ' (buzzing)', 'two': ' One.\\n [BLANK_AUDIO] Two (buzzing)'}.get(mode, ' Open task R16 \\u2013 now.\\n'))
+print({'blank': ' [BLANK_AUDIO]', 'noise': ' (buzzing)', 'echo': ' Task ids like R16, B162.', 'two': ' One.\\n [BLANK_AUDIO] Two (buzzing)'}.get(mode, ' Open task R16 \\u2013 now.\\n'))
 sys.exit(3 if mode == 'fail' else 0)
 """, encoding='utf-8')
 os.environ['STUB_SEEN'] = str(SEEN)
@@ -196,7 +196,7 @@ try:
     put(HOME / 'whisper' / Rec.GPU_MODEL)
     eq(json.loads(call()[2])['model'], Rec.GPU_MODEL, 'the large model when it is installed (a GPU)')
     check(CLIPS in Path(seen['clip']).parents and not list(CLIPS.iterdir()), 'the clip is deleted')
-    for mode, want in (('blank', ''), ('noise', ''), ('two', 'One. Two')):
+    for mode, want in (('blank', ''), ('echo', ''), ('noise', ''), ('two', 'One. Two')):
         eq(post(mode=mode)[1].get('words'), want, f'what is not speech: {mode}')
     SEEN.unlink()
     eq((post(wav(loud=0)), SEEN.exists()), ((200, {'ok': True, 'words': ''}), False), 'silence: no words, the engine not asked')
