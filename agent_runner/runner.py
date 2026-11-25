@@ -23,6 +23,7 @@ docs/REFERENCE.md describes each mechanism. In short:
   - tasks whose `| after: X, Y` names a task not done yet,
   - the Stretch and Parked sections, anything tried this run (until its line is edited), and branches waiting to be merged,
   - a task parked twice (wip/<ID>, wip/<ID>-2): the run blocks it on a person instead (`block_parked`).
+  - a task whose two runs in a row end with no commits, its plan text unchanged: the run blocks it `DECIDE:` (`no_commits`, B774).
 
   Parts of a split task run together only when their `files:` do not meet and neither waits for the other
   (a part naming none waits), and never beside the task they are parts of. An ordered section runs one task at a time. Two tasks never run on the same

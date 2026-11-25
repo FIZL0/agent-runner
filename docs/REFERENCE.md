@@ -1013,6 +1013,7 @@ and its next prompt points at the earlier attempt. Parked twice (`wip/<ID>`, `wi
 runs and restarts; a slot's saved edits do not count), the next pick blocks it `DECIDE:` on a person, with
 the ledger's reasons, instead of starting it a third time; `plan unblock <ID>` lets it run again (the attempts it was blocked over, kept in
 `.runner/parked-seen.json`, no longer count).
+Two runs in a row that end a task's slot session with no commits, its plan text unchanged, block it the same way: `<notes>/no-commits.json` counts them across restarts, and a task told, reopened or edited in between counts afresh (`no_commits.py`, B774).
 
 **Merges happen in a merge worktree.** The merge is built and tested in `~/runs/<repo>/merge`; the main
 checkout moves only to a tested commit, and nothing in it is stashed. Nor is its branch ever switched: while

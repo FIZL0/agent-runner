@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a task whose slot sessions end with no commits in two runs in a row, its plan text unchanged, is blocked `DECIDE:` under Needs you with what its last session said, instead of starting a full session again each pass. `<notes>/no-commits.json` counts across restarts; a task told, reopened or edited in between, or a run with commits, counts afresh, and a `take` does not count. Until the block is committed the dry run says the task ended twice with no commits and needs a person. Before, one task (R45 in iFizBox) was started 18 times (B774).
+
 ## 0.65.0 (2026-11-24)
 
 - Fixed: `plan add` and `plan edit` refuse a text (or a place after `@`) with a stretch that is mostly paths that exist in the current folder, separated by spaces (at least 6 more of them than of its other words): it is a glob the shell expanded. They exit 2 and file nothing (`--force` does not override), and say to quote the glob, as in `--files 'dir/**'`. A text that names a few paths, or a comma-separated list of them, still files. Before, only paths given as separate arguments were refused, and one task's line had grown to 27 KB of paths (B773).

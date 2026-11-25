@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, fallback as FB, settings_live, ci, file_split, gitops, no_push, plan as P, plansync, plat, shared_tools, stack, undo
+from agent_runner import agent_hold, brief_arrives, fallback as FB, settings_live, ci, file_split, gitops, no_commits, no_push, plan as P, plansync, plat, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -777,7 +777,10 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         git('update-ref', '-d', TESTED + tid)
         note(f'{tid}: no commits — nothing to merge')
         log(f'{tid}: no commits — nothing to merge', EV_NO_COMMITS, tid)
+        if n:  # B774: a slot's session, not a `take`
+            no_commits.ended(tid, last_words(sid) if sid and sid != '(unknown)' else '', branch)
         return True
+    no_commits.forget(tid)
     if sid and sid != '(unknown)':
         TASK_SID[tid] = sid  # its repair, if the merge fails the gate, starts from this session
     over = ''
@@ -1435,6 +1438,7 @@ class Run:
             sweep_unmerged(branch, self.merging)
         undo.tick(branch, self.merging)  # F98
         keep_claims(self.running, branch)
+        no_commits.tick(branch)  # B774
         block_asks(branch, self.tried)  # F102: an ask whose block could not be committed when it was parked
         take_keys()
         # an exit may have queued one
