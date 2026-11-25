@@ -36,8 +36,13 @@ def test_options(tmp: Path) -> None:
     eq(Q.ask([you('hi'), say(ASK)]), {'id': 'u1', 'question': 'Which look?', 'options': SHOWN},
        'the question, and its options with the recommended one first and marked')
     eq([o['name'] for o in Q.ask([say('**DECIDE: Go on? [Yes / No]**')])['options']], ['Yes', 'No'], 'none recommended: as written')
-    eq(Q.ask([say('DECIDE: Which? [A / B] https://claude.ai/x')])['options'],
-       [{'name': 'A', 'rec': False}, {'name': 'B', 'rec': False}], 'a link after the bracket')
+    eq(Q.ask([say('DECIDE: Which? [A / B] https://claude.ai/x')]),
+       {'id': 'u1', 'question': 'Which?', 'options': [{'name': 'A', 'rec': False}, {'name': 'B', 'rec': False}]},
+       'a link after the bracket is not in the question')
+    think = {'type': 'assistant', 'uuid': 'u4', 'message': {'content': [{'type': 'thinking', 'thinking': 'hm'}]}}
+    watch = {'type': 'assistant', 'uuid': 'u5', 'message': {'content': [
+        {'type': 'tool_use', 'id': 't2', 'name': 'Monitor', 'input': {'command': './run since --follow --needs-you'}}]}}
+    eq(Q.ask([say(ASK), think, watch])['id'], 'u1', 'thinking, or the standing watch set again, after it: the same question')
     a, b = Q.ask_of(ASK), Q.ask_of(ASK.replace('Which look?', 'Which size?'))
     eq((a['id'] == Q.ask_of(ASK)['id'], a['id'] == b['id']), (True, False), 'with no uuid the id is the question\'s own')
 
@@ -54,6 +59,8 @@ def test_none(tmp: Path) -> None:
             ('a bracket after a link', [say('DECIDE: Which? https://claude.ai/x [A / B]')]),
             ('the person has spoken since', [say(ASK), you('Full')]),
             ('the turn goes on', [say(ASK), tool()]),
+            ('it goes on in the same entry', [{**say(ASK), 'message': {'content': say(ASK)['message']['content']
+                                                                      + tool()['message']['content']}}]),
             ('a later answer ends on something else', [say(ASK), you('Full'), say('Done.', 'u3')])):
         eq(Q.ask(rows), None, why)
 
