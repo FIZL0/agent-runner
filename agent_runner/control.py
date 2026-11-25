@@ -121,9 +121,13 @@ def control_settings() -> Path:
             return f
     except OSError:
         pass
-    tmp = f.with_name(f.name + '.tmp')
-    tmp.write_text(text, encoding='utf-8')
-    os.replace(tmp, f)
+    tmp = f.with_name(f'{f.name}.{uuid.uuid4().hex}.tmp')  # B806: each writer its own
+    try:
+        tmp.write_text(text, encoding='utf-8')
+        os.replace(tmp, f)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return f
 
 
