@@ -117,12 +117,12 @@ def test_changed() -> None:
     for new in (('page = ":8123"', 'start = "sleep 601"'), ('page = ":8123"',), ()):
         toml('page = ":8123"', 'start = "sleep 600"')
         check(op('start')['ok'], 'started')
-        pid = rec()['pid']
+        pid, old = rec()['pid'], rec()['cmd']
         toml(*new)
         eq((state(), shown()['run']['state']), ('running', 'running'), f'still running: {new}')
+        eq((rec()['cmd'], rec()['pid']), (old, pid), 'the old one')
         r = op('stop')
         check(r['ok'] and not DP._group(pid), 'stopped', r)
-        eq(rec()['cmd'] if len(new) > 1 else 'sleep 600', 'sleep 600', 'the old one')
     toml('page = ":8123"', 'start = "sleep 601"')
     check(op('start')['ok'] and rec()['cmd'] == 'sleep 601', 'the next start has the new one')
     pid = rec()['pid']

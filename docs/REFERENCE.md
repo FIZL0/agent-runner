@@ -1163,7 +1163,8 @@ start = "tools/serve.sh"         # optional: the command that serves it
   not AGENT_RUNNER_CONFIG's file, and never text the page sends). Start, stop, state, output and the https, token and
   same-origin rule are as for a device's web page (### Devices). A change to `start` does not stop what runs: Stop (or
   `run device stop NAME`) still ends the old command, also when `start` or the tool itself was taken out (once the tool
-  is gone, only the command can stop it, as it has no card); the next start uses the new one. `run device start|stop|show
+  is gone it has no card, so stop it with the command). While runner.toml does not read, no `run` command works, but
+  POST /tools still stops it. The next start uses the new one. `run device start|stop|show
   NAME` take it and `run device list` lists it; when a device has the same name, these commands take the runner.toml
   tool. POST /tools ops `start` and `stop` take an optional `"source"` (`"device"` or `"runner.toml"`), the device when
   not given. GET /tools gives `page`, `start` and `run` (its state). The Tools page does not show it yet.
