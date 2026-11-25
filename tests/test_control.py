@@ -1419,7 +1419,7 @@ def test_decide_options_f181d():
     print('F181d: a control session ends its DECIDE with the options, and filing keeps the bracket for the buttons')
     from agent_runner import guide as G, need_detail as N, plan as P, runner as R
     core = ' '.join(G.CONTROL.split())
-    for words in ('`DECIDE: Which look? [Full (recommended) / Small / No change]`', 'any link after the bracket',
+    for words in ('holding it up? [Yes (recommended) / No]`', 'any link after the bracket',
                   'One DECIDE per question'):
         check(words in core, f'the brief: {words}')
     check('[Full (recommended) / Small]' in G.topic('needs', 'run'), 'the needs guide says what the bracket is')

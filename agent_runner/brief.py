@@ -336,18 +336,16 @@ CONFIRM or BLOCKED line over 200 characters with no ask file, or one that waits 
 `--after`. When there is more to say, write it first to the ask file {path}, as \
 JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place>, "steps": [<what to do>, …], \
 "expect": [<what they should see>, …], "shots": [{{"file": <a picture's path>, "caption": <what it shows>}}]}}; leave out \
-what you do not need. One action per step, in words the person sees on screen, no file names or code (the command that failed and its error, \
-when too long for the line, go in the commit message). When the \
-check or choice is about how something looks, take screenshots: small ones, put under {shots}/, with no secrets or \
-tokens in them. The file is optional, and it is gone once they answer, so write a new one for each ask.
+what you do not need. One action per step, in words the person sees on screen, no file names or code (a failed command and its error, \
+when too long for the line, go in the commit message). For a check or choice about looks, take small screenshots, put under {shots}/, with no secrets or \
+tokens in them. The file is optional; write a new one for each ask.
 
-A `DECIDE:` is one question. When its answers are a few short names, they become buttons, so give them: end the question with them in a bracket, as in `DECIDE: Which look? [Full (recommended) / Small / No change]`, before any link, or as "options": [{{"name": "Full", "rec": true}}, {{"name": "Small"}}] in the ask file. With `ask` use the ask file: a bracket there gives no buttons. Give 2 to 12 different names, each under 80 characters and no ` / ` in one, at most one recommended, and each clear on its own: its name is all the answer says.
+A `DECIDE:` is one question: two choices crossed in one bracket are two (ask the next once this one is answered). It may be read days later by someone who has not seen the chat: name the project, the thing and the problem in plain words, never "this", "it", "like this" or "What should I do?". Short answers become buttons: end the question with them in a bracket, as in `DECIDE: Should tasks added after an automatic release is queued go in the next release, instead of holding it up? [Yes (recommended) / No]`, before any link (about a page, always its link), or as "options": [{{"name": "Full", "rec": true}}, {{"name": "Small"}}] in the ask file. With `ask` use the ask file: a bracket there gives no buttons. Give 2 to 12 different names, each under 80 characters and no ` / ` in one, at most one recommended. Each says what happens and is clear without the chat: never a bare task id (say what it is, the id in brackets at most).
 
 When you block with `BLOCKED:` because of steps only a person can take (a login, a certificate or signing key, \
 a secret, a click in a third-party dashboard), write the steps, links, commands and inputs they have to do in that \
 file: a step is words or {{"text", "link", "cmd", "on"}}, and "inputs" lists what they give back (a secret is only \
-named there; the person's answer carries its value). Here a step may hold a link or a command, though a plain step \
-has no file names or code. Write only steps you cannot do yourself, say only what you know of each page or command, checked \
+named there; the person's answer carries its value). Here a step may hold a link or a command. Write only steps you cannot do yourself, checked \
 and not guessed, and put no secret in the file. Never tell the person to run a script. When they answer, the \
 reopening note gives you their values, and a secret is in {env} as NAME='value'."""
 
@@ -462,16 +460,14 @@ def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
 # task (`plan confirm`) with each answer spelled out in its note. `[run] questionnaires = false` turns it off.
 
 SHEET_PROMPT = """\
-When you block with `DECIDE:` on a choice that takes more than one question (a pick-list, settings to change or \
-keep), or whose answers each need a why (one question with a few short answers is the bracket or "options" above; a sheet is the one `DECIDE:` that holds several), write the choice \
+When you block with `DECIDE:` on a choice that takes more than one question (a pick-list, settings), or whose answers each need a why (a sheet is the one `DECIDE:` that holds several), write the choice \
 as a pick sheet, not as a numbered list: no option numbers anywhere. Write {path} as JSON: "title" (a short \
-name), "summary" (one line that says what is ready, e.g. "12 config cleanups ready, 10 optional"), "intro" \
+name), "summary" (one line that says what is ready), "intro" \
 (one or two sentences), and "groups": [{{"heading": <a kind of change>, "questions": [{{"id": <short key>, \
 "q": <a plain question>, "answers": [<2-3 short answers>], "recommended": <index of your pick>, "keep": \
 <index of the answer that changes nothing; leave it out when every answer changes something>, "why": <one or two lines>}}]}}]; `backticks` show as \
 code. Check it with `{runner} sheet {tid}` and publish it with `{runner} sheet {tid} --publish`: it prints the sheet's URL \
-(its Send writes the picks there; with no URL, the run page has the sheet: leave the link out). Give it up to 6 minutes. Then block with `--blocked "DECIDE: <the summary> <the sheet's url>"`. Needs you shows \
-the person that one line and the link; their picks (or 'go' for your recommendations) reopen {tid} with each \
+(its Send writes the picks there; with no URL, the run page has the sheet: leave the link out). Give it up to 6 minutes. Then block with `--blocked "DECIDE: <the summary> <the sheet's url>"`. Their picks (or 'go' for your recommendations) reopen {tid} with each \
 answer in its note."""
 
 
