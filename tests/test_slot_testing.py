@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,7 +33,6 @@ def test_phases(tmp: Path) -> None:
     eq(gate()['F3'], '', 'a gate killed midway never leaves the row at Testing')
     M.clear_slot_gate(S.C, 'F1')
     eq(gate()['F1'], '', 'the gate ended: Working again')
-    os.environ.pop('AGENT_RUNNER_SLOT', None)
     eq(M.gate_phase('F9', '2', [{'slot_gate': True, 'tid': 'X', 'slot': '2', 'phase': 'testing'}]), 'testing', 'by its slot too')
 
 
