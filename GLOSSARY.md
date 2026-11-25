@@ -122,7 +122,6 @@ _In code_: context_warn, context_over, EV_CONTEXT, cost.filled
 _Avoid_: context limit, hard limit
 
 **Exact-repeat command**:
-**Exact-repeat command**:
 the same shell line run again, word for word, in one session; its later results stay in context beside the first
 _Said_: repeated command
 _On screen_: exact-repeat commands
