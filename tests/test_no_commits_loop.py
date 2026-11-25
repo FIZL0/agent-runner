@@ -37,6 +37,7 @@ def make_repo(tmp: Path) -> Path:
 
 def empty_run(repo: Path, said: str = 'No brief.', tid: str = 'R1', n: int = 1) -> None:
     """One session on `tid` that ends with no commits, then the run's tick."""
+    P._clear_ask(tid, R.C.todo)  # as `slots.start` does: it must not touch the count
     git(repo, 'branch', f'task/{tid}', 'main')
     with mock.patch.object(L, 'last_words', lambda sid: said):
         eq(L._finish(tid, n, 'sid', 'main'), True, f'{tid}: the session ends, nothing to merge')

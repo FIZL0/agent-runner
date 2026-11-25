@@ -82,7 +82,7 @@ def forget(tid: str) -> None:
 
 
 def reopened(tid: str, c) -> None:
-    """`tid` of project `c`'s plan was blocked or unblocked, maybe with no run up: forget it, as `forget` does. Takes
+    """`tid` of project `c`'s plan was unblocked, maybe with no run up: forget it, as `forget` does. Takes
     the project, since a plan command has no run's state."""
     f = c.notes('no-commits.json')
     with _LOCK:

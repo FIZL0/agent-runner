@@ -215,7 +215,13 @@ def clear_ask(tid: str, todo: str | Path | None = None) -> None:
     for c in _plans(todo):
         _clear_file(c, tid)
         _clear_sheet(c, tid)
-        no_commits.reopened(tid, c)  # B774
+
+
+def reopened(tid: str, todo: str | Path | None = None) -> None:
+    """B774: the plan unblocked `tid`: its runs that ended with no commits are counted afresh. Not `clear_ask`'s part:
+    every start of a task calls that."""
+    for c in _plans(todo):
+        no_commits.reopened(tid, c)
 
 
 def _clear_sheet(c, tid: str) -> None:
