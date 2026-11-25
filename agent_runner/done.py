@@ -21,7 +21,8 @@ A diff that is docs only (every file the worktree changes since the shared branc
 skips the gate: `done` says 'docs only, gate skipped' and runs `[run] docs_check` instead, if one is set.
 
 `--blocked WHY` marks it `[~]` instead. Say what would unblock it. If what it waits on is another task
-landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reopen it once they merge.
+landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reopen it once they merge. A CONFIRM or
+BLOCKED that waits for an open task or release with no `--after`, or over 200 characters with no ask file, is refused.
 
 `--until CHECK[,CHECK]`, with `--blocked`, is for a wait this machine can check by itself (`version:X.Y.Z`,
 `login:PROVIDER`, `tool:NAME`, `check:NAME`; all must pass), in place of `--after`. A bad check is refused before the
@@ -119,6 +120,9 @@ def main(argv: list[str] | None = None) -> int:
     c = cfg()
     cwd = c.root
     if why := until_refusal(a, c):  # F427b
+        print(why, file=sys.stderr)
+        return 2
+    if why := asks.line_refusal(a.id, a.blocked, a.after, a.until, c, PROG):  # B795
         print(why, file=sys.stderr)
         return 2
     if not a.blocked and tested_tick(a.id, c) and not git('status', '--porcelain', cwd=cwd).stdout.strip():

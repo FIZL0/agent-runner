@@ -178,7 +178,7 @@ def unblocked_asks() -> set[str]:
     return out
 
 
-LINE_MAX = 200  # a longer ask line with no ask file gets `long_line`'s note
+LINE_MAX = 200  # a longer ask line with no ask file: `line_refusal` refuses a CONFIRM or BLOCKED, `long_line` notes a DECIDE
 
 
 def ask_file(tid: str, c=None) -> Path:
@@ -358,3 +358,57 @@ def long_line(tid: str, why: str, c=None) -> str:
         f'the line is {len(why)} characters, hard to read in Needs you, and it has no ask file. Blocked all the same; '
         f'write the steps to {f} now as {{"summary", "where", "steps": [...], "expect": [...], "shots": [{{"file", '
         f'"caption"}}]}} and Needs you shows those (no need to block again)')
+
+
+# B795: the words that make a task named beside them a wait, not a mention ("the list F12 made")
+_IDS = r'(?P<ids>[A-Z]+\d+[a-z0-9]*(?:(?:, (?:and )?| and | or |/)[A-Z]+\d+[a-z0-9]*)*)\b'
+_FILL = r'(?:(?:the|task|tasks|release|open|both|for|on|of|merge|landing|list|work|fix|from|in|to) )*'
+_WAIT_FOR = re.compile(
+    r'(?:\b(?i:wait(?:s|ing)?(?: for| on)?|until|depends? on|blocked (?:on|by))\b[^.,;:?!]{0,40}?\b'
+    r'|\b(?i:wait(?:s|ing)? (?:for|on))\b[^;:?!]{0,40}?\b'
+    r'|\b(?i:after|once|when|needs?|requires?|pending|upgrade|release|land|merge|publish|ship|finish) (?i:' + _FILL + r'))'
+    + _IDS + r"(?!['’]s| (?:opens?|shows?|loads?|appears?)\b)")
+_WAIT_THEN = re.compile(
+    r'\b' + _IDS + r'(?: \([^)]*\))? (?i:(?:release )?(?:(?:has|have|is|are|must|to|be|been|gets?|first|not|yet|both) )*'
+    r'(?:lands?|landed|merges?|merged|ships?|shipped|released|releases|release(?! \w)|published|finish(?:es|ed)?|first|needed|(?<=is )done|(?<=are )done|(?<=be )done)\b)')
+
+
+def waits_named(tid: str, why: str, live: set[str]) -> list[str]:
+    """The open tasks and releases (`live`) that task `tid`'s ask line `why` says it waits for."""
+    why = re.sub(r'[`*]', '', P.URL.sub('', why))
+    found = [t for r in (_WAIT_FOR, _WAIT_THEN) for m in r.finditer(why) for t in P.TASK_ID.findall(m['ids'])]
+    return [t for t in dict.fromkeys(found) if t in live and t != tid]
+
+
+def _has_ask_file(tid: str, c) -> bool:
+    """Whether `tid`'s ask file will be there once it blocks: not one an earlier block took, which `taken_ask` removes."""
+    f, mark = ask_file(tid, c), ask_file(tid, c).with_suffix('.taken')
+    try:
+        if not f.is_file():
+            return False
+        old = mark.is_file() and mark.read_text(encoding='utf-8') == str(f.stat().st_mtime_ns)
+        return not (old and any(t.rstrip('.') == tid and box == '~' for _, box, t, _, _ in P.iter_tasks(P.lines(c.todo))))
+    except OSError:
+        return False
+
+
+def line_refusal(tid: str, why: str, after: str | None, until: str | None, c, prog: str) -> str | None:
+    """B795: why `done --blocked` refuses this CONFIRM or BLOCKED line, or None: it waits on an open task or release
+    with no `--after`, or it is over LINE_MAX characters with no ask file."""
+    m = re.match(r'\s*(CONFIRM|BLOCKED):', why or '')
+    waits = bool(until or (after or '').replace(',', ' ').split())
+    if not m or waits and m.group(1) == 'BLOCKED':  # a BLOCKED that waits asks the person nothing (B211)
+        return None
+    if not waits and c.todo.exists() and (ids := waits_named(tid, why, P.open_ids(P.lines(c.todo)))):
+        wait = ','.join(ids)
+        label = f'the same CONFIRM with --after {wait}' if m.group(1) == 'CONFIRM' else \
+            f'--blocked "<why, with no label>" --after {wait}'
+        return (f'{prog}: the {m.group(1)} line waits for {", ".join(ids)}, still open, and no person is needed for that: '
+                f'write {label}, and the run goes on once it lands. If it does not wait for it, start with what the '
+                f'person does and name the task by its title, not its id. Nothing blocked.')
+    if len(why) > LINE_MAX and not _has_ask_file(tid, c):
+        return (f'{prog}: the {m.group(1)} line is {len(why)} characters, over {LINE_MAX}, and it has no ask file. '
+                f'Write one short sentence that starts with what the person does, the reason second, and the rest first '
+                f'to {ask_file(tid, c)} as {{"summary", "where", "steps": [...], "expect": [...], "shots": [{{"file", '
+                f'"caption"}}]}}. Nothing blocked.')
+    return None
