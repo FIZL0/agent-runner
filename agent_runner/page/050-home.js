@@ -153,13 +153,13 @@ function projectCard(p){
 function askRow(a){const here=a.key===HKEY&&!HOME_PAGE;
   return card(`<div class="row"><div class="grow"><b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.name)}${a.id?` · ${esc(a.id)}`:''}</div></div><a class="btn" href="${esc(projectLink(HB,a.key,T)+('#'+(a.id?'need-'+a.id:'home')))}"${here?` data-askhere="${esc(a.id)}"`:''}>Open</a></div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)}
 function deviceCard(d){const v=d.verdict||{};
-  return card(`<div class="row"><div class="grow"><b>${esc(d.host)}</b>${d.here?' <span class="small">· this one</span>':''}<div class="v-${esc(v.level)}" style="font-weight:500">${esc(v.said)}</div></div></div>${(d.meters||[]).map(meterHTML).join('')}`,
-    'tap',`tabindex="0" role="button" data-devopen="${esc(d.id)}" data-k="device:${esc(d.id)}"`);
+  return card(`<div class="row"><div class="grow"><b>${esc(d.host)}</b>${d.here?' <span class="small">· this one</span>':''}${devVerdict(v)}</div></div>${(d.meters||[]).map(meterHTML).join('')}`,
+    'tap devcard',`tabindex="0" role="button" data-devopen="${esc(d.id)}" data-k="device:${esc(d.id)}"`);
 }
 const ASKS_SHOWN=3;
 const homeErr=()=>H.err?card(`<div class="small"><span class="v-bad">${esc(H.err)}</span></div><div class="btns"><button class="btn" data-pload>Retry</button></div>`):'';
 function devicesHTML(){const ds=H.devices;
-  return `<div class="col">${homeErr()}<div class="sec">Devices<span class="ln"></span></div>${ds===null?emptyCard('Loading…'):ds.length?ds.map(deviceCard).join(''):emptyCard('No devices.')}</div>`}
+  return `<div class="col">${homeErr()}${ds===null?emptyCard('Loading…'):ds.length?ds.map(deviceCard).join(''):emptyCard('No devices.')}</div>`}
 function projectsHTML(){
   if(HOME_PAGE&&!atAll())return offHTML();
   if(H.tab==='devices')return devOn()?devHTML():devicesHTML();

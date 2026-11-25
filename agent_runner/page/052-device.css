@@ -1,4 +1,7 @@
 /* B818a: a device's page: a sparkline's height, and room for the meters' longer names; B818b: Clean's tick list */
 .devtick{display:flex;gap:var(--s3);align-items:center;min-height:var(--tap);cursor:pointer} .devtick input{flex:none;width:20px;height:20px;margin:0;accent-color:var(--accent)} .devtick span{min-width:0;overflow-wrap:anywhere} .devsaid{white-space:pre-line}
 .spark{display:block;width:100%;height:28px;color:var(--muted)} .spark polyline{fill:none;stroke:currentColor;stroke-width:1.5;vector-effect:non-scaling-stroke}
-.devcard .meter{grid-template-columns:68px minmax(0,1fr) auto} .devcard .small{overflow-wrap:anywhere}
+/* B818c: a card's meters share their columns, so the bars start and end together */
+.devcard{grid-template-columns:max-content minmax(0,1fr) max-content} .devcard>*{grid-column:1/-1} .devcard>.meter,.devpart,.devpart>.meter{grid-column:1/-1;grid-template-columns:subgrid} .devpart>*{grid-column:1/-1}
+.devpart{display:grid;row-gap:var(--s1)} .devpart+.devpart{margin-top:var(--s1)} .devcard .meter .r{text-align:right} .devcard>.foldin .meter{grid-template-columns:68px minmax(0,1fr) 44px} .devcard .small{overflow-wrap:anywhere}
+.devverdict{font-weight:500}
