@@ -821,5 +821,5 @@ _Avoid_: page server, idle run, light run
 The way of Talk where the run's machine turns a clip the page recorded into words; the other way is the browser's own recognition.
 _Said_: have both as an option
 _On screen_: Recorded
-_In code_: recorded.py, /recorded
+_In code_: recorded.py, /recorded, Recorder, 172-talk.js
 _Avoid_: STT, transcription
