@@ -7,6 +7,7 @@
   --page:var(--bg); --bg:#faf9f5; --side:#f5f4ee; --surface:#ffffff; --bubble:#f0eee6; --fg:#141413; --muted:#73726c; --faint:#a3a199;
   --line:#e8e6dc; --line2:#dcd9cd; --accent:#c96442; --accent2:#b5573a; --onaccent:#ffffff; --ok:#4f7a43;
   --warn:#a8711a; --bad:#b0412e; --onbad:#ffffff; --scrim:rgba(0,0,0,.25); --shadow:rgba(0,0,0,.15); --lift:rgba(0,0,0,.04); --feed:#1f1e1d;
+  --kred:#b0412e; --kblue:#2f66b5; --kpurple:#7b3fa8; --kteal:#0b7285; --kgreen:#3f7a3a; --kgold:#8a6100; --kindigo:#5b5f9e; --kgray:#6b6a64;
   --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif; --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --fs-xs:11px; --fs-s:12px; --fs-m:13px; --fs-n:14px; --fs-b:15px; --fs-l:17px; --fs-xl:30px;
@@ -21,11 +22,13 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#262624; --side:#1f1e1d; --surface:#30302e; --bubble:#3a3936; --fg:#f3f1ea; --muted:#a3a199; --faint:#7d7b74;
   --line:#3b3a37; --line2:#4a4945; --accent:#d97757; --accent2:#e08868; --onaccent:#ffffff; --ok:#8fb07c;
-  --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}}
+  --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --kred:#ee8a76; --kblue:#82b1f2; --kpurple:#cd9df0; --kteal:#5fcadb; --kgreen:#93c785; --kgold:#e0b04f; --kindigo:#aeb2f0; --kgray:#aeaca4;
+  --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#262624; --side:#1f1e1d; --surface:#30302e; --bubble:#3a3936; --fg:#f3f1ea; --muted:#a3a199; --faint:#7d7b74;
   --line:#3b3a37; --line2:#4a4945; --accent:#d97757; --accent2:#e08868; --onaccent:#ffffff; --ok:#8fb07c;
-  --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}
+  --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --kred:#ee8a76; --kblue:#82b1f2; --kpurple:#cd9df0; --kteal:#5fcadb; --kgreen:#93c785; --kgold:#e0b04f; --kindigo:#aeb2f0; --kgray:#aeaca4;
+  --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}
 *{box-sizing:border-box;scrollbar-width:none} *::-webkit-scrollbar{display:none}
 [hidden]{display:none!important}
 /* B160: --page is what shows outside .app (behind Safari's bar, round the keyboard): the colour of the view, a chat's too */

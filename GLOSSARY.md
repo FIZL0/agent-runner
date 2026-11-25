@@ -885,3 +885,9 @@ _Said_: skip this release
 _On screen_: that cut is skipped, and the count starts from zero
 _In code_: release_moves.removed, release_moves.drop_next, EV_CUT_REMOVED, next-release
 _Avoid_: cancelled release, skipped release
+
+**Hint**:
+The bubble that names a control with only an icon or a sign (no letter or digit): its aria-label, else its title, shown over or under it while a mouse hovers it or a finger holds it
+_Said_: hint
+_In code_: iconWords, hintSpot, .hint
+_Avoid_: tooltip, popover, help text

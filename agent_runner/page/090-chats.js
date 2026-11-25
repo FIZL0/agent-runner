@@ -162,7 +162,7 @@ function feedHTML(n,bare){
 function feedTerm(){try{return FD.up&&FD.frame&&FD.frame.contentWindow.term||null}catch(e){return null}}
 function feedKey(k){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
   t.input(feedBytes(k,!!(t.modes&&t.modes.applicationCursorKeysMode)),true)}
-const keyButtons=()=>`<div class="keys" role="toolbar" aria-label="Keys for the session">${FEED_KEYS.map(([k,l])=>`${k==='left'?'<button type="button" class="tool" data-feedtext title="The screen as text, to copy">Text</button>':''}<button type="button" class="tool" data-feedkey="${k}">${l}</button>`).join('')}</div>`;
+const keyButtons=()=>`<div class="keys" role="toolbar" aria-label="Keys for the session">${FEED_KEYS.map(([k,l])=>`${k==='left'?'<button type="button" class="tool" data-feedtext title="The screen as text, to copy">Text</button>':''}<button type="button" class="tool" data-feedkey="${k}"${/\w/.test(l)?'':` aria-label="${k.charAt(0).toUpperCase()+k.slice(1)} arrow"`}>${l}</button>`).join('')}</div>`;
 const keysRow=()=>S.keys?keyButtons():'';
 /* the screen's text in a sheet, to select and copy with a finger */
 function feedText(){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
@@ -520,7 +520,7 @@ const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${ob
 function relCard(){
   const rs=planReleases(S.snap), drops=x=>obActs(x,'queue')&&rs.some(q=>!q.placeholder&&x.ctl.endsWith(':'+q.id));
   const line=q=>{const r=q.release||q;
-    return `<div class="row" data-k="rel:${esc(q.id||'next')}"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><div class="small">${esc((q.id?q.id+' · ':'')+(r.words||'')+(r.note||''))}</div></div>${q.placeholder?'':actBtns(relDrop(q),q.id)}</div>${q.placeholder?'':actSure(relDrop(q),q.id)}`};
+    return `<div class="row" data-k="rel:${esc(q.id||'next')}">${q.id?taskChip(q.id):''}<div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><div class="small">${esc((r.words||'')+(r.note||''))}</div></div>${q.placeholder?'':actBtns(relDrop(q),q.id)}</div>${q.placeholder?'':actSure(relDrop(q),q.id)}`};
   if(!releasesOn(S.snap))return newReleaseCard();
   return obCards(drops)+(rs.length?card(rs.map(line).join(''),'','data-k="releases"'):'')+newReleaseCard();
 }
@@ -540,7 +540,7 @@ function statusHTML(){
   return `<div class="col">${ttydLine()}
     <div class="sec">Run<span class="ln"></span></div>${controlsCard()}
     <div class="sec">Usage<span class="ln"></span></div>${use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):emptyCard('No usage read yet.')}
-    <div class="sec">Landed lately<span class="ln"></span></div>${late.length?card(late.map(l=>`<div class="lrow" data-k="late:${esc(l.at+l.text)}"><span>${esc(l.text)}</span><span class="small">${esc(agoWords(l.at))}</span></div>`).join(''),'','data-k="late"'):emptyCard('Nothing has landed yet.')}
+    <div class="sec">Landed lately<span class="ln"></span></div>${late.length?card(late.map(l=>`<div class="lrow" data-k="late:${esc(l.at+l.text)}"><span>${l.id?taskChip(l.id)+' ':''}${esc(landedText(l))}</span><span class="small">${esc(agoWords(l.at))}</span></div>`).join(''),'','data-k="late"'):emptyCard('Nothing has landed yet.')}
     ${releasesOn(S.snap)?'<div class="sec">Release<span class="ln"></span></div>':''}${relCard()}
     <div class="sec">Run log<span class="ln"></span></div><div class="chips" style="justify-content:flex-start"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="yesterday">${I.clock}Since yesterday</button></div>
     ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev" data-k="log:${esc(l)}"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):emptyCard('Nothing in the run log yet.')}</div>`;

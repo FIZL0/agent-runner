@@ -31,6 +31,7 @@ name its own size).
 | `--line --line2` | a quiet edge, a control's edge |
 | `--accent --accent2 --onaccent` | the one thing to press, its pressed shade, text on it |
 | `--ok --warn --bad --onbad` | landed or running, needs you or paused, failed or destructive |
+| `--kred --kblue --kpurple --kteal --kgreen --kgold --kindigo --kgray` | a task kind's colour in its chip (Kind chip), light and dark; never a state |
 | `--scrim --shadow --lift` | behind a sheet, under a floating thing, under the message box |
 | `--feed` | the ground behind a session: dark; the page's `--bg` for a session with the run's theme; white when the person's agent theme is light (see The session) |
 | `--fs-xs --fs-s --fs-m --fs-n --fs-b --fs-l --fs-xl` | 11 hint, 12 badge, 13 second text, 14 button, 15 body, 17 card title, 30 greeting |
@@ -49,18 +50,30 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 
 - **Button** (`.btn`): an action in words, a verb first. `.pri` the likely answer, `.acc` the one main action,
   `.bad` the Yes of a destructive confirm. At most one `.pri` or `.acc` in a card. An icon button (`.icon`, `.tool`)
-  has an `aria-label` and a `title`.
+  has an `aria-label` and a `title`; with no letter or digit its name shows as a Hint (below).
+- **Hint** (`.hint`, `iconWords()`, `hintSpot()`, page/188-shared.js): every control with only an icon or a sign (no
+  letter or digit in it) shows its `aria-label`, else its `title`, in one bubble, over it or under it, while a mouse
+  hovers it (after 400 ms; the native title tooltip is held back meanwhile) or a finger or pen holds it (500 ms; it
+  stays 1.2 s after the release). A hold that showed it presses nothing; moving over 9px cancels it; a tap is as
+  before. The mic in "Hold to talk" keeps its own hold and shows none. It is automatic: a new icon-only control needs
+  only an `aria-label` (tests/test_web_shared.py checks).
+- **Kind chip** (`.kind`, `kindChip()`, `taskChip()`): a task's id as a chip with its kind's word in the kind's colour
+  (`--kred` and the rest; a project's own kind is gray). It stands on the run page in Plan rows (before the title),
+  slot rows, the Needs you card and sheet (on the label's line), Landed lately, History rows and Concept cards. A
+  release (V) is the one filled chip. The colour says the kind only, never the state: running, landed and stuck keep
+  their own dot and words. A tool or pitch item has no task, so its plain id stays. In the terminal UI a queue row's
+  id and word are in the kind's colour instead (a release filled); a panel under 36 columns wide has no word.
 - **Card** (`.card`, `card()`): one thing. `.tap` opens something; `.need` waits on the person. Title, one line of
   second text, then `.btns`.
 - **Needs you item** (`.asktap`, `needTap()`): one button, not a card of buttons. What is wanted and where in everyday
-  words (`.asklab`), what is asked (`needHead()`, `.q`: a DECIDE's question, any other item's summary), its task's
-  title small under it (`needTitle()`, left out when it says the same), a DECIDE's background (`.askdo`), then Press for
-  details, the steps count, the id and the age. Nothing of it is cut: no ellipsis and no line clamp, on the card or in
+  words (`.asklab`), with its task's kind chip on that line (Kind chip), what is asked (`needHead()`, `.q`: a DECIDE's
+  question, any other item's summary), its task's title small under it (`needTitle()`, left out when it says the
+  same), a DECIDE's background (`.askdo`), then Press for details, the steps count and the age. Nothing of it is cut: no ellipsis and no line clamp, on the card or in
   the sheet. Its answer buttons sit below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
   sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way. A
   device's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: what is asked, its task's
-  title small under it as on the card, label, age, id; Why (a BLOCKED item's, left out when the heading says it); where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
+  title small under it as on the card, label (with its kind chip, as on the card), age; Why (a BLOCKED item's, left out when the heading says it); where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
   only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or
   Esc goes back); the
   task text folded. An item with inputs draws its steps with Open (a step's link) and the command as code, with
@@ -72,7 +85,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Question card** (`.qcard`, `questionCard()`, `questionHTML()`): in a chat whose last answer asks a question with options (/live's `ask`), it stands in the dock over the chips, and the message box stays under it. The question in `.q`, then one full-width button of `--tap` height per option, the recommended first, marked "(recommended)" and `.pri`; a tall card scrolls inside itself. A tap turns the card into one row, Sending "the option" with Undo (`.qheld`): nothing is sent for 5 s (`QUESTION_HOLD`), and Undo brings the card back. Then the answer goes through `outbox()` as the person's message, queued while the session works and never forced. A press within 500 ms of the swap does nothing (`QUESTION_AGAIN`), so a double tap neither undoes nor picks. A typed message takes the card away at once. A question that goes, or is answered in words, during the hold takes the held answer along, unsent, with a toast; leaving the chat does not cancel the hold, a reload does. The card is gone once answered, and back if its message is discarded in the outbox. Motion: the card fades in and rises 14px on `--dur`, and the frame glides with the dock (`feedGlide()`), except when the chat was just opened; `questionMove()` does both.
 - **Chat about this** (`.qchat`, `.qabout`, `questionChat()`, `questionMarkHTML()`, `questionGo()`): the card's last button, full width and quiet (`--muted`, no edge), so it is not taken for an option. A tap puts the mark in the card's place: one row, "Chat about this, not your answer", the whole question (a long one scrolls inside the mark), and a ✕ of `--tap` size, "Back to the question", which brings the card back and keeps the typed words; the message box gets the focus in the tap itself (phone keyboard). The mark belongs to its chat and lasts over a reload, as the draft does. The words go through `outbox()` as an ordinary message led by `About your question “…” (not my answer): `, never as the answer; a slash command goes as it is and the mark stays. After the send the card is back at once, and stays (`QN.kept`, in memory: a reload drops it) though /live's ask is gone, until it is answered (an option, or a message typed without the mark), or another question is asked. A failed message taken back into the box has its mark again (`obEditBack`). A question answered elsewhere while marked does not come back. Motion: as the card (`questionMove()`). A second press within `QUESTION_AGAIN` does nothing.
 - **Row** (`.row`, `.crow`, `.prow`, `.srow`, its folding head `.fold`): one line when folded, with an ellipsis. A row that holds more folds
-  open on tap in place (`aria-expanded`), and its chevron turns. A setting's row (`.srow`) shows its name, its description and its control; it opens to show the code name and More… (a sheet with the other home and Reset). A changed row says "Not saved yet" until the bar saves it. In Plan one row of a list is open at a time (`S.taskOpen[list]`); opening another closes it and the pressed row stays in view (`taskInView()`); a task is open in one list only, so its question is asked once; a release row is in the Queue's list, so opening one closes an open task there and the other way round. Chat is the last button of a task's actions. In Plan a task or release row's head `.fold` is a real button and the row's one focusable control (Enter opens it), and holds no other control: a tap on its words opens its details in place; buttons, a grip, a menu button or icons stand beside it, never in it, so pressing them opens nothing.
+  open on tap in place (`aria-expanded`), and its chevron turns. A setting's row (`.srow`) shows its name, its description and its control; it opens to show the code name and More… (a sheet with the other home and Reset). A changed row says "Not saved yet" until the bar saves it. In Plan one row of a list is open at a time (`S.taskOpen[list]`); opening another closes it and the pressed row stays in view (`taskInView()`); a task is open in one list only, so its question is asked once; a release row is in the Queue's list, so opening one closes an open task there and the other way round. Chat is the last button of a task's actions. In Plan a task or release row's head `.fold` (its kind chip first, then the title) is a real button and the row's one focusable control (Enter opens it), and holds no other control: a tap on its words opens its details in place; buttons, a grip, a menu button or icons stand beside it, never in it, so pressing them opens nothing.
 - **Plan search** (`.planq`): sticks to the top of the view, outside `.col` because a sticky grid item stays in its own row; on `--bg`, and nothing else sticks there.
 - **History search** (`.planq`, Find in history): the same sticky field as Plan search, its rows `.srow` with `.fold` heads in one card each for Landed and Releases; one row open per list, and a Landed or Releases row lists its options in this order: What changed (`.pri`), Report a problem, Chat last.
 - **Settings bar** (`.setbar`, `setBarDraw()`): a row of its own under the Settings view, like the walkthrough, covering nothing. It says "N changes not saved" or "N changes saved", with Undo and one `.acc` (Save), and a close x after a save. No toast goes over it on a clean save, and it stays above the keyboard.
@@ -155,7 +168,7 @@ saved secret is shown only as `set, changed <date>`.
 
 - Plain words, a verb first on a button, sentence case, no exclamation marks, no dash between clauses.
 - The glossary's term, and the same one everywhere: Needs you, slot, task, landed, concept, chat.
-- A task is named by its title. Its id may follow, small.
+- A task is named by its title. Its id is the kind chip (Kind chip), not a small id after the title.
 - Say what happens, in the person's terms: "Stop (running tasks finish)".
 - Numbers with their unit: `6 min`, `2 of 3 slots`, `week 62%`.
 

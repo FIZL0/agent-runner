@@ -1,0 +1,10 @@
+/* F195b: a task's kind: its chip (kindChip), one colour and word per kind; a release's is the only filled one */
+.kind{--kc:var(--kgray);display:inline-block;flex:none;font:600 12px/1 var(--mono);color:var(--kc);background:color-mix(in srgb,var(--kc) 13%,transparent);border-radius:var(--r-s);padding:5px 7px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kind i{font:500 11px/1 var(--sans)}
+.k-red{--kc:var(--kred)} .k-blue{--kc:var(--kblue)} .k-purple{--kc:var(--kpurple)} .k-teal{--kc:var(--kteal)} .k-green{--kc:var(--kgreen)} .k-gold{--kc:var(--kgold)} .k-indigo{--kc:var(--kindigo)} .k-gray{--kc:var(--kgray)}
+.kind.k-purple{background:var(--kpurple);color:var(--surface)}
+.askkind{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);min-width:0}
+/* F195b: what an icon-only control does, while it is hovered or held (188-shared.js) */
+.hint{position:fixed;z-index:40;max-width:min(280px,90vw);background:var(--fg);color:var(--bg);border-radius:var(--r-s);padding:var(--s1) var(--s2);font-size:var(--fs-s);pointer-events:none;overflow-wrap:anywhere}
+.hint:not([hidden]){animation:fadein var(--dur-fast) var(--ease)}
+:is(button,a)[aria-label]:is(:has(>svg),.x,.btn,.tool){-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}

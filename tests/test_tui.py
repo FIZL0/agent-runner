@@ -15,6 +15,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -23,6 +24,7 @@ from unittest import mock
 from _check import check, eq, git, report
 
 from agent_runner import state as S  # noqa: E402
+from agent_runner import theme as TH  # noqa: E402
 from agent_runner import tui as T  # noqa: E402
 from agent_runner import ui_model as U  # noqa: E402
 from agent_runner import walk as W  # noqa: E402
@@ -247,13 +249,24 @@ def test_session_tabs() -> None:
     check('❯ message c6' not in win.text(), 'F112: no message box for a control session', win.text())
 
 
+def test_kinds_f195b() -> None:
+    """F195b: a queue row has its kind's word and colour, the project's own kinds too; a narrow panel says the word on the selected row."""
+    row = {'id': 'M4', 'title': 'Look', 'state': 'ready'}
+    p = page(dict(SNAP, kinds=TH.kind_table({'M': 'research: find out', 'Z': 'board work'})))
+    eq(p.row_lines(3, row, 60, False)[0][0], ('M4   research ', 'yellow'), 'another letter, the same kind')
+    eq(p.row_lines(3, dict(row, id='Z1'), 60, False)[0][0], ('Z1   board    ', 'dim'), "the project's own: gray")
+    eq(p.row_lines(3, dict(row, id='T21'), 60, False)[0][0], ('T21  tests    ', 'green'), 'a default')
+    eq(p.row_lines(3, row, 26, False)[0][0], ('M4   ', 'yellow'), 'narrow: no word')
+    check('research · ready' in ''.join(t for l in p.row_lines(3, row, 26, True) for t, _ in l), 'but when it is selected')
+
+
 def test_queue() -> None:
     p = page()
     p.key('3')
     win = drawn(p, 32, 100)
     eq(p.tab()[1], ['direct edit', 'chat edit'], 'a task: direct edit, chat edit (no info tab)')
-    eq((colour_at(win, 'B2 '), colour_at(win, 'C3 '), colour_at(win, 'Q4 ')), ('red', 'blue', 'cyan'),
-       'kind-coloured ids: B red, C blue')
+    eq((colour_at(win, 'B2 '), colour_at(win, 'C3 '), colour_at(win, 'Q4 ')), ('red', 'dim', 'dim'),
+       "kind-coloured ids: B red, C gray, a kind of the project's own gray")
     y = win.at('B2 ')[0]
     check(win.lines()[y][:36].rstrip().endswith('critical │'), 'critical: a red tag at the right', win.lines()[y])
     eq(colour_at(win, 'critical'), 'red', 'in red')
@@ -2164,7 +2177,9 @@ def test_release_row_f131() -> None:
     eq((ids[:3], ids.count('V5'), ids.count('V6'), 'V4' in ids, 'released' in ids), ([q[0]['id'], 'V5', q[1]['id']], 1, 1, False, False),
        'each at its place, once; a landed one is past')
     v5, v6 = ids.index('V5'), ids.index('V6')
-    eq([''.join(s for s, _ in p.row_lines(3, items[i], 60, False)[0]) for i in (v5, v6)], [r['text'] for r in rows], "in the rows' words")
+    eq([[s for s, _ in p.row_lines(3, items[i], 60, False)[0]] for i in (v5, v6)],
+       [[f'{r["id"]}   release  ', ' ', r['text'][3:]] for r in rows], "in the rows' words, after the chip")
+    eq([p.row_lines(3, items[v5], w, False)[0][0] for w in (60, 26)], [('V5   release  ', 'kindv'), ('V5   ', 'kindv')], 'the one filled kind; no word with no room')
     check('F9 nine' in ''.join(s for l in p.row_lines(3, items[v6], 200, True) for s, _ in l), 'selected: every task')
     p.key('3')
     with mock.patch.object(U, 'RUN', [lambda argv: check(False, 'nothing moves', str(argv))]):
@@ -2291,7 +2306,7 @@ def test_manage_releases_f193() -> None:
         eq((ids.index('V5'), ids.count('V5')), (len(q) if has else 1, 1), said + 'where V5 is')
         p.cur[3] = ids.index('V5')
         text = drawn(p).text()
-        eq('V5 Release · next' in text, has, said + 'the row in its own words')
+        eq(re.search(r'V5 +(release +)?Release · next', text) is not None, has, said + 'the row in its own words')
         eq('Release: bump the version' in text, True, said + 'V5 shows')
         eq(('R', 'new release') in p.hint_keys(), has, said + 'the hint on V5')
         eq(p.tab()[1], ['direct edit', 'chat edit'], said + 'its tabs')
@@ -2368,7 +2383,7 @@ def test_walk_f194c() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_walk_f194c, test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_question_b223b, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_walk_f194c, test_manage_releases_f193, test_always_tmux_f141, test_rename_f129, test_release_row_f131, test_new_drop_release_f186, test_project_name_b153, test_need_detail_f162, test_need_question_b223b, test_need_give_f175b, test_need_give_secret_f175b, test_quick_ask_names_session_c32,test_decide_options_f181c, test_sheet_buttons_f181b, test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_kinds_f195b, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

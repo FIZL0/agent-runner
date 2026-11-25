@@ -76,3 +76,4 @@ function md(src){
   return h;
 }
 
+const taskChip=id=>kindChip(id,S.snap.kinds);  // F195b

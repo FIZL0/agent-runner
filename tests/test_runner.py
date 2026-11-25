@@ -1643,14 +1643,14 @@ def test_control(repo: Path):
     st = {'state': '3 slots', 'running': {'1': 'T3'}, 'since': {'1': 1000.0}, 'merging': ['T1'],
           'usage': {'five_hour': 40.0, 'seven_day': 10.4}}
     text = R.status_text(True, st, lines, {'T3': 'speed up the parser', 'F2': 'background run'}, 1000 + 12 * 60)
-    eq(text.splitlines(), ['run up: 3 slots', '  s1  speed up the parser [T3]  12 min',
-                           'merging: T1', 'lately:', '  21:02 landed: background run [F2]',
-                           '  21:03 stuck, not merged: B9 (x) [B9]',
+    eq(text.splitlines(), ['run up: 3 slots', '  s1  tests T3 speed up the parser  12 min',
+                           'merging: tests T1', 'lately:', '  21:02 landed: feature F2 background run',
+                           '  21:03 stuck, not merged: bug B9 (x)',
                            '  21:05 run idle: nothing left it may start', 'usage: session 40%, week 10%'],
-       'status reads well on a phone: titles first, ids in brackets at the end')
+       'F195b: status says each task as its kind, its id and its title')
     st['spend'] = {'1': [2_500_000, 7.5]}
     has(R.status_text(True, st, [], {'T3': 'speed up the parser'}, 1000 + 12 * 60),
-        r'^  s1  speed up the parser \[T3\]  12 min  2\.5M tok \$7\.50$', 'F103: status shows a task\'s spend')
+        r'^  s1  tests T3 speed up the parser  12 min  2\.5M tok \$7\.50$', 'F103: status shows a task\'s spend')
 
 
 def test_concepts_waiting(repo: Path):
@@ -2835,7 +2835,7 @@ def test_prompt_and_hooks(repo: Path):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 R.cmd_status(['-n', '0'])
-        check('run up: 1 slot' in out.getvalue() and re.search(r'^  s1  (.+ \[T3\]|T3)  0 min$', out.getvalue(), re.M),
+        check('run up: 1 slot' in out.getvalue() and re.search(r'^  s1  tests T3( .+)?  0 min$', out.getvalue(), re.M),
               '`status` shows the state and each slot\'s task and minutes', out.getvalue())
         run(repo, 'stop', '--force', '--shutdown')
         R.take_keys()
