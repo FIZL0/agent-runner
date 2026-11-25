@@ -94,8 +94,7 @@ def test_reopened_between(repo: Path) -> None:
     print('blocked and reopened between the two runs, its line the same: not in a row')
     empty_run(repo)
     P.block('R1', 'a wait', todo=repo / TODO, after=[])
-    git(repo, 'commit', '-qm', 'block', '--', TODO)
-    N.tick('main')
+    git(repo, 'commit', '-qm', 'block', '--', TODO)  # no tick while it is blocked: no run may be up
     P.unblock('R1', todo=repo / TODO)
     git(repo, 'commit', '-qm', 'reopen', '--', TODO)
     empty_run(repo)

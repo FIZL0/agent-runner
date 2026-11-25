@@ -15,7 +15,7 @@ import subprocess as sp
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import plan as P, plansync, plat
+from agent_runner import no_commits, plan as P, plansync, plat
 from agent_runner import state as S
 from agent_runner.state import commit_plan, git, log, MERGE, plan_rel
 from agent_runner.sched import open_tasks, plan_text
@@ -215,6 +215,7 @@ def clear_ask(tid: str, todo: str | Path | None = None) -> None:
     for c in _plans(todo):
         _clear_file(c, tid)
         _clear_sheet(c, tid)
+        no_commits.reopened(tid, c)  # B774
 
 
 def _clear_sheet(c, tid: str) -> None:

@@ -81,6 +81,21 @@ def forget(tid: str) -> None:
             _write(d)
 
 
+def reopened(tid: str, c) -> None:
+    """`tid` of project `c`'s plan was blocked or unblocked, maybe with no run up: forget it, as `forget` does. Takes
+    the project, since a plan command has no run's state."""
+    f = c.notes('no-commits.json')
+    with _LOCK:
+        try:
+            d = json.loads(f.read_text(encoding='utf-8'))
+            if isinstance(d, dict) and d.pop(tid, None) is not None:
+                tmp = f.with_suffix('.json-tmp')
+                tmp.write_text(json.dumps(d, indent=1), encoding='utf-8')
+                os.replace(tmp, f)
+        except (OSError, ValueError):
+            return
+
+
 def stuck(branch: str) -> dict[str, dict]:
     """The open tasks that LIMIT runs in a row ended with no commits, unchanged in the plan since: none may start."""
     d = {t: r for t, r in _read().items() if isinstance(r.get('runs'), int) and r['runs'] >= LIMIT}
@@ -133,7 +148,7 @@ def _block(tid: str, r: dict, branch: str) -> bool:
             return False  # the main checkout is behind the remote
         said = str(r.get('said') or '')
         P.block(tid, f'DECIDE: {tid} ended {r["runs"]} times in a row with no commits: change it, start it again or '
-                'drop it? ' + (f'Its last session said: "{said}"' if said else 'Its last session said nothing.'),
+                'drop it? ' + (f'Its last session said: "{said}"' if said else 'Its last session left no words.'),
                 todo=S.ROOT / rel, after=[])
         if not commit_plan(f'Plan: block {tid}, {r["runs"]} runs in a row with no commits', rel):
             if not S.C.plan_external:
