@@ -11,7 +11,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import gitops, plan as P, state as S
+from agent_runner import gitops, plan as P, pr, state as S
 
 CHOSEN: dict[str, dict] = {}  # task -> the merge `sched.choose` picked for it to start on: {'on', 'tids'}
 POLL = 5  # seconds between looks whether the merge a finished task started on has landed
@@ -23,6 +23,12 @@ yet. That work is not yours: read it, build on it, and leave it as it is. Your o
 wherever this brief says `git diff {branch}...HEAD`. Your branch lands after it; if that merge is refused, the runner \
 moves your commits onto {branch} without it, so commit only your own work and never merge or rebase. If the gate fails \
 only on what that merge brought, run `done` with `--blocked "<the failing test>: waits on {tids}" --after {tids}`."""
+
+TOLD_PR = """
+
+This branch starts on {tids} ({on}): finished parts of the same task, which share its pull request and are not on \
+{branch} yet. That work is not yours: read it, build on it, and leave it as it is. Your own diff is `git diff \
+{on}...HEAD`, wherever this brief says `git diff {branch}...HEAD`. Commit only your own work and never merge or rebase."""
 
 WARNED = """
 
@@ -94,12 +100,15 @@ def has_own(tid: str, branch: str) -> bool:
 
 def begin(tid: str, branch: str) -> str:
     """The commit a fresh start of `tid` checks out: the merge chosen for it, recorded, else `branch`."""
-    c = CHOSEN.pop(tid, None)
+    c = CHOSEN.pop(tid, None) or pr.start_on(tid, branch)  # F419: the parts its pull request has so far
     if _file(tid).exists():  # an earlier attempt's, which may be on wip/<ID>: `told` warns of it
         os.replace(_file(tid), _old(tid))
     if not c or _has(branch, c['on']):
         return branch
     _file(tid).write_text(json.dumps(c), encoding='utf-8')
+    if S.C.pr:
+        S.log(f'{tid}: starts on {", ".join(c["tids"])} ({c["on"][:9]}), whose pull request it shares')
+        return c['on']
     S.log(f'{tid}: starts on the merge of {", ".join(c["tids"])} ({c["on"][:9]}), which has not landed; it lands '
           f'after {"it" if len(c["tids"]) == 1 else "them"}')
     return c['on']
@@ -108,7 +117,7 @@ def begin(tid: str, branch: str) -> str:
 def told(tid: str, branch: str) -> str:
     """What a task started on a merge is told beside its brief, or ''."""
     s = stacked(tid, branch)
-    out = TOLD.format(tids=','.join(s['tids']), on=s['on'][:12], branch=branch) if s else ''
+    out = (TOLD_PR if S.C.pr else TOLD).format(tids=','.join(s['tids']), on=s['on'][:12], branch=branch) if s else ''
     try:
         o = json.loads(_old(tid).read_text(encoding='utf-8'))
         on, tids = o['on'], ','.join(o['tids'])
@@ -130,6 +139,8 @@ def settle(tid: str, branch: str, halted=lambda: False) -> str | bool | None:
     """Before finished `tid` merges: wait until the merge it was started on landed or every task in it is over, then
     replay its commits on `branch` if the merge is not there. None when it may merge (or has nothing to merge, or
     `halted`), False when the run stops first and task/<tid> waits for the next one, else why it cannot merge."""
+    if S.C.pr:  # F419: it was started on its own pull request's branch, and goes back into it
+        return None
     said = False
     while (s := stacked(tid, branch)) and has_own(tid, branch) and not halted():
         if not (wait := [t for t in s['tids'] if pending(t)]):

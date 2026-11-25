@@ -119,6 +119,13 @@ APPROVE = ('When your session ends, the runner merges your branch and tests the 
            '`git push` in this repository. Commits you make in other repositories (a dependency or sibling repo the '
            'task needed) are pushed as usual; never publish beyond git (releases, uploads, stores) unless the task '
            'says to.')
+PR_MODE = ('When your session ends, the runner tests your branch with main merged in, pushes it and opens a pull request '
+           '(`[git] pr`). A person merges that: the runner never merges and never pushes main, and neither do you, with '
+           '`git` or `gh`, in this repository. Commits you make in other repositories (a dependency or sibling repo the '
+           'task needed) are pushed as usual; never publish beyond git (releases, uploads, stores) unless the task says to.')
+PR_PROMPT = ('Before `done`, write `{path}` for the person who reviews the pull request, as JSON: "what": what it changes; '
+             '"why": why; "try": how to try it; "risk": what it might break. `done` refuses without all four, or without '
+             'the `review: …` line that ends its message.')
 PITCH_PROMPT = ('Before `done`, write `{path}` for the person who approves the push: they use the product, and do not '
                 'review code. JSON, plain words, no code talk; `backticks` show as code. "what": what it changes for '
                 'them; "why": why they would want it; "try": how to try it now (the page or command to open); "risk": '
@@ -169,7 +176,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
                 f'nobody will find.\n' if journal else '')
 
     def publish(t: str) -> str:
-        return (NO_REMOTE if C.push_remote and missing_remote(C.root) else APPROVE if C.approve else PUBLISH if C.push_remote
+        return (NO_REMOTE if C.push_remote and missing_remote(C.root) else PR_MODE if C.pr else APPROVE if C.approve else PUBLISH if C.push_remote
                 else NO_PUSH).format(runner=C.command, tid=t, remote=C.push_remote)
 
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
@@ -214,6 +221,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         policies.append(f'{OWN_FILES} {SPLIT_FILES}')
     if pitch.on(C):  # F98
         policies.append(PITCH_PROMPT.format(path=C.notes('pitches', f'{tid}.json')))
+    if C.pr:  # F419
+        policies.append(PR_PROMPT.format(path=C.notes('pitches', f'{tid}.json')))
     if P.concept(tid):
         prompt = f'{prompt.rstrip()}\n\n' + CONCEPT_PROMPT.format(runner=C.command, tid=tid)
     elif research_task(tid):  # F36

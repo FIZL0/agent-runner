@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import inbox_lock, no_push, plan as P, plat, session_theme, shared_tools, stack
+from agent_runner import inbox_lock, no_push, plan as P, plat, pr, session_theme, shared_tools, stack
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -109,7 +109,7 @@ def unmerged(branch: str, idle: list[int]) -> list[str]:
     # blocked too: a session that ended its task blocked (a concept round handing over) still has its journal
     # to merge, and its claim would otherwise be refreshed for as long as the branch sits
     open_ids = open_tasks(branch) | blocked_tasks(branch)
-    return [t for t in ahead(branch) if f'task/{t}' not in held and t in open_ids]
+    return [t for t in ahead(branch) if f'task/{t}' not in held and t in open_ids and not pr.holds(t)]  # F419
 
 
 def single_run() -> object:

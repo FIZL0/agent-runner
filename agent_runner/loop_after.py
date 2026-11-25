@@ -6,7 +6,7 @@ from __future__ import annotations
 import threading
 import time
 
-from agent_runner import exit_hook, no_commits, stack, undo
+from agent_runner import exit_hook, no_commits, pr, stack, undo
 from agent_runner.state import log, queued, stopping
 from agent_runner.autorelease import auto_release
 from agent_runner.sched import keep_claims
@@ -43,6 +43,7 @@ def after(run) -> None:
     if not stopping():
         sweep_unmerged(branch, run.merging)
     undo.tick(branch, run.merging)  # F98
+    pr.tick(branch)  # F419
     keep_claims(run.running, branch)
     no_commits.tick(branch)  # B774
     block_asks(branch, run.tried)  # F102: an ask whose block could not be committed when it was parked
