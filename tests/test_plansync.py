@@ -56,7 +56,9 @@ def test_all(tmp: Path):
     check(ca.plan_external and ca.plan_repo, 'a [plan] repo makes the plan external')
 
     print('plan: reads clone, edits push')
-    has(run(a, 'plan').stdout, r'T1', '`plan` clones the plan repo and lists it')
+    r = run(a, 'plan')
+    has(r.stdout, r'T1', '`plan` clones the plan repo and lists it')
+    check(r.returncode == 0 and not r.stderr.count('Traceback'), 'and exits 0', r.stderr)
     head = git(a, 'rev-parse', 'HEAD')
     r = run(a, 'plan', 'add', 'F', 'from A')
     has(r.stdout, r'added F1', 'add works in the clone')
