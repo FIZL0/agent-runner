@@ -2618,6 +2618,8 @@ def merge3(ours: list[str], base: list[str], theirs: list[str], own: str | None 
             return None
     for k in [k for k in io if k in it and k not in ib and noted(io[k][1], it[k][1])]:  # B33: theirs = ours + notes
         io[k] = (io[k][0], it[k][1])  # one task, which theirs noted (`join.fold_doubles`): ours' place, theirs' words
+    for k in [k for k in io if k in it and k not in ib and noted(it[k][1], io[k][1])]:  # B829: ours = theirs + notes
+        it[k] = (it[k][0], io[k][1])
     for k in [k for k in io if k in it and k not in ib and io[k][1] != it[k][1]]:  # one id, two new tasks
         it = {(k[0], k[1], ('theirs', k[2])) if x == k else x: v for x, v in it.items()}  # keep both
     mo, mt = _moves(B, O), _moves(B, T)
@@ -2760,7 +2762,7 @@ def _keeps_merges_local(c) -> str:
 
 def _push(root: Path) -> str:
     """B73: publish a hand edit's commit on the shared branch to `[git] push`, fast-forward only. Rejected:
-    one rebase onto the remote (not while a run is up here: its merges land in this checkout, and its next
+    one rebase onto the remote, or a merge of it when ids clashed and were renumbered (not while a run is up here: its merges land in this checkout, and its next
     merge publishes main), then push again. Returns why it could not, or '' (pushed, or nothing to push)."""
     from agent_runner import gitops
     g, c = partial(git, cwd=root), cfg(root)
@@ -2786,7 +2788,18 @@ def _push(root: Path) -> str:
         return f'offline? ({(f.stderr.strip().splitlines() or [why])[-1][:200]})'
     if g('status', '--porcelain', '--untracked-files=no').stdout.strip():
         return f'{remote}/{branch} has moved, and uncommitted changes here stop a rebase onto it'
-    if g('rebase', '-q', 'FETCH_HEAD').returncode:
+    if not c.plan_external:
+        install_driver(root, [p.relative_to(c.root).as_posix() for p in (c.todo, c.done)])
+    up, was = f'refs/remotes/{remote}/{branch}', g('rev-parse', 'HEAD').stdout.strip()
+    if g('rev-parse', '-q', '--verify', up).stdout != g('rev-parse', 'FETCH_HEAD').stdout:
+        up = 'FETCH_HEAD'
+    from agent_runner import join  # it reads this module
+    if join.renumber_plan(c, root, up):  # B829: merged, as a rebase would replay the edits made under the old ids
+        if g('merge', '-q', '--no-edit', up).returncode:
+            g('merge', '--abort')
+            g('reset', '-q', '--keep', was)  # the renumbering goes with the merge it was for
+            return f'{branch} and {remote}/{branch} have diverged and do not merge cleanly; pull and push by hand'
+    elif g('rebase', '-q', 'FETCH_HEAD').returncode:
         g('rebase', '--abort')
         return f'{branch} and {remote}/{branch} have diverged and do not rebase cleanly; pull and push by hand'
     if (r := net('push', '-q', remote, branch)).returncode:
