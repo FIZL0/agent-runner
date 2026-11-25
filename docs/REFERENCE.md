@@ -861,7 +861,7 @@ still code. Tasks that are not research are unchanged.
   - `test:` the tests that prove it. `journal:` its journal folder.
   - `plan add P "text" --files a,b --after X --test name` writes them; `--model M` writes `model:`; `--needs T` writes `needs:`.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what
-  lets the run reopen the task by itself.
+  lets the run reopen the task by itself. `BLOCKED: (until CHECK, …) why` is what `--until` writes; see ### Until checks.
 - `plan/tasks/<ID>.md`, if it exists, is the task's long form. The brief uses it instead of the one-line text.
   Long forms sit in `tasks/` so the plan's top level is TODO.md, DONE.md and the overviews a person reads
   (REFERENCE.md, HUMAN.md, batch briefs). A long form left at `plan/<ID>.md` still counts; move it with
@@ -1246,6 +1246,18 @@ label = "the test VM"       # what the screens say; default: the name
 Each answers passed, not yet or cannot run, with a few words saying why. An unknown kind or name is refused with what
 there is, and a bad `[run.checks]` is named when the config loads.
 
+**Blocking on one.** `done ID "msg" --blocked WHY --until CHECK[,CHECK]` and `plan block ID --until CHECK[,CHECK] WHY` block a task on until checks. Several are comma-separated, and all must pass. It is written `BLOCKED: (until version:0.66.0, login:codex) why`, and it is kept through the plan merge and sync. A bad check is refused before anything is blocked (`done` refuses it before its gate runs). `--until` with `--after`, and `--until` without `--blocked`, are refused too.
+
+Such a task is not under Needs you, and no slot takes it. Plan, `plan`, `status` and the terminal UI say `waits for version 0.66.0`. `plan unblock` frees it at any time.
+
+If the block holds a CONFIRM or DECIDE, the question is kept in the block, and the task comes back under Needs you when the checks pass. A `BLOCKED:` label is dropped, and it reopens for an agent.
+
+Neither it nor a task that waits on it holds an `after: all` or `all above` task, since a release must not wait for a task that waits for that release's version. A task that names it in `after:` does wait.
+
+A check that `[run.checks]` names only on the branch, or only in the main checkout, is taken.
+
+`plan.until_passed` does the reopening, for whoever runs the checks. Nothing reopens the task by itself yet, except `plan unblock`.
+
 ### Waiting for memory
 
 Claude Code stops a background command when memory is low, and tells the agent not to start it again unless
@@ -1600,7 +1612,7 @@ agent-runner pitch [approve|no PITCH]  landed work that waits for a yes to be pu
 agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck since the last look (or WHEN:
                                        2h, yesterday), as a digest; --all every event; --follow each new one live
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
-agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--artifact URL] [--no-test]
+agent-runner done ID "MSG" [--blocked WHY [--after X,Y | --until CHECK,…]] [--artifact URL] [--no-test]
                                        --artifact: a concept's page (a K task without it takes the URL that
                                        `publish-page` recorded; --page FILE names its copy)
 agent-runner review [ID] [--base BRANCH]
