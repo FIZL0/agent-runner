@@ -128,10 +128,10 @@ function talkBack(){
   if(DK.rec&&DK.key==='talk'){DK.put=true;if(MIC.rec===DK.rec)DK.rec.stop();else{MIC.next=null;DK.rec=null}}  // its stop is in the box
   return true;
 }
-/* B836: Talk left for another view or chat: the reading stops, and what waited to be read keeps its play button. From
+/* B836: Talk left for another view or chat: the reading stops, and what waited to be read, or is still being replied, keeps its play button. From
    render(), so it draws nothing; no speechSynthesis call when nothing is read (B132) */
 function talkAway(){
-  TK.later=[];
+  TK.later=[];if(TK.wait)TK.wait.away=true;
   if(!talkReads())return;
   TK.playing='';TK.turn=(TK.turn||0)+1;if(TK.state==='speaking')TK.state=talkRest();
   shush();
@@ -292,10 +292,10 @@ function talkHear(n){
   const w=TK.wait;if(!w||talkWaitName()!==n)return;
   if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking'){TK.state='';toast('No spoken reply came in five minutes: its chat shows where it is.',true);render(true)}return}
   const said=talkReply(feedOf(n),w.since,w.said);
-  if(!said||said!==w.last){w.last=said;w.away=!chatShown();return}
+  if(!said||said!==w.last){w.last=said;return}
   TK.wait=null;
   if(TK.state==='thinking')TK.state='';
-  if(TS.read&&chatShown()&&!w.away){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off; B836: or its last words landed with Talk not shown
+  if(TS.read&&chatShown()&&!w.away){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off; B836: or Talk was left since the send
   render(true);
 }
 function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
