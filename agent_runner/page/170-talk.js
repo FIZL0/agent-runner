@@ -284,10 +284,11 @@ function talkHear(n){
   const w=TK.wait;if(!w||talkWaitName()!==n)return;
   if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking'){TK.state='';toast('No spoken reply came in five minutes: its chat shows where it is.',true);render(true)}return}
   const said=talkReply(feedOf(n),w.since,w.said);
+  if(said&&!chatShown())w.away=true;  // B836: it landed while Talk was left, so it is not read, then or on the way back
   if(!said||said!==w.last){w.last=said;return}
   TK.wait=null;
   if(TK.state==='thinking')TK.state='';
-  if(TS.read){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off
+  if(TS.read&&!w.away){TK.later.push(said);talkNext()}  // F124: else read replies aloud is off
   render(true);
 }
 function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
@@ -330,6 +331,15 @@ function speak(text,key){
 }
 /* the reading stops: by the person (replies still waiting keep their play buttons), or, keep, by itself: the next is read */
 function hush(keep){TK.playing='';if(!keep)TK.later=[];if(TK.state==='speaking')TK.state=talkRest();TK.turn=(TK.turn||0)+1;shush();render(true);if(keep)talkNext()}
+/* B836: Talk was left (render() says so, whatever the way out): what is read stops and what waits to be read is
+   dropped; their play buttons stay. No render() here, as one is under way */
+function talkAway(){
+  TK.later=[];
+  if(!talkReads())return;
+  if(TK.trail)micLog('sound: Talk was left');
+  TK.playing='';if(TK.state==='speaking')TK.state=talkRest();TK.turn=(TK.turn||0)+1;shush();
+}
+addEventListener('pagehide',talkAway);  // B836: another project's page, or Home's: the browser's voice can outlive this one
 /* a Talk reply's play button: reads that reply, or stops it */
 function playReply(k){
   if(TK.playing===k)return hush();
