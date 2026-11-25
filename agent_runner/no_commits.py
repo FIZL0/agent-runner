@@ -68,7 +68,7 @@ def ended(tid: str, said: str, branch: str) -> None:
         old = d.pop(tid, None)
         if mark:
             runs = old['runs'] + 1 if old and old.get('plan') == mark and isinstance(old.get('runs'), int) else 1
-            d[tid] = {'runs': runs, 'plan': mark, 'said': said}
+            d[tid] = {'runs': runs, 'plan': mark, 'said': plain(said)}
         if old or mark:
             _write(d)
 
@@ -131,7 +131,7 @@ def _block(tid: str, r: dict, branch: str) -> bool:
             return False
         if tid not in P.open_ids(P.lines(S.ROOT / rel)):
             return False  # the main checkout is behind the remote
-        said = plain(str(r.get('said') or ''))
+        said = str(r.get('said') or '')
         P.block(tid, f'DECIDE: {tid} ended {r["runs"]} times in a row with no commits: change it, start it again or '
                 'drop it? ' + (f'Its last session said: "{said}"' if said else 'Its last session said nothing.'),
                 todo=S.ROOT / rel, after=[])
