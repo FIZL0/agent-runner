@@ -10,7 +10,6 @@ import os
 import re
 import shutil
 import signal
-import subprocess as sp
 import sys
 import threading
 import time
@@ -19,7 +18,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, claude_use, fallback as FB, settings_live, ci, file_split, gitops, no_commits, no_push, plan as P, plansync, plat, shared_tools, stack, undo
+from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, settings_live, ci, file_split, gitops, no_commits, no_push, plan as P, plansync, plat, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -33,7 +32,7 @@ from agent_runner.sched import agent_held, blocked_by_edits, forgive_park, keep_
 from agent_runner.tools import take_end
 from agent_runner.login import retry_held, unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, no_slot, park_asked, unblocked_asks
-from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
+from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged, budget_mark, budgets, SPENT)
 from agent_runner.teardown import close_page, end_own, PAGE, RUN_LOCK, wait_last_run
@@ -310,7 +309,8 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
     away (`discard_task`) and its slot freed at once; a change starts it again in that slot from the new
     text. A finished branch waiting to merge is deleted unmerged (by `_finish`, which checks first). B110: a
     take back ('take') stops, discards and frees the same way but is no drop: the task stays in the plan, taken,
-    so its wip branches stay and no EV_DROPPED event is recorded."""
+    so its wip branches stay and no EV_DROPPED event is recorded. B801: `[run] on_exit` runs as at any session's
+    end; a short wait lets it end first, and a slower one holds the slot: a changed task then starts later."""
     for tid, how in halt_requests().items():
         verb = {'drop': 'dropped', 'take': 'took'}.get(how, 'changed')
         n = next((m for m, t in running.items() if t[0] == tid), None)
@@ -319,13 +319,7 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         if n is not None:
             pid, sid, _ = procs.pop(n)
             running.pop(n)
-            plat.terminate(pid)
-            end = time.monotonic() + 10
-            while plat.alive(pid) and time.monotonic() < end:
-                time.sleep(0.2)
-            if plat.alive(pid):  # it ignored SIGTERM: its tree gets one, then whatever is left is ended below
-                for p in [*plat.descendants(pid), pid]:
-                    plat.terminate(p)
+            exit_hook.end_session(pid)
             stopped = f'stopped s{n}'
         elif q is not None:
             n, sid = q, queued()[q][1]
@@ -337,9 +331,14 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
             stopped = DISCARDED.pop(tid)
         else:
             stopped = 'no slot was on it any more'
-        did = discard_task(tid, n, sid) if n is not None else []
         if n is not None:
             end_orphans()
+            if n not in procs:  # B801: for a queued resume too: `s!` or a run that died ended its session without it
+                if n not in exit_hook.busy():  # else the one its own exit started
+                    exit_hook.start(n)
+                exit_hook.wait(n)
+        did = discard_task(tid, n, sid) if n is not None else []
+        if n is not None:
             free_at[n] = dt.datetime.now()
         msg = (f'{verb} {tid}' + (' back to a take' if how == 'take' else '') + f'; {stopped}'
                + (f', removed its work ({", ".join(did)})' if did else ''))
@@ -352,7 +351,7 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         else:
             tried.discard(tid)  # the new text is a new attempt
             task = next((t for t in tasks(branch) if t[0] == tid), None)
-            if n is not None and task and n <= slots and not agent_held() and (p := start(n, task, branch, model, idle, slots)):
+            if n is not None and task and n <= slots and n not in exit_hook.busy() and not agent_held() and (p := start(n, task, branch, model, idle, slots)):
                 procs[n], running[n] = p, task
                 tried.add(tid)
                 msg += f'; restarted it in s{n} with the new text'
@@ -1249,10 +1248,7 @@ class Run:
             end_orphans()
             if backend().report_exit and (said := last_words(sid)):
                 log(f'slot {n}: {task[0]} {r["backend"]}: {said[:500]}')
-            if r['on_exit']:
-                sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
-                         env={**os.environ, **env_vars(slot_env(n))},
-                         stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            exit_hook.start(n)  # B801: the slot is held until it has ended
             end = take_end(n, C)  # F102: the agent's `run finish` or `run ask`
             if end.get('how') == 'finish':
                 log(f'slot {n}: {task[0]} finished: {end.get("text", "")[:300]}', EV_FINISHED, task[0],
@@ -1306,6 +1302,8 @@ class Run:
         """True when the slot is not this run's to fill this tick: a session no run knew or tracks sits in
         it, or it is an adopted slot past the run's count."""
         procs, foreign = self.procs, self.foreign
+        if n not in procs and n in exit_hook.busy():
+            return True  # B801: what it frees may be the next task's
         if n not in procs and n in foreign:
             if plat.alive(foreign[n]):
                 return True  # see queue_cut_off: never a second agent in its worktree
@@ -1324,7 +1322,7 @@ class Run:
         if n > self.slots:  # an adopted slot past this run's count: watched to the end, never refilled
             if n not in procs and n not in self.waiting and n not in foreign:
                 self.free_at.pop(n)
-                drop_extra_slots(self.slots, set(procs) | set(queued()) | set(foreign))
+                drop_extra_slots(self.slots, set(procs) | set(queued()) | set(foreign) | exit_hook.busy())
             return True
         return False
 
@@ -1422,7 +1420,7 @@ class Run:
         if not stopping():
             auto_upgrade(bool(self.merging))
             watch_code(bool(self.merging))  # F149
-        if not self.merging and not stopping():
+        if not self.merging and not stopping() and not exit_hook.busy():  # B801: a restart forgets which slot it holds
             restart_if_upgraded()
         watch_ci(branch)
         watch_issues(branch)
@@ -1447,7 +1445,8 @@ class Run:
         """Stop the run once a stop has drained it; end `once`, say idle, or power off when nothing may start."""
         procs, waiting, merging, tried = self.procs, self.waiting, self.merging, self.tried
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
-        if stopping() and not procs and (not waiting or forced()) and not merging:
+        if stopping() and not procs and (not waiting or forced()) and not merging and \
+                (forced() or not exit_hook.busy()):  # B801
             how = stopped_by()
             end_own(rc_sweep_stop, log, keep_page=not POWER)  # B144, F402b3a: its own are gone, or its page handed over, before it says so
             clear_stop()
@@ -1455,7 +1454,7 @@ class Run:
             if POWER:
                 power_now()
             return 0
-        quiet = not procs and not waiting and not merging and all(dt.datetime.now() >= t for t in self.free_at.values())
+        quiet = not procs and not waiting and not merging and not exit_hook.busy() and all(dt.datetime.now() >= t for t in self.free_at.values())
         # Idle, never exit: tasks a human or a session commits later start without anyone restarting the
         # run. Logged once, and only with nothing running or merging, so no slot or finished branch is left
         # behind. A script waiting on the run watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.

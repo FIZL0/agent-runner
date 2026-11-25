@@ -2161,7 +2161,7 @@ server on a port. Give each slot its own copy and let the runner tell it which:
 - `slot_env` hands every slot its number, so the project's tools pick their copy: a port, a profile
   directory, a lock file. `EMU_SLOT={n}` and a launcher that reads it is all it takes.
 - `pass_env` passes on what the whole run shares (a cap on how long one session may hold the program).
-- `on_exit` closes the slot's copy when its session ends, with that slot's env.
+- `on_exit` closes the slot's copy when its session ends, with that slot's env. It also runs when a drop, `plan change --restart` or a take back stops the session, and the slot starts nothing until it has ended.
 - `before_start` holds new sessions while the program cannot run (no display, device unplugged). The run
   logs it once, rings the bell, and resumes once the check passes.
 - `prompt_extra` tells the session it has its own copy and how to drive it (`{n}` is the slot).
