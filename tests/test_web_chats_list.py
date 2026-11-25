@@ -87,7 +87,7 @@ def test_card_chat_b139(tmp: Path) -> None:
              ['control', '--new', '--no-wait', '--ask', 'do F1 here', '--no-feed']], 'quick_ask and take use new_control')
     eq((q['name'], t['name']), ('c9', 'c9'), 'each names its new chat for the page to open')
     page = W.PAGE.read_text(encoding='utf-8')
-    send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
+    send = page.split('async function send(by){', 1)[1].split('\n}', 1)[0]
     check('sendReq(ctx,to,msg)' in send and "newChat(rq.name,rq.args," in send,
           'send() starts a new chat when a card set the context', send)
     check("newChat('quick_ask'" in page and "outbox('quick_ask'" not in page, 'a quick ask starts a new chat', '')

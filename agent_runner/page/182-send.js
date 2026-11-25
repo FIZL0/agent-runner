@@ -3,11 +3,13 @@
    the box before; not when a starting chat gets its name (named): its box may be in use */
 function open(n,named){if(TOUCH()&&!isNew(n)&&!named&&typingIn(document.activeElement))document.activeElement.blur();const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;if(!isNew(n))S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet&&!TOUCH())setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
 function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);if(S.view==='settings')loadSettings();if(S.view==='tools')loadTools()}
-async function send(){
+/* by: the button that was pressed; none for a key, so an empty Enter never forces (F190c) */
+async function send(by){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
   const key=boxKey(), atts=S.atts[key]||[];  // B182: this box's own
   if(sendWaits(atts))return toast('Wait for the attachments to finish uploading');
   const paths=atts.filter(a=>a.path).map(a=>a.path);
+  if(by&&ta&&by.classList.contains('force')&&sendNow(ta)==='force')return forceQueued(key,S.thread);
   if(!text&&!paths.length)return;
   sentMark(text);
   if(!S.thread&&S.view==='talk'){  // F93; F83: out of the box at once, back in it if it did not go
@@ -22,7 +24,8 @@ async function send(){
   const rq=sendReq(ctx,to,msg);
   if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx?ctx.label:text||`${paths.length} attachment(s)`,msg);return}  // B139, F176
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
-  // F190a: never with force: while it works, the session queues the message
+  // F190a: never with force: while it works, the session queues the message; F190c: a second press forces, after a delay
+  sendHold(key,SEND_HOLD);
   if(FD.shown){feedRest();sendFly()}  // the session draws it itself
   outbox('chat_to',{text:msg,to,...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
 }

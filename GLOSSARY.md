@@ -207,10 +207,10 @@ _In code_: ui_model.feed, feed_entries, /feed/NAME
 _Avoid_: log, terminal, thread
 
 **Force send**:
-A send that interrupts the session (Escape), waits until Claude Code is at rest, and sends the message once. It is not the message box's Send, which queues the message while Claude works.
+Sends what the session still has queued at once, interrupting it. With words (`chat_to` with `force`, no page control) it interrupts with Escape, waits until Claude Code is at rest, and sends the message once. Send with words queues.
 _Said_: force send
-_On screen_: none now (Send queues)
-_In code_: session_now.force_send, chat_to (force), .send.force
+_On screen_: "Force send" (the arrow's label while the box is empty and a sent message is still queued)
+_In code_: sendIs, forceQueued, session_now.force_queued, session_now.force_send, chat_to (force), .send.force
 _Avoid_: interrupt and send, resend
 
 **Session chips**:

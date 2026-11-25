@@ -5,6 +5,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - Changed: a run's stop no longer closes its run page. Before the run says `run stopped`, it starts a detached page-only process that takes the page over (same address, port and key; web.url and the Tailscale Serve https rule kept, with or without Runner Home), and a run started right after takes it back. If the handover fails, the run still stops, the page closes and the run log says why. No page stays after a stop with suspend or shutdown, or with `[run] web = false`; Ctrl-C, a kill or a crash still takes the page with it. Before, a stop closed the page (F402b3a).
+- Changed: on the run page, the message box's send arrow forces only when it reads Force send: with the box empty, the session working and a sent message still queued, a press sends what is queued at once (`chat_to` with `force` and no text, one Escape). With words or an attachment it is the plain Send and queues. After a send or a force the arrow is disabled for about 1 s while the session works and the box is empty, so a double tap never forces (F190c).
 ## 0.66.0 (2026-11-24)
 
 - Added: `POST /recorded` on the run turns a clip the page recorded (16 kHz mono WAV) into words with whisper.cpp, installed by `agent-runner speech install whisper`; nothing on the page uses it yet (F161a).
