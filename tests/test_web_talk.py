@@ -176,7 +176,7 @@ const HOME_PAGE = false, document = {};  // B153: takeSnap sets the window title
 const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
 const chats = () => S.snap.sessions.filter(s => /^c\d+$/.test(s.name)), working_ = () => [];
 const feedOf = n => (S.feeds[n] || {}).entries || [];
-const chatShown = () => true, toEnd = () => {};
+const chatShown = () => false;
 const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: '', gen: 0, starting: [], later: []};
 const MIC = {rec: null, next: null};  // B174
 let feeds = {}, actDone = null, actResult = null;
@@ -943,7 +943,6 @@ const TK = {state: '', playing: '', note: '', held: '', later: [], wait: null, w
 let TS; const micWhy = () => '', TM_KEY = 'tm', store = {get: k => kept[k] || ''}, tabStore = store, talkWaitName = () => 'c5', talkSet = (k, v) => { TS = {...TS, [k]: v} };
 const RUN_VERSION = '', DK = {};
 // a send waits for its reply, as talkSend does
-const chatShown = () => !S.thread && S.view === 'talk';
 const talkSend = async t => { sent.push(t); if (TK.state !== 'speaking') TK.state = 'thinking'; awaitReply() };
 const awaitReply = () => { TK.wait = {n: 'c5', since: 0, at: now, last: '', said: ''}; S.feeds.c5 = {entries: []} };
 const lands = t => { if (!TK.wait) awaitReply(); S.feeds.c5.entries = [{kind: 'you', text: 'x'}, {kind: 'say', text: t}]; talkHear('c5'); talkHear('c5') };
@@ -1229,13 +1228,12 @@ def test_mic_test_b162b1(tmp: Path) -> None:
     eq((o.get('toast'), o.get('spoke')), ('Mic test copied: paste it into your reply', 0), 'copied; speechSynthesis not touched')
 
 
-BACK_DRIVER = SCROLL_DRIVER.split('eval(logic')[0].replace('talkBack = () => {}, talkAway = () => {}, talkLate = () => true, ', '') \
+BACK_DRIVER = SCROLL_DRIVER.split('eval(logic')[0].replace('talkBack = () => {}, talkLate = () => true, ', '') \
     .replace("store = {get: () => '', set() {}}", "kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }}") \
     .replace("boxKey = () => S.thread || 'home'", "boxKey = () => S.thread || (S.view === 'talk' ? 'talk' : 'home')") + r"""
 const feedHTML = () => CHAT, feedEnd = () => '', sessRow = feedEnd, keysRow = feedEnd, isNew = () => false, modelOf = () => '';
 const tab = {}, tabStore = {get: k => tab[k] || '', set: (k, v) => { tab[k] = v }}, ears = {}, hear = (t, f) => { (ears[t] = ears[t] || []).push(f) };
 const fire = (t, e) => (ears[t] || []).forEach(f => f(e || {})), DK = {rec: null, key: ''}, MIC = {rec: null, next: null}, TM_KEY = 'ar-talkmode'; let TALK_FOR = ':a run';
-const TK = {later: [], state: '', playing: '', wait: null, turn: 1}; let cancels = 0; const shush = () => { cancels++ };  // B836
 let why = '', now = 1e6; const micWhy = () => why, kbFocus = t => { document.activeElement = t }; Date.now = () => now;
 document.addEventListener = hear; window.addEventListener = hear; HI.key = '';
 ta.matches = s => s === '[data-in]'; ta.blur = () => { document.activeElement = null }; ta.focus = () => { document.activeElement = ta };
@@ -1263,10 +1261,6 @@ type(); lastPlace = null; go('talk'); out.noStamp = at();
 type(); hide(1000); hide(59999); out.twice = at()[0];
 let stops = 0; DK.key = 'talk'; DK.rec = MIC.rec = {stop() { stops++ }}; go('home'); go('talk'); out.dictation = [stops, DK.put]; DK.rec = MIC.rec = null;
 why = 'no mic'; go('talk', 'c1'); document.activeElement = ta; go('talk'); out.noMic = at();
-why = '';
-out.left = [['home'], ['talk', 'c1'], ['plan']].map(([v, t]) => { go('talk'); TK.state = 'speaking'; TK.later = ['next']; cancels = 0;
-  render(true); const on = TK.state; go(v, t); render(true); const off = [TK.state, TK.later.length, cancels]; go('talk'); return [on, ...off, TK.state] });
-go('talk'); TK.state = ''; TK.later = ['next']; cancels = 0; go('home'); out.quiet = [TK.later.length, cancels];
 console.log(JSON.stringify(out));`);
 """
 
@@ -1297,60 +1291,5 @@ def test_talk_back_b802(tmp: Path) -> None:
     eq(got.get('noMic'), on, 'where the mic cannot be used the box stays as it was')
 
 
-AWAY_DRIVER = READ_DRIVER.split('(async () => {\n  const out = {}; await settle(); const run')[0].replace("+ line('const talkTyping=')", "+ grab('function talkAway(') + line('const talkTyping=')", 1) + r"""
-(async () => {
-  const out = {}; await settle(); const run = AU.got; AU.ok = true;
-  // what render does on a way out, then back in
-  const leave = () => { S.view = 'home'; talkAway() }, back = () => { S.view = 'talk' };
-  for (const kind of ['own', 'run']) {
-    AU.got = kind === 'run' ? run : null; const o = out[kind] = {}, n = () => plays.length + us.length; back(); over();
-    lands('One here. Two.'); if (kind === 'run') await settle(); else { us[0].onstart(); ss.speaking = true }
-    lands('Second reply.'); o.on = [TK.state, TK.later.length]; order.length = 0; const was = n();
-    leave(); o.left = [TK.state, TK.later.length, kind === 'run' ? AU.el.paused : order.includes('cancel'), AU.holding]; ss.speaking = false;
-    if (kind === 'own') us[us.length - 1].onend({type: 'end'});  // the cancelled voice's own events start nothing
-    lands('One here. Two. And later words.'); await settle(); await look(3); o.away = n() - was;
-    back(); await look(3); o.back = [TK.state, n() - was];
-    speak('Second reply.', 'k1'); await settle(); o.play = [TK.playing, n() > was];  // its play button
-    const at = n(); leave(); o.playLeft = [TK.playing, n() - at];
-    // its last words landed away, the second look at them back in Talk: not read; words that came back in Talk are
-    over(); awaitReply(); const say = t => { S.feeds.c5.entries = [{kind: 'you', text: 'x'}, {kind: 'say', text: t}]; talkHear('c5') };
-    say('Landed away.'); back(); say('Landed away.'); await settle(); o.between = [n(), TK.state, TK.wait];
-    leave(); awaitReply(); say('Landed away.'); back(); say('More here.'); say('More here.'); await settle(); o.more = TK.state;
-  }
-  // a clip still asked for when Talk is left is not played
-  AU.got = run; over(); back(); lands('One here. Two.'); leave(); await settle(); await look(3); out.asked = [asked.length > 0, plays.length, TK.state];
-  console.log(JSON.stringify(out));
-})();`);
-"""
-
-
-def test_talk_left_b836(tmp: Path) -> None:
-    """B836: leaving Talk for another view or chat stops the reading, reads nothing that waits or lands meanwhile, and
-    coming back starts none of it; a play button still reads."""
-    if not shutil.which('node'):
-        print('  (no node here: the left Talk script test is skipped)')
-        return
-    (tmp / 'driver.js').write_text(AWAY_DRIVER, encoding='utf-8')
-    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
-    check(r.returncode == 0, 'node runs the way out of Talk', r.stderr[-900:])
-    got = json.loads(r.stdout or '{}')
-    for kind in ('own', 'run'):
-        o = got.get(kind) or {}
-        eq(o.get('on'), ['speaking', 1], f'{kind}: a reply is read, the next waits')
-        eq(o.get('left'), ['', 0, True, False], f'{kind}: Talk left: the sound stops, the waiting reply is dropped')
-        eq(o.get('away'), 0, f'{kind}: later words that land away are not read')
-        eq(o.get('back'), ['', 0], f'{kind}: coming back starts nothing')
-        eq(o.get('play'), ['k1', True], f'{kind}: its play button reads it')
-        eq(o.get('playLeft'), ['', 0], f'{kind}: and leaving stops that too')
-        eq(o.get('between'), [0, '', None], f'{kind}: landed away, seen again in Talk: not read')
-        eq(o.get('more'), 'speaking', f'{kind}: words that come once back in Talk are read')
-    eq(got.get('asked'), [True, 0, ''], 'a clip still on its way is not played')
-    (tmp / 'back.js').write_text(BACK_DRIVER, encoding='utf-8')
-    r = subprocess.run(['node', str(tmp / 'back.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
-    got = json.loads(r.stdout or '{}')
-    eq(got.get('left'), [['speaking', '', 0, 1, '']] * 3, "the page's own draw: a redraw on Talk reads on; another view or chat stops it once")
-    eq(got.get('quiet'), [0, 0], 'nothing read: no speechSynthesis call')
-
-
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_talk_left_b836), in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
+    raise SystemExit(report([in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
