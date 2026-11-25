@@ -196,6 +196,24 @@ def caps(tid: str, own: tuple) -> tuple:
     return min(filter(None, (cap, own[0]))), own[1]
 
 
+def budget(tid: str, own: tuple, tokens: int, usd: float) -> tuple[tuple, str, str, str]:
+    """(its caps, why `tid`'s spend is past them or '', what it is then told, what the run log says of that)."""
+    from agent_runner.brief import BUDGET_STOP
+    from agent_runner.cost import over_budget
+    mine = caps(tid, own)
+    why = over_budget(tokens, usd, *mine)
+    if why and is_audit(tid):
+        return mine, why if mine == own else why.replace('task_tokens', 'audit_tokens'), STOP, \
+            'told it to stop and land what it found'
+    return mine, why, BUDGET_STOP, (f'told it to stop at a clean point, commit and write its journal; its branch is parked as '
+                                    f'wip/{tid} when the session ends')
+
+
+def model(tid: str, ls: list[str]) -> str:
+    """The model of `tid`'s session when it is an audit by the plan's lines `ls`, else ''."""
+    return S.C.models['audit'] if is_audit(tid, ls) else ''
+
+
 def prompt(tid: str, branch: str, cwd: Path) -> str:
     """The audit paragraphs of `tid`'s brief, in the worktree `cwd`: its scope, what it looks at, its file and its cap."""
     until = S.git('merge-base', 'HEAD', branch, cwd=cwd).stdout.strip()[:12] or branch
