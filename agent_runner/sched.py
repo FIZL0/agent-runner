@@ -407,7 +407,8 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
 def clash_or_stack(t: tuple, h: Held) -> tuple[tuple | None, dict]:
     """(the busy task that holds `t`, {}), or (None, the merge `t` may start on, {} for none needed). F198: a `t` that
     clashes by files alone, and only with finished tasks all in one merge under way (under test, or built ahead on
-    that one), starts on that merge instead of waiting for it to land."""
+    that one), starts on that merge instead of waiting for it to land; B805: not one filed since it was built, whose
+    line its plan lacks. That one waits, and starts on the shared branch."""
     clashing = (b for b in h.busy if clash(t, b, h.shared, h.alone) and not passes(t, b, h))
     if not (first := next(clashing, None)):
         return None, {}
@@ -424,7 +425,7 @@ def clash_or_stack(t: tuple, h: Held) -> tuple[tuple | None, dict]:
         return first, {}  # its session goes on with the work it has, on the commit it began on
     ids = {b[0] for b in bs}
     for m in merges:
-        if ids <= set(m['tids']) and not any(
+        if ids <= set(m['tids']) and stack.has_line(m['on'], t[0]) and not any(
                 git('merge-base', '--is-ancestor', f'refs/heads/task/{x}', m['on']).returncode for x in ids):
             return None, m
     return first, {}

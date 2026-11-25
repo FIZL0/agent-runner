@@ -1469,7 +1469,7 @@ A task that clashes with finished tasks only by files, and only with ones that a
 (the one under test, or a merge built ahead on it whose own gate has not failed), starts at once on top of
 that merge in its own worktree, instead of waiting for the gate (F198). Not for an `(alone)` task, a release,
 a part held back by the sibling rule (a part that clashes with a sibling), a task in an ordered section, an `after:` wait, a task resuming after `run ask` or a shared-tool
-wait, or one that also clashes with a running task. A finished task not yet in any merge still holds its
+wait, or one that also clashes with a running task, or one filed on main after that merge when the merge's plan has no line for it (a merge built ahead that has the line will do). A finished task not yet in any merge still holds its
 files. Which merge it started on is in `<notes>/<ID>.stacked`, which survives a restart; its brief says so
 and which diff is its own. It lands only after that merge is on main: when it finishes it waits (log: "S2:
 finished; it lands after S1, on whose merge it was started"), then merges as any task. If that merge is
