@@ -840,10 +840,10 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
 
 # --- usage caps and power ------------------------------------------------------
 
-def capped(force: bool) -> str | None:
+def capped(force: bool, own: bool = False) -> str | None:
     """Why no new task may start: the 5-hour session usage at or past `[run] session_max`, or the 7-day usage
-    at or past `[run] weekly_max` (and not --force). None when neither is."""
-    if force or not claude_use.account(C):
+    at or past `[run] weekly_max` (and not --force). None when neither is. `own`: there are tasks it holds alone (claude_use.own_tasks)."""
+    if force or not (own or claude_use.account(C)):
         return None
     for name, what, key in (('five_hour', 'session', 'session_max'), ('seven_day', 'weekly', 'weekly_max')):
         w = usage_pct(name)
@@ -1341,24 +1341,25 @@ class Run:
             self.tried.add(tid)
             self.idle_said = False
 
-    def say_cap(self, w: str) -> None:
-        """The usage-cap alarm, once each time a cap is reached."""
+    def say_cap(self, w: str, own: str = '') -> None:
+        """The usage-cap alarm, once each time a cap is reached. `own`: the tasks it holds alone (B791)."""
         if not self.cap_said:
-            alarm(f'{w}: no new tasks', cap_stop_detail())
+            alarm(*claude_use.cap_alarm(w, own, cap_stop_detail()))
             self.cap_said = True
 
     def fill(self, n: int) -> None:
-        """Start the next task in the free slot, unless a stop, pause, wrong [run] agent, usage cap, backlog, API outage, low disk
-        or failing before_start holds it."""
+        """Start the next task in the free slot, unless one of the holds below stops it."""
         procs, running, slots, r = self.procs, self.running, self.slots, self.r
         if stopping():  # said once, with how many are left, by stop_note at the top of the tick
             return
         if PAUSED[0] or agent_held():  # B764c: never another agent instead
             return
-        w, held = capped(self.a.force or FORCED[0]), frozenset()
+        self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
+        own = claude_use.own_waiting(self)  # B791: these alone are held
+        w, held = capped(self.a.force or FORCED[0], bool(own)), frozenset()
         if w is None:
             self.cap_said = self.cap_fell = False
-        elif C.fallback:
+        elif C.fallback or own:
             held = FB.USAGE_HELD  # F142: new tasks start down the chain instead
         else:
             self.say_cap(w)
@@ -1381,19 +1382,18 @@ class Run:
                 print('\a', end='', flush=True)
             return
         self.stall_said.discard('before_start')
-        self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
-        passed = FB.no_free(self.branch, self.model, held) if held else set()
-        task = pick(running, self.tried | passed, self.branch, claim=True) or file_split.no_task(self, held)  # F200b
+        passed, no_api = claude_use.passed_over(self, own, held)
+        task = pick(running, self.tried | passed | no_api, self.branch, claim=True) or file_split.no_task(self, held and not own)  # F200b
         if not task and passed and not self.cap_said and \
                 (t := pick(running, self.tried, self.branch)) and t[0] in passed:
-            self.say_cap(w)  # F142: only the cap holds it: no provider in the chain is free for it
+            self.say_cap(w, t[0] if own else '')  # F142: only the cap holds it: no provider in the chain is free for it
         if task:
             if unlogged(task[0], self.branch, self.model):  # F106e: its provider has no login: Needs you
                 plansync.release(C, task[0])
                 self.tried.add(task[0])  # the next pick takes another; an unblock or retry_held puts it back
                 return
-            if held and not self.cap_fell:
-                log(f'{w}: new tasks start on the first free provider in [models] fallback until the reset')
+            if held and not self.cap_fell and (not own or task[0] in own):
+                log(f'{w}: {"tasks on a claude model" if own else "new tasks"} start on the first free provider in [models] fallback until the reset')
                 self.cap_fell = True
             if p := start(n, task, self.branch, self.model, self.idle, slots, held=held):
                 procs[n], running[n] = p, task

@@ -111,10 +111,15 @@ kinds = { F = "codex:<model>", B = "codex:<model>", T = "codex:<model>", V = "co
 
 Then there is no missing-`[run] agent` line or hold. The run also shows no Claude login line (in status, on the
 run page, on Home, or as a push), reads no usage and applies no cap (`session_max`, `weekly_max`), makes no API
-check and has no headroom usage limit. A removed value such as `agent = "pi"` is still said.
+check and has no headroom usage limit, except for a task on a claude model that waits to start (below). A removed
+value such as `agent = "pi"` is still said.
 
 A task given its own Claude model (`plan add --model opus`) still waits alone, blocked under Needs you, when
-Claude Code is not on the machine.
+Claude Code is not on the machine. With Claude Code on the machine, such a task does not start past `session_max`
+or `weekly_max` (it alone waits, or starts on the first free `[models] fallback` provider), and waits alone while
+the Claude API is unreachable, unless the cap moves it to such a provider. Other tasks start as before. When nothing else can start, the alarm names the held task
+and says it cannot start until the reset; `force` lifts the cap. The usage and the API are read only while such
+a task is waiting to start.
 
 ## Provider logins: run login
 
