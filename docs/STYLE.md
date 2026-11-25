@@ -460,6 +460,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   When the browser blocks it, the talk line says what to tap.
 - One button stops the reading: the speaker (and the reply's own play button). The mic is never a stop for it; a press on the mic
   cuts a reading and listens in that press.
+- Leaving Talk stops the reading too: `render()` calls `talkAway()` whenever Talk is not the shown view (`chatShown()`), so a new way out needs nothing of its own.
 - Every reading must be watched with `soundWatch()`, since iOS can skip a sound's end event.
 - The browser's voice (`speechSynthesis`) is not called before `rec.start()` in a press (B132); run speech clips may be stopped before it.
 - Every mic use goes through `MIC`: a Recorder stands in as a recognizer (`micRec()`), so one recognizer or recording runs at a time.
