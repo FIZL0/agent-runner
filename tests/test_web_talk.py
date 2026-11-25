@@ -486,7 +486,7 @@ const ta = {value: ''}, box = {value: ''}; document.querySelector = () => ta; ta
 const micWhy = () => '', dictWhy = () => '', toast = () => {}, voices = () => [], talkTyping = () => false;
 const AU = {el: null, got: null, ok: false};  // F158
 const boxKey = () => 'c3', DRAFT_KEY = k => k, store = {set() {}}, grow = () => {};
-const talkSend = t => { sent.push(t); TK.state = TK.kept = TK.note = '' };
+const talkSend = t => { sent.push(t); TK.state = TK.note = '' };
 const els = {}, el = () => ({classList: {toggle() {}}, setAttribute(k, v) { this[k] = v }, removeAttribute(k) { delete this[k] }});
 let copied = '', sheet = '', RUN_VERSION = '9.9'; const openSheet = n => { sheet = n };
 const $ = k => els[k] = els[k] || el();
@@ -616,6 +616,12 @@ bad(0); k(); hears(['x', true]); now += 1000; bad(1); last().end(); hp.throw1 = 
 bad(0); k(); hears(['x', true]); now += 1000; bad(2); last().end(); tick(250); hp.throw2 = keptNow(); bad(0); fire('pointerup', when);
 // Tap: a restart refused in the wait is tried again, and its silence still sends
 TS.mic = 'tap'; TK.hold = false; TK.kept = ''; listen(); hears(['so', true]); bad(1); last().end(); hp.tapThrow = [TK.state, sent.length]; tick(250); hears(['on', true]); listen(); last().end(); hp.tapOn = keptNow(); bad(0);
+// Tap: twice refused, kept; a restart that hears silence sends, as silence is its end
+listen(); hears(['so', true]); bad(2); last().end(); tick(250); hp.tapFail = keptNow(); bad(0); TK.kept = '';
+listen(); hears(['so', true]); last().end(); last().onaudiostart(); now += 2000; tick(2000); last().end(); hp.tapQuiet = keptNow();
+// a hold let go at once, its restart failed; a note beside kept words
+TS.mic = 'hold'; render(); k(); now += 300; last().fail('aborted'); fire('pointerup', when); hp.failSoon = keptNow(); TK.note = 'Other.'; render(); hp.note = says();
+TS.mic = 'tap'; TK.note = TK.kept = '';
 // Tap goes on from kept words, an abort first tried again; nothing heard keeps them
 TK.kept = 'Is there a'; starts = 0; listen(); last().fail('aborted'); tick(250); hp.tapRetry = starts; listen(); last().end(); hp.tapKept = keptNow(); TK.kept = '';
 hp.most = most; sent.length = 0; render();
@@ -625,20 +631,20 @@ now += 1500; hears(['full one', false]); tick(2000); cut.goesOn = [sent.length, 
 now += 2000; tick(2000); cut.silence = !!last().stopped; last().end(); cut.pauseSent = [sent.splice(0), TK.state, ended(), starts];
 // speech begun in the wait makes it longer, once
 starts = 0; listen(); hears(['so', true]); last().end(); now += 1500; last().onspeechstart(); now += 1000; last().fail('no-speech'); cut.speech = [starts, sent.length];
-last().onspeechstart(); now += 1100; last().fail('no-speech'); cut.speechEnd = [starts, sent.splice(0), ended()];
+last().onspeechstart(); now += 1100; last().fail('no-speech'); cut.speechEnd = [starts, sent.splice(0), ended()]; TK.kept = '';
 // results that come back empty unsay nothing
 listen(); hears(['so do', false]); hears(['', false]); last().onresult({resultIndex: 0, results: []}); listen(); last().end(); cut.empty = sent.splice(0);
 // the wait's recognizer ends early, as iOS does: on again until the wait is over, and no longer
 starts = 0; listen(); hears(['so', true]); now += 3000; last().end(); now += 300; last().fail('aborted', 'No speech detected'); tick(250); cut.early = [starts, sent.length];
 now += 400; last().fail('aborted'); tick(250); cut.failed = [starts, sent.length]; now += 1300; last().end(); cut.over = [starts, sent.splice(0)];
 // the wait is over while no recognizer runs
-listen(); hears(['so', true]); last().end(); now += 900; last().fail('aborted'); tick(2000); cut.between = [sent.splice(0), TK.state];
+listen(); hears(['so', true]); last().end(); now += 900; last().fail('aborted'); tick(2000); cut.between = [sent.splice(0), TK.state]; TK.kept = '';
 // a tap sends at once: in the first listen, and in the wait
 listen(); hears(['so', true]); starts = 0; listen(); last().end(); cut.tap = [starts, sent.splice(0)];
 listen(); hears(['so', true]); last().end(); listen(); last().end(); cut.tapWait = [sent.splice(0), ended()]; tick(2000); cut.once = sent.length;
 // auto listen sends at a silence; a real failure in the wait sends too; left Talk: no wait
 starts = 0; TK.again = true; listen(); hears(['yes', true]); last().end(); cut.auto = [starts, sent.splice(0), ended()];
-listen(); hears(['so', true]); last().end(); last().fail('network'); cut.network = [sent.splice(0), ended()];
+listen(); hears(['so', true]); last().end(); last().fail('network'); cut.network = [sent.splice(0), ended()]; TK.kept = '';
 starts = 0; listen(); hears(['so', true]); S.view = 'home'; last().end(); S.view = 'talk'; cut.left = [starts, sent.splice(0)];
 // the report: growing results are one line, the line that says what ended it is in a full one too, and no words are
 listen(); for (const w of ['s', 'se', 'sec', 'secret']) hears([w, false]); cut.grow = TK.trail.ev.filter(x => /result/.test(x)).length;
@@ -737,16 +743,18 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq((g.get('throw1'), g.get('thrown')), (['listening', 0], [[K + ' x y'], '', '', True]), 'a start that throws is tried again')
     eq(g.get('throw2'), [[], K + ' x', '', False], 'twice: kept')
     eq((g.get('tapThrow'), g.get('tapOn')), (['listening', 0], [['so on'], '', '', True]), 'Tap: the same')
+    eq((g.get('tapFail'), g.get('tapQuiet')), ([[], 'so', '', False], [['so'], '', '', True]), 'Tap: a failed restart keeps, silence sends')
+    eq((g.get('failSoon'), g.get('note')), (kept, f'“{K}” Not sent: nothing was heard after these words. Hold to go on from them, or send them as they are. Other.'), 'a failed restart keeps however soon; another note does not hide why')
     eq((g.get('tapRetry'), g.get('tapKept'), g.get('most')), (2, kept, 1), 'Tap goes on from kept words')
     eq((b.get('pause'), b.get('goesOn'), b.get('again')), ([2, 0, 'listening', 'so do a'], [0, False], [3, 0]), 'Tap: a pause listens on')
     eq((b.get('silence'), b.get('pauseSent')), (True, [['so do a full one'], '', 'sent 16 letters, ended by a pause', 3]), 'and a silence of 2 s sends one message')
-    eq((b.get('speech'), b.get('speechEnd')), ([3, 0], [3, ['so'], 'sent 2 letters, ended by error no-speech']), 'speech begun in the wait makes it longer, once')
+    eq((b.get('speech'), b.get('speechEnd')), ([3, 0], [3, [], 'kept 2 letters, not sent: nothing heard after them, ended by error no-speech']), 'speech begun in the wait makes it longer, once; with no words, the first are kept')
     eq(b.get('empty'), ['so do'], 'empty results unsay nothing')
     eq((b.get('early'), b.get('failed'), b.get('over')), ([3, 0], [4, 0], [4, ['so']]), 'a recognizer that ends early does not end the wait, nor outlast it')
-    eq(b.get('between'), [['so'], ''], 'nor does one that is about to start')
+    eq(b.get('between'), [[], ''], 'a restart that failed: kept')
     eq((b.get('tap'), b.get('tapWait'), b.get('once')), ([0, ['so']], [['so'], 'sent 2 letters, ended by a tap'], 0), 'a tap sends at once, and once')
     eq(b.get('auto'), [1, ['yes'], 'sent 3 letters, ended by the recognizer'], 'auto listen ends at a silence')
-    eq((b.get('network'), b.get('left')), ([['so'], 'sent 2 letters, ended by error network'], [1, ['so']]), 'a failure, and Talk left, send')
+    eq((b.get('network'), b.get('left')), ([[], 'kept 2 letters, not sent: nothing heard after them, ended by error network'], [1, ['so']]), 'a failed restart keeps, Talk left sends')
     eq((b.get('grow'), b.get('full'), b.get('most')), (1, ['sent 6 letters, ended by a tap', False], 1), 'the report has its end, and no words')
     check('mic hold, version' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
     eq(got.get('cap'), 'and 10 more', 'the report has an end')
