@@ -3,10 +3,12 @@ state shared by merging and landing."""
 
 from __future__ import annotations
 
+import datetime as dt
 import fnmatch
 import os
 import re
 import subprocess as sp
+import sys
 from pathlib import Path
 
 from agent_runner import glossary, plan as P, plat
@@ -124,7 +126,8 @@ def _next_free(k: str, taken: set[str]) -> str:
     return k + 'r'
 
 
-def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = False) -> str:
+def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = False, at=None,
+                     held: list | None = None) -> str:
     """`ref`, or a commit on top of it that renumbers the tasks it added under an id `onto` already uses.
 
     A branch files a follow-up with the next id its own copy of the plan has free, while main, meanwhile,
@@ -135,8 +138,14 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
 
     With `remote` (`renumber_upstream`), `ref` is this side and `onto` the remote's branch it takes in: nothing is
     folded, a task both sides have (one line, whatever was noted on it since) is no clash, and one that has a
-    branch keeps its id, since its session and its merge go by it; that is logged."""
-    files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
+    branch keeps its id, since its session and its merge go by it; that is logged.
+
+    `at` (`renumber_plan`) is the project whose plan is in the repository `cwd`, which may be a `[plan] repo` clone:
+    the paths, the notes folder, the branches and the log are that project's, with no run needed. What to do once the
+    merge holds (reserve the new ids, log them) goes in `held` then, as calls."""
+    rel = (lambda name: os.path.relpath(at.plan_dir / name, cwd).replace(os.sep, '/')) if at else plan_rel
+    log_ = (lambda msg: _plan_log(at, msg)) if at else log
+    files = [rel('TODO.md'), rel('DONE.md')]
     base = git('merge-base', onto, ref, cwd=cwd).stdout.strip()
     show = lambda rev, f: git('show', f'{rev}:{f}', cwd=cwd).stdout.splitlines() if rev else []
 
@@ -160,8 +169,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
             doubled.append(tid)  # the task of this merge: logged below
         doubled = [k for k in doubled if said(theirs[k]) != said(ours[k])]
         if begun := [k for k in doubled if k == tid or any(not git('rev-parse', '-q', '--verify', f'refs/heads/{b}/{k}',
-                                                       cwd=cwd).returncode for b in ('task', 'wip'))]:
-            log(f'{tid}: {onto} uses {", ".join(begun)} for another task, but it is under way here, so it is not '
+                                                       cwd=at.root if at else cwd).returncode for b in ('task', 'wip'))]:
+            log_(f'{tid}: {onto} uses {", ".join(begun)} for another task, but it is under way here, so it is not '
                 'renumbered: two tasks now have that id')
             doubled = [k for k in doubled if k not in begun]
     if not doubled and not folds:
@@ -170,11 +179,13 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
     for k in doubled:
         new[k] = _next_free(k, taken)
         taken.add(new[k])
-    if doubled:
+    if doubled and held is not None:
+        held.append(lambda: P.reserve(cwd, *new.values()))
+    elif doubled:
         P.reserve(cwd, *new.values())  # or the next branch's renumber takes the same one (MD175 -> 180 -> 181 -> 182)
     moved = {**new, **folds}  # a line the branch wrote that names a folded task names the one it went into
     pat = re.compile(r'\b(' + '|'.join(map(re.escape, moved)) + r')\b')
-    idx = C.notes(f'renumber.{tid}.index')  # one per task: merges of different tasks run in threads at once
+    idx = (at or C).notes(f'renumber.{tid}.index')  # one per task: merges of different tasks run in threads at once
     env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
     g = lambda *a, **kw: git(*a, cwd=cwd, env=env, **kw)
     try:
@@ -198,7 +209,7 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
                 g('update-index', '--force-remove', was)
                 log(f'{tid}: dropped {was}, the long form of {k}, folded into {folds[k]}')
         for k, v in new.items():  # the long form the branch wrote for it goes with it
-            was, now = plan_rel(f'{P.TASKS}/{k}.md'), plan_rel(f'{P.TASKS}/{v}.md')
+            was, now = rel(f'{P.TASKS}/{k}.md'), rel(f'{P.TASKS}/{v}.md')
             blob = git('rev-parse', '-q', '--verify', f'{ref}:{was}', cwd=cwd).stdout.strip()
             if blob and git('cat-file', '-e', f'{base}:{was}', cwd=cwd).returncode:
                 g('update-index', '--force-remove', was)
@@ -212,11 +223,15 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
     finally:
         idx.unlink(missing_ok=True)
     if not c:
-        log(f'{tid}: could not renumber {", ".join([*doubled, *folds])}; the merge may drop or double a task')
+        log_(f'{tid}: could not renumber {", ".join([*doubled, *folds])}; the merge may drop or double a task')
         return ref
     if new:
-        log(f'{tid}: renumbered {pairs}: {onto} gave the id to another task meanwhile')
-        note(f'{tid}: renumbered {pairs} before the merge')
+        text = f'{tid}: renumbered {pairs}: {onto} gave the id to another task meanwhile'
+        if held is not None:
+            held.append(lambda: log_(text))
+        else:
+            log_(text)
+            note(f'{tid}: renumbered {pairs} before the merge')
     if folds:
         log(f'{tid}: folded {into}: {onto} has the same follow-up, filed by another slot meanwhile; '
             'noted there instead of adding it again')
@@ -230,6 +245,32 @@ def renumber_upstream(d: Path, up: str, tid: str) -> None:
     ref = renumber_doubles('HEAD', up, tid, d, remote=True)
     if ref != 'HEAD' and (r := git('merge', '-q', '--ff-only', ref, cwd=d)).returncode:
         log(f'{tid}: the renumbering does not apply in {d}; two tasks may have one id: {r.stderr.strip()[:200]}')
+
+
+def renumber_plan(c, d: Path, up: str) -> list:
+    """`renumber_upstream` for plan commits taken in outside a run's merge (B829): `d` is project `c`'s main checkout
+    or its `[plan] repo` clone. When a new commit on `d`'s HEAD renumbers some, the calls to make once the merge holds; else []."""
+    for a, b in (('HEAD', up), (up, 'HEAD')):
+        if not git('merge-base', '--is-ancestor', a, b, cwd=d).returncode:
+            return []  # not diverged: nothing can clash
+    held: list = []
+    ref = renumber_doubles('HEAD', up, 'plan', d, remote=True, at=c, held=held)
+    if ref == 'HEAD':
+        return []
+    if (r := git('merge', '-q', '--ff-only', ref, cwd=d)).returncode:
+        _plan_log(c, f'plan: the renumbering does not apply in {d}; two tasks may have one id: {r.stderr.strip()[:200]}')
+        return []
+    return held
+
+
+def _plan_log(c, msg: str) -> None:
+    """`msg` for whoever edits the plan (stderr: a plan command's stdout is its answer) and in project `c`'s run.log."""
+    print(f'! {msg}', file=sys.stderr)
+    try:
+        with open(c.notes('run.log'), 'a', encoding='utf-8') as f:
+            f.write(f'=== {dt.datetime.now().isoformat(timespec="seconds")} {msg}\n')
+    except OSError:
+        pass
 
 
 class _Kept(str):
