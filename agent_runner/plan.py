@@ -81,7 +81,7 @@ given a `--pri` (and every follow-up a running agent files, which is `normal` un
                earlier critical ones: it breaks or blocks other work
     high       the top of the leading section, behind critical and earlier high ones: important, but blocks
                nothing; a run tries it after the critical tasks and ahead of the rest, wherever its line stands
-    normal    `### Follow-ups`, made after the person's sections (before Stretch/Parked): the usual follow-up
+    normal     `### Follow-ups`, made after the person's sections (before Stretch/Parked): the usual follow-up
     low        the same section, behind every normal one: a check, a small tidy-up, a nice-to-have
     later      `### Parked`, which a run never starts: big future work for a person to schedule
 
@@ -968,8 +968,9 @@ PRI = ('critical', 'high', 'normal', 'low', 'later')  # a follow-up's level, mos
 
 
 def next_pri(pri: str) -> str:
-    """F438: the level the Priority control sets on a task of level `pri`: high, then critical, then normal again."""
-    return {'high': 'critical', 'critical': 'normal'}.get(pri, 'high')
+    """F438: the level the Priority control sets on a task of level `pri`: critical, then high, then normal again
+    (down, so lowering a task never passes through a higher level)."""
+    return {'critical': 'high', 'high': 'normal'}.get(pri, 'critical')
 
 
 PRI_TAG = re.compile(r'\(follow-up, (' + '|'.join(PRI) + r')\)')
@@ -1229,7 +1230,8 @@ def _place_pri(ls: list[str], pri: str) -> int:
         i = _place(ls, 'top', None)
         h = next((k for k in range(i - 1, -1, -1) if _level(ls[k])), None)
         if h is not None and 'critical' in ls[h].lower():
-            h = next((k for k in range(h + 1, len(ls)) if _level(ls[k]) == _level(ls[h])), None)
+            h = next((k for k in range(h + 1, len(ls)) if 0 < _level(ls[k]) <= _level(ls[h])), None)
+            h = h if h is not None and _level(ls[h]) == 3 else None
             if h is None or ls[h].lstrip('# ').startswith((FOLLOW_UPS, *SKIPPED)):
                 h = _make_section(ls, 'Next', (FOLLOW_UPS, *SKIPPED))
             i = h + 1

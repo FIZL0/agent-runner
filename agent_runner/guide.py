@@ -506,7 +506,7 @@ you, to act on a task or when the person asks which one.
 # Shaping the queue
 
 - "add a task", "fix X", "can someone…": `{cmd} plan add <KIND> "what, why, how to check" --files a.py,dir/**`
-  (`{cmd} plan kinds` lists KIND letters; `--pri critical` only when it blocks work). Name the exact files, the test file too (`tests/test_menu.py`,
+  (`{cmd} plan kinds` lists KIND letters; `--pri high` for "high priority", `critical` only when it blocks work). Name the exact files, the test file too (`tests/test_menu.py`,
   not `tests/**`): tasks on the same files wait. "after T181", "once X lands": add `--after T181` (ids,
   comma-separated); for a task already queued, `{cmd} plan block ID --after T181 "waits for T181"`. The run
   starts it once those merge, so the only watch you start is to tell the person ("notify me when"). "after

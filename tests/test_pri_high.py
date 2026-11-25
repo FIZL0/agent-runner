@@ -76,7 +76,7 @@ def test_shown() -> None:
     page = T.RunPage({'queue': [row]}, get_snap=lambda: {'queue': [row]}, attrs={})
     eq((page.queue_tag(row), page.queue_tag(waits)[1]), (('high', 'yellow'), 'dim'), 'the terminal UI')
     eq(page.form(row)['pri'], 'high', 'its direct edit starts at high')
-    eq([P.next_pri(p) for p in ('normal', 'high', 'critical', 'low')], ['high', 'critical', 'normal', 'high'], 'the steps')
+    eq([P.next_pri(p) for p in ('normal', 'high', 'critical', 'low')], ['critical', 'normal', 'high', 'critical'], 'the steps')
 
 
 if __name__ == '__main__':

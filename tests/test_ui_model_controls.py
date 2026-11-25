@@ -109,7 +109,7 @@ def test_row_actions(tmp: Path) -> None:
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
         eq(U.run_control('queue_priority', tid='F1')['ok'], True, 'priority runs')
         eq(U.run_control('queue_unpark', tid='R8')['ok'], True, 'unpark runs')
-        eq(ran, [['plan', 'edit', 'F1', '--pri', 'high'], ['plan', 'edit', 'R8', '--pri', 'normal']],
+        eq(ran, [['plan', 'edit', 'F1', '--pri', 'critical'], ['plan', 'edit', 'R8', '--pri', 'normal']],
            'their plan commands')
         ran.clear()
         for key, tid in (('queue_unpark', 'F1'), ('queue_priority', 'R8'), ('queue_drop', 'ZZ9'), ('queue_drop', '')):
