@@ -1,6 +1,6 @@
 /* F429c: the grip of a Plan queue row, in the card's room left of the row's head (its padding) */
 .card:has(>.grip){position:relative;grid-template-rows:auto}
-.card>.grip{position:absolute;grid-row:1/2;left:-16px;top:-14px;bottom:-14px;width:16px;padding:0;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:grab;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.card>.grip{position:absolute;grid-column:1/-1;grid-row:1/2;left:-16px;top:-14px;bottom:-14px;width:16px;padding:0;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:grab;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .grip svg{width:16px;height:16px;stroke-width:2.6} .grip:hover{background:var(--bubble)}
 @media not all and (any-pointer:fine){.card>.grip{pointer-events:none}}
 .gripping,.gripping *{cursor:grabbing!important} .gripping .card{transition:transform var(--dur) var(--ease)}
