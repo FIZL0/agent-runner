@@ -113,7 +113,7 @@ def taken_place() -> dict:
     except ValueError:
         return {}
     return place if isinstance(place, dict) else {}
-KIND_COLOUR = {'B': 'red', 'F': 'green', 'C': 'blue', 'R': 'magenta', 'V': 'yellow', 'K': 'cyan'}
+KIND_WORD, KIND_ROOM = 9, 36  # F195b: the queue's column of kind words, in a panel at least this wide
 KINDS = ('B', 'F', 'T', 'D', 'R', 'C', 'K', 'V')  # the direct edit's kind field cycles through these
 QUICK_KEYS = {'since': 's', 'yesterday': 'y', 'needs': 'w', 'usage': 'u'}  # F74's quick asks, by key
 FIELDS = ('t', 'k', 'p', 'f', 'a', 'e')  # the direct edit's fields, in Tab order
@@ -529,6 +529,14 @@ class RunPage:
     def diff(self, name: str) -> str:
         return self.cached(f'diff:{name}', lambda: self.diff_of(name)) or ''
 
+    def kind_of(self, tid: str) -> dict:
+        """F195b: the kind of task `tid`: its word and colour (`theme.kind_of`), as the snapshot's project names them."""
+        return TH.kind_of(tid, self.snap.get('kinds'))
+
+    def kind_colour(self, tid: str) -> str:
+        """F195b: the colour of task `tid`'s kind."""
+        return TH.kind_token(self.kind_of(tid))
+
     # --- rows and the main pane, as (text, colour) segments ------------------------------------------------
 
     def row(self, n: int, it) -> list[tuple[str, str]]:
@@ -547,7 +555,7 @@ class RunPage:
                 return [(f'{it["name"]} ', 'dim'), (it.get('state') or 'idle', 'dim')]
             mins = f' {it["minutes"]}m' if it.get('minutes') is not None else ''
             return [(f'{it["name"]} ', 'magenta' if it.get('state') == 'merging' else 'yellow'),
-                    (f'{it.get("task", "")} ', 'cyan'), (it.get('title', ''), 'fg'),
+                    (f'{it.get("task", "")} ', self.kind_colour(it.get('task', ''))), (it.get('title', ''), 'fg'),
                     (f'{mins} {it.get("state", "")}', 'dim')]
         if n == 4:
             # B152: the short ask, one line; the full ask shows in the pane beside
@@ -557,7 +565,7 @@ class RunPage:
                     (said in [*d.get('steps', []), *d.get('expect', [])] or said.casefold() in flat):
                 said = U.ask_short(said)  # B793b: the ask's own words, whole in detail; a question and an ask file's summary stay
             short = ' '.join(str(said or it.get('ask_short') or it.get('title') or it.get('ask', '')).split())
-            return [(f'{it["id"]} ', 'yellow'), (short, 'fg'),
+            return [(f'{it["id"]} ', self.kind_colour(it['id'])), (short, 'fg'),
                     (f' {it.get("age", "")}', 'dim')]
         if it.get('new'):
             return [('+ ', 'green'), ('new concept ', 'dim'), ('n', 'hkey')]
@@ -583,6 +591,11 @@ class RunPage:
             return f'⧗ {it.get("tool_wait") or "waits for a tool"}', 'dim'
         return 'ready', 'green'
 
+    def kind_word(self, tid: str, width: int) -> str:
+        """F195b: task `tid`'s kind word as the queue panel's column; '' in a panel too narrow for it (the selected
+        row says it beside its tag)."""
+        return self.kind_of(tid)['word'][:KIND_WORD - 1].ljust(KIND_WORD) if width >= KIND_ROOM else ''
+
     def row_lines(self, n: int, it, width: int, open_: bool) -> list:
         """A row as lines of segments within `width`; the selected row of the focused queue (`open_`) wraps to
         show its whole title and its tag (the after line) under it."""
@@ -591,21 +604,30 @@ class RunPage:
         rel = it if it.get('placeholder') else it.get('release')
         if rel:  # F185: 'V5 Release · releasing now'; dimmed 'Next release · auto at 10 landed: 6/10'
             text = f'{rel["id"]} {rel["title"]} · {rel["all"]}{rel.get("note", "")}' if open_ and rel.get('all') and it.get('release') else rel['text']
-            colour = 'dim' if it.get('placeholder') else KIND_COLOUR.get('V', 'magenta')
-            if open_ or len(text) <= width:
-                return wrap([(text, colour)], max(width, 4))
-            return [[(text[:max(width - 1, 0)] + '…', colour)]]
+            if it.get('placeholder'):
+                lines = wrap([(text, 'dim')], max(width, 4)) if open_ or len(text) <= width else \
+                    [[(text[:max(width - 1, 0)] + '…', 'dim')]]
+                return lines
+            tid = rel['id']  # F195b: the only filled kind
+            chip = [(f'{tid.ljust(max(5, len(tid) + 1))}{self.kind_word(tid, width)}', 'kindv'), (' ', '')]
+            used, text = len(chip[0][0]) + 1, text.removeprefix(f'{tid} ')
+            room = max(width - used, 4)
+            if open_:
+                return [(chip if i == 0 else [(' ' * used, '')]) + l for i, l in enumerate(wrap([(text, 'fg')], room))]
+            return [chip + [(text if len(text) <= room else text[:room - 1] + '…', 'fg')]]
         if it.get('new'):
             return [[('+ ', 'green'), ('new task ', 'dim'), ('n', 'hkey')]]
         tid = it.get('id', '')
-        idw = max(5, len(tid) + 1)
-        head = [(tid.ljust(idw), KIND_COLOUR.get(tid[:1], 'cyan'))]
+        word = self.kind_word(tid, width)
+        head = [(tid.ljust(max(5, len(tid) + 1)) + word, self.kind_colour(tid))]
+        idw = len(head[0][0])
         tag, colour = self.queue_tag(it)
         title = it.get('title', '')
         if open_:
             lines = [l for l in wrap([(title, 'fg')], max(width - idw, 4))]
             out = [(head if i == 0 else [(' ' * idw, '')]) + l for i, l in enumerate(lines)]
-            out += [[(' ' * idw, '')] + l for l in wrap([(tag, colour)], max(width - idw, 4))]
+            said = [(f'{self.kind_of(tid)["word"]} · ', self.kind_colour(tid))] if not word and self.kind_of(tid)['word'] else []
+            out += [[(' ' * idw, '')] + l for l in wrap([*said, (tag, colour)], max(width - idw, 4))]
             return out
         room = width - idw
         tag = tag if len(tag) <= max(room * 42 // 100, 6) else tag[:max(room * 42 // 100, 6) - 1] + '…'
@@ -678,7 +700,7 @@ class RunPage:
                 hint = 'e.g. the board should show usage too'
             else:
                 out = [L(('Say what to change about ', 'dim'), (it['id'], 'dim'), ('; a new chat rewrites the task.', 'dim')),
-                       L()] + [[(f'{it["id"]} ', KIND_COLOUR.get(it['id'][:1], 'cyan'))] + l
+                       L()] + [[(f'{it["id"]} ', self.kind_colour(it['id']))] + l
                                for l in wrap([(it.get('title', ''), 'fg')], width - len(it['id']) - 1)]
                 hint = 'e.g. also cover openmx'
             return out, self.input_lines(f'edit:{it["id"]}', width, hint), 0
@@ -697,12 +719,12 @@ class RunPage:
                 out += text_lines(f'More options, typed as the reply: {more}', 'dim', width)
             return out, [row] + self.input_lines(f'answer:{it["id"]}', width, 'or your own reply'), 0
         if tab == 'info' and self.panel == 3:  # F184: a shelved task
-            out = [L((f'{it["id"]} ', KIND_COLOUR.get(it['id'][:1], 'cyan')), (it.get('title', ''), 'fg')), L(),
+            out = [L((f'{it["id"]} ', self.kind_colour(it['id'])), (it.get('title', ''), 'fg')), L(),
                    L(('shelved: off Needs you until you bring it back', 'dim')), L()]
             out += text_lines(it.get('ask', ''), 'fg', width)
             return out, [buttons(*[button(c['tui'], c['label'].lower()) for c in self.row_controls(it, 'shelved')])], 0
         if tab == 'info' and self.panel == 4:
-            out = [L((f'{it["id"]} ', 'yellow'), (it.get('title', ''), 'fg')), L(),
+            out = [L((f'{it["id"]} ', self.kind_colour(it['id'])), (it.get('title', ''), 'fg')), L(),
                    L(('kind of ask ', 'dim'), (it.get('label', ''), 'fg'))]
             out += text_lines(it.get('what') or it.get('ask', ''), 'fg', width)
             if it.get('url'):
@@ -726,7 +748,7 @@ class RunPage:
             if it.get('label') == 'DECIDE':  # B223b: what it asks is the heading here too
                 return text_lines(it.get('ask', ''), 'fg', width, f'{it["id"]} ', ' ' * (len(it['id']) + 1), 'yellow') + \
                     text_lines(it.get('title', ''), 'dim', width)
-            return [L((f'{it["id"]} ', 'yellow'), (it.get('title', ''), 'fg')), L()] + \
+            return [L((f'{it["id"]} ', self.kind_colour(it['id'])), (it.get('title', ''), 'fg')), L()] + \
                 text_lines(it.get('ask', ''), 'fg', width)
         lab = d['said'] + (f' · {d["where"]}' if d.get('where') else '')
         if q := d.get('question'):  # B223b: a DECIDE's heading, its task's title under it
@@ -735,7 +757,7 @@ class RunPage:
             if d['title'] not in (it['id'], q):
                 out += text_lines(d['title'], 'dim', width)
         else:
-            out = [L((f'{it["id"]} ', 'yellow'), (d['title'], 'fg'))]
+            out = [L((f'{it["id"]} ', self.kind_colour(it['id'])), (d['title'], 'fg'))]
         out.append(L((lab, 'yellow'), (f'  {it.get("age", "")}', 'dim')))
         for x in d.get('why') or []:  # B794: why a BLOCKED stopped
             out += [L()] + text_lines(f'Why: {x}', 'fg', width)
@@ -1194,7 +1216,7 @@ class RunPage:
         except Exception:  # noqa: BLE001 - no plan to name the kinds: the letter alone
             kind_name = ''
         kind_name = kind_name.split(':', 1)[0].strip()  # B128: the short name, not V's whole release description
-        kind = L(*label('k', 'kind', '(cycles, K back)'), ('  ', ''), (f['kind'], KIND_COLOUR.get(f['kind'], 'cyan')),
+        kind = L(*label('k', 'kind', '(cycles, K back)'), ('  ', ''), (f['kind'], self.kind_colour(f['kind'] + '1')),
                  (f' {kind_name}' if kind_name and kind_name != f['kind'] else '', 'fg'))
         k_lines = wrap(kind, width)  # a narrow pane: the run-on indented under the value, never at column 0
         out += k_lines[:1] + [[('    ', '')] + l for k in k_lines[1:] for l in wrap(k, width - 4)]
@@ -2334,7 +2356,7 @@ def curses_attrs(curses, theme: str | dict | None = None) -> dict[str, int]:
     has them, else the 8 basic ones; the terminal theme draws in the terminal's own colours and background."""
     if not curses.has_colors():
         return {'red': curses.A_BOLD, 'accent': curses.A_BOLD, 'sel': curses.A_REVERSE, 'cur': curses.A_BOLD,
-                'mode': curses.A_REVERSE, 'key': curses.A_BOLD, 'hkey': curses.A_BOLD | curses.A_REVERSE,
+                'mode': curses.A_REVERSE, 'kindv': curses.A_REVERSE, 'key': curses.A_BOLD, 'hkey': curses.A_BOLD | curses.A_REVERSE,
                 'gkey': curses.A_BOLD}
     th = theme if isinstance(theme, dict) else TH.get(theme or TH.configured())
     curses.start_color()
@@ -2355,7 +2377,9 @@ def curses_attrs(curses, theme: str | dict | None = None) -> dict[str, int]:
     curses.init_pair(n + 2, col('fg'), col('cur'))
     out.update(sel=curses.color_pair(n), mode=curses.color_pair(n + 1) | curses.A_BOLD,
                cur=curses.color_pair(n + 2))
-    n += 3
+    curses.init_pair(n + 3, bg if bg != -1 else 0, col('magenta'))  # F195b: a release's chip, on every row background
+    out['kindv'] = out['sel:kindv'] = out['cur:kindv'] = curses.color_pair(n + 3) | curses.A_BOLD
+    n += 4
     for ground in ('sel', 'cur'):  # B112: every colour on each row background
         row_bg = col(ground)
         for name in COLOURS:

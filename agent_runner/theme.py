@@ -46,6 +46,41 @@ THEMES: dict[str, dict] = {
                  'cyan': 6, 'key': 15},
 }
 
+# F195b: one word and colour per kind of task, for the run page, the terminal page and status. A colour is a name; the
+# terminal draws its theme token below, the page its own --k… token (page/010-shared.css)
+KINDS = {'B': ('bug', 'red'), 'F': ('feature', 'blue'), 'V': ('release', 'purple'), 'K': ('concept', 'teal'),
+         'T': ('tests', 'green'), 'R': ('research', 'gold'), 'D': ('docs', 'indigo'), 'C': ('cleanup', 'gray')}
+KIND_OWN = 'gray'  # a kind a project names itself
+KIND_TOKEN = {'red': 'red', 'blue': 'blue', 'purple': 'magenta', 'teal': 'cyan', 'green': 'green', 'gold': 'yellow',
+              'indigo': 'fg', 'gray': 'dim'}
+TASK_ID = re.compile(r'([A-Za-z]+)\d')
+
+
+def kind_table(names: dict | None = None) -> dict[str, dict]:
+    """{id letters: {'word', 'color'}} for every kind: KINDS, then the project's own ([plan] kinds, `names`:
+    {letters: 'word: meaning'}). The colour goes with the word, so a letter a project gives another meaning is
+    gray, and the same meaning under another letter keeps its colour."""
+    out = {k: {'word': w, 'color': c} for k, (w, c) in KINDS.items()}
+    colour = dict(KINDS.values())
+    for letters, meaning in (names or {}).items():
+        m = re.match(r'[^\W_][\w-]*', str(meaning).strip())
+        word = m.group(0).lower() if m else ''
+        if word:
+            out[str(letters)] = {'word': word, 'color': colour.get(word, KIND_OWN)}
+    return out
+
+
+def kind_of(tid: str, table: dict | None = None) -> dict:
+    """Task `tid`'s kind out of `kind_table`'s `table` (None: the defaults); no word and gray for letters it lacks."""
+    m = TASK_ID.match(tid or '')
+    return (table or kind_table()).get(m.group(1) if m else '') or {'word': '', 'color': KIND_OWN}
+
+
+def kind_token(kind: dict) -> str:
+    """The theme token the terminal draws `kind` (`kind_of`) in."""
+    return KIND_TOKEN.get(kind.get('color', ''), 'dim')
+
+
 HEX = re.compile(r'^#[0-9a-fA-F]{6}$')
 # an omarchy colors.toml's names for each ANSI colour, old style (red, bright_red) and new (color1, color9)
 ANSI_NAMES = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']

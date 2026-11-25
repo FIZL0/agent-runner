@@ -479,6 +479,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'claude_login': login,  # F126a
             'unpushed': unpushed_line(),  # F98
             'responses': kept_responses(),  # F425a
+            'kinds': theme.kind_table(_kind_names()),  # F195b
             'usage': usage_rows(st), 'lately': lately(titles), 'past_releases': past_releases(titles), 'chat_quiet': chat_quiet(), 'chat_model': new_chat_model(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
 

@@ -94,7 +94,7 @@ const from = page.indexOf('/* F426c: the History view'), src = page.slice(from, 
 const snap = JSON.parse(process.argv[3]);
 const opened = [], chats = [], asked = [];
 const env = {S: {snap, f: {}, taskOpen: {}, tasks: {}}, I: new Proxy({}, {get: () => ''}), LOGLINE_ICON: {},
-  esc: s => String(s ?? ''), card: (h, c, a) => `<div class="card" ${a}>${h}</div>`, emptyCard: t => `[empty ${t}]`,
+  esc: s => String(s ?? ''), taskChip: id => `<kind ${id}>`, card: (h, c, a) => `<div class="card" ${a}>${h}</div>`, emptyCard: t => `[empty ${t}]`,
   foldIn: (k, h) => `<fold>${h}</fold>`, agoWords: () => '5 min', logKind: () => '', releasesOn: s => s.manage_releases !== false,
   oldRun: () => false, oldRunHTML: t => t, plainOut: (j, t) => t, tq: p => p, render: () => {}, clearTimeout: () => {}, setTimeout: f => { env.fire = f; return 1 },
   open: k => opened.push(k), ctxKey: c => '+' + c.kind + ':' + c.id, newChat: (...a) => chats.push(a), kbFocus: () => {},
@@ -140,7 +140,7 @@ def test_view(tmp: Path) -> None:
     at = [shut.find(x) for x in ('Find in history', '>Landed<', '>Releases<', '>Run log<', 'data-quick="since"', '10:05 landed F1', '10:00 started F1')]
     check(all(i >= 0 for i in at) and at == sorted(at), 'search, landed, releases, the log newest first', at)
     eq([shut.count(f'data-task="{t}"') for t in ('F1', 'B2', 'V6', 'C3')], [1, 1, 1, 0], 'each once, a release in Releases, and no other event')
-    check('data-task="V6" data-list="pastrel"' in shut and 'B2 · part landed · 5 min' in shut, 'the release; a part says so', shut)
+    check('data-task="V6" data-list="pastrel"' in shut and '>part landed · 5 min<' in shut and '<kind B2>' in shut, 'the release; a part says so', shut)
     check('data-hist="' not in shut and 'aria-expanded="true"' not in shut, 'all shut')
     check('Loading…' in o['loading'], 'its text is on the way', o['loading'])
     op = o['open']

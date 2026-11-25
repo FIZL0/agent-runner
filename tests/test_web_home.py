@@ -299,7 +299,7 @@ def test_need_popup_f162(tmp: Path) -> None:
     o = json.loads(r.stdout)
     card = o['card']
     check('Check this · iPhone, Safari' in card and 'Keyboard &lt;b&gt;' in card and '<b class="q">Run <code>x</code> &lt;i&gt;</b><span class="small">Keyboard &lt;b&gt;</span>' in card
-          and '2 steps · B160 · 20m' in card, 'the card: what is wanted and where, what is asked, the title small under it', card)
+          and '2 steps · 20m' in card and '>B160</span><span class="asklab">' in card, 'the card: what is wanted and where, what is asked, the title small under it', card)
     check('Close it' not in card and card.index('</button>') < card.index('data-ctl="need_yes"'), 'no steps on it, and its buttons are not inside its words', card)
     eq(o['opened'], ['need', 'B160', True, True], 'a press on its words opens the popup')
     eq(o['fetched'], ['task/B160?t=T', 'why/B160?t=T'], 'which asks for why it waits and the whole task')

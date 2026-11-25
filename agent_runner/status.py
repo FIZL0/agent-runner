@@ -8,7 +8,7 @@ import os
 import re
 import time
 
-from agent_runner import pitch, plan as P, shared_tools
+from agent_runner import pitch, plan as P, shared_tools, theme
 from agent_runner.config import shown_cmd
 from agent_runner.state import C, default_branch, git, project
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LANDED, EV_LEFT, EV_NO_COMMITS,
@@ -701,6 +701,27 @@ def lately_events(log_lines: list, titles: dict[str, str]) -> list[tuple[str, st
     return out
 
 
+def kind_table() -> dict[str, dict]:
+    """F195b: `theme.kind_table` of the project's kinds."""
+    from agent_runner import ui_model as U
+    return theme.kind_table(U._kind_names())
+
+
+def task_words(tid: str, title: str, kinds: dict) -> str:
+    """F195b: a task as `status` prints it: 'bug B216 Talk: the end is cut off'."""
+    word = theme.kind_of(tid, kinds)['word']
+    return ' '.join(x for x in (word, tid, title) if x)
+
+
+def event_words(tid: str, said: str, kinds: dict) -> str:
+    """F195b: a lately line with its kind: 'landed: Run page chats [B215]' as 'landed: bug B215 Run page chats'."""
+    state, sep, what = said.partition(': ')
+    if not tid or not sep or not what.endswith(f' [{tid}]'):
+        return said
+    what = what.removesuffix(f' [{tid}]')
+    return f'{state}: {task_words(tid, what.removeprefix(tid).strip() if re.match(re.escape(tid) + r"( |$)", what) else what, kinds)}'
+
+
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
                 waiting=None, progress: str = '', wips=None, login: str = '', agent: str = '') -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
@@ -719,11 +740,12 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     if unpushed := pitch.waiting_line():  # F98
         out.append(unpushed)
     out += progress.splitlines()
+    kinds = kind_table()
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
         title = titles.get(tid, '')
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
         mins = f'{int((now - st["since"][n]) // 60)} min' if n in st.get('since', {}) else ''
-        out.append('  ' + '  '.join(x for x in (f's{n}' if n.isdigit() else n, f'{title} [{tid}]' if title else tid,
+        out.append('  ' + '  '.join(x for x in (f's{n}' if n.isdigit() else n, task_words(tid, title, kinds),
                                                  mins, spend_shown(st, n)) if x))
     if up and not st.get('running'):
         out.append('  no task running')
@@ -731,11 +753,11 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
         out += tool_lines(st)  # F168
     out += until_lines()
     if st.get('merging'):
-        out.append('merging: ' + ', '.join(f'{titles[t]} [{t}]' if titles.get(t) else t for t in st['merging']))
+        out.append('merging: ' + ', '.join(task_words(t, titles.get(t, ''), kinds) for t in st['merging']))
     events = lately_events(log_lines[-2000:], titles)
     if events:
         out.append('lately:')
-        out += [f'  {m[0][11:16]} {m[2]}' for m in events[-5:]]
+        out += [f'  {m[0][11:16]} {event_words(m[1], m[2], kinds)}' for m in events[-5:]]
     use = st.get('usage') or {}
     if any(v is not None for v in use.values()):
         out.append('usage: ' + ', '.join(f'{w} {use[k]:.0f}%' for k, w in (('five_hour', 'session'), ('seven_day', 'week'))

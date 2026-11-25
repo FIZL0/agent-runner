@@ -15,8 +15,9 @@ const needTitle=n=>{const d=needD(n);return d.title!==n.id&&needSame(d.title)!==
 const needHead=n=>askWords(needAsk(n));
 /* the card's words, one button that opens the popup: what is wanted and where, what is asked, the title, a
    DECIDE's background; nothing of it is cut */
-function needTap(n){const d=needD(n), k=d.steps.length, t=needTitle(n), say=d.question?d.lead.join(' '):'';
-  return `<button class="asktap" data-needopen="${E_(n.id)}" aria-haspopup="dialog"><span class="asklab">${E_(needLab(n))}</span><b class="q">${needHead(n)}</b>${t?`<span class="small">${E_(t)}</span>`:''}${say?`<span class="askdo">${askWords(say)}</span>`:''}<span class="small">${['Press for details',k>1?`${k} steps`:'',E_(n.id),E_(n.age||'')].filter(Boolean).join(' · ')}</span></button>`}
+const askChip=(n,kinds)=>/^[A-Za-z]+\d/.test(n.id)?kindChip(n.id,kinds):'';  // F195b: a tool or a pitch has no kind
+function needTap(n,kinds){const d=needD(n), k=d.steps.length, t=needTitle(n), say=d.question?d.lead.join(' '):'';
+  return `<button class="asktap" data-needopen="${E_(n.id)}" aria-haspopup="dialog"><span class="askkind">${askChip(n,kinds)}<span class="asklab">${E_(needLab(n))}</span></span><b class="q">${needHead(n)}</b>${t?`<span class="small">${E_(t)}</span>`:''}${say?`<span class="askdo">${askWords(say)}</span>`:''}<span class="small">${['Press for details',k>1?`${k} steps`:'',askChip(n,kinds)?'':E_(n.id),E_(n.age||'')].filter(Boolean).join(' · ')}</span></button>`}
 /* F175a: a step's link to open and its command to copy */
 function stepMore(m,j){if(!m)return '';
   return (/^https?:/i.test(m.link||'')?`<div class="btns"><a class="btn" href="${E_(m.link)}" target="_blank" rel="noopener noreferrer">Open</a></div>`:'')

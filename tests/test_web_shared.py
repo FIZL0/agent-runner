@@ -24,7 +24,9 @@ from _check import check, eq, git, report
 from _trust import asked, trusted_checks
 
 from agent_runner import config as CF  # noqa: E402
+from agent_runner import plan as P  # noqa: E402
 from agent_runner import state as S  # noqa: E402
+from agent_runner import theme as TH  # noqa: E402
 from agent_runner import ui_model as U  # noqa: E402
 from agent_runner import web as W  # noqa: E402
 from _web import TODO, fake_repo, get, post, LOGIC_DRIVER, logic_js, in_tmp  # noqa: E402
@@ -619,9 +621,97 @@ def test_style_f83(tmp: Path) -> None:
     for cls in re.findall(r'`\.([a-z]\w*)`', doc):
         check(f'.{cls}' in css, f'docs/STYLE.md names .{cls}, a class in the page')
     for dark in re.findall(r'\[data-theme="dark"\]\{(.*?)\}', css, re.S):
-        light = set(re.findall(r'(--(?:bg|side|surface|bubble|fg|muted|faint|line2?|accent2?|onaccent|ok|warn|bad|onbad|scrim|shadow|lift)):', css.split('}', 1)[0]))
+        light = set(re.findall(r'(--(?:bg|side|surface|bubble|fg|muted|faint|line2?|accent2?|onaccent|ok|warn|bad|onbad|scrim|shadow|lift|k(?:red|blue|purple|teal|green|gold|indigo|gray))):', css.split('}', 1)[0]))
         eq(light - set(re.findall(r'(--[a-z0-9]+):', dark)), set(), 'every colour has its dark value')
     check('confirm(' not in page and 'alert(' not in page, 'no browser dialogs')
+
+
+def test_kinds_f195b(tmp: Path) -> None:
+    """F195b: one word and colour per task kind, from the one table (theme.KINDS), on the snapshot and as the page's chip."""
+    fake_repo(tmp)
+    eq(U.snapshot(up=False)['kinds'], TH.kind_table(P.KINDS), "the snapshot has the project's kinds")
+    eq(TH.kind_table(P.KINDS), TH.kind_table(), "the plan's own kinds are the table's")
+    eq({w for w, _ in TH.KINDS.values()}, {'bug', 'feature', 'release', 'concept', 'tests', 'research', 'docs', 'cleanup'}, 'the words')
+    eq(len({c for _, c in TH.KINDS.values()}), 8, 'a colour each')
+    own = TH.kind_table({'F': 'fizz: board work', 'M': 'Research: find out', 'X': ''})
+    eq([own[k] for k in 'FMB'], [{'word': 'fizz', 'color': 'gray'}, {'word': 'research', 'color': 'gold'}, {'word': 'bug', 'color': 'red'}],
+       "a project's own kind is gray; the same kind under another letter keeps its colour")
+    check('X' not in own and TH.kind_of('X1', own) == {'word': '', 'color': 'gray'}, 'a kind with no word: gray')
+    eq([TH.kind_token(TH.kind_of(t)) for t in ('B216', 'F193b', 'V5', 'K13', 'T21', 'R17', 'D7', 'C19')],
+       ['red', 'blue', 'magenta', 'cyan', 'green', 'yellow', 'fg', 'dim'], "the terminal's colours")
+    css = W.PAGE.read_text(encoding='utf-8').split('</style>', 1)[0]
+    for _, c in TH.KINDS.values():
+        eq(css.count(f'--k{c}:'), 3, f'{c}: light, dark, dark by the system')
+        check(f'.k-{c}{{--kc:var(--k{c})}}' in css, f'and its class: {c}')
+    if not shutil.which('node'):
+        return
+    kinds = {**own, 'H': {'word': '<b>', 'color': 'gray'}}
+    got = logic_js([['kindChip', 'B216', kinds], ['kindChip', 'Q4', kinds], ['kindChip', 'tool-x', kinds], ['kindChip', 'B1', None],
+                    ['kindChip', 'H1', kinds], ['landedText', {'id': 'B2', 'text': 'landed: One [B2]'}], ['landedText', {'id': '', 'text': 'idle'}]])
+    eq(got, ['<span class="kind k-red"><i>Bug</i> B216</span>', '<span class="kind k-gray">Q4</span>', 'tool-x',
+             '<span class="kind k-gray">B1</span>', '<span class="kind k-gray"><i>&lt;b&gt;</i> H1</span>', 'landed: One', 'idle'], 'the chips')
+
+
+HINT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const at = page.indexOf('/* F195b: an icon-only control says'), src = page.slice(at, page.indexOf("e.target===window)hintHide()},{capture:true,passive:true});", at)) + "e.target===window)hintHide()},{capture:true,passive:true});";
+const ears = {}, on = (t, f) => (ears[t] = ears[t] || []).push(f), timers = new Map(); let made = null, seq = 0;
+const window = {}, TS = {mic: 'hold'}, innerWidth = 390, innerHeight = 800, addEventListener = on;
+const setTimeout = (f, ms) => (timers.set(++seq, [f, ms]), seq), clearTimeout = i => timers.delete(i);
+const due = ms => { for (const [i, [f, m]] of [...timers]) if (m === ms && timers.delete(i)) f() };
+const document = {addEventListener: on, getElementById: () => made, body: {appendChild: b => { made = b }},
+  createElement: () => ({style: {}, setAttribute() {}, offsetWidth: 80, offsetHeight: 24, hidden: true})};
+const el = (attrs, text = '', svg = true, inside = '') => { const e = {attrs, isConnected: true, textContent: text, getAttribute: k => attrs[k] ?? null, hasAttribute: k => k in attrs,
+  setAttribute: (k, v) => { attrs[k] = v }, removeAttribute: k => { delete attrs[k] }, contains: x => x === e,
+  querySelector: q => q === 'svg' && svg ? {} : null, closest: q => q.startsWith('button') || q === inside ? e : null, getBoundingClientRect: () => ({left: 0, right: 40, top: 4, bottom: 44})}; return e };
+eval(logic + src + ';Object.assign(globalThis,{HINT})');
+const fire = (t, o) => { let stop = false; const e = {pointerType: 'touch', pointerId: 1, isPrimary: true, clientX: 0, clientY: 0, cancelable: true, preventDefault() { e.kept = true }, stopPropagation() {}, stopImmediatePropagation() { stop = true }, ...o};
+  for (const f of ears[t] || []) { if (stop) break; f(e) } return stop };
+const shown = () => made && !made.hidden ? made.textContent : '', out = {};
+const a = el({'aria-label': 'Menu', title: 'Menu'}), word = el({title: 'Add'}, 'Task');
+fire('pointerdown', {target: a}); out.before = shown(); due(500); out.held = [shown(), made.style.top]; fire('pointerup', {target: a}); out.ate = fire('click', {target: a}); due(400);
+due(1200); out.gone = [shown(), a.attrs.title]; out.next = fire('click', {target: a});
+fire('pointerdown', {target: a}); fire('pointerup', {target: a}); due(500); out.tap = [shown(), fire('click', {target: a})];
+fire('pointerdown', {target: a}); fire('pointermove', {target: a, clientY: 30}); due(500); out.swipe = shown(); fire('pointerup', {target: a});
+fire('pointerdown', {target: word}); due(500); out.word = shown(); fire('pointerup', {target: word});
+const mic = el({'aria-label': 'Hold to talk'}, '', true, '[data-mic]');
+fire('pointerdown', {target: mic}); due(500); out.mic = shown(); fire('pointerup', {target: mic});
+TS.mic = 'tap'; fire('pointerdown', {target: mic}); due(500); out.micTap = shown(); fire('pointerup', {target: mic}); due(400); due(1200);
+fire('pointerdown', {target: a}); const e = {target: a}; fire('contextmenu', e); out.menu = shown(); fire('pointercancel', {target: a}); due(400); due(1200);
+fire('pointerover', {target: a, pointerType: 'mouse'}); out.wait = shown(); due(400); out.hover = [shown(), 'title' in a.attrs];
+out.press = fire('click', {target: a}); out.pressed = [shown(), a.attrs.title];
+fire('pointerover', {target: word, pointerType: 'mouse'}); due(400); out.hoverWord = shown();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_icon_hints_f195b(tmp: Path) -> None:
+    """F195b: an icon-only control says what it does while hovered or held, a hold that showed it presses nothing, and
+    a tap, a swipe or the mic in Hold is as before; every icon-only control in the page has the label it says."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    for tag, inner in re.findall(r'<(?:button|a)( [^<>]*?)>((?:\$\{I\.\w+\}|[✕…/−+↑])(?:<span class="bdot"></span>)?)</(?:button|a)>', page):
+        check('aria-label=' in tag, f'an icon-only control has its label: {inner}', tag)
+    if not shutil.which('node'):
+        return
+    eq(logic_js([['iconWords', 'Close', '', '', True], ['iconWords', '', 'More', '…', False], ['iconWords', 'New chat', '', 'Chat', True],
+                 ['iconWords', 'Scrim', '', '', False],
+                 ['hintSpot', {'left': 100, 'right': 140, 'top': 300, 'bottom': 340}, 80, 24, 390, 800],
+                 ['hintSpot', {'left': 350, 'right': 390, 'top': 4, 'bottom': 44}, 80, 24, 390, 800]]),
+       ['Close', 'More', '', '', {'left': 80, 'top': 268}, {'left': 302, 'top': 52}], 'which are icons only, and where the hint stands')
+    (tmp / 'driver.js').write_text(HINT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, encoding='utf-8', timeout=60)
+    check(r.returncode == 0, 'node runs the hints', r.stderr[-1200:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq((o['before'], o['held'], o['ate']), ('', ['Menu', '52px'], True), 'held: it says what it does, and the release presses nothing')
+    eq((o['gone'], o['next']), (['', 'Menu'], False), 'then it goes, its title is back, and the next tap presses')
+    eq((o['tap'], o['swipe'], o['word']), (['', False], '', ''), 'a tap, a swipe and a button with a word: none')
+    eq((o['mic'], o['micTap']), ('', 'Hold to talk'), 'the mic in Hold has a hold of its own')
+    eq(o['menu'], 'Menu', "the browser's own long press shows it too")
+    eq((o['wait'], o['hover']), ('', ['Menu', False]), 'hovered: after a moment, and once (no tooltip of the browser)')
+    eq((o['press'], o['pressed'], o['hoverWord']), (False, ['', 'Menu'], ''), 'a click presses and takes it away; none on a word')
 
 
 def test_page_parts_c41a(tmp: Path) -> None:
@@ -641,4 +731,4 @@ def test_page_parts_c41a(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_page_parts_c41a)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_kinds_f195b), in_tmp(test_icon_hints_f195b), in_tmp(test_page_parts_c41a)]))

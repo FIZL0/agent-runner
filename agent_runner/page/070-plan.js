@@ -28,7 +28,7 @@ const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+
 function slotRow(s){
   if(!s.task)return `<div class="srow" data-k="slot:${esc(s.name)}:"><div class="row"><div class="who">${esc(s.name)}</div><div class="grow small">Idle: nothing it can start right now</div></div></div>`;
   const w=lastWords(s.name), tc=taskControlsOn(s)?controlsOf('task'):[];
-  return `<div class="srow" data-k="slot:${esc(s.name)}:${esc(s.task)}"><button class="fold" data-thread="${esc(s.name)}"><span class="who">${esc(s.name)}</span><span class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></span><span class="chev">${I.chev}</span></button>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn${ctlBusy(c.key,s.task)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}</div>`;
+  return `<div class="srow" data-k="slot:${esc(s.name)}:${esc(s.task)}"><button class="fold" data-thread="${esc(s.name)}"><span class="who">${esc(s.name)}</span>${taskChip(s.task)}<span class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></span><span class="chev">${I.chev}</span></button>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn${ctlBusy(c.key,s.task)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}</div>`;
 }
 /* F168: the shared tools in words, the same as status says */
 const toolsWords=ts=>'Tools: '+ts.map(t=>`${t.label}: ${t.words}`).join(' · ');
@@ -63,7 +63,7 @@ function needBtns(n,i,more=''){
 }
 /* F411: an item's page: its link, or the run page's own copy of a pick sheet with no claude.ai page */
 const needPage=n=>n.url||(n.page?tq(n.page):'');
-const needCard=(n,i)=>card(needTap(n)+needBtns(n,i),'need',`data-k="need:${esc(n.id)}"`);
+const needCard=(n,i)=>card(needTap(n,S.snap.kinds)+needBtns(n,i),'need',`data-k="need:${esc(n.id)}"`);
 /* F162: the popup of one Needs you item: everything about it, its answers always on screen at the foot */
 const needOf=id=>((S.snap&&S.snap.needs)||[]).find(n=>n.id===id);
 const shotUrl=s=>tq('shot/'+s.src.split('/').map(encodeURIComponent).join('/'));
@@ -164,7 +164,7 @@ function needSheet(){
     :`${needBody(n,shotUrl,giveHTML(n,{secure,...said,done:giveDone(n,said,secure)}))}${needPage(n)?`<a class="asklink" href="${esc(needPage(n))}" target="_blank" rel="noopener">Its page ${I.ext}</a>`:''}${askTask(n.id)?askWhyFold(n.id)+askFold('task','Full task',(S.askText||{})[n.id]):''}`;
   const foot=needInputs(n).length?`<div class="askfoot end" data-k="askfoot">${needBtns(n,i)}</div>`:n.label==='TOOL'?'':`<div class="askfoot" data-k="askfoot"><input class="fld" data-f="${esc(f)}" aria-label="${rep?'Your reply':'A note with your answer'}" placeholder="${rep?'Your reply':'Add a note (optional)'}" autocomplete="off">${needBtns(n,i,rep?`<button class="btn ${answerOpts(n).length?'':'pri'}" data-reply="${esc(n.id)}">Reply</button>`:'')}</div>`;
   return `<div class="asktop"><div class="grow"><h2>${needHead(n)}</h2>${needTitle(n)?`<div class="small">${esc(needTitle(n))}</div>`:''}</div>${big?'<button class="btn" data-shotclose>Back</button>':'<button class="btn" data-closesheet>Close</button>'}</div>
-    <div class="small"><span class="asklab">${esc(needLab(n))}</span>${n.age?` · ${esc(n.age)}`:''} · ${esc(n.id)}</div><div class="askbody">${body}</div>${foot}`;
+    <div class="small">${askChip(n,S.snap.kinds)?askChip(n,S.snap.kinds)+' ':''}<span class="asklab">${esc(needLab(n))}</span>${n.age?` · ${esc(n.age)}`:''}${askChip(n)?'':` · ${esc(n.id)}`}</div><div class="askbody">${body}</div>${foot}`;
 }
 /* F175a: Done on an item with inputs, under its fields. A field may be gone meanwhile (the item changed): its words show here */
 function giveDone(n,said,secure){
@@ -221,7 +221,7 @@ const taskIsOpen=(list,id)=>S.taskOpen[list]===id;
 function taskRow(q,title,more='',list='queue',lead=''){
   const open=taskIsOpen(list,q.id), t=S.tasks[q.id], k=list.startsWith('wait:')?list+':'+q.id:q.id;
   const text=()=>t&&t.text?`<pre class="tasktext" data-k="text:${esc(k)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>';
-  return `<button class="fold" data-task="${esc(q.id)}" data-list="${esc(list)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(k)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(open&&q.release?relWaits(q.release):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(k,(lead||text())+more):''}`;
+  return `<button class="fold" data-task="${esc(q.id)}" data-list="${esc(list)}" aria-expanded="${open}">${taskChip(q.id)}<span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(k)}" data-v="${esc(q.state||'')}">${esc(open&&q.release?relWaits(q.release):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(k,(lead||text())+more):''}`;
 }
 async function openTask(id,list='queue'){
   const on=!taskIsOpen(list,id);
@@ -274,7 +274,7 @@ function conceptCard(c,i){  // B219a: its one Chat is the new chat view; concept
   const b=x=>x.pick!=null?`<button class="btn ${x.rec?'pri':''}" data-pick="${i}" data-o="${x.pick}">${esc(x.label)}</button>`
     :x.about?`<button class="btn" data-about="concept:${i}">Chat</button>`
     :`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`;
-  return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${esc(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(optionName(os.find(o=>o.rec)))}`:''}`:''}</span>
+  return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${taskChip(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(optionName(os.find(o=>o.rec)))}`:''}`:''}</span>
     <div class="btns">${conceptButtons(c).map(b).join('')}${actBtns(acts,c.id)}</div>${actSure(acts,c.id)}`,'',`data-k="concept:${esc(c.id)}"`);
 }
 function box(ph,foot){
