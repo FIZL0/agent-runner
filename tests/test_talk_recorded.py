@@ -129,7 +129,7 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   fresh(); may = 'granted'; await shown(); click('[data-mic]'); await settle(); sound(1); await gone(); await tail(); TK.wait = null; TK.state = ''; await tick(500); await shown(); out.takenListen = [asks, REC.open, sent.slice()];
   fresh(); may = 'granted'; await shown(); TK.wait = null; lands('A reply.'); k1 = REC.open.rest; await gone(); const reads = REC.open; us[us.length - 1].onend({type: 'end'}); await shown(); out.takenReply = [k1, reads, asks, REC.open];
   // F161c3: a press that cuts a reply off wakes the same stream in the press, with none of the reply's sound in the clip
-  fresh(); may = 'granted'; await shown(); TK.wait = null; lands('A reply.'); k1 = REC.open; before(1, 0.4); click('[data-mic]'); out.cutOff = [REC.open === k1, k1.track.enabled, k1.rest, types[types.length - 1]]; await settle(); out.cutOn = [asks, TK.state, !!(REC.now && REC.now.on)]; sound(1); click('[data-mic]'); await tail(); out.cutClip = [posts.length, sent.slice(), asks];
+  fresh(); may = 'granted'; await shown(); TK.wait = null; lands('A reply.'); k1 = REC.open; before(1, 0.4); const cut0 = REC.open.kept; click('[data-mic]'); out.cutOff = [REC.open === k1, k1.track.enabled, k1.rest, types[types.length - 1]]; await settle(); out.cutOn = [asks, TK.state, !!(REC.now && REC.now.on)]; sound(1); click('[data-mic]'); await tail(); out.cutClip = [posts.length, sent.slice(), asks, cut0]; const cw = posts[0] && Buffer.from(posts[0]); out.cutSecs = cw ? (cw.length - 44) / 32000 : 0;
   // a press opened it and a new stream could ask: the same rest while a reply plays
   fresh(); click('[data-mic]'); await settle(); sound(1); click('[data-mic]'); await tail(); TK.wait = null; TK.state = ''; before(1, 0.1); k1 = REC.open; lands('A reply.'); before(1, 0.1); out.rests = [REC.open === k1, k1.track.enabled, k1.ctx.state, k1.kept, types[types.length - 1], asks]; us[us.length - 1].onend({type: 'end'}); await shown(); out.wakes = [REC.open === k1, k1.track.enabled, k1.ctx.state, asks, types[types.length - 1]];
   // a press with only what came before it sends nothing; the browser's way opens nothing
@@ -250,7 +250,8 @@ def test_recorded_f161b(tmp: Path) -> None:
     eq((g.get('reply'), g.get('during')), ([True, 'live', False, 'running', 'playback', 'speaking', False], [True, True, 0]), 'F161c3: a reply: the stream rests, its track off, its context running; no sound is taken')
     eq(g.get('afterReply'), [True, True, True, 0, 'play-and-record'], 'and the same one is live after it, with none of its sound')
     eq((g.get('cutOff'), g.get('cutOn')), ([True, True, False, 'play-and-record'], [1, 'listening', True]), 'F161c3: a press that cuts a reply off wakes the stream in the press, with no new ask')
-    eq(g.get('cutClip'), [1, ['hello run'], 1], 'and its words go out')
+    eq(g.get('cutClip'), [1, ['hello run'], 1, 0], 'and its words go out')
+    check(0.8 <= (g.get('cutSecs') or 0) <= 1.1, 'with only the second since the press in the clip', str(g.get('cutSecs')))
     eq((g.get('hides'), g.get('backOn')), (['ended', None, 'playback', False], True), 'hidden: released at once; shown: open again')
     for n in ('left', 'thread', 'test', 'typing'):
         eq((g.get('rel_' + n), g.get('back_' + n)), (None, True), f'{n}: released, then open again')

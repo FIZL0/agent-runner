@@ -155,12 +155,12 @@ Real taps by WebDriverAgent, speaker, reply = a 4 s clip. Time = press to the fi
 
 - Fresh open, page already allowed: 377-434 ms; second press on the open stream: 42-46 ms.
 - After a reply: closed, then reopened by the press: 461 ms (1 run). Closed, then reopened when the reply ended: the reopening takes about 0.5 s, then the press 46-49 ms (2 runs).
-- Kept (track off, AudioContext running, audio session playback): 47, 51, 48 ms. Track off, session play-and-record: 47, 46, 45. Stream untouched, session playback: 48, 47.
+- Kept (track off, AudioContext running, audio session playback): 47, 51, 48 ms. Track off, session play-and-record: 47, 46, 45. Stream untouched, session playback: 48, 47; session play-and-record too: 46.
 - Cutting a reply off: closed 1133-1141 ms (3 runs, 2 of them of the reopen variant; all reopened in the press); kept 77-80 ms.
 - Context suspended (the old rest): first piece after 822-1009 ms (one 122 ms, with the track left on), and only silence (exact zeros for 4 s) in 6 of 8 presses, in all 4 with the track off too (the old rest). Two fresh opens just after a load were as silent, so what causes the silence is not known; none of the 9 presses whose context kept running, after a reply, and none of the 9 that cut one off, were silent.
 - Reply start delay: 64-81 ms kept; 87-316 ms closed; 745-821 ms suspended.
 
-Not measured: loudness of replies while the stream rests, earbuds (hands-free profile), and a person speaking. The 1.57 s report is not reproduced by these numbers; the closest is 1.14 s for a cut. An early run whose taps hit the wrong buttons was discarded.
+Not measured: loudness of replies while the stream rests, earbuds (hands-free profile; none were connected to the test phone), the run app's own press path, and a person speaking. The 1.57 s report is not reproduced by these numbers; the closest is 1.14 s for a cut. An early run whose taps hit the wrong buttons was discarded.
 
 ## 5. Why Safari's own recognition misses the first word (not a finding about the engine)
 
