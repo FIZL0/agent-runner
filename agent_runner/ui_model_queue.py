@@ -475,18 +475,27 @@ def landed_count() -> int | None:
     return LANDED_COUNT[2]
 
 
+def grip_on(row: dict) -> bool:
+    """B824b: has the Plan queue row `row` a grip? Each but a parked one and a release already started; a task that runs or is
+    under way too: a move is of its place alone."""
+    state = str(row.get('state') or '')
+    started = row.get('started') or row.get('under_way') or state.startswith('running')
+    return state != 'parked' and not (started and P.release(row['id']))
+
+
 def pin_releases(queue: list[dict], rows: list[dict]) -> list[dict]:
     """The queue with each release task `rows` stand for carrying `release`: its row, at its place (F195c). The auto
     release's row, which is no task, gets `before`: the id of the task it stands before, after as many that may land as
-    it still needs ('' for the queue's end). F429b: each has `menu`, the keys of its row menu."""
+    it still needs ('' for the queue's end). F429b: each has `menu`, the keys of its row menu; B824b: and
+    `grip`, whether it can be moved (`grip_on`)."""
     by = {r['id']: r for r in rows if not r.get('placeholder')}
     for r in rows:
         if r.get('state') == 'auto' and r.get('left') is not None:
             tasks = [q['id'] for q in queue if q['id'] not in by and q['state'] not in ('parked', 'blocked', 'held')]
             r['before'] = tasks[r['left']] if r['left'] < len(tasks) else ''
         if r.get('state') == 'auto':
-            r['menu'] = row_acts('queuemenu', r)
-    queue = [dict(q, menu=row_acts('queuemenu', q)) for q in queue]
+            r.update(menu=row_acts('queuemenu', r), grip=True)
+    queue = [dict(q, menu=row_acts('queuemenu', q), grip=grip_on(q)) for q in queue]
     return [dict(q, release=by[q['id']]) if q['id'] in by else q for q in queue]
 
 

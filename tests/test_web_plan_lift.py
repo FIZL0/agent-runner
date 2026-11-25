@@ -63,7 +63,7 @@ const lift = async (id, by, e = opens(id)) => { const n = sent.length, y = down(
   out.swipe = no(y => touch('touchmove', [y + 9])); out.side = no(y => touch('touchmove', [y], {touches: [{identifier: 0, clientX: 70, clientY: y}]}));
   out.native = no(y => touch('touchmove', [y + 1], {cancelable: false})); out.glided = no(() => { root.scrollTop += 4 }); root.scrollTop = 0;
   out.two = no(y => { touch('touchstart', [y, y + 50]); }); out.gone = no(() => touch('touchcancel', [])); out.drawer = no(() => setSW({on: true})); setSW(null);
-  out.where = [['F3', 'b'], ['F8', 'b']].map(([id]) => { down(opens(id)); hold(); const r = !!GR.d; touch('touchend', []); return r });
+  out.where = [['F3', 'b'], ['F8', 'b']].map(([id]) => { down(opens(id), yOf(id)); hold(); const r = !!GR.d; touch('touchend', []); return r });
   down(dots('F1')); hold(); out.dots = !!GR.d; touch('touchend', []);
   S.sheet = 'x'; down(opens('F1')); hold(); out.sheet = !!GR.d; touch('touchend', []); S.sheet = null;
   // lifted: the touch is the row's
@@ -73,7 +73,8 @@ const lift = async (id, by, e = opens(id)) => { const n = sent.length, y = down(
   y = down(opens('F1')); hold(); touch('touchmove', [y + 130]); const n1 = sent.length; touch('touchcancel', []); out.cancel = [GR.d, LF.now, sent.length - n1, rows().join()]; clear();
   y = down(opens('F1')); hold(); out.menu = fire('contextmenu', {target: el}); touch('touchend', []); out.menuAfter = fire('contextmenu', {target: el}); clear();
   y = down(opens('F1')); hold(); touch('touchmove', [y + 130]); S.snap.queue[4].title = 'Changed'; render(); out.off = el.isConnected; const k = touch('touchmove', [y + 131]); const e2 = touch('touchend', []); out.redrawn = [k, e2, rows().join(), last(), ears()]; clear();
-  y = down(opens('F1')); hold(); touch('touchmove', [y + 130]); S.snap.queue[0] = {...S.snap.queue[0], state: 'running s1 1m', menu: []}; render(); const n2 = sent.length; out.started = [touch('touchmove', [y + 131]), GR.d, touch('touchend', []), sent.length - n2];
+  y = down(opens('F1')); hold(); touch('touchmove', [y + 130]); S.snap.queue[0] = {...S.snap.queue[0], state: 'running s1 1m', menu: []}; S.snap.queue[3] = {...S.snap.queue[3], started: true, grip: false, menu: []}; render(); const n2 = sent.length; out.started = [touch('touchmove', [y + 131]), !!GR.d, touch('touchend', []), last()]; clear();
+  down(opens('V6')); hold(); out.release = [!!GR.d, sent.length - n2]; touch('touchend', []);
   console.log(JSON.stringify(out));
 })();
 """
@@ -89,9 +90,9 @@ def test_page(tmp: Path) -> None:
         return
     menu = [HOLD, TOP, REMOVE]
     row = {'id': 'V6', 'title': 'Release', 'words': 'next', 'waits': [], 'note': '', 'placeholder': False}
-    t = lambda i, **k: {'id': i, 'title': 'T' + i, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, **k}  # noqa: E731
-    ph = {'id': '', 'title': 'Next release', 'state': 'auto', 'words': 'auto at 3 landed: 1/3', 'before': 'F7', 'placeholder': True, 'menu': menu}
-    snap = {'queue': [t('F1'), t('B2'), t('F3', state='running s1 2m', menu=[]), t('V6', release=row), t('F7'), t('F8', state='parked', section='Parked', menu=[])],
+    t = lambda i, **k: {'id': i, 'title': 'T' + i, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, 'grip': True, **k}  # noqa: E731
+    ph = {'id': '', 'title': 'Next release', 'state': 'auto', 'words': 'auto at 3 landed: 1/3', 'before': 'F7', 'placeholder': True, 'menu': menu, 'grip': True}
+    snap = {'queue': [t('F1'), t('B2'), t('F3', state='running s1 2m', menu=[]), t('V6', release=row), t('F7'), t('F8', state='parked', section='Parked', menu=[], grip=False)],
             'shelved': [], 'releases': [row, ph], 'release_acts': [], 'sessions': [], 'controls': U.controls()}
     (tmp / 'lift.js').write_text(DRIVER, encoding='utf-8')
     r = subprocess.run(['node', str(tmp / 'lift.js'), str(W.PAGE), json.dumps(snap), str(LIFT)], capture_output=True, text=True, encoding='utf-8', timeout=60)
@@ -114,14 +115,15 @@ def test_page(tmp: Path) -> None:
     eq(o['wobble'], [False, True], 'a finger that wobbles still lifts it')
     for k in ('swipe', 'side', 'native', 'glided', 'gone', 'drawer', 'two'):
         eq(o[k], [False, False, None, 0, 0, same], f'{k}: no lift in that touch, and the page may scroll')
-    eq((o['where'], o['dots'], o['sheet']), ([False, False], False, False), 'not a running or parked row, the dots, or under a sheet')
+    eq((o['where'], o['dots'], o['sheet']), ([True, False], False, False), 'a running row too; not a parked row, the dots, or under a sheet')
     eq(o['own'], [None, None], 'lifted: no drawer swipe, no Hint')
     eq(o['room'][:3], ['translateY(130px)', 'translateY(-60px)', 'translateY(-60px)'], 'the others make room')
     eq(o['second'], [None, True, True, True, True, 0, same], 'a second finger puts it back, and nothing scrolls until both lift')
     eq(o['cancel'], [None, None, 0, same], 'a touch the browser took puts it back')
     eq((o['menu'], o['menuAfter']), (True, False), "the browser's long-press menu stays away while held")
     eq((o['off'], o['redrawn']), (False, [True, True, ','.join(moved), mv('F1', 'after', 'F3'), 0]), 'a redraw midway: the drag goes on')
-    eq(o['started'], [True, None, True, 0], 'one that started meanwhile is put back')
+    eq(o['started'], [True, True, True, mv('F1', 'after', 'F3')], 'a task that started meanwhile goes on')
+    eq(o['release'], [False, 1], 'a release that started never lifts')
 
 
 if __name__ == '__main__':

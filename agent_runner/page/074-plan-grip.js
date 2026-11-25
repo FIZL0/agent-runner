@@ -1,9 +1,10 @@
 /* F429c: the grip of a Plan queue row (a task, a release, the Next release row): a mouse drags the row to its place, arrow
-   up and down move it one place. No grip on a row with nothing to move it ('menu_top' of its menu). GR.did: what was moved,
+   up and down move it one place. A running or under-way task's too (B824b: its place alone); none
+   on a parked row or a release already started (`grip`, ui_model_queue.grip_on), nor on one whose Remove is undone. GR.did: what was moved,
    drawn at once and until the snapshot has it ({id,cid,at,ms,down: the rows below it, seen: the row menu's presses before
    it}); GR.rows: the rows last drawn; GR.d: the drag under way */
 const GR={did:[],rows:[],d:null}, GRIP_PX=4, GRIP_EDGE=56;
-const gripOn=q=>!q.removed&&(q.menu||[]).includes('menu_top')&&!(q.placeholder&&GR.did.some(d=>d.id===menuId(q)));  // moved once, that one is a release of its own
+const gripOn=q=>!!q.grip&&!q.removed&&!PM.did.some(d=>d.back&&d.id===menuId(q)&&!(q.menu||[]).length)&&!(q.placeholder&&GR.did.some(d=>d.id===menuId(q)));  // moved once, that one is a release of its own
 const gripReal=q=>!q.placeholder&&!q.removed;  // a row the plan can name
 /* as plan.child(): a task's subtasks move with it */
 const gripChild=(id,t)=>t.length>id.length&&t.startsWith(id)&&/\d/.test(t[id.length])!==/\d/.test(id[id.length-1]);
