@@ -17,7 +17,7 @@ from unittest import mock
 from _check import check, eq, git, report
 
 from agent_runner import loop  # noqa: E402
-from agent_runner import loop_after, loop_requests, loop_watch  # noqa: E402
+from agent_runner import loop_after, loop_requests, loop_sweep, loop_upgrade, loop_watch  # noqa: E402
 from agent_runner import teardown  # noqa: E402
 from agent_runner import runner as R  # noqa: E402
 
@@ -49,7 +49,7 @@ def stubs(st: ExitStack, said: list, **over) -> dict:
     got = {}
     for k, v in names.items():
         m = v if callable(v) and not isinstance(v, mock.Mock) else mock.Mock(return_value=v)
-        for mod in (loop, loop_requests, loop_watch, loop_after):  # C51: each module that holds the name
+        for mod in (loop, loop_requests, loop_watch, loop_after, loop_sweep, loop_upgrade):  # C51: each module that holds the name
             if hasattr(mod, k):
                 mp = st.enter_context(mock.patch.object(mod, k, m))
         got[k] = m
