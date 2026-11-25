@@ -28,8 +28,9 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
         because the newest entry is where the last session said whose move it is),
       * the files named on the line: where they actually are, how long they are, and their last 3 commits —
         so the session knows whether someone changed them yesterday before it reads a single one — and,
-        with `[plan] outline` (a command; {file} is the path), each file's outline: the map of what is
-        where, so a session reads the part it needs instead of paging through the file to find it,
+        with `[plan] outline` (a command; {file} is the path), the outline of each file over OUTLINE_LINES
+        lines: the map of what is where, so a session reads the part it needs instead of paging through the
+        file to find it (OUTLINE_MAX bytes for all of them together),
       * and the output of `[plan] brief_extra` (a command; {id} is the task), for what only the project
         knows how to find.
 
@@ -78,6 +79,10 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     where = [p for p in files_on_line(text) if p != own_rel and '*' not in p]
     if where:
         out += ['', '## Files on the line, and their last commits']
+        texts = {}
+        if cmd := c.raw['plan']['outline']:
+            texts = {t: o for t in where if line_count(root / t) > OUTLINE_LINES and (o := outline(cmd, t, root))}
+        maps, left_out = fit_outlines(texts, c.raw['plan']['outline'])
         for t in where:
             log = git('log', '-3', '--format=%h %ad %s', '--date=short', '--', t, cwd=root).stdout.strip().splitlines()
             try:
@@ -86,8 +91,8 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             except OSError:
                 size = 'missing — this task creates it'
             out += [f'- `{t}` ({size})', *[f'  - {l[:120]}' for l in log]]
-            if (cmd := c.raw['plan']['outline']) and size[0].isdigit():
-                out += outline(cmd, t, root)
+            out += maps.pop(t, [])  # once, when the line names a file twice
+        out += left_out
     if cmd := c.raw['plan']['brief_extra']:  # what only the project knows: its oracle names, a spec, …
         r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True,
                            errors='replace')
@@ -97,18 +102,62 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
 
 
 DATE = re.compile(r'\d{4}-\d{2}-\d{2}')
-OUTLINE_MAX = 6000  # chars of one file's outline in a brief
+OUTLINE_LINES = 300  # a file this long or shorter gets no outline: it is read whole
+OUTLINE_MAX = 2048  # bytes of all the outlines in one brief, with their own labels
+
+
+def line_count(path: Path) -> int:
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            return sum(1 for _ in f)
+    except OSError:
+        return 0
 
 
 def outline(cmd: str, path: str, root) -> list[str]:
-    """`[plan] outline` for one file, indented under its entry in the brief; a failure says so in one line."""
+    """The lines `[plan] outline` prints for one file; a failure is one line that says so."""
     cmd = cmd.format(file=shlex.quote(path))
     try:
-        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, text=True, timeout=60)
+        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, text=True, errors='replace',
+                           timeout=60)
     except subprocess.TimeoutExpired:
-        return [f'  (outline: `{cmd}` ran past 60 s)']
-    if r.returncode or not r.stdout.strip():
-        return [f'  (outline: `{cmd}` failed: {r.stderr.strip()[:150]})'] if r.returncode else []
-    text = r.stdout.rstrip()
-    cut = f'  … (outline cut at {OUTLINE_MAX} chars)' if len(text) > OUTLINE_MAX else ''
-    return ['  outline:', *(f'    {l}' for l in text[:OUTLINE_MAX].splitlines()), *([cut] if cut else [])]
+        return [f'({cmd[:150]} ran past 60 s)']
+    if r.returncode:
+        return [f'({cmd[:150]} failed: {" ".join(r.stderr.split())[:150]})']
+    return [l.rstrip() for l in r.stdout.splitlines() if l.strip()]
+
+
+def outline_bytes(ls: list[str]) -> int:
+    return sum(len(l.encode('utf-8')) + 1 for l in ls)
+
+
+def outline_block(ls: list[str], room: int) -> list[str]:
+    """One file's outline in at most `room` bytes: when it does not all fit, lines picked evenly from its whole
+    length, and how many of how many. [] when not even one line fits."""
+    for n in range(len(ls), 0, -1):
+        picked = [ls[i * len(ls) // n] for i in range(n)]
+        label = '  outline:' if n == len(ls) else f'  outline (trimmed evenly: {n} of {len(ls)} lines):'
+        block = [label, *(f'    {l}' for l in picked)]
+        if outline_bytes(block) <= room:
+            return block
+    return []
+
+
+def fit_outlines(texts: dict[str, list[str]], cmd: str) -> tuple[dict[str, list[str]], list[str]]:
+    """Each file's outline block, all within OUTLINE_MAX bytes, and the lines that say what was trimmed. The
+    files get an even share, and what a short outline does not need goes to the longer ones."""
+    whole = {t: outline_block(ls, 1 << 30) for t, ls in texts.items()}
+    if sum(outline_bytes(b) for b in whole.values()) <= OUTLINE_MAX:
+        return whole, []
+    note = f'(outlines trimmed to {OUTLINE_MAX} bytes in all; a whole one: `{cmd[:150]}`)'
+    note_left = note[:-1] + f'; {len(texts)} files have none here)'  # the longest the note can get
+    room, blocks = OUTLINE_MAX - outline_bytes([note_left]), {}
+    order = sorted(texts, key=lambda t: outline_bytes(whole[t]))
+    for i, t in enumerate(order):
+        block = outline_block(texts[t], room // (len(order) - i))
+        room -= outline_bytes(block)
+        blocks[t] = block
+    none = sum(not b for b in blocks.values())
+    if none:
+        note = note[:-1] + f'; {none} file{"s have" if none > 1 else " has"} none here)'
+    return blocks, [note]

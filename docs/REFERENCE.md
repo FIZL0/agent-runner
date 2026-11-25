@@ -1646,6 +1646,7 @@ code map each task appended a line to). Leave the rules there; put code maps, ho
 `agent-runner plan "Driving the game"`). A heading named exactly that wins over one that only contains it.
 `agent-runner context` shows what every session loads, biggest sections first, against `[plan] context_kb` (12 KB);
 `run` warns at start when it's over, and the prompt tells agents where new reference material goes.
+Big files get a map too: `[plan] outline` runs only for files on the task line that are over 300 lines, and all the outlines in one brief stay within 2 KB. When they don't fit, each file gets an even share and shows lines picked evenly through the file, labelled `outline (trimmed evenly: N of M lines)`; a note after the files gives the command for a whole one and how many have none. `tools/outline.py` (stdlib only) lists functions, classes, methods, section comments and headings, with line numbers, for Python, .js, .mjs and Markdown.
 
 ## Making it fast
 
@@ -1862,7 +1863,7 @@ journal = ""              # e.g. "journal": per-task folders, the newest pasted 
 journal_layout = "dated"  # or "id": one folder per task, journal/<ID>/, a retry dated one folder down
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id
 outline = ""              # a command printing one file's outline; {file} is the path, e.g.
-                          # "python3 tools/outline.py {file}": the brief shows it under each file the line names
+                          # "python3 tools/outline.py {file}": the brief shows it under each file the line names over 300 lines
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
 lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]

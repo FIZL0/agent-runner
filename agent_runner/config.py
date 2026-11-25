@@ -91,7 +91,7 @@ DEFAULTS: dict = {
                                 # repeat attempt in <journal>/<ID>/<date>-<slug>/notes.md
         'brief_extra': '',      # a command whose output ends the brief; {id} is the task id
         'outline': '',          # a command printing one file's outline (its symbols, sections); {file} is
-                                # the path. The brief shows it under each file the task line names
+                                # the path. The brief shows it under each file over 300 lines the task line names
         'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
         'need_files': False,    # `plan add` refuses a line with no files: or test: field
         'lookup': [],           # more markdown files `plan <name>` searches for a heading (after TODO, REFERENCE,
