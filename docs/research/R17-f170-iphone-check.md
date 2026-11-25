@@ -8,6 +8,11 @@ No product code changed; this is research only. **The check could not be done ye
 - Runner Home (port 8770, the Tailscale https link from `agent-runner home status`) serves the installed run, **0.62.0**. Its page has no F170: none of `feedFoot`, `ar-box` or the Force send / Stop buttons are in it (8 matches in this branch's `agent_runner/web_page.html`, 0 in the served page). Judging it there would judge the old chat window.
 - Putting the new page in front of the phone needs either a release (V5 is open) with `agent-runner upgrade`, which restarts the person's running run, or a second run of this branch beside it. Neither is for an unattended task to do: the first restarts every session, the second needs its own ttyd sessions, tokens and ports on a machine with a live run.
 
+## Update, 2026-11-24 (second try)
+
+- F170 is served now: Runner Home's `/p/agent-runner/` has `feedFoot` (7 matches) and Force send (4), from the installed 0.66.0. The earlier block is lifted.
+- The phone is not free: iFizBox's task B440 held the UI lock (`tools/ui-15.sh state` exit 75) for over 25 minutes of polling, touching it every minute, so the lock never went stale. Nothing was driven on the phone and no screenshot taken. Rerun when `tools/ui-15.sh state` exits 0.
+
 ## What to check once F170 is served (the task's list)
 
 Open a chat with a real session at `/p/agent-runner/` in Safari on the phone (390 pt wide, Tailscale link), with Claude working:
