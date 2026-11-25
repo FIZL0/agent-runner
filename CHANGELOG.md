@@ -4,7 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
-- Fixed: on the run page on a phone, a tall question card no longer leaves the session shown whole for good, with no chips and no history: the session's frame is never lower than 12 rows, so Claude Code's prompt is drawn and found again (B828).
+- Fixed: on the run page on a phone, a tall question card no longer leaves the session shown whole for good, with no chips and no history: the card never makes the session's frame lower than 12 rows, so Claude Code's prompt is drawn and found again (B828).
 - Fixed: in PR mode, after the feedback round on a closed pull request the run log names that pull request's number (it said #0); a new pull request has the time it was opened in Needs you (it kept its record's old time, so it looked minutes old at once); and during a GitHub outage a run log line that differs only in GitHub's request id (or a time of day) is written once instead of every minute (B823).
 - Fixed: on the run page's Status view, an opened Merging row whose merge the run log has not yet mentioned no longer reads "Its merge is built and tested, or waits its turn."; it says "Testing the merge" while a gate runs on its merge, "Waiting to merge" while another task's merge is in its gate or being fixed, and "Not merged yet" when the run cannot tell (B831).
 - Fixed: Devices and a device's page follow the app's style: the title and verdict are said once, meters line up, details and sparkline sit under their meter, and Clean is beside More (B818c).

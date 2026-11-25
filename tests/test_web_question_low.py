@@ -41,22 +41,26 @@ def test_room(tmp: Path) -> None:
     head = L.KB_FEED_DRIVER.split('const out = {};')[0]
     (tmp / 'driver.js').write_text(head + """
 const out = [], stay = false;
+const query = document.querySelector; let card = true;
+document.querySelector = s => s === '#dock .qcard' ? card && extra ? {offsetHeight: extra} : null : query(s);
 FD.whole = true;
 for (const [more, last] of [[0, 31], [300, 12], [400, 12], [560, 12]]) { extra = more; FD.last = last; out.push(at()) }
 // the keyboard over it: the same size, its last line on the box
 extra = 400; FD.last = 12; out.push(kb(420)[0], kb(0)[0]);
 FD.whole = false; FD.foot = {top: 40}; out.push(at()[0]);
+FD.whole = true; card = false; FD.last = 8; out.push(at()[0]);
 console.log(JSON.stringify(out));`);
 """, encoding='utf-8')
     r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node places the frame', r.stderr[-900:])
-    got = json.loads(r.stdout or '[]') or [None] * 7
+    got = json.loads(r.stdout or '[]') or [None] * 8
     low = 2 * 12 + 12 * 17
     eq(got[0], [545, 0], 'with no card it fits its room')
     eq(got[1], [245, 0], 'with a card that leaves over 12 rows too')
     eq(got[2:4], [[low, 0], [low, 0]], 'a tall card: never lower than 12 rows, the last line still on the box')
     eq(got[4:6], [[low, 0], [low, 0]], 'the keyboard never resizes it')
     eq(got[6], 812, 'found again, it is its usual size, whatever the card takes')
+    eq(got[7], 145, 'low for another reason (no card), it fits its room as before')
 
 
 if __name__ == '__main__':

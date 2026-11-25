@@ -71,11 +71,11 @@ function feedSpot(o){
   const t=o.hold!=null?Math.min(o.hold,low):rest+Math.min(Math.max(o.off||0,0),low-rest);
   return{t,off:Math.max(0,t-rest),far:low-rest,cut:Math.max(0,o.high-end)};
 }
-/* B828: the height of a whole frame with this much room: never so low that the agent CLI draws its prompt cut off, as
-   feedFoot would never find it again. It cuts its lines at the bottom, from under 8 rows or so; the rest is for a note
-   or a longer prompt. What does not fit lies under the top bar */
+/* B828: the height of a whole frame with this much room, over a question card this high (0: none): the card never makes it
+   so low that the agent CLI draws its prompt cut off, as feedFoot would never find it again. It cuts its lines at the
+   bottom, from under 8 rows or so; the rest is for a note or a longer prompt. What does not fit lies under the top bar */
 const WHOLE_ROWS=12;
-const feedWholeHigh=(room,pad,cell)=>Math.max(room,Math.ceil(2*pad+WHOLE_ROWS*cell));
+const feedWholeHigh=(room,pad,cell,card)=>Math.max(60,room,Math.min(room+card,Math.ceil(2*pad+WHOLE_ROWS*cell)));
 /* B766: has the screen a gap over the agent CLI's working lines, right above its prompt (row top)? Then it is not full, and
    there is nothing older to scroll to. B786: the row the words over the gap end at (0: none);
    work: only a gap over the agent CLI's working line counts, or one no answer has */
