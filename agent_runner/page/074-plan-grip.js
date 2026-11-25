@@ -16,17 +16,34 @@ function gripPut(rows,id,g){
 /* does that change anything the plan knows: the order of the rows it can name, and of `id` */
 const gripOrder=(rows,id)=>rows.filter(q=>gripReal(q)||menuId(q)===id).map(menuId).join(' ');
 const gripNew=(rows,id,g)=>gripOrder(gripPut(rows,id,g),id)!==gripOrder(rows,id);
+/* B825: a moved release waits for what is above its new place: it says so before the snapshot does. What a person holds
+   up (blocked, held), and what waits for that, keeps no release waiting; its note says them, as plan.not_waiting() */
+function gripStuck(q,seen=[]){
+  if(q.held||q.state==='held')return ['held'];
+  if(q.state==='blocked')return ['needs you'];
+  if(seen.includes(q.id))return [];
+  const by=(q.after||[]).filter(t=>{const x=(S.snap.queue||[]).find(y=>y.id===t);return x&&(x.state==='parked'||gripStuck(x,seen.concat(q.id)).length)});
+  return by.length?[`after ${by.join(', ')}`]:[];
+}
+function gripWaits(q,above){
+  const r=q.release, rows=above.filter(gripReal), waits=rows.filter(x=>!gripStuck(x).length).map(x=>({id:x.id,title:x.title}));
+  if(q.held||!q.placeholder&&!(r&&['waits','next'].includes(r.state)))return q;
+  if(q.placeholder)return {...q,words:waits.length?WAITS_ALL:'next'};
+  const off=rows.filter(x=>gripStuck(x).length).map(x=>`${x.id} (${gripStuck(x)[0]})`);
+  return {...q,release:{...r,waits,everything:true,note:off.length?`; not waiting on: ${off.join(', ')}`:'',
+    ...(waits.length?{state:'waits'}:r.state==='next'?{}:{state:'next',words:'next'})}};
+}
 function gripRows(rows){
   GR.did=GR.did.filter(menuLive);
-  let out=rows;
+  let out=rows;const moved=[];
   for(const d of GR.did){
     if(PM.did.some(x=>x.id===d.id&&x.k==='menu_top'&&!d.seen.includes(x)))continue;  // pressed since
     const block=gripBlock(out,d.id), rest=out.filter(q=>!block.includes(q));if(!block.length)continue;
     const down=d.down.filter(t=>!PM.did.some(x=>x.id===t&&x.k==='menu_top'&&!d.seen.includes(x)));
     const g=down.map(t=>rest.findIndex(q=>menuId(q)===t)).find(n=>n>=0);
-    out=gripPut(out,d.id,g===undefined?rest.length:g);
+    out=gripPut(out,d.id,g===undefined?rest.length:g);moved.push(d.id);
   }
-  return GR.rows=PM.rows=out;
+  return GR.rows=PM.rows=out.map((q,i)=>moved.includes(menuId(q))?gripWaits(q,out.slice(0,i)):q);
 }
 const rowGrip=(q,list='queue')=>list==='queue'&&gripOn(q)?`<button class="grip" data-grip="${esc(menuId(q))}" aria-label="Move ${esc(menuName(menuId(q)))}: drag, or arrow up and down">${I.grip}</button>`:'';
 /* row `id` to place `g` among the others: true when that moves it */
