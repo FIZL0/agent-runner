@@ -33,14 +33,15 @@ const CTL_ICON={start:'play',go_on:'play',pause:'pause',stop:'stop',stop_undo:'u
 function controlsCard(){
   const run=S.snap.run||{}, up=S.snap.up!==false;
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
+  const mark=up&&run.mark?`<span class="small" data-k="heldmark"> · ${esc(run.mark)}</span>`:'', herr=S.heldErr?`<div class="small v-bad" data-k="heldErr">${esc(S.heldErr)}</div>`:'';  // B851a
   const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${I[CTL_ICON[k]]||''}${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
-  return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-roll data-v="${esc(said)}">${esc(said)}</div></div>${up?(w=>`<span class="small" data-k="slotsof" data-roll data-v="${w}">${w}</span>`)(`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`):''}</div>
+  return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-roll data-v="${esc(said)}">${esc(said)}${mark}</div></div>${up?(w=>`<span class="small" data-k="slotsof" data-roll data-v="${w}">${w}</span>`)(`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`):''}</div>
     ${S.snap.no_settings?`<div class="small" data-k="nosettings"><span class="v-warn">${esc(S.snap.no_settings)}</span></div>`:''}
     ${S.snap.agent_problem?`<div class="small" data-k="agentproblem"><span class="v-warn">${esc(S.snap.agent_problem)}</span></div>`:''}
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
     ${S.snap.pr_limit?`<div class="small" data-k="prlimit" data-v="${esc(S.snap.pr_limit)}">${esc(S.snap.pr_limit)}</div>`:''}
     ${(S.snap.tools||[]).length?`<div class="small" data-k="tools" data-v="${esc(toolsWords(S.snap.tools))}">${esc(toolsWords(S.snap.tools))}</div>`:''}
-    ${obCards(obRun)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">${I.dots}More…</button></div>`:''}`,'','data-k="run"');
+    ${herr}${obCards(obRun)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">${I.dots}More…</button></div>`:''}`,'','data-k="run"');
 }
 /* F98: a pitch's Not this, folded open in place: all of it or one change, its task reopened or dropped */
 function pitchNo(n,i){
