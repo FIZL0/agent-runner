@@ -362,6 +362,21 @@ def _page_fields(a: dict) -> dict:
     return {'page': url, 'start': cmd, **({'folder': folder} if folder else {})}
 
 
+PORT_PAGE = re.compile(r':([0-9]{1,5})')
+
+
+def tool_fields(t: dict) -> dict:
+    """F428a: {page, start} of a [run.tools.<name>], those that are set, under a device's rules; its page may also be
+    ':PORT' of this machine, at the host the run page was opened on."""
+    page, start = (str(t.get(k) or '').strip(' ') for k in ('page', 'start'))
+    if page.startswith(':'):
+        m = PORT_PAGE.fullmatch(page)
+        if not m or not 0 < int(m[1]) < 65536:
+            raise Refused("the web page is an http:// or https:// address, or ':PORT' with a port from 1 to 65535")
+        return {**_page_fields({'page': 'http://localhost', 'start': start}), 'page': page}
+    return _page_fields({'page': page, 'start': start})
+
+
 def checked(a: dict) -> dict:
     """The fields of a device as they may be saved. A refusal names the field, never what was typed in it."""
     kind = a.get('kind')
@@ -716,7 +731,7 @@ def _page_dir(dev: dict) -> Path:
 def page_state(dev: dict) -> dict | None:
     """{'state': running, stopped or failed, 'lines': what a failed one printed last}; None with no start command."""
     from agent_runner import device_page
-    if not dev.get('start'):
+    if not dev.get('page_id'):
         return None
     s = device_page.state(d := _page_dir(dev))
     return {'state': s, 'lines': _page_lines(d) if s == 'failed' else []}
@@ -729,7 +744,8 @@ def _page_lines(d: Path) -> list[str]:
     """The last lines, every device's stored secrets hidden in them. None are shown when one cannot be read."""
     from agent_runner import device_page
     try:
-        stamp = tuple((s.st_mtime_ns, s.st_size) for s in (d.joinpath('log').stat(), (state_dir() / 'devices.json').stat()))
+        saved = state_dir() / 'devices.json'  # none where only runner.toml has a tool
+        stamp = tuple((s.st_mtime_ns, s.st_size) for s in (d.joinpath('log').stat(), *([saved.stat()] if saved.exists() else [])))
         if (hit := _LINES.get(str(d))) and hit[0] == stamp:
             return hit[1]
         hide = [v for n, dev in load()['devices'].items() for w in dev.get('secrets') or {} if w in SECRETS
@@ -759,18 +775,62 @@ def _page_end(dev: dict) -> bool:
     return was
 
 
-def _page_command(d: dict, name) -> dict:
-    dev = _get(d, name)
-    if not dev.get('start'):
+TOML = 'runner.toml'  # the `source` of a shared tool of the project's, as GET /tools has it
+
+
+def _toml_tools(c) -> dict[str, dict]:
+    """[run.tools] as the main checkout's runner.toml has it now: no worktree's, no other file's."""
+    from agent_runner.config import _load
+    try:
+        tools = (_load(Path(project(c), TOML)).get('run') or {}).get('tools')
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return {n: t for n, t in tools.items() if isinstance(t, dict)} if isinstance(tools, dict) else {}
+
+
+def tool_page(c, name: str, t: dict | None = None) -> dict:
+    """F428a: the web page of a shared tool in runner.toml, as a device with one has it: {page, start, folder, page_id},
+    {} without one. Its folder goes by project and name, so a changed or removed `start` still has its command ended."""
+    from agent_runner import device_page
+    t, root = _toml_tools(c).get(name) if t is None else t, project(c)
+    try:
+        from agent_runner.config import tools_problem
+        dev = {} if not t or tools_problem({name: t}) else tool_fields(t)
+    except Refused:
+        dev = {}
+    pid = 'toml-' + hashlib.sha256(f'{root}\0{name}'.encode()).hexdigest()[:16]
+    if dev.get('start') or device_page.state(state_dir() / 'pages' / pid) == 'running':
+        dev = {**dev, 'folder': root, 'page_id': pid}
+    return dev
+
+
+def tool_pages(c) -> dict[str, dict]:
+    """{name: `tool_page`} of the shared tools in runner.toml that have a web page, or a command still running."""
+    return {n: dev for n, t in _toml_tools(c).items() if (dev := tool_page(c, n, t))}
+
+
+def _paged(name, source: str, c) -> dict:
+    """What has the web page: the device `name`, or the runner.toml tool. With no `source`, the device when there is one."""
+    if c and isinstance(name, str) and (source == TOML or (not source and name not in load()['devices'])):
+        if dev := tool_page(c, name):
+            return dev
+        if source == TOML or name in _toml_tools(c):
+            raise Refused(f'{name} has no start command')
+    return _get(load(), name)
+
+
+def _page_command(name, source: str, c, key: str) -> dict:
+    dev = _paged(name, source, c)
+    if not dev.get(key):
         raise Refused(f'{name} has no start command')
     return dev
 
 
-def page_start(name: str) -> dict:
+def page_start(name: str, source: str = '', c=None) -> dict:
     """Start the command a person saved for `name`, once: {ok, out, state, lines}."""
     from agent_runner import device_page
     with _locked():
-        dev = _page_command(load(), name)
+        dev = _page_command(name, source, c, 'start')
         try:
             cwd = Path(dev.get('folder') or '~').expanduser()
             fresh = device_page.start(_folder('pages', dev['page_id']), dev['start'], cwd)
@@ -784,11 +844,11 @@ def page_start(name: str) -> dict:
             'out': f'{name} is running' if r['state'] == 'running' else f'{name} ended at once ({r["state"]})'}
 
 
-def page_stop(name: str) -> dict:
-    """Stop what `page_start` started."""
+def page_stop(name: str, source: str = '', c=None) -> dict:
+    """Stop what `page_start` started, whatever the start command is now."""
     from agent_runner import device_page
     with _locked():
-        dev = _page_command(load(), name)
+        dev = _page_command(name, source, c, 'page_id')
         was = device_page.state(_page_dir(dev)) == 'running'
         if not device_page.stop(_page_dir(dev)):
             raise Refused(f'{name} did not stop; try again')
@@ -808,7 +868,7 @@ def need_pages(line: str, c) -> list[dict]:
 
 def _page_words(dev: dict) -> str:
     r = page_state(dev)
-    return dev['page'] + (f' ({r["state"]})' if r else '')
+    return dev.get('page', 'removed from runner.toml') + (f' ({r["state"]})' if r else '')
 
 
 # --- who has it ----------------------------------------------------------------------------------------------------------
@@ -964,15 +1024,19 @@ def _shown(name: str, dev: dict, uses: list[str]) -> dict:
                         if w in SECRETS}}
 
 
+def _tool_shown(dev: dict | None) -> dict:
+    return {**{k: dev[k] for k in ('page', 'start') if k in dev}, 'run': page_state(dev)} if dev else {}
+
+
 def page(c, why: str = '') -> dict:
     """GET /tools: every tool and device, F168's state of each, and whether this page may save."""
     from agent_runner import shared_tools
     d = load()
     states = {r['name']: r for r in shared_tools.rows(checked=True)}
     toml = c.run.get('tools') or {}
-    uses = d['uses'].get(project(c), [])
-    out = [{'name': n, 'label': t.get('label') or n, 'description': t.get('description', ''), 'source': 'runner.toml',
-            'check': t['check'], 'exclusive': True, 'used': True} for n, t in toml.items()]
+    uses, pages = d['uses'].get(project(c), []), tool_pages(c)
+    out = [{'name': n, 'label': t.get('label') or n, 'description': t.get('description', ''), 'source': TOML,
+            'check': t['check'], 'exclusive': True, 'used': True, **_tool_shown(pages.get(n))} for n, t in toml.items()]
     out += [_shown(n, dev, uses) for n, dev in d['devices'].items()]
     for t in out:
         r = states.get(t['name']) if t['used'] and not (t['source'] == 'device' and t['name'] in toml) else None
@@ -1202,12 +1266,19 @@ def op_keypair(a: dict, c) -> dict:
     return {'out': 'A key pair is made. Add its public key to ~/.ssh/authorized_keys on the device.'}
 
 
+def _source(a: dict) -> str:
+    """Which of a device and a runner.toml tool with one name a press is for, as GET /tools names it."""
+    if (s := a.get('source') or '') not in ('', 'device', TOML):
+        raise Refused('there is no such device')
+    return s
+
+
 def op_start(a: dict, c) -> dict:
-    return page_start(a.get('name'))
+    return page_start(a.get('name'), _source(a), c)
 
 
 def op_stop(a: dict, c) -> dict:
-    return page_stop(a.get('name'))
+    return page_stop(a.get('name'), _source(a), c)
 
 
 OPS = {'save': op_save, 'remove': op_remove, 'use': op_use, 'test': op_test, 'accept': op_accept,
@@ -1317,7 +1388,7 @@ def cmd_device(argv: list[str]) -> int:
     c = cfg(main_checkout())
     if S.C is None:
         S.init(c.root)
-    devs = used(c)
+    devs, tools = used(c), tool_pages(c)
 
     def fail(why: str, rc: int = 2) -> int:
         print(f'run device: {why}', file=sys.stderr)
@@ -1331,7 +1402,9 @@ def cmd_device(argv: list[str]) -> int:
         for n, d in devs.items():
             print(f'{n}: {d.get("description") or "no description"} ({how(n, d, RUNNER)})'
                   + (f'; web page {_page_words(d)}' if d.get('page') else ''))
-        if not devs:
+        for n, d in tools.items():
+            print(f'{n}: a shared tool in {TOML}; web page {_page_words(d)}')
+        if not devs and not tools:
             print('This project uses no device. A person adds one on the Tools page.')
         return 0
     if a.cmd == 'copy':
@@ -1341,17 +1414,24 @@ def cmd_device(argv: list[str]) -> int:
         name = n1 or n2
     else:
         name = a.name
-    if name not in devs:
+    paged = a.cmd in ('show', 'start', 'stop') and (name in tools or (name in _toml_tools(c) and name not in devs))
+    if paged or (a.cmd == 'stop' and name not in devs and tool_page(c, name)):  # F428a: as everywhere, over a device
+        dev = tools.get(name) or tool_page(c, name)
+    elif name not in devs:
         return fail(f'this project uses no device named {name}; it uses: {", ".join(devs) or "none"}')
-    dev = devs[name]
+    else:
+        dev = devs[name]
     if a.cmd == 'show':
-        print(f'{name}: {dev.get("description") or "no description"}\nReach it with: {how(name, dev, RUNNER)}')
-        if dev.get('page'):
+        if paged:
+            print(f'{name}: {_toml_tools(c)[name].get("description") or "no description"}\nA shared tool in {TOML}')
+        else:
+            print(f'{name}: {dev.get("description") or "no description"}\nReach it with: {how(name, dev, RUNNER)}')
+        if dev.get('page') or (paged and dev):
             print('\n'.join([f'Web page: {_page_words(dev)}', *((page_state(dev) or {}).get('lines') or [])]))
         return 0
     if a.cmd in ('start', 'stop'):
         try:
-            r = page_start(name) if a.cmd == 'start' else page_stop(name)
+            r = (page_start if a.cmd == 'start' else page_stop)(name, 'device' if dev is devs.get(name) else TOML, c)
         except Refused as e:
             return fail(str(e), 1)
         if not r['ok']:

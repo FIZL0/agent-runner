@@ -234,7 +234,8 @@ DEFAULTS: dict = {
         'tools': {},            # the shared tools, [run.tools.<name>]: things only one task can use at a time (a
                                 # test phone). check = a command that exits 0 free, 75 busy, 69 missing, its first
                                 # output line the holder or why; label; connect = what Needs you asks when missing;
-                                # description = what it is, for agents
+                                # description = what it is, for agents; page = its web page (an http/https URL, or
+                                # ':PORT' of this machine); start = the command that serves it (F428a)
         'checks': {},           # the checks a blocked task can wait on, [run.checks.<name>]: cmd = a command that exits 0
                                 # passed, 75 not yet, anything else cannot run (main checkout, 10 s); label
         'command_timeout': 3600,  # seconds the gate, a retest or a hook command (join, before_start, on_exit,
@@ -1064,8 +1065,10 @@ def agent_problem(root: Path, v, used: bool = True) -> str:
 
 
 def tools_problem(v) -> str:
-    """F168: why `v` cannot be `[run] tools` ('' when it can): {name: {check, label, connect, description}}, all text."""
+    """F168: why `v` cannot be `[run] tools` ('' when it can): {name: {check, label, connect, description,
+    page, start}}, all text."""
     import re
+    from agent_runner import devices
     if not isinstance(v, dict):
         return f'[run] tools is a table of shared tools ([run.tools.iphone15]), not {v!r}'
     for name, t in v.items():
@@ -1076,10 +1079,14 @@ def tools_problem(v) -> str:
             return f'{where}: memory is built in (`run wait-for memory`); name the tool otherwise'
         if not isinstance(t, dict) or not isinstance(t.get('check'), str) or not t['check'].strip():
             return f'{where} needs check, the command that says whether it is free'
-        if bad := [k for k in t if k not in ('check', 'label', 'connect', 'description')]:
-            return f'{where}: {bad[0]} is not one of check, label, connect, description'
+        if bad := [k for k in t if k not in ('check', 'label', 'connect', 'description', 'page', 'start')]:
+            return f'{where}: {bad[0]} is not one of check, label, connect, description, page, start'
         if bad := [k for k, x in t.items() if not isinstance(x, str)]:
             return f'{where}: {bad[0]} must be text'
+        try:
+            devices.tool_fields(t)  # F428a
+        except devices.Refused as e:
+            return f'{where}: {e}'
     return ''
 
 
