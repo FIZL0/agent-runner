@@ -181,7 +181,7 @@ sheet's Send writes their picks to the sheet's artifact db (F54): when they say 
 sheet's url, collection `picks`, doc_id the ID); if the document is there, run `{cmd} sheet R7 --picks
 "<its picks field>"`. An older sheet, or one whose write failed, gives a line like `R7 picks: backend=a
 batch=b` to paste instead: run `{cmd} sheet R7 --picks "<that line>"`. "go" (or "recommended") is `{cmd}
-sheet R7 --go`. Each of these reopens the task with every answer spelled out in its note, so the sheet
+sheet R7 --go`. A sheet with no link opens on the run page (Open on its Needs you item). Each of these reopens the task with every answer spelled out in its note, so the sheet
 command is the whole answer (`plan confirm` is for items without a sheet).
 An item can be settled in another session, on the run page or in the TUI while you wait (F160). Re-read it (`{cmd}
 plan ID`) right before you ask the person to do something for it, and again on each follow-up about it. If it is

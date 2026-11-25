@@ -439,7 +439,7 @@ def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
 # --- F18: pick sheets for a DECIDE with more than one question (agent_runner/sheet.py) ---------------------------------------
 #
 # An agent that blocks with `DECIDE:` on a choice writes it as questions with answers to <notes>/sheets/<ID>.json,
-# renders the page with `agent-runner sheet <ID> --html FILE`, publishes it (the Artifact tool) and blocks with
+# has the runner publish its page with `agent-runner sheet <ID> --publish` (F411) and blocks with
 # `DECIDE: <summary> <the sheet's url>`. Needs you, the feed and the control brief show one line, '<summary>.
 # Pick on the sheet or reply go', and the link. The sheet's Send gives a reply line (`<ID> picks: a=b …`) that
 # the session the person talks to passes to `sheet <ID> --picks`; 'go' is `sheet <ID> --go`. Both reopen the
@@ -453,8 +453,8 @@ name), "summary" (one line that says what is ready, e.g. "12 config cleanups rea
 (one or two sentences), and "groups": [{{"heading": <a kind of change>, "questions": [{{"id": <short key>, \
 "q": <a plain question>, "answers": [<2-3 short answers>], "recommended": <index of your pick>, "keep": \
 <index of the answer that changes nothing; leave it out when every answer changes something>, "why": <one or two lines>}}]}}]; `backticks` show as \
-code. Check and render it with `{runner} sheet {tid} --html <a file in your scratchpad>`, publish that file \
-with the Artifact tool with capabilities {{"db": {{}}}} (its Send writes the picks there), and block with `--blocked "DECIDE: <the summary> <the sheet's url>"`. Needs you shows \
+code. Check it with `{runner} sheet {tid}` and publish it with `{runner} sheet {tid} --publish`: it prints the sheet's URL \
+(its Send writes the picks there; with no URL, the run page has the sheet: leave the link out). Give it up to 6 minutes. Then block with `--blocked "DECIDE: <the summary> <the sheet's url>"`. Needs you shows \
 the person that one line and the link; their picks (or 'go' for your recommendations) reopen {tid} with each \
 answer in its note."""
 

@@ -64,8 +64,10 @@ function needBtns(n,i,more=''){
   if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id];
     return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?foldIn('pitch:'+n.id,pitchNo(n,i)):''}`}
   if(n.label==='TOOL')return '';  // F168: nothing to answer, it clears once the tool is back
-  return `<div class="btns">${needInputs(n).length?'':ansBtns(n)}${more}${restBtns(n)}${open(n.url)}${n.devices?needDevices(n):''}</div>${actSure(n.acts,n.id)}`;
+  return `<div class="btns">${needInputs(n).length?'':ansBtns(n)}${more}${restBtns(n)}${open(needPage(n))}${n.devices?needDevices(n):''}</div>${actSure(n.acts,n.id)}`;
 }
+/* F411: an item's page: its link, or the run page's own copy of a pick sheet with no claude.ai page */
+const needPage=n=>n.url||(n.page?tq(n.page):'');
 const needCard=(n,i)=>card(needTap(n)+needBtns(n,i),'need',`data-k="need:${esc(n.id)}"`);
 /* F162: the popup of one Needs you item: everything about it, its answers always on screen at the foot */
 const needOf=id=>((S.snap&&S.snap.needs)||[]).find(n=>n.id===id);
@@ -164,7 +166,7 @@ function needSheet(){
   const n=needOf(S.sheetArg);if(!n)return '';
   const i=S.snap.needs.indexOf(n), d=needD(n), big=d.shots[S.askShot], rep=needReplies(n), f=askField(n.id), said=S.giveSaid&&S.giveSaid.id===n.id?S.giveSaid:{}, secure=window.isSecureContext!==false;
   const body=big?`<button class="shotbig" data-shotclose aria-label="Back to the details"><img src="${esc(shotUrl(big))}" alt="${esc(big.caption||'Picture')}"></button>${big.caption?`<p class="small">${esc(big.caption)}</p>`:''}`
-    :`${needBody(n,shotUrl,giveHTML(n,{secure,...said,done:giveDone(n,said,secure)}))}${n.url?`<a class="asklink" href="${esc(n.url)}" target="_blank" rel="noopener">Its page ${I.ext}</a>`:''}${askTask(n.id)?askWhyFold(n.id)+askFold('task','Full task',(S.askText||{})[n.id]):''}`;
+    :`${needBody(n,shotUrl,giveHTML(n,{secure,...said,done:giveDone(n,said,secure)}))}${needPage(n)?`<a class="asklink" href="${esc(needPage(n))}" target="_blank" rel="noopener">Its page ${I.ext}</a>`:''}${askTask(n.id)?askWhyFold(n.id)+askFold('task','Full task',(S.askText||{})[n.id]):''}`;
   const foot=needInputs(n).length?`<div class="askfoot end" data-k="askfoot">${needBtns(n,i)}</div>`:n.label==='TOOL'?'':`<div class="askfoot" data-k="askfoot"><input class="fld" data-f="${esc(f)}" aria-label="${rep?'Your reply':'A note with your answer'}" placeholder="${rep?'Your reply':'Add a note (optional)'}" autocomplete="off">${needBtns(n,i,rep?`<button class="btn ${answerOpts(n).length?'':'pri'}" data-reply="${esc(n.id)}">Reply</button>`:'')}</div>`;
   return `<div class="asktop"><div class="grow"><h2>${needHead(n)}</h2>${needTitle(n)?`<div class="small">${esc(needTitle(n))}</div>`:''}</div>${big?'<button class="btn" data-shotclose>Back</button>':'<button class="btn" data-closesheet>Close</button>'}</div>
     <div class="small"><span class="asklab">${esc(needLab(n))}</span>${n.age?` · ${esc(n.age)}`:''} · ${esc(n.id)}</div><div class="askbody">${body}</div>${foot}`;
