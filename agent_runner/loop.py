@@ -18,7 +18,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, freeze, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, stop_now, undo
+from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, freeze, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, stop_now, undo, working_branch
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -652,6 +652,11 @@ def run(argv: list[str], prog: str) -> int:
         return slot_shim(a.slot_shim)
 
     init()
+    if not a.dry_run and working_branch.waits(ROOT):  # F447b: the one saved, before anything is read off the branch
+        RUN_LOCK.append(wait_last_run())
+        if working_branch.at_start(ROOT):
+            working_branch.forget()
+            init()
     no_push.require(C, ROOT)
     pr.require(C, ROOT)  # F419
     r = settings_live.start()  # F202a: what changes from here on is read by the loop
@@ -681,7 +686,8 @@ def run(argv: list[str], prog: str) -> int:
     if a.dry_run:
         return dry_run(slots, branch)
 
-    RUN_LOCK.append(wait_last_run())  # B144: held until run() returns; a start after a stop waits for it
+    if not RUN_LOCK:
+        RUN_LOCK.append(wait_last_run())  # B144: held until run() returns; a start after a stop waits for it
     stop_now.begin()  # B827
     ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
     drop_earlier_stop(keep)

@@ -13,6 +13,14 @@ def settings() -> dict:
     row = lambda t, key: next(k for x in snap['tables'] if x['table'] == t for k in x['keys'] if k['key'] == key)  # noqa: E731
     agent = row('run', 'agent')  # F405: its picker, and the providers beside it
     agent['picks'] = agents_here.picks(S.ROOT, agent)
+    from agent_runner import working_branch as WB
+    wb = row('git', 'master_branch')  # F447b: its picks, the branch now, and the switch that waits
+    try:
+        wb.update(WB.show(S.ROOT, wb))
+    except SystemExit:  # a settings file that cannot be taken: the rest of the page still shows
+        pass
+    if 'next' in wb and 'git.master_branch' not in snap['waits']:  # a start that could not switch
+        snap['waits'].append('git.master_branch')
     snap['providers'] = agents_here.providers(row('models', 'providers')['value'])
     return snap
 
@@ -37,12 +45,35 @@ def _setting_done(table: str, key: str, value=None, unset: bool = False) -> dict
     from agent_runner import config as CF
     try:
         with _SETTING_LOCK:
-            f = CF.save_local_setting(S.ROOT, table, key, value, unset)
+            undo = _branch_begin('device', table, key, value, unset)
+            try:
+                f = CF.save_local_setting(S.ROOT, table, key, value, unset)
+            except BaseException:
+                undo()
+                raise
     except (ValueError, OSError) as e:
         return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
     if bad := _setting_now(table, key, f.name):
         return bad
-    return {'ok': True, 'code': 0, 'out': f'{_setting_said(table, key, value, unset)} in {f.name}', 'argv': []}
+    more = _branch_said(table, key)
+    out = f'{_setting_said(table, key, value, unset)} in {f.name}' + (f' ({more})' if more else '')
+    return {'ok': True, 'code': 0, 'out': out, 'argv': [], **({'note': more} if more else {})}
+
+
+def _branch_begin(side: str, table: str, key: str, value, unset: bool):
+    """F447b: a save of the working branch is about to be written: what takes that back when it fails."""
+    from agent_runner import working_branch as WB
+    if (table, key) != ('git', 'master_branch'):
+        return lambda: None
+    try:
+        return WB.begin(S.ROOT, side, value, unset)
+    except SystemExit as e:
+        raise ValueError(str(e).removeprefix('agent-runner: ')) from None
+
+
+def _branch_said(table: str, key: str) -> str:
+    from agent_runner import working_branch as WB
+    return WB.said(S.ROOT) if (table, key) == ('git', 'master_branch') else ''
 
 
 def _setting_said(table: str, key: str, value, unset: bool) -> str:
@@ -147,7 +178,8 @@ def _save_round(changes: list[dict]) -> tuple[list, list, list]:
     got = list(zip(project, _project_saves(mine))) if mine else []
     for c in take:
         if c['side'] == 'device':
-            got.append((c, {'got': _setting_done(c['table'], c['key'], c.get('value'), bool(c.get('unset')))}))
+            r = _setting_done(c['table'], c['key'], c.get('value'), bool(c.get('unset')))
+            got.append((c, {'got': r, 'note': r.get('note', '')}))
     after, saved, failed = _setting_rows(), [], []
     for c, x in got:
         at = c['table'], c['key']
@@ -215,12 +247,15 @@ def _save_project(batch: list[dict]) -> None:
             bad(x, why)
         return
     last = {(x['table'], x['key']): x for x in batch}  # the newest save of a key wins
+    undo: list = []  # F447b
 
     def edit(data: bytes) -> tuple[bytes, str]:
         done = []
         for x in last.values():
             try:
-                data = CF.setting_edit(data, x['table'], x['key'], x['value'], x['unset'], f.name)
+                new = CF.setting_edit(data, x['table'], x['key'], x['value'], x['unset'], f.name)
+                undo.append(_branch_begin('project', x['table'], x['key'], x['value'], x['unset']))
+                data = new
             except ValueError as e:
                 bad(x, str(e))
                 continue
@@ -228,14 +263,18 @@ def _save_project(batch: list[dict]) -> None:
         said = '; '.join(_setting_said(x['table'], x['key'], x['value'], x['unset']) for x in done)
         short = said if len(said) <= 100 else ', '.join(f'[{x["table"]}] {x["key"]}' for x in done)
         return data, f'settings: {short}'
+    ok = False
     try:
         ok, note = plansync.commit_file(S.ROOT, f, edit, S.default_branch())
         if ok and not note:  # committed; the push in LANDING too: it may rebase the main checkout when no run is up
             note = _setting_push()
-    except SystemExit as e:  # [git] master_branch is not out in the main checkout
+    except SystemExit as e:  # the working branch is not out in the main checkout
         ok, note = False, f'{e}. Nothing was changed'
     finally:
         S.LANDING.release()
+        if not ok:
+            for back in undo:
+                back()
     if not ok:
         for x in last.values():
             if x['got'] is None:
@@ -247,9 +286,9 @@ def _save_project(batch: list[dict]) -> None:
             if x['got'] is None:
                 row = _setting_row(x['table'], x['key'])
                 out = f'{_setting_said(x["table"], x["key"], x["value"], x["unset"])} in {f.name}'
-                x['note'] = note
-                if note:
-                    out += f' ({note})'
+                x['note'] = '; '.join(filter(None, (note, _branch_said(x['table'], x['key']))))
+                if x['note']:
+                    out += f' ({x["note"]})'
                 if row['has_device']:
                     out += f'. This device keeps its own ({CF.toml_value(row["device"])})'
                 x['got'] = (None if row['has_device'] else _setting_now(x['table'], x['key'], f.name)) or \

@@ -117,9 +117,15 @@ def problem(c, root: Path, gh: ci.Gh | None = None) -> str:
         return f'[plan] repo is this repository ({repo}): plan commits would go to it'
     branch = shared_name(root, remote)
     if not branch:
-        return 'no main branch is known: set [git] master_branch'
+        return 'no working branch is known: set it in Settings ([git] master_branch)'
     gh = gh or ci.gh_in(root)
     return protection_problem(gh, repo, branch)
+
+
+def branch_problem(c, root: Path, branch: str, gh: ci.Gh | None = None) -> str:
+    """F447b: why PR mode could not go on with `branch` as the working branch; '' when it could. Asks GitHub."""
+    repo = slug(root, c.push_remote) if c.push_remote else ''
+    return protection_problem(gh or ci.gh_in(root), repo, branch) if repo else ''
 
 
 def refusal(c, root: Path, gh: ci.Gh | None = None) -> str:
