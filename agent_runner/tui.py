@@ -545,7 +545,7 @@ class RunPage:
 
     def row(self, n: int, it) -> list[tuple[str, str]]:
         if n == 1:
-            if self.off_row(it):
+            if it.startswith('no run') and self.off_row(it):
                 said = self.off_said()
                 return [('● ', 'yellow' if self.run_start else 'red'), (said.splitlines()[0], 'fg')] + \
                     ([] if self.run_start or self.run_failed else [(' · ', 'dim'), ('T', 'hkey'), (' start', 'dim')])

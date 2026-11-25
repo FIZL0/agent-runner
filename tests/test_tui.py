@@ -1314,7 +1314,8 @@ def test_start_run_f402c2() -> None:
         p = fresh()
         p.socket = lambda name: name == 'c1'
         p.key('2')
-        eq((p.sel()['name'], p.want_side()), ('c1', 'c1'), 'an open chat still shows as itself, to type in')
+        with mock.patch.object(T, 'in_tmux', lambda: True):
+            eq((p.sel()['name'], p.want_side()), ('c1', 'c1'), 'an open chat still shows as itself, to type in')
     with mock.patch.object(U.sp, 'run', return_value=mock.Mock(returncode=0, stdout='', stderr='')) as sp_run, \
             mock.patch.object(U.S, 'ROOT', Path('.')), mock.patch.object(U, 'runner_cmd', lambda: ['runner']):
         U._run([])
