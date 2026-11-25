@@ -133,6 +133,7 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   anew(); may = 'granted'; await shown(); REC.open.ctx.state = 'interrupted'; out.whyCtx = await why();
   anew(); may = 'granted'; hold = new Promise(y => yes = y); await shown(); now += 300; TK.wait = null; click('[data-mic]'); const tr3 = TK.ear.trail; now += 100; yes(); await settle(); await settle(); out.whyOpening = tr3.ev.join(' | ');
   anew(); deny = 'NotReadableError'; out.whyFailed = await why();
+  anew(); may = 'granted'; hold = new Promise(y => yes = y); deny = 'NotReadableError'; await shown(); now += 300; TK.wait = null; click('[data-mic]'); const tr4 = TK.ear.trail; now += 100; yes(); await settle(); await settle(); out.lost2 = tr4.ev.join(' | ');
   console.log(JSON.stringify(out, (k, v) => v === undefined ? null : v));
 })();`);
 """)
@@ -220,6 +221,8 @@ def test_recorded_f161b(tmp: Path) -> None:
     check(any(x.startswith('mic woken: context running after ') for x in g.get('whyRest') or []), 'a resting mic: its wake', str(g.get('whyRest')))
     o = g.get('whyOpening') or ''
     check('mic not open: opening under way, begun by the page; before it: ' in o and 'mic opened: opening begun 300 ms before: getUserMedia 400 ms' in o, "the page's own opening, joined", o)
+    o = g.get('lost2') or ''
+    check('mic not opened by the page: opening begun 300 ms before: getUserMedia 400 ms, NotReadableError' in o and 'mic not opened: getUserMedia 0 ms' in o, "the page's own opening failed, and the press's", o)
     check(any(x.startswith('mic not opened: getUserMedia 0 ms, NotReadableError') for x in g.get('whyFailed') or []), 'a refused opening', str(g.get('whyFailed')))
 
 

@@ -119,13 +119,15 @@ class Recorder{
     REC.now=this;
     if(recLive())return this.begin(REC.open,again);  // F161c: in the press itself
     /* B804a: the mic report: why it was not open, and what the opening took, also where the listen ended meanwhile */
-    const t=TK.rec===this?TK.ear:null, log=x=>{if(t)micLog(x,false,t.trail)}, at=Date.now(), kept=REC.open;
+    const t=TK.rec===this?TK.ear:null, log=x=>{if(t)micLog(x,false,t.trail)}, at=Date.now(), kept=REC.open, was=REC.asking&&REC.took;
+    const lost=()=>{if(was&&was!==REC.took)log(`mic not opened by the page: ${recTook(was,at)}`)};  // the press asked again itself
     log(recNotOpen(kept,REC.asking,REC.why,document.hidden,REC.perm,REC.shut));
     if(t)recAsked(log);
     recOpen().then(o=>{
+      lost();
       log(o===kept?`mic woken: context ${o.ctx.state} after ${Date.now()-at} ms`:`mic opened: ${recTook(o.box,at)}`);
       if(!this.done&&!this.stopping)this.begin(o,again);
-    },e=>{log(`mic not opened${REC.took?': '+recTook(REC.took,at):''}`);throw e}).catch(e=>this.refused(e));
+    },e=>{lost();log(`mic not opened${REC.took?': '+recTook(REC.took,at):''}`);throw e}).catch(e=>this.refused(e));
   }
   /* it listens, from the second before the press */
   begin(o,again){
