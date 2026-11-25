@@ -6,9 +6,10 @@
    F192a3: an ask with `need` is also that item under Needs you: its answer settles the item, and one given there takes the
    card and the mark (/live's `answered`)
    F192b: gone: the questions dismissed. F437a: min: the minimized ones (both 096-dismiss.js)
-   F437b: keys: the question the key row was opened under, with the keyboard button */
+   F437b: keys: the question the key row was opened under, with the keyboard button
+   F437c: away: the chat whose reader is scrolled up, its card hidden where it stands; awayT: it is about to be back; cls: .main's classes */
 const QMARK_KEY='ar-qmark:'+(HKEY||document.title);
-const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0,gone:new Set(),min:new Set(),keys:''};
+const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0,gone:new Set(),min:new Set(),keys:'',away:'',awayT:0,cls:'false false'};
 const questionAsk=n=>FD.n===n&&FD.live&&FD.live.ask||null;
 const questionSpoken=n=>questionSpoke(n,S.ob,(S.sent[n]&&S.sent[n].pending)||[],Date.now()-((S.sent[n]||{}).at||0));
 /* an answer to it, here or under Needs you, is on its way */
@@ -25,6 +26,7 @@ function questionUp(n){
 /* the card of chat n, drawn over its chips (sessRow) */
 function questionCard(n){
   if(!/^c\d+$/.test(n||''))return '';
+  questionAwayClass();
   let sent=QN.sent.get(n);
   if(sent&&sent.need)questionNeedSent(n,sent);
   else if(sent=questionSent(sent,S.ob,(S.sent[n]||{}).at))QN.sent.set(n,sent);
@@ -115,6 +117,43 @@ function questionGo(n,text,go){
   moved();
 }
 questionOn.send=questionGo;
+/* F437c: the card and its minimized line hide while the reader is scrolled up, in the history or where the terminal scrolls
+   itself. Their room stays (.qaway), so no text moves; a held answer and the mark stay */
+const questionAway=n=>!!n&&QN.away===n&&FD.n===n&&FD.shown&&!QN.held.has(n)&&!QN.mark.has(n);
+function questionFarNow(){
+  if(!FD.shown||!FD.n)return false;
+  const el=pastUp()&&$('feedpast');
+  return questionFar(QN.away===FD.n,{up:el?pastEnd()-el.scrollTop:0,off:FD.off,jump:FD.jump||questionPillNow()});
+}
+function questionPillNow(){
+  const t=FD.whole&&!FD.foot&&feedTerm();if(!t)return false;
+  const b=t.buffer.active;
+  return questionPill(feedLines(t),t.cols,(y,x)=>{const l=b.getLine(b.baseY+y), c=l&&l.getCell(x);return!!(c&&!c.isBgDefault())});
+}
+/* each scroll, and each draw of the session: hidden at once, back once it stayed at the bottom */
+function questionScroll(){
+  const on=questionFarNow();
+  if(on||!FD.shown||QN.away!==FD.n){clearTimeout(QN.awayT);QN.awayT=0;questionAwaySet(on?FD.n:'')}
+  else if(!QN.awayT)QN.awayT=setTimeout(()=>{QN.awayT=0;if(!questionFarNow())questionAwaySet('')},QUESTION_BACK);
+}
+function questionAwaySet(n){
+  if(QN.away===n)return;
+  QN.away=n;questionAwayClass();
+  if((S.keys||TOUCH()&&FD.whole)&&questionUp(FD.n))render(true);  // the key row comes or goes with it (F437b)
+  if($('pastjump'))pastJumpDraw();
+}
+/* qkeys: the key row is there only while the card is hidden; it stands in the card's room */
+function questionAwayClass(){
+  const on=questionAway(FD.n), k=on?questionUp(FD.n):'', keys=!!k&&QN.keys!==k, is=`${on} ${keys}`;if(QN.cls===is)return;
+  QN.cls=is;const m=document.querySelector('.main').classList;
+  m.toggle('qaway',on);m.toggle('qkeys',keys);
+}
+/* the room of a hidden card, over what stands under it: the jump button floats there */
+function questionRoom(){
+  const c=questionAway(FD.n)&&document.querySelector('#dock .qcard'), next=c&&c.nextElementSibling;
+  return next?Math.max(0,next.offsetTop-c.offsetTop):0;
+}
+questionOn.scroll=questionScroll;questionOn.room=questionRoom;
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-qchat],[data-qunchat]');if(!el)return;
   if(el.dataset.qchat)return questionChat(S.thread,el.dataset.qchat);

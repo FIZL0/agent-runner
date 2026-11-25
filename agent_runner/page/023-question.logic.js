@@ -18,6 +18,14 @@ const questionSpoke=(n,ob,pending,ago)=>ob.some(x=>x.name==='chat_to'&&x.args.to
 const questionOpen=(live,id)=>!live||!live.ok||!!(live.ask&&live.ask.id===id);
 /* a question, as QN.gone (F192b, dismissed) and QN.min (F437a, minimized) have it */
 const questionKey=(n,id)=>n+' '+id;
+/* F437c: is the reader away from the bottom? o: up (px the history is scrolled from its end), off (px the frame is pulled),
+   jump (the terminal itself is scrolled). was: they were; it takes more to go than to stay, so the edge does not flicker */
+const QUESTION_EDGE=24, QUESTION_BACK=150;  // px; ms at the bottom before the card is back
+const questionFar=(was,o)=>!!o.jump||Math.max(o.up||0,o.off||0)>(was?1:QUESTION_EDGE);
+/* the agent CLI's own Jump to bottom pill, on a screen too low for feedFoot to find its prompt: by its place, the middle,
+   and its ground (lit), which the same words in an answer do not have */
+const questionPill=(lines,cols,lit)=>lines.some((l,y)=>[...l.matchAll(FEED_PILL)].some(m=>{
+  const at=feedCells(l.slice(0,m.index));return Math.abs(at-(cols-feedCells(m[0].trim())-2)/2)<1&&lit(y,at+2)}));
 const questionIcon=d=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const questionLabel=o=>o.name+(o.rec?' (recommended)':'');
 function questionHTML(n,ask,held,sent,min){
