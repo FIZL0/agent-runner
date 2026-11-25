@@ -1132,14 +1132,10 @@ def test_session_controls_f170(tmp: Path) -> None:
     eq([c['label'] for c in got[15]], ['Bypass', '2 agents', 'Update'], 'what the screen says')
     eq(([c['label'] for c in got[16]], got[17], got[18]), (['Session'], '1m 12s', '1h 2m'), 'nothing known; a clock')
     page = W.PAGE.read_text(encoding='utf-8')
-    check("on?'Force send':'Send'" in page and 'data-halt' in page and "{force:true}" in page, 'Force send and Stop while it works')
+    check('data-halt' in page and 'force:true' not in page, 'F190a: Stop while it works; Send never forces')
     check('act force' not in page and '>Force send<' not in page and page.count('data-send aria-label="Send" title="Send">${I.send}') == 1,
           'B208: one Send arrow, never a wide text button')
-    check('\n  sendDraw(ta);' in page.split('function grow(', 1)[1][:60], 'B208: it follows the words, the attachments and the status')
-    eq(logic_js([['sendForces', *x] for x in (
-        [True, '', []], [True, ' \n', None], [False, 'hi', [{'path': '/a'}]], [True, 'hi', []], [True, '', [{'path': '/a'}]],
-        [True, '', [{'name': 'a'}, {'name': 'b', 'err': 'no'}]])]), [False, False, False, True, True, False],
-       'B208: a force send only while it works, with words or an attachment to send')
+    check('\n  sendDraw(ta);' in page.split('function grow(', 1)[1][:60], 'F205: it follows the attachments')
     check('lineHeight=1.3' in W.session_frame.ttyd_options('dark') and 'minimumContrastRatio=4.5' in W.session_frame.ttyd_options('dark'),
           'room between the lines, text that reads')
     head = W.session_frame.with_head(b'<head>', 'c6', 'page').decode()
@@ -1354,6 +1350,8 @@ const boxEl = {classList: {toggle}, querySelector: () => btn};
 const ta = {value: '', style: {}, scrollHeight: 20, offsetHeight: 20, closest: s => s === '.box' ? boxEl : null};
 const S = {thread: 'c1', view: 'home', atts: {}}, said = [], asks = [];
 let works = false, growGlide = () => {}, toast = t => said.push(t), tq = p => p, plainErr = String;
+const FD = {n: 'c1'}, HI = {}, store = {set() {}}, DRAFT_KEY = k => k, sent = [], sentMark = () => {}, histAdd = () => {}, threadTitle = String;
+const outbox = (name, args) => sent.push([name, args]);
 const boxKey = () => S.thread, isNew = () => false, sessWorks = () => works, document = {querySelector: () => ta};
 const render = () => grow(ta, true), fetch = () => new Promise((ok, no) => asks.push({ok: j => ok({json: async () => j}), no}));
 const tick = () => new Promise(r => setTimeout(r, 0));
@@ -1368,7 +1366,10 @@ eval(logic + slice('let boxWas=', '\n}\n') + slice('function sendDraw(', '\n}\n'
   start(''); asks[0].no('net'); await tick(); out.failed = look();
   start('hi'); asks[0].ok({ok: false, out: 'no'}); await tick(); out.failedWords = look();
   start('hi'); S.atts.c1.splice(0, 1); render(); out.removed = look();
-  start('hi', true); out.force = look(); asks[0].ok({ok: true, path: '/a'}); await tick(); out.forceUp = look();
+  start('hi', true); out.works = look(); asks[0].ok({ok: true, path: '/a'}); await tick(); out.worksUp = look();
+  for (const [k, v, w, a, t] of [['words', 'hi', true, []], ['att', '', true, [{path: '/a'}]], ['idle', 'hi', false, []], ['unsent', 'hi', true, [], 'x']]) {
+    S.atts = {c1: a}; ta.value = v; works = w; FD.foot = {text: t || ''}; sent.length = 0; render();
+    const l = look(); await send(); out['sent_' + k] = [l, sent.map(x => [x[0], Object.keys(x[1]), x[1].text.includes(v || '/a')])] }
   start('hi'); upload({name: 'b'}); asks[0].ok({ok: true, path: '/a'}); await tick(); out.one = look();
   asks[1].ok({ok: true, path: '/b'}); await tick(); out.both = look();
   start('hi'); S.thread = 'c2'; render(); out.other = look();
@@ -1381,7 +1382,7 @@ def test_send_waits_f205(tmp: Path) -> None:
     """F205: the send arrow is gray, and says Uploading…, while an attachment of its box uploads; it turns back at once,
     and an uploaded attachment alone is something to send."""
     page = W.PAGE.read_text(encoding='utf-8')
-    check('.box .send[data-send][aria-disabled=true]:not(#_){opacity:.4;filter:grayscale(1);' in page, 'gray, Force send and an empty box too')
+    check('.box .send[data-send][aria-disabled=true]:not(#_){opacity:.4;filter:grayscale(1);' in page, 'gray, with an empty box too')
     if not shutil.which('node'):
         print('  (no node here: the send arrow test is skipped)')
         return
@@ -1389,13 +1390,15 @@ def test_send_waits_f205(tmp: Path) -> None:
     r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node runs the send arrow', r.stderr[-800:])
     o = json.loads(r.stdout or '{}')
-    wait = lambda force, has: ['Uploading…', 'Uploading…', 'true', force, has]  # noqa: E731
-    ready = lambda has, say='Send': [say, say, '', say != 'Send', has]  # noqa: E731
-    for k, want in (('alone', wait(False, False)), ('aloneUp', ready(True)), ('words', wait(False, True)), ('wordsUp', ready(True)),
-                    ('failed', ready(False)), ('failedWords', ready(True)), ('removed', ready(True)), ('force', wait(True, True)),
-                    ('forceUp', ready(True, 'Force send')), ('one', wait(False, True)), ('both', ready(True)), ('other', ready(True))):
+    wait = lambda has: ['Uploading…', 'Uploading…', 'true', False, has]  # noqa: E731
+    ready = lambda has: ['Send', 'Send', '', False, has]  # noqa: E731
+    for k, want in (('alone', wait(False)), ('aloneUp', ready(True)), ('words', wait(True)), ('wordsUp', ready(True)),
+                    ('failed', ready(False)), ('failedWords', ready(True)), ('removed', ready(True)), ('works', wait(True)),
+                    ('worksUp', ready(True)), ('one', wait(True)), ('both', ready(True)), ('other', ready(True))):
         eq(o.get(k), want, f'F205: {k}')
     eq((o.get('said'), o.get('kept')), (['Wait for the attachments to finish uploading'], ['hi', 1]), 'a tap or Enter says why, and nothing is lost')
+    for k, args in (('words', ['text', 'to']), ('att', ['text', 'to']), ('idle', ['text', 'to']), ('unsent', ['text', 'to', 'unsent'])):
+        eq(o.get(f'sent_{k}'), [ready(True), [['chat_to', args, True]]], f'F190a: {k}: the plain Send, sent once with no force')
 
 
 if __name__ == '__main__':

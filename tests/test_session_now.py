@@ -74,6 +74,10 @@ def test_stop_and_force() -> None:
         N.force_send('c2', 'hi', s.send, unsent=True)
         eq(s.got, ['\n', ('sent', 'hi')], 'idle with words left in its input: below them')
     with Session() as s, mock.patch.object(U, 'send', s.send):
+        U.act('chat_to', text='hi', to='c2', unsent=True)
+        U.act('chat_to', text='hi', to='c2')
+        eq(s.got, ['\n', ('sent', 'hi'), ('sent', 'hi')], 'F190a: without force a working session is never interrupted')
+    with Session() as s, mock.patch.object(U, 'send', s.send):
         eq((U.act('chat_to', text='hi', to='c2', force=True)['ok'], s.got[-1]), (True, ('sent', 'hi')), 'chat_to force')
 
 

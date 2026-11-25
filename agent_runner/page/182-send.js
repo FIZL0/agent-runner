@@ -22,8 +22,9 @@ async function send(){
   const rq=sendReq(ctx,to,msg);
   if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx?ctx.label:text||`${paths.length} attachment(s)`,msg);return}  // B139, F176
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
+  // F190a: never with force: while it works, Claude Code queues the message
   if(FD.shown){feedRest();sendFly()}  // the session draws it itself
-  outbox('chat_to',{text:msg,to,...(S.thread===to&&sessWorks(to)?{force:true}:{}),...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
+  outbox('chat_to',{text:msg,to,...(FD.n===to&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
 }
 /* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
    waiting, and its messages go once it has a name. B139: ask, its first message, shows in the stand-in. */

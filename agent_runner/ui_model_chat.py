@@ -342,7 +342,7 @@ def chat_to(text: str, to: str = '', force: bool = False, unsent: bool = False, 
     at = time.time()
     if to and (force or unsent):
         from agent_runner.session_now import force_send
-        r = {**force_send(to, text, send, unsent), 'at': at}
+        r = {**force_send(to, text, send, unsent, force), 'at': at}
     else:
         r = {**send(to, text), 'at': at}
     n = re.search(r'\bcontrol (\d+) ', r.get('out') or '') if not to and r['ok'] else None

@@ -243,11 +243,12 @@ def rest(session: str) -> str:
     return f'{session} did not stop, so the message was not sent'
 
 
-def force_send(session: str, text: str, send, unsent: bool = False) -> dict:
+def force_send(session: str, text: str, send, unsent: bool = False, force: bool = True) -> dict:
     """Force send: interrupt `session` while it works, wait until it rests, then `send(session, text)` once; idle, it
     just sends. Interrupted before it had answered at all, Claude Code puts that prompt back in its input: the new
-    message goes on a line of its own below it, so both reach it, once (a command goes first, and the prompt stays in the input)."""
-    busy = status(session) == BUSY
+    message goes on a line of its own below it, so both reach it, once (a command goes first, and the prompt stays in the input).
+    F190a: with `force` False nothing is interrupted: the message only goes below what is `unsent` in its input."""
+    busy = force and status(session) == BUSY
     if not busy and not unsent:
         return send(session, text)
     if busy and (why := rest(session)):
