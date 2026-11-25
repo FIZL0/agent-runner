@@ -432,62 +432,6 @@ def tick(tid: str, todo=None, done=None, plan_dir=None) -> int:
     return archive(todo, done)
 
 
-def _split_ids(todo) -> set[str]:
-    """Ids of the tasks in `todo` not done that say `(split into …)`."""
-    ls = lines(todo)
-    return {tid for _, box, tid, _, i in iter_tasks(ls) if box != 'x' and SPLIT.search(ls[i])}
-
-
-def drop(tid: str, why: str, todo=None, done=None) -> list[str]:
-    """Close a task nobody will do (a duplicate, work another task overtook): noted, then archived as ticked,
-    so its id stays used and what waits on it reopens. Returns the split parents it made one whole task again:
-    this was their last open part and none landed (B197)."""
-    todo, done = ensure(todo, done)
-    was = _split_ids(todo)
-    note(tid, f'dropped: {why}', todo=todo)
-    tick(tid, todo, done)
-    from agent_runner.asks import clear_env  # here: asks imports this module
-    clear_env(tid, todo)  # F175
-    return sorted(was & open_ids(lines(todo)) - _split_ids(todo))
-
-
-DROPPED = ' — dropped: '
-
-
-def restore(tid: str, where: str = 'top', ref: str | None = None, todo=None, done=None, plan_dir=None) -> None:
-    """Undo a mistaken tick or drop (F47): the task's block goes from DONE.md back to TODO.md as open [ ], same id,
-    its text, fields and sub-items kept, less the ` — dropped: WHY` its drop appended; at the top of the leading
-    section unless `where` (as `move`) says. A tick made but not archived yet is reopened where it stands."""
-    todo, done = ensure(todo, done)
-    plan_dir = str(plan_dir or os.path.dirname(todo))
-    ls, dl = list(lines(todo)), list(lines(done))
-    here = next((i for i, l in enumerate(ls) if (m := ITEM.match(l)) and not m.group(1)
-                 and m.group(3).rstrip('.') == tid), None)
-    if here is not None and ITEM.match(ls[here]).group(2) != 'x':
-        raise SystemExit(f'{PROG}: {tid} is still open in {Path(todo).name}: nothing to restore')
-    if here is None:
-        try:
-            j = _find(dl, tid)
-        except SystemExit:
-            raise SystemExit(f'{PROG}: no task {tid!r} in {Path(done).name} to restore') from None
-        blk = _item_block(dl, j)
-        del dl[j:j + len(blk)]
-        if j < len(dl) and not dl[j].strip() and j and not dl[j - 1].strip():
-            del dl[j]  # don't leave a double blank line behind
-        here = _place(ls, where, ref)
-        ls[here:here] = blk
-    else:
-        blk = _item_block(ls, here)
-    for k in range(here + len(blk) - 1, here - 1, -1):  # the drop's note is the last one on the block
-        if DROPPED in ls[k]:
-            ls[k] = ls[k][:ls[k].rindex(DROPPED)]
-            break
-    _mark(ls, here, ' ')
-    _write(todo, ls)
-    _write(done, dl)
-    own = long_form(plan_dir, tid)
-    if os.path.exists(own):
-        _write(own, [re.sub(rf'^(\s*)- \[x\] \*\*{re.escape(tid)}\b', rf'\1- [ ] **{tid}', l) for l in lines(own)])
 
 
 TASKS = 'tasks'  # a task's long form is <plan dir>/tasks/<ID>.md, so the top level stays TODO.md and overviews
@@ -1508,138 +1452,8 @@ def goal(text: str | None = None, todo=None) -> str:
     return text
 
 
-# --- concept tasks: an Artifact page of options, and a build that waits for a person's OK ----------------
-#
-# A K task builds nothing: its session publishes a page of 2-3 options and finishes with `done K7 "msg"
-# --artifact URL`. `done` notes the link on K7 and files the build after it, blocked as "waiting for your OK on
-# URL" (no `after:`, so `reopen` never frees it). `plan approve K7 "option B: …"` unblocks the build with the
-# choice noted; `plan revise K7 WHY` sends the concept back for another round. A repo whose [plan] kinds lack K
-# has no concepts: a K-lettered id there is an ordinary task.
-
-CONCEPT = 'K'
 WAIT_OK = 'waiting for your OK on '
-WAITING = re.compile(r'BLOCKED: ' + re.escape(WAIT_OK) + r'(\S+)')
-FROM_CONCEPT = re.compile(r'\bconcept ([A-Z]+\d+[a-z0-9]*)\b')
-
-
-def concept(tid: str) -> bool:
-    """Is `tid` a concept task: its letters are K, and this repo's kinds have K."""
-    m = re.match(r'([A-Za-z]+)\d', tid)
-    return bool(m) and m.group(1) == CONCEPT and CONCEPT in kinds()[0]
-
-
-RESEARCH = re.compile(r'\s*research\b', re.I)  # F36: a kind whose meaning starts "research" changes no product
-
-
-def research(tid: str, kinds_map: dict[str, str] | None = None) -> bool:
-    """Is `tid` a research task (F36): its id letters name a kind whose meaning starts with "research" (R in
-    KINDS; any letter a repo's own [plan] kinds mark so). Its merge carries findings only (`[run] findings`)."""
-    m = re.match(r'([A-Za-z]+)\d', tid or '')
-    k = kinds()[0] if kinds_map is None else kinds_map
-    return bool(m) and bool(RESEARCH.match(str(k.get(m.group(1), ''))))
-
-
-# F36, B221: the question a research task whose diff changes code puts to the person, and what their answer says
-SHIP, QUEUE = 'Ship them', 'Queue them as their own task'
-RESEARCH_BUTTONS = f'[{SHIP} (recommended) / {QUEUE}]'  # ends the question; its quote in an answer's note ends so too
-MERGE_ANYWAY = re.compile(r'\bmerge[ -]anyway\b', re.I)
-_SHIP_NAME = re.compile(r'(?:ship them|merge[ -]anyway)\s*(?:$|[:.!(])', re.I)  # the button, words after it or not
-_SHIP_WORDS = re.compile(r'^(?:yes|yep|yeah|y|ok|okay|sure|done|go|ship|merge)\b|\b(?:go ahead|ship (?:it|them))\b', re.I)
-_QUEUE_WORDS = re.compile(r'^queue\b|\bqueue (?:them|it|these|this|the (?:code|changes))\b|\bfollow[ -]?up\b|\bown task\b', re.I)
-_NOT = re.compile(r"\b(?:no|not|never|dont|wont|without|only|findings|later|wait|first|until)\b|n['’]t\b|\?", re.I)  # no plain yes
-_NOT_MERGE = re.compile(r"(?:\b(?:no|not|never|dont|without)|n't)\s+(?:\w+\s+){0,2}merge[ -]anyway", re.I)
-_PERSON_NOTE = re.compile(r'(your answer|confirmed by you) \(|you said(?:, on (?:stuck|CONFIRM|DECIDE|BLOCKED) |: )')
-
-
-def research_choice(said: str) -> str:
-    """What the answer `said` to the research question chooses: 'ship', 'queue', or '' when it is neither."""
-    said = ' '.join(said.split()).strip('`\'"')
-    if _SHIP_NAME.match(said):
-        return 'ship'
-    if _QUEUE_WORDS.search(said):
-        return 'queue'
-    return 'ship' if _SHIP_WORDS.search(said) and not _NOT.search(re.sub(r'\bno (?:problem|need)\b', '', said, flags=re.I)) else ''
-
-
-def _note_parts(item: str) -> list[str]:
-    """The parts of a task's text `item`: its own line first, then each note; not what it is blocked with."""
-    return item.split(' BLOCKED: ')[0].split(' — ')
-
-
-def _own_words(part: str, tid: str) -> tuple[str, bool] | None:
-    """(the person's own words in the note `part`, whether they answer `tid`'s research question), the question it
-    quotes left out; None when the note is not one `confirm` or `change` wrote."""
-    part = part.strip()
-    if not (m := _PERSON_NOTE.match(part)):
-        return None
-    for end in (RESEARCH_BUTTONS, f'the attempt is parked on wip/{tid}'):  # the second: an ask from before B221
-        if m[0] != 'you said: ' and (at := part.find(end)) >= 0:
-            return re.sub(r'^\)?:\s*(?:do this instead:\s*)?', '', part[at + len(end):]), True
-    cut = '): ' if m[1] else 'do this instead: '
-    return part.rsplit(cut, 1)[-1] if cut in part else '', False
-
-
-def research_ships(item: str, tid: str) -> bool:
-    """B221: does the last decision on task `tid`'s text `item` land its research diff's code: an answer to the
-    question (`research_choice`), or with no clear one a note that says `merge anyway` and offers no other answer. A
-    question quoted in a note decides nothing."""
-    choice, noted = '', False
-    for part in _note_parts(item)[1:]:
-        own = _own_words(part, tid)
-        said, ours = own or (part, False)
-        if ours:
-            choice, noted = research_choice(said), False
-        elif MERGE_ANYWAY.search(said) and not _NOT_MERGE.search(said) and not _QUEUE_WORDS.search(said):
-            noted = True
-    return choice == 'ship' or not choice and noted
-
-
-ASKED_FOR = re.compile(r'^asked for: *["“]?(.+?)["”]? *$', re.I | re.M)  # a commit message line: the person's words
-
-
-def told_file(c, tid: str) -> Path:
-    """B221: what `tell` passed on to the agent of `tid`, kept because no plan line has it."""
-    return c.notes('told', f'{tid}.txt')
-
-
-def person_words(item: str, tid: str, long: str = '', told: str = '') -> str:
-    """Everything the person said about task `tid`: its request (its line and long form `long`, unless an agent filed
-    it as a follow-up), their answers and changes, and what was `told`."""
-    parts = _note_parts(item)
-    said = [] if not parts or PRI_TAG.search(parts[0]) else [parts[0], long]
-    said += [own[0] for p in parts[1:] if (own := _own_words(p, tid))]
-    return '\n'.join([*said, told])
-
-
-def asked_for(messages: str, words: str) -> str:
-    """B221: the first `asked for: "<words>"` line of the commit `messages` that quotes the person's `words` (three
-    words or more, as they stand there); '' for none."""
-    flat = lambda s: ' '.join(re.sub(r'[`"\'“”‘’]', '', s).casefold().split())  # noqa: E731
-    heard = [flat(x) for x in words.split('\n')]
-    for m in ASKED_FOR.finditer(messages):
-        q = flat(m[1]).rstrip('.…')
-        if len(q.split()) >= 3 and any(q in h for h in heard):
-            return m[1]
-    return ''
-
-
-def build_kind() -> str:
-    """The id letter a concept's build task gets: F (feature) where the kinds have it, else the first other one."""
-    k = kinds()[0]
-    return 'F' if 'F' in k else next((p for p in k if p != CONCEPT), 'F')
-
-
-def title_of(line: str) -> str:
-    """A task line's own words: after its `**ID**`, without the fields, the follow-up and `(alone)` tags, notes
-    or BLOCKED."""
-    t = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', line.split('\n')[0])
-    t = re.split(r' — | BLOCKED: ', t)[0]
-    return ' '.join(re.sub(r'^\s*\(alone\)', '', PRI_TAG.sub('', prose(t))).split())
-
-
 TASK_LINE = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
-
-
 def iter_tasks(ls: list[str]):
     """Each top-level task line of a plan's lines `ls`, in order, as (section, box, id, rest, index): `section`
     is the last `### ` heading above it ('' before any), `box` the character in its [ ], `rest` the line after
@@ -1650,152 +1464,6 @@ def iter_tasks(ls: list[str]):
             section = l[4:].strip()
         elif m := TASK_LINE.match(l):
             yield section, m.group(1), m.group(2), m.group(3), i
-
-
-def titles(*paths, width: int = 60) -> dict[str, str]:
-    """{id: its `short_title`} from the plan files `paths` (TODO.md, DONE.md); a later file's line wins, so
-    pass DONE.md before TODO.md. A missing file adds nothing."""
-    out = {}
-    for f in paths:
-        for _, _, tid, rest, _ in iter_tasks(lines(f)):
-            out[tid] = short_title(rest, width)
-    return out
-
-
-def _drop_asides(t: str) -> str:
-    """`t` without its (…) asides that hold a date, a quote or a file path: "(user 2026-11-19: 'make it…')",
-    "(see runner.py, plan/TODO.md)". Nested brackets count; an aside that is plain words stays."""
-    out, depth, start = [], 0, 0
-    for i, ch in enumerate(t):
-        if ch == '(':
-            if depth == 0:
-                out.append(t[start:i])
-                start = i
-            depth += 1
-        elif ch == ')' and depth:
-            depth -= 1
-            if depth == 0:
-                aside = t[start:i + 1]
-                noisy = re.search(r"^\((?:follow-up|user|asked)\b|\d{4}-\d\d-\d\d|['\"`‘’“”]|/|\w\.(?:py|md|toml|json|rs|ts|js|sh|txt|ya?ml)\b", aside)
-                out.append('' if noisy else aside)
-                start = i + 1
-    out.append(t[start:])  # an unclosed ( keeps its tail
-    return ''.join(out)
-
-
-def short_title(rest: str, width: int = 60) -> str:
-    """A task's line, after its id, as a few plain words for a person: its first sentence, without the ` | `
-    fields, asides with dates, quotes or file lists, quote marks and bold, cut at a word to about `width`."""
-    t = _drop_asides(rest.split(' | ')[0])
-    t = re.sub(r'\b\d{4}-\d\d-\d\d\b', '', t)
-    t = re.sub(r"(?<!\w)(['\"`])\1(?!\w)", 'empty', t)  # `''` read aloud
-    t = re.sub(r"[*`\"“”‘’]|(?<!\w)'|'(?!\w)", '', t)
-    t = re.sub(r'[\w./-]*\w::(?:\w+::)*(\w+)', r'\1', t)  # a Rust/pytest path a::b::c reads as its name, c
-    t = re.split(r'(?<=[.!?;:])\s+(?=[A-Z(\d])|\s+—\s+|\s+--\s+', re.sub(r' ([,.;:])', r'\1', ' '.join(t.split())), maxsplit=1)[0]
-    t = t.strip(' .,;:—-')
-    if len(t) > width:
-        cut = t[:width - 1].rsplit(' ', 1)[0].rstrip(' ,;:—-')
-        if len(cut) < width // 2:  # one long word: cut inside it rather than drop it
-            cut = t[:width - 1].rstrip(' ,;:—-')
-        t = cut + '…'
-    return t
-
-
-def concept_done(tid: str, url: str, todo=None, done=None) -> str:
-    """Note the concept's page on `tid` and file its build task right after it, blocked until a person approves
-    an option. Returns the build task's id. The concept itself is ticked by the caller (`done`)."""
-    todo, done = ensure(todo, done)
-    ls = lines(todo)
-    line = ls[_find(ls, tid)]
-    files = fields(line).get('files', [])
-    note(tid, f'concept page: {url}', todo=todo)
-    text = f'Build the option a person approves on concept {tid}\'s page: {title_of(line)}'
-    if files:
-        text += ' | files: ' + ', '.join(files)
-    bid = add(build_kind(), text, 'after', tid, todo=todo, done=done)
-    block(bid, WAIT_OK + url, todo=todo, after=[])
-    return bid
-
-
-def waiting(todo=None, all: bool = False) -> list[tuple[str, str, str, str]]:
-    """Build tasks waiting for a person's OK on a concept page: (build id, concept id or '', url, title).
-    Shelved ones (`shelve`) only with `all`."""
-    todo, _ = ensure(todo)
-    ls, out = lines(todo), []
-    for i, l in enumerate(ls):
-        m = ITEM.match(l)
-        if not (m and not m.group(1) and m.group(2) == '~'):
-            continue
-        tail = ls[i + len(_item_block(ls, i)) - 1]
-        if w := (WAIT_ANY if all else WAITING).findall(tail):
-            w = [x[-1] if isinstance(x, tuple) else x for x in w]
-            k = FROM_CONCEPT.search(l)
-            title = re.sub(r'^Build the option a person approves on concept \S+ page: ', '', title_of(l))
-            out.append((m.group(3).rstrip('.'), k.group(1) if k else '', w[-1], title))
-    return out
-
-
-def _waiter(tid: str, todo) -> tuple[str, str, str, str]:
-    """The waiting build task `tid` names: the build task itself or its concept."""
-    for w in waiting(todo, all=True):
-        if tid in (w[0], w[1]):
-            return w
-    raise SystemExit(f'{PROG}: nothing waits for an OK on {tid!r}: `{PROG} waiting` lists what does')
-
-
-def approve(tid: str, choice: str = '', todo=None) -> str:
-    """A person's OK: unblock the build task of concept `tid` (or the build task `tid`) with the choice noted, so
-    a run starts it. Returns the build task's id."""
-    todo, _ = ensure(todo)
-    w = _waiter(tid, todo)
-    unblock(w[0], f'approved ({w[2]}): {choice}' if choice else f'approved as recommended on {w[2]}', todo=todo)
-    FREED[:] = release_held({x for x in w[:2] if x}, choice, todo=todo)  # F19: a restyle frees what it held
-    return w[0]
-
-
-def revise(tid: str, why: str, todo=None, done=None) -> str:
-    """Changes asked for: drop the waiting build task and reopen the concept with `why` noted, so its next
-    session publishes a new round. Returns the concept's id."""
-    todo, done = ensure(todo, done)
-    b, k, url, _ = _waiter(tid, todo)
-    if not k:
-        raise SystemExit(f'{PROG}: {b} names no concept to send back; `{PROG} note` and `{PROG} unblock` it by hand')
-    ls, dl = lines(todo), lines(done)
-    at = next((i for i, l in enumerate(ls) if (m := ITEM.match(l)) and not m.group(1) and m.group(3) == k), None)
-    if at is None:  # archived: move its block back from DONE.md to where the build task stands
-        j = _find(dl, k)
-        blk = _item_block(dl, j)
-        del dl[j:j + len(blk)]
-        _write(done, dl)
-        i = _find(ls, b)
-        ls[i:i] = blk
-        at = i
-    _mark(ls, at, ' ')
-    _write(todo, ls)
-    note(k, f'changes asked on {url}: {why}', todo=todo)
-    drop(b, f'concept {k} sent back for changes', todo=todo, done=done)
-    return k
-
-
-def concept_shown(title: str, page: str, files=None, todo=None, done=None, local=None) -> tuple[str, str]:
-    """F108: a concept page a chat (a control session) wrote and showed inline lands in the plan as a K task
-    already done: ticked with its page noted and its build waiting for the OK, as `concept_done` leaves a finished
-    K task, so Needs you, `waiting` and the run page's Concepts list it until the person picks (`approve`,
-    `revise` on its id). Where the kinds lack K only the waiting build is filed. Returns (concept id, build id);
-    the two are the same id without K. F406f: `local(id)`, with no claude.ai page: gives the concept its copy, and its address."""
-    todo, done = ensure(todo, done)
-    text = ' '.join(title.split()) + (' | files: ' + ', '.join(files) if files else '')
-    if CONCEPT not in kinds()[0]:
-        bid = add(build_kind(), f'Build the option a person approves on the concept page: {text}', todo=todo,
-                  done=done)
-        block(bid, WAIT_OK + (local(bid) if local else page), todo=todo, after=[])
-        return bid, bid
-    kid = add(CONCEPT, text, todo=todo, done=done)
-    page = local(kid) if local else page
-    bid = concept_done(kid, page, todo=todo, done=done)
-    tick(kid, todo=todo, done=done)
-    return kid, bid
-
 
 # --- F19: a style for the future too: a restyle page, and the interface work held until it is approved -------
 #
@@ -2696,105 +2364,6 @@ def overlap(a: set[str], b: set[str]) -> set[str]:
                 or ('*' in x and fnmatch.fnmatch(y, f'*{x}')) or ('*' in y and fnmatch.fnmatch(x, f'*{y}')))
     return {x for x in a for y in b if meet(x, y)}
 
-
-def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
-    """Everything a task starts from, in one command.
-
-    This is the highest-value thing in the module. A fresh session otherwise spends its first five or six
-    turns finding the task line, looking for a `plan/tasks/<ID>.md`, hunting the journal directory, opening the
-    files and running `git log` on them — all of it predictable, all of it paid for again on every turn after.
-    `brief` assembles it once:
-
-      * the task's own line (and sub-items) from TODO.md or DONE.md,
-      * `plan/tasks/<ID>.md` in full, if the task has a long form,
-      * its journal directory: the file list, and the newest entry pasted in (capped at JOURNAL_MAX chars,
-        because the newest entry is where the last session said whose move it is),
-      * the files named on the line: where they actually are, how long they are, and their last 3 commits —
-        so the session knows whether someone changed them yesterday before it reads a single one — and,
-        with `[plan] outline` (a command; {file} is the path), each file's outline: the map of what is
-        where, so a session reads the part it needs instead of paging through the file to find it,
-      * and the output of `[plan] brief_extra` (a command; {id} is the task), for what only the project
-        knows how to find.
-
-    `./run run` pastes this into the agent's first turn. A project whose own tool already writes a brief
-    (one that also sets things up for the session, say) names it in `[plan] brief`, and its output is
-    the brief instead.
-    """
-    c = cfg(root)
-    root = c.root
-    plan_dir = Path(plan_dir or c.plan_dir)
-    journal = Path(journal) if journal else c.journal
-    paths = [plan_dir / 'TODO.md', plan_dir / 'DONE.md']
-    line = next((o for p in paths if (o := section(p, tid))), [])
-    if not line:
-        raise SystemExit(f'{PROG}: no task {tid!r} in {plan_dir}/TODO.md or DONE.md')
-    text = '\n'.join(line)
-    out = [f'## Task {tid} ({plan_dir.name}/TODO.md)', *line]
-    own = long_form(plan_dir, tid)
-    own_rel = f'{plan_dir.name}/{own.relative_to(plan_dir).as_posix()}'
-    if own.exists():
-        out += ['', f'## {own_rel}', *lines(own)]
-        text += '\n' + '\n'.join(lines(own))
-
-    # journals: the ones the line points at (`j: <dir>`) and any whose name carries this id
-    named = fields(text).get('journal', [])
-    try:
-        dirs = sorted(d for d in os.listdir(journal) if (journal / d).is_dir()) if journal else []
-    except OSError:
-        dirs = []
-    own_j = [d for d in dirs if d == tid or re.search(rf'-{re.escape(tid.lower())}(-|$)', d.lower())]
-    for j in dict.fromkeys(named + own_j) if journal else ():  # `j:` on a line with no journal dir set
-        d = journal / j
-        if not d.is_dir():
-            continue
-        # entries: its .md files and those one folder down (an `id` layout's repeat attempts, <date>-<slug>/)
-        files = sorted(p.relative_to(d).as_posix() for p in [*d.glob('*.md'), *d.glob('*/*.md')])
-        rel = os.path.relpath(d, root).replace(os.sep, '/')
-        out += ['', f'## Journal {rel}/: {" · ".join(files)}']
-        if files and j in own_j:  # journals the line only points at are listed, not pasted
-            newest = max(files, key=lambda f: (m[0] if (m := DATE.search(f)) else '', f))  # dated beats undated
-            body = (d / newest).read_text(encoding='utf-8', errors='replace')
-            cut = len(body) > JOURNAL_MAX
-            out += [f'### {newest}' + (f' (first {JOURNAL_MAX} chars)' if cut else ''),
-                    body[:JOURNAL_MAX].rstrip()]
-
-    where = [p for p in files_on_line(text) if p != own_rel and '*' not in p]
-    if where:
-        out += ['', '## Files on the line, and their last commits']
-        for t in where:
-            log = git('log', '-3', '--format=%h %ad %s', '--date=short', '--', t, cwd=root).stdout.strip().splitlines()
-            try:
-                n_lines = sum(1 for _ in open(root / t, encoding='utf-8', errors='replace'))
-                size = f'{n_lines} lines'
-            except OSError:
-                size = 'missing — this task creates it'
-            out += [f'- `{t}` ({size})', *[f'  - {l[:120]}' for l in log]]
-            if (cmd := c.raw['plan']['outline']) and size[0].isdigit():
-                out += outline(cmd, t, root)
-    if cmd := c.raw['plan']['brief_extra']:  # what only the project knows: its oracle names, a spec, …
-        r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True,
-                           errors='replace')
-        if extra := (r.stdout.rstrip() or (f'({cmd} failed: {r.stderr.strip()[:200]})' if r.returncode else '')):
-            out += ['', *extra.splitlines()]
-    return out
-
-
-DATE = re.compile(r'\d{4}-\d{2}-\d{2}')
-OUTLINE_MAX = 6000  # chars of one file's outline in a brief
-
-
-def outline(cmd: str, path: str, root) -> list[str]:
-    """`[plan] outline` for one file, indented under its entry in the brief; a failure says so in one line."""
-    cmd = cmd.format(file=shlex.quote(path))
-    try:
-        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, text=True, timeout=60)
-    except subprocess.TimeoutExpired:
-        return [f'  (outline: `{cmd}` ran past 60 s)']
-    if r.returncode or not r.stdout.strip():
-        return [f'  (outline: `{cmd}` failed: {r.stderr.strip()[:150]})'] if r.returncode else []
-    text = r.stdout.rstrip()
-    cut = f'  … (outline cut at {OUTLINE_MAX} chars)' if len(text) > OUTLINE_MAX else ''
-    return ['  outline:', *(f'    {l}' for l in text[:OUTLINE_MAX].splitlines()), *([cut] if cut else [])]
 
 
 # --- merging --------------------------------------------------------------------
@@ -3849,6 +3418,24 @@ def decide_question(text: str) -> str:
     end = m[0] if (m := re.search(r' \[[^\[\]]+ / [^\[\]]+\]\.?(?: https?://\S+)*$', q)) else ''
     head, room = q[:len(q) - len(end)], max(239 - len(end), 100)  # a long bracket still leaves the question 100
     return q if len(head) <= room else head[:room].rsplit(' ', 1)[0] + '…' + end
+
+
+# --- C52: the areas moved to modules of their own; every name stays here too. They import this module, so these
+# lines come last.
+from agent_runner.plan_drop import (  # noqa: E402,F401
+    DROPPED, _split_ids, drop, restore,
+)
+from agent_runner.plan_concepts import (  # noqa: E402,F401
+    ASKED_FOR, CONCEPT, FROM_CONCEPT, MERGE_ANYWAY, QUEUE, RESEARCH,
+    RESEARCH_BUTTONS, SHIP, WAITING, _NOT, _NOT_MERGE, _PERSON_NOTE,
+    _QUEUE_WORDS, _SHIP_NAME, _SHIP_WORDS, _drop_asides, _note_parts, _own_words,
+    _waiter, approve, asked_for, build_kind, concept, concept_done,
+    concept_shown, person_words, research, research_choice, research_ships, revise,
+    short_title, title_of, titles, told_file, waiting,
+)
+from agent_runner.plan_brief import (  # noqa: E402,F401
+    DATE, OUTLINE_MAX, brief, outline,
+)
 
 
 if __name__ == '__main__':
