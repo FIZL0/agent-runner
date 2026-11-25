@@ -37,7 +37,7 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged, budget_mark, budgets, SPENT)
 from agent_runner.teardown import close_page, end_own, PAGE, RUN_LOCK, wait_last_run
-from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
+from agent_runner.watch import (_account, api_down, api_up, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
     START_TRIES, state_line, stats, stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, watch_code, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
@@ -840,10 +840,10 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
 
 # --- usage caps and power ------------------------------------------------------
 
-def capped(force: bool) -> str | None:
+def capped(force: bool, own: bool = False) -> str | None:
     """Why no new task may start: the 5-hour session usage at or past `[run] session_max`, or the 7-day usage
-    at or past `[run] weekly_max` (and not --force). None when neither is."""
-    if force or not claude_use.account(C):
+    at or past `[run] weekly_max` (and not --force). None when neither is. `own`: there are tasks it holds alone (claude_use.own_tasks)."""
+    if force or not (own or claude_use.account(C)):
         return None
     for name, what, key in (('five_hour', 'session', 'session_max'), ('seven_day', 'weekly', 'weekly_max')):
         w = usage_pct(name)
@@ -852,10 +852,11 @@ def capped(force: bool) -> str | None:
     return None
 
 
-def cap_stop_detail() -> str:
+def cap_stop_detail(own: str = '') -> str:
     """B102: the usage-cap alarm's detail, the remote-friendly way to go on first (a control session,
-    `[run] command` force), the run view's f + Enter last."""
-    return ('the running tasks finish and merge; new ones wait for the reset. To go on now: say force in '
+    `[run] command` force), the run view's f + Enter last. `own`: the tasks it holds alone (B791)."""
+    return (f'the model of {own} is a claude one; tasks on other models still start. ' if own else
+            'the running tasks finish and merge; new ones wait for the reset. ') + ('To go on now: say force in '
             f'a control session, or run `{C.command} force`, or type f + Enter in the run view '
             f'({C.command} attach).')
 SHUTDOWN_GRACE = 120  # s the run must stay idle first; new work or a stop in that time cancels it
@@ -1341,11 +1342,23 @@ class Run:
             self.tried.add(tid)
             self.idle_said = False
 
-    def say_cap(self, w: str) -> None:
-        """The usage-cap alarm, once each time a cap is reached."""
+    def say_cap(self, w: str, own: str = '') -> None:
+        """The usage-cap alarm, once each time a cap is reached. `own`: the tasks it holds alone (B791)."""
         if not self.cap_said:
-            alarm(f'{w}: no new tasks', cap_stop_detail())
+            alarm(f'{w}: {own} cannot start until the reset' if own else f'{w}: no new tasks', cap_stop_detail(own))
             self.cap_said = True
+
+    def own_no_api(self, own: dict, held: frozenset) -> set[str]:
+        """B791: the `own` tasks (claude_use.own_tasks) that would start on Claude Code while its API cannot be reached.
+        Said once, until it can."""
+        out = {t for t, m in own.items() if FB.provider(FB.start_model(m, held)) == 'claude'}
+        if not out or api_up(True):
+            self.stall_said.discard('api own')
+            return set()
+        if 'api own' not in self.stall_said:
+            self.stall_said.add('api own')
+            log(f'the Claude API cannot be reached: {", ".join(sorted(out))} cannot start until it can')
+        return out
 
     def fill(self, n: int) -> None:
         """Start the next task in the free slot, unless a stop, pause, wrong [run] agent, usage cap, backlog, API outage, low disk
@@ -1355,10 +1368,12 @@ class Run:
             return
         if PAUSED[0] or agent_held():  # B764c: never another agent instead
             return
-        w, held = capped(self.a.force or FORCED[0]), frozenset()
+        own = {t: m for t, m in claude_use.own_tasks(C, self.branch, self.model).items()  # B791: these alone are held
+               if t not in self.tried and t not in {x[0] for x in running.values()}}
+        w, held = capped(self.a.force or FORCED[0], bool(own)), frozenset()
         if w is None:
             self.cap_said = self.cap_fell = False
-        elif C.fallback:
+        elif C.fallback or own:
             held = FB.USAGE_HELD  # F142: new tasks start down the chain instead
         else:
             self.say_cap(w)
@@ -1383,16 +1398,20 @@ class Run:
         self.stall_said.discard('before_start')
         self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
         passed = FB.no_free(self.branch, self.model, held) if held else set()
-        task = pick(running, self.tried | passed, self.branch, claim=True) or file_split.no_task(self, held)  # F200b
+        if own:
+            passed &= own.keys()
+        no_api = self.own_no_api(own, held)
+        task = pick(running, self.tried | passed | no_api, self.branch, claim=True) or \
+            file_split.no_task(self, frozenset() if own else held)  # F200b
         if not task and passed and not self.cap_said and \
                 (t := pick(running, self.tried, self.branch)) and t[0] in passed:
-            self.say_cap(w)  # F142: only the cap holds it: no provider in the chain is free for it
+            self.say_cap(w, t[0] if own else '')  # F142: only the cap holds it: no provider in the chain is free for it
         if task:
             if unlogged(task[0], self.branch, self.model):  # F106e: its provider has no login: Needs you
                 plansync.release(C, task[0])
                 self.tried.add(task[0])  # the next pick takes another; an unblock or retry_held puts it back
                 return
-            if held and not self.cap_fell:
+            if held and not self.cap_fell and (not own or task[0] in own):
                 log(f'{w}: new tasks start on the first free provider in [models] fallback until the reset')
                 self.cap_fell = True
             if p := start(n, task, self.branch, self.model, self.idle, slots, held=held):

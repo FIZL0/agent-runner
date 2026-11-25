@@ -215,6 +215,72 @@ def test_task_model(tmp: Path) -> None:
     eq(sched.agent_held(), '', 'and holds nothing else')
 
 
+def test_task_held(tmp: Path) -> None:
+    print("a task whose own model is claude's, with Claude Code here: the usage caps and the API hold it alone")
+    from agent_runner import fallback as FB
+    bin_ = tmp / 'claude-bin'
+    bin_.mkdir()
+    (bin_ / 'claude').write_text('#!/bin/sh\n', encoding='utf-8')
+    (bin_ / 'claude').chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k.lower() != 'https_proxy'}
+    env['PATH'] = f'{bin_}{os.pathsep}{os.environ["PATH"]}'
+    two = '# TODO\n\n- [ ] **F1** one | files: a.txt | model: opus\n- [ ] **F2** two | files: b.txt\n'
+
+    def ticks(name: str, usage: int = 0, api: bool = True, todo: str = two, chain: str = '', force: bool = False) -> tuple:
+        """(what one fill of each of two slots started, the alarms, the usage and API reads, the log)"""
+        root = repo_at(tmp / name, ROLES + KINDS + chain)
+        (root / 'plan' / 'TODO.md').write_text(todo, encoding='utf-8')
+        git(root, 'commit', '-qam', 'plan', '--allow-empty')
+        c = load(root)
+        started, alarms, reads, logs = [], [], [], []
+
+        def connect(*a, **k):
+            reads.append('api')
+            if not api:
+                raise OSError('no network')
+            return mock.Mock()
+
+        def start(n, task, branch, model, idle, slots, held=frozenset()):
+            m = 'opus' if task[0] == 'F1' else MODEL
+            started.append((task[0], FB.start_model(m, held)))
+            return (n, 'sid', None)
+        r = loop.Run.__new__(loop.Run)
+        r.__dict__.update(procs={}, running={}, slots=2, r=c.run, a=mock.Mock(force=force), branch='main', model=MODEL,
+                          idle=30, pause=1, tried=set(), merging=[], waiting={}, foreign={}, stall_said=set(),
+                          held_said=2, cap_said=False, cap_fell=False, once=True, idle_said=False, failed_starts={},
+                          free_at={})
+        W._api[:] = [-1e9, True]
+        with mock.patch.object(W.socket, 'create_connection', connect), mock.patch.object(loop, 'start', start), \
+                mock.patch.object(loop, 'usage_pct', lambda n: reads.append('usage') or usage), \
+                mock.patch.object(loop, 'alarm', lambda *a: alarms.append(a[0])), \
+                mock.patch.object(loop, 'log', lambda s, *a, **k: logs.append(s)), \
+                mock.patch.object(loop, 'ask_stop', lambda *a: None), mock.patch.object(loop, 'low_disk', lambda *a: False), \
+                mock.patch.object(loop.shared_tools, 'low_memory', lambda: False), \
+                mock.patch('agent_runner.login.missing', lambda m, c: ''):
+            r.fill(1)
+            r.fill(2)
+        W._api[:] = [-1e9, True]
+        return started, alarms, set(reads), ' '.join(logs)
+    with mock.patch.dict(os.environ, env, clear=True):
+        one = two[:two.index('- [ ] **F2')]
+        own, other = ('F1', 'opus'), ('F2', MODEL)
+        eq(ticks('h-ok')[0], [own, other], 'nothing in the way: both start')
+        alarm = ['session usage 100% >= 90%: F1 cannot start until the reset']
+        eq(ticks('h-cap', usage=100)[:2], ([other], alarm), 'past the cap: only the other starts, and the alarm names the one held')
+        eq(ticks('h-cap1', usage=100, todo=one)[:2], ([], alarm), 'alone in the plan: held, and the alarm is raised once')
+        eq(ticks('h-force', usage=100, force=True)[0], [own, other], 'forced: the cap is off')
+        chain = 'fallback = ["gemini:pro"]\n'
+        got = ticks('h-chain', usage=100, api=False, chain=chain)
+        eq(got[0], [('F1', 'gemini:pro'), other], 'a chain: it starts there, its API nothing to it')
+        has(got[3], 'first free provider in .models. fallback', 'and it is said')
+        got = ticks('h-api', api=False)
+        eq(got[0], [other], 'the API down: only the other starts')
+        eq(got[3].count('F1 cannot start'), 1, 'which is said once')
+        eq(ticks('h-api-chain', api=False, chain=chain)[0], [other], 'with a chain too')
+        eq(ticks('h-none', usage=100, api=False, todo=two.replace(' | model: opus', ''))[2], set(),
+           'no task on claude: no usage and no API is read')
+
+
 # --- end to end ----------------------------------------------------------------------------------------------------
 
 def calls(tmp: Path) -> list[dict]:
@@ -325,7 +391,7 @@ def main() -> int:
     here = os.getcwd()
     logged_in(tmp)
     assert not shutil.which('claude')
-    tests = [test_uses, test_lines, test_vitals, test_task_model]
+    tests = [test_uses, test_lines, test_vitals, test_task_model, test_task_held]
     if shutil.which('node'):
         tests += [test_setup, test_run, test_chat]
     else:

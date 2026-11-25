@@ -8,7 +8,7 @@ def uses(c, flag: str = '') -> bool:
     was given) names a claude model, or a [models] fallback entry does and Claude Code is here (a missing one is passed
     over: fallback.chain_next). Not [models] docs: that is a subagent of a Claude Code
     task session, so with none it never runs. A claude model on a task's own line is not counted: only that task
-    waits for Claude Code (login.unlogged)."""
+    waits, for Claude Code (login.unlogged) or for its usage and API (`own_tasks`)."""
     from agent_runner.config import agent_missing, harness_model
     models = getattr(c, 'models', None)
     if not isinstance(models, dict):
@@ -31,3 +31,18 @@ def lacking(model: str, c) -> bool:
     (one that does is held as a whole: sched.agent_held)."""
     from agent_runner.config import agent_missing, harness_model
     return not harness_model(model, c.providers) and not uses(c) and bool(agent_missing(c.root, c.run['agent']))
+
+
+def own_tasks(c, branch: str, model: str) -> dict[str, str]:
+    """B791: {id: model} of the open tasks whose own model is claude's, in a project that needs this machine's Claude
+    account for nothing else, with Claude Code here: its usage caps and API hold these tasks alone. Empty in a project
+    they hold as a whole (`account`)."""
+    from agent_runner.config import agent_missing, harness_model
+    if (c.run.get('agent') or 'claude') != 'claude' or uses(c) or agent_missing(c.root, 'claude'):
+        return {}
+    from agent_runner.sched import tasks
+    from agent_runner.slots import task_model
+    from agent_runner.state import plan_text
+    ls = plan_text(branch)
+    settled = {tid: task_model(tid, model, branch, ls) for tid, *_ in tasks(branch)}
+    return {tid: m for tid, m in settled.items() if not harness_model(m, c.providers)}

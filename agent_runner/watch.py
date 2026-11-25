@@ -464,11 +464,12 @@ def api_down(said: set[str]) -> bool:
     return True
 
 
-def api_up() -> bool:
+def api_up(own: bool = False) -> bool:
     """Whether the agent's API can be reached (a TCP connect), checked at most every 10 s. A session started
     or resumed while it cannot be dies at its first call. True for another agent, with no role
-    on Claude Code (F406h), or behind a proxy."""
-    if not claude_use.account(C) or any(os.environ.get(k) for k in ('HTTPS_PROXY', 'https_proxy')):
+    on Claude Code (F406h; `own`, B791: asked for a task whose own model is claude's, so checked all the same), or
+    behind a proxy."""
+    if not (own or claude_use.account(C)) or any(os.environ.get(k) for k in ('HTTPS_PROXY', 'https_proxy')):
         return True
     if time.time() - _api[0] >= 10:
         host = re.sub(r'^\w+://|[:/].*$', '', os.environ.get('ANTHROPIC_BASE_URL') or 'api.anthropic.com')
