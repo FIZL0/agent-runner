@@ -6,8 +6,9 @@ with `[git] pr = true` and `[plan] repo` set.
 ## Verdict
 
 Every case of the trial reached its end on a real GitHub repo, but not all at the first try: an answer given with
-`plan unblock` does not reach the session (B820), so one task asked again and one opened the same pull request again.
-An answer given with `plan confirm` works. Four bugs are filed: B820, B821, B823 and B826.
+`plan unblock` did not reach the session (B820), so one task asked again and one opened the same pull request again.
+An answer given with `plan confirm` works. Four bugs are filed. B820 has landed, and the lost answer is fixed and
+checked again on 2026-11-25. B821, B823 and B826 are still open.
 
 ## Earlier blocker
 
@@ -56,14 +57,34 @@ chose a public scratch repo, and the run below used it. Task D10 (open) is to sa
 
 ## Filed bugs
 
-- **B820** (answer lost): an answer given with `plan unblock` is lost in a PR round. The log says "It is open
+- **B820** (answer lost, fixed): an answer given with `plan unblock` is lost in a PR round. The log says "It is open
   again; no answer was noted". F3's session blocked again on the same question. F5's #7 was opened identical to the
-  closed #1. `plan confirm` works.
+  closed #1. `plan confirm` works. B820 has landed and was rechecked; see Recheck after B820.
 - **B821**: `run plan` with no arguments, under `[plan] repo`, ends in an IndexError traceback.
 - **B823** (low): the log says "its round on pull request #0 is over". A new PR keeps the old one's time in Needs you.
   During an outage the same log line repeats each minute, as gh's message holds a changing request id.
 - **B826**: #8's body still said "six" when its file held "SIX". The session is not told to rewrite its pitch in a round;
   F4's did anyway.
+
+## Recheck after B820
+
+On 2026-11-25, 12:35 to 12:44, the two cases that lost an answer were run again live. The run used the v0.73.0
+code on branch task/T26, with 2 haiku slots, and web and review off. The repos were a
+new public FIZL0/pr-mode-scratch (ruleset on main, no bypass) and a private FIZL0/pr-mode-scratch-plan. Both were
+deleted after the run. T26's session played the person with the FIZL0 login. The check fails when a `notes/*.txt`
+file does not end with "end".
+
+- Red CI (F1, #2): the session blocked with a DECIDE, `plan unblock F1 'Add the end line'`. The log said "resumes
+  in slot 2 for pull request #2: red CI, your answer". The session's message said "The task is open again, with this
+  note: Add the end line". It added the line, the check passed, and #2 was merged (squash). F1 was ticked.
+- Closed without a merge (F2, #1): `plan unblock F2 'Write "SIX" in place of "six".'` The message held the note. A
+  new pull request #3 opened with SIX, not a copy of #1. It was merged (squash) and F2 was ticked. The task branches
+  were gone from the remote.
+- #3's new body said SIX in what and how to try it, so the stale body of B826 did not show in this run. B826 is
+  still open.
+- B821 (IndexError of `run plan` with no arguments) and B823 ("pull request #0" in the log) were seen again. Both
+  are still open.
+- Needs you was empty at the end.
 
 ## Seen, not filed
 
@@ -88,7 +109,7 @@ A repo needs:
 - a ruleset on main with no bypass;
 - to be public, unless the account has a paid plan.
 
-On 2026-11-25 the person was asked which repo should turn on PR mode, and answered "No repo yet, wait for the lost-answer fix". That fix is B820, still open. T26 waits for B820; once it has landed, an unblock answer in a PR round is checked again and the person is asked again.
+On 2026-11-25 the person was asked which repo should turn on PR mode, and answered "No repo yet, wait for the lost-answer fix". B820 landed and was rechecked; the person is asked again.
 
 No runner.toml in `~/repos` sets `[plan] repo` yet. GitHub lists no rules on main for agent-runner, openmx, opentennis,
 partyboard and iFizBox; classic protection was not looked at, nor were the other repos. Clay is private and the logins
