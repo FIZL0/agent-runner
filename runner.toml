@@ -4,6 +4,7 @@
 outline = "python3 tools/outline.py {file}"  # the brief's map of each big file a task names
 
 [run]
+rules = "AGENTS.md"  # the short rules file every slot is pointed at
 auto_upgrade = true  # upgrade agent-runner by itself when a newer release is out, between merges
 auto_release = { "every" = 10, "idle" = true }  # queue a release by itself when the run goes idle with landed work
 # The gate `done` and every merge run: each tests/test_*.py suite in turn, stopping at the first failure.
