@@ -10,8 +10,8 @@ function devOpen(id){
   try{history.replaceState(devHere(),'');history.pushState(devHere(id),'')}catch(e){}
   devSet(id);render(true);
 }
-/* another tab of All projects was pressed: the history entry is that tab's now */
-function devLeave(){devSet('');try{if(history.state&&'tab' in history.state)history.replaceState(devHere(),'')}catch(e){}}
+/* a tab of All projects was pressed: Devices is the way back, for another the history entry is that tab's now */
+function devLeave(){if(H.dev&&H.tab==='devices')return devBack();devSet('');try{if(history.state&&'tab' in history.state)history.replaceState(devHere(),'')}catch(e){}}
 function devBack(){
   if(history.state&&history.state.dev&&history.state.dev===H.dev){history.back();return}
   devSet('');render(true);
@@ -28,6 +28,7 @@ async function devLoad(){
   try{d=await (await fetch(tq(HB+'dev/'+encodeURIComponent(id)+'/vitals/device'))).json()}
   catch(e){err=`Could not reach Runner Home: ${plainErr(e)}`}
   if(turn!==DV.turn)return;  // another device, or a newer ask
+  if(d&&!d.ok&&!d.id){err=d.out||'The device could not be read.';d=null}  // Home's own refusal: a device's answer has its id
   DV.busy=false;DV.err=err;if(d)DV.d=d;
   render();
 }

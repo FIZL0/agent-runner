@@ -45,6 +45,7 @@ const tick = () => new Promise(r => setTimeout(r, 0));
   // Back, Forward, the Back button, another tab, down and up again, a reload
   out.hist = hist.slice(); history.back(); out.b1 = [H.tab, H.dev, devOn()]; history.forward(); out.f1 = [H.tab, H.dev];
   devBack(); out.b2 = [H.tab, H.dev, at];
+  history.forward(); devLeave(); out.b3 = [H.dev, at];
   history.forward(); H.tab = ''; devLeave(); out.left = [H.dev, history.state];
   H.tab = 'devices'; devOpen('local'); history.pushState({level: 'in'}, ''); all = false; out.off = [devOn(), devBackBtn()]; history.back(); out.up = [H.tab, H.dev, went];
   H.tab = ''; H.dev = ''; hits = []; devPlace(history.state); await tick(); out.reload = [H.tab, H.dev, hits.length];
@@ -53,6 +54,7 @@ const tick = () => new Promise(r => setTimeout(r, 0));
   answer = {ok: false, out: 'timed out', id: 'p2'}; devOpen('p2'); await tick(); out.not = devHTML();
   devBack(); devOpen('p1'); await tick(); out.refused = devHTML(); out.notTitle = allTitle();
   devBack(); answer = FULL; devOpen('local'); await tick(); answer = new Error('down'); devLoad(); await tick(); out.unreached = devHTML();
+  answer = {ok: false, out: 'no such device'}; devLoad(); await tick(); out.home = devHTML();
   let late; answer = u => u.includes('p9') ? {ok: true, host: 'nine'} : new Promise(r => { late = r });
   devLoad(); devBack(); devOpen('p9'); await tick(); late(FULL); await tick(); out.late = allTitle();
   console.log(JSON.stringify(out));
@@ -81,12 +83,14 @@ def test_device_b818a(tmp: Path) -> None:
     check('Back to Devices' in o['back'] and o['drawer'] is False, 'the top bar leads back, the drawer is closed')
     eq(o['hist'], [{'level': 'all', 'tab': 'devices'}, {'level': 'all', 'tab': 'devices', 'dev': 'local'}], 'a history entry of its own')
     eq((o['b1'], o['f1'], o['b2']), (['devices', '', ''], ['devices', 'local'], ['devices', '', 0]), 'Back, Forward and Back to Devices')
+    eq(o['b3'], ['', 0], 'Devices in the sidebar is the way back too')
     eq(o['left'], ['', {'level': 'all', 'tab': ''}], 'Overview takes the entry over')
     eq((o['off'], o['up']), (['', ''], ['devices', 'local', ['up']]), 'up again by Back: the device')
     eq((o['reload'], o['noload']), (['devices', 'local', 1], 0), 'a reload opens it; the list asks for no device')
     check('v-bad">Not answering' in o['not'] and 'timed out' in o['not'] and 'data-devload' in o['not'], 'not answering, why, and Retry', o['not'])
     check('Its Home refused' in o['refused'] and 'lap' in o['notTitle'], "a listed one says what the list says", o['refused'])
     check('Could not reach Runner Home: down' in o['unreached'] and 'Headroom' in o['unreached'], 'what was read stays')
+    check('no such device' in o['home'] and 'Not answering' not in o['home'] and 'Headroom' in o['home'], "Home's own refusal is no word of the device")
     eq(o['late'], '<span class="tt">nine</span>', 'a late answer of another device is dropped')
 
 
