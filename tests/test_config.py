@@ -315,6 +315,38 @@ def test_wrong_agent_b764b(tmp: Path) -> None:
     eq(U.agent_problem(), '', 'fixed: gone')
 
 
+def test_global_provider_f443(tmp: Path) -> None:
+    """F443: [models] provider takes every bare model name, opus/sonnet/haiku through [models.tiers]; a model that names
+    its provider keeps it."""
+    repo = project(tmp)
+    c = CF.Config(repo)
+    eq((c.model_provider, c.models['code'], c.models['kinds']['D']), ('claude', 'opus', 'sonnet'), 'claude by default: as before')
+    (repo / 'runner.local.toml').write_text('[models]\nprovider = "copilot"\ncode = "claude:opus"\nfix = "codex:gpt-x"\n'
+                                            'review = "gpt-6-sol"\nfallback = ["haiku"]\n[models.kinds]\nC = "opus"\n'
+                                            '[models.tiers.copilot]\nhaiku = "mai-code-2-flash"\n', encoding='utf-8')
+    c = CF.Config(repo)
+    eq((c.models['kinds']['F'], c.models['kinds']['D'], c.models['kinds']['C']),
+       ('copilot:claude-opus-5.5', 'copilot:claude-sonnet-5.5', 'copilot:claude-opus-5.5'), 'bare tiers: the provider’s own')
+    eq((c.models['code'], c.models['fix']), ('opus', 'codex:gpt-x'), 'one that names its provider keeps it')
+    eq(c.models['review'], 'copilot:gpt-6-sol', 'another bare name goes to the provider as it is')
+    eq((c.models['docs'], c.fallback), ('copilot:mai-code-2-flash', ['copilot:mai-code-2-flash']), '[models.tiers] over the built-in')
+    eq((c.task_model('F9', 'sonnet'), c.task_model('F9', 'claude:haiku'), c.task_model('X9')),
+       ('copilot:claude-sonnet-5.5', 'haiku', 'opus'), "a task's own model: bare is the provider's")
+    eq(CF.settled(c)['models', 'provider'], 'copilot', 'a run that is up sees it change')
+    for bad, said in (('provider = "acme"', '[models] provider must be one of'), ('provider = "ollama"', 'local provider'),
+                      ('[models.tiers.copilot]\nbig = "x"', 'maps opus, sonnet or haiku'), ('[models.tiers.claude]\nopus = "x"', 'not a provider')):
+        (repo / 'runner.local.toml').write_text(f'[models]\n{bad}\n', encoding='utf-8')
+        try:
+            CF.Config(repo)
+            check(False, f'{bad!r} is refused')
+        except SystemExit as e:
+            check(said in str(e), f'{bad!r} is refused', e)
+    (repo / 'runner.local.toml').write_text('', encoding='utf-8')
+    eq(CF.setting_check(repo, 'models', 'provider', 'gemini'), '', 'the page saves a provider')
+    check('must be one of' in CF.setting_check(repo, 'models', 'provider', 'nope'), 'not one it does not know')
+    eq(CF.setting_type('models', 'provider'), 'text', 'a pick of named providers, a custom one typed in the file')
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -326,4 +358,4 @@ def in_tmp(f):
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(f) for f in (test_one_key, test_line_ends, test_waits_for_a_merge, test_refused, test_push_fails,
                                                  test_device_over_it, test_other_files, test_external_plan, test_trusted_networks,
-                                                 test_releases_f193, test_wrong_agent_b764b)]))
+                                                 test_releases_f193, test_wrong_agent_b764b, test_global_provider_f443)]))

@@ -161,16 +161,61 @@ def pitch_waits(pid: str) -> bool:
         return False
 
 
-def keep_response(tid: str, row: dict, said: str, note: str = '') -> None:
-    """F425a: keep the sent response to the item `tid` (`row`: `need_row`, read before), which opened no chat. Never
-    fails the answer."""
+def keep_response(tid: str, row: dict, said: str, note: str = '') -> str:
+    """F425a: keep the sent response to the item `tid` (`row`: `need_row`, read before), which opened no chat: its id,
+    '' when it could not be kept. Never fails the answer."""
     try:
         from agent_runner import sent_responses
-        ask = row.get('ask') or ''
-        sent_responses.keep(row.get('id') or tid, row.get('title') or P.titles(S.C.done, S.C.todo).get(tid, ''),
-                            (row.get('detail') or {}).get('summary') or ask, ask, said, note)
+        return sent_responses.keep(*response_of(tid, row), said, note)
     except (Exception, SystemExit):  # noqa: BLE001
-        pass
+        return ''
+
+
+def response_of(tid: str, row: dict) -> tuple[str, str, str, str]:
+    """F425a: the item `tid` (`row`: `need_row`) as a sent response has it: its id, title, question and whole ask."""
+    ask = row.get('ask') or ''
+    return (row.get('id') or tid, row.get('title') or P.titles(S.C.done, S.C.todo).get(tid, ''),
+            (row.get('detail') or {}).get('summary') or ask, ask)
+
+
+CLOSED = re.compile(r'^confirmed and ticked ', re.M)  # F452: what `plan.confirm` prints when the answer closed the task
+NOTE_CHAT_WAIT = 3.0  # s the answer's result waits to hear whether the chat about its note started
+
+
+def note_chat(tid: str, row: dict, said: str, note: str) -> str:
+    """F452: a new chat with the `note` of the answer `said`, which closed `tid` (`row`: `need_row`, read before), and
+    what to say of it. Never fails the answer, nor holds it longer than NOTE_CHAT_WAIT: it starts in a thread. The
+    sent response is kept first and goes once the chat starts, so a run that ends meanwhile loses no note."""
+    rid, send, over = keep_response(tid, row, said, note), SEND[0], []  # over: why it did not start, '' when it did
+
+    def go() -> None:
+        why = 'it failed'
+        try:
+            from agent_runner import sent_responses
+            sent = send(sent_responses.note_message(*response_of(tid, row), said, note))
+            why = '' if sent['ok'] else ((sent.get('out') or '').splitlines() or [why])[0]
+        except (Exception, SystemExit) as e:  # noqa: BLE001
+            why = str(e) or type(e).__name__
+        try:
+            if why:
+                S.log(f'{tid}: closed; the chat with its note did not start ({why})')
+            else:
+                sent_responses.take(rid)
+        finally:
+            over.append(why)
+
+    try:
+        t = threading.Thread(target=go, daemon=True)
+        t.start()
+    except RuntimeError as e:  # no thread to be had
+        over.append(str(e) or 'no thread')
+        S.log(f'{tid}: closed; the chat with its note did not start ({over[0]})')
+    else:
+        t.join(NOTE_CHAT_WAIT)
+    if not over:
+        return 'A chat with your note is starting'
+    return f'The chat with your note did not start ({over[0]}); find your answer under Quiet in Chats' if over[0] else \
+        'Your note opened a chat'
 
 
 def sheet_said(tid: str, said: str) -> str:
@@ -187,7 +232,8 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
     """A reply to a Needs you item. B138: a button's answer, and the words typed for a DECIDE (F181a), run the
     plan command itself (`answer_argv`), with no AI session, and an ok result carries 'said' (what was done, for
     the toast) and 'gone' (the item, off Needs you); the words typed for any other label go to a new chat to
-    settle as its needs guide says. F425a: one that opened no chat is kept (`keep_response`)."""
+    settle as its needs guide says. F425a: one that opened no chat is kept (`keep_response`). F452: one with
+    a note that closed its task starts a chat with it (`note_chat`)."""
     argv, done = answer_argv(tid, text, button, note)
     if button and not argv and not need_label(tid):  # answered already, or never asked: say so, no AI session
         return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
@@ -206,6 +252,9 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
                         S.log(f'{tid}: approved; the words with it went to no chat ({why}): {words}')
                         done += f'. Your words were not sent ({why}): {words}'
             r.update(said=done, gone=tid)
+            words = ' '.join((note or '').split())
+            if words and argv[:2] == ['plan', 'confirm'] and CLOSED.search(r['out'] or ''):  # F452: no agent gets it
+                r['said'], to_chat = f'{done}. {note_chat(tid, row, (text or "").strip(), note.strip())}', True
             if not to_chat and not (argv[0] == 'pitch' and pitch_waits(tid)):  # a part of a pitch settles nothing yet
                 said = (text or '').strip()
                 keep_response(tid, row, sheet_said(tid, said) if argv[0] == 'sheet' else said, note)

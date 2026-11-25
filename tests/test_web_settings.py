@@ -554,6 +554,12 @@ def test_settings_f97(tmp: Path) -> None:
                     ['settingValue', k(default=False, also=['list']), 'bug, ui'], ['settingValue', k(default=False, also=['list']), 'true']])
     eq([g.get('v', 'err') for g in got], [4, 'err', ['a', 'b'], False, False, 'false', True, 'auto', {'every': 10}, 'err', 8,
                                           ['bug', 'ui'], True], "a field's words as a value of its type")
+    names = ['claude', 'copilot', 'codex']
+    eq(logic_js([['modelProviders', 'code', 'opus', names], ['modelProviders', 'code', 'opus', names, 'copilot'],
+                 ['modelProviders', 'kinds', {'F': 'opus', 'D': 'codex:x', 'C': 'claude:opus'}, names, 'copilot'],
+                 ['modelProviders', 'provider', 'codex', names], ['modelProviders', 'provider', 'claude', names],
+                 ['modelProviders', 'tiers', {'copilot': {'opus': 'x'}}, names, 'copilot']]),
+       [[], ['copilot'], ['copilot', 'codex'], ['codex'], [], []], 'F443: a bare model is [models] provider’s; the Provider row names its own')
     item = lambda c, **o: {'cid': c, 'name': 'setting_project', 'state': 'sending', 'set': {'id': 'run.slots'}, **o}  # noqa: E731
     box = [item('a'), item('b'), item('c', set={'id': 'run.web'}), item('d', name='setting_device'), item('e', state='failed')]
     eq([x['cid'] for x in logic_js([['obAdd', box, item('f'), 'a']])[0]], ['a', 'c', 'd', 'e', 'f'],
@@ -696,7 +702,7 @@ def test_agent_picker_f405(tmp: Path) -> None:
             check(f'<option value="claude" selected>claude 2.1.330 · {one}</option>' in o['row'], 'the picker, on its row', o['row'])
             check('Other path…' in o['row'] and 'not found' not in o['row'] and 'setother' not in o['row'], 'found: not marked, no field')
             for part in (f'At {one}, version 2.1.330', 'Logged in: OAuth', f'Not logged in: <span class="setkey">{CF.RUNNER} login codex</span>',
-                         'No login needed', 'chosen per role in [models], not here', 'data-setmodels'):
+                         'No login needed', 'Provider in Models picks one for every model', 'data-setmodels'):
                 check(part in o['row'], f'the row says {part!r}', o['row'])
             check('data-f="setother:device:run.agent"' in o['other'] and ' data-now' in o['other'].split('setother:')[1].split('>')[0], 'Other path: a field, for the bar')
             eq((o['asked'], o['wrap']), (0, [['device', 'run.agent', '/opt/wrap']]), 'F202b: its words are the change')

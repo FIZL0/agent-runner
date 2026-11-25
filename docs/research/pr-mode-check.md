@@ -9,7 +9,8 @@ Every case of the trial reached its end on a real GitHub repo, but not all at th
 `plan unblock` did not reach the session (B820), so one task asked again and one opened the same pull request again.
 An answer given with `plan confirm` works. Four bugs are filed. B820 has landed, and the lost answer is fixed and
 checked again on 2026-11-25. B821 and B823 have landed since; T26 did not recheck them live after their fix. Only B826
-(stale pull request text) is still open.
+(stale pull request text) is still open. PR mode stays off everywhere for now, the person's answer on
+2026-11-25.
 
 ## Earlier blocker
 

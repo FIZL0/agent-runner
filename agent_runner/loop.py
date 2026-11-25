@@ -19,7 +19,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, freeze, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, stop_now, undo, working_branch
-from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
+from agent_runner.config import RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
 from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_plan, default_branch, FORCED, forced,
@@ -662,8 +662,8 @@ def run(argv: list[str], prog: str) -> int:
     no_push.require(C, ROOT)
     pr.require(C, ROOT)  # F419
     r = settings_live.start()  # F202a: what changes from here on is read by the loop
-    if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
-        a.model = claude_model(a.model, C.providers, C.models_local, 'run --model')
+    if a.model:  # F125: another provider is refused here, not run as a claude model name; F443: a bare one is [models] provider's
+        a.model = C.settle(a.model, 'run --model')
     once = a.slots == 'once'
     global POWER
     POWER = '' if once else 'shutdown' if a.shutdown else 'suspend' if a.suspend else ''

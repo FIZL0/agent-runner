@@ -50,18 +50,21 @@ def _one_line(s) -> str:
     return ' '.join(str(s or '').split())
 
 
-def keep(item: str, title: str, question: str, ask: str, answer: str, note: str = '') -> None:
-    """Keep one response. Never raises: the answer it records is done already."""
+def keep(item: str, title: str, question: str, ask: str, answer: str, note: str = '') -> str:
+    """Keep one response: its id, '' when it could not. Never raises: the answer it records is done already."""
+    rid = f'{time.time_ns()}-{os.getpid()}'
     try:
-        _save({'id': f'{time.time_ns()}-{os.getpid()}', 'item': item, 'title': _one_line(title), 'question': question,
+        _save({'id': rid, 'item': item, 'title': _one_line(title), 'question': question,
                'ask': ask, 'answer': answer, 'note': _one_line(note), 'at': time.time()})
         for f in _files()[KEEP:]:
             f.unlink(missing_ok=True)
+        return rid
     except Exception as e:  # noqa: BLE001
         try:
             S.log(f'{item}: the answer is sent; it could not be kept as a sent response: {type(e).__name__}')
         except Exception:  # noqa: BLE001
             pass
+        return ''
 
 
 def recent() -> list[dict]:
@@ -116,4 +119,20 @@ def first_message(d: dict, state: str, words: str) -> str:
     out.append('The answer is sent already, so this message is no answer to the item. Settle or change nothing unless '
                'my words below ask for it.')
     out.append(f'My words:\n{words.strip()}')
+    return '\n\n'.join(out)
+
+
+def note_message(item: str, title: str, question: str, ask: str, answer: str, note: str) -> str:
+    """F452: the first message of the chat about the `note` of an answer that closed `item`. Its start is what
+    `control_settled.OPENED` reads the item from."""
+    title = _one_line(title)
+    out = [f"About {item}{f' ({title})' if title else ''}: my answer in Needs you closed this task, and it came with a "
+           'note.']
+    if question:
+        out.append(f'The question: {question}')
+    if ask and ask != question:
+        out.append(f'The whole ask: {ask}')
+    out.append(f'My answer: {answer}')
+    out.append(f'My note with it: {note}')
+    out.append('The task is closed, so no agent of it gets the note: act on the note now, in this chat.')
     return '\n\n'.join(out)
