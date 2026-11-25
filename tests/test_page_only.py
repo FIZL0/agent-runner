@@ -229,6 +229,10 @@ def test_ends(tmp: Path) -> None:
             eq((P.urls(root), P.held(root), P.serving(root)), ([], False, False), 'web.url, its lock and note are gone')
             go.set()
             eq(P.serve(go), 0, 'asked to end (a signal sets this): it does')
+        lock = plat.lock(S.C.notes('page.lock'))
+        eq((P.take_over(0.2), P.asked_to_end()), (0, True), 'one too slow to end: the run goes on, and it is still asked to')
+        lock.close()
+        S.C.notes('page.stop').unlink()
         (root / 'runner.toml').write_text('[run]\nweb = false\n', encoding='utf-8')
         with mock.patch.dict(S.C.run, {'web': False}):
             eq(P.serve(go), 1, '[run] web off: none')

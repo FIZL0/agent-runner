@@ -137,15 +137,13 @@ def take_over(wait: float = TAKE_WAIT) -> int:
         return 0
     us, stop = urls(), S.C.notes('page.stop')
     stop.write_text(str(os.getpid()), encoding='utf-8')
-    try:
-        end = time.monotonic() + wait
-        while held():
-            if time.monotonic() >= end:
-                S.log(f'run page: the page-only process did not end in {wait:g} s')
-                return 0
-            time.sleep(0.1)
-    finally:
-        stop.unlink(missing_ok=True)
+    end = time.monotonic() + wait
+    while held():
+        if time.monotonic() >= end:  # the note stays, so it still ends once it looks
+            S.log(f'run page: the page-only process did not end in {wait:g} s')
+            return 0
+        time.sleep(0.1)
+    stop.unlink(missing_ok=True)
     try:
         return urlsplit(us[0]).port or 0
     except (IndexError, ValueError):
