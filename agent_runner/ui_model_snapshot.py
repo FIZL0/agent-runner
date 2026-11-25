@@ -424,8 +424,13 @@ RUN_WAIT = 'waits for the run to start'
 def wait_for_run(queue: list[dict]) -> list[dict]:
     """F402c1: the queue rows `queue` with no run up: one that nothing else keeps says that it waits for the run, in
     the words of state 'tool', which the run page and the TUI both show. A release's words are its own row's."""
+    from agent_runner.sched import taken
+    by_hand = taken() if any(q.get('under_way') for q in queue) else ()  # one that waits to resume waits for the run
+    live = {tid for _, box, tid, _, _ in P.iter_tasks(P.lines(S.C.todo)) if box in ' ~'}
     for q in queue:
-        if q.get('state') in ('ready', 'critical') and not q.get('release') and not q.get('under_way'):
+        if q.get('state') == 'critical' and live & set(q.get('after') or []):
+            q['state'] = 'after'  # another task keeps it first
+        if q.get('state') in ('ready', 'critical') and not q.get('release') and q.get('id') not in by_hand:
             q.update(tool_wait=RUN_WAIT + (', goes first' if q['state'] == 'critical' else ''), state='tool',
                      waits_run=True)
     return queue
