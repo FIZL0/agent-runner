@@ -960,3 +960,10 @@ _Said_: waits for the run
 _On screen_: Waits for the run to start
 _In code_: RUN_WAIT, wait_for_run, waits_run, addedWaits
 _Avoid_: offline task, not running task, pending start
+
+**Removal check**:
+What a task's finish looks for when its work deletes or renames a file, test, setting or command: the places that still name it.
+_Said_: what still names it
+_On screen_: still named
+_In code_: stale.py, refusal, Gone, Mention
+_Avoid_: dead-reference scan, stale check

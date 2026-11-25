@@ -28,6 +28,10 @@ BLOCKED that waits for an open task or release with no `--after`, or over 200 ch
 `login:PROVIDER`, `tool:NAME`, `check:NAME`; all must pass), in place of `--after`. A bad check is refused before the
 gate runs.
 
+F416: before the gate, a diff that deletes or renames a file, test, setting or command is checked for what still names
+it: a dead path in code, config or CI is refused, and the rest is a list to answer once, with `--named "1 filed B12; 2
+kept because …"` (`stale.py`).
+
 `--artifact URL` is the page a concept task (kind K) published: required for one, which builds nothing.
 It notes the link on the task (and in its journal), and files the build task blocked until a person
 approves an option (`plan approve`). F74: it also keeps a local copy of the page at <notes>/concepts/<ID>.html
@@ -50,7 +54,7 @@ import tempfile
 from functools import partial
 from pathlib import Path
 
-from agent_runner import asks, plan, plansync, shared_tools
+from agent_runner import asks, plan, plansync, shared_tools, stale
 from agent_runner.config import cfg, finished_mark
 from agent_runner.gitops import git, missing_remote, push, shared_branch, shared_name, shell
 
@@ -116,6 +120,9 @@ def main(argv: list[str] | None = None) -> int:
                     help='with --artifact: the local HTML file the page was published from; a copy is kept '
                          '(<notes>/concepts/<ID>.html) for the run page to show inline')
     ap.add_argument('--no-test', action='store_true', help='skip the gate (say why in the message)')
+    ap.add_argument('--named', metavar='ANSWERS',
+                    help='answers the removal check\'s list of what still names what this diff removes, e.g. '
+                         '"1 filed B12; 2-3 kept because <why>"')
     a = ap.parse_args(argv)
     c = cfg()
     cwd = c.root
@@ -152,6 +159,9 @@ def main(argv: list[str] | None = None) -> int:
     if why := gate_limit(a, cwd):
         print(why, file=sys.stderr)
         return 1
+    if not a.blocked and (why := stale.refusal(a.id, a.named, c, content_hash(cwd), PROG)):  # F416
+        print(why, file=sys.stderr)
+        return 2
     a.docs = docs = bool(not a.no_test and c.run['test'] and docs_only(changed(cwd), c.run['docs_files']))
     own = c.run['done_test']  # F178: in place of `test`, whatever the diff is
     if docs and not own:  # no tested ref either: the merge decides by its own diff
