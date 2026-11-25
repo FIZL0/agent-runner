@@ -45,6 +45,9 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
      heading one side moved comes out once, and two notes on one line are both kept;
    - conflicts in other record-per-line files (`[run] joinable`, e.g. a CHANGELOG) are joined, keeping
      both sides' lines;
+   - a conflict in the glossary file (`[plan] glossary`) is joined by term entry, not by line, with no
+     setting: terms added on either side are both kept, an entry changed on one side takes that side; one
+     changed differently on both sides, or a side that does not parse, goes to a fix session;
    - any other conflict goes to a one-shot fix session (`claude -p`);
    - the gate runs again if the merged code differs from what `done` tested.
    Only then is the main checkout moved to the tested merge. That takes seconds, it never stashes, and it
@@ -1744,6 +1747,7 @@ lookup = []               # more files `plan <name>` searches for a heading, e.g
 context_kb = 12           # budget for what every session loads (`context`); `run` warns past it, 0 = never
 glossary = "GLOSSARY.md"  # the project's glossary (`agent-runner glossary`): seeded by the first control session,
                           # named in every brief; false = off (no file written, briefs skip it)
+                          # a conflict in it is joined by entry on its own (Merge, step 5); a [run.join] entry for it wins
 
 [git]
 master_branch = ""        # optional local shared branch; must exist and be checked out

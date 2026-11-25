@@ -90,16 +90,19 @@ def test_one_side(tmp: Path):
     print('an entry edited or removed on one side takes that side')
     new = BASE.replace('What Gate is.\n_Avoid_: x', 'The test command.\n_Avoid_: y')
     add = after(BASE, 'Gate', entry('Claim'))
-    for what, a, b in (('ours', new, add), ('theirs', add, new)):
+    both = after(after(new, 'Gate', entry('Take')), 'Run', entry('Page'))
+    add = after(add, 'Run', entry('Home'))  # git conflicts at the end, where both added
+    for what, a, b in (('ours', both, add), ('theirs', add, both)):
         files, ok, text = merged(tmp, a, b)
         check(files and ok, f'an edit on {what} beside an added term conflicts and is joined')
         eq(G.parse(text)['Gate']['means'], 'The test command.', 'the edit is kept')
-        check(text.count('**Gate**') == 1 and 'Claim' in G.parse(text), 'once, and the added term too')
+        check(text.count('**Gate**') == 1 and {'Claim', 'Take', 'Page', 'Home'} <= set(G.parse(text)),
+              'once, and the added terms too')
     gone = G.remove(BASE, 'Gate')
     for what, a, b in (('ours', gone, add), ('theirs', add, gone)):
         files, ok, text = merged(tmp, a, b)
         check(files and ok, f'a removal on {what} beside an added term conflicts and is joined')
-        eq(list(G.parse(text)), ['Task', 'Claim', 'Slot', 'Run'], 'the entry is gone, nothing else')
+        eq(list(G.parse(text)), ['Task', 'Claim', 'Slot', 'Run', 'Home'], 'the entry is gone, nothing else')
     refused(BASE, gone, new, 'an entry one side removed and the other edited')
 
 

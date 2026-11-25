@@ -13,6 +13,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Changed: Cancel replaces Take back on the run page's slot rows and in `agent-runner ui` (key C, asked first with the minutes worked; H there no longer does anything): `plan cancel ID --yes` stops a running task's agent, keeps its work on wip/ID and parks the task, so no run starts it until it is unparked (F426d).
 - Added: a shared tool in runner.toml and a device may have tool buttons of their own (`[[run.tools.<name>.buttons]]`, and `buttons` saved with the device): each a label and a command that runs once and ends, with an optional question asked first; POST /tools `op: press` runs one, one at a time per tool, and GET /tools lists them (F428c).
 - Added: on the run page's Plan, a thin grip on each queue row; drag it with a mouse, or focus it and press arrow up/down, to move the task, release or Next release row; a running row has none (F429c).
+- Added: a conflict in the glossary file (`[plan] glossary`, GLOSSARY.md) is joined by term entry with no setting: terms added on either side are both kept, and an entry changed on one side takes that side; one changed differently on both sides, or a side that does not parse, goes to a fix session and the run log says why (T31).
 ## 0.68.0 (2026-11-25)
 
 - Added: a shared tool in runner.toml may have a `page` (an http/https address, or `:PORT` of this machine) and a `start` command, served and started as a device's web page is, by `run device start|stop|show NAME` and POST/GET /tools (F428a).
