@@ -87,10 +87,10 @@ def backend(run=sp.run) -> str:
 
 
 def not_connected() -> bool:
-    """B815a: does Tailscale say that it is not connected (stopped, logged out)? Without it here: no."""
+    """B815a: is Tailscale here but not connected (stopped, logged out, not answering)?"""
     if os.environ.get('AGENT_RUNNER_NO_SERVE') or not shutil.which('tailscale'):
         return False
-    return backend() not in ('', 'Running')
+    return backend() != 'Running'
 
 
 def used(status: dict, https: int) -> bool:

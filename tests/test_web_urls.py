@@ -116,7 +116,9 @@ def test_offer(tmp: Path) -> None:
                                   ask=lambda q: True, which=lambda n: '/usr/bin/' + n)
     eq(within(Tailscale('Stopped'), offer), PLAIN, 'stopped: home install gives the plain links')
     eq(ran, [], 'and runs no tailscale serve')
-    eq(said, ["No https link while Tailscale is not connected: Talk's mic needs one."], 'and says why')
+    within(Tailscale('', code=1), offer)
+    eq(ran, [], 'nor with a Tailscale that does not answer')
+    eq(said[:1], ["No https link while Tailscale is not connected: Talk's mic needs one."], 'and says why')
 
 
 if __name__ == '__main__':
