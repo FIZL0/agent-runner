@@ -71,7 +71,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   same), a DECIDE's background (`.askdo`), then Press for details, the steps count and the age. Nothing of it is cut: no ellipsis and no line clamp, on the card or in
   the sheet. Its answer buttons sit below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
   sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way. A
-  device's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
+  device's or tool's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: what is asked, its task's
   title small under it as on the card, label (with its kind chip, as on the card), age; Why (a BLOCKED item's, left out when the heading says it); where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
   only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or
@@ -116,7 +116,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Run card** (`controlsCard()`, `.btns.tight`, `CTL_ICON`): order top to bottom: state line, notices, the run's controls, then the slot rows, each under a line, so a run control never reads as a slot's own button. Each run control has an icon beside its word, never an icon alone: 15px, decorative (`aria-hidden`). A new control on the card gets an entry in `CTL_ICON`.
 - **Device card** (`toolCard()`, `toolPage()`): a web page's state in a word with its colour on the address line, a
   failed one's last output lines in `.tasktext`, Start or Use is the `.pri` with Stop beside it; Test connection, Edit… and Remove in a
-  row of their own below.
+  row of their own below. The same web page part stands on a runner.toml tool's card when it has a `page`.
 - **Walkthrough** (`.walk`, `walkDraw()`, `walkStep()`): one card at a time (`.walkcard`), only on the example project's
   page (`walkNow()` says when), never in a chat or Talk. Its row of its own under the view covers nothing, and goes while
   the keyboard is open. A 2px `--accent` ring (`[data-walkat]`) is on the real thing it points at. Back, Next and Skip

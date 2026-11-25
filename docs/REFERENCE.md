@@ -468,7 +468,7 @@ outside it, it re-execs itself in the project's tmux session (named for the fold
 tmux, or on Windows, it refuses with exit 2 (the install line, or the run page's link). Ctrl-f makes the session
 full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link; `c` (anywhere) starts a new chat, and `d` closes any control session. In the example project the walkthrough shows here too: the same seven steps as the page, worded for keys, with `<` back, `>` next and `/` to skip it and show it again; where you are is kept in the project's `.runner/walk.json`, and a step focuses and marks its panel.
 - **Tools.** The devices and shared tools: add, edit or remove a device, Used here per project, Test connection, and
-  its secrets (### Devices). The shared tools of runner.toml show here too, and are edited there.
+  its secrets (### Devices). The shared tools of runner.toml show here too, and are edited there; one with a `page` has its web page's card (### Shared tools).
 
 ### Adding a row action
 
@@ -1171,7 +1171,7 @@ start = "tools/serve.sh"         # optional: the command that serves it
   POST /tools still stops it. The next start uses the new one. `run device start|stop|show
   NAME` take it and `run device list` lists it; when a device has the same name, these commands take the runner.toml
   tool. POST /tools ops `start` and `stop` take an optional `"source"` (`"device"` or `"runner.toml"`), the device when
-  not given. GET /tools gives `page`, `start` and `run` (its state). The Tools page does not show it yet.
+  not given. GET /tools gives `page`, `start` and `run` (its state). On the Tools page such a tool's card shows its address and state and has Start, Use and Stop as a device's does (### Devices), Use alone with no start command; a Needs you item whose task names it in `needs:` has Use LABEL, or Open LABEL in Tools while it is not running. Without `page` the card is unchanged.
 
 ### Devices
 

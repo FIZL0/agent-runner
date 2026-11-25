@@ -790,10 +790,10 @@ _In code_: plan_search, planFound, planq
 _Avoid_: task filter, lookup
 
 **Device page**:
-The web page a device can have, opened from the Tools page; a start command saved with it makes the runner able to start and stop what serves it, and to say whether it is running, stopped or failed.
+The web page a device or a runner.toml tool can have, opened from the Tools page; a start command saved with it makes the runner able to start and stop what serves it, and to say whether it is running, stopped or failed.
 _Said_: web page of a device
 _On screen_: Web page to open, Use, Start, Stop, Open NAME in Tools
-_In code_: device_page.py, page_state, run device start|stop, toolPage, needDevices, need_pages
+_In code_: device_page.py, page_state, run device start|stop, toolPage, toolKey, needDevices, need_pages, need_tools
 _Avoid_: app, service, server
 
 **Settings bar**:
