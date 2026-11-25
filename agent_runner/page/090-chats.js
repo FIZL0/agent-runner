@@ -224,7 +224,7 @@ if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.docu
 const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
 function feedGone(){pastReset();clearTimeout(FD.wait);feedStill();Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,top:false,still:'',live:null,liveAt:0});feedClass()}
 function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');if(!m||!row)return;
-  m.classList.toggle('still',calm());m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);row.hidden=!FD.shown;
+  m.classList.toggle('still',calm());m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);m.classList.toggle('pulled',FD.shown&&FD.off>0);row.hidden=!FD.shown;
   const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;row.inert=!FD.slim;
   if(!FD.shown){const a=feedFly;feedFly=null;if(a)a.cancel();$('feed').style.bottom=''}}
 function feedShown(on){if(FD.shown!==on){FD.shown=on;if(!on){FD.slim=false;FD.off=0}}feedClass();if(on)requestAnimationFrame(feedPlace)}
@@ -335,15 +335,16 @@ function slimSize(){
   const mid=ta.getBoundingClientRect().top-b.getBoundingClientRect().top+parseFloat(c.paddingTop)+parseFloat(c.lineHeight)/2-22;  // the first line's middle over a slim row's
   const set=(k,v)=>m.style.setProperty(k,v), o=+getComputedStyle(d).opacity, rest=o===0||o===1;
   if(rest)m.classList.add('still');  // nothing moves now: the new sizes are not a motion
-  set('--slimd',by);set('--slimride',by-Math.min(8,Math.max(0,mid))+'px');set('--slimgap',slimGap()+'px');set('--slimgrow',d.offsetHeight/(48+slimGap()));
+  set('--slimd',by);set('--slimride',by-Math.min(8,Math.max(0,mid))+'px');set('--slimgap',slimGap()+'px');
   const f=d.querySelector('.foot');setHTML($('slimfoot'),f?f.innerHTML:'');
   set('--slimtop',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px');
-  if(rest){for(const e of [d,b,$('top'),document.querySelector('.notices'),$('slimbox'),...document.querySelectorAll('.slimground i,.slimskin i')])getComputedStyle(e).translate;m.classList.remove('still')}
+  if(rest){for(const e of [d,b,$('top'),document.querySelector('.notices'),$('slimbox'),...document.querySelectorAll('.slimground,.slimskin i')])getComputedStyle(e).translate;m.classList.remove('still')}
 }
 /* what the frame's place is made of; null while there is none */
 function feedPlace(){
   const main=document.querySelector('.main'), box=$('feedframe');if(!FD.shown||!main||!main.clientHeight)return;
   if(!FD.drawn||FD.muted){main.style.setProperty('--feeddock',document.querySelector('.dockwrap').offsetHeight+'px');main.style.setProperty('--feedbar',$('top').offsetHeight+document.querySelector('.notices').offsetHeight+'px')}
+  const gap=slimGap();if(gap)main.style.setProperty('--slimgap',gap+'px');
   if(!FD.frame){main.style.setProperty('--seebar',$('top').offsetHeight+'px');return}
   const top=$('top').offsetHeight, say=document.querySelector('.notices').offsetHeight;
   main.style.setProperty('--seebar',top+'px');
@@ -355,6 +356,7 @@ function feedPlace(){
   const o={main:main.clientHeight,bar:FD.bar,dock,row,high,pad,cell,foot:FD.foot,short:FD.short,whole:FD.whole,last:FD.last,off:FD.off,top:FD.top,hold};
   let at=feedSpot(o);if(!FD.jump&&hold!=null&&!at.off)at=feedSpot({...o,off:0,hold:null});
   if(!FD.whole&&FD.foot===undefined)at.t=Math.min(FD.bar,main.clientHeight-dock-high+FOOT_ROWS*cell);  // not read yet
+  main.classList.toggle('pulled',at.off>0);
   FD.far=at.far;FD.off=at.off;FD.t=at.t;FD.above=above;FD.held=FD.whole||!FD.foot?'':size;
   const st=box.style, set=(k,v)=>{if(st[k]!==v)st[k]=v};
   set('inset','0 0 auto 0');set('height',high+'px');set('transform',`translateY(${Math.round(at.t)}px)`);
