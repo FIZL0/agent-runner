@@ -54,7 +54,7 @@ import tempfile
 from functools import partial
 from pathlib import Path
 
-from agent_runner import asks, plan, plansync, shared_tools, stale
+from agent_runner import asks, audit_fix, plan, plansync, shared_tools, stale
 from agent_runner.config import cfg, finished_mark
 from agent_runner.gitops import git, missing_remote, push, shared_branch, shared_name, shell
 
@@ -160,6 +160,9 @@ def main(argv: list[str] | None = None) -> int:
         print(why, file=sys.stderr)
         return 1
     if not a.blocked and (why := stale.refusal(a.id, a.named, c, content_hash(cwd), PROG)):  # F416
+        print(why, file=sys.stderr)
+        return 2
+    if why := audit_fix.refusal(a.id, a.blocked, c, lambda: content_hash(cwd), PROG):  # F418
         print(why, file=sys.stderr)
         return 2
     a.docs = docs = bool(not a.no_test and c.run['test'] and docs_only(changed(cwd), c.run['docs_files']))
