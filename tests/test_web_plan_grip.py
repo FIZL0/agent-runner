@@ -199,5 +199,63 @@ def test_page(tmp: Path) -> None:
     eq(o['search'], False, 'none in a search')
 
 
+# a row of each kind, shut, opened, and with its menu's icons, as the page draws them
+PLACE = DRIVER.split('(async () => {')[0] + r"""
+(async () => {
+  const out = {}, html = s => { const h = planHTML(); out[s] = h.slice(h.indexOf('<div class="col">')) };
+  S.planMenu = ''; render(); html('shut');
+  for (const id of ['F1', 'F3', 'V6']) { await tap(cardOf(id).all.find(e => e.nodeName === 'b')); out['opened ' + id] = opened(); html('open ' + id); await tap(cardOf(id).all.find(e => e.nodeName === 'b')) }
+  S.planMenu = 'F1'; html('icons');
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_place_b830(tmp: Path) -> None:
+    """The grip is in the card at the same place on a row with a three-dot menu and one without, shut and open, and a
+    press there meets it. Measured in Chromium at phone width."""
+    chrome = next(filter(None, map(shutil.which, ('chromium', 'chromium-browser', 'google-chrome'))), None)
+    if not chrome or not shutil.which('node'):
+        print('  (no node or Chromium here: the grip place test is skipped)')
+        return
+    menu = [HOLD, TOP, REMOVE]
+    row = {'id': 'V6', 'title': 'Release', 'words': 'next', 'waits': [], 'note': '', 'placeholder': False}
+    t = lambda i, **k: {'id': i, 'title': 'T' + i, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, 'grip': True, **k}  # noqa: E731
+    ph = {'id': '', 'title': 'Next release', 'state': 'auto', 'words': 'auto at 3 landed: 1/3', 'before': 'F7', 'placeholder': True, 'menu': menu, 'grip': True}
+    snap = {'queue': [t('F1'), t('F3', state='running s1 2m', menu=[]), t('V6', release=row), t('F7')],
+            'shelved': [], 'releases': [row, ph], 'release_acts': [], 'sessions': [], 'controls': U.controls()}
+    (tmp / 'place.js').write_text(PLACE, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'place.js'), str(W.PAGE), json.dumps(snap)], capture_output=True, text=True, encoding='utf-8', timeout=60)
+    check(r.returncode == 0, 'node draws the rows', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq([o.pop(f'opened {i}') for i in ('F1', 'F3', 'V6')], [['F1'], ['F3'], ['V6']], 'each opens')
+    css = ''.join(re.findall(r'<style[^>]*>(.*?)</style>', W.page_html().decode(), re.S))
+    body = ''.join(f'<section id="{k}">{v}</section>' for k, v in o.items())
+    f = tmp / 'place.html'
+    f.write_text(f'<!doctype html><meta charset="utf-8"><style>{css}</style><div style="width:390px">{body}</div>'
+                 '<style>body{position:static!important;overflow:visible!important;height:auto!important}.card>.grip{pointer-events:auto!important}</style>'
+                 '<script>const px=n=>Math.round(n*10)/10;document.title=JSON.stringify([...document.querySelectorAll(".card>.grip")].map(g=>{'
+                 'g.scrollIntoView({block:"center"});const a=g.getBoundingClientRect(),c=g.parentElement.getBoundingClientRect(),h=g.parentElement.querySelector(":scope>.fold,:scope>.row").getBoundingClientRect();'
+                 'return [g.closest("section").id,g.dataset.grip,!!g.parentElement.querySelector(":scope>.qmenu,:scope>.qacts"),px(a.left-c.left),px(a.width),px(h.left-a.right),'
+                 'px(h.top-a.top),px(a.bottom-h.bottom),document.elementFromPoint(a.left+a.width/2,a.top+a.height/2)?.closest(".grip")===g]}))</script>', encoding='utf-8')
+    r = subprocess.run([chrome, '--headless', '--no-sandbox', '--disable-gpu', f'--user-data-dir={tmp / "chrome"}', '--dump-dom', f.as_uri()],
+                       capture_output=True, text=True, encoding='utf-8', timeout=90)
+    m = re.search(r'<title>(.*?)</title>', r.stdout)
+    check(m, 'Chromium measures the rows', r.stderr[-800:])
+    if not m:
+        return
+    got = json.loads(m.group(1).replace('&quot;', '"'))
+    eq(sorted({(i, menu) for _, i, menu, *_ in got}), [('F1', True), ('F3', False), ('F7', True), ('V6', True), ('next-release', True)], 'a row without a menu among them')
+    eq(len(got), 25, 'five rows in each of the five drawings')
+    off = [g for g in got if not (0 < g[3] < 4 and g[4] == 16 and g[5] == 0)]
+    eq(off, [], "inside the card, in its padding, its right edge at the head's left")
+    eq(len({g[3] for g in got}), 1, "all the same from the card's edge")
+    eq([g for g in got if not g[8]], [], 'a press in its middle meets it')
+    # its height is the head's and the padding over and under it; a head beside the 44px menu is centred in that row
+    eq([g for g in got if g[6] < 14 or g[7] < 14 or abs(g[6] - g[7]) > 1], [], 'and as high as the row of its head')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_moves), in_tmp(test_grips), in_tmp(test_under_way), in_tmp(test_page)]))
+    raise SystemExit(report([in_tmp(test_moves), in_tmp(test_grips), in_tmp(test_under_way), in_tmp(test_page), in_tmp(test_place_b830)]))
