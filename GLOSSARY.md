@@ -898,3 +898,10 @@ _Said_: the menu on the row
 _On screen_: ⋯ on a Plan queue row: Hold or End the hold, To the top, Remove with Undo
 _In code_: rowMenu, menuRows, menu_hold, menu_unhold, menu_top, menu_remove, menu_restore, queuemenu
 _Avoid_: context menu, kebab menu
+
+**Tool button**:
+A shared tool's own button on the Tools page: a label and a command that runs once and ends, with an optional question asked first; any tool or device can have any number
+_Said_: custom button
+_On screen_: the button's own label
+_In code_: tool_buttons.py, [[run.tools.<name>.buttons]], op press
+_Avoid_: action, macro, shortcut

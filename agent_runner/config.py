@@ -235,7 +235,9 @@ DEFAULTS: dict = {
                                 # test phone). check = a command that exits 0 free, 75 busy, 69 missing, its first
                                 # output line the holder or why; label; connect = what Needs you asks when missing;
                                 # description = what it is, for agents; page = its web page (an http/https URL, or
-                                # ':PORT' of this machine); start = the command that serves it (F428a)
+                                # ':PORT' of this machine); start = the command that serves it (F428a);
+                                # buttons = a list of {label, cmd, confirm}, commands a person runs from the Tools
+                                # page, confirm a question asked first (F428c)
         'checks': {},           # the checks a blocked task can wait on, [run.checks.<name>]: cmd = a command that exits 0
                                 # passed, 75 not yet, anything else cannot run (main checkout, 10 s); label
         'command_timeout': 3600,  # seconds the gate, a retest or a hook command (join, before_start, on_exit,
@@ -1066,9 +1068,9 @@ def agent_problem(root: Path, v, used: bool = True) -> str:
 
 def tools_problem(v) -> str:
     """F168: why `v` cannot be `[run] tools` ('' when it can): {name: {check, label, connect, description,
-    page, start}}, all text."""
+    page, start}}, all text, and buttons (F428c), a list of {label, cmd, confirm}."""
     import re
-    from agent_runner import devices
+    from agent_runner import devices, tool_buttons
     if not isinstance(v, dict):
         return f'[run] tools is a table of shared tools ([run.tools.iphone15]), not {v!r}'
     for name, t in v.items():
@@ -1079,12 +1081,13 @@ def tools_problem(v) -> str:
             return f'{where}: memory is built in (`run wait-for memory`); name the tool otherwise'
         if not isinstance(t, dict) or not isinstance(t.get('check'), str) or not t['check'].strip():
             return f'{where} needs check, the command that says whether it is free'
-        if bad := [k for k in t if k not in ('check', 'label', 'connect', 'description', 'page', 'start')]:
-            return f'{where}: {bad[0]} is not one of check, label, connect, description, page, start'
-        if bad := [k for k, x in t.items() if not isinstance(x, str)]:
+        if bad := [k for k in t if k not in ('check', 'label', 'connect', 'description', 'page', 'start', 'buttons')]:
+            return f'{where}: {bad[0]} is not one of check, label, connect, description, page, start, buttons'
+        if bad := [k for k, x in t.items() if k != 'buttons' and not isinstance(x, str)]:
             return f'{where}: {bad[0]} must be text'
         try:
             devices.tool_fields(t)  # F428a
+            tool_buttons.checked(t.get('buttons', []))
         except devices.Refused as e:
             return f'{where}: {e}'
     return ''
