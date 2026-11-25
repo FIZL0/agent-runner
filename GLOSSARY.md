@@ -976,8 +976,15 @@ _In code_: pr_feedback, round
 _Avoid_: retry, review cycle
 
 **Audit**:
-A task that looks at what changed since the last one for what is stale, dead or wasted and writes its findings to a file; queued by hand, or by an idle run once enough tasks have landed.
+A task that looks at what changed since the last one for what is stale, dead or wasted, writes its findings to a file and asks on one pick sheet; queued by hand, or by an idle run once enough tasks have landed.
 _Said_: auto audit
 _On screen_: Audit by itself
-_In code_: audit.py, (audit), auto_audit, audit_tokens
+_In code_: audit.py, audit_fix, (audit), auto_audit, audit_tokens
 _Avoid_: cleanup run, sweep, health check
+
+**Fix limit**:
+What an audit's own diff may change without a question: its findings file, its own task, and dead references in docs, the glossary and lessons. `done` and the merge refuse a diff past it.
+_Said_: fix limit
+_On screen_: the audit's fix limit
+_In code_: audit_fix
+_Avoid_: guard, whitelist

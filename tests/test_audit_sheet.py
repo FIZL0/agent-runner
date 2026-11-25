@@ -114,12 +114,15 @@ def test_limit(tmp: Path):
     for f, old, new, why in (
             ('docs/guide.md', 'Run `frob_labels` to start. Keep this one.', '', 'names nothing that is gone: "Keep this one'),
             ('docs/guide.md', 'Keep this one.', 'Keep that one.', 'names nothing that is gone'),
-            ('docs/guide.md', '# Guide', '# Guide\n\nA new `src/lexer.py` line.', 'it adds'),
+            ('docs/guide.md', '# Guide', '# Guide\n\nA new `src/lexer.py` line.', 'more than the name'),
             ('docs/guide.md', '`frob_labels` to start', '`frob_labels` to begin', 'still names frob_labels'),
-            ('docs/guide.md', '`frob_labels` to start', '`read_labels` quickly', 'the words quickly'),
-            ('docs/guide.md', 'src/old_parser.py', 'src/none.py', 'the words none'),
+            ('docs/guide.md', '`frob_labels` to start', '`read_labels` quickly', 'more than the name'),
+            ('docs/guide.md', 'src/old_parser.py', 'src/none.py', 'more than the name'),
             ('docs/guide.md', '`src/lexer.py` splits words', 'words', 'names nothing that is gone'),
             ('docs/guide.md', '\n\nRun', '\n\n\nRun', 'only its spacing'),
+            ('docs/guide.md', 'Run `frob_labels` to start', 'Start `read_labels`', 'more than the name'),
+            ('docs/guide.md', '`frob_labels` to', '`read_labels split_words` to', 'more than the name'),
+            ('plan/TODO.md', '### Next', '### Later', 'between tasks'),
             ('GLOSSARY.md', 'A name on a box.', 'A name.', 'names nothing that is gone'),
             ('plan/lessons.md', '- Boxes are heavy.\n', '', 'names nothing that is gone'),
             ('CHANGELOG.md', '- Added `frob_labels`.\n', '', 'not a doc'),
@@ -202,6 +205,7 @@ def test_answer(tmp: Path):
     edit(wt, 'src/lexer.py', 'pass', 'return')
     has(refused(wt, env), r'src/lexer\.py', 'code is still a task')
     edit(wt, 'src/lexer.py', 'return', 'pass')
+    has(refused(wt, env, '--blocked', 'DECIDE: more?'), 'had its one pick sheet', 'no second sheet')
     r = run(wt, 'done', 'R7', 'R7 carried out', env=env)
     eq(r.returncode, 0, 'done' + r.stderr)
     eq(merge.research_code('R7', 'main'), [], 'the drop, the edit and the task merge')

@@ -108,10 +108,11 @@ class Tree:
             path = posixpath.normpath(name)
             while path.startswith('../'):
                 path = path[3:]
+            word = '(^|[^[:alnum:]_])' + re.sub(r'([.^$*+?()\[\]{}|\\])', r'\\\1', name) + '([^[:alnum:]_]|$)'
             at = [f':(top,literal){path}', f':(top,glob)**/{path}']
             code = [':/', *(f':(top,exclude,glob)**/*.{x}' for x in ('md', 'rst', 'txt', 'adoc', 'mdx', 'org'))]
             return (git('log', '-1', '--format=%h', self.base, '--', *at, cwd=self.root).stdout.strip() or
-                    git('log', '-1', '--format=%h', f'-S{name}', self.base, '--', *code, cwd=self.root).stdout.strip())
+                    git('log', '-1', '--format=%h', f'-G{word}', self.base, '--', *code, cwd=self.root).stdout.strip())
         return self.once('had', name, look)
 
     def live(self, name: str, place: str) -> bool:
@@ -121,8 +122,19 @@ class Tree:
         return {r for r in references(s) if not self.live(r, place) and self.had(r)}
 
 
-def words(s: str) -> set[str]:
-    return set(re.findall(r'\w+', s.casefold()))
+def without(s: str, names) -> list[str]:
+    """The words of `s` in order, the references `names` left out."""
+    for n in sorted(names, key=len, reverse=True):
+        s = s.replace(n, ' ')
+    return re.findall(r'\w+', s)
+
+
+def same_but(was: str, now: str, place: str, tree: Tree) -> bool:
+    """Is `now` the sentence `was` with its dead references taken out, each or none replaced by one that is there."""
+    had, has = references(was), references(now)
+    gone = [r for r in had if r not in has and r in tree.dead(was, place)]
+    put = [r for r in has if r not in had and tree.live(r, place)]
+    return bool(gone) and len(put) <= len(gone) and without(was, gone) == without(now, put)
 
 
 def fix_problem(old: str, new: str, place: str, tree: Tree) -> str:
@@ -138,14 +150,13 @@ def fix_problem(old: str, new: str, place: str, tree: Tree) -> str:
             if not (d := tree.dead(s, place)):
                 return f'what goes names nothing that is gone: "{s[:80]}"'
             dead |= d
-        if len(put) > len(gone):
-            return f'it adds "{put[-1][:80]}"'
-        said = {r for s in put for r in references(s)}
+        said = {r for p in put for r in references(p)}
         if still := dead & said:
             return f'it still names {", ".join(sorted(still))}'
-        ok = words(' '.join(gone)).union(*(words(r) for r in said if tree.live(r, place)))
-        if more := sorted(words(' '.join(put)) - ok):
-            return f'it adds the words {", ".join(more[:6])}'
+        left = iter(gone)  # each that stands in their place is one of them, in order
+        for p in put:
+            if not any(same_but(w, p, place, tree) for w in left):
+                return f'it changes more than the name: "{p[:80]}"'
     return ''
 
 
@@ -153,20 +164,30 @@ def _rel(c, p: Path) -> str:
     return p.relative_to(c.root).as_posix() if p.is_relative_to(c.root) else ''
 
 
-def tasks(ls: list[str], tid: str) -> dict[str, tuple]:
-    """Each task but `tid` in a plan's lines: closed, blocked, and its text without what it is blocked with."""
-    return {t: (box == 'x', box == '~', '\n'.join(P._item_block(ls, i)).split(' BLOCKED: ')[0].split('] ', 1)[-1])
-            for _, box, t, _, i in P.iter_tasks(ls) if t.rstrip('.') != tid}
-
-
 def plan_problem(c, base: str, head: str, tid: str) -> str:
-    """Which other tasks the plan of `head` (in the repository) files, closes, drops or edits, or ''."""
+    """What the plan of `head` (in the repository) changes of `base`'s beside the task `tid`, or ''."""
     def at(rev):
-        ls = [stale.show(c.root, rev, r).splitlines() for r in (_rel(c, c.todo), _rel(c, c.done)) if r]
-        return {t: v for one in reversed(ls) for t, v in tasks(one, tid).items()}
+        todo, done = (stale.show(c.root, rev, r).splitlines() if r else [] for r in (_rel(c, c.todo), _rel(c, c.done)))
+        out, own, order, ticked = {}, set(), [], set()
+        for ls in (done, todo):
+            for _, box, t, _, i in P.iter_tasks(ls):
+                block = P._item_block(ls, i)
+                if ls is todo:
+                    own |= set(range(i, i + len(block)))
+                    if t != tid and box == 'x':
+                        ticked.add(t)
+                    elif t != tid:
+                        order.append(t)
+                if t != tid:
+                    out[t] = '\n'.join(block)
+        return out, order, ticked, [l.rstrip() for i, l in enumerate(todo) if l.strip() and i not in own]
     was, now = at(base), at(head)
-    changed = sorted(t for t in was.keys() | now.keys() if was.get(t) != now.get(t))
-    return f'it changes {", ".join(changed[:8])} before the sheet is answered' if changed else ''
+    # one ticked in TODO.md already is archived by the next tick
+    changed = sorted(t for t in was[0].keys() | now[0].keys() if was[0].get(t) != now[0].get(t)
+                     and not (t in was[2] and t in now[0]))
+    if changed:
+        return f'it changes {", ".join(changed[:8])} before the sheet is answered'
+    return '' if was[1] == now[1] and was[3] == now[3] else 'it changes the order or the text between tasks before the sheet is answered'
 
 
 def problems(c, base: str, head: str, tid: str, answered: bool) -> dict[str, str]:
@@ -183,7 +204,8 @@ def problems(c, base: str, head: str, tid: str, answered: bool) -> dict[str, str
     out: dict[str, str] = {}
     for meta, f in zip(parts[::2], parts[1::2]):
         was, now, _, _, how = meta.lstrip(':').split()
-        if f == audit.findings_file(tid, c) and now in FILE_MODES or journal not in ('', '.') and f.startswith(journal + '/'):
+        if f == audit.findings_file(tid, c) and now in FILE_MODES or \
+                journal not in ('', '.') and f.startswith(journal + '/') and (how == 'A' or tid.lower() in f.lower()):
             continue
         if not c.plan_external and f in lists:
             if not answered and (why := plan_problem(c, base, head, tid)):
@@ -238,6 +260,8 @@ def refusal(tid: str, blocked: str | None, c, tree, prog: str) -> str | None:
     answered = any(audit.answered(tid, ls) for ls in plans)
     asks = bool(blocked) and bool(re.match(r'\s*DECIDE:', blocked))
     f = c.notes('sheets', f'{tid}.json')
+    if asks and answered:
+        return f'{prog}: {tid} had its one pick sheet, and it is answered: carry that out. Nothing blocked.'
     if c.run['questionnaires'] is not False and not answered:
         if asks:
             try:
