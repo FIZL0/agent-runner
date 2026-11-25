@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: the launcher's `w` on a project whose run is not up opens its full run page and starts no run: a detached page-only process (one at most per project; Linux and Windows) serves it, with Runner Home or without. New chats, messages, Resume and plan actions work there; no slot, task, merge or push starts, run_up stays false and `status` says no run is up. A run that starts takes the page over (same key, same port; an open page reconnects by itself). It ends after 10 minutes with no page open; no chat ends with it (F402b1).
 ## 0.65.0 (2026-11-24)
 
 - Fixed: `plan add` and `plan edit` refuse a text (or a place after `@`) with a stretch that is mostly paths that exist in the current folder, separated by spaces (at least 6 more of them than of its other words): it is a glob the shell expanded. They exit 2 and file nothing (`--force` does not override), and say to quote the glob, as in `--files 'dir/**'`. A text that names a few paths, or a comma-separated list of them, still files. Before, only paths given as separate arguments were refused, and one task's line had grown to 27 KB of paths (B773).

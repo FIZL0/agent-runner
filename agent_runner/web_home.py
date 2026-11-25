@@ -82,19 +82,31 @@ HOME_LOOK = 2.0  # s between two looks (Home's install waits 8 s for its port)
 HOME_CHECK = 10  # looks between two checks that Home opens the page
 
 
-def start_web() -> WebServer | None:
+def serve_again(port: int) -> WebServer | None:
+    """F402b1: the page on 127.0.0.1 at the `port` the page-only process had it on, so a page open there reconnects;
+    None when there was none (0) or it cannot be had."""
+    try:
+        return serve(web_token(), port, LOCAL) if port else None
+    except OSError:
+        return None
+
+
+def start_web(only: bool = False) -> WebServer | None:
     """The run's start: serve the page when `[run] web` is on (the run log gets its address), else nothing.
     F165: on `[run] web_port` for every interface, but with Runner Home installed (`home_only`), or that port
     taken by another, on 127.0.0.1 for Home alone: no project is on a port of its own unless the person set one.
     Without Home the first run up has web_port, and another one's log and status offer `home install`.
-    A port in use costs the page, not the run. AGENT_RUNNER_NO_WEB=1 (the test suites) turns it off too."""
+    A port in use costs the page, not the run. AGENT_RUNNER_NO_WEB=1 (the test suites) turns it off too.
+    F402b1: `only`: the page-only process serves it; a run takes the page over from one that does."""
+    from agent_runner import page_only
+    was = 0 if only else page_only.take_over()
     url_file().unlink(missing_ok=True)
     r = S.C.run
     if not r.get('web', True) or os.environ.get('AGENT_RUNNER_NO_WEB'):
         page_https.left_over()
         return None
     from agent_runner.ui_model import SETTINGS_AT, settings_start
-    if not SETTINGS_AT[0]:  # F202a: a run took it as it read its settings
+    if not only and not SETTINGS_AT[0]:  # F202a: a run took it as it read its settings
         settings_start()  # F166
     port = int(r.get('web_port', 8770))
     srv, why = None, ''
@@ -108,7 +120,7 @@ def start_web() -> WebServer | None:
             why = f'port {port} is taken ({e})'
     if srv is None:
         try:
-            srv = serve(web_token(), 0, LOCAL)
+            srv = serve_again(was) or serve(web_token(), 0, LOCAL)
         except OSError as e2:
             S.log(f'run page: cannot serve it ({e2}); set [run] web_port, or web = false')
             page_https.left_over()

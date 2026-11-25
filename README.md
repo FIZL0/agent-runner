@@ -78,7 +78,7 @@ agent-runner home add ~/work/proj  # list a project that is not under ~/repos (r
 Runner Home is the recommended setup, not an optional extra. With several projects on one device it is what
 keeps every run's page reachable: one link, each run at `/p/<project>/`.
 
-Each run serves its own page only while it is up. Runner Home is one page that is always there: every folder
+Each run serves its own page while it is up; while none is up, a page-only process serves it (the launcher's `w` starts it, and it starts no run). Runner Home is one page that is always there: every folder
 in `~/repos` with a `runner.toml`, plus the ones you add, each shown as running, idle or off with what needs
 you, and Start run, Pause, ±1 slot and Stop buttons that run the runner's own commands in that project. Open
 takes you to that project's run app through Home, so one link (one bookmark) reaches them all. It runs as a
