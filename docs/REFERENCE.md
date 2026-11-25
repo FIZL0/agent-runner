@@ -1537,7 +1537,7 @@ work a second time. The startup log says `<ID>: its merge was under way when the
 adopting it`, or `<ID>: finished, not merged yet; merging it now` for a branch that only waited its
 turn.
 
-While a restart on changed code is due (see New version), no new merge starts: a finished task, a branch finished outside the slots, or an undo waits, and the merges under way finish. The restarted run takes the held ones up. They start at once instead when the run is stopping, main is not checked out or has `agent_runner` edits under way, or a merge under way waits for a person (edits in the main checkout, a wrong `[run] agent`). A task with no commits is not held; a drop, change or restyle of a held task starts its merge, which answers it.
+While a restart on changed code is due (see New version), no new merge starts: a finished task, a branch finished outside the slots, or an undo waits, and the merges under way finish. The restarted run takes the held ones up. They start at once instead when the run is stopping, main is not checked out or has `agent_runner` edits under way, or a merge under way waits for a person (edits in the main checkout, a wrong `[run] agent`). A release (a merge under way may wait for it) and a task with no commits are not held; a drop, change or restyle of a held task starts its merge, which answers it.
 
 ### Fix sessions
 

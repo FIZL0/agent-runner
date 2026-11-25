@@ -841,6 +841,12 @@ def test_unmerged(repo: Path):
     eq(R.unmerged('main', []), [], 'a branch a busy slot holds is not merged under its session')
     eq(R.unmerged('main', [4]), ['T2'], 'an idle slot still on its finished branch: found')
     eq(git(d, 'branch', '--show-current'), '', 'and that slot let go of the branch')
+    from agent_runner import loop
+    run = loop.Run(mock.Mock(), 1, False, 'main', '', 30, 20, 5)
+    run.restart_due = True
+    run.merge_in('T2', 4, 'sid')
+    eq((run.merging, [m[0] for m in run.held_merges]), ([], ['T2']), 'B227: a due restart holds its merge')
+    eq(R.unmerged('main', []), ['T2'], 'and the restarted run finds its branch')
     git(repo, 'branch', '-D', 'task/T2')
     d = task_branch(repo, 4, 'T2')
     (d / 'b.py').write_text('# printer, again\n', encoding='utf-8')
@@ -5642,10 +5648,12 @@ def test_restart_holds_merges():
             run.merge_in('T2', 1, 'sid2')
             eq(ended(), [('T2', 1, 'sid2')], 'one with no commits only ends its task: not held')
             commits[0] = 'abc'
+            run.merge_in('V1', 1, 'sidv')
+            eq(ended()[-1], ('V1', 1, 'sidv'), 'a release, which a merge under way may wait for: not held')
             run.merge_in('T3', 1, 'sid3')
             run.merge_in('T4', 1, 'sid4')
             LU.start_asked(run)
-            eq(sorted(ended())[1:], [('T3', 1, 'sid3'), ('T4', 1, 'sid4')], 'one a drop or a restyle asks about starts')
+            eq(sorted(ended()[2:]), [('T3', 1, 'sid3'), ('T4', 1, 'sid4')], 'one a drop or a restyle asks about starts')
             eq((run.restart_due, len(run.held_merges)), (True, 1), 'and the other stays held')
             with mock.patch.multiple(undo.pitch, on=lambda: True, tick=lambda: None, undoing=lambda: [{}]), \
                     mock.patch.object(undo, 'undo_changes', lambda b: done.append('undo')):

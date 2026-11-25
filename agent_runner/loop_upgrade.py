@@ -31,8 +31,9 @@ def on_person(run) -> bool:
 
 def hold_merge(run, tid: str, n: int, sid: str) -> bool:
     """Keep finished `tid` for the restarted run, which merges task/<tid> as any finished branch. Not one with no
-    commits, which nothing of it would find, and whose end takes a moment."""
-    if not run.restart_due or not git('rev-list', '-n1', f'{stack.fork(tid, run.branch)}..task/{tid}').stdout.strip():
+    commits, which nothing of it would find, and whose end takes a moment; nor a release, which a merge under way
+    may wait for (`merge.hold_for_release`): each would wait for the other."""
+    if not run.restart_due or P.release(tid) or not git('rev-list', '-n1', f'{stack.fork(tid, run.branch)}..task/{tid}').stdout.strip():
         return False
     run.held_merges.append((tid, n, sid))
     log(f'{tid}: finished; its merge waits for the restart on the changed code')
