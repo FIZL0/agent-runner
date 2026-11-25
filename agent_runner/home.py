@@ -19,7 +19,8 @@ Home's /p/KEY/ (B146, site_links), so one device address switches between runner
 
     GET  /?t=TOKEN               the Home page: F134: the run app (web_page.html) in Home mode, its All projects
                                  view: every project, running, idle or off, what needs you, buttons, Devices
-                                 (F150: /p/KEY/ of a project with no run up is this page too, showing that project)
+                                 (F150: /p/KEY/ of a project with no run up is this page too, showing that project,
+                                 until F402b2 its page-only process, which opening it starts, answers)
     GET  /projects?t=TOKEN       the same as JSON (`project_rows`)
     POST /act?t=TOKEN            {"project": KEY, "name": start|stop|pause|resume|slots, "arg": "+1"}: the
                                  runner's own command in that project (`run_action`); F150: with a "cid" it is run
@@ -289,6 +290,14 @@ def run_link(root: Path) -> tuple[int, str] | None:
         return None
 
 
+def open_off_page(root: Path) -> str:
+    """F402b2: start the page-only process of the project at `root`, unless its run is up (its page is on its way) or
+    its settings cannot be read; '' or why its page does not answer."""
+    from agent_runner import page_only
+    from agent_runner.cmds import run_info
+    return page_only.start(root) if run_info(root).get('up') is False else ''
+
+
 def site_links(root: Path, serves=None, https=None) -> list[str]:
     """B146: the run app of the project at `root` through the device site, Runner Home serving on this device:
     http://HOST:PORT/p/KEY/?t=HOME_TOKEN, by hostname then by LAN address, so one device address switches between
@@ -349,10 +358,10 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said, p
     'stopping', 'slots', 'running' (task ids), 'titles' (F150: the running tasks' titles by id), 'queue' (the next
     tasks, [{'id', 'title'}]), 'landed' (the last 3 titles that landed today) and 'landed_n' (how many did), 'left', 'needs' (how many), 'asks'
     (their 'ID - what to do' lines), 'no_settings' (F178: its warning or ''), 'agent_problem' (B764b: the same), 'example' (F194b: the example project),
-    'page' (its run app through Home, or '')}."""
+    'page' (its run app through Home, its run's or F402b2 its page-only process's, or '')}."""
     from agent_runner.demo import is_demo
     n, asks = needs(root)
-    from agent_runner import cmds
+    from agent_runner import cmds, page_only
     run = (info or cmds.run_info)(root) or {}
     # B135: Home only asks whether there is a link, so no Tailscale lookup per project on each refresh
     # B146: nor the device site lookup (Home is the device site; it would ask itself)
@@ -373,7 +382,7 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said, p
             'no_settings': f.get('no_settings') or '',  # F178
             'agent_problem': f.get('agent_problem') or '',  # B764b
             'example': is_demo(root),  # F194b: its page shows the walkthrough
-            'page': f'p/{key}/' if up and f.get('link') else ''}
+            'page': f'p/{key}/' if (f.get('link') if up else page_only.serving(root)) else ''}  # F402b2
 
 
 def project_rows(reg: dict | None = None, row=project_row) -> list[dict]:
@@ -605,18 +614,30 @@ class HomeHandler(BaseHTTPRequestHandler):
         link = self.server.link(root)
         page = method == 'GET' and parts[3] in ('', 'index.html')
         if link is None:
-            return self.off_page() if page else self.send(502, {'ok': False, 'out': f'{root.name} has no run up'})
+            return self.off_page(root) if page else self.send(502, {'ok': False, 'out': f'{root.name} has no run up'})
         port, token = link
         if parts[3].startswith('t/'):
             return self.terminal(root, port, token, parts[3], u.query)
         query = [(k, v) for k, vs in parse_qs(u.query, keep_blank_values=True).items() if k != 't' for v in vs]
         target = '/' + parts[3] + '?' + urlencode([('t', token), *query])
-        self.forward(method, root, port, target, self.off_page if page else None)
+        self.forward(method, root, port, target, (lambda: self.off_page(root)) if page else None)
 
-    def off_page(self) -> None:
-        """F150: /p/KEY/ while no run serves it: Home's page showing that project, which turns into its run app once
-        the run is up."""
+    def off_page(self, root: Path) -> None:
+        """F150: /p/KEY/ while nothing serves it: Home's page showing that project, which turns into its run app once
+        that answers: the run's, or F402b2 that of the page-only process, started here when a person opens it."""
+        if not self.keyless and self.opened():
+            self.server.open_off(root)
         send_app(self, home_page())
+
+    def opened(self) -> bool:
+        """F402b2: did a person open this page, not a script's fetch, a frame or a prefetch? A browser sends no
+        Sec-Fetch headers over plain http; there only a page load asks for text/html."""
+        h = self.headers
+        if h.get('Sec-Purpose') or h.get('Purpose') or h.get('X-Moz'):
+            return False
+        if mode := h.get('Sec-Fetch-Mode'):
+            return mode == 'navigate' and h.get('Sec-Fetch-Dest') == 'document'
+        return 'text/html' in (h.get('Accept') or '')
 
     def pick(self, key: str) -> None:
         """F167: /p/KEY/pick is a pick link (web.pick): a concept page holds it, so it carries no token of Home's or
@@ -740,7 +761,7 @@ class HomeServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, token: str, port: int, bind: str = '0.0.0.0', rows=project_rows, act=run_action,
-                 link=run_link, roots=projects, vitals=None, stamp=None):
+                 link=run_link, roots=projects, vitals=None, stamp=None, open_off=open_off_page):
         self.stamp = stamp  # B165: package_stamp, or None: never restarts by itself
         self.started_on = self.seen = stamp() if stamp else None
         self.package = package_stamp()  # F149: the files it started on, also when it never restarts by itself
@@ -750,6 +771,7 @@ class HomeServer(ThreadingHTTPServer):
         self.token, self._rows, self._act, self._link, self._roots = token, rows, act, link, roots
         self.acts: dict[str, cf.Future] = {}  # F150: a page's actions by cid, so one sent again is not run again
         self.acts_lock = threading.Lock()
+        self._open_off, self.opening = open_off, set()  # F402b2: the projects whose page-only process is being started
         self._terms = None  # F126b
         self._project_terms: dict[Path, object] = {}  # F406a
         self.vitals = vitals or home_vitals(self)
@@ -856,6 +878,25 @@ class HomeServer(ThreadingHTTPServer):
 
     def link(self, root: Path) -> tuple[int, str] | None:
         return self._link(root)
+
+    def open_off(self, root: Path) -> None:
+        """F402b2: start the page-only process of `root` beside the answer; once at a time per project."""
+        with self.acts_lock:
+            if root in self.opening:
+                return
+            self.opening.add(root)
+
+        def go() -> None:
+            try:
+                why = self._open_off(root)
+            except (Exception, SystemExit) as e:  # noqa: BLE001 - settings that do not load; the off page stays
+                why = f'{type(e).__name__}: {e}'
+            finally:
+                with self.acts_lock:
+                    self.opening.discard(root)
+            if why:
+                print(f'Runner Home: {root.name}: {why}', file=sys.stderr, flush=True)
+        threading.Thread(target=go, name='home-open-off', daemon=True).start()
 
     def enter(self) -> bool:
         with self.open_lock:

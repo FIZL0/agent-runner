@@ -104,7 +104,7 @@ function goUp(stay,keys){
 }
 function goDown(stay,keys){
   if(!atAll()||!HKEY)return;
-  const p=!HOME_PAGE&&!stay&&projectOf(HKEY);if(p&&projectGroup(p)==='off'&&!p.starting){openProject(HKEY,projectLink(HB,HKEY,T));return}  // its run ended meanwhile: its page as it is off
+  const p=!HOME_PAGE&&!stay&&projectOf(HKEY);if(p&&projectGroup(p)==='off'&&!p.starting&&!p.page){openProject(HKEY,projectLink(HB,HKEY,T));return}  // its run ended meanwhile and nothing serves its page (F402b2): its page as it is off
   const b=S.below||{v:lastTab()||'home',t:null,c:null};S.below=null;
   if(!stay)try{history.pushState({level:'in'},'')}catch(e){}
   if(b.t){S.view=b.v;S.ctx=b.c;open(b.t)}else goView(b.v==='projects'?'home':b.v);
