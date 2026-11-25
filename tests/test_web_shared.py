@@ -740,6 +740,29 @@ console.log(JSON.stringify([[0, 5, 90, 47 * 60, 48 * 60].map(m => agoWords(at(m)
                               'free · checked 5 min ago', 'free · checked now', 'not checked yet'], 'ages, and a tool\'s words')
 
 
+def test_hold_selects_b814(tmp: Path) -> None:
+    print('B814: on touch a hold selects no part of the app, only the words people read and copy')
+    css = (W.PAGE_DIR / '190-shared.css').read_text(encoding='utf-8')
+    check('/* B814' in css, 'the rule is in one place')
+    rule = css.split('/* B814', 1)[1].split('@media (any-pointer:coarse){', 1)[1].split('\n}', 1)[0]
+    off, on = 'user-select:none;-webkit-touch-callout:none', 'user-select:text;-webkit-touch-callout:default'
+    lines = [x.strip() for x in rule.strip().splitlines()]
+    eq(len(lines), 4, 'off for the page, on for the words, off for what is pressed, a link keeps its callout')
+    check(lines[0].startswith('html{') and off in lines[0], 'off from the root, so no ancestor is left to select', lines[0])
+    check(lines[1].startswith(':where(') and on in lines[1], 'the words opt in, weaker than a control\'s own rule', lines[1])
+    words = lines[1][len(':where('):lines[1].index('){')]
+    for part in ('input', 'textarea', 'select', '[contenteditable]', 'pre', 'code', '.u', '.a .say', '.said', '.tasktext', '.quote', '.askdo', '.asktext>:not(.btns)', '.a .lead', '.a:not(:has(>.say))', '.asktop :is(h2,.small)', '.foldin>.small',
+                 '.askbody :is(p,li)', '.tooltext', '.qcard .q', '[data-k^="concept:"]>:is(.q,.small)', '.ev .txt'):
+        check(f',{part},' in f',{words},', f'{part} can be selected')
+    for part in ('.side', '.scrim', '.top', '.dock', '.body', '.msgs', '.card', '.btns', '.crow', '.ni', '.it', '.sheet', '.foldin', '.askbody', '.feedtouch', '.feedpast'):
+        check(f',{part},' not in f',{words},', f'{part} cannot')
+    check(lines[2].startswith(':where(button,button *,') and off in lines[2], 'nor can a button in those words', lines[2])
+    check(lines[3].startswith(':where(a[href]:not(') and 'user-select' not in lines[3] and '-webkit-touch-callout:default' in lines[3], 'a link keeps its own callout', lines[3])
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('.feedpast.armed{opacity:1;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}' in page, 'the armed history has its own')
+    check('id="feedtext" style="-webkit-user-select:text;user-select:text"' in page, 'and the feed text sheet')
+
+
 def test_page_parts_c41a(tmp: Path) -> None:
     print('C41a: the page is one file per area, joined in the order of their names into one page')
     parts = sorted(W.PAGE_DIR.glob('*'))
@@ -757,4 +780,4 @@ def test_page_parts_c41a(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_small_fixes_f426f), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_kinds_f195b), in_tmp(test_icon_hints_f195b), in_tmp(test_page_parts_c41a)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_small_fixes_f426f), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_kinds_f195b), in_tmp(test_icon_hints_f195b), in_tmp(test_hold_selects_b814), in_tmp(test_page_parts_c41a)]))
