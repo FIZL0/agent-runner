@@ -106,7 +106,7 @@ function pastMd(text,w){
       const at=m[1].length, num=/\d/.test(m[2]);
       while(lists.length&&lists[lists.length-1].at>at)lists.pop();
       let cur=lists[lists.length-1];
-      if(!cur||at>cur.at+1){if(!cur)gapList(out);const up=cur?cur.pad+(cur.lead||2):0;cur={at,pad:up,n:num?parseInt(m[2],10)-1:0,lead:2};lists.push(cur)}
+      if(!cur||at>cur.at+1){const up=cur?cur.pad+(cur.lead||2):0;cur={at,pad:up,n:num?parseInt(m[2],10)-1:0,lead:2};lists.push(cur)}
       const mark=num?`${++cur.n}. `:'- ';cur.lead=mark.length;
       out.push(...pastFlow(pastInline(m[3]),w,' '.repeat(cur.pad)+mark,' '.repeat(cur.pad+mark.length)));continue}
     if(lists.length&&/^\s+\S/.test(l)){const c=lists[lists.length-1], p=' '.repeat(c.pad+c.lead);out.push(...pastFlow(pastInline(l.trim()),w,p,p));continue}
@@ -118,8 +118,6 @@ function pastMd(text,w){
   while(out.length&&!out[out.length-1].t)out.pop();
   return out;
 }
-/* a list after words has a blank line before it */
-function gapList(out){if(out.length&&out[out.length-1].t)out.push(PAST_BLANK)}
 /* calls one line stands for: what a call counts as */
 function pastFold(e){
   if(e.kind!=='tool'||(e.diff&&e.diff.length))return'';

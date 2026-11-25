@@ -11,7 +11,8 @@ const FEED_LINES=1;  // lines of a drag to one wheel step
 const TOUCH=()=>!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
 const enterHint=()=>TOUCH()?' enterkeyhint="enter"':'';  // B181
 const feedNow=n=>feedState({stand:String(n||'')[0]==='@',starting:starting(n),info:FD.n===n?FD.info:null,chat:!isAgent(n)});
-const feedSrc=n=>`t/${encodeURIComponent(T)}/${encodeURIComponent(n)}/?fontSize=${TOUCH()?12:13}`;
+const feedSize=()=>TOUCH()?12:13;  // the terminal's text size, px: the stand-in's too (standHTML)
+const feedSrc=n=>`t/${encodeURIComponent(T)}/${encodeURIComponent(n)}/?fontSize=${feedSize()}`;
 /* the chat the frame is to be connected to, '' for none (session_frame.HEAD asks once its page is up) */
 function feedWant(){return FD.want?FD.n:''}
 function feedWantLook(){return feedSkinOf(FD.info)}
@@ -83,10 +84,31 @@ function feedSay(wait){
   if(wait&&!on)FD.sayT=setTimeout(feedSkin,left);
   el.hidden=!on;setHTML(el,on?`<span class="livedot"></span>${FD.was?'Reconnecting…':'Connecting to the session…'}`:'');
 }
-/* a chat not seen here yet: its latest messages, from its transcript */
+/* B819: the terminal's cells before it is there: its size and font, measured and rounded as xterm.js does it (a canvas, else
+   a span), in a frame as wide as `room`. STAND: the padding and line height of session_frame's PAD and LINE_HEIGHT, and the
+   scrollbar's room xterm's fit keeps. ls: what brings a letter to its cell */
+const STAND={pad:14,bar:15,line:1.3,seen:{}};
+function standLetter(size,family){
+  const key=size+family;if(STAND.seen[key])return STAND.seen[key];
+  let w=0,h=0;
+  try{const c=new OffscreenCanvas(100,100).getContext('2d');c.font=`${size}px ${family}`;const m=c.measureText('W');w=m.width;h=m.fontBoundingBoxAscent+m.fontBoundingBoxDescent}catch(e){}
+  if(!(w&&h)){
+    const s=document.createElement('span');s.textContent='W'.repeat(32);s.style.cssText=`position:absolute;visibility:hidden;white-space:pre;line-height:normal;font-size:${size}px;font-family:${family}`;
+    document.body.appendChild(s);w=s.offsetWidth/32;h=s.offsetHeight;s.remove();
+  }
+  return w&&h?STAND.seen[key]={w,h}:{w:size*.6,h:size*1.2};
+}
+function standCells(size,family,room){
+  const l=standLetter(size,family), dpr=window.devicePixelRatio||1, wide=n=>Math.round(l.w*dpr*n/dpr)/n;
+  const cols=Math.max(2,Math.floor((room-2*STAND.pad-STAND.bar)/wide(80))), cw=wide(cols);  // it fits from 80 columns
+  return{cols,cw,ls:cw-l.w,cell:Math.floor(Math.ceil(l.h*dpr)*STAND.line)/dpr};
+}
+/* a chat not seen here yet: its latest messages, from its transcript, as the terminal draws them */
 function standHTML(n){
-  const h=standMsgs(feedOf(n)).map(m=>m.w==='u'?`<div class="u">${esc(m.text)}</div>`:`<div class="a"><div class="say">${md(m.text)}</div></div>`).join('');
-  return `<div class="col"><div class="msgs">${h||'<div class="small">Loading…</div>'}</div></div>`;
+  const said=standMsgs(feedOf(n)).map(m=>({kind:m.w==='u'?'you':'say',text:m.text}));
+  if(!said.length)return '<div class="col"><div class="msgs"><div class="small">Loading…</div></div></div>';
+  const el=$('feedstand'), size=feedSize(), c=standCells(size,getComputedStyle(el).fontFamily,$('feed').clientWidth);
+  return `<div class="standrows" style="font-size:${size}px;--hw:${c.cw}px;--hcell:${c.cell}px;letter-spacing:${c.ls.toFixed(4)}px">${pastLines(said,c.cols).map(l=>`<div>${l.h}</div>`).join('')}</div>`;
 }
 /* each draw: the frame for the chat that is open, or its state in the body */
 function feedDraw(n){

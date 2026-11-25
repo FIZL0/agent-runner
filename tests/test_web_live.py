@@ -839,6 +839,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace
 const part = page.slice(page.indexOf('const FD={'), page.indexOf('/* the touch layer over the frame'));
 const el = () => ({hidden: false, kids: [], appendChild(x) { this.kids.push(x); x.box = this }, classList: {toggle() {}}});
 const els = {feed: el(), body: el(), feedframe: el(), feedsay: el(), feedstand: el(), feedline: el()}, $ = k => els[k];
+els.feed.clientWidth = 1020;
 const on = {}, docOn = {}, location = {origin: 'https://x'}, addEventListener = (t, f) => on[t] = f;
 const typed = [], term = {modes: {applicationCursorKeysMode: false}, input: t => typed.push(t), rows: 2,
   buffer: {active: {viewportY: 1, getLine: y => ({translateToString: () => ['old', 'one  ', 'two'][y]})}}};
@@ -846,7 +847,8 @@ const hold = {}, calls = [], arLine = {dial: (n, l) => calls.push('dial ' + n + 
 const requestAnimationFrame = f => f(), md = t => t, feedOf = n => n === 'c12' ? [{kind: 'you', text: 'Hi'}, {kind: 'tool', text: 'ls'}, {kind: 'say', text: 'Hello back'}] : [];
 let lost = false;
 const document = {hidden: false, documentElement: {classList: {toggle() {}}}, addEventListener: (t, f) => docOn[t] = f,
-  createElement: () => ({contentWindow: {term, arLine, arLook() {}}, remove() { const k = this.box.kids; k.splice(k.indexOf(this), 1) }})};
+  createElement: () => ({style: {}, contentWindow: {term, arLine, arLook() {}}, remove() { const k = this.box.kids; k.splice(k.indexOf(this), 1) }})};
+const getComputedStyle = () => ({fontFamily: 'mono'}); document.body = {appendChild(x) { x.box = {kids: []} }};
 const window = {}, T = 'TOK', esc = t => String(t), LOGO = () => '', I = {ext: ''}, tq = p => p, card = h => h;
 const timers = [], setTimeout = (f, ms) => timers.push({f, ms}), clearTimeout = () => {};
 const said = [], toast = t => said.push(t), sheets = [], openSheet = n => sheets.push(n), upload = f => said.push(f);
@@ -895,6 +897,12 @@ const at = () => [!$('feed').hidden, !$('body').hidden, $('feedframe').kids.map(
   ask(true); FD.deaf -= 9000; liveStop(); feedSkin(); out.woke = [quit.aborted, FD.deaf, $('feedline').hidden]; fetch = fetch0;
   // another chat: the same frame; back: its last screen at once, and it is dialed before the run's answer
   answers.c12 = {ok: true, look: 'page'}; calls.length = 0; const go = show('c12'); out.other = [$('feedstand').hidden, $('feedstand').innerHTML, feedWant()]; await go;
+  // B819: the stand-in's text size is the terminal's, on touch and not, and its cells are xterm's
+  const sizes = () => [/fontSize=(\\d+)/.exec(feedSrc('c12'))[1], /font-size:(\\d+)px/.exec(standHTML('c12'))[1]];
+  out.sizes = [sizes()]; globalThis.matchMedia = window.matchMedia = () => ({matches: true}); out.sizes.push(sizes()); delete window.matchMedia;
+  STAND.seen['12f'] = {w: 7.2, h: 16}; STAND.seen['13f'] = {w: 7.8, h: 17};
+  window.devicePixelRatio = 3; out.cells = [standCells(12, 'f', 402)]; window.devicePixelRatio = 1; out.cells.push(standCells(13, 'f', 1020)); delete window.devicePixelRatio;
+  out.pad = [STAND.pad, STAND.line];
   out.dialed = [calls.slice(), FD.frame === f, $('feedframe').kids.length, feedWant(), FD.frame.className];
   word({state: 'up'}); out.stale = FD.up; word({session: 'c12', state: 'up'}); word({session: 'c12', state: 'drawn'});
   calls.length = 0; const back2 = show('c6'); out.back6 = [arLine.shown, FD.frame.className, $('feedstand').hidden, calls.slice()]; await back2; out.one = calls.filter(c => c.startsWith('dial')).length;
@@ -972,7 +980,14 @@ def test_session_feed_f114(tmp: Path) -> None:
           'F206a: placed in the frame that draws it, and the chips there from the first frame')
     eq(o['woke'], [True, 0, True], 'back from a locked phone: no old question counts')
     eq(o['other'][0], False, 'a chat not seen here: its latest messages stand in')
-    check('Hi</div>' in o['other'][1] and 'Hello back' in o['other'][1] and 'ls' not in o['other'][1], 'your words and the replies', o['other'][1])
+    check('Hi  ' in o['other'][1] and 'Hello back' in o['other'][1] and 'ls' not in o['other'][1], 'your words and the replies', o['other'][1])
+    eq(o['sizes'], [['13', '13'], ['12', '12']], "B819: the stand-in's text size is feedSrc's, on touch too")
+    eq([(c['cols'], round(c['cell'], 2)) for c in o['cells']], [(49, 20.67), (125, 22)], 'its columns and rows, as Chromium has them at 402px and on a desktop')
+    eq(o['pad'], [int(W.session_frame.PAD.split()[1].removesuffix('px')), float(W.session_frame.LINE_HEIGHT)], "and the frame's own padding and line height")
+    check('padding:0 14px' in page and '.main.term .msgs{font:14px/1.55' in page, 'its left edge; the other messages keep their look')
+    got = logic_js([['pastLines', [{'kind': 'say', 'text': 'Two parts:\n- **one** that is long enough to wrap\n- two\n\nLast.\n\n- x'}], 24]])[0]
+    eq([x['t'] for x in got], ['', '● Two parts:', '  - one that is long', '    enough to wrap', '  - two', '', '  Last.', '', '  - x'],
+       'B819: as Claude Code 2.1.332 draws a list: right under its words, and hung')
     eq((o['other'][2], o['dialed']), ('', [['hang', 'dial c12 page-dark'], True, 1, 'c12', 'blank']), 'the one frame, connected to it')
     eq(o['stale'], False, "a word of the chat before is nothing")
     eq((o['back6'], o['one']), (['screen of c6', '', True, ['hang', 'dial c6 ']], 1), 'back: its last screen at once, and one dial, before the run answers')

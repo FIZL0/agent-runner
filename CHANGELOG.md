@@ -8,6 +8,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Changed: on the run page, a question card hides while you are scrolled up and is back at the bottom (F437c).
 - Added: in PR mode, `[git] pr_max` (default 5; 0: no limit; Settings > Merging > Open pull requests) starts no new task while that many pull requests are open on GitHub; each open one shows its link and state (CI red, changes asked, conflicts with the main branch, approved, waits to be merged, waits for review) in `agent-runner status`, the run page's Status, the terminal UI and Needs you (F420).
 - Changed: on the run page, while a question card is open (whole, or its Undo row), the key row is not shown, neither the keyboard button's nor the one in place of the chips on touch; it comes back once the card is answered, gone, minimized or marked (Chat about this), and the keyboard button still opens it under the card for that question only (F437b).
+- Fixed: on the run page, the messages shown while a chat's terminal loads are laid out at the terminal's own text size, font, columns and row height, so nothing rewraps or changes size when the terminal draws (they were 14px in a narrower column before), and a list right under a paragraph has no blank line before it, there and in the session history, as Claude Code 2.1.332 draws it (B819).
 
 ## 0.72.0 (2026-11-25)
 
