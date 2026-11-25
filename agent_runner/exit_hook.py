@@ -46,6 +46,24 @@ def end_all(pids: list[int]) -> None:
         t.join()
 
 
+def end_forced(procs: dict, orphans) -> None:
+    """B803: `s!`: end every session; with an `on_exit`, they and what they left (`orphans`) are gone before it starts."""
+    pids = [pid for pid, *_ in procs.values()]
+    if not state.C.run['on_exit']:
+        for pid in pids:
+            plat.terminate(pid)
+    elif pids:
+        end_all(pids)
+        orphans()
+
+
+def start_forced(procs: dict) -> None:
+    """B803: `s!`: run `on_exit` in the ended sessions' slots (a cut-off session resumes after it too)."""
+    for n in procs:
+        start(n)
+    hurry()
+
+
 def start(n: int) -> None:
     """Run `[run] on_exit` in slot n's worktree with the slot's env, for at most `[run] command_timeout`. Its output
     goes nowhere: a pipe would be held open by whatever it leaves in the background."""

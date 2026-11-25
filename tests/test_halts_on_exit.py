@@ -292,6 +292,26 @@ def test_forced(hook: Hook):
             unqueue()
 
 
+def test_forced_two(hook: Hook):
+    print('s!: two sessions are ended, and on_exit runs once in each slot')
+    hook.fresh()
+    git(R.worktree(2, 'main'), 'checkout', '-q', '-B', 'task/H2', 'main')
+    agents = {1: sleeper(), 2: sleeper()}
+    try:
+        force(new_run(), {n: a.pid for n, a in agents.items()})
+        check(all(a.wait(15) is not None for a in agents.values()), 'both are ended')
+        eq(sorted(loop.queued()), [1, 2], 'and both resumes queued')
+        settle()
+        check(exit_hook.wait(2, 60), 'the second hook ends')
+        eq(sorted(hook.ran()), ['1 p1 s1 True', '2 p2 s2 False'], 'once each, with its own slot\'s env')
+    finally:
+        for a in agents.values():
+            a.kill()
+            a.wait()
+            a.stdout.close()
+        unqueue()
+
+
 def test_forced_slow(hook: Hook):
     print('s!: one that runs long is stopped and logged, also one that ran before, and the run ends')
     hook.fresh()
@@ -358,7 +378,7 @@ def main() -> int:
         hook = Hook(Path(tmp))
         return report([lambda: test_stopped(hook), lambda: test_queued(hook), lambda: test_queued_busy(hook),
                        lambda: test_stubborn(hook), lambda: test_slow(hook),
-                       lambda: test_reap(hook), lambda: test_forced(hook), lambda: test_forced_slow(hook),
+                       lambda: test_reap(hook), lambda: test_forced(hook), lambda: test_forced_two(hook), lambda: test_forced_slow(hook),
                        lambda: test_forced_none(hook), lambda: test_timeout(hook), lambda: test_none(hook)])
 
 

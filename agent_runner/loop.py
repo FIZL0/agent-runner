@@ -250,23 +250,16 @@ def drop_earlier_stop(keep: dict) -> None:
 
 def end_sessions(procs: dict, running: dict) -> None:
     """`s!`: end every agent session now, each queued to resume in its slot when a run next starts. Its
-    worktree stays as the session left it; nothing it did is merged. B803: `[run] on_exit` runs as at any
-    session's end (a cut-off one resumes after it too), so no device lock is held until the next run."""
-    hook = C.run['on_exit']
-    if hook:
-        exit_hook.end_all([pid for pid, *_ in procs.values()])  # first: it must not free what a session still uses
-        end_orphans()
+    worktree stays as the session left it; nothing it did is merged. B803: `[run] on_exit` runs once they ended."""
+    exit_hook.end_forced(procs, end_orphans)
     for n, (pid, sid, _) in list(procs.items()):
         tid = running[n][0]
-        if hook:
-            exit_hook.start(n)
-        else:
-            plat.terminate(pid)
         if not transcript(sid):  # it never started (held at a dialog): `--resume` would find no session and sit
             log(f'slot {n}: {tid} ended (s!) before its session began; it starts afresh in the next run')
             continue
         queue_resume(tid, n, sid, 'stopped with s!')
         log(f'slot {n}: {tid} ended (s!); it resumes in this slot in the next run')
+    exit_hook.start_forced(procs)
     procs.clear()
     running.clear()
 
@@ -1211,10 +1204,8 @@ class Run:
             self.slots = SLOTS
             for m in range(1, self.slots + 1):
                 self.free_at.setdefault(m, dt.datetime.min)
-        if forced() and procs:
+        if forced():  # with no session left too: an `on_exit` may still run
             end_sessions(procs, running)
-        if forced():
-            exit_hook.hurry()
         tells(procs, running)  # F16: plan tell / change, typed into a running slot's session
         restyles(procs, running, self.branch)  # F19: plan restyle parks a running interface task
         budgets(procs, running, type_into)  # F103: [run] task_tokens / task_usd stop a task at a clean point
