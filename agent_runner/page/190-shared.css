@@ -8,3 +8,11 @@
 .hint{position:fixed;z-index:40;max-width:min(280px,90vw);background:var(--fg);color:var(--bg);border-radius:var(--r-s);padding:var(--s1) var(--s2);font-size:var(--fs-s);pointer-events:none;overflow-wrap:anywhere}
 .hint:not([hidden]){animation:fadein var(--dur-fast) var(--ease)}
 :is(button,a)[aria-label]:is(:has(>svg),.x,.btn,.tool){-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+/* B814: a finger's hold selects no part of the app: where there were no words (the scrim) iOS took the whole page. What people read and copy is turned back on here, leaf by leaf (never a list or a card, which a hold
+   on a button in it would select); :where() keeps it weaker than a control's own rule. .feedpast.armed has its own (092) */
+@media (any-pointer:coarse){
+  html{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  :where(input,textarea,select,[contenteditable],pre,code,.u,.a .lead,.a .say,.a:not(:has(>.say)),.said,.tasktext,.quote,.askdo,.asktext,.askbody :is(p,li),.asktop :is(h2,.small),.tooltext,.foldin>.small,.qcard .q,[data-k^="concept:"]>:is(.q,.small),.ev .txt,.ell2,.obstand .grow>div,.setkey,.setpath,.v-bad){-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+  :where(button,button *,[role="button"],a.btn,a.btn *,a.icon,.kind,.kind *){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  :where(a[href]:not(.btn,.icon,.prow,.brand,.pname)){-webkit-touch-callout:default}
+}

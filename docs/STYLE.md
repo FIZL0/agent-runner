@@ -393,6 +393,10 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   small button that must be 44px with any pointer gets its target from an `::after` over it (Home's Talk chip), so it
   still looks like the ones beside it.
 - Text boxes are 16px or more, so a phone does not zoom.
+- **A hold selects words only.** On touch (`any-pointer:coarse`) nothing can be selected from `html` down: a hold where there are no
+  words (the scrim) had iOS select the whole page. What people read and copy opts back in, in the one B814 rule at the end of
+  `page/190-shared.css`: add a new reading surface to that list. Name the words' own element, never a list, a card or a view that
+  also holds buttons. A button is never selectable, also inside those words; a link in them keeps its own callout.
 - Every multi-line message box decides Enter with `boxEnter()` and puts `enterHint()` on its textarea, so a phone's Return makes a new line.
 - Touch listeners that watch a gesture are passive, except a `touchmove` that must keep the page still: the drawer
   swipe, a pull to refresh and a row drag (a pinned chat's row, or a lifted Plan queue row), and the `touchend` that makes a tap's focus on a text box (`kbTapEnd()`, iOS only) and the lift's `touchend` (`liftEnd()`). Those call
