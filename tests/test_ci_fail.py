@@ -59,6 +59,15 @@ def test_names():
                        'ValueError: no', *['  ok   x'] * 60))
     eq(ci.failing_tests(crash), ['tests/test_a.py'], 'a traceback and no FAIL line: the test file it is under')
     has('\n'.join(ci.fail_lines(crash)), r'ValueError: no$', 'a traceback is kept to its exception')
+    both = raw('== tests/test_a.py', '  FAIL a', '== tests/test_b.py', 'Traceback (most recent call last):',
+               '  File "b.py", line 1', 'KeyError: 1', '== tests/test_c.py', 'Traceback (most recent call last):',
+               '  File "c.py", line 1', 'OSError: said and caught', 'all checks passed')
+    eq(ci.failing_tests(parsed(both)), ['a', 'tests/test_b.py'], 'a crash beside a FAIL; not one a passing file prints')
+    eq(ci.failing_tests(parsed(raw('Traceback (most recent call last):', '  File "b.py", line 1', 'KeyError: 1'))),
+       ['KeyError: 1'], 'no test file either: the exception')
+    eq(ci.failing_tests(parsed(raw('ERROR: test_x (m.C)'))), ['test_x [m.C]'], 'unittest ERROR')
+    many = '\n'.join(ci.fail_lines(parsed(far(*(f'case {i}' for i in range(90))))))
+    check('FAIL case 89' in many and "got ['a']" not in many, 'too many for their context: all the FAIL lines')
     eq(ci.fail_lines(parsed(raw(*['  ok   x'] * 9))), [], 'nothing failed, nothing kept')
 
 
@@ -152,6 +161,21 @@ def test_closed():
     has(p.long(tid), rf'- {tid}: https://github\.com/o/r/commit/{sha}', 'linked in the long form')
     eq((p.line(tid, 'DONE.md'), tid in R.REOPENED), ('', True), 'out of DONE.md, and the run may try it again')
     p.close(tid)
+    print('a test named before the task was reopened, failing only after it: news')
+    k = Project()
+    t2, = k.red(far('a', 'b'))
+    k.close(t2)
+    eq(k.red(far('a')), [t2], 'reopened for one of two')
+    eq(k.red(far('b')), [t2], 'the other is named again')
+    eq(k.red(far('b')), [], 'once')
+    real_gh = k.gh
+    k.gh = lambda *a: subprocess.CompletedProcess(a, 1, '', 'HTTP 502') if '--log-failed' in a else real_gh(*a)
+    eq(k.red(far('c')), [], 'a log gh cannot read while the task is open')
+    k.gh = real_gh
+    k.n -= 1
+    eq(k.red(far('c')), [t2], 'is read at the next look')
+    R.init(p.repo)
+    ci.gh_in = lambda cwd: p.gh
     print('a different failing test is a task of its own, and the third filing in a week waits on a person')
     q, = p.red(far('unrelated'))
     check(q != tid, 'a new task')
@@ -170,9 +194,9 @@ def test_closed():
 def test_many():
     print('many failing tests: a few on the line, all in the long form')
     p = Project()
-    names = [f'case {i}' for i in range(90)]
+    names = [f'case {i}' for i in range(290)]
     tid, = p.red(far(*names))
-    has(p.line(tid), r'`case 4` and 85 more\. ', 'the line names five')
+    has(p.line(tid), r'`case 4` and 285 more\. ', 'the line names five')
     check('more such lines in the log' in p.long(tid), 'the FAIL lines stop somewhere')
     eq(p.red(far(*names)), [], 'and the rest still count as named')
 

@@ -213,7 +213,7 @@ def log_tail(log: Log, n: int = TAIL) -> list[str]:
 
 COLOUR = re.compile(r'\x1b\[[0-9;]*m')
 FAIL_LINE = re.compile(r'^\s*(?:--- )?FAIL(?:ED|URE)?\b|^test .+ \.\.\. FAILED$|\sFAILED(?:\s+\[\s*\d+%\])?$'
-                       r'|^\[\s+FAILED\s+\]|^\s*[✗✕✖]\s|^\s*not ok \d+')
+                       r'|^\[\s+FAILED\s+\]|^\s*[✗✕✖]\s|^\s*not ok \d+|^ERROR:? (?:test|\S+::)')
 TRACEBACK = 'Traceback (most recent call last)'
 FAIL_NAMES = [re.compile(x) for x in (
     r'^\s*--- FAIL: (\S+)',                                # go
@@ -221,6 +221,7 @@ FAIL_NAMES = [re.compile(x) for x in (
     r'^\[\s+FAILED\s+\] ([A-Za-z_]\w*\.\S+?),?(?:\s|$)',  # gtest
     r'^FAILED (\S+::.+?)(?: - .*)?$',                      # pytest's summary
     r'^(\S+::.+?) FAILED(?:\s+\[\s*\d+%\])?$',            # pytest -v
+    r'^ERROR:? (test\w* \(.+|\S+::.+?)(?: - .*)?$',           # unittest, pytest: it did not get to fail
     r'^\s*not ok \d+ (?:- )?(.+)$',                        # TAP
     r'^\s*[✗✕✖]\s+(.+)$',
     r'^\s*FAIL(?:ED)?:? +([^\s(].*)$',                     # this repo's tests, unittest, jest
@@ -237,39 +238,56 @@ def _key(name: str) -> str:
     return name[:100].strip()
 
 
+def _traceback_end(log: Log, i: int) -> int:
+    """The index of the exception line that ends the traceback at log[i]."""
+    job, l = log[i]
+    ind, end = len(l) - len(l.lstrip()), i + 1
+    while end < len(log) - 1 and end - i < 40 and log[end][0] == job and \
+            (not log[end][1].strip() or len(log[end][1]) - len(log[end][1].lstrip()) > ind):
+        end += 1
+    return min(end, len(log) - 1)
+
+
 def failing_tests(log: Log) -> list[str]:
-    """The failing tests a log names, in its order. With none named, the test files (`== tests/test_x.py`)
-    a traceback is under."""
+    """The failing tests a log names, in its order. A test file (`== tests/test_x.py`) that names none, has a
+    traceback and did not get to its `all checks passed` crashed: it is named itself. With nothing named at all,
+    the exceptions of the log's tracebacks."""
     out: list[str] = []
-    for _, l in log:
-        for p in FAIL_NAMES:
-            if m := p.match(l):
-                out.append(_key(m[1]))
-                break
+    at: dict[str, int] = {}                  # job -> its test file's place in `suites`
+    suites: list[list] = []                  # [its name, a traceback, named or passed, where its name goes in `out`]
+    for job, l in log:
+        if m := SUITE.match(l):
+            at[job] = len(suites)
+            suites.append([m[1], False, False, len(out)])
+            out.append('')
+        suite = suites[at[job]] if job in at else None
+        name = next((m[1] for p in FAIL_NAMES if (m := p.match(l))), '')
+        if name:
+            out.append(_key(name))
+        if suite and (name or l.strip() == 'all checks passed'):
+            suite[2] = True
+        elif suite and l.lstrip().startswith(TRACEBACK):
+            suite[1] = True
+    for name, crashed, told, i in suites:
+        if crashed and not told:
+            out[i] = _key(name)
     if not any(out):
-        at: dict[str, str] = {}
-        for job, l in log:
-            if m := SUITE.match(l):
-                at[job] = m[1]
-            elif l.lstrip().startswith(TRACEBACK) and job in at:
-                out.append(_key(at[job]))
+        out = [_key(log[_traceback_end(log, i)][1]) for i, (_, l) in enumerate(log)
+               if l.lstrip().startswith(TRACEBACK)]
     return list(dict.fromkeys(x for x in out if x))
 
 
 def fail_lines(log: Log) -> list[str]:
     """Each FAIL line and traceback of a log with a few lines around it, as `job: line`, `...` between places."""
-    keep: list[int] = []
-    for i, (job, l) in enumerate(log):
+    core: set[int] = set()
+    for i, (_, l) in enumerate(log):
         if l.lstrip().startswith(TRACEBACK):
-            ind = len(l) - len(l.lstrip())
-            end = i + 1
-            while end < len(log) and end - i < 40 and log[end][0] == job and \
-                    (not log[end][1].strip() or len(log[end][1]) - len(log[end][1].lstrip()) > ind):
-                end += 1  # its frames; the line after them is the exception
-            keep += range(max(0, i - BEFORE), min(len(log), end + 1))
+            core.update(range(i, _traceback_end(log, i) + 1))
         elif FAIL_LINE.search(l):
-            keep += range(max(0, i - BEFORE), min(len(log), i + AFTER + 1))
-    at = sorted(set(keep))
+            core.add(i)
+    at = sorted({j for i in core for j in range(max(0, i - BEFORE), min(len(log), i + AFTER + 1))})
+    if len(at) > FAIL_MAX:
+        at = sorted(core)  # too many for their context: every failure before any of it
     shown = _shown(log)
     out: list[str] = []
     for n, i in enumerate(at[:FAIL_MAX]):
@@ -336,6 +354,9 @@ def to_file(gh: Gh, workflow: str, branch: str, seen: Path, open_text: str,
     if run['conclusion'] not in RED:
         return None
     log, why = failed_log(gh, run['databaseId'])
+    if why and marker(workflow, branch) in open_text:
+        seen.write_text(f'{last}\n')  # which test failed is not known yet: the next look reads it again
+        return None
     tests = failing_tests(log)
     if marker(workflow, branch) in open_text and not tests:
         return None
@@ -394,7 +415,7 @@ def file_red(red: Red, todo: Path, done: Path, git: Callable[..., subprocess.Com
     for l in P.lines(todo):
         if (m := P.ITEM.match(l)) and not m[1] and m[2] != 'x' and red.mark in l:
             tid = m[3].rstrip('.')
-            known = names(says(tid, l))
+            known = names(_since_reopened(says(tid, l)))
             new = [t for t in red.tests if t not in known]
             if not new:
                 return None
@@ -431,7 +452,17 @@ def file_red(red: Red, todo: Path, done: Path, git: Callable[..., subprocess.Com
         how += f' (blocked on a person, after {", ".join(dict.fromkeys(earlier))})'
     else:
         how += ' (critical)'
-    return Filed(tid, how, [*paths, _section(plan_dir, tid, red, links)])
+    return Filed(tid, how, [*paths, _section(plan_dir, tid, red, links, bool(closed))])
+
+
+BEFORE_REOPENED = '## Before it was opened again'
+
+
+def _since_reopened(text: str) -> str:
+    """A task's line and long form, less what they said before it was last opened again: a test fixed then and
+    failing now is news."""
+    line, _, own = text.partition('\n')
+    return line.rsplit(' — reopened: run ', 1)[-1] + '\n' + own.split(BEFORE_REOPENED)[0]
 
 
 def _note(tid: str, text: str, todo: Path) -> None:
@@ -444,7 +475,7 @@ def _note(tid: str, text: str, todo: Path) -> None:
     P._write(todo, ls)
 
 
-def _section(plan_dir: Path, tid: str, red: Red, links: list[str] | None = None) -> Path:
+def _section(plan_dir: Path, tid: str, red: Red, links: list[str] | None = None, again: bool = False) -> Path:
     """Write a red run into the task's long form, above what an earlier run put there."""
     own = P.long_form(plan_dir, tid)
     old = P.lines(own)
@@ -454,7 +485,8 @@ def _section(plan_dir: Path, tid: str, red: Red, links: list[str] | None = None)
     new = [*(['Earlier fixes that did not hold:', '', *links, ''] if links else []), *red.long]
     body = [title, '', *([f'## Run {red.run["databaseId"]}', ''] if rest else []), *new, '']
     if any(x.strip() for x in rest):
-        body += [*(['## Before', ''] if not any(x.startswith('## Run ') for x in rest) else []),
+        body += [*([BEFORE_REOPENED, ''] if again else ['## Before', '']
+                   if not any(x.startswith('## Run ') for x in rest) else []),
                  *('\n'.join(rest).strip('\n').split('\n')), '']
     own.write_text('\n'.join(body), encoding='utf-8')
     return own
