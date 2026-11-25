@@ -30,7 +30,7 @@ def test_merge_rows(tmp: Path) -> None:
     st = {'merging': ['F1', 'B2'], 'running': {'1': 'B2'}, 'slots': 1}
     got = M.rows(st, {'F1': 'Board page'}, lambda sid: '', {})
     eq(got[0], {'id': 'F1', 'title': 'Board page', 'step': 'Conflicts in a.py need reading, handing them to a fix session', 'link': ''}, 'its step')
-    eq(got[1]['step'], '', 'nothing said since its slot: no step')
+    eq(got[1]['step'], 'Not merged yet', 'nothing said since its slot, no gate running: the run cannot tell')
     lines = ['slot 1: F2 finished: x', 'F1: merging together with F2, F20 (one gate run)', 'F1: the gate passed']
     eq([M.step(t, lines) for t in ('F1', 'F2')], ['The gate passed', 'Merging together with F1 (one gate run)'], 'a batch: its riders too')
     asked = []
@@ -44,6 +44,32 @@ def test_merge_rows(tmp: Path) -> None:
     S.C.notes('STATE').write_text(json.dumps(st), encoding='utf-8')
     eq([r['id'] for r in U.snapshot(up=True, links={})['merging']], ['F1', 'B2'], 'in the snapshot')
     eq(U.snapshot(up=False, links={})['merging'], [], 'none with no run up')
+
+
+def test_stage(tmp: Path) -> None:
+    """B831: with no step in the run log, a row says what the running gates show, and never more."""
+    fake_repo(tmp)
+    gates = S.C.notes('gates')
+    gates.mkdir(parents=True, exist_ok=True)
+
+    def rec(name: str, **more) -> None:
+        (gates / f'{name}.json').write_text(json.dumps(more), encoding='utf-8')
+    steps = lambda: [r['step'] for r in M.rows({'merging': ['F1', 'F2', 'F3', 'F4']}, {}, lambda sid: '', {})]  # noqa: E731
+    with mock.patch('agent_runner.merge.gate_alive', side_effect=lambda s: s.get('pid') == 1):
+        eq(steps(), ['Not merged yet'] * 4, 'no gate running')
+        rec('old', tid='F1', pid=2, cwd='/x/merge', tids=['F1'])
+        eq(steps(), ['Not merged yet'] * 4, 'an ended gate is no sign')
+        rec('ahead', tid='F3', pid=1, cwd='/x/merge2', tids=['F3'])
+        eq(steps(), ['Not merged yet'] * 2 + ['Testing the merge', 'Not merged yet'], 'a gate on a merge built ahead holds no turn')
+        rec('now', tid='F1', pid=1, cwd='/x/merge', tids=['F1', 'F2'])
+        eq(steps(), ['Testing the merge'] * 3 + ['Waiting to merge'], 'the gate of a batch, the one ahead, and one that waits')
+        rec('now', tid='F1', pid=1, cwd='/x/merge')
+        eq(steps()[:2], ['Testing the merge', 'Waiting to merge'], 'a record with no tids: its task')
+        (gates / 'half.json').write_text('{"ti', encoding='utf-8')
+        eq(steps()[3], 'Waiting to merge', 'a half-written record is passed over')
+        check((gates / 'half.json').exists(), 'and left to the run')
+        S.C.notes('run.log').write_text('=== 2026-11-25T10:00:00 F1: the gate passed\n', encoding='utf-8')
+        eq(steps()[0], 'The gate passed', 'the run log comes first')
 
 
 def test_logic() -> None:
@@ -148,11 +174,11 @@ def test_view(tmp: Path) -> None:
     eq(m.count('<fold>'), 2, 'one open row in each list')
     last = m.split('>Merging<', 1)[1]
     check('task_cancel' not in last and 'task_drop' not in last, 'no Cancel or Drop while it merges', last)
-    order(o['slot'], 'data-task="F8"', 'Its merge is built and tested, or waits its turn.', 'data-thread="s2"', 'data-about="plan:F8"')
+    order(o['slot'], 'data-task="F8"', 'Not merged yet', 'data-thread="s2"', 'data-about="plan:F8"')
     eq(o['slot'].split('>Merging<', 1)[1].count('<fold>'), 1, 'one open row per list')
     order(o['down'], '[No agent is working.]', '[Nothing is merging.]', '[No usage read yet.]')
     eq(o['asked'], ['task/F1', 'task/F9', 'task/F8'], 'the text of a task, not of an idle slot')
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_merge_rows), test_logic, in_tmp(test_view)]))
+    raise SystemExit(report([in_tmp(test_merge_rows), in_tmp(test_stage), test_logic, in_tmp(test_view)]))

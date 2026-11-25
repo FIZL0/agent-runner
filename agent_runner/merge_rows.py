@@ -2,14 +2,17 @@
 its session's link. A task's slot may be on its next task by then, so the slots' rows do not have them."""
 from __future__ import annotations
 
+import json
 import os
 import re
+from pathlib import Path
 
 from agent_runner import state as S
 
 TAIL = 65536  # bytes of the run log looked through for the steps
 LINE = re.compile(r'=== \S+ (.*)')
 RIDES = re.compile(r'(\S+): merging together with (.+?) \(')
+TESTING, WAITS, UNKNOWN = 'Testing the merge', 'Waiting to merge', 'Not merged yet'  # B831: no step logged yet
 LINKS: dict[str, str] = {}  # {task: its session's link}, while it merges: reading one goes through every slot log
 
 
@@ -39,6 +42,29 @@ def step(tid: str, lines: list[str]) -> str:
     return ''
 
 
+def live_gates() -> list[dict]:
+    """The merge gates running now, from their records. Never `merge.gate_runs`, which removes a record it cannot
+    read: here it may be one the run is just writing."""
+    from agent_runner.merge import GATES, gate_alive
+    out = []
+    for f in S.C.notes(GATES).glob('*.json'):
+        try:
+            s = json.loads(f.read_text(encoding='utf-8'))
+            if gate_alive(s):
+                out.append(s)
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+    return out
+
+
+def stage(tid: str, gates: list[dict]) -> str:
+    """Where the merge of `tid` is when the run log has no step of it: a running gate holds it, or a gate in the merge
+    worktree (one merge at a time) is another task's, so it waits. With neither the run cannot tell."""
+    if any(tid in (s.get('tids') or [s.get('tid')]) for s in gates):
+        return TESTING
+    return WAITS if any(Path(s.get('cwd') or '').name == 'merge' for s in gates) else UNKNOWN
+
+
 def link_of(tid: str, bridge) -> str:
     """Its last session's claude.ai link, '' for none."""
     if tid not in LINKS:
@@ -59,5 +85,6 @@ def rows(st: dict, titles: dict[str, str], bridge, links=None) -> list[dict]:
     for t in set(LINKS) - set(ids):
         LINKS.pop(t, None)
     lines = log_lines() if ids else []
-    return [{'id': t, 'title': titles.get(t, ''), 'step': step(t, lines),
+    gates = live_gates() if ids else []
+    return [{'id': t, 'title': titles.get(t, ''), 'step': step(t, lines) or stage(t, gates),
              'link': '' if links is not None else link_of(t, bridge)} for t in ids]
