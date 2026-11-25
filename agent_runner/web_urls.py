@@ -102,14 +102,16 @@ def serve_https_urls(status: dict, port: int, token: str) -> list[str]:
 
 def tailscale_https_urls(port: int, token: str, run=sp.run) -> list[str]:
     """B130: the https addresses Tailscale Serve gives the page on `port` ([] without tailscale or a serve for
-    it). Safari's mic needs a secure context, so these come first where the page's address is printed."""
+    it; B815a: or while Tailscale is not connected: its saved rule is still listed then, but opens nothing).
+    Safari's mic needs a secure context, so these come first where the page's address is printed."""
     if run is sp.run and not shutil.which('tailscale'):
         return []
     try:
         r = run(['tailscale', 'serve', 'status', '--json'], capture_output=True, text=True, timeout=5)
-        return serve_https_urls(json.loads(r.stdout or '{}'), port, token) if r.returncode == 0 else []
+        got = serve_https_urls(json.loads(r.stdout or '{}'), port, token) if r.returncode == 0 else []
     except (OSError, ValueError, sp.SubprocessError):
         return []
+    return got if got and page_https.backend(run) == 'Running' else []
 
 
 def page_urls(port: int, token: str) -> list[str]:

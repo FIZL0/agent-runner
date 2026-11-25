@@ -76,6 +76,23 @@ def as_json(text: str) -> dict:
     return got if isinstance(got, dict) else {}
 
 
+def backend(run=sp.run) -> str:
+    """B815a: Tailscale's state: 'Running' while it is connected; '' when it does not say."""
+    try:
+        r = run(['tailscale', 'status', '--json'], capture_output=True, text=True, encoding='utf-8', errors='replace',
+                stdin=sp.DEVNULL, timeout=ASK)
+    except (OSError, ValueError, sp.SubprocessError):
+        return ''
+    return str(as_json(r.stdout).get('BackendState') or '') if r.returncode == 0 else ''
+
+
+def not_connected() -> bool:
+    """B815a: is Tailscale here but not connected (stopped, logged out, not answering)?"""
+    if os.environ.get('AGENT_RUNNER_NO_SERVE') or not shutil.which('tailscale'):
+        return False
+    return backend() != 'Running'
+
+
 def used(status: dict, https: int) -> bool:
     """Does `tailscale serve status --json` have any rule on port `https` (one in the foreground too)?"""
     return any(str(https) in (one.get('TCP') or {}) or

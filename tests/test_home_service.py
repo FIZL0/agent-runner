@@ -890,6 +890,8 @@ SERVE_STATUS = {'TCP': {'8771': {'HTTPS': True}},
 def fake_tailscale(status: dict):
     """`tailscale serve status --json` answering `status`, as web.tailscale_https_urls runs it."""
     def run(argv, **kw):
+        if argv[1] == 'status':  # B815a: it is connected
+            return subprocess.CompletedProcess(argv, 0, '{"BackendState": "Running"}', '')
         eq(argv[:3], ['tailscale', 'serve', 'status'], 'asks tailscale serve status')
         return subprocess.CompletedProcess(argv, 0, json.dumps(status), '')
     return lambda port, token: W.tailscale_https_urls(port, token, run=run)

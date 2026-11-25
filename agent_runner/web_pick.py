@@ -79,7 +79,10 @@ def https_base(https=None) -> str:
 
 def no_https_why() -> str:
     """Why `https_base` is '' (F165: without naming a port only Home opens)."""
-    if site := site_urls():
+    site = site_urls()
+    if (site or run_port()) and page_https.not_connected():
+        return 'Tailscale is not connected'
+    if site:
         from agent_runner.home import serve_https_argv
         port = urlsplit(site[-1]).port
         return (f'Tailscale Serve proxies none to Runner Home\'s port {port}; '

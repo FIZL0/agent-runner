@@ -99,7 +99,8 @@ def test_https_link_b130(tmp: Path) -> None:
     eq(W.serve_https_urls(plain, 8770, 'TK'), [], 'a plain-http serve gives no https link')
     on443 = {'TCP': {'443': {'HTTPS': True}}, 'Web': {'box.tail.ts.net:443': {'Handlers': {'/': {'Proxy': 'http://localhost:8770'}}}}}
     eq(W.serve_https_urls(on443, 8770, 'TK'), ['https://box.tail.ts.net/?t=TK'], 'port 443 needs no port')
-    ran = lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(serve), '')
+    ran = lambda argv, **k: subprocess.CompletedProcess(
+        argv, 0, json.dumps(serve if argv[1] == 'serve' else {'BackendState': 'Running'}), '')
     eq(W.tailscale_https_urls(8770, 'TK', run=ran), ['https://box.tail.ts.net:8771/?t=TK'], 'read from tailscale')
     W.url_file().parent.mkdir(parents=True, exist_ok=True)
     W.url_file().write_text('http://box:8770/?t=TK\nhttp://10.0.0.5:8770/?t=TK\n', encoding='utf-8')
