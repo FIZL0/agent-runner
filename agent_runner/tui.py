@@ -311,11 +311,12 @@ def buttons(*bs) -> list[tuple[str, str]]:
 
 def queue_with_releases(snap: dict) -> list:
     """F195c: the queue panel's rows: the queue's, each release at its place, and the auto release's count (no task)
-    before the row its `before` names, else last."""
+    before the row its `before` names, else after the last one that is not parked."""
     rows = list(snap.get('queue') or [])
     for r in snap.get('releases') or []:
         if r.get('placeholder') and not r.get('id'):
-            i = next((i for i, t in enumerate(rows) if r.get('before') and t.get('id') == r['before']), len(rows))
+            i = next((i for i, t in enumerate(rows) if r.get('before') and t.get('id') == r['before']),
+                     1 + max((i for i, t in enumerate(rows) if t.get('state') != 'parked'), default=-1))
             rows.insert(i, dict(r, new=True, id='release'))
     return rows
 

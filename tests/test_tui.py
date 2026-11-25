@@ -2135,6 +2135,9 @@ def test_release_row_f131() -> None:
     words = 'Next release · auto at 10 landed: 6/10'
     last = page(dict(SNAP, releases=[{'id': '', 'placeholder': True, 'text': words, 'before': ''}])).items(3)
     eq(last[len(SNAP['queue'])].get('text'), words, "the placeholder at the queue's end")
+    parked = dict(SNAP['queue'][0], id='Q99', state='parked')
+    last = page(dict(SNAP, queue=SNAP['queue'] + [parked], releases=[{'id': '', 'placeholder': True, 'text': words, 'before': ''}])).items(3)
+    eq([t.get('id') for t in last[-3:-1]], ['release', 'Q99'], 'before the parked tasks, as on the run page')
     p = page(dict(SNAP, releases=[{'id': '', 'placeholder': True, 'text': words, 'before': SNAP['queue'][1]['id']}]))
     eq(p.items(3)[1].get('text'), words, 'or before the task its place names')
     eq(p.row_lines(3, p.items(3)[1], 60, False), [[(words, 'dim')]], 'dimmed')
@@ -2174,6 +2177,8 @@ def test_release_row_f131() -> None:
         p.cur[3] = v5
         p.key('K')
         eq(p.msg, 'V5 is a release: it stays at its place', 'the release stays there')
+    p.key('ENTER')
+    eq((p.main, p.sel()['id'], p.tab()[0]), (True, 'V5', 'direct edit'), 'Enter opens its details')
 
 
 def test_new_drop_release_f186() -> None:
