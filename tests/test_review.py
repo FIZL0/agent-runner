@@ -63,7 +63,7 @@ def test_prompt_on():
             check(line in p, f'the commit line {line}', p)
         check(p.index('Spec review') < p.index('Project policies:'), 'before the policies')
         tools = R.lean()
-        eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact,Agent', 'lean: the Agent tool too')
+        eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Agent', 'lean: the Agent tool too')
 
         long = root / 'plan' / 'tasks' / 'F2.md'
         long.parent.mkdir(parents=True, exist_ok=True)
@@ -87,11 +87,11 @@ def test_prompt_off():
         check('Spec review' not in p and 'review: ' not in p and '"review"' not in p, 'not in the prompt', p)
         check('review' not in R.subagents(), 'no review subagent (F101)')
         tools = R.lean()
-        eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact,Agent',
+        eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Agent',
            'lean: the Agent tool still, for the docs subagent (F101)')
         with mock.patch.dict(R.C.raw['models'], {'docs': False}):
             tools = R.lean()
-            eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact', 'no subagent at all: no Agent tool')
+            eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write', 'no subagent at all: no Agent tool')
 
 
 ANSWER = r"""

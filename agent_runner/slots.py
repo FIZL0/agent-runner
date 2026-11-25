@@ -26,7 +26,7 @@ from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, hook, log, note, ROOT, SLOTS_DIR
 from agent_runner.state import EV_STARTED
 from agent_runner.state import EV_DRIFT
-from agent_runner.brief import prompt_for, review_on, subagents
+from agent_runner.brief import concept_at, prompt_for, review_on, subagents
 from agent_runner.brief_arrives import MARKER, with_brief
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
 from agent_runner.stream import run_stream, stream_message, StreamInput  # noqa: F401 (StreamInput: runner.X)
@@ -123,14 +123,15 @@ def single_run() -> object:
 
 # --- starting a session --------------------------------------------------------
 
-def lean() -> list[str]:
-    """Bash/Read/Edit/Write/Artifact and the repo's own settings only: an unattended agent needs no MCP servers, and a
-    user-level setting (a status line, a hook that asks) is something nobody is there to answer."""
+def lean(artifact: bool = False) -> list[str]:
+    """Bash/Read/Edit/Write and the repo's own settings only: an unattended agent needs no MCP servers, and a
+    user-level setting (a status line, a hook that asks) is something nobody is there to answer. C48: the Artifact
+    tool (its three schemas are some 17k tokens of every first turn) only with `artifact`, for a concept task;
+    any other task shows a person a page with `publish-page`."""
     if not C.run['lean']:
         return []
-    # Artifact: a task can publish a page or screenshots to claude.ai and link it, seen from any device
     # Agent (F28, F101): the spec review before done, and the docs subagent, run as subagents
-    tools = 'Bash,Read,Edit,Write,Artifact' + (',Agent' if review_on() or subagents() else '')
+    tools = 'Bash,Read,Edit,Write' + (',Artifact' if artifact else '') + (',Agent' if review_on() or subagents() else '')
     return ['--tools', tools, '--setting-sources', 'project,local', '--strict-mcp-config']
 
 
@@ -169,7 +170,7 @@ class Claude:
     """
     report_exit = False  # log a session's last words at exit
 
-    def flags(self, sid: str, model: str, idle: int, resume: bool, once: bool) -> list[str]:
+    def flags(self, sid: str, model: str, idle: int, resume: bool, once: bool, artifact: bool = False) -> list[str]:
         stop = [{'hooks': [{'type': 'command', 'command': plat.command_text(
             [*runner_cmd(), 'run', '--stop-hook', '--idle', str(-1 if stream_engine() else idle)])}]}]
         brief = C.notes(f'{sid}.brief')
@@ -178,7 +179,7 @@ class Claude:
         ends = {'Stop': stop} if stream_engine() else {'Stop': stop, 'StopFailure': stop}
         return [*(STREAM_FLAGS if stream_engine() else []),
                 '--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
-                '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
+                '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(artifact),
                 # F101: the review and docs subagents, each on its [models] role, so all of it is plan usage
                 *(['--agents', json.dumps(agents)] if (agents := subagents()) else []),
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
@@ -282,7 +283,7 @@ class Harness(Claude):
     def trust(d):
         pass  # no folder question
 
-    def flags(self, sid, model, idle, resume, once):
+    def flags(self, sid, model, idle, resume, once, artifact=False):
         if resume and not self.find_transcript(sid):
             raise FileNotFoundError(f'harness session {sid} is missing')
         provider = model.partition(':')[0]
@@ -348,10 +349,11 @@ def backend_for(model: str) -> Claude:
     return HARNESS if on_harness(model) else backend()
 
 
-def agent_flags(sid: str, model: str, idle: int, resume: bool = False, once: bool = False) -> list[str]:
+def agent_flags(sid: str, model: str, idle: int, resume: bool = False, once: bool = False,
+                artifact: bool = False) -> list[str]:
     """The session flags after the prompt. `resume` continues the session `sid` instead of starting it (its
     transcript keeps the id); `once` is a session with no pane, which exits after one answer."""
-    return backend_for(model).flags(sid, model, idle, resume, once)
+    return backend_for(model).flags(sid, model, idle, resume, once, artifact)
 
 
 REMOTE_ENV_FLAGS = ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
@@ -548,7 +550,7 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
     b = backend_for(model)  # F106c: the harness loop has no Remote Control
-    return b.cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume) +
+    return b.cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume, artifact=concept_at(cwd)) +
                  ([] if b is HARNESS or stream_engine() else remote_flags(name, cwd)))
 
 
@@ -559,7 +561,7 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: 
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
     b = backend_for(model)  # F106c: the harness loop has no Remote Control
-    return b.argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once) +  # F106b: nor a stream session
+    return b.argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once, concept_at(cwd)) +  # F106b: nor a stream session
                   ([] if once or b is HARNESS or stream_engine() else remote_flags(name, cwd)))
 
 

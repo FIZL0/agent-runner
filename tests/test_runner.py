@@ -7866,11 +7866,11 @@ def test_models_f101(repo: Path, tmp: Path):
     eq({k: v['model'] for k, v in agents.items()}, {'review': 'opus', 'docs': 'haiku'},
        'agent_cmd carries --agents: review on opus, docs on haiku by default')
     check(all(v['description'] and v['prompt'] for v in agents.values()), 'each with a description and a prompt')
-    eq(argv[argv.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact,Agent', 'lean allows Agent')
+    eq(argv[argv.index('--tools') + 1], 'Bash,Read,Edit,Write,Agent', 'lean allows Agent')
     _, agents = agents_of('[run]\nremote = false\nmodel = "sonnet"\n\n[models]\nreview = "sonnet"\ndocs = "opus"\n')
     eq({k: v['model'] for k, v in agents.items()}, {'review': 'sonnet', 'docs': 'opus'}, '[models] sets each subagent')
     argv, agents = agents_of('[run]\nremote = false\nreview = false\n\n[models]\ndocs = false\n')
-    check('--agents' not in argv and argv[argv.index('--tools') + 1] == 'Bash,Read,Edit,Write,Artifact',
+    check('--agents' not in argv and argv[argv.index('--tools') + 1] == 'Bash,Read,Edit,Write',
           'no review and docs = false: no --agents, no Agent tool', argv)
     agents_of('[run]\nremote = false\n')
     from agent_runner import brief
