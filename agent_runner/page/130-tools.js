@@ -141,10 +141,11 @@ function toolEdit(t){
 async function toolPress(name,source,label,a={}){
   const key=toolKey({source,name}), all=S.press=S.press||{};
   if((all[key]||{}).busy)return;
-  all[key]={busy:label};render(true);
+  const mine=all[key]={busy:label};render(true);
   let j;
   try{const r=await fetch(tq('tools'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'press',name,button:label,source,...a})});j=await r.json()}
   catch(e){j={ok:false,out:'Could not reach the run page. The command may have run; check before you press again.'}}
+  if(all[key]!==mine)return;  // the device was removed or renamed meanwhile
   const t=S.tools&&S.tools.tools.find(t=>t.name===name&&t.source===source), ask=o=>({ask:{...a,label,at:Date.now(),...o}});
   all[key]=j.ask?ask({q:j.ask,confirm:j.ask}):j.busy?ask({q:`${t?t.label:name} is held by ${j.busy.holder}.`,holder:j.busy.key,busy:true})
     :{said:{ok:!!j.ok,out:plainOut(j,'That failed.'),lines:j.lines||[],https:j.https||''}};
@@ -161,7 +162,7 @@ function pressClick(tool,name,source,label){
   return toolPress(name,source,label);
 }
 /* what a device's last press said goes when it is changed or removed: another one may take its name */
-function pressForget(name){const p=(S.press||{})[name];if(p&&!p.busy)delete S.press[name]}
+function pressForget(name,same){const p=(S.press||{})[name];if(p&&!(same&&p.busy))delete S.press[name]}
 /* a button more or less in a device's sheet; saved with it */
 function btnClick(x){
   if(x.dataset.tool==='btnadd'){
@@ -190,7 +191,7 @@ async function toolClick(x){
     for(const k of ['description','kind','alias','host','user','port','reach','page','start','folder'])a[k]=toolVal(k);
     a.exclusive=toolVal('exclusive')==='true';
     a.buttons=S.devBtns.map(i=>Object.fromEntries(BTN_FIELDS.map(k=>[k,toolVal(btnField(i,k))])));
-    const j=await toolPost(a,name);if(j&&j.ok){pressForget(name);closeSheet();toast(j.out)}return}
+    const j=await toolPost(a,name);if(j&&j.ok){pressForget(name,a.name===name);closeSheet();toast(j.out)}return}
   if(tool==='secret'){
     const a={op:'secret',name,what,[what]:toolVal(what)};if(what==='key')a.passphrase=toolVal('passphrase');
     for(const f of SECRET_FIELDS)delete S.f[f];for(const el of document.querySelectorAll('#sheet [data-f^="dev:"]'))el.value='';

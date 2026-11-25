@@ -72,6 +72,7 @@ const soon = () => new Promise(r => setImmediate(r)), say = async j => { answer(
   f.toolEdit(dev); for (const i of '012') await click('btndel', {i}); await f.toolClick({dataset: {tool: 'save', name: 'phone'}}); out.empty = sent.pop().buttons;
   f.toolEdit(null); out.add = fields(SHEETS.device()); await click('btnadd'); out.first = fields(SHEETS.device());
   S.press = {phone: {said: {ok: true, out: 'old', lines: []}}}; await f.toolClick({dataset: {tool: 'remove', name: 'phone'}}); out.removed = said(dev);
+  click('press', {label: 'Wake', source: 'device'}); await f.toolClick({dataset: {tool: 'remove', name: 'phone'}}); await say({ok: true, out: 'Wake: done', lines: []}); out.late = [said(dev), btns(dev)[0]];
   console.log(JSON.stringify(out));
 })();
 """
@@ -127,6 +128,7 @@ def test_page(tmp: Path) -> None:
     eq(o['empty'], [], 'all removed')
     eq((o['add'], o['first']), ([], ['b0-label', 'b0-cmd', 'b0-confirm']), 'a new device has none, and can get one')
     eq(o['removed'], None, 'a removed device leaves no answer')
+    eq(o['late'], [None, 'Wake|||press'], 'nor one that comes after it went')
 
 
 def main() -> int:
