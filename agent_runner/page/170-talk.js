@@ -227,14 +227,14 @@ const talkMic=()=>`<div class="talkline" id="talkline" role="status"></div><butt
 const talkFoot=()=>{const why=micWhy();return why?esc(why):keysLine(!!modelOf(talkName()))};
 function talkDraw(){
   const why=micWhy(), st=TK.state, hold=TS.mic==='hold', mic=$('mic'), spk=$('spk'), line=$('talkline');
-  const reads=talkReads(), stop=$('spkbox');
+  const reads=talkReads(), stop=$('spkbox'), open=!!REC.open&&!REC.open.rest;  // F161c
   $('dock').classList.toggle('typing',talkTyping());
   if(stop)stop.hidden=!reads;
   if(!mic)return;
-  line.textContent=why||(st==='listening'?(TK.heard||(TK.ear&&TK.ear.reading?'Getting the words…':TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…')):st==='thinking'?'Thinking…':st==='speaking'?'Speaking…':(TK.note||(hold?'Hold to talk':'Tap to talk')));
+  line.textContent=why||(st==='listening'?(TK.heard||(TK.ear&&TK.ear.reading?'Getting the words…':TK.ear&&!TK.ear.on?'Starting the mic…':'Listening…')):st==='thinking'?'Thinking…':st==='speaking'?'Speaking…':(TK.note||((hold?'Hold to talk':'Tap to talk')+(open?', the mic is open':''))));
   $('micrep').hidden=!!why||!!st||!TK.report;
-  const label=why||(st==='listening'?'Stop listening':hold?'Hold to talk':'Talk');
-  mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':'');mic.disabled=!!why;
+  const label=why||(st==='listening'?'Stop listening':(hold?'Hold to talk':'Talk')+(open?', the mic is open':''));
+  mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':open?' open':'');mic.disabled=!!why;
   mic.setAttribute('aria-label',label);mic.title=label;setHTML(mic,I.talk);
   const sl=reads?'Stop speaking':TK.held?'Read the reply aloud':TS.read?'Read replies aloud: on':'Read replies aloud: off';
   spk.className='spk'+(reads?' on':TS.read?'':' off');spk.setAttribute('aria-label',sl);if(reads)spk.removeAttribute('aria-pressed');else spk.setAttribute('aria-pressed',String(TS.read));spk.title=sl;setHTML(spk,reads?I.stop:TS.read?I.speak:I.mute);
@@ -294,7 +294,7 @@ function speak(text,key){
     u.onstart=()=>{if(!w.begun)pastSound('voice');w.begun=true;w.quiet=0;w.at=Date.now();w.len=p.length;if(!i)log('started')};
     u.onend=u.onerror=e=>{w.at=Date.now();w.len=(ps[i+1]||'').length;if(i===ps.length-1){log(e&&e.type==='error'?'error '+e.error:'ended');ended(e)}};
     ss.speak(u)})};
-  soundAs('playback');soundWatch(w);
+  if(REC.open)recQuiet();soundAs('playback');soundWatch(w);  // F161c
   if(!rv)own(parts);
   else{
     unlockAudio();  // a play button's tap

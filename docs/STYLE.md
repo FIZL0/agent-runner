@@ -259,7 +259,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form and a typed secret (`givesec:` keys) are not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
 - **The off page turns into the app.** An off project's page (see Off page in GLOSSARY.md) becomes its run's app once the
   run is up, at the same address (`turnIntoApp()`), but not while a sheet is open on it.
-- A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
+- A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box. The one exception is Recorded's open mic where the permission is already `granted`, which listens to nothing.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll. In a Needs you sheet the field in use stays the same element (`sheetHTML()` patches around it), and so do the Settings search and a text field typed in on a Settings row (`settingsDraw()`), because a new one under the phone's keyboard loses its autocorrect; never put a typed value in markup: `keepFields()` puts it back.
 - A notice (`.notice`) floats over the top of the view and never pushes it down, except in a chat: there it has its own
@@ -423,8 +423,8 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - Every reading must be watched with `soundWatch()`, since iOS can skip a sound's end event.
 - The browser's voice (`speechSynthesis`) is not called before `rec.start()` in a press (B132); run speech clips may be stopped before it.
 - Every mic use goes through `MIC`: a Recorder stands in as a recognizer (`micRec()`), so one recognizer or recording runs at a time.
-- Recorded keeps one stream, opened by a press that needs it, never one ask per press. Sound outside a listen is dropped, and the stream is released when Talk is left or hidden.
-- The talk line says `Starting the mic…`, `Listening…` or `Getting the words…`. A setting that cannot work says why under its row and what is used instead.
+- Recorded keeps one stream. It opens when Talk shows, where the Permissions API already says `granted`; otherwise the first press opens it, and it stays open between listens. A press on a running stream listens inside the press, its clip starting with up to 1 s of sound from before it (pre-roll); older sound is dropped, never sent or kept, and sound from before a press alone is not sent. It is released at once when the page is hidden, within 0.5 s when Talk is left, a chat or the Mic test opens, or typing mode shows, and opened again when Talk's mic shows. While a reply plays, a stream opened where the permission was `granted` is closed and opened again after; where a new stream could ask again, it only rests (track disabled, AudioContext suspended). The audio session is play-and-record while the stream is open, playback while it is closed or rests. If opening by itself fails, or the mic is taken away (a call), it is not tried by itself again until Talk shows anew; a press still tries.
+- The talk line says `Starting the mic…`, `Listening…` or `Getting the words…`, and `Tap to talk, the mic is open` at rest while the stream is open (the mic button's label says it too). The open-mic dot (`.mic.open`, `--bad`) stands still, with no animation. A setting that cannot work says why under its row and what is used instead.
 
 ## Before you finish
 

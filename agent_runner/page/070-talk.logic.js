@@ -42,9 +42,9 @@ function micLog(what,fresh,own,must){
   else if(must||t.ev.length<120)t.ev.push(ev);else t.more++;
 }
 /* B178: what the sound is for, where the browser lets a page say (iOS): 'play-and-record' for the mic, which puts
-   Bluetooth earbuds in the hands-free profile, 'playback' once no mic is on or about to be */
+   Bluetooth earbuds in the hands-free profile, 'playback' once no mic is on (F161c: Recorded's open one too) or about to be */
 function soundAs(type){
-  try{const a=navigator.audioSession;if(!a||a.type===type||(type==='playback'&&(MIC.rec||MIC.next||TK.ear)))return;
+  try{const a=navigator.audioSession;if(!a||a.type===type||(type==='playback'&&(MIC.rec||MIC.next||TK.ear||(REC.open&&!REC.open.rest))))return;
     a.type=type;micLog(`audio session ${type}, ${a.state||''}`)}catch(e){}
 }
 /* B166: a run voice reads, or may once the run has said which it has */

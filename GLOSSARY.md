@@ -823,3 +823,10 @@ _Said_: have both as an option
 _On screen_: Recorded
 _In code_: recorded.py, /recorded, Recorder, 172-talk.js
 _Avoid_: STT, transcription
+
+**Open mic**:
+The mic's stream kept open on Talk with Speech to words: Recorded, so a press listens at once and starts up to a second before it; older sound is dropped, and nothing is sent without a press.
+_Said_: start listening while on that page
+_On screen_: the mic is open
+_In code_: recLook, recAhead, recRing, .mic.open
+_Avoid_: hot mic, always listening
