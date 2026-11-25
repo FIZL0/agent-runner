@@ -33,7 +33,8 @@ function giveHTML(n,o){const xs=needInputs(n);
     return `<label class="give"><span>${E_(x.label)}</span><input class="fld" data-f="${E_(giveField(n.id,x))}" ${x.kind==='secret'?'type="password" autocomplete="new-password"':`type="text"${x.kind==='link'?' inputmode="url"':''} autocomplete="off"`} autocapitalize="off" autocorrect="off" spellcheck="false"${bad?` aria-invalid="true" aria-describedby="giveout${j}"`:''}>${bad?`<span class="small v-bad" id="giveout${j}" role="alert">${E_(o.out)}</span>`:''}</label>`}).join('')}${o.done||''}</section>`:''}
 /* the popup's lists and pictures; url: a picture's address; give: its inputs' fields */
 function needBody(n,url,give=''){const d=needD(n), more=d.step_more||[], list=(t,h,xs)=>xs.length?`<section><h3>${h}</h3><${t}>${xs.map((x,j)=>`<li>${askWords(x)}${t==='ol'?stepMore(more[j],j):''}</li>`).join('')}</${t}></section>`:'';
-  return d.lead.map(x=>`<p>${askWords(x)}</p>`).join('')+list('ol','What to do',d.steps)+list('ul','What you should see',d.expect)+give
+  const why=(d.why||[]).filter(x=>needSame(x)!==needSame(needAsk(n)));  // B794: why a BLOCKED stopped; a run without it has none
+  return (why.length?`<section><h3>Why</h3>${why.map(x=>`<p>${askWords(x)}</p>`).join('')}</section>`:'')+d.lead.map(x=>`<p>${askWords(x)}</p>`).join('')+list('ol','What to do',d.steps)+list('ul','What you should see',d.expect)+give
     +d.notes.filter(x=>!needInputs(n).length||!/^Reply (done once it is|yes\/no)$/i.test(x)).map(x=>`<p class="small">${askWords(x)}</p>`).join('')
     +(d.shots.length?`<section><h3>Pictures</h3><div class="shots">${d.shots.map((s,j)=>`<button class="shot" data-shot="${j}" aria-label="Open the picture: ${E_(s.caption||'no caption')}"><img src="${E_(url(s))}" alt="${E_(s.caption||'Picture')}" loading="lazy"></button>`).join('')}</div></section>`:'')}
 /* a task's text as paragraphs: its fields, notes, block and numbered parts each on their own */

@@ -582,6 +582,8 @@ absolute path inside one of those two folders. A picture is png, jpg, gif or web
 `GET /shot/uploads/…` or `/shot/asks/…` and never from anywhere else; a picture under `<notes>/uploads` that the task's
 line names shows too. The TUI's Needs you pane shows the same steps, expected list and picture paths.
 
+A BLOCKED item split this way also takes its `why`: the statements that say why it stopped, shown as a Why section above What to do (never under What you should see, and left out on the page when the heading already says it). Steps are orders to the person, and `After that: …` notes say what the run or an agent does next; only words after a step's colon that report no failure become What you should see, and nothing is lost. CONFIRM and DECIDE are unchanged, and the TUI's Needs you pane shows the why as `Why: …`.
+
 `inputs` asks the person to enter something. Each is `{key, label, kind, hint, match, confirm, env}`: `kind` is `text`
 (500 characters at most), `link` (a web address, 1000 at most) or `secret` (4096 at most), and a secret's `env` is its
 NAME, the key in capitals by default. `match` is a regex the whole value must match (200 characters at most), `hint`

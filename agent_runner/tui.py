@@ -743,6 +743,8 @@ class RunPage:
         else:
             out = [L((f'{it["id"]} ', 'yellow'), (d['title'], 'fg'))]
         out.append(L((lab, 'yellow'), (f'  {it.get("age", "")}', 'dim')))
+        for x in d.get('why') or []:  # B794: why a BLOCKED stopped
+            out += [L()] + text_lines(f'Why: {x}', 'fg', width)
         for x in d['lead']:
             out += [L()] + text_lines(x, 'fg', width)
         for head, xs, mark in (('What to do', d['steps'], lambda j: f'{j}. '),
