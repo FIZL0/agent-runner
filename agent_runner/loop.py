@@ -1076,8 +1076,7 @@ def run(argv: list[str], prog: str) -> int:
     start_control()  # F176: no session of an earlier run is picked up, but those a shutdown cut off come back
     start_control_server()
     from agent_runner.web import start_web
-    if srv := start_web():  # F66: the run page on this machine ([run] web), its address in the run log
-        PAGE.append(srv)  # B144, F402b3a: the stop hands it over before it says `run stopped`
+    PAGE.extend(filter(None, [start_web()]))  # F66: the run page ([run] web); F402b3a: the stop hands it over
 
     code_start(bool(r['auto_upgrade']))  # F149
     threading.Thread(target=update_watch, daemon=True).start()
@@ -1450,8 +1449,7 @@ class Run:
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
         if stopping() and not procs and (not waiting or forced()) and not merging:
             how = stopped_by()
-            # B144: its feed, control server and board are gone before it says it stopped, and its page is handed over
-            end_own(rc_sweep_stop, log, keep_page=not POWER)  # F402b3a: no page stays for a suspend or a shutdown
+            end_own(rc_sweep_stop, log, keep_page=not POWER)  # B144, F402b3a: its own are gone, or its page handed over, before it says so
             clear_stop()
             log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}', EV_STOPPED)
             if POWER:

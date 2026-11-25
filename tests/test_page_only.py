@@ -270,7 +270,15 @@ def test_hand_over(tmp: Path) -> None:
             eq((p, get_code(page), S.run_up(), pid_of(root) == os.getpid()), (port, 200, False, False), 'the page answers, up false')
             check('stays up' in said[-1], 'the log says so', said)
             check(page_https.made_rule() and not off.called, 'its https rule stays')
-            p, page = stop()  # the next run takes it back
+            # the next run takes it back; an ask to end of its own that is still there does not end what it hands over to
+            serve_web = W.start_web
+
+            def slow():
+                srv = serve_web()
+                S.C.notes('page.stop').write_text(str(os.getpid()), encoding='utf-8')
+                return srv
+            with mock.patch.object(W, 'start_web', slow):
+                p, page = stop()
             check(until(lambda: not plat.alive(pids[0])) and pids[0] != pids[1], 'the next run ended the first')
             eq((p, get_code(page)), (port, 200), 'had its port, and handed it over again')
             p, page = stop(private=True)
@@ -339,6 +347,15 @@ def test_power(tmp: Path) -> None:
             now = st.enter_context(mock.patch.object(loop, 'power_now'))
             eq(TL.new_run().end(), 0, f'the run ends ({power or "a stop"})')
             eq((own.call_args.kwargs.get('keep_page'), now.called), (keep, bool(power)), 'its page')
+    root, _ = project(tmp, {})
+    with TL.ExitStack() as st:
+        CF._cfg.cache_clear()
+        S.init(root)
+        TL.stubs(st, [])
+        st.enter_context(mock.patch.object(loop.shared_tools, 'pending', lambda tried: False))
+        st.enter_context(mock.patch.object(loop, 'splitting', lambda *a: False))
+        close = st.enter_context(mock.patch.object(loop, 'close_page'))
+        eq((TL.new_run(once=True).end(), close.call_args.args[0]), (0, True), '`once` with nothing to start: its page stays')
 
 
 def post_long(url: str, body: dict) -> dict:

@@ -17,7 +17,7 @@ from agent_runner.state import EV_STOPPED, log, stopping
 
 RUN_LOCK: list = []  # run.lock's open file, held until run() has returned
 PAGE: list = []  # the run page server `start_web` returned, closed by the stop before it says so
-LAST_RUN_WAIT = 30  # s a start waits for a run that is stopping to be gone
+LAST_RUN_WAIT = 60  # s a start waits for a run that is stopping to be gone (a page handover that fails can take 45)
 LOOKS = 10  # tries, 0.1 s apart, a start beside a page-only process has for run.lock before it is refused
 OWN_WAIT = 10 # s the stop gives its board and control server to end after SIGTERM
 

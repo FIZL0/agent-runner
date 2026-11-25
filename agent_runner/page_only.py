@@ -195,7 +195,9 @@ def hand_over(srv) -> str:
     proc, why, https, closed = None, '', False, False
     try:
         live.unlink(missing_ok=True)  # of one that was killed
-        out.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):  # Windows: one that ended may still have it open (LAST_ACTS)
+            out.unlink(missing_ok=True)
+        S.C.notes('page.stop').unlink(missing_ok=True)  # this run's own ask, if the one it met was slow to end
         bind, port = srv.server_address[:2]
         note.write_text(json.dumps({'pid': os.getpid(), 'bind': bind, 'port': port}), encoding='utf-8')
         env = {k: v for k, v in os.environ.items() if k not in NOT_OURS}
