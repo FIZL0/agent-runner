@@ -1,18 +1,25 @@
 """B809c: under Needs you, a control session's filed question shows what explains it, on its card and in its popup.
+F445a: an item plays its videos.
 
     python3 tests/test_needs_explained.py
 """
 from __future__ import annotations
 
+import http.client
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 from _check import check, eq, report
-from _web import in_tmp, logic_js
+from _web import fake_repo, in_tmp, logic_js
+from agent_runner import need_detail as N
 from agent_runner import web as W
+from test_tui import SNAP, page as tui_page
 from test_web_home import NEED_DRIVER
+from test_web_sheet import DOM
 
 NONE: dict = {k: [] for k in ('lead', 'steps', 'expect', 'notes', 'shots')}
 TEXT = ('## The concept\n\nThe page is **ready**, see `a.py`. It has two parts:\n1. Install, as [the page](https://claude.ai/artifact/a_b_c) says\n'
@@ -118,5 +125,124 @@ def test_full_task(tmp: Path) -> None:
     check('Full task' in out['plain'] and 'asked the person' in out['plain'] and 'class="explain"' not in out['plain'], 'without a text: as it was', out['plain'])
 
 
+MP4 = b'\0\0\0\x20ftypisom' + bytes(range(256)) * 8
+WEBM = b'\x1aE\xdf\xa3\x9fB\x86\x81\x01B\xf7\x81\x01B\xf2\x81\x04B\xf3\x81\x08B\x82\x84webm' + b'0' * 50
+
+
+def ask_videos(repo: Path) -> Path:
+    """Puts videos, and what is none, beside D3's ask file; the notes dir."""
+    notes = repo / '.runner'
+    for d in ('asks/D3', 'uploads'):
+        (notes / d).mkdir(parents=True, exist_ok=True)
+    for f, data in {'asks/D3/a.mp4': MP4, 'uploads/b.WEBM': WEBM, 'asks/D3/p.png': b'\x89PNG\r\n\x1a\nfake', 'secret.mp4': MP4,
+                    'asks/D3/text.mp4': b'not a video at all', 'asks/D3/png.mp4': b'\x89PNG\r\n\x1a\nfake', 'asks/D3/mp4.png': MP4,
+                    'asks/D3/a.mov': MP4, 'asks/D3/mp4.webm': MP4, 'asks/D3/mkv.webm': WEBM.replace(b'webm', b'mkv!')}.items():
+        (notes / f).write_bytes(data)
+    return notes
+
+
+def test_video_types(tmp: Path) -> None:
+    """F445a: an ask file's shots may be mp4 and webm videos, with a picture's folder and size checks."""
+    notes = ask_videos(fake_repo(tmp))
+    files = ['D3/a.mp4', 'D3/p.png', 'uploads/b.WEBM', str(notes / 'asks/D3/a.mp4'), 'D3/text.mp4', 'D3/png.mp4', 'D3/mp4.png', 'D3/a.mov',
+             'D3/mkv.webm', 'D3/mp4.webm', '../secret.mp4', str(notes / 'secret.mp4'), 'D3/gone.mp4']
+    (notes / 'asks' / 'D3.json').write_text(json.dumps({'shots': [{'file': f, 'caption': 'c'} for f in files]}), encoding='utf-8')
+    eq([(s['src'], s.get('video')) for s in N.asks_file('D3')['shots']],
+       [('asks/D3/a.mp4', True), ('asks/D3/p.png', None), ('uploads/b.WEBM', True), ('asks/D3/a.mp4', True)], 'only real ones, in the two folders')
+    if os.name == 'posix':
+        (notes / 'asks' / 'out.mp4').symlink_to(notes / 'secret.mp4')
+        eq(N.shot_file('asks/out.mp4'), None, 'no way out by a link')
+    with mock.patch.object(N, 'SHOT_MAX', len(MP4) - 1):
+        eq(N.shot_file('asks/D3/a.mp4'), None, 'none over the size limit')
+    eq(N.named_shots('see uploads/b.WEBM'), [], 'a task\'s text names pictures only')
+
+
+def test_range(tmp: Path) -> None:
+    eq([W.byte_range(r, 100) for r in ('bytes=0-1', 'bytes=10-', 'bytes=-5', 'bytes=-500', 'bytes=90-500', 'bytes=100-', 'bytes=100-200', 'bytes=-0')],
+       [(0, 2), (10, 100), (95, 100), (0, 100), (90, 100), (0, 0), (0, 0), (0, 0)], 'a part, or none of it')
+    eq([W.byte_range(r, 100) for r in ('', 'bytes=-', 'bytes=5-2', 'bytes=200-150', 'bytes=0-1,4-5', 'lines=0-1', 'bytes=0-' + '9' * 5000)], [None] * 7, 'the whole')
+    ask_videos(fake_repo(tmp))
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    conn = http.client.HTTPConnection('127.0.0.1', srv.server_address[1], timeout=10)  # one connection: a wrong length would spoil the next
+
+    def ask(src: str, rng: str = '', t: str = token) -> tuple:
+        conn.request('GET', f'/shot/{src}?t={t}', headers={'Range': rng} if rng else {})
+        r = conn.getresponse()
+        return r.status, r.read(), r.getheader('Content-Range'), r.getheader('Content-Type'), r.getheader('Accept-Ranges')
+    try:
+        n, mp4 = len(MP4), 'video/mp4'
+        eq(ask('asks/D3/a.mp4'), (200, MP4, None, mp4, 'bytes'), 'the whole')
+        eq(ask('asks/D3/a.mp4', 'bytes=0-1'), (206, MP4[:2], f'bytes 0-1/{n}', mp4, 'bytes'), 'as an iPhone asks first')
+        eq(ask('asks/D3/a.mp4', 'bytes=500-')[:3], (206, MP4[500:], f'bytes 500-{n - 1}/{n}'), 'a seek')
+        eq(ask('asks/D3/a.mp4', 'bytes=-7')[:3], (206, MP4[-7:], f'bytes {n - 7}-{n - 1}/{n}'), 'its end')
+        eq(ask('asks/D3/a.mp4', f'bytes={n}-')[:3], (416, b'', f'bytes */{n}'), 'past it')
+        eq(ask('asks/D3/a.mp4', 'bytes=0-1,5-6')[:2], (200, MP4), 'several parts: the whole')
+        eq(ask('uploads/b.WEBM', 'bytes=0-3')[::3], (206, 'video/webm'), 'a webm')
+        eq(ask('asks/D3/p.png')[::3], (200, 'image/png'), 'a picture as before')
+        for f in ('secret.mp4', 'asks/..%2fsecret.mp4', 'asks/%2e%2e/secret.mp4', 'asks/D3/text.mp4', 'asks/D3/png.mp4', 'concepts/a.mp4'):
+            eq(ask(f, 'bytes=0-1')[0], 404, f'{f} is refused')
+        eq(ask('asks/D3/a.mp4', 'bytes=0-1', 'no')[0], 403, 'only with the token')
+    finally:
+        conn.close()
+        srv.stop()
+
+
+VIDEO = {'src': 'asks/D3/a.mp4', 'path': '/n/asks/D3/a.mp4', 'caption': 'The "band"', 'video': True}
+
+
+def test_video_popup(tmp: Path) -> None:
+    pic = {'src': 'asks/p.png', 'path': '/x', 'caption': 'Phone'}
+    if not shutil.which('node'):
+        print('  (no node here: the video script test is skipped)')
+        return
+    drive = NEED_DRIVER.split('const S = env.S, out')[0] + "press('[data-needopen]', {needopen: 'F435'}, false); console.log(JSON.stringify(el.h)); process.exit(0)"
+    (tmp / 'driver.js').write_text(drive, encoding='utf-8')
+    htmls = []
+    for shots in ([VIDEO, pic], [VIDEO]):
+        r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps([row('', shots=shots)]), '[]'], capture_output=True, text=True, timeout=60)
+        check(r.returncode == 0, 'node draws the popup', r.stderr[-1500:])
+        htmls.append(json.loads(r.stdout or '""'))
+    both, only = htmls
+    check('<h3>Video</h3><video class="shotvideo" data-video controls playsinline preload="metadata" src="shot/asks/D3/a.mp4?t=T#t=0.001"' in both and
+          '</video><p class="small">The &quot;band&quot;</p>' in both, 'it plays in place, its caption under it', both)
+    check('data-shot="1"' in both and 'data-shot="0"' not in both, 'a picture opens as its own place in the list', both)
+    check('Pictures' not in only, 'no pictures, no heading', only)
+    lines = [''.join(t for t, _ in x).strip() for x in tui_page(SNAP).need_lines(row('', shots=[VIDEO, pic]), 80)]
+    at = lines.index('Videos')
+    eq(lines[at + 1:at + 3], [VIDEO['path'], VIDEO['caption']], 'the terminal UI: where it is and its caption')
+    check(lines.index('Pictures') > at and lines.count('/x') == 1, 'apart from the pictures', lines)
+
+
+REDRAW_DRIVER = DOM + r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const S = {sheet: 'need'}, setHTML = (el, h) => { if (el._h === h) return false; el._h = h; el.innerHTML = h; return true };
+const document = {activeElement: null, createElement: () => ({content: new Node(11, '#fragment'), set innerHTML(h) { this.content.innerHTML = h }})};
+const sheetHTML = new Function('S', 'document', 'setHTML', slice('function sheetHTML(', '/* F189b: a press in the sheet') + 'return sheetHTML')(S, document, setHTML);
+const draw = (age, note, src = 'a.mp4') => `<h2>T</h2><div class="small">${age}</div><div class="askbody"><p>${note}</p><section><h3>Video</h3><video data-video="" src="${src}"></video></section></div>`;
+const text = n => n.childNodes.length ? n.childNodes.map(text).join('|') : n.data || '';
+const out = [], el = root, video = () => el.querySelectorAll('[data-video]')[0];
+sheetHTML(el, draw('1m', 'one')); const was = video(), gone = [];
+was.remove = () => gone.push(1);
+sheetHTML(el, draw('2m', 'one')); out.push(video() === was);
+sheetHTML(el, draw('3m', 'two')); out.push(video() === was, gone.length, text(el), sheetHTML(el, draw('3m', 'two')));
+delete was.remove; sheetHTML(el, draw('3m', 'two', 'b.mp4')); out.push(video().getAttribute('src'));
+console.log(JSON.stringify(out));
+"""
+
+
+def test_video_redraw(tmp: Path) -> None:
+    """A redraw leaves the video's element where it is: one drawn again would stop and start over."""
+    if not shutil.which('node'):
+        print('  (no node here: the video redraw test is skipped)')
+        return
+    (tmp / 'redraw.js').write_text(REDRAW_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'redraw.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node redraws the sheet', r.stderr[-1500:])
+    if r.returncode == 0:
+        eq(json.loads(r.stdout), [True, True, 0, 'T|3m|two|Video|', False, 'b.mp4'], 'the same element, in new words; another video is drawn')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(f) for f in (test_card, test_popup, test_fold, test_full_task)]))
+    raise SystemExit(report([in_tmp(f) for f in (test_card, test_popup, test_fold, test_full_task, test_video_types, test_range, test_video_popup, test_video_redraw)]))

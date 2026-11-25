@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: an ask file's `shots` may now be .mp4 and .webm videos (same folders, uploads and asks, same 50 MB limit, content checked against the suffix); the run page's Needs you sheet plays each in place under Video or Videos above Pictures, `GET /shot/…` answers Range requests for Safari, and the terminal UI lists them under Videos. A picture named in a task's line and a control session's copied pictures stay pictures only (F445a).
 - Fixed: on the run page on a phone, a tall question card no longer leaves the session shown whole for good, with no chips and no history: the card never makes the session's frame lower than 12 rows, so Claude Code's prompt is drawn and found again (B828).
 - Added: the run page's printed addresses (run log, `agent-runner status`) end with a localhost link for this machine's own browser, whenever the page listens on every interface, so Talk's mic works without https; through Runner Home it is Home's localhost link, the launcher's `w` and the page-only process open it, and `c` still copies the ordinary link (B815b).
 - Added: PR mode was tried end to end on a scratch GitHub repo (docs/research/pr-mode-check.md); it stays off by default and is turned on in no repo for now, by the person's choice (T26).
