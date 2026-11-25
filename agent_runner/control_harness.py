@@ -134,7 +134,7 @@ def new_chat_model() -> str:
 
 def now(sid: str) -> dict:
     """F406g: what the harness loop says of chat `sid` (`<notes>/<sid>.now`): pid, sessionId, status, statusUpdatedAt,
-    startedAt, queued; {} for none, or one whose process is gone."""
+    startedAt, queued, answers (F433: a queued message is not about its question); {} for none, or one whose process is gone."""
     from agent_runner import plat
     try:
         d = json.loads(state.C.notes(f'{sid}.now').read_text(encoding='utf-8')) if sid else {}
