@@ -283,6 +283,29 @@ def test_other_machine() -> None:
         check(not W.waits(b), 'left by hand: it is not switched again')
 
 
+def test_other_machine_behind() -> None:
+    print("a branch behind the remote's takes its commits, and a later save on it goes first")
+    for later in (False, True):
+        d = project()
+        _, b = other(d)
+        git(b, 'branch', '-q', 'dev', 'origin/dev')
+        eq(U.setting_project('git', 'master_branch', 'dev')['ok'], True, 'saved')
+        git(d, 'push', '-q', 'origin', 'main')
+        fresh(d)
+        eq(W.at_start(d), True, 'the saving machine switched')
+        if later:
+            git(d, 'branch', 'stage')
+            fresh(d)
+            eq(U.setting_project('git', 'master_branch', 'stage')['ok'], True, 'and saved another')
+        git(d, 'push', '-q', 'origin', '--all')
+        git(b, 'pull', '-q')
+        fresh(b)
+        eq(W.at_start(b), True, 'the other machine switches')
+        fresh(b)
+        eq((out(b, 'branch', '--show-current'), S.default_branch()), (('stage', 'stage') if later else ('dev', 'dev')), 'to the newest')
+        eq(out(b, 'rev-parse', 'dev'), out(d, 'rev-parse', 'dev'), 'with no commit of its own on dev')
+
+
 def test_other_machine_reset() -> None:
     print('a pulled reset to the branch found by itself switches too, and a save on that machine takes it back')
     d = project()
@@ -344,5 +367,5 @@ def test_by_hand() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_refused, test_pr_mode, test_waits, test_picks, test_switch, test_run_start, test_held, test_other_machine,
+    raise SystemExit(report([test_refused, test_pr_mode, test_waits, test_picks, test_switch, test_run_start, test_held, test_other_machine, test_other_machine_behind,
                              test_other_machine_reset, test_by_hand]))

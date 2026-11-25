@@ -297,10 +297,13 @@ def at_start(root: Path) -> bool:
         return False
     now, to = d['now'], d['next']
     why = holds(root, now)
-    made = not why and pulled(root, saved(root)) and _fetched(root, to)
-    if not why and (bad := problem(root, saved(root))):
+    v, note = saved(root), _read(f)
+    ours = bool(note) and note['to'] == v and not note.get('pulled')  # saved on this machine
+    made = not why and not ours and _fetched(root, to)
+    if not why and (bad := problem(root, v)):
         why = [bad]
-    if not why and (bad := _switch(root, to)):
+    newer = None if why or ours else _newer(root, to)
+    if not why and (bad := _switch(root, to, newer is None)):
         why = [bad]
     if why:
         if made:
@@ -309,6 +312,11 @@ def at_start(root: Path) -> bool:
         return False
     f.unlink(missing_ok=True)
     S.log(f'working branch: {to} (it was {now})')
+    if newer is not None:
+        from agent_runner.whole_write import write_whole
+        f.parent.mkdir(parents=True, exist_ok=True)
+        write_whole(f, json.dumps({'was': to, 'to': newer, 'pulled': True}).encode())
+        at_start(root)
     return True
 
 
@@ -318,16 +326,31 @@ def forget() -> None:
 
 
 def _fetched(root: Path, to: str) -> bool:
-    """B833: a machine that never had the branch makes it from the remote's. Was it made?"""
-    if not _git(root, 'show-ref', '--verify', '--quiet', f'refs/heads/{to}').returncode:
+    """B833: a machine that never had the branch makes it from the remote's, and one behind it takes its commits, the
+    setting's own among them. Was it made?"""
+    ref, here = f'refs/remotes/{CF.Config(root).push_remote or "origin"}/{to}', f'refs/heads/{to}'
+    if not _git(root, 'show-ref', '--verify', '--quiet', here).returncode:
+        if to not in _elsewhere(root) and to != _out(root, 'branch', '--show-current') \
+                and not _git(root, 'merge-base', '--is-ancestor', here, ref).returncode:
+            _git(root, 'update-ref', here, _out(root, 'rev-parse', ref), _out(root, 'rev-parse', here))
         return False
-    ref = f'refs/remotes/{CF.Config(root).push_remote or "origin"}/{to}'
     return not _git(root, 'branch', '-q', '--track', to, ref).returncode
 
 
-def _switch(root: Path, to: str) -> str:
-    """Give `to` the setting, then check it out in the main checkout: why not, or ''."""
-    if why := _carry(root, to):
+def _newer(root: Path, to: str):
+    """B833: the value `to`'s own settings file has when a later save there, after the one that named `to`, changed
+    it; None otherwise. That save goes before the one pulled on the old branch."""
+    f = CF.config_file(root)
+    rel = _rel(root, f) if f else ''
+    if not rel or _row(root)['has_device'] or not _has(root, f'refs/heads/{to}', rel):
+        return None
+    v, *old = _values(root, _out(root, 'log', '-n', '500', '--format=%H', f'refs/heads/{to}', '--', rel).split(), rel)
+    return v if isinstance(v, str) and v != to and to in old else None
+
+
+def _switch(root: Path, to: str, carry: bool = True) -> str:
+    """Give `to` the setting (`carry`), then check it out in the main checkout: why not, or ''."""
+    if carry and (why := _carry(root, to)):
         return why
     if _out(root, 'branch', '--show-current') == to:
         return ''
