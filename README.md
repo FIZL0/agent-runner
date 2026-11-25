@@ -78,7 +78,7 @@ agent-runner home add ~/work/proj  # list a project that is not under ~/repos (r
 Runner Home is the recommended setup, not an optional extra. With several projects on one device it is what
 keeps every run's page reachable: one link, each run at `/p/<project>/`.
 
-Each run serves its own page while it is up; while none is up, a page-only process serves it (the launcher's `w` starts it, and it starts no run). Runner Home is one page that is always there: every folder
+A run serves its page; when it stops, a page-only process serves the same page at the same address (none after a suspend or shutdown stop, or with `[run] web = false`), and Start on the page starts the run again at that address. The launcher's `w` starts the page-only process too, and it starts no run. Runner Home is one page that is always there: every folder
 in `~/repos` with a `runner.toml`, plus the ones you add, each shown as running, idle or off with what needs
 you, and Start run, Pause, ±1 slot and Stop buttons that run the runner's own commands in that project. Open
 takes you to that project's run app through Home, so one link (one bookmark) reaches them all. It runs as a
@@ -160,7 +160,7 @@ in one step. Edits already made in the main checkout: add `--here`, and they mov
 
 **Stopping.** Type `s` + Enter in the run view (`agent-runner attach`, or the terminal `run 3` runs in), or
 run `agent-runner stop`. Nothing new starts; the
-running tasks finish and merge, then the run exits (`s` again takes it back). `s!` (`stop --force`) ends the
+running tasks finish and merge, then the run exits and its run page stays up (`s` again takes it back). `s!` (`stop --force`) ends the
 sessions now instead, each to resume in the next run. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `[run] auto_upgrade`, on by default, does it once a release is out, and off, nothing restarts by itself), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
 `x` suspend or shut the computer down once the run stops (or goes idle); `?` lists the keys. To leave the
 machine to it from the start, run with `--shutdown` or `--suspend`.

@@ -377,7 +377,7 @@ def post_long(url: str, body: dict) -> dict:
 
 
 def test_ends(tmp: Path) -> None:
-    print('F402b1: it ends when idle, not while a page is open; on a signal; [run] web off; a stale note')
+    print('F402b1, F402b3b: it ends when idle where Home can start it again, not while a page is open; on a signal; [run] web off; a stale note')
     env: dict = {}
     root, port = project(tmp, env)
     with mock.patch.dict(os.environ, env), mock.patch.object(S, 'log'), mock.patch.object(P, 'held_messages') as held:
@@ -385,20 +385,25 @@ def test_ends(tmp: Path) -> None:
         S.init(root)
         go = threading.Event()
         code: list[int] = []
-        with mock.patch.object(P, 'IDLE', 2.0), mock.patch.object(P, 'LOOK', 0.1):
+        home = mock.Mock(return_value=False)
+        with mock.patch.object(P, 'IDLE', 2.0), mock.patch.object(P, 'LOOK', 0.1), mock.patch.object(P, 'HOME_AGAIN', 0.2), \
+                mock.patch.object(P, 'home_starts', home):
             th = threading.Thread(target=lambda: code.append(P.serve(go)), daemon=True)
             S.C.notes('page.stop').write_text('999999999', encoding='utf-8')  # of a run that is gone
             th.start()
             check(until(lambda: P.serving(root)), 'it serves, whatever a gone run left')
             stream = urllib.request.urlopen(f'http://127.0.0.1:{port}/events?t={W.web_token()}', timeout=30)
             time.sleep(3.5)
-            check(th.is_alive(), 'with a page open it stays past the idle time')
+            eq((th.is_alive(), home.called), (True, False), 'with a page open it stays past the idle time')
             check(held.called, 'the messages chats hold are looked at')
             # the page is gone: its stream's next write fails, as after the keep-alive
             with mock.patch.object(W, 'PING', 0.2):
                 stream.close()
+                check(until(lambda: home.call_count >= 2), 'with none open, idle')
+                eq((th.is_alive(), P.serving(root)), (True, True), 'it stays where Home cannot start it again, and looks again')
+                home.return_value = True
                 th.join(30)
-            eq((th.is_alive(), code), (False, [0]), 'with none open it ends')
+            eq((th.is_alive(), code), (False, [0]), 'where Home can, it ends')
             eq((P.urls(root), P.held(root), P.serving(root)), ([], False, False), 'web.url, its lock and note are gone')
             go.set()
             eq(P.serve(go), 0, 'asked to end (a signal sets this): it does')
@@ -410,6 +415,121 @@ def test_ends(tmp: Path) -> None:
         with mock.patch.dict(S.C.run, {'web': False}):
             eq(P.serve(go), 1, '[run] web off: none')
         check('off here' in P.start(root), 'and w says why', P.start(root))
+
+
+def test_home_starts(tmp: Path) -> None:
+    print('F402b3b: Home can start it again only when Home opens the page, answers and lists the project')
+    for only, links, want in ((True, ['http://h/p/proj/'], True), (True, [], False), (False, ['http://h/p/proj/'], False)):
+        with mock.patch.object(W, 'home_only', lambda: only), mock.patch.object(H, 'site_links', lambda *a, **k: links):
+            eq(P.home_starts(), want, f'Home alone opens it: {only}, it routes the project: {bool(links)}')
+    with mock.patch.object(W, 'home_only', lambda: True), mock.patch.object(H, 'site_links', side_effect=TypeError('x')), \
+            mock.patch.object(S, 'log'):
+        eq(P.home_starts(), False, 'cannot be told: it stays')
+    env: dict = {}
+    root, port = project(tmp, env)
+    cfg = Path(env['AGENT_RUNNER_HOME_CONFIG'])
+    cfg.mkdir(parents=True)
+    with mock.patch.dict(os.environ, env), mock.patch.object(H, 'site_links', lambda *a, **k: ['x']):
+        CF._cfg.cache_clear()
+        S.init(root)
+        eq(P.home_starts(), False, 'no Home')
+        (cfg / 'home.json').write_text(json.dumps({'installed': True, 'port': port + 1}), encoding='utf-8')
+        eq(P.home_starts(), False, 'a web_port of its own')
+        (cfg / 'home.json').write_text(json.dumps({'installed': True, 'port': port}), encoding='utf-8')
+        eq(P.home_starts(), True, "Home's own port")
+
+
+def test_stop_command(tmp: Path) -> None:
+    print('F402b3b: `agent-runner page-only stop` ends it')
+    env: dict = {}
+    root, port = project(tmp, env)
+    cmd = lambda *w: subprocess.run([sys.executable, str(RUN), 'page-only', *w], cwd=root, capture_output=True, text=True, timeout=60)  # noqa: E731
+    with mock.patch.dict(os.environ, env):
+        CF._cfg.cache_clear()
+        S.init(root)
+        r = cmd('stop')
+        check(r.returncode == 0 and 'no page-only process' in r.stdout, 'none there: it says so', r.stdout + r.stderr)
+        eq(cmd('nonsense').returncode, 2, 'another word is refused')
+        eq(P.start(root), '', 'it starts')
+        pid = pid_of(root)
+        try:
+            r = cmd('stop')
+            check(r.returncode == 0 and 'ended' in r.stdout, 'it is ended', r.stdout + r.stderr)
+            check(ended(root, pid), 'the process is gone')
+            eq((get_code(f'http://127.0.0.1:{port}/?t={W.web_token()}'), P.urls(root), S.C.notes('page.stop').exists()), (0, [], False),
+               'its page, web.url and the ask too')
+        finally:
+            if plat.alive(pid):
+                plat.terminate(pid)
+        lock = plat.lock(S.C.notes('page.lock'))
+        eq(P.end_page(0.2)[0], 1, 'one too slow to end: an error')
+        lock.close()
+
+
+# the open page's own script: its events stream, feeds and the run-off banner, over a fake EventSource
+PAGE_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const cut = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const timers = [], streams = [], els = {}, out = {};
+const setTimeout = (f, ms) => timers.push([f, ms, String(f).includes('connect')]), clearTimeout = i => { if (i) timers[i - 1] = null };
+class EventSource { constructor(u) { this.u = u; this.readyState = 0; streams.push(this) } }
+const $ = k => els[k] = els[k] || {hidden: true, h: ''}, setHTML = (e, h) => { e.h = h }, tq = p => p, esc = t => String(t), HOME_PAGE = false;
+let all = false, busy = false, snaps = 0, answer;
+const atAll = () => all, ctlBusy = () => busy, controlOf = k => ({key: k, label: 'Start the run'}), render = () => {};
+const takeSnap = s => { snaps++; S.snap = {...S.snap, ...s} }, fetch = async () => answer;
+const S = {snap: {}, view: 'plan', thread: 'c3', feeds: {}, sent: {}, f: {a: 'typed'}, atts: {}, ob: [{cid: '1'}]};
+const sessionOf = () => null, talkHear = () => {}, keepSent = () => {}, keptCheck = () => false;
+eval((logic + cut('function offDraw(', 'function newsLater(') + cut('let lost=0;', 'setInterval(')).replace(/\b(const|let) /g, 'var '));
+const last = () => streams[streams.length - 1], say = s => last().onmessage({data: JSON.stringify(s)});
+const waits = () => timers.filter(t => t && t[2]).map(t => t[1]);
+const go = () => { const i = timers.findIndex(t => t && t[2]), t = timers[i]; timers[i] = null; t[0](); return t[1] };
+const die = () => { const s = last(); s.readyState = 2; const f = s.onerror; f() };
+(async () => {
+  connect(); say({up: true, boot: 'run', shown: ['stop']}); offDraw(); out.up = els.runoff.hidden;
+  const kept = JSON.stringify([S.view, S.thread, S.f, S.ob]);
+  last().readyState = 0; last().onerror(); out.byItself = [streams.length, waits()];
+  die(); out.after = [streams.length, waits()]; out.waits = [go()];
+  for (let i = 0; i < 5; i++) { die(); out.waits.push(go()) }
+  out.banner = timers.filter(t => t && !t[2]).length;
+  timers.find(t => t && !t[2])[0](); out.lost = els.offline.hidden;
+  say({up: false, boot: 'page', shown: ['start']}); out.fine = els.offline.hidden;
+  out.kept = JSON.stringify([S.view, S.thread, S.f, S.ob]) === kept;
+  offDraw(); out.off = [els.runoff.hidden, els.runoff.h];
+  busy = true; offDraw(); out.busy = els.runoff.h; busy = false;
+  S.thread = null; S.view = 'status'; offDraw(); out.status = els.runoff.hidden; S.view = 'home';
+  all = true; offDraw(); out.all = els.runoff.hidden; all = false;
+  const b = S.snap.boot; delete S.snap.boot; offDraw(); out.old = els.runoff.hidden; S.snap.boot = b;
+  die(); out.again = go();
+  say({up: true, boot: 'run2', shown: ['stop']}); offDraw(); out.back = els.runoff.hidden;
+  S.feeds.c3 = {entries: ['words']}; answer = {status: 502, json: async () => ({ok: false})};
+  await loadFeed('c3'); out.feed = S.feeds.c3.entries;
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_open_page(tmp: Path) -> None:
+    print('F402b3b: the open page connects again by itself, keeps what it has, and says the run is not running, with Start')
+    if not shutil.which('node'):
+        print('  (no node here: the open page script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(PAGE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq((o['up'], o['byItself']), (True, [1, []]), 'a run is up: no banner; a stream the browser opens again is left to it')
+    eq((o['after'], o['waits']), ([1, [1000]], [1000, 2000, 4000, 8000, 15000, 15000]), 'one that ended for good is dialled again, ever less often')
+    eq((o['banner'], o['lost'], o['fine']), (1, False, True), 'the lost connection is said once, and gone with the next snapshot')
+    check(o['kept'], 'the view, the chat, what is typed and the outbox are as they were')
+    check(not o['off'][0] and 'not running' in o['off'][1] and 'data-ctl="start"' in o['off'][1], 'no run: said, with Start', o['off'])
+    check('Starting the run' in o['busy'] and ' busy"' in o['busy'], 'Start under way', o['busy'])
+    eq((o['status'], o['all'], o['old']), (True, True, True), "not on Status (its Run card says it), All projects, or from a kept snapshot")
+    eq((o['again'], o['back']), (1000, True), 'the next time it dials at once again, and a run that is up takes the banner away')
+    eq(o['feed'], ['words'], "an answer that nothing serves the page leaves the chat's words")
+    check('id="runoff"' in W.page_html().decode(), 'the page has its place')
 
 
 def test_private(tmp: Path) -> None:
@@ -518,5 +638,5 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    sys.exit(report([in_tmp(test_serves), in_tmp(test_start_from_page), in_tmp(test_ends), in_tmp(test_private),
+    sys.exit(report([in_tmp(test_serves), in_tmp(test_start_from_page), in_tmp(test_ends), in_tmp(test_home_starts), in_tmp(test_stop_command), in_tmp(test_open_page), in_tmp(test_private),
                      in_tmp(test_hand_over), in_tmp(test_lock_look), test_service_scope, in_tmp(test_outlives_service), in_tmp(test_power)]))

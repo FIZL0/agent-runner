@@ -292,14 +292,18 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   row under the header, so it covers no text, and `noticeRoom()` keeps the text in place. Elsewhere it floats as
   before. In Talk the top bar may be away while scrolled up, and the notice's row moves up with it (See-through Talk).
 
-- **The Claude login banner** (`.login`, `loginDraw()`) is the one notice that stays until what it says is fixed, so it
+- **The Claude login banner** (`.login`, `loginDraw()`) is a notice with no Later, kept until what it says is fixed, so it
   has its own row under the header in every view and covers nothing; a scrolled-up session (`.slim`) puts it away with
-  the other bars. It has one button, Log in again, and no Later, and goes by itself after a new login. Log in again
+  the other bars. It has one button, Log in again, and goes by itself after a new login. Log in again
   opens a sheet (`SHEETS.login`) with numbered steps, `1. Open the sign-in page` and `2. The code the sign-in page
   gives you` with Send code, since a phone cannot press a link or paste in a terminal. The terminal (`claude auth login`
   in ttyd) sits under the steps in `.loginterm`, its frame put there by script, so a redraw never takes it. The other
   notices stand under it, in `.over`. A run's page shows the run's own words; Home, and All
   projects on any page, show Home's.
+- **The run-off banner** (`.login` class, `#runoff`, `offDraw()`) says The run is not running (busy: Starting the run…)
+  with one `.acc` button, Start the run, and no Later. It has its own row under the header, like the login banner, on
+  every view but Status (its Run card says it, unless a chat is open), and not on Home's page or All projects. It shows
+  only from a fresh snapshot.
 
 ### See-through Talk
 

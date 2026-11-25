@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a run's stop keeps its run page up (the page-only process takes it over, as before, and `agent-runner page-only stop` ends it; none after a suspend or shutdown stop or with `[run] web = false`). While no run is up the run page says The run is not running, with Start the run on every view but Status; an open page reconnects by itself after an error answer, its chats and drafts kept; a page-only process left idle ends only where Runner Home can start it again (F402b3b).
 ## 0.70.0 (2026-11-25)
 
 - Changed: on the run page, a question card's question that the person chats about (Chat about this) stays asked by the run itself (/live's ask): `chat_question.ask` reads past the messages that begin `About your question “…” (not my answer): ` (queued ones too) and Claude's replies to them, so the card survives a reload and shows on other devices, and goes when the question is answered in other words in the terminal or on another device, or another question is asked. Before, the page kept the card in memory only. In a chat on the harness loop, words queued in it still hide the card until they go in (F430).
