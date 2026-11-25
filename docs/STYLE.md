@@ -424,7 +424,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - The browser's voice (`speechSynthesis`) is not called before `rec.start()` in a press (B132); run speech clips may be stopped before it.
 - Every mic use goes through `MIC`: a Recorder stands in as a recognizer (`micRec()`), so one recognizer or recording runs at a time.
 - Recorded keeps one stream, opened by a press that needs it, never one ask per press. Sound outside a listen is dropped, and the stream is released when Talk is left or hidden.
-- The talk line says `Starting the mic…`, `Listening…` or `Getting the words…`. A setting that cannot work says why under its row and what is used instead.
+- The talk line says `Starting the mic…`, `Listening…` or `Getting the words…`. A setting that cannot work says why under its row and what is used instead. After a pause in a hold, the talk line shows the words with `… Starting the mic…` or `… Listening…` until the mic is on again, and words that may be half a message are never sent by themselves: the line says so, with `Send as it is`.
 
 ## Before you finish
 

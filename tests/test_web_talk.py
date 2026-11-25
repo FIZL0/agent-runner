@@ -486,7 +486,7 @@ const ta = {value: ''}, box = {value: ''}; document.querySelector = () => ta; ta
 const micWhy = () => '', dictWhy = () => '', toast = () => {}, voices = () => [], talkTyping = () => false;
 const AU = {el: null, got: null, ok: false};  // F158
 const boxKey = () => 'c3', DRAFT_KEY = k => k, store = {set() {}}, grow = () => {};
-const talkSend = t => { sent.push(t); TK.state = '' };
+const talkSend = t => { sent.push(t); TK.state = TK.note = '' };
 const els = {}, el = () => ({classList: {toggle() {}}, setAttribute(k, v) { this[k] = v }, removeAttribute(k) { delete this[k] }});
 let copied = '', sheet = '', RUN_VERSION = '9.9'; const openSheet = n => { sheet = n };
 const $ = k => els[k] = els[k] || el();
@@ -494,7 +494,7 @@ let micEl = null;  // a redraw of the mic's markup makes a new element
 eval(logic + `
 function render() { if (setHTML($('talkmic'), talkMic())) els.mic = micEl = {...el(), setPointerCapture(id) { this.cap = id }}; talkDraw() }
 let TS = talkSetParse('');
-` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'earEnd', 'micStop', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
+` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'micStop', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
   + page.slice(page.indexOf('/* B162: the mic report\'s pointer'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {}; render();
 // two aborts: one retry by itself, then the words
@@ -573,7 +573,7 @@ starts = 0; fire('pointerdown', when); last().onaudiostart(); now += 5000; last(
 starts = 0; fire('pointerdown', when); last().onaudiostart(); now += 300; last().end(); fire('pointerup', when); tick(250); out.holdWait = [starts, TK.state, sent.length];
 // a real failure ends it, and the words so far go out
 for (const err of ['not-allowed', 'service-not-allowed', 'audio-capture']) { starts = 0; fire('pointerdown', when); now += 2000; last().fail(err); tick(250); (out.real = out.real || []).push([starts, TK.state, sent.length]); fire('pointerup', when) }
-starts = 0; fire('pointerdown', when); last().say('kept'); now += 2000; last().end(); last().fail('audio-capture'); tick(250); out.realWords = [starts, TK.state, sent.splice(0)]; fire('pointerup', when);
+starts = 0; fire('pointerdown', when); last().say('kept'); now += 2000; last().end(); last().fail('audio-capture'); tick(250); out.realWords = [starts, TK.state, sent.splice(0)]; fire('pointerup', when); TK.kept = '';
 // a listen that is not held still ends at a silence
 starts = 0; listen(); now += 5000; last().fail('no-speech'); tick(250); out.notHeld = [starts, TK.state];
 // B216: the end of what was said. hears(): a whole results list, each [words, final]
@@ -589,27 +589,62 @@ fire('pointerdown', when); hears(['so do', false]); fire('pointerup', when); hea
 // held: after words the next one starts at once, however short, with nothing lost between
 starts = 0; fire('pointerdown', when); hears(['so', true], [' do', false]); now += 300; last().end(); cut.gap = [starts, sent.length]; hears(['a full', false]); fire('pointerup', when); last().end(); cut.gapSent = sent.splice(0);
 // a recognizer that cannot be made again: the words so far go out
-fire('pointerdown', when); hears(['kept', false]); { const S0 = SR; SR = class { constructor() { throw new Error('none') } }; last().end(); SR = S0 } cut.none = [sent.splice(0), TK.state, ended()]; fire('pointerup', when);
+fire('pointerdown', when); hears(['kept', false]); { const S0 = SR; SR = class { constructor() { throw new Error('none') } }; last().end(); SR = S0 } cut.none = [sent.splice(0), TK.state, ended()]; fire('pointerup', when); TK.kept = '';
+// B216a1: a hold with a long pause. k(): words, the silence, the recognizer's end; its restart runs
+const hp = out.b216a1 = {}, keptNow = () => [sent.splice(0), TK.kept || '', TK.state, els.keptsend.hidden];
+const k = () => { TK.hold = false; TK.state = ''; TK.kept = ''; starts = 0; fire('pointerdown', when); last().onaudiostart(); hears(['Is there a', true]); now += 4000; last().end() };
+// the restart hears: all of it, one message; the line says when the mic is on again
+k(); hp.off = says(); last().onaudiostart(); hp.on = says(); now += 3000; hears(['way to do it', true]); hp.line = says(); fire('pointerup', when); last().end(); hp.whole = keptNow();
+// it starts and hears nothing: kept, said, not sent; the next hold goes on from it
+k(); last().onaudiostart(); now += 3300; fire('pointerup', when); last().fail('aborted', 'No speech detected'); hp.deaf = [...keptNow(), says(), ended(), TK.report === TK.trail, TK.note.includes('Is there')];
+fire('pointerdown', when); hp.goOn = says(); last().onaudiostart(); now += 2000; fire('pointerup', when); last().end(); hp.again = keptNow();
+fire('pointerdown', when); hears(['way', true]); fire('pointerup', when); last().end(); hp.joined = keptNow();
+// Send as it is; not while it listens
+k(); now += 3300; fire('pointerup', when); last().end(); fire('pointerdown', when); keptSend(); hp.busy = sent.length; fire('pointerup', when); last().end(); keptSend(); render(); hp.asIs = keptNow();
+// let go at once after the words, with nothing begun: sent; speech begun with no words: kept
+k(); now += 400; fire('pointerup', when); last().end(); hp.soon = keptNow();
+k(); last().onspeechstart(); now += 400; fire('pointerup', when); last().end(); hp.spoke = keptNow();
+// silent restarts one after another, and a release between two of them
+k(); now += 5000; last().fail('no-speech'); now += 300; last().end(); fire('pointerup', when); hp.between = keptNow(); tick(250);
+// words after a release, before the end
+k(); now += 3000; fire('pointerup', when); hears(['way', true]); last().end(); hp.late = keptNow();
+// the restart is aborted twice, the button still down
+k(); now += 100; last().fail('aborted'); tick(250); hp.one = [starts, TK.state]; last().fail('aborted'); hp.two = [starts, ...keptNow()]; fire('pointerup', when); hp.after = keptNow();
+// rec.start() throws: once more, then kept
+const start0 = SR.prototype.start, bad = n => { SR.prototype.start = function () { if (n-- > 0) throw new Error('busy'); start0.call(this) } };
+bad(0); k(); hears(['x', true]); now += 1000; bad(1); last().end(); hp.throw1 = [TK.state, sent.length]; tick(250); hears(['y', true]); fire('pointerup', when); last().end(); hp.thrown = keptNow();
+bad(0); k(); hears(['x', true]); now += 1000; bad(2); last().end(); tick(250); hp.throw2 = keptNow(); bad(0); fire('pointerup', when);
+// Tap: a restart refused in the wait is tried again, and its silence still sends
+TS.mic = 'tap'; TK.hold = false; TK.kept = ''; listen(); hears(['so', true]); bad(1); last().end(); hp.tapThrow = [TK.state, sent.length]; tick(250); hears(['on', true]); listen(); last().end(); hp.tapOn = keptNow(); bad(0);
+// Tap: twice refused, kept; a restart that hears silence sends, as silence is its end
+listen(); hears(['so', true]); bad(2); last().end(); tick(250); hp.tapFail = keptNow(); bad(0); TK.kept = '';
+listen(); hears(['so', true]); last().end(); last().onaudiostart(); now += 2000; tick(2000); last().end(); hp.tapQuiet = keptNow();
+// a hold let go at once, its restart failed; a note beside kept words
+TS.mic = 'hold'; render(); k(); now += 300; last().fail('aborted'); fire('pointerup', when); hp.failSoon = keptNow(); TK.note = 'Other.'; render(); hp.note = says();
+TS.mic = 'tap'; TK.note = TK.kept = '';
+// Tap goes on from kept words, an abort first tried again; nothing heard keeps them
+TK.kept = 'Is there a'; starts = 0; listen(); last().fail('aborted'); tick(250); hp.tapRetry = starts; listen(); last().end(); hp.tapKept = keptNow(); TK.kept = '';
+hp.most = most; sent.length = 0; render();
 // Tap: a pause does not send; more words, then a silence, and it does
 TS.mic = 'tap'; starts = 0; listen(); hears(['so do a', true]); now += 3000; last().end(); cut.pause = [starts, sent.length, TK.state, says()];
 now += 1500; hears(['full one', false]); tick(2000); cut.goesOn = [sent.length, !!last().stopped]; hears(['full one', true]); last().end(); cut.again = [starts, sent.length];
 now += 2000; tick(2000); cut.silence = !!last().stopped; last().end(); cut.pauseSent = [sent.splice(0), TK.state, ended(), starts];
 // speech begun in the wait makes it longer, once
 starts = 0; listen(); hears(['so', true]); last().end(); now += 1500; last().onspeechstart(); now += 1000; last().fail('no-speech'); cut.speech = [starts, sent.length];
-last().onspeechstart(); now += 1100; last().fail('no-speech'); cut.speechEnd = [starts, sent.splice(0), ended()];
+last().onspeechstart(); now += 1100; last().fail('no-speech'); cut.speechEnd = [starts, sent.splice(0), ended()]; TK.kept = '';
 // results that come back empty unsay nothing
 listen(); hears(['so do', false]); hears(['', false]); last().onresult({resultIndex: 0, results: []}); listen(); last().end(); cut.empty = sent.splice(0);
 // the wait's recognizer ends early, as iOS does: on again until the wait is over, and no longer
 starts = 0; listen(); hears(['so', true]); now += 3000; last().end(); now += 300; last().fail('aborted', 'No speech detected'); tick(250); cut.early = [starts, sent.length];
 now += 400; last().fail('aborted'); tick(250); cut.failed = [starts, sent.length]; now += 1300; last().end(); cut.over = [starts, sent.splice(0)];
 // the wait is over while no recognizer runs
-listen(); hears(['so', true]); last().end(); now += 900; last().fail('aborted'); tick(2000); cut.between = [sent.splice(0), TK.state];
+listen(); hears(['so', true]); last().end(); now += 900; last().fail('aborted'); tick(2000); cut.between = [sent.splice(0), TK.state]; TK.kept = '';
 // a tap sends at once: in the first listen, and in the wait
 listen(); hears(['so', true]); starts = 0; listen(); last().end(); cut.tap = [starts, sent.splice(0)];
 listen(); hears(['so', true]); last().end(); listen(); last().end(); cut.tapWait = [sent.splice(0), ended()]; tick(2000); cut.once = sent.length;
 // auto listen sends at a silence; a real failure in the wait sends too; left Talk: no wait
 starts = 0; TK.again = true; listen(); hears(['yes', true]); last().end(); cut.auto = [starts, sent.splice(0), ended()];
-listen(); hears(['so', true]); last().end(); last().fail('network'); cut.network = [sent.splice(0), ended()];
+listen(); hears(['so', true]); last().end(); last().fail('network'); cut.network = [sent.splice(0), ended()]; TK.kept = '';
 starts = 0; listen(); hears(['so', true]); S.view = 'home'; last().end(); S.view = 'talk'; cut.left = [starts, sent.splice(0)];
 // the report: growing results are one line, the line that says what ended it is in a full one too, and no words are
 listen(); for (const w of ['s', 'se', 'sec', 'secret']) hears([w, false]); cut.grow = TK.trail.ev.filter(x => /result/.test(x)).length;
@@ -677,7 +712,7 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     for k in ('iphone', 'ipad', 'mac', 'android'):
         eq(got.get(k), ['Hold to talk', 1, 'mic hold on', 'Starting the mic…', True, 1, f'by {k}', ''], f'{k}: a hold is a hold')
     eq((got.get('quiet'), got.get('ownEnd')), ([2, 'listening', True, 2], [3, 'listening', True, 3]), 'B162a1: no-speech and its own end: the hold listens on')
-    eq(got.get('wordsKept'), [4, 'listening', True, 4, 'one', 0], 'words heard stay on the line, unsent')
+    eq(got.get('wordsKept'), [4, 'listening', True, 4, 'one … Starting the mic…', 0], 'words heard stay on the line, unsent')
     eq((got.get('shortWait'), got.get('iosQuiet')), (4, [5, 'listening', True, 5]), "iOS's abort for silence: on again, after a wait when it was short")
     eq((got.get('iosNoStart'), got.get('oneFail')), ([6, 'listening', True, 6], [7, 'listening', True, 7]), 'the message alone says silence; one failed start is tried again')
     eq(got.get('holdWords'), [['one two'], '', 1], 'release sends all the words; never two recognizers')
@@ -685,7 +720,7 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     check('Heard nothing' in got['holdNone'][3], 'and the line says so, not that the mic was never on', got['holdNone'][3])
     eq(got.get('holdWait'), [1, '', 0], 'released before the next start: none')
     eq(got.get('real'), [[1, '', 0]] * 3, 'permission refused or no mic ends it')
-    eq(got.get('realWords'), [2, '', ['kept']], 'and the words so far go out')
+    eq(got.get('realWords'), [2, '', []], 'B216a1: and the words before it are not sent as if whole')
     eq(got.get('notHeld'), [1, ''], 'a listen not held ends at a silence')
     b = got.get('b216') or {}
     eq(b.get('line'), 'so do a full one', 'B216: shown as heard')
@@ -693,16 +728,33 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(b.get('release'), [['so do a full one'], True], 'let go, with an abort, the same')
     eq((b.get('blank'), b.get('late')), (['so do a full'], ['so do a full']), 'an empty final unsays nothing; words after the release count')
     eq((b.get('gap'), b.get('gapSent')), ([2, 0], ['so do a full']), 'held: on again at once after words')
-    eq(b.get('none'), [['kept'], '', 'sent 4 letters, ended by no recognizer'], 'no recognizer: the words so far go out')
+    eq(b.get('none'), [[], '', 'kept 4 letters, not sent: nothing heard after them, ended by no recognizer'], 'no recognizer: the words so far are kept')
+    g, K = got.get('b216a1') or {}, 'Is there a'
+    kept = [[], K, '', False]
+    eq((g.get('off'), g.get('on'), g.get('line')), (K + ' … Starting the mic…', K + ' … Listening…', K + ' way to do it'), 'B216a1: the line says when the mic is on again')
+    eq(g.get('whole'), [[K + ' way to do it'], '', '', True], 'a pause in a hold: all of it is sent')
+    eq(g.get('deaf'), [*kept, f'“{K}” Not sent: nothing was heard after these words. Hold to go on from them, or send them as they are.',
+                       'kept 10 letters, not sent: nothing heard after them, ended by pointerup', True, False], 'a restart that hears nothing: said, not sent; no words in the report')
+    eq((g.get('goOn'), g.get('again'), g.get('joined')), (K + ' … Starting the mic…', kept, [[K + ' way'], '', '', True]), 'the next hold goes on from the words')
+    eq((g.get('busy'), g.get('asIs')), (0, [[K], '', '', True]), 'Send as it is')
+    eq(g.get('soon'), [[K], '', '', True], 'let go right after the words: sent')
+    eq((g.get('spoke'), g.get('between'), g.get('late')), (kept, kept, [[K + ' way'], '', '', True]), 'speech with no words, a release between two restarts; late words count')
+    eq((g.get('one'), g.get('two'), g.get('after')), ([3, 'listening'], [3, *kept], kept), 'a restart aborted twice: kept')
+    eq((g.get('throw1'), g.get('thrown')), (['listening', 0], [[K + ' x y'], '', '', True]), 'a start that throws is tried again')
+    eq(g.get('throw2'), [[], K + ' x', '', False], 'twice: kept')
+    eq((g.get('tapThrow'), g.get('tapOn')), (['listening', 0], [['so on'], '', '', True]), 'Tap: the same')
+    eq((g.get('tapFail'), g.get('tapQuiet')), ([[], 'so', '', False], [['so'], '', '', True]), 'Tap: a failed restart keeps, silence sends')
+    eq((g.get('failSoon'), g.get('note')), (kept, f'“{K}” Not sent: nothing was heard after these words. Hold to go on from them, or send them as they are. Other.'), 'a failed restart keeps however soon; another note does not hide why')
+    eq((g.get('tapRetry'), g.get('tapKept'), g.get('most')), (2, kept, 1), 'Tap goes on from kept words')
     eq((b.get('pause'), b.get('goesOn'), b.get('again')), ([2, 0, 'listening', 'so do a'], [0, False], [3, 0]), 'Tap: a pause listens on')
     eq((b.get('silence'), b.get('pauseSent')), (True, [['so do a full one'], '', 'sent 16 letters, ended by a pause', 3]), 'and a silence of 2 s sends one message')
-    eq((b.get('speech'), b.get('speechEnd')), ([3, 0], [3, ['so'], 'sent 2 letters, ended by error no-speech']), 'speech begun in the wait makes it longer, once')
+    eq((b.get('speech'), b.get('speechEnd')), ([3, 0], [3, [], 'kept 2 letters, not sent: nothing heard after them, ended by error no-speech']), 'speech begun in the wait makes it longer, once; with no words, the first are kept')
     eq(b.get('empty'), ['so do'], 'empty results unsay nothing')
     eq((b.get('early'), b.get('failed'), b.get('over')), ([3, 0], [4, 0], [4, ['so']]), 'a recognizer that ends early does not end the wait, nor outlast it')
-    eq(b.get('between'), [['so'], ''], 'nor does one that is about to start')
+    eq(b.get('between'), [[], ''], 'a restart that failed: kept')
     eq((b.get('tap'), b.get('tapWait'), b.get('once')), ([0, ['so']], [['so'], 'sent 2 letters, ended by a tap'], 0), 'a tap sends at once, and once')
     eq(b.get('auto'), [1, ['yes'], 'sent 3 letters, ended by the recognizer'], 'auto listen ends at a silence')
-    eq((b.get('network'), b.get('left')), ([['so'], 'sent 2 letters, ended by error network'], [1, ['so']]), 'a failure, and Talk left, send')
+    eq((b.get('network'), b.get('left')), ([[], 'kept 2 letters, not sent: nothing heard after them, ended by error network'], [1, ['so']]), 'a failed restart keeps, Talk left sends')
     eq((b.get('grow'), b.get('full'), b.get('most')), (1, ['sent 6 letters, ended by a tap', False], 1), 'the report has its end, and no words')
     check('mic hold, version' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
     eq(got.get('cap'), 'and 10 more', 'the report has an end')
@@ -842,7 +894,7 @@ const lands = t => { if (!TK.wait) awaitReply(); S.feeds.c5.entries = [{kind: 'y
 const press = k => { const b = {}, e = {target: {closest: s => s === k ? b : null}, button: 0, pointerId: 1, pointerType: 'touch', detail: 1}; return e };
 eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run speech:'), page.indexOf('const talkTyping='))
  + line('const talkTyping=') + line('function setHTML(') + line('const MIC=')
- + ['micWhenFree', 'micFree', 'talkDraw', 'talkHear', 'speak', 'listen', 'hear', 'micSent', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('') + line('function hush(')
+ + ['micWhenFree', 'micFree', 'talkDraw', 'talkHear', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('') + line('function hush(')
  + page.slice(page.indexOf("document.addEventListener('visibilitychange',()=>{if(TK.ear)"), page.indexOf('/* F124: a swipe right anywhere'))
  + `const click = k => { const e = press(k), q = s => e.target.closest(s); ` + ['data-mic', 'data-spk'].map(k => line("  if(q('[" + k + "]'))").trim()).map(x => '(() => {' + x.replace(/\/\/ F93.*/, '') + '})();').join('') + ` };
 const shows = () => { talkDraw(); return [els.mic.innerHTML, els.mic['aria-label'], els.spk.innerHTML, els.spk['aria-label'], els.talkline.textContent, els.spkbox.hidden] };

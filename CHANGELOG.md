@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page, a Talk Hold with words followed by a pause no longer sends the first half as the whole message when the mic's restart heard nothing or failed; those words are kept, the talk line shows them with Send as it is, and the next listen goes on from them (B216a1).
 - Changed: a control session's first message (in Chat or Talk, or `control --new --ask`) no longer gets a `<runner-waiting>` block of Needs you items, only the person's ask and the lines for attached files; the control brief says a first message that is a bare reply or names an item ("yes", "R43: tags please") is settled after running `needs`, and any other is answered without mentioning waiting items. Older transcripts with a block still read clean where a Held message is shown (a chat's messages waiting out a usage limit). Before, the block filled the chat bubble, and in Talk nearly every ask carried every item.
 - Added: Talk settings has Speech to words: Recorded, where the page records what you say and posts it as WAV to the run's `POST /recorded`, which sends back the words; the same Tap, Hold and auto listen, and the browser's recognition stays the default (F161b).
 - Added: `POST /recorded` on the run turns a clip the page recorded (16 kHz mono WAV) into words with whisper.cpp, installed by `agent-runner speech install whisper` (F161a).
