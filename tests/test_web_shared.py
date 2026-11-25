@@ -125,7 +125,7 @@ def test_page(tmp: Path) -> None:
         page = get(f'http://127.0.0.1:{srv.server_address[1]}/?t={token}')[1].decode()
     finally:
         srv.stop()
-    for part in ('New chat', "['home','Home'],['status','Status'],['plan','Plan'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']",
+    for part in ('New chat', "['home','Home'],['status','Status'],['plan','Plan'],['history','History'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']",
                  'Style rules: docs/STYLE.md',
                  '<div class="shead row"><span>Chats</span>', '<div class="shead">Agents working</div>', 'class="livedot"',
                  'S.snap.machine', 'usage ${esc(use)}',  # the sidebar

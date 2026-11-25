@@ -148,6 +148,7 @@ function compose(ctx,text,paths){
   if(ctx&&ctx.kind==='new')msg=`Add a task: ${text}`;
   else if(ctx&&ctx.kind==='newconcept')msg=`Concept: ${text}`;  // F183: guide concepts: the options page in that chat
   else if(ctx&&ctx.kind==='plan')msg=`About ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
+  else if(ctx&&ctx.kind==='report')msg=`A problem with ${ctx.id}${ctx.title?` (${ctx.title})`:''}, which has landed: ${text}\n\nFind out what is wrong, and add a bug task for it.`;  // F426c
   else if(ctx&&ctx.kind==='concept'&&ctx.lead)msg=ctx.lead+(text?`\n\n${text}`:'');  // B219a: what the chat is about (ui_model.concept_chat_text), then your words
   else if(ctx&&ctx.kind==='concept')msg=`About concept ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
   else if(ctx&&ctx.kind==='setting')msg=`Change the setting ${ctx.id} (${ctx.title}) in the project file: ${text}`;
@@ -161,4 +162,4 @@ function sendReq(ctx,to,msg){return ctx||!to?{name:'new_control',args:{ask:msg}}
 /* F172: the new chat view of a card's Chat, before its first message: its name in S.thread ('+plan:F1'; no session has it) */
 const ctxKey=ctx=>'+'+(ctx.kind==='new'||ctx.kind==='newconcept'?ctx.kind:ctx.kind+':'+ctx.id);
 /* its message box's placeholder */
-const newPh=ctx=>({new:'Describe the task in your own words',newconcept:'What should the concept show?'})[ctx&&ctx.kind]||'Write your first message';
+const newPh=ctx=>({new:'Describe the task in your own words',newconcept:'What should the concept show?',report:'What is the problem?'})[ctx&&ctx.kind]||'Write your first message';

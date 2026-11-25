@@ -278,12 +278,24 @@ def usage_rows(st: dict) -> list[dict]:
             if isinstance(use.get(k), (int, float))]
 
 
-_LATELY: list = [None, []]  # the event log's path, size and time, and what lately() read from it
+_LATELY: list = [None, [], []]  # the event log's path, size and time, and what lately() and past_releases() read from it
+LATELY_MAX, PAST_RELEASES = 60, 20  # rows a snapshot carries
 
 
-def lately(titles: dict[str, str], n: int = 6) -> list[dict]:
-    """F124: what landed lately, newest first: `status`'s "lately" lines, from the event log."""
-    from agent_runner.status import events_file, lately_events, read_events
+def landed_row(at: str, tid: str, text: str) -> dict:
+    """F426c: a "lately" line as a row: 'id' its task, 'kind' 'landed' or 'part' for a landing, with its 'title'."""
+    from agent_runner.status import SAID
+    row = {'at': at, 'text': text, 'id': tid, 'kind': ''}
+    for kind, event in (('landed', S.EV_LANDED), ('part', S.EV_PART)):
+        if tid and text.startswith(f'{SAID[event]}: '):
+            row.update(kind=kind, title=text.removeprefix(f'{SAID[event]}: ').removesuffix(f' [{tid}]'))
+            break
+    return row
+
+
+def _landings(titles: dict[str, str]) -> tuple[list[dict], list[dict]]:
+    """(`lately`'s rows, `past_releases`'), read again only when the event log changed."""
+    from agent_runner.status import events_file, lately_events, read_events, release_version
     try:
         f = events_file().stat()
         mark = (str(events_file()), f.st_size, f.st_mtime_ns)
@@ -291,11 +303,29 @@ def lately(titles: dict[str, str], n: int = 6) -> list[dict]:
         mark = None
     if mark is None or _LATELY[0] != mark:
         try:
-            _LATELY[:] = [mark, [{'at': m[0], 'text': m[2]}
-                                 for m in lately_events(read_events()[-2000:], titles)[-n:]][::-1]]
+            evs = read_events()
+            rows = [landed_row(*m) for m in lately_events(evs[-2000:], titles)[-LATELY_MAX:]][::-1]
+            past: list[dict] = []
+            for j in range(len(evs) - 1, -1, -1):
+                tid = evs[j].get('id') or ''
+                if evs[j]['kind'] == S.EV_LANDED and P.release(tid) and tid not in {r['id'] for r in past}:
+                    past.append({'id': tid, 'title': f'Release {release_version(evs, j)}'.rstrip(), 'at': evs[j]['time'][:19]})
+                    if len(past) == PAST_RELEASES:
+                        break
+            _LATELY[:] = [mark, rows, past]
         except Exception:  # noqa: BLE001 - no event log yet
-            return []
-    return _LATELY[1]
+            return [], []
+    return _LATELY[1], _LATELY[2]
+
+
+def lately(titles: dict[str, str]) -> list[dict]:
+    """F124: what landed lately, newest first: `status`'s "lately" lines, from the event log (`landed_row`)."""
+    return _landings(titles)[0]
+
+
+def past_releases(titles: dict[str, str]) -> list[dict]:
+    """F426c: the releases that landed, newest first; [] with `[run] releases` off (F193)."""
+    return _landings(titles)[1] if releases_on() else []
 
 
 _PLAN_FACTS: dict = {}  # `plan_facts` by the project's files: what they held when last read
@@ -447,7 +477,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'claude_login': login,  # F126a
             'unpushed': unpushed_line(),  # F98
             'responses': kept_responses(),  # F425a
-            'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(), 'chat_model': new_chat_model(),
+            'usage': usage_rows(st), 'lately': lately(titles), 'past_releases': past_releases(titles), 'chat_quiet': chat_quiet(), 'chat_model': new_chat_model(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
 
 
