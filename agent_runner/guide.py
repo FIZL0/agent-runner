@@ -534,6 +534,7 @@ you, to act on a task or when the person asks which one.
   - "park it", "someday": `{cmd} plan add <KIND> "..." --pri later` (never started by a run); "low
     priority": `--pri low`. "do that next": `{cmd} plan move ID top`. "drop it": `{cmd} plan drop ID "why"`.
     "that wasn't done", "bring it back": `{cmd} plan restore ID`
+  - "hold F5", "not yet but keep its place": `{cmd} plan hold ID` (no run starts it until `{cmd} plan unhold ID`)
   - "split that up": `{cmd} plan add ID "part"` per part (IDa, IDb), then `{cmd} plan edit ID "<title> (split
     into IDa, IDb)"`: the parts run, then ID ticks itself
   - "stop and sleep / shut down when done": `{cmd} stop --suspend` / `{cmd} stop --shutdown`

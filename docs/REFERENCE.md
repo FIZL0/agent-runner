@@ -931,6 +931,8 @@ Each free slot reads `plan/TODO.md` from the top and starts the first task it's 
 lines is the order of the work. `plan add` puts a person's new task at the top; `plan add PREFIX TEXT @ after ID` or
 `plan move ID after ID` puts it where you want it.
 
+`plan hold ID` keeps a queued task, or a release, at its place in the queue, and no run starts it until `plan unhold ID` ends the hold. It is the field `| held: yes` on the task's line, written only by hold (edit and move keep it, add ignores it). A task that is running, taken by hand, merging, finished and waiting to merge, or claimed by another runner cannot be held (refused, exit 1). A held task is not under Needs you, and an `after: all` or `all above` release does not wait for it or for one that waits on it; a held release is not cut while tasks land. Unlike a parked task (later, in the Parked section) or a shelved one (a Needs you item), it is skipped until the person ends the hold. The queue row says held, and the dry run says `held`.
+
 A follow-up an agent files gets a level (`--pri`, default `normal`), tagged on its line as
 `(follow-up, LEVEL)`, and is filed so the work a person queued comes first:
 
