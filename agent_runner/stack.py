@@ -11,7 +11,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import gitops, state as S
+from agent_runner import gitops, plan as P, state as S
 
 CHOSEN: dict[str, dict] = {}  # task -> the merge `sched.choose` picked for it to start on: {'on', 'tids'}
 POLL = 5  # seconds between looks whether the merge a finished task started on has landed
@@ -58,6 +58,15 @@ def _old(tid: str) -> Path:
 
 def _has(rev: str, commit: str) -> bool:
     return not S.git('merge-base', '--is-ancestor', commit, rev).returncode
+
+
+def has_line(on: str, tid: str) -> bool:
+    """B805: the merge `on` has `tid`'s line in its plan, so a branch started on it can be ticked or blocked there.
+    Not one filed on the shared branch after the merge was built. A plan outside the repo has one copy, for all."""
+    if S.C.plan_external:
+        return True
+    r = S.git('show', f'{on}:{S.plan_rel("TODO.md")}')
+    return not r.returncode and any(t == tid for _, _, t, _, _ in P.iter_tasks(r.stdout.splitlines()))
 
 
 def stacked(tid: str, branch: str) -> dict:
