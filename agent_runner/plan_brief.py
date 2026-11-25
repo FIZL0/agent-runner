@@ -91,7 +91,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             except OSError:
                 size = 'missing — this task creates it'
             out += [f'- `{t}` ({size})', *[f'  - {l[:120]}' for l in log]]
-            out += maps.get(t, [])
+            out += maps.pop(t, [])  # once, when the line names a file twice
         out += left_out
     if cmd := c.raw['plan']['brief_extra']:  # what only the project knows: its oracle names, a spec, …
         r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True,

@@ -68,9 +68,20 @@ def sections(text: str, pattern, skip=()) -> list[Entry]:
             if i not in skip and (m := pattern.match(l))]
 
 
+def joined(ls: list[str], i: int) -> str:
+    """Line i, with the lines its open parameter list runs on to (a few at most)."""
+    line = ls[i]
+    for more in ls[i + 1:i + 9]:
+        if line.count('(') <= line.count(')'):
+            break
+        line += ' ' + more.strip()
+    return line
+
+
 def javascript(text: str) -> list[Entry]:
     out, comment, in_class, member = [], False, False, None  # member: the indent of the class's own lines
-    for i, line in enumerate(text.split('\n'), 1):
+    ls = text.split('\n')
+    for i, line in enumerate(ls, 1):
         if comment:
             comment = '*/' not in line
             continue
@@ -84,12 +95,12 @@ def javascript(text: str) -> list[Entry]:
             in_class, member = not line.rstrip().endswith('}'), None
         elif m := JS_FUNCTION.match(line):
             out.append((i, 0, f'function {m[1] or "(default)"}'))
-        elif m := JS_NAMED.match(line):
+        elif m := JS_NAMED.match(joined(ls, i - 1)):
             out.append((i, 0, f'function {m[1]}'))
         elif in_class and line.strip() and not line.lstrip().startswith('//'):
             indent = line[:len(line) - len(line.lstrip())]
             member = indent if member is None else member
-            if (m := JS_METHOD.match(line)) and m[1] == member and m[2] not in JS_NOT_METHOD:
+            if (m := JS_METHOD.match(joined(ls, i - 1))) and m[1] == member and m[2] not in JS_NOT_METHOD:
                 out.append((i, 1, m[2]))
         if in_class and line.startswith('}'):
             in_class = False

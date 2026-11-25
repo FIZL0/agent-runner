@@ -59,6 +59,15 @@ export default class Box extends Base {
   }
 }
 function* after(){}
+const wide=(
+  a,
+  b)=>{
+}
+class Two {
+  far(a,
+    b) {
+  }
+}
 '''
 MD = '''# Title
 
@@ -97,7 +106,8 @@ def test_kinds():
     same('a.py', 'class A:\n    def b(self):\n<<<<<<< HEAD\n', ['1 class A', '2   def b'],
          'Python that does not parse is read by its lines')
     js = ['5 --- the page', '6 function load', '11 function pick', '13 function one', '14 class Box',
-          '16   constructor', '22   open', '25 function after']
+          '16   constructor', '22   open', '25 function after',
+          '26 function wide', '30 class Two', '31   far']
     same('a.js', JS, js, 'JavaScript: sections, functions, classes and methods; not nested ones or comments')
     same('a.mjs', JS, js, 'and .mjs the same')
     same('a.md', MD, ['1 # Title', '3 ## Part one', '15 ### Part two'], 'Markdown: headings; not in code')
