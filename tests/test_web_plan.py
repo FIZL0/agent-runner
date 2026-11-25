@@ -46,6 +46,16 @@ def test_real_action(tmp: Path) -> None:
         srv.stop()
 
 
+def test_no_run_f402c1(tmp: Path) -> None:
+    """F402c1: no run is up: a queued task's row says that it waits for the run, and so does a toast once it is added."""
+    row = {'id': 'F1', 'state': 'tool', 'tool_wait': U.RUN_WAIT, 'waits_run': True}
+    two, off = [row, {**row, 'id': 'F2'}], lambda q: {'up': False, 'queue': q}
+    got = logic_js([['planWords', row, []], ['addedWaits', ['F1'], off(two)], ['addedWaits', [], off(two)],
+                    ['addedWaits', None, off(two)], ['addedWaits', ['F1', 'F2'], off(two)], ['addedWaits', [], {'up': True, 'queue': two}]])
+    eq(got, ['Waits for the run to start', 'F2 is queued: it waits for the run to start',
+             '2 tasks are queued: they wait for the run to start', '', '', ''], 'the row, and the toast for new ones alone')
+
+
 def test_run_controls(tmp: Path) -> None:
     """F82: the run controls on the web: the page builds each control's request from the snapshot's one list
     (ui_model.RUN_CONTROLS), the server runs its runner command, and stop now runs only with the page's own
@@ -738,4 +748,4 @@ def test_plan_lists_f426b(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_no_run_f402c1), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b)]))

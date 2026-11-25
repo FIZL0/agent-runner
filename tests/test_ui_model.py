@@ -93,6 +93,16 @@ def test_snapshot(tmp: Path) -> None:
     eq(down['status'][0], 'no run is up', 'no run: said so')
     eq([s['name'] for s in down['sessions']], [], 'no run and no chat: no rows')
     eq(down['slots'], 0, 'no run: no slots')
+    off = {x['id']: x for x in down['queue']}
+    eq((off['F1']['state'], off['F1'].get('tool_wait'), off['F1'].get('waits_run')), ('tool', U.RUN_WAIT, True),
+       'F402c1: no run: a task that nothing else keeps waits for the run to start')
+    eq((off['B2']['state'], off['R8']['state'], off['D3']['state']), ('after', 'parked', 'blocked'), 'the others say what keeps them')
+    check(not any(x.get('waits_run') for x in q.values()), 'a run up: none waits for it', q)
+    kept, again = U.wait_for_run([{'id': 'B7', 'state': 'critical', 'after': ['F1']}, {'id': 'B6', 'state': 'ready', 'under_way': True}])
+    eq((kept['state'], kept.get('waits_run'), again.get('waits_run')), ('after', None, True),
+       'a critical one another task keeps says that; one that waits to resume waits for the run')
+    crit, held = U.wait_for_run([{'id': 'B9', 'state': 'critical'}, {'id': 'B8', 'state': 'held'}])
+    eq((crit['tool_wait'], held), (U.RUN_WAIT + ', goes first', {'id': 'B8', 'state': 'held'}), 'a critical one goes first; a held one is held')
 
 
 def test_idle_slots(tmp: Path) -> None:
