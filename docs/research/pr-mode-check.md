@@ -88,7 +88,7 @@ A repo needs:
 - a ruleset on main with no bypass;
 - to be public, unless the account has a paid plan.
 
-The person must pick the repo.
+On 2026-11-25 the person was asked which repo should turn on PR mode, and answered "No repo yet, wait for the lost-answer fix". That fix is B820, still open. T26 waits for B820; once it has landed, an unblock answer in a PR round is checked again and the person is asked again.
 
 No runner.toml in `~/repos` sets `[plan] repo` yet. GitHub lists no rules on main for agent-runner, openmx, opentennis,
 partyboard and iFizBox; classic protection was not looked at, nor were the other repos. Clay is private and the logins
