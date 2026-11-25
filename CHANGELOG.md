@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: six writers used one temp file name (NAME.tmp) for the files they write whole (the voice file, the run page's chat order, the since mark, runner.local.toml, Home's registry home.json, and a shared file committed through plansync.commit_file, settings for everyone), so two at the same moment could fail with FileNotFoundError or move the other's half-written text into place. Each write now has a temp file of its own in the same directory, removed on failure (agent_runner/whole_write.py); changes to the voice file and Home's registry by commands and the Home server now run one at a time under a file lock (voice.lock, home.lock in the config folder), so none is lost, and when the lock cannot be had within 10 s the change is made without it (B807).
+
 ## 0.69.0 (2026-11-25)
 
 - Fixed: `s!` (`stop --force`) now runs `[run] on_exit` for each session it ends, in its slot; before, it ended them without it, so e.g. a device lock it frees stayed held until the resumed session ended. The sessions still resume in the next run. The run waits for every on_exit still running, also one from a session that ended just before `s!`, at most 60 s from `s!` (or `[run] command_timeout` if that comes sooner); one still running is stopped and the log says so (B803).

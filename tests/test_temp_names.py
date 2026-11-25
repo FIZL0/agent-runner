@@ -1,5 +1,5 @@
 """B807: two writers of one file at the same moment each have a temp file of their own, and a change of the voice
-file or of Home's registry is never lost to another one."""
+file or of Home's registry made under the lock does not lose another one's."""
 from __future__ import annotations
 
 import contextlib
