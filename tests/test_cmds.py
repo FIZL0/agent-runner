@@ -207,6 +207,7 @@ def test_launcher_not_up_f402a():
         print('why it failed', file=M.sys.stderr)
         return 1 if fail else 0
     acts = {k: (lambda a, k=k: called.append((k, a)) or '') for k in 'wtc'}
+    acts['page'] = lambda r: called.append(('page', r)) or ('opened', '')  # F402b1: w while no run is up
     with tempfile.TemporaryDirectory() as d, mock.patch.object(M, 'run_info', lambda r: infos[-1]), \
             mock.patch.object(M, 'run_facts', lambda r, run: dict(facts[-1])), \
             mock.patch.object(tui, 'refusal', lambda: ''), mock.patch.object(M, 'home_link', lambda r: links[-1]), \
@@ -218,15 +219,18 @@ def test_launcher_not_up_f402a():
             eq(M.cmd_pick(here, keys('enter', 'w', 't', 'c', 'enter', 'q', 'q'), shown.append, acts,
                           sessions=lambda: RUNS, paint=paint), 0, 'picked, each key, back, quit')
             eq(started, [], 'nothing started')
-            eq(called, [('w', links[0]), ('t', here), ('c', links[0]), ('t', here)], 'w and c take Home\'s link')
+            eq(called, [('page', here), ('t', here), ('c', links[0]), ('t', here)], 'w opens its page with no run, c takes Home\'s link')
             text = M.re.sub(r'\x1b\[[0-9;]*[mK]', '', shown[1])
             check('not running · 2 tasks left' in text and 'start the run' in text and 'run up' not in text
                   and links[0] in text, 'the launcher says so and offers s', text)
         links.append('')
         shown = []
         called.clear()
-        M.cmd_pick(here, keys('enter', 'w', 'q', 'q'), shown.append, acts, sessions=lambda: RUNS)
+        M.cmd_pick(here, keys('enter', 'c', 'w', 'q', 'q'), shown.append, {**acts, 'page': lambda r: ('opened', 'http://own/')},
+                   sessions=lambda: RUNS)
         check(not called and shown[2].count('no run page yet') == 2, 'Home does not route it: no page yet', shown[2])
+        check('opening the run page' in shown[3] and 'opened' in shown[4] and 'http://own/' in shown[4],
+              'w opens it all the same, and its link shows', shown[4])
         cwd, fail, shown = Path.cwd(), True, []
         M.cmd_pick(here, keys('enter', 's', 'q', 'q'), shown.append, acts, sessions=lambda: RUNS)
         check('starting the run' in shown[2] and 'why it failed' in shown[3] and 'not running' in shown[3],
