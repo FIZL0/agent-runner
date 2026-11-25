@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: the run app's Talk code, agent_runner/page/170-talk.js, is split by area into 170-talk.js and 171-talk-clips/kept/mic/send/speak/words.js, with no change in behaviour (C54).
 - Fixed: the test of a task that goes on with the next provider at a usage cap (its fallback chain, in tests/test_runner.py) no longer fails when it runs across 15:00 local time: its fake cap said "resets 3pm", so the cap had already reset by the check; it now names a fixed far-off epoch (B837).
 - Changed: a Yes with words on a Needs you CONFIRM that closes its task now also starts a new control session with the words, which lists at the top of Chats and keeps no sent response; a chat that cannot start keeps the sent response and the toast and run log say so (F452).
 - Fixed: the question card, and the item filed under Needs you, carry a chat's DECIDE question whole (up to 2000 characters); it was cut at 240 characters with the options and links counted, so a long link left about 100. A spaced em dash (now an en dash) or `BLOCKED:` in it no longer ends it in its item. A question filed before the upgrade with the cut words is still the same question: not filed again, its answer and its explaining text still found (B840).
