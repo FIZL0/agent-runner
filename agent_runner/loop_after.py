@@ -9,7 +9,7 @@ import time
 from agent_runner import exit_hook, no_commits, pr, stack, undo
 from agent_runner.state import log, queued, stopping
 from agent_runner.autorelease import auto_release
-from agent_runner.sched import keep_claims
+from agent_runner.sched import keep_claims, taken
 from agent_runner.asks import block_asks
 from agent_runner.slots import unmerged
 from agent_runner.watch import auto_upgrade, restart_if_upgraded, watch_code
@@ -43,7 +43,8 @@ def after(run) -> None:
     if not stopping():
         sweep_unmerged(branch, run.merging)
     undo.tick(branch, run.merging)  # F98
-    pr.tick(branch)  # F419
+    pr.tick(branch, {t[0] for t in run.running.values()} | {q[0] for q in queued().values()} | set(taken()) |
+            {t.name.removeprefix('merge:') for t in run.merging if t.is_alive()})  # F419, F423
     keep_claims(run.running, branch)
     no_commits.tick(branch)  # B774
     block_asks(branch, run.tried)  # F102: an ask whose block could not be committed when it was parked

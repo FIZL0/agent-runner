@@ -960,3 +960,10 @@ _Said_: waits for the run
 _On screen_: Waits for the run to start
 _In code_: RUN_WAIT, wait_for_run, waits_run, addedWaits
 _Avoid_: offline task, not running task, pending start
+
+**Feedback round**:
+One resumed session of a task on its open pull request's branch, to answer review comments, red CI, a conflict or a person's answer, ending with a push and replies
+_Said_: PR feedback
+_On screen_: resumes for pull request #N
+_In code_: pr_feedback, round
+_Avoid_: retry, review cycle

@@ -250,7 +250,7 @@ def test_opens(tmp: Path):
         eq((len(gh.prs), pr.read()[0]['number']), (1, 1), 'the one that is there is found again')
         gh.prs[0]['state'] = 'CLOSED'
         pr.look('main', gh)
-        eq((boxes()['F1'], pr.read()[0]['state']), (' ', 'CLOSED'), 'closed without a merge: not done')
+        eq((boxes()['F1'], pr.read()[0]['state']), ('~', 'CLOSED'), 'closed without a merge: not done, a person is asked')
     check(not any(c[:2] == ('pr', 'merge') for c in gh.calls), 'the runner never merges')
 
 

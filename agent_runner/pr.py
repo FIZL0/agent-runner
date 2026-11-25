@@ -6,7 +6,7 @@ person merges that on GitHub, as a merge commit, a squash or a rebase.
 in <notes>/prs.json. The parts of a split task go into one branch, pr/<KEY>, and one pull request once the last is
 finished (`group`); a part started after another is taken in starts on that branch (`mates`). `tick`, from the run loop,
 opens what is complete, asks `gh` what became of each pull request, brings the local main up to the remote's, and
-ticks the tasks of a merged one (`landed`).
+ticks the tasks of a merged one (`landed`). What people and CI say on an open one is `pr_feedback`'s.
 
 PR mode needs `[plan] repo` and a main branch GitHub protects from the token too (`problem`): `setup` and the run's
 start refuse it without. The parts that talk to `gh` take a `gh` callable (`ci.gh_in`), so the tests give them answers.
@@ -257,6 +257,8 @@ def mates(tid: str, ls: list[str], d: list[dict] | None = None) -> set[str]:
 
 def start_on(tid: str, branch: str) -> dict:
     """The branch of its finished parts a fresh start of `tid` checks out, as `stack` records it; {} for main."""
+    if S.C.pr and (own := of(tid)) and own['number']:  # F423: it goes on from what its pull request has
+        return {'on': own['head'], 'tids': own['ids']}
     if not S.C.pr or not (m := mates(tid, S.plan_text(branch))):
         return {}
     rec = next(x for x in read() if set(x['ids']) & m)
@@ -290,6 +292,18 @@ def reviewed(tid: str) -> str | None:
 
 
 def submit(tid: str, branch: str):
+    """`take_in`; a task whose pull request is open is never parked for it (`pr_feedback.kept`): F423."""
+    from agent_runner import pr_feedback
+    own = of(tid)
+    if not own or not own['number'] or holds(tid):
+        return take_in(tid, branch)
+    if own['state'] == 'MERGED':
+        return False  # `landed` keeps what came too late
+    why = take_in(tid, branch)
+    return why if why is False else pr_feedback.kept(tid, own, why)
+
+
+def take_in(tid: str, branch: str):
     """In place of a merge: finished task/<tid>, gated with main taken in, goes into its pull request. False when it is
     in one (it is done when a person merges that), None when there is nothing to open one for, else why not."""
     from agent_runner import merge as M
@@ -337,7 +351,7 @@ def submit(tid: str, branch: str):
         with edit() as d:
             if not (now := next((x for x in d if x['branch'] == rec['branch']), None)):
                 d.append(now := rec)
-            now.update(head=head, base=base, gate=gate, ids=[*dict.fromkeys([*now['ids'], tid])],
+            now.update(head=head, base=base, gate=gate, failed='', ids=[*dict.fromkeys([*now['ids'], tid])],
                        tips={**now['tips'], tid: tip})
     if left := missing(now, S.plan_text(branch), read()):
         S.note(f'{tid}: gate passed, waits for {", ".join(sorted(left))} to share a pull request')
@@ -349,6 +363,7 @@ def submit(tid: str, branch: str):
 def build(tid: str, branch: str, rec: dict, M) -> tuple[str | None, str, str, str]:
     """(why not, the tested commit, the main it is on, what the gate said): task/<tid> on what `rec` holds, with main
     taken in, gated. A branch only gets commits on top, so pushing it needs no force. Holds MERGE."""
+    from agent_runner import pr_feedback
     d = M.worktree('merge', branch)
     M.adopt_merge(d)
     g = lambda *a: S.git(*a, cwd=d)  # noqa: E731
@@ -358,10 +373,12 @@ def build(tid: str, branch: str, rec: dict, M) -> tuple[str | None, str, str, st
         fetch(branch)
         base, tip = rev(main_ref(branch)), rev(f'refs/heads/task/{tid}')
         others = bool(set(rec['ids']) - {tid})
-        start = rec['head'] if others else tip
+        started = rec['number'] and not _has(tip, rec['head'])  # F423: afresh, beside what the pull request has
+        start = rec['head'] if others or started else tip
+        there = pr_feedback.remote_tip(rec) if rec['number'] else ''  # F423: what a person pushed to it
         g('checkout', '-q', '--detach', start)
-        for ref, msg in ((tip, M.merge_message(tid, f'task/{tid}')), (base, f'Merge {branch} into {rec["branch"]}')):
-            if not g('merge-base', '--is-ancestor', ref, 'HEAD').returncode:
+        for ref, msg in ((tip, M.merge_message(tid, f'task/{tid}')), (there, f'Merge {rec["branch"]} as it is on GitHub'), (base, f'Merge {branch} into {rec["branch"]}')):
+            if not ref or not g('merge-base', '--is-ancestor', ref, 'HEAD').returncode:
                 continue
             if (files := M.merge_into(d, ref, msg, tid)) is None:
                 return f'git refused to merge {ref[:10]} into {rec["branch"]} (see the merge worktree, {d})', '', '', ''
@@ -538,16 +555,17 @@ def follow(branch: str) -> str:
         return ''
 
 
-def tick(branch: str) -> None:
-    """From the run loop, every POLL s, in a thread of its own."""
+def tick(branch: str, busy: set[str] = frozenset()) -> None:
+    """From the run loop, every POLL s, in a thread of its own. `busy`: the tasks with a session, a queued resume or a
+    merge (F423: their pull requests wait for them)."""
     if not S.C.pr or time.time() - AT[0] < POLL or any(t.is_alive() for t in JOB):
         return
     AT[0] = time.time()
-    JOB[:] = [threading.Thread(target=look, args=(branch,), name='pull requests', daemon=True)]
+    JOB[:] = [threading.Thread(target=look, args=(branch, None, busy), name='pull requests', daemon=True)]
     JOB[0].start()
 
 
-def look(branch: str, gh: ci.Gh | None = None) -> None:
+def look(branch: str, gh: ci.Gh | None = None, busy: set[str] = frozenset()) -> None:
     """One look: main brought up to date, dropped parts taken out, what is due opened, what is merged ticked."""
     gh = gh or ci.gh_in(S.ROOT)
     try:
@@ -561,14 +579,16 @@ def look(branch: str, gh: ci.Gh | None = None) -> None:
         open_due(branch, gh)
         for rec in read():
             if rec['number']:
-                _look_at(rec, branch, gh)
+                _look_at(rec, branch, gh, busy)
     except Exception as e:  # noqa: BLE001 - the next look tries again
         _say('look', f'pull requests: {type(e).__name__}: {e}')
 
 
-def _look_at(rec: dict, branch: str, gh: ci.Gh) -> None:
+def _look_at(rec: dict, branch: str, gh: ci.Gh, busy: set[str] = frozenset()) -> None:
+    from agent_runner import pr_feedback
     repo = slug(S.ROOT, S.C.push_remote or 'origin')
-    r = gh('pr', 'view', str(rec['number']), '--repo', repo, '--json', 'state,mergeCommit,headRefOid,baseRefName')
+    r = gh('pr', 'view', str(rec['number']), '--repo', repo, '--json', 
+           'state,mergeCommit,headRefOid,baseRefName,mergeable,statusCheckRollup')
     got = _json(r)
     if not isinstance(got, dict):
         return _say(rec['key'], f'{rec["key"]}: GitHub did not say what became of pull request #{rec["number"]} ({_why(r)})')
@@ -576,9 +596,9 @@ def _look_at(rec: dict, branch: str, gh: ci.Gh) -> None:
         for x in d:
             if x['branch'] == rec['branch']:
                 x['state'] = got['state']
-    if got['state'] == 'CLOSED':
-        return _say(rec['key'], f'{rec["key"]}: pull request #{rec["number"]} was closed without a merge: {rec["url"]}')
     if got['state'] != 'MERGED':
+        return pr_feedback.look(rec['branch'], got, branch, gh, busy)  # F423
+    if pr_feedback.merged_waits(rec, busy):
         return None
     if got.get('baseRefName') != branch:
         return _say(rec['key'], f'{rec["key"]}: pull request #{rec["number"]} was merged into {got.get("baseRefName")}, not {branch}')
