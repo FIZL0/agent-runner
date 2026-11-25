@@ -254,7 +254,7 @@ const relWaits=r=>((r.waits||[]).length?`waits for ${r.waits.length}`:r.words)+(
 function releaseRow(q,list='release'){
   const r=q.release, in_='wait:'+q.id;
   const one=w=>{const t=(S.snap.queue||[]).concat(S.snap.shelved||[]).find(x=>x.id===w.id);
-    return `<div class="srow" data-k="${esc(in_)}:${esc(w.id)}">${taskRow(t||{...w,state:'open'},(t||w).title||w.id,taskBtns(t||w).replace('data-k="acts:',`data-k="acts:${esc(in_)}:`),in_)}</div>`};
+    return `<div class="srow" data-k="${esc(in_)}:${esc(w.id)}">${taskRow(t||{...w,state:'open'},(t||w).title||w.id,t?taskBtns(t).replace('data-k="acts:',`data-k="acts:${esc(in_)}:`):'',in_)}</div>`};
   return taskRow(q,r.title||q.title||q.id,taskBtns(q,relDrop(q)),list,(r.waits||[]).length?`<div class="waits">${r.waits.map(one).join('')}</div>`:'');
 }
 const releaseCard=(q,list)=>card(releaseRow(q,list),'',`data-k="task:${esc(q.id)}"`);

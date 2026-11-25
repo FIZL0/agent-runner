@@ -683,7 +683,6 @@ def test_plan_lists_f426b(tmp: Path) -> None:
     plan = page.split('const planField=', 1)[1].split('\n', 1)[0]
     check('<div class="planq">' in plan and re.search(r'\.planq\{position:sticky;top:0;[^}]*background:var\(--bg\)', page), 'the search sticks', plan)
     check('`${planField()}<div class="col">' in page, 'outside the grid, where a sticky row would go with its own cell')
-    check(".find(x=>x.id===v)||{id:v,title:''}" in page, 'Chat works on a task the snapshot lacks')
     check('openTask(x.dataset.task,x.dataset.list)' in page, 'a press names its list')
     if not shutil.which('node'):
         print('  (no node here: the Plan lists script test is skipped)')
@@ -719,7 +718,7 @@ def test_plan_lists_f426b(tmp: Path) -> None:
         check(f'data-task="{t}" data-list="wait:V5"' in o['rel'][2], f'it lists {t}')
     check('waits for 3 (not B9)' in o['rel'][2], 'its line is the count, as the list names them')
     eq(o['waits'][0], ['release V5', 'wait:V5 B2', 'parked F83'], 'and its tasks open, one at a time; a task is open in one list')
-    check(['acts:wait:V5:F7', ['Chat']] in o['unseen'], 'one the snapshot does not have: Chat', o['unseen'])
+    check(not any('F7' in k for k, _ in o['unseen']), 'one the snapshot does not have: its text alone', o['unseen'])
     check('sure' in o['waits'][1], 'its question is asked there')
     eq(len(o['waits'][1]), len(set(o['waits'][1])), 'no key is drawn twice')
     eq(o['other'][0], ['release V6', 'parked F83'], 'another release shuts the first')
