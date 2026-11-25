@@ -444,6 +444,8 @@ def test_off_page_for_real(tmp: Path) -> None:
             r = row()
             eq((r['state'], r['page'], r['slots']), ('off', 'p/proj/', None), 'the list says off, and that the page answers (the off page turns into it)')
             check(not is_home(), 'the full run page at /p/proj/')
+            src = (Path(H.__file__).parent / 'page' / '050-home.js').read_text(encoding='utf-8')
+            check('&&!p.page' in src.split('function goDown(')[1].split('\n}')[0], 'down from All projects: no reload while its page is served')
             snap = json.loads(get(page.replace('/?', '/snapshot?'))[1])
             eq((snap.get('up'), run_info(root)['up']), (False, False), 'and no run is up')
             got = H.run_action(root, 'start')
