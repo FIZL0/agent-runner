@@ -127,6 +127,35 @@ def test_same(tmp: Path):
     has(t, r'seen again on a phone', 'and its note is kept')
 
 
+def test_same_after(tmp: Path):
+    print('a line both sides have is left as it is, though it names a clashing id')
+    repo, _, other = make(tmp / 'sameafter')
+    task(repo, 'B1', MINE, AFTER)
+    pushed(other, PUSHED, AFTER)
+    t = build(repo)
+    eq(ids(t), ['B1', 'B2', 'B3', 'B4', 'B5'], 'it is one task, and only the clash is renumbered')
+    has(t, r'after: B3', 'as pushed')
+    repo, _, other = make(tmp / 'dash')
+    task(repo, 'B1', '- [ ] **B3** — mine')
+    pushed(other, '- [ ] **B3** — theirs')
+    eq(ids(build(repo)), ['B1', 'B2', 'B3', 'B4'], 'words that begin with a dash are told apart too')
+
+
+def test_own(tmp: Path):
+    print('the task of the merge itself keeps its id, and the log says so')
+    repo, _, other = make(tmp / 'own')
+    add(repo, MINE)
+    task(repo, 'B3')
+    pushed(other, PUSHED)
+    d = R.worktree('merge', 'main')
+    git(d, 'checkout', '-q', '--detach', 'task/B3')
+    head = git(d, 'rev-parse', 'HEAD')
+    git(repo, 'fetch', '-q')
+    M.renumber_upstream(d, 'refs/remotes/origin/main', 'B3')
+    eq(git(d, 'rev-parse', 'HEAD'), head, 'nothing is renumbered')
+    has(run_log(repo), r'B3: .*origin/main uses B3 for another task, but it is under way', 'the log says so')
+
+
 def test_begun(tmp: Path):
     print('a clashing task with a branch of its own keeps its id')
     repo, _, other = make(tmp / 'begun')
@@ -135,7 +164,7 @@ def test_begun(tmp: Path):
     git(repo, 'branch', 'task/B3')
     pushed(other, PUSHED)
     eq(ids(build(repo)), ['B1', 'B2', 'B3', 'B3'], 'it is not renumbered under its session')
-    has(run_log(repo), r'B1: .*origin/main uses B3 for another task, but it has a branch', 'and the log says so')
+    has(run_log(repo), r'B1: .*origin/main uses B3 for another task, but it is under way', 'and the log says so')
 
 
 def test_push(tmp: Path):
@@ -171,5 +200,5 @@ def test_push(tmp: Path):
 
 if __name__ == '__main__':
     tmp = Path(tempfile.mkdtemp(prefix='agent-runner-test-upstream-ids-'))
-    sys.exit(report([lambda f=f: f(tmp) for f in (test_task_branch, test_plan_commit, test_same, test_begun,
-                                                  test_push)]))
+    sys.exit(report([lambda f=f: f(tmp) for f in (test_task_branch, test_plan_commit, test_same, test_same_after,
+                                                  test_own, test_begun, test_push)]))

@@ -153,11 +153,15 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
     doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]
                and k not in folds]
     if remote:
-        said = lambda rest: P.SEG.split(rest)[0].rstrip()
+        def said(line):  # its own words, without the notes and BLOCKED after them
+            return next((s.strip() for s in P.SEG.split(line.partition('**')[2].partition('**')[2]) if s.strip()), '')
+
+        if tid in theirs and tid not in old and tid in ours and theirs[tid] != ours[tid]:
+            doubled.append(tid)  # the task of this merge: logged below
         doubled = [k for k in doubled if said(theirs[k]) != said(ours[k])]
-        if begun := [k for k in doubled if any(not git('rev-parse', '-q', '--verify', f'refs/heads/{b}/{k}',
+        if begun := [k for k in doubled if k == tid or any(not git('rev-parse', '-q', '--verify', f'refs/heads/{b}/{k}',
                                                        cwd=cwd).returncode for b in ('task', 'wip'))]:
-            log(f'{tid}: {onto} uses {", ".join(begun)} for another task, but it has a branch here, so it is not '
+            log(f'{tid}: {onto} uses {", ".join(begun)} for another task, but it is under way here, so it is not '
                 'renumbered: two tasks now have that id')
             doubled = [k for k in doubled if k not in begun]
     if not doubled and not folds:
@@ -177,6 +181,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
         g('read-tree', ref)
         for f in files:
             was, now = set(show(base, f)), show(ref, f)
+            if remote:  # a line both sides have stays one line
+                was |= set(show(onto, f))
             if not now:
                 continue
             if f == files[0] and folds:
