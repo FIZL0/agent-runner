@@ -73,7 +73,7 @@ DRIVER = r"""<script>
     const kb = on => { app.classList.toggle('kb', on); app.style.height = on ? '470px' : '' };
     for (const k of ['real', 'long']) for (const up of [false, true]) {
       put(FAKE.asks[k]); kb(up); await wait(); const o = out[k + (up ? 'Kb' : '')] = {card: view()};
-      const c0 = one('#dock .qcard'); c0.scrollTop = 60; c0.dispatchEvent(new Event('scroll')); /* virtual time draws no frame, so the browser sends none */ FD.live = {...FD.live, status: 'busy', since: 1}; render(true); await wait(); kb(up); o.kept = [c0 !== one('#dock .qcard'), one('#dock .qcard').scrollTop];
+      const c0 = one('#dock .qcard'); c0.scrollTop = 40; c0.dispatchEvent(new Event('scroll')); /* virtual time draws no frame, so the browser sends none */ FD.live = {...FD.live, status: 'busy', since: 1}; render(true); await wait(); kb(up); o.kept = [c0 !== one('#dock .qcard'), one('#dock .qcard').scrollTop];
       if (SHOT === k + (up ? 'Kb' : '')) return;
       one('#dock [data-qmin]').click(); await wait(); kb(up); await wait(); o.min = view();
       QN.back = 0; one('#dock [data-qshow]').click(); await wait(); QN.back = 0;
@@ -125,7 +125,7 @@ def test_page(tmp: Path) -> None:
         eq((c['reach'], c['side'], c['whole'], c['words'], c['scrolls'], c['inView']), ([True] * 4, [True] * 3, True, True, True, True),
            f'{k}: every button can be reached, all the words are drawn by scrolling, nothing sideways, between the top bar and the box')
         check(c['high'] <= c['app'] * (.4 if kb else .45) + 1, f'{k}: the card is bounded', c['high'])
-        eq(v['kept'], [True, 60], f'{k}: a redraw keeps its scroll place')
+        eq(v['kept'], [True, 40], f'{k}: a redraw keeps its scroll place')
         m, a = v['min'], v['mark']
         eq((m['n'], m['reach'], m['side'], m['inView'], m['high'] < 60), (['Show question'], [True], [True] * 3, True, True), f'{k}: minimized, one line')
         eq((a['n'], a['reach'], a['side'], a['whole'], a['inView']), (['Back to the question'], [True], [True] * 3, True, True), f'{k}: marked')
