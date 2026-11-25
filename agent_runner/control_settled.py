@@ -101,9 +101,28 @@ def filed(c, ids, who: dict | None = None) -> None:
         who = author(c) if who is None else who
         if sid := who['sid']:
             f = filed_file(c, sid)
-            save(f, {'n': who['n'], 'sid': sid, 'ids': list(dict.fromkeys([*filed_ids(c, sid), *(x for x in ids if x)]))})
+            save(f, {**read_json(f, {}), 'n': who['n'], 'sid': sid,
+                     'ids': list(dict.fromkeys([*filed_ids(c, sid), *(x for x in ids if x)]))})
     except (OSError, AttributeError):
         pass
+
+
+def filed_question(c, sid: str, tid: str, ask_id: str, what: str) -> None:
+    """F192a3: the item `tid`, filed by session `sid` (`filed`, before this), is its question `ask_id`
+    (`chat_question.ask`), which reads `what` under Needs you (`plan.asks`)."""
+    try:
+        f = filed_file(c, sid)
+        d = read_json(f, {})
+        save(f, {**d, 'asked': {**d.get('asked', {}), tid: {'id': ask_id, 'what': what}}})
+    except OSError:
+        pass
+
+
+def filed_questions(c, sid: str) -> dict[str, dict]:
+    """F192a3: {item: {'id', 'what'}} of the questions of session `sid` filed under Needs you, the oldest first."""
+    ids = filed_ids(c, sid)
+    asked = read_json(filed_file(c, sid), {}).get('asked', {}) if ids else {}
+    return {t: asked[t] for t in ids if t in asked}
 
 
 def filed_file(c, sid: str) -> Path:

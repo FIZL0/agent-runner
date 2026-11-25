@@ -24,6 +24,32 @@ def ask_of(text: str, uuid: str = '') -> dict | None:
     return {'id': uuid or hashlib.sha256(q.encode('utf-8')).hexdigest()[:16], 'question': question, 'options': options}
 
 
+def needs(sid: str) -> dict[str, str]:
+    """F192a3: {question id: the item that still asks it under Needs you (shelved too), '' once it does not} of the
+    questions of session `sid` the run filed there. An item that asks something else by now is not that question's.
+    With a plan that does not read, every item waits: `ui_model.question_answer` looks again."""
+    from agent_runner import control_settled, plan as P, state
+    if not (filed := control_settled.filed_questions(state.C, sid)):
+        return {}
+    try:
+        waits = {a[1]: a[3] for a in P.asks(state.C.todo, all=True) if a[0] == 'DECIDE'}
+    except (SystemExit, OSError):
+        waits = {t: q['what'] for t, q in filed.items()}
+    out: dict[str, str] = {}
+    for tid, q in filed.items():
+        out[q['id']] = out.get(q['id']) or (tid if waits.get(tid) == q['what'] else '')
+    return out
+
+
+def joined(ask: dict | None, sid: str) -> dict:
+    """F192a3: what /live says of `ask` (`ask` of session `sid`): 'ask' with 'need', the item it is under Needs you, and
+    None once that was answered there; 'answered', the ids of the session's questions that were."""
+    ids = needs(sid)
+    if ask and ask['id'] in ids:
+        ask = {**ask, 'need': ids[ask['id']]} if ids[ask['id']] else None
+    return {'ask': ask, 'answered': [i for i, tid in ids.items() if not tid]}
+
+
 def ask(rows) -> dict | None:
     """`ask_of` the last answer in transcript entries `rows`; None when the person has spoken since, or Claude's turn
     goes on after it (a tool call)."""

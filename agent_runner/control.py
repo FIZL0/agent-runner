@@ -941,7 +941,13 @@ def control_live_numbers() -> list[int]:
 def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> str:
     """File control session `n`'s open question under Needs you: a task blocked `DECIDE: <q> <link>` (the link
     after the bracket of options `q` may end with, so its options are buttons: F181d), committed
-    as `watch_ci` commits its tasks (MERGE free, TODO.md clean). Its id, or '' when it could not be filed now."""
+    as `watch_ci` commits its tasks (MERGE free, TODO.md clean). Its id, or '' when it could not be filed now.
+    F192a3: the chat's question card knows its item (`control_settled.filed_question`); a question that still waits
+    there (the chat was resumed and left) is not filed again."""
+    from agent_runner import chat_question
+    ask = chat_question.ask(entries(sid, skip_bad=True))
+    if ask and (tid := chat_question.needs(sid).get(ask['id'])):
+        return tid
     if not MERGE.acquire(blocking=False):
         return ''
     hold = ExitStack()
@@ -962,6 +968,8 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
                 git('checkout', '-q', '--', rel)
             return ''
         control_settled.filed(C, [tid], {'n': n, 'sid': sid})  # F209a: reopened, it is about its question
+        if what := ask and next((a[3] for a in P.asks(ROOT / rel, all=True) if a[1] == tid), ''):
+            control_settled.filed_question(C, sid, tid, ask['id'], what)
         return tid
     finally:
         hold.close()
