@@ -65,7 +65,7 @@ function pressHTML(t){
 }
 function pressSaid(t){
   const s=pressOf(t).said;
-  return s?`<div data-k="pressed:${esc(toolKey(t))}" role="status"><div class="small tooltext${s.ok?'':' v-bad'}">${esc(s.out)}${s.https?` <a href="${esc(s.https)}">${esc(s.https.split('?')[0])}</a>`:''}</div>${s.lines.length?`<pre class="tasktext">${esc(s.lines.join('\n'))}</pre>`:''}</div>`:'';
+  return s?`<div class="pressed" data-k="pressed:${esc(toolKey(t))}" role="status"><div class="small tooltext${s.ok?'':' v-bad'}">${esc(s.out)}${s.https?` <a href="${esc(s.https)}">${esc(s.https.split('?')[0])}</a>`:''}</div>${s.lines.length?`<pre class="tasktext">${esc(s.lines.join('\n'))}</pre>`:''}</div>`:'';
 }
 /* the web pages of the devices and tools a Needs you item's task needs: Use, or the way to the card while it is not running */
 function needDevices(n){

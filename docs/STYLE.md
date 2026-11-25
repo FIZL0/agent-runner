@@ -118,7 +118,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Run card** (`controlsCard()`, `.btns.tight`, `CTL_ICON`): order top to bottom: state line, notices, the run's controls, then the slot rows, each under a line, so a run control never reads as a slot's own button. Each run control has an icon beside its word, never an icon alone: 15px, decorative (`aria-hidden`). A new control on the card gets an entry in `CTL_ICON`.
 - **Device card** (`toolCard()`, `toolPage()`): a web page's state in a word with its colour on the address line, a
   failed one's last output lines in `.tasktext`, Start or Use is the `.pri` with Stop beside it; Test connection, Edit… and Remove in a
-  row of their own below. The same web page part stands on a runner.toml tool's card when it has a `page`.
+  row of their own below. The same web page part stands on a runner.toml tool's card when it has a `page`. The tool's own buttons (`pressHTML()`, `pressSaid()`, `.toolbtns`) are plain buttons in a row of their own after the web page part, on a device's and a runner.toml tool's card; never `.pri`. Labels wrap in the button, never cut or sideways. A question (its confirm, or "LABEL is held by HOLDER." with "Use it anyway") stands in the buttons' place: Yes is `.bad`, then No. Yes within `QUESTION_AGAIN` (500 ms) of the question does nothing, as a double tap. Press state is per tool (`S.press`), so one tool's long command holds no other. The answer (words, a failure in `--bad`, last lines in `.tasktext`) is the last thing on the card until that tool's next press. The device sheet's buttons come one group each ("Button N", Remove, then Label, Command, Question), with Add a button below, all saved with Save.
 - **Walkthrough** (`.walk`, `walkDraw()`, `walkStep()`): one card at a time (`.walkcard`), only on the example project's
   page (`walkNow()` says when), never in a chat or Talk. Its row of its own under the view covers nothing, and goes while
   the keyboard is open. A 2px `--accent` ring (`[data-walkat]`) is on the real thing it points at. Back, Next and Skip
@@ -161,7 +161,7 @@ that Home, so one started before a switch to another project is still followed t
 failure brings Retry there too.
 
 A secret never goes through `outbox()`, which the browser keeps: a device's change goes straight to the run
-(`toolPost()`; its secret's field is emptied when sent), and an input goes straight to the run too (`giveSend()`), a text or link as well. A refusal or a
+(`toolPost()`; its secret's field is emptied when sent), a tool button's press does too (`toolPress()`, never through `outbox()`, as a resend could run its command twice), and an input goes straight to the run too (`giveSend()`), a text or link as well. A refusal or a
 question keeps what was typed, the secret too, while the sheet is open; a secret is forgotten when the sheet closes
 (`giveForget()`), a text or link is kept. Once sent, all its fields and words go. No value goes in the markup, and a
 saved secret is shown only as `set, changed <date>`.
