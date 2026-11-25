@@ -42,7 +42,13 @@ function loginNote(at,key,names){
 function settingLogins(k,side){
   if(k.table!=='models')return '';
   const names=(S.set.providers||[]).map(p=>p.name), vals=[draftValue(k,{text:settingNow(k,side,true)}),...['device','project'].filter(s=>s!==side).map(s=>(S.draft||{})[setField(settingId(k),s)]).filter(Boolean).map(d=>draftValue(k,d))];
-  return loginNote(settingId(k),k.key,vals.filter(r=>!r.err).flatMap(r=>modelProviders(k.key,k.key==='kinds'?{...k.default,...r.v}:r.v,names)));
+  return loginNote(settingId(k),k.key,vals.filter(r=>!r.err).flatMap(r=>modelProviders(k.key,k.key==='kinds'?{...k.default,...r.v}:r.v,names,baseProvider())));
+}
+/* F443: the [models] provider a bare model name runs on, its change not saved yet included */
+function baseProvider(){
+  const k=settingOf('models.provider');if(!k)return 'claude';
+  const r=draftValue(k,{text:settingNow(k,settingSide(k),true)});
+  return !r.err&&typeof r.v==='string'&&r.v?r.v:'claude';
 }
 const setUnset=f=>!!((S.draft||{})[f]||{}).unset;
 /* F174: its two controls; on its row a change goes to the draft. F422: with `on`, the count shows while the switch is on */
@@ -84,7 +90,7 @@ function pickAgent(el){
 /* the providers stand beside the program, and their models are picked elsewhere */
 function providersHTML(d){
   const ps=d&&d.providers||[];if(!ps.length)return '';
-  return `<div class="sec">Providers<span class="ln"></span></div><div class="small">Models of other providers run in the harness loop. A provider is chosen per role in [models], not here.</div>
+  return `<div class="sec">Providers<span class="ln"></span></div><div class="small">Models of other providers run in the harness loop. Provider in Models picks one for every model; a model set as provider:model keeps its own.</div>
     ${loginsNow(d,S.logins).map(p=>`<div class="row setlogin" data-k="prov:${esc(p.name)}"><div class="grow"><div class="small setpath"><b>${esc(p.name)}</b> · ${p.state==='unchecked'?esc(p.says):esc(LOGIN_SAYS[p.state]||p.state)}${p.state==='out'?p.terminal?'':`: <span class="setkey">${esc(p.cmd)}</span>`:p.state==='in'?`: ${esc(p.says)}`:''}</div>${loginGoing(p)}</div>${loginBtn(p)}</div>`).join('')}
     <div class="btns"><button class="btn" data-setmodels>Show the model settings</button></div>`;
 }
@@ -151,7 +157,7 @@ function kindsRow(g,k){
   const open=!!S.setOpen['kinds:'+g.id], now=kindsModel(g.kinds,{...k.default,...kindsValue(k)}), ms=[...new Set(['opus','sonnet','haiku',...(now?[now]:[])])];
   return `<div class="srow" data-k="setkinds:${g.id}"><div class="row setline"><button class="fold setname" data-setopen="kinds:${g.id}" aria-expanded="${open}"><span class="grow"><b>${g.name}</b><span class="small">${g.desc}</span></span></button>
     <select class="fld setpick" data-kinds="${g.id}" aria-label="${g.name}">${now?'':'<option value="" selected>Mixed</option>'}${ms.map(m=>`<option ${m===now?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
-    ${settingBusy('models.kinds')}${kindsNote(g,k)}${loginNote('kinds:'+g.id,'kinds',g.kinds.flatMap(x=>modelProviders('kinds',[{...k.default,...kindsValue(k)}[x]],(S.set.providers||[]).map(p=>p.name))))}
+    ${settingBusy('models.kinds')}${kindsNote(g,k)}${loginNote('kinds:'+g.id,'kinds',g.kinds.flatMap(x=>modelProviders('kinds',[{...k.default,...kindsValue(k)}[x]],(S.set.providers||[]).map(p=>p.name),baseProvider())))}
     ${k.has_device?`<div class="small">${k.has_project?'This device overrides what everyone has':'Saved on this device only'}</div>`:''}
     ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies now.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`):''}</div>`;
 }
