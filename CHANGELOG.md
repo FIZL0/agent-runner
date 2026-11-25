@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: on the run page, a History view after Plan (the NAV row's History): a Find in history field, Landed (the newest landed tasks), Releases (past ones) and the Run log, with a landed or release row opening to What changed, Report a problem and Chat last (F426c).
 - Fixed: a task on a claude model in a project whose roles and kinds all name another provider, on a machine with Claude Code, no longer starts past `[run] session_max` or `weekly_max`, or while the Claude API is unreachable; past a cap it alone waits (or starts on the first free `[models] fallback` provider), other tasks start as before, and when nothing else can start the alarm names the held task and says it cannot start until the reset. `force` lifts the cap (B791).
 ## 0.67.0 (2026-11-24)
 

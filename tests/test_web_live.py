@@ -250,7 +250,7 @@ const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: 
 const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, newsDraw = () => {}, loginDraw = () => {}, walkDraw = () => {}, setBarDraw = () => {}, side = () => {}, rowSettle = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
-const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, settingsDraw = (el, h) => setHTML(el, h), planDraw = settingsDraw, projectsHTML = () => VIEW;
+const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, historyHTML = () => VIEW, conceptsHTML = () => VIEW, toolsHTML = () => VIEW, settingsHTML = () => VIEW, settingsDraw = (el, h) => setHTML(el, h), planDraw = settingsDraw, histDraw = settingsDraw, projectsHTML = () => VIEW;
 const DRAFT_KEY = k => k, toast = () => {}, open = n => { S.thread = n; render(true) }, outboxed = [];
 const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, keepPlace = () => {}, settingsTrip = () => {};
 const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };

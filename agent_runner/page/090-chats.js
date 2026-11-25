@@ -526,7 +526,7 @@ function newReleaseCard(rows=''){
    release, then the run log. C50: no Needs you here; Home has it */
 const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};
 function statusHTML(){
-  const log=(S.snap.log||[]).slice().reverse(), use=S.snap.usage||[], late=S.snap.lately||[];
+  const log=(S.snap.log||[]).slice().reverse(), use=S.snap.usage||[], late=(S.snap.lately||[]).slice(0,6);
   return `<div class="col">${ttydLine()}
     <div class="sec">Run<span class="ln"></span></div>${controlsCard()}
     <div class="sec">Usage<span class="ln"></span></div>${use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):emptyCard('No usage read yet.')}

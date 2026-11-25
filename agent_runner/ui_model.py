@@ -32,7 +32,9 @@ copy, and the actions they share.
     terminal_mode  how a session's terminal shows: 'ttyd', or 'install' (no ttyd yet)
     run       paused, stopping, forced, power, and `state`: the state pill's words (F124: `run_state`)
     usage     F124: the account's usage, [{'name': 'session'|'week', 'pct'}]
-    lately    F124: what landed lately, newest first, [{'at', 'text'}], the words `status` lists under "lately"
+    lately    F124: what landed lately, newest first, the words `status` lists under "lately": [{'at', 'text'}]; F426c: 'id'
+              (its task, '' for none), 'kind' ('landed', 'part', else '') and, for those two, 'title'
+    past_releases  F426c: the releases that landed, newest first, [{'id', 'title', 'at'}]; [] with `[run] releases` off
     fixups    F124: what the Fix up controls would work on (`fixups`): {'resume', 'unclaim', 'wip': [{'id', 'label'}]}
     claude_login  F126a: the Claude login warning (`watch.claude_login_line`), the page's banner, else ''
     no_settings  F178: the warning when no settings file was found (`no_settings`), else ''
