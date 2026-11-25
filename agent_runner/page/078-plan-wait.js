@@ -82,7 +82,8 @@ function waitEnd(){
 function waitDone(){
   const id=S.planWait, q=waitRows(S.snap.queue||[]).find(x=>x.id===id);if(!q)return;
   const open=waitKnown().map(x=>x.id), ids=S.waitPicks.filter(t=>open.includes(t));  // one that landed meanwhile is waited for no more
-  if(!waitSame(ids,waitNow(q))){
+  const all=!ids.length&&/^all:/.test(q.after_title||'');  // after: all, with nothing above it to tick: cleared too
+  if(all||!waitSame(ids,waitNow(q))){
     S.planWait='';S.waitPicks=[];  // outbox() draws
     for(const x of S.ob.filter(x=>x.waitset===id&&x.state==='failed'))obChange(b=>obDrop(b,x.cid));  // a refused one this replaces
     outbox('set_waits',{tid:id,ids},{waitset:id,say:ids.length?`${id} waits for ${ids.join(', ')}`:`${id} waits for nothing`});

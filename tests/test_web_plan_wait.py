@@ -49,6 +49,7 @@ DRIVER = r"""<script>
   const out = {}, wait = ms => new Promise(r => setTimeout(r, ms || 30)), $$ = s => [...document.querySelectorAll('#body ' + s)], one = s => document.querySelector(s);
   try {
     document.getElementById('app').style.width = '390px';
+    const still = () => document.getAnimations().forEach(a => { try { a.finish() } catch (e) {} });  // a measure half way through a move is the load's
     const fresh = () => { takeSnap(JSON.parse(JSON.stringify(FAKE))) };
     const menu = id => { one(`[data-planmenu="${id}"]`).click(); return [...one('.qacts').children].map(b => b.getAttribute('aria-label')) };
     const start = id => { menu(id); const b = one('[data-waitset]'); if (b) b.click(); return !!b };
@@ -59,13 +60,13 @@ DRIVER = r"""<script>
     fresh(); goView('plan'); await wait();
     out.menus = ['F1', 'D6', 'V9', 'next-release'].map(menu); esc();
     out.noDots = ['F3', 'P8'].map(id => !one(`[data-planmenu="${id}"]`));
-    const y0 = one('[data-k="task:F1"]').getBoundingClientRect().top;
-    start('F1'); await wait(400);
+    still(); const y0 = one('[data-k="task:F1"]').getBoundingClientRect().top;
+    start('F1'); await wait(400); still();
     out.start = [bar(), ticks(), !!one('.card.waitset [data-waitme="F1"]'), document.activeElement.dataset.waitme, $$(':is(.grip,.qmenu,.qacts,[data-task])').length, Math.round(one('[data-k="task:F1"]').getBoundingClientRect().top - y0)];
     out.off = $$('[aria-disabled]').map(e => [e.dataset.waitpick, words(e.dataset.waitpick)]);
     out.ph = one('[data-k="rel:next"]').querySelectorAll('button').length;
     out.roles = [...new Set($$('[data-waitpick]').map(e => e.nodeName + e.getAttribute('role')))];
-    document.getAnimations().forEach(a => { try { a.finish() } catch (e) {} });
+    still();
     const b = one('#waitbar').getBoundingClientRect(), app = document.getElementById('app').getBoundingClientRect();
     out.look = [document.getElementById('body').scrollWidth <= document.getElementById('body').clientWidth, b.width <= 390 && b.bottom <= app.bottom + 1, b.height < 80, [...document.querySelectorAll('#waitbar .btn')].every(x => x.offsetHeight >= 44),
       $$('[data-waitpick]').every(e => e.getBoundingClientRect().right <= 390 && e.querySelector('.waittick').getBoundingClientRect().width >= 20), getComputedStyle(pick('F4').closest('.card')).opacity];
@@ -85,6 +86,7 @@ DRIVER = r"""<script>
     refuse = 'F1 has started: it runs'; start('F1'); tap('B2'); done(); out.hope = words('F1'); await wait(100); S.obOpen = false; render(true);
     const card = () => $$('.obstand.failed')[0]; out.refused = [words('F1'), card() && card().innerText.includes('F1 has started: it runs'), !!card() && !!card().querySelector('[data-obretry]')];
     refuse = ''; card().querySelector('[data-obretry]').click(); out.again = words('F1'); await wait(100); out.retried = [sets().pop(), !card()];
+    Object.assign(FAKE.queue[1], {after: [], after_title: 'all: everything above it'}); fresh(); start('B2'); done(); await wait(); out.all = sets().pop();
     start('F1'); FAKE.queue[0].menu = []; fresh(); await wait(); out.started = [bar(), $$('[data-waitpick]').length, one('#toast').textContent];
   } catch (e) { out.error = String(e.stack || e) }
   const pre = document.createElement('pre'); pre.id = 'out'; pre.textContent = JSON.stringify(out); document.body.appendChild(pre);
@@ -142,6 +144,7 @@ def test_page(tmp: Path) -> None:
     eq((o['clear'], o['cleared']), ('Ready to start when a slot is free', {'tid': 'F1', 'ids': []}), 'all unticked: cleared')
     eq((o['hope'], o['refused']), ('Waits for B2 Changed', ['Ready to start when a slot is free', True, True]), 'refused: taken back, the reason and Retry')
     eq((o['again'], o['retried']), ('Waits for B2 Changed', [{'tid': 'F1', 'ids': ['B2']}, True]), 'Retry sends it again')
+    eq(o['all'], {'tid': 'B2', 'ids': []}, 'a wait for all with nothing to tick is cleared')
     eq(o['started'][:2], ['', 0], 'a task that started meanwhile is set no more')
     check('F1 has started' in o['started'][2], 'and it says so', o['started'][2])
 
