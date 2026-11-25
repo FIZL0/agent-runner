@@ -65,7 +65,7 @@ function render(force){
   feedDraw(n);  // F114
   if(n){const agent=isAgent(n);h=$('body').hidden?'':feedHTML(n);
     dock=(isNew(n)?'':feedEnd(n)+sessRow(n)+keysRow())+box(agent?`Message ${threadTitle(n)}`:isNew(n)?newPh(S.ctx):`Reply to ${threadTitle(n)}`,
-      (agent?'Goes straight to this agent, between its steps. ':'')+keysLine())}  // B120: the keys, from BOX_KEYS
+      (agent?'Goes straight to this agent, between its steps. ':'')+keysLine(!!modelOf(n)))}  // B120: the keys, from BOX_KEYS
   else if(S.view==='talk')h=talkHTML();
   else h={home:homeHTML,status:statusHTML,plan:planHTML,concepts:conceptsHTML,tools:toolsHTML,settings:settingsHTML,projects:projectsHTML}[S.view]();
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;

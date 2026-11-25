@@ -28,6 +28,7 @@ let sheetBack=null;
 Object.assign(SHEETS,{
   sesswork(){const e=feedOf(FD.n).filter(x=>x.kind==='tool').pop();
     return `<h2>Working</h2>${e?`<div class="small">${esc(e.text)}</div>`:''}<div class="btns"><button class="btn" data-halt="${esc(FD.n)}">Stop</button></div>`},
+  sessmodel(){return `<h2>Model</h2><div class="small">This chat runs on ${esc(modelOf(FD.n))}. The Chats setting under Models names it for new chats. It runs on this machine only, with no link in your apps and no slash commands.</div>`},
   sessmode(){const f=FD.foot||{}, now=f.mode||(FD.live||{}).mode;
     return `<h2>Mode</h2>${FEED_MODES.map(([k,l])=>`<button class="it" data-mode="${k}" aria-pressed="${k===now}"><span>${esc(l)}</span>${k===now?I.check:''}</button>`).join('')}${f.status&&f.status.length?`<div class="sec">Status line<span class="ln"></span></div><pre class="out">${esc(f.status.join('\n'))}</pre>`:''}`},
   sessshells(){const ts=sessTasks('shell');

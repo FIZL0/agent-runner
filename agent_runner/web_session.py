@@ -69,9 +69,18 @@ def resumable(name: str) -> str:
         return ''
 
 
+def why_not_resumed(sid: str) -> str:
+    """F406g: why conversation `sid` cannot come up again though it is kept ('' when it can)."""
+    try:
+        from agent_runner.control_harness import cannot_resume
+        return cannot_resume(sid) if sid else ''
+    except Exception:  # noqa: BLE001 - settings that cannot be read are said elsewhere
+        return ''
+
+
 def no_session(name: str) -> dict:
     """F114: why session `name` has no terminal to show (`mode` 'none'): `live` (it runs), its claude.ai/code `link`
-    and whether it can be resumed."""
+    whether it can be resumed, and `why` not (F406g)."""
     if not re.fullmatch(r'[cs]\d+', name):
         return {'ok': False, 'mode': 'none', 'live': False, 'out': f'{name} is not a session.', 'link': '', 'resume': False}
     live, sid = session_live(name), resumable(name)
@@ -83,8 +92,9 @@ def no_session(name: str) -> dict:
         out = f'{name} is up, but there is no terminal to attach to. If it just started, it comes in a moment.'
     else:
         out = f'{name} is not up, so there is no session to show.'
+    why = why_not_resumed(sid)
     link = U._bridge_link(sid or U.session_sid(name))
-    return {'ok': False, 'mode': 'none', 'live': live, 'out': out, 'link': link, 'resume': bool(sid) and not live}
+    return {'ok': False, 'mode': 'none', 'live': live, 'out': out, 'link': link, 'resume': bool(sid) and not live and not why, 'why': why}
 
 
 def resume_chat(chat: str) -> dict:
@@ -96,6 +106,8 @@ def resume_chat(chat: str) -> dict:
         return {'ok': True, 'code': 0, 'out': f'{chat} is up already', 'argv': [], 'name': chat}
     if not (sid := resumable(chat)):
         return {**bad, 'out': f'{chat} has no conversation left to resume'}
+    if why := why_not_resumed(sid):
+        return {**bad, 'code': 1, 'out': f'{chat} was not resumed. {why}'}
     from agent_runner.sched import agent_held
     if held := agent_held():  # B764c
         return {**bad, 'code': 1, 'out': f'{chat} was not resumed: {held}'}

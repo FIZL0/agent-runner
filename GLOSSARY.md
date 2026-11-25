@@ -214,7 +214,7 @@ _In code_: session_now.force_send, chat_to (force), .send.force
 _Avoid_: interrupt and send, resend
 
 **Session chips**:
-The row of chips above a chat's message box that holds the lines Claude Code draws under its prompt, which the frame hides: Working, the mode, N shells, N agents, Update. Each opens a sheet.
+The row of chips above a chat's message box that holds the lines Claude Code draws under its prompt, which the frame hides: Working, the mode, N shells, N agents, Update. Each opens a sheet. On a chat on the harness loop the row holds only Working and the model (`Codex · gpt-5.6-sol`, sheet `sessmodel`).
 _Said_: chips
 _On screen_: Working, Update, 2 shells
 _In code_: sessionChips, .schips, session_now.py

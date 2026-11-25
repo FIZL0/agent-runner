@@ -1945,6 +1945,19 @@ runner.local.toml, the notes dir and `take` worktrees) may be edited. publish_pa
 per session and name. No Remote Control, so no control server, push, Artifact or Monitor; pages go through publish-page,
 and `plan concept --page` takes `/concept/ID` for one with no claude.ai link.
 
+In the run app a chat on the harness loop opens as a Claude Code one does: one frame with its terminal, and a chip row that
+holds only Working and the model (`Codex · gpt-5.6-sol`). Stop and Force send send Escape, never Ctrl-C; Force send with no
+text sends what is queued. While it runs, `<notes>/SID.now` holds JSON (pid, sessionId, status busy or idle, statusUpdatedAt,
+startedAt, queued); it is removed at exit, and `/live/cN` reads it as `status`, `since`, `queued` and `harness: true`.
+`<notes>/SID.model` holds the model it runs on, written at start and after a fallback switch. In the snapshot the chat's row
+has `model` (the provider's name and model, only for a harness loop chat), and the snapshot's `chat_model` is what a new chat
+runs on (`''` on Claude Code). The new chat card says "The chat starts with your first message, on Codex · …". The read tool
+shows an image (PNG, JPEG, GIF, WebP, up to 5 MB) to the model for every harness loop session; the transcript keeps only its
+path, and an image since deleted is said to be gone. The terminal is drawn again from the last 32,000 characters printed when
+a viewer comes or the size changes, and a resumed chat's terminal starts with the words of its last messages. `/commands` is
+`[]` for it. An ended chat of the other kind than `[models] control` names has no Resume, says why, and is not restarted.
+Questions (DECIDE), attachments, Talk and Resume work as before.
+
 Transcript: `<notes>/harness-sessions/<session id>.jsonl`, in Claude Code's entry shape (type user/assistant, content
 blocks text/tool_use/tool_result, usage in Claude's keys), so status, spend, the exit line's stats and resume read it
 as Claude's. Each entry also keeps the provider's message as sent (`harness` field), which a resume reads back, so a

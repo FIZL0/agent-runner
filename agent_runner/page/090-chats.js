@@ -129,7 +129,7 @@ addEventListener('online',()=>{if(FD.n&&FD.want)feedAgain()});  // the socket ma
 function feedEnd(n){return feedNow(n)==='ended'&&FD.old?`<div class="feedend">${feedHTML(n,true)}</div>`:''}
 /* what a chat or slot with no session to show says */
 function feedHTML(n,bare){
-  if(isNew(n))return `<div class="col feeds">${card(`<div class="q">${esc(threadTitle(n))}</div><div class="small">The chat starts with your first message.</div>`,'',`data-k="feed:${esc(n)}"`)}</div>`;  // F172
+  if(isNew(n))return `<div class="col feeds">${card(`<div class="q">${esc(threadTitle(n))}</div><div class="small">The chat starts with your first message${modelOf(n)?`, on ${esc(modelOf(n))}`:''}.</div>`,'',`data-k="feed:${esc(n)}"`)}</div>`;  // F172
   const st=feedNow(n), i=(FD.n===n&&FD.info)||{}, last=S.last[n]||{}, link=i.link||(sessionOf(n)||{}).link||last.link||'';
   const open=link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open its session ${I.ext}</a>`:'';
   if(st==='starting')return `<div class="col feeds"><div class="msgs">${sentBubbles(n,t=>t)}${obBubbles(n)}${n[0]==='@'?'':`<div class="think">${LOGO()}${WAVE}Starting the chat…</div>`}</div></div>`;
@@ -138,7 +138,7 @@ function feedHTML(n,bare){
   if(st==='install')title='The session cannot be shown here';
   else if(st==='ended'){
     title='This chat has ended';
-    words=i.resume?'Resume brings it back with everything said in it.':'';
+    words=i.resume?'Resume brings it back with everything said in it.':i.why||'';
     if(i.resume)btns=`<button class="btn pri${S.ob.some(x=>x.res===n&&x.state==='sending')?' busy':''}" data-resume="${esc(n)}">Resume</button>`+open;
   }else if(st==='idle'){
     const tid=(sessionOf(n)||{}).task||last.task||'', cut=tid&&((S.snap.fixups||{}).resume||[]).some(x=>x.id===tid)&&controlOf('resume');
@@ -413,13 +413,16 @@ function workDraw(){for(const e of document.querySelectorAll('[data-workfor]')){
 setInterval(()=>{if(!FD.shown||document.hidden)return;workDraw();if(feedMute()!==FD.muted){feedSkin();feedPlace()}if(Date.now()-FD.liveAt>=LIVE_EVERY)liveLoad()},1000);
 addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]')){FD.typed=Date.now();if(FD.slim)feedSlim(false)}});
 addEventListener('keydown',e=>{if(FD.slim&&e.target.matches&&e.target.matches('[data-in]')&&e.key!=='Escape')feedSlim(false)});
+/* F406g: the provider's name and model of a chat on the harness loop ('' for another), or of a new one */
+const modelOf=n=>/^c\d+$/.test(n||'')?(sessionOf(n)||{}).model||'':isAgent(n)&&n?'':S.snap.chat_model||'';
 /* the row above the box: what there is to say, each a sheet; a menu or a question has the key row in its place */
 function sessRow(n){
   const st=feedNow(n);if(st!=='session'&&!(st==='loading'&&sessionOf(n)))return '';  // F206a: there from the first frame, so what stands over it does not move
-  if(FD.foot===null&&FD.whole)return TOUCH()&&!S.keys?keyButtons():'';
+  const model=modelOf(n);
+  if(!model&&FD.foot===null&&FD.whole)return TOUCH()&&!S.keys?keyButtons():'';
   const w=sessWorks(n), icon={work:'<span class="livedot"></span>',update:'<span class="bdot"></span>'};
   setTimeout(slimDraw,0);
-  return `<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
+  return `<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w,model}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
 }
 const sessTasks=kind=>((FD.live||{}).tasks||[]).filter(t=>t.kind===kind);
 const taskWhen=t=>t.running?`running${t.at?' '+forWords(Date.now()/1000-t.at).replace(/ \d+s$/,''):''}`:'done';
@@ -476,7 +479,7 @@ async function sessTask(t,what){
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
 function homeHTML(){
   const ws=working_(), nx=upNext().slice(0,3);
-  return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
+  return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div>${box('How can I help with the run?',keysLine(!!S.snap.chat_model))}${ttydLine()}
     <div class="chips"><button class="chip" data-view="talk">${I.talk}Talk</button><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><span class="chips"><button class="chip" data-about="new">${I.plus}Add a task</button><button class="chip" data-about="newconcept">${I.plus}New concept</button></span></div>
     ${needsSec()}
     <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:emptyCard(S.snap.up===false?'No run is up.':'No agent is working right now.')}

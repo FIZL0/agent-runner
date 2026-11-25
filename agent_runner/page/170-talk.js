@@ -224,7 +224,7 @@ function talkHTML(){
 /* F124, B174: the dock's mic, always the mic: the speaker (the stop while a reply is read) and the mic (64px), the keyboard beside them. Its markup never changes while it
    listens or speaks (talkDraw sets that), so a finger holding the mic keeps it */
 const talkMic=()=>`<div class="talkline" id="talkline" role="status"></div><button type="button" class="btn" id="micrep" data-micreport hidden>Copy mic report</button><div class="talkrow"><button type="button" class="spk" id="spk" data-spk></button><button type="button" class="mic" id="mic" data-mic></button><button type="button" class="kbd" data-talkmode="type" aria-label="Type instead" title="Type instead">${I.keys}</button></div>`;
-const talkFoot=()=>{const why=micWhy();return why?esc(why):keysLine()};
+const talkFoot=()=>{const why=micWhy();return why?esc(why):keysLine(!!modelOf(talkName()))};
 function talkDraw(){
   const why=micWhy(), st=TK.state, hold=TS.mic==='hold', mic=$('mic'), spk=$('spk'), line=$('talkline');
   const reads=talkReads(), stop=$('spkbox');

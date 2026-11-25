@@ -26,7 +26,7 @@ from agent_runner.config import Config, runner_cmd
 
 os.environ.pop(K.CONTROL_N_ENV, None)  # a run a control session started hands its number on
 
-# The fake provider answers the last user message: "run: CMD" calls bash, "slow" never answers, "fail" is an error.
+# The fake provider answers the last user message: "run: CMD" calls bash, "read: FILE" read, "slow" never answers, "fail" is an error.
 FAKE = r"""
 import fs from 'node:fs';
 export default function ({ provider, model }) {
@@ -35,13 +35,16 @@ export default function ({ provider, model }) {
       const last = context.messages[context.messages.length - 1];
       const text = typeof last.content === 'string' ? last.content : last.content.map((b) => b.text || '').join(' ');
       fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ provider, model, system: context.systemPrompt,
-        tools: context.tools.map((t) => t.name), said: context.messages.filter((m) => m.role === 'user').map((m) => m.content) }) + '\n');
+        tools: context.tools.map((t) => t.name), images: context.messages.flatMap((m) => Array.isArray(m.content) ? m.content.filter((b) => b.type === 'image') : []),
+        said: context.messages.filter((m) => m.role === 'user').map((m) => m.content) }) + '\n');
       const base = { role: 'assistant', api: 'fake', provider, model, timestamp: Date.now(), usage: { input: 10, output: 5,
         cacheRead: 0, cacheWrite: 0, cost: { total: 0 } } };
       if (last.role === 'user' && text === 'slow') await new Promise((r) => setTimeout(r, 60000));
       if (last.role === 'user' && text === 'fail') return { ...base, content: [], stopReason: 'error', errorMessage: '400 invalid request' };
       if (last.role === 'user' && text.startsWith('run: '))
         return { ...base, stopReason: 'toolUse', content: [{ type: 'toolCall', id: `c${Date.now()}`, name: 'bash', arguments: { command: text.slice(5) } }] };
+      if (last.role === 'user' && text.startsWith('read: '))
+        return { ...base, stopReason: 'toolUse', content: [{ type: 'toolCall', id: `c${Date.now()}`, name: 'read', arguments: { path: text.slice(6) } }] };
       return { ...base, stopReason: 'stop', content: [{ type: 'text', text: `answer to ${last.role === 'user' ? text : `tool (${text})`}` }] };
     },
   };

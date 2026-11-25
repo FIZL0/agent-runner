@@ -275,6 +275,7 @@ def test_update_and_restart() -> None:
             mock.patch.object(N.plat, 'terminate') as end, mock.patch.object(N.plat, 'alive', lambda p: False), \
             mock.patch.object(U, 'hidden_inbox', lambda n: None), mock.patch('agent_runner.control.transcript', lambda s: 'x'), \
             mock.patch('agent_runner.control.control_keep_sid'), \
+            mock.patch('agent_runner.control_harness.cannot_resume', return_value=''), \
             mock.patch('agent_runner.control_reopen.reopen_control', return_value='x') as again:
         check(N.restart_chat('c2')['ok'], 'an idle one restarts')
         eq((end.call_args[0], again.call_args[0]), ((77,), (2, 'sid')), 'its process ends, its conversation comes up again')

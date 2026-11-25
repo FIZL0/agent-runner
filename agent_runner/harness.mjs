@@ -218,9 +218,9 @@ class Transcript {
       model: m.model, content, stop_reason: stop, usage: claudeUsage(m.usage) }, m, extra);
   }
 
-  toolResult(call, text, isError) {
+  toolResult(call, text, isError, image = null) {
     const m = { role: 'toolResult', toolCallId: call.id, toolName: call.name, isError,
-      content: [{ type: 'text', text }], timestamp: Date.now() };
+      content: [{ type: 'text', text }, ...(image ? [image] : [])], timestamp: Date.now() };
     this.write('user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: text,
       is_error: isError }] }, m);
     return m;
@@ -241,6 +241,7 @@ class Tells {
     this.waiters = [];
     this.chat = chat;
     this.ended = false;
+    this.changed = null; // called when the queue grew or was taken
     this.held = ''; // the start of an escape sequence, until the rest of it comes
     this.echo = Boolean(chat && input.isTTY);
     this.buf = '';
@@ -314,12 +315,17 @@ class Tells {
     text = text.trim();
     if (!text) return;
     this.queue.push(text);
+    this.changed?.();
     this.wake();
   }
 
   wake() { for (const w of this.waiters.splice(0)) w(); }
 
-  take() { return this.queue.splice(0); }
+  take() {
+    const got = this.queue.splice(0);
+    if (got.length) this.changed?.();
+    return got;
+  }
 
   // resolves true when a tell came within `seconds` (Infinity: no limit, but a closed input ends it), false when none did
   wait(seconds) {
@@ -333,6 +339,78 @@ class Tells {
       this.waiters.push(() => { if (this.queue.length) { clearTimeout(t); resolve(true); } });
     });
   }
+}
+
+// --- what a chat is doing now (F406g) ------------------------------------------------------------------------------
+
+// `<notes>/<sid>.now`, which the run page reads (session_now.record): busy or idle, since when, and how many messages
+// are queued. In Claude Code's words; gone once the chat ended.
+class Now {
+  constructor(a) {
+    this.file = path.join(a.notes, `${a.sid}.now`);
+    this.d = { pid: process.pid, sessionId: a.sid, startedAt: Date.now(), status: '', statusUpdatedAt: 0, queued: 0 };
+    process.on('exit', () => { try { fs.unlinkSync(this.file); } catch { /* not there */ } });
+  }
+
+  set(status, queued) {
+    if (status !== this.d.status) this.d.statusUpdatedAt = Date.now();
+    Object.assign(this.d, { status, queued });
+    const part = `${this.file}.part`;
+    try { fs.writeFileSync(part, JSON.stringify(this.d)); fs.renameSync(part, this.file); } catch { /* the next change writes it */ }
+  }
+}
+
+// A viewer that comes to a chat's terminal sees what was said: at its new size (attach.Viewers gives one to each viewer
+// that comes) the screen is drawn again from the last SCREEN characters printed.
+const SCREEN = 32000;
+function redrawn(out) {
+  let kept = '', due = null;
+  const write = out.write.bind(out);
+  out.write = (s, ...more) => {
+    kept = (kept + String(s)).slice(-SCREEN);
+    return write(s, ...more);
+  };
+  out.on('resize', () => {
+    clearTimeout(due);
+    due = setTimeout(() => {
+      const cut = kept.length === SCREEN ? kept.slice(kept.indexOf('\n') + 1) : kept; // from a whole line on
+      write(`\x1b[H\x1b[2J\x1b[3J${cut}`);
+    }, 120);
+  });
+}
+
+// what a resumed chat's terminal starts with: the words of its last messages
+function recap(messages) {
+  for (const m of messages.slice(-60)) {
+    const said = m.role === 'toolResult' ? '' : textOf(m.content).trim();
+    if (said.startsWith('[Request interrupted')) console.log('harness: interrupted');
+    else if (said) console.log(m.role === 'user' ? `\n> ${said}` : said);
+  }
+}
+
+// --- images (F406g) ------------------------------------------------------------------------------------------------
+
+const IMAGE_MAX = 5 * 1024 * 1024;
+
+// what image the bytes are, '' for none a model takes
+function imageType(data) {
+  const at = (from, to) => data.subarray(from, to).toString('latin1');
+  if (at(0, 8) === '\x89PNG\r\n\x1a\n') return 'image/png';
+  if (at(0, 3) === '\xff\xd8\xff') return 'image/jpeg';
+  if (at(0, 4) === 'GIF8') return 'image/gif';
+  if (at(0, 4) === 'RIFF' && at(8, 12) === 'WEBP') return 'image/webp';
+  return '';
+}
+
+// the messages as the provider gets them: an image is kept as its path, so the transcript stays small
+function withImages(messages) {
+  return messages.map((m) => (!Array.isArray(m.content) || !m.content.some((b) => b?.type === 'image' && b.path) ? m :
+    { ...m, content: m.content.map((b) => {
+      if (b?.type !== 'image' || !b.path) return b;
+      try { return { type: 'image', mimeType: b.mimeType, data: fs.readFileSync(b.path).toString('base64') }; } catch {
+        return { type: 'text', text: `(the image ${b.path} is gone)` };
+      }
+    }) }));
 }
 
 // --- the provider ---------------------------------------------------------------------------------------------
@@ -511,7 +589,8 @@ const TOOLS = [
       `(default ${BASH_TIMEOUT}, at most ${BASH_TIMEOUT_MAX}).`,
     parameters: { type: 'object', properties: { command: { type: 'string' }, timeout: { type: 'number' } },
       required: ['command'] } },
-  { name: 'read', description: `Read a text file: its lines numbered, ${READ_LINES} from offset (1-based) unless limit says otherwise.`,
+  { name: 'read', description: `Read a text file: its lines numbered, ${READ_LINES} from offset (1-based) unless limit says otherwise. ` +
+      'An image (PNG, JPEG, GIF, WebP) is shown to you.',
     parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number' },
       limit: { type: 'number' } }, required: ['path'] } },
   { name: 'edit', description: 'Replace old_string with new_string in a file. old_string must occur exactly once ' +
@@ -638,6 +717,9 @@ class Session {
   async tool_read(a) {
     const f = this.resolve(a.path);
     const data = fs.readFileSync(f);
+    const mimeType = imageType(data);
+    if (mimeType && data.length > IMAGE_MAX) return [`${f} is an image of ${Math.ceil(data.length / 1024 / 1024)} MB: one over ${IMAGE_MAX / 1024 / 1024} MB cannot be shown`, true];
+    if (mimeType) return [`${f} (${mimeType})`, false, { type: 'image', mimeType, path: f }];
     if (data.includes(0)) return [`${f} is a binary file`, true];
     const lines = data.toString('utf8').split('\n');
     const from = Math.max((Number(a.offset) || 1) - 1, 0), n = Number(a.limit) || READ_LINES;
@@ -724,7 +806,8 @@ const ONE_SHOT = `You answer one message, unattended: nobody can reply. Use only
 // F406f: a control session; what it is for is in the control brief (--system-file)
 const CHAT = `You are in a conversation with a person, in the main checkout of a git repository. Answer each message, ` +
   `using your tools (bash, read, edit, write, publish_page) as the brief below says, then stop: the person's next ` +
-  `message comes when they send it. Paths are relative to the checkout.`;
+  `message comes when they send it. Paths are relative to the checkout. A message that names a file the person attached ` +
+  `means that file: read it before you answer, an image too.`;
 
 function overBudget(a, tokens, usd) {
   const tok = tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1)}M` : `${Math.round(tokens / 1e3)}k`;
@@ -760,11 +843,17 @@ async function main() {
     if (process.stdout.isTTY) process.stdout.write('\x1b[?2004l');
     process.exit(code);
   };
+  if (a.chat && process.stdout.isTTY) redrawn(process.stdout); // F406g
   const tells = new Tells(process.stdin, a.chat ? { end: () => quit(0),
     interrupt: () => { const going = Boolean(s.ctl && !s.ctl.signal.aborted); s.ctl?.abort(); return going; } } : null);
   if (a.chat) for (const sig of ['SIGTERM', 'SIGHUP']) process.on(sig, () => quit(0));
+  const now = a.chat ? new Now(a) : null; // F406g
+  const is = (status) => now?.set(status, tells.queue.length);
+  tells.changed = () => is(now?.d.status);
+  is(prompt.trim() ? 'busy' : 'idle');
   let provider = await loadProvider(a.model, a.provider);
   console.log(`harness: ${a.resume ? 'resumed' : 'started'} session ${a.sid} on ${a.model} in ${cwd}`);
+  if (a.chat && a.resume) recap(messages);
   const pending = prompt.trim() ? [prompt] : [];
   const stopped = () => { // as Claude Code words it, so the transcript's readers know it
     messages.push(t.user('[Request interrupted by user]'));
@@ -775,11 +864,13 @@ async function main() {
     if (over && !pending.length) {
       s.ctl = null;
       console.log('\n(waiting for you)');
+      if (!tells.queue.length) is('idle');
       if (!(await tells.wait(Infinity))) return 0;
       if (tells.queue.some((x) => x === '/exit' || x === '/quit')) return 0;
     }
     if (a.chat && (over || !s.ctl)) s.ctl = new AbortController();
     over = false;
+    is('busy');
     for (const text of [...pending.splice(0), ...tells.take()]) {
       messages.push(t.user(text));
       console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
@@ -793,7 +884,7 @@ async function main() {
     }
     let m;
     try {
-      const context = { systemPrompt: system, messages,
+      const context = { systemPrompt: system, messages: withImages(messages),
         tools: a.tools ? TOOLS.filter((x) => a.tools.includes(x.name)) : TOOLS };
       m = await stoppable(s.ctl?.signal, provider.call(context, s.ctl?.signal));
     } catch (e) {
@@ -856,8 +947,8 @@ async function main() {
     const calls = m.content.filter((b) => b.type === 'toolCall');
     for (const c of calls) {
       console.log(`· ${c.name} ${JSON.stringify(c.arguments || {}).slice(0, 200)}`);
-      const [text, isError] = s.ctl?.signal.aborted ? ['The person interrupted before this tool call ran; it did not run.', true] : c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
-      messages.push(t.toolResult(c, text, isError));
+      const [text, isError, image] = s.ctl?.signal.aborted ? ['The person interrupted before this tool call ran; it did not run.', true] : c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
+      messages.push(t.toolResult(c, text, isError, image));
       if (!s.ended) s.ended = s.endedNow();
     }
     if (s.ctl?.signal.aborted) {

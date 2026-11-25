@@ -91,7 +91,13 @@ def slash_commands(session: str = '') -> list[dict]:
     session's own skills first (/run /since /follow /control /pause /stop /slots, as guide.control_skills writes
     them), then the agent CLI's built-ins (/clear /compact …), then the project's and the person's own skills and
     commands (`.claude/skills`, `.claude/commands`), each name once. F170: then the skills `session`'s own transcript lists,
-    plugin and bundled ones too."""
+    plugin and bundled ones too. F406g: none on the harness loop, which takes no slash commands."""
+    try:
+        from agent_runner import control_harness
+        if control_harness.harness_session(U.session_sid(session)) if session else control_harness.new_chat_model():
+            return []
+    except Exception:  # noqa: BLE001 - settings that cannot be read are said elsewhere
+        pass
     from agent_runner.control import CONTROL_SKILL, control_cmd
     from agent_runner.guide import control_skills
     seen: dict[str, str] = {}

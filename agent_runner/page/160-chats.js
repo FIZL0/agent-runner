@@ -139,7 +139,7 @@ function slashShow(ta,press){
   const of=/^[cs]\d+$/.test(S.thread||'')?S.thread:'';  // F170: the open chat's own commands, again after a while
   if(ta&&ta.value[0]==='/'&&(of!==SL.of||Date.now()-SL.at>60000))slashLoad(of);
   const m=document.querySelector('[data-slash]');if(!m)return;
-  SL.items=ta?slashMatches(SL.cmds,ta.value):[];if(SL.i>=SL.items.length)SL.i=0;
+  SL.items=ta&&!modelOf(S.thread||(S.view==='talk'?talkName():''))?slashMatches(SL.cmds,ta.value):[];if(SL.i>=SL.items.length)SL.i=0;
   m.hidden=!SL.items.length;
   m.innerHTML=SL.items.map((c,j)=>`<button type="button" role="option" class="${j===SL.i?'on':''}" aria-selected="${j===SL.i}" data-slashpick="${j}"><b>/${esc(c.name)}</b><span>${esc(c.desc||'')}</span></button>`).join('');
   const on=m.querySelector('.on');if(!on||!on.scrollIntoView)return;

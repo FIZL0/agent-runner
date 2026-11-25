@@ -66,7 +66,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const handlers = {}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
 const DRAFT_KEY = k => k, boxKey = () => 'c1', grow = () => {}, esc = s => String(s), tq = p => p;
 const S = {thread: 'c1', sel: [], drawer: false};
-const TOUCH = () => false, busy = () => false, act = () => {}, selectedText = () => false, render = () => {};
+const TOUCH = () => false, busy = () => false, act = () => {}, selectedText = () => false, render = () => {}, modelOf = () => '', talkName = () => '';
 let sent = 0; const send = () => { sent++ };
 const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
 const ta = {value: '', blurred: 0, matches(s) { return s === '[data-in]' }, focus() {}, blur() { this.blurred++ },
@@ -262,7 +262,7 @@ def test_composer_keys_b120(tmp: Path) -> None:
     (kept per chat in localStorage), Shift+Enter makes a new line and Enter sends, Esc interrupts a working chat;
     the keys are listed once (BOX_KEYS); without ttyd the page shows one line with this machine's install command."""
     page = W.page_html().decode()
-    check('const BOX_KEYS=[' in page and page.count('keysLine()') >= 2, 'the keys are listed once, in BOX_KEYS, and '
+    check('const BOX_KEYS=[' in page and page.count('keysLine(') >= 2, 'the keys are listed once, in BOX_KEYS, and '
           'shown under the box')
     check("'ar-hist:'+CHATS_OF+k" in page and 'localStorage' in page, 'the history is kept per chat in localStorage')
     check("S.snap.terminal_mode==='install'" in page and 'A chat shows the real session with ttyd' in page,
@@ -334,7 +334,7 @@ const ta = el('[data-in]');
 const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
                   querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
 const fetch = () => Promise.resolve({json: () => Promise.resolve([{name: 'clear', desc: ''}])});
-eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
+eval(logic + 'const modelOf = () => "", talkName = () => "";' + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
      + slice('let boxWas=', '\n}\n') + 'function growGlide(){}\nfunction sendDraw(){}\n'
      + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n')
      + slice("document.addEventListener('beforeinput',", '\n});\n')
