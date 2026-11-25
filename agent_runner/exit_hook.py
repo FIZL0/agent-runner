@@ -1,17 +1,19 @@
 """B801: `[run] on_exit`, run once each time a slot's session ends: by itself (`Run.reap`), or stopped by a drop, a
-`plan change --restart` or a take back (`loop.halts`). It runs beside the loop, and nothing starts in its slot until it
+`plan change --restart` or a take back (`loop.halts`), or by `s!` (`loop.end_sessions`, B803). It runs beside the loop, and nothing starts in its slot until it
 has ended (`Run.held`): it may free a lock by AGENT_SLOT, which the slot's next task could have just taken."""
 from __future__ import annotations
 
 import os
 import signal
 import subprocess as sp
+import threading
 import time
 
 from agent_runner import plat, slots, state
 
-GOING: list[tuple[int, sp.Popen, float, str]] = []  # (slot, process, when it is stopped, command)
+GOING: list[tuple[int, sp.Popen, float, str, str]] = []  # (slot, process, when it is stopped, command, why then)
 SOON = 5.0  # s a halt waits for it, so a quick one ends before the worktree is reset and the task starts again
+FORCED = 60.0  # s one may still run once `s!` was asked
 
 
 def gone(pid: int, seconds: float) -> bool:
@@ -35,6 +37,15 @@ def end_session(pid: int) -> None:
             pass
 
 
+def end_all(pids: list[int]) -> None:
+    """B803: `s!`: end these sessions side by side, so ones that ignore SIGTERM cost their wait once."""
+    ending = [threading.Thread(target=end_session, args=(pid,)) for pid in pids]
+    for t in ending:
+        t.start()
+    for t in ending:
+        t.join()
+
+
 def start(n: int) -> None:
     """Run `[run] on_exit` in slot n's worktree with the slot's env, for at most `[run] command_timeout`. Its output
     goes nowhere: a pipe would be held open by whatever it leaves in the background."""
@@ -43,20 +54,28 @@ def start(n: int) -> None:
         return
     p = sp.Popen(cmd, shell=True, cwd=str(d), env={**os.environ, **slots.env_vars(slots.slot_env(n))},
                  stdin=sp.DEVNULL, stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=not plat.WINDOWS)
-    GOING.append((n, p, time.monotonic() + state.C.run['command_timeout'], cmd))
+    limit = state.C.run['command_timeout']
+    GOING.append((n, p, time.monotonic() + limit, cmd, f'ran past [run] command_timeout ({limit}s)'))
+
+
+def hurry() -> None:
+    """B803: `s!` waits for each `on_exit` too, but at most FORCED from the first call; asked again, it changes nothing."""
+    end = time.monotonic() + FORCED
+    for i, (n, p, was, cmd, _) in enumerate(GOING):
+        if end < was:
+            GOING[i] = (n, p, end, cmd, f'still ran {FORCED:g}s after s!')
 
 
 def busy() -> set[int]:
     """The slots whose `on_exit` still runs; one past its time is stopped here, and logged."""
     for hook in list(GOING):
-        n, p, end, cmd = hook
+        n, p, end, cmd, why = hook
         if p.poll() is None and time.monotonic() < end:
             continue
         GOING.remove(hook)
         if p.returncode is None:
             stop(p)
-            state.log(f'slot {n}: on_exit: `{cmd}` ran past [run] command_timeout '
-                      f'({state.C.run["command_timeout"]}s); stopped')
+            state.log(f'slot {n}: on_exit: `{cmd}` {why}; stopped')
     return {n for n, *_ in GOING}
 
 

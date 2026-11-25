@@ -1340,7 +1340,8 @@ start again.
 
 `s!` + Enter (or `agent-runner stop --force`) stops now: every agent session is ended and queued to resume
 in its slot when a run next starts (its worktree stays as it was, nothing of it is merged); the merges
-already under way finish, then the run exits.
+already under way finish, then the run exits. `[run] on_exit` runs for each ended session, and the run waits for it, at
+most 60 s: one that still runs is stopped, and the log says so.
 
 The other keys, listed by `?` + Enter (and printed when the run starts), ruled off from the log:
 
@@ -2161,7 +2162,7 @@ server on a port. Give each slot its own copy and let the runner tell it which:
 - `slot_env` hands every slot its number, so the project's tools pick their copy: a port, a profile
   directory, a lock file. `EMU_SLOT={n}` and a launcher that reads it is all it takes.
 - `pass_env` passes on what the whole run shares (a cap on how long one session may hold the program).
-- `on_exit` closes the slot's copy when its session ends, with that slot's env. It also runs when a drop, `plan change --restart` or a take back stops the session, and the slot starts nothing until it has ended.
+- `on_exit` closes the slot's copy when its session ends, with that slot's env. It also runs when a drop, `plan change --restart`, a take back or `s!` stops the session, and the slot starts nothing until it has ended.
 - `before_start` holds new sessions while the program cannot run (no display, device unplugged). The run
   logs it once, rings the bell, and resumes once the check passes.
 - `prompt_extra` tells the session it has its own copy and how to drive it (`{n}` is the slot).

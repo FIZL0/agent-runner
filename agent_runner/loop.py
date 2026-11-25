@@ -250,10 +250,18 @@ def drop_earlier_stop(keep: dict) -> None:
 
 def end_sessions(procs: dict, running: dict) -> None:
     """`s!`: end every agent session now, each queued to resume in its slot when a run next starts. Its
-    worktree stays as the session left it; nothing it did is merged."""
+    worktree stays as the session left it; nothing it did is merged. B803: `[run] on_exit` runs as at any
+    session's end (a cut-off one resumes after it too), so no device lock is held until the next run."""
+    hook = C.run['on_exit']
+    if hook:
+        exit_hook.end_all([pid for pid, *_ in procs.values()])  # first: it must not free what a session still uses
+        end_orphans()
     for n, (pid, sid, _) in list(procs.items()):
         tid = running[n][0]
-        plat.terminate(pid)
+        if hook:
+            exit_hook.start(n)
+        else:
+            plat.terminate(pid)
         if not transcript(sid):  # it never started (held at a dialog): `--resume` would find no session and sit
             log(f'slot {n}: {tid} ended (s!) before its session began; it starts afresh in the next run')
             continue
@@ -333,7 +341,7 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
             stopped = 'no slot was on it any more'
         if n is not None:
             end_orphans()
-            if n not in procs:  # B801: for a queued resume too: `s!` or a run that died ended its session without it
+            if n not in procs:  # B801: for a queued resume too: a run that died ended its session without it
                 if n not in exit_hook.busy():  # else the one its own exit started
                     exit_hook.start(n)
                 exit_hook.wait(n)
@@ -1205,6 +1213,8 @@ class Run:
                 self.free_at.setdefault(m, dt.datetime.min)
         if forced() and procs:
             end_sessions(procs, running)
+        if forced():
+            exit_hook.hurry()
         tells(procs, running)  # F16: plan tell / change, typed into a running slot's session
         restyles(procs, running, self.branch)  # F19: plan restyle parks a running interface task
         budgets(procs, running, type_into)  # F103: [run] task_tokens / task_usd stop a task at a clean point
@@ -1446,7 +1456,7 @@ class Run:
         procs, waiting, merging, tried = self.procs, self.waiting, self.merging, self.tried
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
         if stopping() and not procs and (not waiting or forced()) and not merging and \
-                (forced() or not exit_hook.busy()):  # B801
+                not exit_hook.busy():  # B801; B803: `s!` waits too, not long (`exit_hook.hurry`)
             how = stopped_by()
             end_own(rc_sweep_stop, log, keep_page=not POWER)  # B144, F402b3a: its own are gone, or its page handed over, before it says so
             clear_stop()

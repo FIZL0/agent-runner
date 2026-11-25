@@ -268,7 +268,7 @@ first, a custom conflict join, a program per slot) is a setting now: see the hoo
 | `[run] suspect` | a regex; a `BLOCKED` line a merge adds to the plan that matches it is flagged `SUSPECT, recheck` in the ledger |
 | `[run] slot_env` | `NAME=value` per slot, with `{n}` (slot) and `{slots}` (how many) |
 | `[run] pass_env` | names of the runner's environment variables handed on to every slot |
-| `[run] on_exit` | a command run in the slot's worktree, with the slot's env, when its session ends (both parallel and `once`), also when a drop, `plan change --restart` or a take back stops it; the slot starts nothing until it has ended |
+| `[run] on_exit` | a command run in the slot's worktree, with the slot's env, when its session ends (both parallel and `once`), also when a drop, `plan change --restart`, a take back or `s!` stops it (`s!` gives it at most 60 s); the slot starts nothing until it has ended |
 | `[run] prompt_extra` | a paragraph added to the prompt; takes the prompt's placeholders (`{n}`, `{id}`, `{runner}`, …) |
 | `[run] command` | what the prompt and the brief tell sessions to type |
 | `[run] links` | git-ignored paths symlinked into every worktree |
