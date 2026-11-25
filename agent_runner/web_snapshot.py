@@ -8,11 +8,36 @@ Part of `web`: `web` runs this file in its own namespace (see its PARTS), so the
 class Snapshots:
     """The snapshot, made at most once per TICK however many pages watch it."""
 
-    def __init__(self, make):
+    def __init__(self, make, state=None):
         self.make, self.lock, self.at, self.last = make, threading.Lock(), 0.0, ''
+        self.state = state if state is not None else state_path  # B850b: STATE, whose change makes one at once
+        self.seen = None  # STATE's (mtime, size) at the last snapshot
+        self.woken = threading.Condition()
+
+    def now(self) -> None:
+        """B850b: drop the cached snapshot and wake every events stream, so they send a fresh one at once."""
+        self.at = 0.0
+        with self.woken:
+            self.woken.notify_all()
+
+    def wait(self, timeout: float) -> None:
+        """B850b: an events stream's pause: until `now()` or `timeout`."""
+        with self.woken:
+            self.woken.wait(timeout)
+
+    def state_mark(self):
+        try:
+            p = self.state()
+            st = p.stat() if p else None
+            return (st.st_mtime_ns, st.st_size) if st else None
+        except (OSError, AttributeError):
+            return None
 
     def get(self) -> str:
         with self.lock:
+            mark = self.state_mark()
+            if mark != self.seen:
+                self.seen, self.at = mark, 0.0
             if time.monotonic() - self.at >= TICK or not self.last:
                 try:
                     self.last = json.dumps(with_chat_order(self.make()), ensure_ascii=False)
@@ -20,6 +45,11 @@ class Snapshots:
                     self.last = json.dumps({'error': f'{type(e).__name__}: {e}'})
                 self.at = time.monotonic()
             return self.last
+
+
+def state_path():
+    """B850b: the run's STATE file, or None with no project."""
+    return S.C.notes('STATE') if S.C else None
 
 
 def page_html(home: bool = False) -> bytes:

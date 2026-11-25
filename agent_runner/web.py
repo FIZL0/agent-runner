@@ -253,7 +253,7 @@ class Handler(BaseHTTPRequestHandler):
         r = self.server.once.run(cid, run)
         if r is None:  # F137: a copy of an action still running: the outbox sends it again later
             return self.send(503, json.dumps({'ok': False, 'out': 'that action is still running'}))
-        self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
+        self.server.snaps.now()  # B850b: the events streams send what the action changed at once
         self.send(200, json.dumps(r, ensure_ascii=False))
 
     def session(self, path: str) -> None:
@@ -452,7 +452,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(b': ping\n\n')
                     quiet = time.monotonic()
                 self.wfile.flush()
-                self.server.stopped.wait(TICK / 2)
+                self.server.snaps.wait(STATE_LOOK)  # B850b: woken by an action; STATE looked at this often
         except OSError:  # the page went away
             pass
 
@@ -499,6 +499,7 @@ class WebServer(ThreadingHTTPServer):
 
     def stop(self) -> None:
         self.stopped.set()
+        self.snaps.now()  # B850b: the events streams see the stop at once
         with self.moving:
             self.https_off()
             self.shutdown()
