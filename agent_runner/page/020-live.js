@@ -43,7 +43,7 @@ function sentBubbles(n,shown){
 function outbox(name,args,more){
   const it={cid:newCid(),name,args:args||{},by:OB.tab,state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
   const ck=String(it.ctl||''), w=ck.endsWith(':')&&ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n);  // B851a: a run control shows its result now
-  if(w){S.held=(S.held||[]).concat([{key:ck.slice(0,-1),cid:it.cid,n:(it.args||{}).n,at:it.at,want:w,say:it.say}]);S.heldErr='';setTimeout(()=>render(true),CTL_HOLD+50)}
+  if(w){const ks=Object.keys(w);S.held=(S.held||[]).filter(p=>!Object.keys(p.want).some(k=>ks.includes(k))).concat([{key:ck.slice(0,-1),cid:it.cid,n:(it.args||{}).n,at:it.at,want:w,say:it.say}]);S.heldErr='';setTimeout(()=>render(true),CTL_HOLD+50)}  // a later press on the same thing takes the place of the earlier
   obChange(b=>obAdd(b,it,OB.at));render(true);drain();return it;
 }
 async function drain(){
@@ -98,7 +98,7 @@ function obHide(){
   S.snap.needs=(S.snap.needs||[]).filter(n=>!ns.includes(n.id));
   S.snap.shelved=(S.snap.shelved||[]).filter(x=>!sh.includes(x.id));  // F184
   S.snap.concepts=needsShown(S.snap.concepts,S.gone,now).filter(c=>!cs.includes(c.id));
-  const h=ctlSettle(S.snap,S.held,S.ob,now);S.held=h.held;if(h.err)S.heldErr=h.err;ctlHold(S.snap,S.held);  // B851a
+  const h=ctlSettle(S.snap,S.held,S.ob,now);S.held=h.held;if(h.err){S.heldErr=h.err;setTimeout(()=>{if(S.heldErr===h.err){S.heldErr='';render(true)}},CTL_HOLD)}ctlHold(S.snap,S.held);  // B851a
 }
 /* B164: the run is older than the page: what to do, with the restart control when the run has one */
 function oldRunHTML(msg){const rc=controlOf('restart');
