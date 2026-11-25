@@ -405,7 +405,7 @@ def test_direct_edit() -> None:
         for c in 'x.py':
             p2.key(c)
         p2.key('^S')
-        eq(ran2, [['plan', 'add', 'T', 'Fix it', '--files', 'x.py', '--pri', 'critical']], 'a new task: plan add')
+        eq(ran2, [['plan', 'add', 'T', 'Fix it', '--files', 'x.py', '--pri', 'high']], 'a new task: plan add')
         eq(p2.main, False, 'saved: back to the panels')
 
 

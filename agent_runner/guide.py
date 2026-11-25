@@ -318,7 +318,7 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    claims read, and in the main checkout it commits itself (`plan: <command>`). TODO.md and DONE.md are its
    output: leave them to it, unedited and uncommitted by hand.
    - queue: `agent-runner plan add <KIND> "what, why, how to check" --files a.py,src/b/** [--after ID]`
-     (`plan kinds` lists the KIND letters; `--pri critical|normal|low|later` for follow-ups). Name the exact files, the test file too (`tests/test_menu.py`, not `tests/**`): a task waits for any other on
+     (`plan kinds` lists the KIND letters; `--pri critical|high|normal|low|later` for follow-ups). Name the exact files, the test file too (`tests/test_menu.py`, not `tests/**`): a task waits for any other on
      its files. """ + OWN_FILES + ' ' + SPLIT_FILES + """
    - correct: `plan edit ID "corrected text"` (it replaces the description and its notes, so no stale
      instruction stays beside the new one); `plan note ID "..."` only adds detail. `plan restore ID` undoes a
@@ -415,7 +415,7 @@ What the person asks, and what you run:
   Update agent-runner: `{cmd} upgrade` (else `[run] auto_upgrade` and the release task); never set up a
   background watcher, Monitor or loop to upgrade agent-runner.
 - **Queue it** ("add a task", "fix X"): `{cmd} plan add <KIND> "what, why, how to check" --files
-  a.py,tests/test_a.py` (`plan kinds`; exact files; `--after ID`; `--pri critical` only when it blocks work),
+  a.py,tests/test_a.py` (`plan kinds`; exact files; `--after ID`; "high priority": `--pri high`; `critical` only when it blocks work),
   then one hint line: 'Say "do F48 here" to start it now.' A big ask: split into parts first. How, and
   corrections, order, park, drop, a release, telling a running task: `guide queue`.
 - Why did a task stop? `plan ID`, the run log `{log}`, then `plan note ID "…"` or `plan unblock ID "…"`.
@@ -534,7 +534,8 @@ you, to act on a task or when the person asks which one.
   (the aim moved on, or it names done work): reword it with `{cmd} plan goal "TEXT"`, never a task to edit TODO.md.
 - More of what they say, and what you run:
   - "park it", "someday": `{cmd} plan add <KIND> "..." --pri later` (never started by a run); "low
-    priority": `--pri low`. "do that next": `{cmd} plan move ID top`. "drop it": `{cmd} plan drop ID "why"`.
+    priority": `--pri low`. "high priority", "important": `--pri high` (tried after critical ones, ahead of the
+    rest; queued already: `{cmd} plan edit ID --pri high`), never critical unless it blocks work. "do that next": `{cmd} plan move ID top`. "drop it": `{cmd} plan drop ID "why"`.
     "that wasn't done", "bring it back": `{cmd} plan restore ID`
   - "hold F5", "not yet but keep its place": `{cmd} plan hold ID` (no run starts it until `{cmd} plan unhold ID`)
   - "cancel F5", "stop working on it, keep the task": `{cmd} plan cancel ID --yes` (keeps its work and parks the task; `{cmd} plan edit ID --pri normal` unparks it)

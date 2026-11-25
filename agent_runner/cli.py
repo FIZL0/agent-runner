@@ -95,8 +95,8 @@ Choose what goes first:
     agent-runner plan add B "Fix it" @ after B646
     agent-runner plan add B "Fix it" @ bottom    last in the leading section
     agent-runner plan add B "Check it" --pri low
-        -> a follow-up: critical (top: it breaks or blocks work), normal (an agent's default) and low go
-           after the queued sections, in ### Follow-ups; later is parked in ### Parked.
+        -> a follow-up: critical (top: it breaks or blocks work), then high (behind critical,
+           ahead of the rest); normal (an agent's default) and low go after the queued sections, in ### Follow-ups; later is parked in ### Parked.
     agent-runner plan kinds                   what each id letter means ([plan] kinds)
 
 Never started: blocked [~] tasks, ### Stretch and ### Parked, a task with open subtasks (one that

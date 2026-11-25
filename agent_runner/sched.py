@@ -286,6 +286,7 @@ class Held(NamedTuple):
     prs: int = 0  # F420: the open pull requests, when no new task may start for them
     on: frozenset = frozenset()  # F420: with `prs`, the tasks that are not new
     waits: dict = {}  # F168: {task that gave up its slot: (its tool, since when)}, longest first
+    high: frozenset = frozenset()  # F438: open tasks tagged `(follow-up, high)`
 
 
 def held(running: dict, branch: str) -> Held:
@@ -321,6 +322,7 @@ def held(running: dict, branch: str) -> Held:
                 no_commits=frozenset(no_commits.stuck(branch)) if todo else frozenset(),
                 holding=frozenset(row_hold.held_ids(plan_text(branch))) if todo else frozenset(),
                 **({'prs': n, 'on': pr_rows.started()} if todo and (n := pr_rows.full()) else {}),
+                high=high_tasks(branch) if todo else frozenset(),
                 splits=split_holds(branch) if todo else {}, **tool_fields(todo, live, branch))
 
 
@@ -374,6 +376,12 @@ def critical_tasks(branch: str) -> frozenset:
     return frozenset(tid for section, box, tid, rest, _ in P.iter_tasks(plan_text(branch))
                      if box == ' ' and ('critical' in section.lower() or
                                         (m := P.PRI_TAG.search(rest)) and m.group(1) == 'critical'))
+
+
+def high_tasks(branch: str) -> frozenset:
+    """F438: ids of the open tasks tagged `(follow-up, high)` in `branch`'s TODO.md."""
+    return frozenset(tid for _, box, tid, rest, _ in P.iter_tasks(plan_text(branch))
+                     if box == ' ' and (m := P.PRI_TAG.search(rest)) and m.group(1) == 'high')
 
 
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
@@ -569,12 +577,12 @@ def choose(h: Held, tried: set, branch: str, claim: bool = False):
     """The first open task nothing holds back (`holds`), claimed first when `claim` (see `claim_task`), or None.
     Parked tasks are skipped, not blocked: that is `pick`'s part. Critical tasks are tried first, wherever their
     lines stand (B126): one whose blocker has just landed takes the next free slot ahead of the normal ones. One
-    still blocked holds nothing back (B140): the free slot goes to the next task that may start. A task that gave up
+    still blocked holds nothing back (B140): the free slot goes to the next task that may start. High ones come next, the same way (F438). A task that gave up
     its slot for a shared tool goes ahead of them all, the longest wait first (F168), but for this: while a critical `(alone)` task
     waits for its turn, only critical tasks start (F208, `turn_of`)."""
     turn = turn_of(tried, h, branch)
     for t in sorted(h.todo, key=lambda t: (h.waits[t[0]][1] if t[0] in h.waits else float('inf'),
-                                           t[0] not in h.critical)):
+                                           t[0] not in h.critical, t[0] not in h.high)):
         if turn and t[0] not in h.critical or holds(t, tried, h):
             continue
         tid = t[0]

@@ -82,7 +82,7 @@ RUN_CONTROLS = (
     {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'task'},
     # C34: a Queue row's actions ('where' 'queue', '{id}' the row's task; `fits` says which rows it is allowed on, and
-    # each snapshot row carries those keys as `acts`; '{pri}' the other level of critical / normal), and the release
+    # each snapshot row carries those keys as `acts`; '{pri}' the next level, `plan.next_pri`), and the release
     # tab's ('where' 'release'). 'tui_sure' False: the terminal UI runs it without asking (the page asks).
     # 'confirm_of' (F186): a row's own confirm ('' the entry's), asked by both; the snapshot row's `asks` carries it.
     {'key': 'queue_priority', 'label': 'Priority', 'argv': ('plan', 'edit', '{id}', '--pri', '{pri}'), 'tui': 'p',
@@ -381,7 +381,7 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
             from agent_runner import row_hold
             if why := row_hold.under_way(S.C, tid):
                 return {'ok': False, 'code': 1, 'out': f'{tid} cannot be removed: {why}', 'argv': []}
-        pri = 'normal' if row.get('pri') == 'critical' else 'critical'
+        pri = P.next_pri(row.get('pri'))  # F438
         if c.get('answer'):
             said = answer_of(row, key)
             if text != said:

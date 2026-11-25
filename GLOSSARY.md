@@ -373,6 +373,13 @@ _On screen_: Parked: a run won't start it
 _In code_: state 'parked', unpark, parkedLast, queueGroups
 _Avoid_: later task, on hold
 
+**High task**:
+A queued task at level high: a run tries it after the critical ones and ahead of the rest, wherever its line stands, as soon as a slot is free. Only critical gets the merge order, the alone turn and an interim release.
+_Said_: high priority
+_On screen_: High priority: goes ahead of normal tasks, as soon as a slot is free
+_In code_: --pri high, high_tasks, next_pri
+_Avoid_: urgent task, critical task
+
 **Attach**:
 Put this terminal on a session's own terminal, to watch it and type into it, until Ctrl-b d leaves it running (on Windows 1809 and later too; the run app's session has no detach key)
 _Said_: attach

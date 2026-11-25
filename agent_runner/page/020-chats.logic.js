@@ -141,6 +141,7 @@ function planWords(q,sessions){
   if(q.state==='held')return "Held: a run won't start it";  // F429
   if(q.state==='parked')return "Parked: a run won't start it";  // B118: never 'Ready'
   if(q.state==='done'||q.state==='dropped'||q.state==='open')return q.state.charAt(0).toUpperCase()+q.state.slice(1);  // F212: a search hit
+  if(q.pri==='high')return 'High priority: goes ahead of normal tasks, as soon as a slot is free';  // F438
   return 'Ready to start when a slot is free';
 }
 /* what the message box sends: the About line, your words, then the attachments' paths on this machine */

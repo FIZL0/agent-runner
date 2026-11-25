@@ -101,7 +101,7 @@ def _is_next_cut(line: str, tid: str) -> bool:
 
 def rewait(tid: str, todo=None) -> None:
     """The release `tid` was moved: it waits for the tasks above it now, whatever it waited for before, and is no
-    longer critical, or it would go ahead of its place."""
+    longer critical or high, or it would go ahead of its place."""
     _ready()
     todo, _ = P.ensure(todo)
     ls = list(P.lines(todo))
@@ -110,7 +110,7 @@ def rewait(tid: str, todo=None) -> None:
     P.edit(tid, keyed=keyed, todo=todo)
     ls = list(P.lines(todo))
     i = P._find(ls, tid)
-    ls[i] = P.PRI_TAG.sub(lambda m: '' if m.group(1) == 'critical' else m.group(0), ls[i], count=1).replace('**  ', '** ', 1)
+    ls[i] = P.PRI_TAG.sub(lambda m: '' if m.group(1) in ('critical', 'high') else m.group(0), ls[i], count=1).replace('**  ', '** ', 1)
     P._write(todo, ls)
 
 
