@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, fallback as FB, settings_live, ci, file_split, gitops, no_commits, no_push, plan as P, plansync, plat, shared_tools, stack, undo
+from agent_runner import agent_hold, brief_arrives, claude_use, fallback as FB, settings_live, ci, file_split, gitops, no_commits, no_push, plan as P, plansync, plat, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -843,7 +843,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
 def capped(force: bool) -> str | None:
     """Why no new task may start: the 5-hour session usage at or past `[run] session_max`, or the 7-day usage
     at or past `[run] weekly_max` (and not --force). None when neither is."""
-    if force or C.run['agent'] != 'claude':
+    if force or not claude_use.account(C):
         return None
     for name, what, key in (('five_hour', 'session', 'session_max'), ('seven_day', 'weekly', 'weekly_max')):
         w = usage_pct(name)
@@ -1146,7 +1146,7 @@ class Run:
         procs, running, free_at = self.procs, self.running, self.free_at
         reserve_branch_ids()
         log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
-            (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''),
+            (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and claude_use.account(C) else ''),
             EV_RUN_UP, slots=slots)
         if nogate := no_gate_line():
             log(nogate)

@@ -215,7 +215,7 @@ def no_settings(c=None, st: dict | None = None) -> str:
     return NO_SETTINGS
 
 
-_FILE_AGENT: dict = {}  # `agent_problem`: root -> its settings files as last read, and the agent they name
+_FILE_AGENT: dict = {}  # `agent_problem`: root -> its settings files as last read, the agent they name, whether a role runs on it
 
 
 def agent_problem(c=None, st: dict | None = None) -> str:
@@ -227,15 +227,15 @@ def agent_problem(c=None, st: dict | None = None) -> str:
     c = c or S.C
     if not c:
         return ''
-    from agent_runner import config
+    from agent_runner import claude_use, config
     now = config.settings_print(c.root)
     if _FILE_AGENT.get(c.root, (None,))[0] != now:
         try:
-            v = config.Config(c.root).run['agent']
+            new = config.Config(c.root)
         except (Exception, SystemExit):  # noqa: BLE001 - a file that does not load: the run log says it
-            v = c.run['agent']
-        _FILE_AGENT[c.root] = now, v
-    return config.agent_problem(c.root, _FILE_AGENT[c.root][1])
+            new = c
+        _FILE_AGENT[c.root] = now, new.run['agent'], claude_use.uses(new, c.run.get('model_flag') or '')
+    return config.agent_problem(c.root, *_FILE_AGENT[c.root][1:])
 
 
 def status_rows(up: bool, st: dict, progress: str, login: str | None = None) -> list[str]:
