@@ -1,5 +1,5 @@
 """B801: `[run] on_exit`, run once each time a slot's session ends: by itself (`Run.reap`), or stopped by a drop, a
-`plan change --restart` or a take back (`loop.halts`), or by `s!` (`loop.end_sessions`, B803). It runs beside the loop, and nothing starts in its slot until it
+`plan change --restart`, a take back or a cancel (`loop.halts`), or by `s!` (`loop.end_sessions`, B803). It runs beside the loop, and nothing starts in its slot until it
 has ended (`Run.held`): it may free a lock by AGENT_SLOT, which the slot's next task could have just taken."""
 from __future__ import annotations
 
