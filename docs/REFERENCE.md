@@ -27,6 +27,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
    (`[x]`, and the line moves to DONE.md), commits, and pushes `task/<ID>`. If the gate fails, nothing is
    ticked or committed. A session that's stuck runs `done --blocked "why"` instead.
    A file its own output goes to (`done … > done.log 2>&1`) is left out of the commit.
+   Before the gate, `done` runs the [removal check](#the-removal-check) on what the diff deletes or renames.
    Failed gates are counted per task (a pass or a block resets the count), each with a hash of
    the worktree's content (uncommitted and untracked files too, not ignored ones). After three, `done` runs one more gate only if
    that changed since the last failure; unchanged, it refuses without running, and a changed one that fails
@@ -1177,6 +1178,26 @@ the slot reset.
 or quiet for over 65 minutes with a tool running, is logged with the terminal to look at, and the bell
 rings.
 
+### The removal check
+
+Before the gate, `done` looks at what the task's diff removes (F416): the commits past the shared branch, or past
+the merge the worktree was started on, plus uncommitted and untracked files. When it deletes or renames a file, test,
+setting or command, `done` searches for each name (two words or more, or a file name with an uncommon extension) in
+code, config, CI workflows, docs, the glossary, lessons, open tasks and their long forms (its own task left out), and
+the project's Claude Code memories (main checkout and worktree). History is exempt: DONE.md, CHANGELOG,
+docs/research, `[run] findings`, the journal and closed tasks' long forms.
+
+A dead path (the removed file's full path) in code, config or CI refuses `done`, and no answer helps; code that must
+name it, such as a fixture or migration, can build the path from its parts. The other mentions are a numbered list.
+`done` refuses (exit 2, nothing ticked, no failed gate counted) until each is answered once: fix it (it leaves the
+list), or `--named "1 filed B12; 2-3 kept because <why>"` (no number or `all` means all; `fixed` is accepted only when
+it is gone; a filed ID must be an open task). Answers are kept per task in the worktree's git dir. An answer given
+before the list was shown counts for nothing, and a new mention is asked about on its own.
+
+A file now git-ignored counts as made, not removed; a test, setting or command moved to another file is not removed.
+An open auto-filed CI task for a removed test or workflow is listed too. It runs on docs-only diffs and with
+`--no-test`, not with `--blocked`. It reads text only: no model call.
+
 ### Shared tools
 
 Some things only one task can use at a time: a test phone, a device. Each is named under `[run.tools.<name>]` in
@@ -1705,9 +1726,10 @@ agent-runner pitch [approve|no PITCH]  landed work that waits for a yes to be pu
 agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck since the last look (or WHEN:
                                        2h, yesterday), as a digest; --all every event; --follow each new one live
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
-agent-runner done ID "MSG" [--blocked WHY [--after X,Y | --until CHECK,…]] [--artifact URL] [--no-test]
+agent-runner done ID "MSG" [--blocked WHY [--after X,Y | --until CHECK,…]] [--artifact URL] [--no-test] [--named ANSWERS]
                                        --artifact: a concept's page (a K task without it takes the URL that
                                        `publish-page` recorded; --page FILE names its copy)
+                                       --named: answers the removal check's list (**The removal check** above)
 agent-runner review [ID] [--base BRANCH]
                                        the spec review before `done`, a fresh one-shot on [models] review
                                        (**Spec review one-shot** above); its findings print
@@ -2273,6 +2295,7 @@ python3 tests/test_home.py      # [run] home: default, overrides, the pre-0.13 p
 python3 tests/test_disk.py      # slot_max_gb, min_free_gb, extra slots removed
 python3 tests/test_cost.py      # agent-runner cost: kinds of call, size × turns, Claude and Pi transcripts
 python3 tests/test_plansync.py  # [plan] repo: two checkouts on one plan repo, merges, claims, tick on landing
+python3 tests/test_stale.py     # the removal check (F416): what still names a removed name, answers, ignored files
 python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessions, wip parking,
                                 # retry after unblock, prompt, Stop hook, resume, adopt,
                                 # batches, flaky/inherited failures, the platform layer and the

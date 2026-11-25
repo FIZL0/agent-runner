@@ -5,6 +5,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - Added: PR mode (`[git] pr = true`) for a repository on GitHub: each finished task opens one pull request for a person to merge, and the runner never merges or pushes main (F419).
+- Added: `done` runs a removal check before its gate (F416): when a task's diff deletes or renames a file, test, setting or command, it lists what still names it, and a dead path in code, config or CI refuses `done` until it is gone; the rest is answered once with `done --named "1 filed B12; 2-3 kept because …"`.
 ## 0.71.0 (2026-11-25)
 
 - Changed: in the terminal UI (`agent-runner ui`) with no run up, the Status panel says Not running and names T (start), with no slot, pause or stop keys; T starts the run without blocking the UI, and the panel says Starting the run… while it starts, or Not started: why after a failure (T again retries). When the run comes up, the panel, tab and each selection stay as they were. Adding a task and messaging a chat work with no run up (F402c2).
