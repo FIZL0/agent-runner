@@ -251,9 +251,9 @@ function talkDraw(){
   const ear=TK.ear, again=ear&&ear.again&&TK.hold&&!ear.stopped;  // B216a1: a restart in a hold
   const now=again&&!ear.on?'The mic is off, wait until it is on again':again&&ear.deaf?`Nothing is heard. Let go and press again${ear.gapAt||ear.kept?', these words are kept':''}`:TK.ear&&TK.ear.reading?'Getting the words…':TK.ear&&(!TK.ear.on||micOpening(TK.rec))?'Starting the mic…':'Listening…';
   /* B216a1: after a pause in a hold the mic can be off for a moment, so the line says when it is on again */
-  line.textContent=why||(st==='listening'?(TK.heard?TK.heard+(TK.ear&&(TK.ear.gapAt||TK.ear.kept||(again&&!ear.on))?' … '+now:''):now):st==='thinking'?'Thinking…':st==='speaking'?'Speaking…':(TK.kept?`“${TK.kept.length>90?'…'+TK.kept.slice(-90):TK.kept}” Not sent: nothing was heard after these words. ${hold?'Hold':'Tap'} to go on from them, or send them as they are. `+TK.note:TK.note||(hold?'Hold to talk':'Tap to talk')+(open?', the mic is open':'')).trim());
+  line.textContent=why||(st==='listening'?(TK.heard?TK.heard+(TK.ear&&(TK.ear.gapAt||TK.ear.kept||(again&&!ear.on))?' … '+now:''):now):st==='thinking'?'Thinking…':st==='speaking'?'Speaking…':(TK.kept?`“${TK.kept.length>90?'…'+TK.kept.slice(-90):TK.kept}” Not sent: nothing was heard after these words. ${hold?'Hold':'Tap'} to go on from them, or send them as they are. `+TK.note:TK.note||(hold?'Hold to talk':'Tap to talk')+(open?', the mic is open, not listening':'')).trim());
   $('micrep').hidden=!!why||!!st||!TK.report;$('keptsend').hidden=!!st||!TK.kept;
-  const label=why||(st==='listening'?'Stop listening':(hold?'Hold to talk':'Talk')+(open?', the mic is open':''));
+  const label=why||(st==='listening'?'Stop listening':(hold?'Hold to talk':'Talk')+(open?', the mic is open, not listening':''));
   mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':open?' open':'');mic.disabled=!!why;
   mic.setAttribute('aria-label',label);mic.title=label;setHTML(mic,I.talk);
   const sl=reads?'Stop speaking':TK.held?'Read the reply aloud':TS.read?'Read replies aloud: on':'Read replies aloud: off';
