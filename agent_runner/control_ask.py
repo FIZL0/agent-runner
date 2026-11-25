@@ -53,6 +53,9 @@ def _inside(f: Path, sid: str) -> bool:
     """Whether the real path `f` is in this project, or in the scratchpad Claude Code gave session `sid`."""
     if f.is_relative_to(os.path.realpath(S.ROOT)):
         return True
+    from agent_runner.slots import tmp_roots
+    if not any(f.is_relative_to(os.path.realpath(r)) for r in (*tmp_roots(), Path.home() / '.cache')):
+        return False
     parts = f.parts
     return bool(sid) and any(parts[i] == sid and parts[i + 1] == 'scratchpad' and re.fullmatch(r'claude(-\w+)?', parts[i - 2])
                              for i in range(2, len(parts) - 2))
@@ -148,11 +151,11 @@ def fill() -> list[str]:
     transcript, when that is still there. An item answered since, or that asks something else by now, is left alone."""
     if str(S.C.todo) in FILLED:
         return []
-    FILLED.add(str(S.C.todo))
     try:
         waits = [a[1] for a in P.asks(S.C.todo, all=True) if a[0] == 'DECIDE']
     except (OSError, SystemExit):
-        return []
+        return []  # the next look tries again
+    FILLED.add(str(S.C.todo))
     out = []
     for tid in waits:
         try:

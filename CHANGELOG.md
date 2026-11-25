@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a control session's DECIDE question that the run files under Needs you keeps, in its ask file, the text of the message above the DECIDE line (the message before it when it is a bare DECIDE), the session's name and project, and copies of the local pictures that text names when they are in the project or that session's scratchpad; questions already waiting get it once from the session's transcript, if still there. The run page does not show that text yet (B809c), and the pictures show as the item's pictures (B809b).
 - Added: in PR mode, a review comment or change request by someone with write access, or red CI or a conflict with main, resumes the task's session on its pull request, with at most 3 tries each before Needs you; a pull request closed without a merge goes to Needs you instead of only being logged (F423).
 - Added: PR mode (`[git] pr = true`) for a repository on GitHub: each finished task opens one pull request for a person to merge, and the runner never merges or pushes main (F419).
 - Added: `done` runs a removal check before its gate (F416): when a task's diff deletes or renames a file, test, setting or command, it lists what still names it, and a dead path in code, config or CI refuses `done` until it is gone; the rest is answered once with `done --named "1 filed B12; 2-3 kept because …"`.
