@@ -339,6 +339,7 @@ function talkAway(){
   if(TK.trail)micLog('sound: Talk was left');
   TK.playing='';if(TK.state==='speaking')TK.state=talkRest();TK.turn=(TK.turn||0)+1;shush();
 }
+addEventListener('pagehide',talkAway);  // B836: another project's page, or Home's: the browser's voice can outlive this one
 /* a Talk reply's play button: reads that reply, or stops it */
 function playReply(k){
   if(TK.playing===k)return hush();

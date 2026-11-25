@@ -1107,7 +1107,8 @@ def test_talk_settings_f124(tmp: Path) -> None:
     eq(got.get('autoHeld'), 'auto', 'holding the mic while it already listens: letting go sends')
 
 
-AWAY_DRIVER = READ_DRIVER.split('(async () => {')[0] + r"""
+AWAY_DRIVER = READ_DRIVER.split('(async () => {')[0].replace('addEventListener = () => {};', 'addEventListener = document.addEventListener;') + r"""
+` + line("addEventListener('pagehide',talkAway)") + `
 const go = (v, t) => { S.view = v; S.thread = t || null; ` + line('  if(!HOME_PAGE&&!chatShown())talkAway()') + ` };
 (async () => {
   const out = {}; await settle(); const run = AU.got; AU.ok = true;
@@ -1130,6 +1131,7 @@ const go = (v, t) => { S.view = v; S.thread = t || null; ` + line('  if(!HOME_PA
     // gone and back before it lands: read; and a play button's reading stops too
     over(); awaitReply(); go('home'); go('talk'); lands('In time.'); await begin(); o.inTime = TK.state;
     over(); speak('By hand.', 'k'); await begin(); go('home'); o.hand = [TK.playing, kind === 'run' ? AU.el.paused !== false : order.includes('cancel')]; go('talk');
+    over(); lands('One here. Two.'); await begin(); order.length = 0; fire('pagehide', {}); o.page = [TK.state, kind === 'run' ? AU.el.paused !== false : order.includes('cancel')];
     // nothing is read: leaving does not touch the browser's voice (B132)
     over(); go('home'); o.none = order.length; go('talk');
   }
@@ -1156,6 +1158,7 @@ def test_talk_left_b836(tmp: Path) -> None:
         eq(o.get('seen'), ['', 0], f'{kind}: nor one first seen while away')
         eq(o.get('inTime'), 'speaking', f'{kind}: back before it lands: it is read')
         eq(o.get('hand'), ['', True], f"{kind}: a play button's reading stops too")
+        eq(o.get('page'), ['', True], f"{kind}: another project's page stops it too")
         eq(o.get('none'), 0, f'{kind}: with nothing read, leaving makes no speechSynthesis call')
 
 
