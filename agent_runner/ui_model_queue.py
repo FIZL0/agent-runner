@@ -78,6 +78,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     """Every open task ([ ] or [~]) of TODO.md's lines `ls`, in plan order. F74: each row also carries
     `after_title` (what it waits on, in words: `after_words`) and `state` (`queue_state`; STATE `st` says
     which slot runs it and since when)."""
+    from agent_runner import plan_wait, row_hold
     names, out = _kind_names(), []
     tasks = list(P.iter_tasks(ls))
     titles = {tid: P.short_title(rest, 200) for _, _, tid, rest, _ in tasks}
@@ -94,6 +95,10 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             continue
         f = P.fields(ls[i])
         after, pri = P.waits_on(ls, i), task_pri(rest, section)
+        on_tasks = False
+        if box == '~' and (ids := plan_wait.blocked_on(ls, i)):  # F441: blocked on tasks alone, as `reopen` reads it
+            after = [t for t in dict.fromkeys(P.resolve_after(ls, i, ids)) if t != tid]
+            on_tasks = any(t in live for t in after)
         if pri == 'later' and split_queued(ls, tid, i, tasks):
             pri = 'normal'
         everything = P.ALL in f.get('after', []) and 'ahead' not in f  # F435: a listed one names them
@@ -101,14 +106,13 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
                     'files': f.get('files', []), 'after': after, 'pri': pri,
                     'section': section, 'blocked': box == '~',
                     'after_title': after_words(after, names_of, live, everything, landed),
-                    'state': queue_state(tid, pri, after, live, where, box == '~', tid in tool_waits)})
+                    'state': queue_state(tid, pri, after, live, where, box == '~' and not on_tasks, tid in tool_waits)})
         if tool_names:  # F168
             out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
         elif tid in tool_waits:  # B184: memory; B196: its author's split
             out[-1]['tool_wait'] = tool_waits[tid]
         if tid in untils and tid not in where:  # F427b: neither the person nor a slot: it says what it waits for
             out[-1].update(state='tool', tool_wait=untils[tid])
-        from agent_runner import row_hold
         if tid in busy:
             out[-1]['under_way'] = True
         if row_hold._not_queued(ls, i):  # F429b: `plan hold` refuses it

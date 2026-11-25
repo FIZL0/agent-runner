@@ -416,7 +416,7 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
 
 
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
-           'open_session': open_session, 'move': move,
+           'open_session': open_session, 'move': move, 'set_waits': set_waits,
            'run_control': run_control}
 
 

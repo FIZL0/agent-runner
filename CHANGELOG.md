@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: `plan edit ID --wait-for X,Y` sets what a queued task waits for to exactly those tasks, and `--wait-for none` clears it (a blocked task reopens with its notes kept; a person's check that waited goes back to Needs you); the run app's `set_waits` does the same. Refused with the reason and nothing changed for an unknown or done task, a circle, a started task, a release, a shelved one and similar. In the Plan queue (run page and terminal UI) a task blocked on open tasks now reads what it waits for, where it read "Waits for you" or blocked (F441).
 ## 0.73.0 (2026-11-25)
 
 - Fixed: on the run page's Plan queue, a shut waiting release row says "Waits for everything above" or "Waits for 3 tasks" (or "next") instead of naming its tasks; opened, it still lists them (B825).

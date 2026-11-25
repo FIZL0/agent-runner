@@ -39,6 +39,9 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  --pri retags it and moves it as `add` files that level, --alone/--no-alone sets
                                  or clears its `(alone)` tag. A corrected instruction
                                  goes here, not in a note. A slot running it is told "Your task changed: …"
+    ./run plan edit <ID> --wait-for X,Y|none   what a queued task waits for, exactly: replaces its `after:`, or the
+                                 (after …) it is blocked on; none clears it. Refused for a release, a task that has
+                                 started or asks the person, a done or unknown id, its own parent or subtask, a circle
     ./run plan goal [TEXT]       print the `Goal:` paragraph above TODO.md's first heading; with TEXT replace it
                                  (title, fields-format line, other paragraphs, headings and tasks untouched)
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
@@ -3352,6 +3355,9 @@ def _p_note(a, x):
 
 
 def _p_edit(a, x):
+    if '--wait-for' in a.rest:  # F441
+        from agent_runner import plan_wait
+        return plan_wait.command(a, x)
     if refused := [w for w in a.rest if w in ('@', '--last', '--force')]:
         print(f'{PROG}: edit takes no {refused[0]} (`{PROG} move ID WHERE` moves a task)', file=sys.stderr)
         return 2

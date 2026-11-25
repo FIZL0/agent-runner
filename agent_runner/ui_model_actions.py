@@ -297,3 +297,16 @@ def move(tid: str, where: str, other: str) -> dict:
     if where not in ('after', 'before'):
         return {'ok': False, 'code': 2, 'out': f'move: where is after or before, not {where!r}', 'argv': []}
     return call(['plan', 'move', tid, where, other])
+
+
+def set_waits(tid: str, ids: list) -> dict:
+    """F441: the Plan page's Wait for…: task `tid` waits for exactly the tasks `ids`, [] for none (`plan edit ID
+    --wait-for`). A refusal's 'out' is its plain reason."""
+    from agent_runner import plan_wait
+    if not isinstance(ids, list):
+        return {'ok': False, 'code': 2, 'out': 'set_waits: ids is a list of task ids', 'argv': []}
+    for t in [tid, *ids]:
+        if not isinstance(t, str) or not TASK_ID.fullmatch(t):
+            return {'ok': False, 'code': 2, 'out': f'set_waits: a task id (F72), not {t!r}', 'argv': []}
+    r = call(['plan', 'edit', tid, plan_wait.FLAG, ','.join(ids) or plan_wait.NONE])
+    return r if r['ok'] else {**r, 'out': r['out'].removeprefix(f'{P.PROG}: waits not changed: ')}

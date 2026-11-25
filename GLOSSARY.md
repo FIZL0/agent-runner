@@ -1009,3 +1009,10 @@ _Said_: waits for review, changes asked, CI red
 _On screen_: waits for review; changes asked; CI red; conflicts with the main branch; approved, waits to be merged
 _In code_: pr_rows.state_of
 _Avoid_: PR status, merge state
+
+**Wait for…**:
+Setting which tasks a queued task waits for: exactly the ones picked, or none
+_Said_: wait for, what it waits for
+_On screen_: Wait for…
+_In code_: plan edit --wait-for, plan_wait.py, set_waits
+_Avoid_: block on, depend on
