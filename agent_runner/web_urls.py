@@ -207,7 +207,7 @@ def page_line(site=None) -> str:
             us = shown_links((site or site_urls)(), own_links(us))
             if not us:
                 return f'run page: {closed_line()}'
-            more = us[1:2] + [u for u in us[2:] if urlsplit(u).hostname == 'localhost']
+            more = us[1:2] + [u for u in us[2:] if fell_back() or urlsplit(u).hostname == 'localhost']
             return f'run page: {us[0]}' + (f' (or {" or ".join(more)})' if more else '')
     except (OSError, ValueError):
         pass
