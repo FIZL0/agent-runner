@@ -494,7 +494,8 @@ async function sessTask(t,what){
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
 /* F426a: Home is about the person: talk, answer, jump; the run and the plan are one line each, which opens its view */
 function homeHTML(){
-  return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div><button class="btn acc talkbig" data-view="talk">${I.talk}Talk</button>${box('How can I help with the run?',keysLine(!!S.snap.chat_model))}${ttydLine()}
+  const off=homeStart();
+  return `<div class="col">${off}<div class="greet">${LOGO()}${greeting()}</div><button class="btn${off?'':' acc'} talkbig" data-view="talk">${I.talk}Talk</button>${box('How can I help with the run?',keysLine(!!S.snap.chat_model))}${ttydLine()}
     ${homeChips()}${needsSec()}${homeSums()}</div>`;
 }
 /* the chat that last had something said in it, pinned or not, and the one run control that fits now */
