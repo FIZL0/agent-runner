@@ -34,6 +34,59 @@ def test_moves(tmp: Path) -> None:
         check(go('next-release', 'after', 'F3')['ok'] and P.release(order()[1]), 'the Next release row is a release there', order())
 
 
+def test_grips(tmp: Path) -> None:
+    """Which row has a grip: each, a running or under-way task's too; not a parked row or a started release."""
+    repo(tmp)
+
+    def grips(st: dict | None = None) -> str:
+        ls = P.lines(S.C.todo)
+        rows = U.pin_releases(U.queue_rows(ls, st or {}), U.release_rows(ls, st or {}, landed=0))
+        return ' '.join(q['id'] for q in rows if q['grip'])
+    tasks = 'F1 B2 F3 D4 F5 F7'
+    eq(grips(), 'F1 B2 F3 D4 F5 V6 F7', 'a blocked one and a waiting release too; not the parked one')
+    eq(grips({'running': {'1': 'F1', '2': 'V6'}, 'merging': ['B2']}), tasks, 'running, merging; not the release that runs')
+    eq(grips({'merging': ['V6']}), tasks, 'nor one that merges')
+    with mock.patch('agent_runner.sched.taken', lambda: {'F3': tmp, 'V6': tmp}):
+        eq(grips(), tasks, 'taken by hand')
+    with mock.patch.object(S, 'queued', lambda: {1: ('B2', 's', 'w'), 2: ('V6', 's', 'w')}):
+        eq(grips(), tasks, 'waiting to resume')
+    P.drop('V6', 'no', S.C.todo, S.C.done)
+    ls = P.lines(S.C.todo)
+    rows = U.release_rows(ls, {}, landed=1)
+    U.pin_releases(U.queue_rows(ls), rows)
+    eq([r['grip'] for r in rows if r['state'] == 'auto'], [True], 'the Next release row')
+
+
+def test_under_way(tmp: Path) -> None:
+    """A task that runs moves before or after another: its place alone, its line as it was, `after:` kept, and the slot's
+    files not touched. A release that started stays put; to the top, hold and remove are refused as before."""
+    repo(tmp)
+    P.edit('B2', keyed=' | after: F1', todo=S.C.todo)
+    P.edit('F3', keyed=' | after: B2', todo=S.C.todo)
+    text = lambda: sorted(P.lines(S.C.todo))  # noqa: E731
+    with mock.patch.object(U, 'RUN', [real]):
+        go = lambda *a: U.act('move', tid=a[0], where=a[1], other=a[2])  # noqa: E731
+        was = text()
+        check(go('F1', 'after', 'V6')['ok'] and go('B2', 'before', 'F1')['ok'] and go('F3', 'after', 'F7')['ok'], 'moved, past the tasks they wait for too')
+        eq((order(), text()), (['D4', 'F5', 'V6', 'B2', 'F1', 'F7', 'F3', 'F8'], was), "a normal task's move changes no line, so no after:")
+        notes = {t: S.C.notes(f'{t}.resume') for t in ('B2', 'V6')}
+        for n, (t, f) in enumerate(notes.items(), 1):
+            f.write_text(json.dumps({'slot': n, 'sid': t, 'why': 'cut off'}), encoding='utf-8')
+        kept = {t: f.read_text(encoding='utf-8') for t, f in notes.items()}
+        r = go('B2', 'before', 'D4')
+        check(r['ok'] and order()[:2] == ['B2', 'D4'] and text() == was, 'an under-way task moves, its line as it was', r)
+        eq({t: f.read_text(encoding='utf-8') for t, f in notes.items()}, kept, 'its session goes on as it would')
+        now = order()
+        r = go('V6', 'before', 'D4')
+        check(not r['ok'] and 'cannot be moved' in r['out'] and order() == now, 'a started release does not', r)
+        for a in (('move', 'B2', 'top'), ('hold', 'B2')):
+            check(real(['plan', *a])[0] and order() == now and text() == was, f'{a[0]} {a[-1]}: refused as before')
+    ran = P._parse_command(['move', 'F1', 'before', 'B2'])
+    with mock.patch.object(P, 'run_on', lambda c, t: 's2'), mock.patch.object(P, 'cfg', lambda: S.C):
+        P._p_move(ran, mock.Mock(c=S.C, todo=S.C.todo))
+    eq((order()[0], text()), ('F1', was), 'in a slot: moved, every line as it was')
+
+
 # the menu test's page, with the grip's whole script and its listeners, cards 50px high and 10px apart
 DRIVER = MENU.split('(async () => {\n  const out')[0] \
     .replace("'/* the drag: the row goes'", "'I.grip='") \
@@ -82,7 +135,11 @@ const drop = async (id, by) => { const n = sent.length; noClick = false; const y
   y = start('F1'); move(y + 130); fire('pointermove', {clientY: y + 130, buttons: 0}); out.lost = [GR.d, rows()];
   fire('pointerdown', {target: grip('F1'), clientY: 125, pointerType: 'touch'}); fire('pointerdown', {target: grip('F1'), clientY: 125, button: 2}); fire('pointerdown', {target: cardOf('F1').all.find(e => e.nodeName === 'b'), clientY: 125}); out.none = GR.d;
   y = start('F1'); move(y + 130); S.snap.queue[4].title = 'Changed'; render(); move(y + 131); fire('pointerup', {}); out.redrawn = [rows(), last()]; land();
-  y = start('F1'); move(y + 130); S.snap.queue[0] = {...S.snap.queue[0], state: 'running s1 1m', menu: []}; render(); const n = sent.length; move(y + 131); fire('pointerup', {}); out.started = [GR.d, sent.length - n, !!grip('F1')];
+  out.runDrag = await drop('F3', -130); out.dots = !!dots('F3'); land();
+  out.runKey = [key('F3', 'ArrowDown'), rows(), last()]; land();
+  y = start('F1'); move(y + 130); S.snap.queue[0] = {...S.snap.queue[0], state: 'running s1 1m', menu: []}; render(); move(y + 131); fire('pointerup', {}); out.ran = [rows(), last(), !!grip('F1')]; land();
+  y = start('V6'); move(y - 130); S.snap.queue[3] = {...S.snap.queue[3], started: true, grip: false, menu: []}; render(); const n = sent.length; move(y - 131); fire('pointerup', {}); out.started = [GR.d, sent.length - n, !!grip('V6'), rows()];
+  PM.did = [{id: 'F7', k: 'menu_remove', back: true, cid: 'x', at: now, ms: 9000, q: {...S.snap.queue[4]}, down: []}]; const f7 = S.snap.queue.splice(4, 1); render(); out.undone = [rows().includes('F7'), !!grip('F7')]; S.snap.queue.splice(4, 0, ...f7); render(); out.back = [out.back, !!grip('F7')]; PM.did = [];
   S.f.planq = 'x'; PM.did = []; out.search = planHTML().includes('data-grip');
   console.log(JSON.stringify(out));
 })();
@@ -90,7 +147,7 @@ const drop = async (id, by) => { const n = sent.length; noClick = false; const y
 
 
 def test_page(tmp: Path) -> None:
-    """The grip, a drag and the keys move a row and open none; a tap on the row does; a running row has no grip."""
+    """The grip, a drag and the keys move a row and open none; a tap on the row does; a running row too, not a started release."""
     page = W.PAGE.read_text(encoding='utf-8')
     check(re.search(r'\.card>\.grip\{[^{}]*touch-action:pan-y', page), 'a swipe that starts on it scrolls')
     if not shutil.which('node'):
@@ -98,9 +155,9 @@ def test_page(tmp: Path) -> None:
         return
     menu = [HOLD, TOP, REMOVE]
     row = {'id': 'V6', 'title': 'Release', 'words': 'next', 'waits': [], 'note': '', 'placeholder': False}
-    t = lambda i, **k: {'id': i, 'title': 'T' + i, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, **k}  # noqa: E731
-    ph = {'id': '', 'title': 'Next release', 'state': 'auto', 'words': 'auto at 3 landed: 1/3', 'before': 'F7', 'placeholder': True, 'menu': menu}
-    snap = {'queue': [t('F1'), t('B2'), t('F3', state='running s1 2m', menu=[]), t('V6', release=row), t('F7'), t('F8', state='parked', section='Parked', menu=[])],
+    t = lambda i, **k: {'id': i, 'title': 'T' + i, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, 'grip': True, **k}  # noqa: E731
+    ph = {'id': '', 'title': 'Next release', 'state': 'auto', 'words': 'auto at 3 landed: 1/3', 'before': 'F7', 'placeholder': True, 'menu': menu, 'grip': True}
+    snap = {'queue': [t('F1'), t('B2'), t('F3', state='running s1 2m', menu=[]), t('V6', release=row), t('F7'), t('F8', state='parked', section='Parked', menu=[], grip=False)],
             'shelved': [], 'releases': [row, ph], 'release_acts': [], 'sessions': [], 'controls': U.controls()}
     (tmp / 'grip.js').write_text(DRIVER, encoding='utf-8')
     r = subprocess.run(['node', str(tmp / 'grip.js'), str(W.PAGE), json.dumps(snap)], capture_output=True, text=True, encoding='utf-8', timeout=60)
@@ -110,8 +167,8 @@ def test_page(tmp: Path) -> None:
     o = json.loads(r.stdout)
     mv = lambda tid, where, other: {'tid': tid, 'where': where, 'other': other}  # noqa: E731
     on = lambda i, n='': [i, f'button|Move {n or i}: drag, or arrow up and down', True]  # noqa: E731
-    eq(o['grips'], [on('F1'), on('B2'), ['F3', '', False], on('V6'), on('next-release', 'Next release'), on('F7'), ['F8', '', False]],
-       'a button of the card, outside its head; none on a running or a parked row')
+    eq(o['grips'], [on('F1'), on('B2'), on('F3'), on('V6'), on('next-release', 'Next release'), on('F7'), ['F8', '', False]],
+       "a button of the card, outside its head; a running row's too; none on a parked one")
     eq((o['tapGrip'], o['tapRow']), ([[], 0], ['F1']), 'a press on it opens nothing; a tap on the row does')
     start = ['F1', 'B2', 'F3', 'V6', 'rel:next', 'F7', 'F8']
     eq(o['down'], [True, ['B2', 'F1', *start[2:]], mv('F1', 'after', 'B2'), [], True], 'arrow down: one place, at once; the focus stays on it')
@@ -129,14 +186,18 @@ def test_page(tmp: Path) -> None:
     eq(o['kids'][1], [mv('B2', 'after', 'V6')], 'among the releases')
     eq(o['kidPut'], ['F2', 'P1', 'P1a', 'P10'], "a task's subtasks go with it")
     eq(o['little'], [start, [], [], False, None], 'a press that hardly moves is no drag')
-    eq(o['back'], [start, [], [], True, None], 'dropped where it was: nothing sent')
+    eq(o['back'][0], [start, [], [], True, None], 'dropped where it was: nothing sent')
     eq(o['room'][0], ['translateY(130px)', 'translateY(-60px)', 'translateY(-60px)', '', '', '', ''], 'the row goes with the mouse, the others make room')
     eq((o['room'][1:3], o['esc'], o['lost']), ([True, None], start, [None, start]), 'Esc, and a release outside the window, put it back')
     eq(o['none'], None, 'no touch, no other button, no drag from the row itself')
     eq(o['redrawn'], [['B2', 'F3', 'F1', *start[3:]], mv('F1', 'after', 'F3')], 'a redraw midway: the drag goes on')
-    eq(o['started'], [None, 0, False], 'one that started meanwhile is not moved')
+    eq(o['runDrag'], [['F3', 'F1', 'B2', *start[3:]], [mv('F3', 'before', 'F1')], [], True, None], 'a running row dragged')
+    eq((o['dots'], o['runKey']), (False, [True, ['F1', 'B2', 'V6', 'F3', *start[4:]], mv('F3', 'after', 'V6')]), 'and by the keys; no three-dot menu')
+    eq(o['ran'], [['B2', 'F3', 'F1', *start[3:]], mv('F1', 'after', 'F3'), True], 'a task that started meanwhile is moved')
+    eq(o['started'], [None, 0, False, start], 'a release that started meanwhile is not')
+    eq((o['undone'], o['back'][1]), ([True, False], True), 'a row whose Remove is undone: once the plan has it')
     eq(o['search'], False, 'none in a search')
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_moves), in_tmp(test_page)]))
+    raise SystemExit(report([in_tmp(test_moves), in_tmp(test_grips), in_tmp(test_under_way), in_tmp(test_page)]))

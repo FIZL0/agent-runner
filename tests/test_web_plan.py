@@ -838,14 +838,14 @@ def waits_rows(tmp: Path) -> dict:
     menu = ['menu_hold', 'menu_top', 'menu_remove']
     waits = [{'id': 'F1', 'title': 'The A-Z index must be able to scroll'}, {'id': 'B2', 'title': 'Retry'}, {'id': 'F3', 'title': 'Third'}]
     names = 'F1 The A-Z index must be able to scroll a…, B2 Retry, F3 Third'
-    t = lambda i, title, **k: {'id': i, 'title': title, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, **k}  # noqa: E731
+    t = lambda i, title, **k: {'id': i, 'title': title, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, 'grip': True, **k}  # noqa: E731
     def rel(i, stands, words, w=(), everything=False, **k):
         return t(i, 'Release', release={'id': i, 'title': 'Release', 'state': stands, 'words': words, 'waits': list(w), 'everything': everything, 'note': ' (not waiting on D4)', 'placeholder': False}, **k)
     q = [t('D4', 'Pick', state='blocked', blocked=True), t('F5', 'Stuck', state='after', after=['D4']), t('F1', waits[0]['title']), t('B2', 'Retry'), t('F3', 'Third'),
          rel('V5', 'waits', f'waits for 3: {names}', waits, True), rel('V6', 'waits', f'waits for 3: {names}', waits),
          rel('V7', 'waits', 'waits for 1: F1 The A-Z index', waits[:1]), rel('V8', 'held', 'held', held=True, state='held'),
          rel('V9', 'blocked', 'blocked', blocked=True, state='blocked'), rel('V10', 'next', 'next'), rel('V11', 'releasing', 'releasing now')]
-    ph = {'id': '', 'title': 'Next release', 'state': 'auto', 'words': 'auto at 3 landed: 1/3', 'before': '', 'placeholder': True, 'menu': menu}
+    ph = {'id': '', 'title': 'Next release', 'state': 'auto', 'words': 'auto at 3 landed: 1/3', 'before': '', 'placeholder': True, 'menu': menu, 'grip': True}
     snap = {'queue': q, 'shelved': [], 'releases': [x['release'] for x in q if 'release' in x] + [ph], 'release_acts': [], 'sessions': [], 'controls': U.controls()}
     (tmp / 'relwait.js').write_text(RELWAIT_DRIVER, encoding='utf-8')
     r = subprocess.run(['node', str(tmp / 'relwait.js'), str(W.PAGE), json.dumps(snap)], capture_output=True, text=True, encoding='utf-8', timeout=60)

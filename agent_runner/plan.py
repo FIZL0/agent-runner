@@ -3035,7 +3035,8 @@ def _p_move(a, x):
         tid = release_moves.move_next(where, ref, x.todo)
         return x.say(f'moved {a.id} {_text(a)}: it is {tid} now, and waits for the tasks above it')
     _find(lines(x.todo), a.id)
-    if why := row_hold.under_way(x.c, a.id):
+    order = where in ('before', 'after') and not release(a.id)  # B824b: its place alone, also while it runs
+    if not order and (why := row_hold.under_way(x.c, a.id)):
         print(f'{PROG}: {a.id} cannot be moved: {why}', file=sys.stderr)
         return 1
     move(a.id, where, ref)
