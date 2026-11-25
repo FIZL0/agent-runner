@@ -6,7 +6,7 @@ const TALK_FOR=':'+(HKEY||document.title), TALK_KEY='ar-talk'+TALK_FOR, TALK_OLD
 const talkKept=()=>{const v=tabStore.get(TALK_KEY);return v==='-'?'':v||store.get(TALK_KEY)}, talkKeep=v=>{tabStore.set(TALK_KEY,v||'-');store.set(TALK_KEY,v)}, talkWas=()=>{const v=tabStore.get(TALK_KEY);return/^c\d+$/.test(v)?v:''};
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const TK={rec:null,heard:'',kept:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',held:'',playing:'',later:[],watch:null,hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* later, watch: talkNext(), soundWatch() (B174);  gen: counts New Talk chat presses; kept: words a listen did not send, as nothing was heard after them (micSent(), B216a1); starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads; held: the reply the browser wants a tap for (F158) */
-/* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
+/* F124: Talk's settings (TALK_SET), as this browser last had them, and whether its dock shows the mic or the box, as this tab has it */
 const TS_KEY='ar-talkset', TM_KEY='ar-talkmode';
 let TS=talkSetParse(store.get(TS_KEY));
 TK.starting=talkStartsRead();  // F157
@@ -116,8 +116,25 @@ async function playClips(clips,voice,turn,end,fall,held){
   }
   routeFree();end();
 }
-const talkTyping=()=>!!micWhy()||store.get(TM_KEY)==='type';
-function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;if(chatShown())toEnd(true);render(true);const t=m==='type'&&document.querySelector('[data-in]');if(t)kbFocus(t)}
+const talkTyping=()=>!!micWhy()||tabStore.get(TM_KEY)==='type';
+/* B802: coming to Talk, or back to its tab, ends typing mode: the mic shows, and the words stay the box's draft. The tab
+   hidden for less than TYPE_STAYS (an app switch, a refresh of the page) is not left. Returns whether it ended */
+const TA_KEY='ar-talkaway', TYPE_STAYS=60000;
+function talkBack(){
+  if(micWhy())return false;
+  const t=document.activeElement;if(t&&t.matches&&t.matches('[data-in]'))t.blur();  // a chat's box too: the redraw would hand its focus on
+  if(tabStore.get(TM_KEY)!=='type')return false;
+  tabStore.set(TM_KEY,'');
+  if(DK.rec&&DK.key==='talk'){DK.put=true;if(MIC.rec===DK.rec)DK.rec.stop();else{MIC.next=null;DK.rec=null}}  // its stop is in the box
+  return true;
+}
+/* since when the tab is away, and from which project, kept over a reload. Back: true when that was too long, or another
+   project's page was open since, or nothing says */
+function talkLate(){const [at,...of]=tabStore.get(TA_KEY).split(' ');tabStore.set(TA_KEY,'');return !at||of.join(' ')!==TALK_FOR||Date.now()-at>=TYPE_STAYS}
+const talkGone=()=>{if(!tabStore.get(TA_KEY))tabStore.set(TA_KEY,Date.now()+' '+TALK_FOR)};
+const talkSeen=()=>{if(!tabStore.get(TA_KEY))return;if(talkLate()&&chatShown()&&talkBack())render(true)};
+for(const [o,t] of [[document,'visibilitychange'],[window,'pagehide'],[window,'pageshow']])o.addEventListener(t,e=>{if(t==='pagehide'||document.hidden)talkGone();else if(t!=='pageshow'||e.persisted)talkSeen()});
+function talkMode(m){tabStore.set(TM_KEY,m==='type'?'type':'');S.pin=true;if(chatShown())toEnd(true);render(true);const t=m==='type'&&document.querySelector('[data-in]');if(t)kbFocus(t)}
 /* F157: the Talk chats left by New Talk chat, kept over a reload */
 function talkOld(){try{const l=JSON.parse(store.get(TALK_OLD)||'[]');return Array.isArray(l)?l:[]}catch(e){return []}}
 function talkLeave(names){store.set(TALK_OLD,JSON.stringify([...new Set(talkOld().concat(names))]))}
@@ -195,7 +212,7 @@ function dictate(){
   if(TK.state==='listening')return toast("Talk's mic is listening: tap it to stop, then dictate.",true);  /* it has the recognizer */
   const ta=document.querySelector('[data-in]');if(!ta)return;
   let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
-  DK.rec=rec;DK.key=boxKey();DK.base=ta.value;
+  DK.rec=rec;DK.put=false;DK.key=boxKey();DK.base=ta.value;
   rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
   let final='', heard='';
   rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)final+=x[0].transcript;else interim+=x[0].transcript}
@@ -203,7 +220,7 @@ function dictate(){
   rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type instead.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
   rec.onend=()=>{DK.rec=null;dictShow(final||heard);render(true);
-    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus({preventScroll:true});t.setSelectionRange(t.value.length,t.value.length)}micFree(rec);soundAs('playback')};
+    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key&&!DK.put){t.focus({preventScroll:true});t.setSelectionRange(t.value.length,t.value.length)}micFree(rec);soundAs('playback')};
   render(true);
   micWhenFree(()=>{MIC.rec=rec;recFree();soundAs('play-and-record');try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}},()=>{DK.rec=null});
 }

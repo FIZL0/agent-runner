@@ -286,7 +286,7 @@ const fetch = async (p, o) => { if (!o) return {ok: true, json: async () => VOIC
 const navigator = {language: 'en-US'}, toast = t => notes.push(t), render = () => {}, voices = () => [];
 const MIC = {rec: null, next: null}, S = {view: 'talk', thread: null, sheet: ''}, TK = {state: '', playing: '', note: '', held: '', later: [], ear: null, unlocked: true};
 let TS;
-const listen = () => { listens++ }, talkSet = (k, v) => { TS[k] = v }, micWhy = () => '', store = {get: () => ''}, TM_KEY = 'tm';
+const listen = () => { listens++ }, talkSet = (k, v) => { TS[k] = v }, micWhy = () => '', store = {get: () => ''}, tabStore = store, TM_KEY = 'tm';
 const tick = () => new Promise(r => setTimeout(r, 5));
 eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run speech:'), page.indexOf('const talkTyping='))
  + line('const talkTyping=') + grab('function unlockSpeech(') + grab('function speak(') + line('function hush(')
