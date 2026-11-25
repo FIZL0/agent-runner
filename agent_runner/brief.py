@@ -338,7 +338,10 @@ A wait on a task or a release is `--after <ID>`, and a wait a check can read is 
 CONFIRM or BLOCKED line over 200 characters with no ask file, or one that waits on an open task or release with no \
 `--after`. When there is more to say, write it first to the ask file {path}, as \
 JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place>, "steps": [<what to do>, …], \
-"expect": [<what they should see>, …], "shots": [{{"file": <a picture's path>, "caption": <what it shows>}}]}}; leave out \
+"expect": [<what they should see>, …], "shots": [{{"file": <a picture's or video's path>, "caption": <what it shows>}}]}}; shots takes pictures and .mp4 \
+or .webm videos, under {shots}/, 50 MB each, and anything to watch or look at is attached there or given as a link, \
+never as an address to type or a hand-written /concept/ page (`done --blocked` refuses a /concept/<ID> of a task with \
+no concept filed); leave out \
 what you do not need. One action per step, in words the person sees on screen, no file names or code (a failed command and its error, \
 when too long for the line, go in the commit message). For a check or choice about looks, take small screenshots, put under {shots}/, with no secrets or \
 tokens in them. The file is optional; write a new one for each ask.
