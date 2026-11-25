@@ -43,11 +43,11 @@ def step(tid: str, lines: list[str]) -> str:
 
 
 def live_gates() -> list[dict]:
-    """The merge gates running now, from their records. Never `merge.gate_runs`, which removes a record it cannot
+    """The merge gates running now, and the fix or repair session (`kind`), from their records. Never `merge.gate_runs`, which removes a record it cannot
     read: here it may be one the run is just writing."""
     from agent_runner.merge import GATES, gate_alive
     out = []
-    for f in S.C.notes(GATES).glob('*.json'):
+    for f in [*S.C.notes(GATES).glob('*.json'), S.C.notes('master.json')]:
         try:
             s = json.loads(f.read_text(encoding='utf-8'))
             if gate_alive(s):
@@ -58,10 +58,11 @@ def live_gates() -> list[dict]:
 
 
 def stage(tid: str, gates: list[dict]) -> str:
-    """Where the merge of `tid` is when the run log has no step of it: a running gate holds it, or a gate in the merge
+    """Where the merge of `tid` is when the run log has no step of it: a running gate holds it, or what runs in the merge
     worktree (one merge at a time) is another task's, so it waits. With neither the run cannot tell."""
-    if any(tid in (s.get('tids') or [s.get('tid')]) for s in gates):
-        return TESTING
+    mine = [s for s in gates if tid in (s.get('tids') or [s.get('tid')])]
+    if mine:
+        return UNKNOWN if all(s.get('kind') for s in mine) else TESTING
     return WAITS if any(Path(s.get('cwd') or '').name == 'merge' for s in gates) else UNKNOWN
 
 
