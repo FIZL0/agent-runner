@@ -22,14 +22,21 @@ function dictInsert(draft,words){
 /* B132: the talk line after a listen that ended with no words, naming the last error the recognizer gave */
 /* B162: with how the mic was started (tap, hold, auto) and how long it ran before the error; a mic cut off
    ('aborted') gets what to try, in plain words, unless the person stopped it */
-function heardNothing(err,mode,ms,tries,stopped,on,msg){
+/* B804b: early: a hold let go while Recorded's mic was opening, or just after it opened */
+function heardNothing(err,mode,ms,tries,stopped,on,msg,early){
   const d=(msg?': '+msg:'')+[mode||'',ms==null?'':`after ${(ms/1000).toFixed(1)} s`,tries>1?`${tries} tries`:''].filter(Boolean).map(x=>', '+x).join('');
-  if(!err){const x=d?` (${d.slice(2)})`:'';return stopped&&on===false?`${MIC_EARLY}.${x}`:`Heard nothing${x}`}
+  if(!err){const x=d?` (${d.slice(2)})`:'';return early?`${MIC_STARTING}.${x}`:stopped&&on===false?`${MIC_EARLY}.${x}`:`Heard nothing${x}`}
   if(err==='aborted'&&!stopped)return `The mic was cut off before it heard anything. Stop any other app that uses sound or the mic, then try again. (${err}${d})`;
   if(err==='aborted')return `${on===false?MIC_EARLY:'The mic was on, but no words reached it before it was stopped. Stop any other app that uses sound or the mic, then try again'}. (${err}${d})`;
   return `Heard nothing (error: ${err}${d})`;
 }
 const MIC_EARLY='The mic was stopped before it was on. Allow it if the browser asks, wait until this line says Listening…, then speak';
+const MIC_STARTING='The mic was still starting. Allow it if the browser asks, hold until this line says Listening…, then speak';
+/* B804b: Recorded's mic is opened afresh in the listen, as no sound came; before the first opening the listen is not on yet */
+const micOpening=rec=>!!rec&&!!rec.recorded&&rec.on===false;
+const MIC_EARLY_MS=500;
+/* a hold let go before Recorded's mic took sound, or within MIC_EARLY_MS of it where the press found it not open */
+const micEarly=(t,rec,by)=>t.mode==='hold'&&/^(pointerup|touchend)$/.test(by)&&!!rec&&!!rec.recorded&&(micOpening(rec)||!t.on||(t.late&&t.stopAt-t.onAt<MIC_EARLY_MS));
 /* B162: the mic report: what happened from the press on the mic to its end, each with its ms. WebKit's 'aborted' is
    any failure of the system's recognizer (silence too), and only the error's message tells them apart; a stop before
    its start gives an end with no error. Words heard are counted, not kept. B216: a run of growing results is one line,
