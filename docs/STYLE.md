@@ -85,6 +85,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Title switcher** (`SHEETS.chats`, `chatsSheet()`): a chat's title in the top bar, with a down chevron, opens the chats in
   the sidebar's order, each with its last line (`chatLast()`), a `.bdot` when it needs your reply, and a check on the open one.
   Rename this chat is at its foot. A tap on the title only opens the switcher; it does not rename.
+- **Sent response row** (`responseRow()`, `responses()`, `quietRows()`, `.crow.response`, `.newlabel`, `responseHTML()`): a sent response (F425a) in the Chats list's Quiet group, and in the switcher with its second line "You: <answer>" (`.swc.response`). It has no row buttons (no pin, rename or delete). The dim "new" label (`.newlabel`, until the response is opened once per browser) is not a Dot or a Badge. Opening it never focuses the message box on touch.
 - **Sidebar level** (`.slevel`, `.prow`, `sideShow()`): the sidebar's level is the view. The first row is All projects
   (`allRow()`, with a count of what needs you in other projects, hidden when Home lists one project); the level it
   opens is the project list (`allSide()`), and a project's own list turns it back. A `.prow` is one project: its state

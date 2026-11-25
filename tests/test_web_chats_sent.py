@@ -537,8 +537,8 @@ def test_responses_f425b(tmp: Path) -> None:
     row = o['off'].split('<div class="qline">Quiet</div>')
     check(len(row) == 2 and '+response' not in row[0] and row[1].count('data-thread="+response:') == 2,
           'with chat_quiet off the rows still stand under Quiet, never in the top list', o['off'])
-    check('F2 Title F2' in row[1] and row[1].count('newlabel') == 2 and 'bdot' not in o['off'] and 'data-del' not in row[1],
-          'each with its id and title and new, with no dot', row[1])
+    check('F2 Title F2' in row[1] and row[1].count('newlabel') == 2 and 'bdot' not in o['off'] and 'class="n"' not in o['off'] and 'data-del' not in row[1],
+          'each with its id and title and new, with no dot and no count', row[1])
     check(o['sheet'].count('data-thread="+response:') == 2 and 'Quiet' in o['sheet'] and o['sheet'].count('newlabel') == 2, 'the switcher has them too', o['sheet'])
     eq(sorted(o['names']), ['c1', 'c2'], 'no chat among the chats a pick takes')
     eq(o['quiet'], ['[c1]', 'qline', 'data-thread="+response:2-1"', 'newlabel', '[c2 q]', 'data-thread="+response:1-1"', 'newlabel'], 'among the quiet chats, newest first')
