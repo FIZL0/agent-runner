@@ -8,7 +8,7 @@
 /* F128: quiet chats; F129: a chat's name being edited, a touch row's menu */
 .qline{display:flex;align-items:center;gap:8px;font-size:var(--fs-xs);color:var(--muted);padding:10px 10px 4px} .qline::after{content:'';flex:1;height:1px;background:var(--line2)}
 .crow.quiet .thread{color:var(--muted)} .crow.quiet .t{opacity:.75}
-.renform{margin:0;padding:2px 4px} .renform input{width:100%;border:1px solid var(--accent);border-radius:var(--r-s);background:var(--bg);color:var(--fg);padding:6px 8px;font:16px/1.3 var(--sans)}
+.renform{margin:0;padding:2px 4px;display:flex;align-items:center;gap:var(--s1)} .renform .icon{color:var(--muted)} .renform input{flex:1;min-width:0;border:1px solid var(--accent);border-radius:var(--r-s);background:var(--bg);color:var(--fg);padding:6px 8px;font:16px/1.3 var(--sans)}
 .rowmenu,.rowacts{display:none}
 @media (hover:none){
   .crow .rowmenu,.rowacts button{touch-action:manipulation}
