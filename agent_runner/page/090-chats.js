@@ -110,6 +110,7 @@ function standHTML(n){
   const el=$('feedstand'), size=feedSize(), c=standCells(size,getComputedStyle(el).fontFamily,$('feed').clientWidth);
   return `<div class="standrows" style="font-size:${size}px;--hw:${c.cw}px;--hcell:${c.cell}px;letter-spacing:${c.ls.toFixed(4)}px">${pastLines(said,c.cols).map(l=>`<div>${l.h}</div>`).join('')}</div>`;
 }
+addEventListener('resize',()=>{if(!$('feedstand').hidden)feedSkin()});
 /* each draw: the frame for the chat that is open, or its state in the body */
 function feedDraw(n){
   const moved=(n||'')!==FD.n;
