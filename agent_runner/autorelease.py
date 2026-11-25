@@ -6,6 +6,7 @@ The run's settings (ROOT, C) are read from `state` when used, not imported, so `
 from __future__ import annotations
 
 import datetime as dt
+import time
 from contextlib import ExitStack
 
 from agent_runner import plan as P, plansync, state as S
@@ -58,6 +59,7 @@ def landed_since_release(branch: str) -> list[str]:
 
 
 AUTO_RELEASE_SEEN = [None]  # events.jsonl's and TODO.md's size and mtime at the last count by `every`: neither changed, no new count
+LOOK_AGAIN = 600  # s: a release that stopped the count may have let go with no event (a claim gone stale, a take ended)
 
 
 def waiting_releases(branch: str, ls: list[str]) -> set[str]:
@@ -82,8 +84,8 @@ def auto_release(branch: str, idle: bool = False) -> str:
     every, on_idle = auto_release_of(C.run.get('auto_release', False))
     if not releases_on() or not every and not (idle and on_idle):
         return ''
-    if not idle:  # the every-tick look: only after a landing, or a change to TODO.md (a release dropped)
-        mark = []
+    if not idle:  # the every-tick look: only after a landing, or a change to TODO.md (a release dropped), or LOOK_AGAIN later
+        mark = [int(time.time() // LOOK_AGAIN)]
         for f in (C.notes('events.jsonl'), S.ROOT / rel):
             try:
                 st = f.stat()

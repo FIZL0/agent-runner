@@ -5391,7 +5391,9 @@ def test_auto_release(repo: Path):
         git(repo, 'branch', 'task/V902')
         eq((R.auto_release('main'), at('V902')), ('', old), 'a release releasing now: no cut')
         git(repo, 'branch', '-D', 'task/V902')
-        R.AUTO_RELEASE_SEEN[0] = None
+        with mock.patch.object(sys.modules['agent_runner.autorelease'].time, 'time', lambda t=time.time(): t + 601):
+            eq(R.auto_release('main'), 'V902', 'it let go with no event: looked at again later, and cut')
+        plan(old)
         R.C.run['releases'] = False
         eq((R.auto_release('main'), at('V902')), ('', old), 'releases off: an old one is left as it is')
         R.C.run['releases'] = True
@@ -5438,7 +5440,8 @@ def test_auto_release(repo: Path):
             check(tid3.startswith('V'), f'{first} queues one', tid3)
             has(git(repo, 'log', '-1', '--format=%s'), r'\(2 landed\)$' if first == 'count' else r'\(idle\)$', 'saying why')
             land('F912', 'F913', 'F914')
-            eq((R.auto_release('main'), R.auto_release('main', idle=True), releases() and len(releases())), ('', '', 1),
+            eq((R.auto_release('main'), R.auto_release('main', idle=True), len(releases())),
+               (tid3 if first == 'idle' else '', '', 1),  # F195a: the idle one still waited, so N cuts that one
                f'{first} first: neither queues a second while it is open')
             P.block(tid3, 'BLOCKED: a login', todo=todo)
             git(repo, 'commit', '-qam', 'release blocked')
