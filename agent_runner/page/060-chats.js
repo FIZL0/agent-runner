@@ -1,6 +1,6 @@
 function chatRow(s,quiet){
   const n=s.name,u=S.undo,gone=!!(u&&u.names.includes(n)),cls=[S.thread===n&&!gone?'on':'',S.sel.includes(n)?'sel':'',gone?'gone':''].join(' ');
-  if(S.ren&&S.ren===n)return `<form class="renform" data-renform data-k="chat:${esc(n)}"><input data-f="ren" aria-label="The chat's name" maxlength="80" autocomplete="off"></form>`;  // F129
+  if(S.ren&&S.ren===n)return `<form class="renform" data-renform data-k="chat:${esc(n)}"><input data-f="ren" aria-label="The chat's name" maxlength="80" autocomplete="off"><button class="icon" type="button" data-rencancel aria-label="Cancel rename" title="Cancel rename">${I.x}</button></form>`;  // F129, F446
   const due=!gone&&replyDue(s);  // F128
   const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}" title="Double-click to rename"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t"><span class="tt">${esc(chatTitle(s))}</span></span>${due?'<span class="bdot" role="img" aria-label="needs your reply" title="needs your reply"></span>':''}</button>`;
   const btn=gone?(u.bar?'':`<button class="del undo" data-undo>Undo</button>`):
@@ -27,8 +27,10 @@ function rowTap(e){
   e.preventDefault();e.stopPropagation();rowShut();
 }
 function rowSettle(){if(S.rowOpen&&(S.sheet||S.ren||atAll()||!sessionOf(S.rowOpen)||drawerOn()&&!S.drawer))S.rowOpen=''}
-/* F129: Rename, in the row itself: Enter keeps it, Esc does not */
+/* F129: Rename, in the row itself: Enter keeps it; Esc, its Cancel button (F446) or opening another chat (renameLeave) does not */
 function startRename(n){const x=sessionOf(n);if(!x)return;S.ren=n;S.f.ren=chatTitle(x);if(drawerOn())S.drawer=true;S.renFocus=true;render(true)}
+function cancelRename(){S.ren=null;render(true)}
+function renameLeave(n){if(S.ren&&n&&n!==S.ren)S.ren=null}  // the caller draws
 function saveRename(){
   const n=S.ren, title=String(S.f.ren||'').replace(/\s+/g,' ').trim(), x=sessionOf(n);S.ren=null;
   if(x&&title&&title!==chatTitle(x))outbox('rename_chat',{chat:n,title},{ren:n,say:`Rename ${chatTitle(x)} to “${title}”`});
