@@ -166,6 +166,8 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   away(); hold = new Promise(y => yes = y); goTalk(); click('[data-mic]'); yes(); await settle(); await settle(); out.tpJoin = [asks, TK.rec && TK.rec.on];
   // refused: not asked again by itself, nor by the next Talk press; the mic asks, and once it listens Talk's press does
   away(); deny = 'NotAllowedError'; goTalk(); await settle(); await tick(500); await shown(); const r1 = [asks, notes.length, REC.no]; S.view = 'home'; await tick(500); goTalk(); await settle(); await shown(); out.tpRefused = [...r1, asks]; deny = ''; click('[data-mic]'); await settle(); await settle(); out.tpRefusedMic = [asks, TK.rec.on]; TK.rec.abort(); TK.ear = null; TK.state = ''; S.view = 'home'; await tick(500); goTalk(); await settle(); await shown(); out.tpRefusedOver = [asks, !!REC.open];
+  away(); deny = 'NotAllowedError'; goTalk(); await settle(); deny = ''; may = 'granted'; S.view = 'home'; await tick(500); goTalk(); await shown(); const al = [asks, !!REC.open, REC.denied]; S.view = 'home'; await tick(500); may = 'prompt'; goTalk(); await settle(); await shown(); out.tpAllowed = [...al, asks, !!REC.open];
+  away(); goTalk(false); await settle(); await settle(); fire('click', press('[data-view="plan"]')); S.view = 'plan'; await tick(500); out.tpElse = REC.open;
   away(); deny = 'NotAllowedError'; hold = new Promise(y => yes = y); goTalk(); click('[data-mic]'); yes(); await settle(); await settle(); out.tpRefusedJoin = [asks, recs.length, REC.no !== '']; mic().end(); await settle(); TK.ear = null; MIC.rec = null;
   // Talk already shown, a reply read, dictation, the browser's way: the press opens nothing
   anew(); goTalk(); out.tpShown = asks; away(); TK.state = 'speaking'; goTalk(); out.tpReads = asks; away(); DK.rec = {}; goTalk(); out.tpDict = asks; DK.rec = null; away(); TS.way = 'browser'; goTalk(); out.tpBrowser = asks;
@@ -289,6 +291,8 @@ def test_recorded_f161b(tmp: Path) -> None:
     eq(g.get('tpJoin'), [1, True], 'a mic press during the ask joins it')
     eq(g.get('tpRefused'), [1, 0, '', 1], 'refused: quiet, and not asked again, nor by the next Talk press')
     eq((g.get('tpRefusedMic'), g.get('tpRefusedOver')), ([2, True], [3, True]), 'the mic press asks, and once it listened the Talk press opens it again')
+    eq(g.get('tpAllowed'), [2, True, False, 3, True], 'allowed in the browser meanwhile: the refusal is over')
+    eq(g.get('tpElse', 1), None, 'another place pressed before Talk is drawn: released at the next look')
     eq(g.get('tpRefusedJoin'), [1, 1, True], 'refused with a mic press waiting: not asked a second time, the browser hears')
     eq([g.get(k) for k in ('tpShown', 'tpReads', 'tpDict', 'tpBrowser')], [0, 0, 0, 0], "Talk shown already, a reply read, dictation or the browser's way: nothing opens")
     eq((g.get('tpMay'), g.get('tpPrompt')), (True, False), 'the permission from before the ask is kept')

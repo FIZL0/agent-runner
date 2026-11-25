@@ -114,6 +114,7 @@ async function recAhead(){
   if(!recMayOpen())return;
   REC.may=st==='granted';
   if(!REC.may)return;
+  REC.denied=false;  // allowed meanwhile
   soundAs('play-and-record');
   const gen=REC.gen;
   recBegin(true).catch(()=>{if(gen===REC.gen)REC.shut=true;soundAs('playback')});  // not tried again by itself until Talk shows anew
@@ -132,7 +133,7 @@ function recPress(){
   recBegin('talk').catch(e=>{if(recDenied(e))REC.denied=true;if(gen===REC.gen)REC.shut=true;soundAs('playback')});
   setTimeout(recLook,0);
 }
-document.addEventListener('click',e=>{if(e.target.closest('[data-view="talk"]'))recPress()});  // before the click that opens it
+document.addEventListener('click',e=>{REC.coming=0;if(e.target.closest('[data-view="talk"]'))recPress()});  // before the click that opens it; any other press may leave Talk
 /* B804a: the permission at a press, for the mic report */
 function recAsked(log){
   try{navigator.permissions.query({name:'microphone'}).then(p=>{REC.perm=p.state;log(`permission: ${p.state}`)},()=>log('permission: the browser cannot say'))}
