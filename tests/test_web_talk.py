@@ -489,13 +489,13 @@ const AU = {el: null, got: null, ok: false};  // F158
 const boxKey = () => 'c3', DRAFT_KEY = k => k, store = {set() {}}, grow = () => {};
 const talkSend = t => { sent.push(t); TK.state = TK.note = '' };
 const els = {}, el = () => ({classList: {toggle() {}}, setAttribute(k, v) { this[k] = v }, removeAttribute(k) { delete this[k] }});
-let copied = '', sheet = '', RUN_VERSION = '9.9'; const openSheet = n => { sheet = n };
+let copied = '', sheet = '', RUN_VERSION = '9.9', PAGE_PRINT = 'aaa'; const openSheet = n => { sheet = n };
 const $ = k => els[k] = els[k] || el();
 let micEl = null;  // a redraw of the mic's markup makes a new element
 eval(logic + `
 function render() { if (setHTML($('talkmic'), talkMic())) els.mic = micEl = {...el(), setPointerCapture(id) { this.cap = id }}; talkDraw() }
 let TS = talkSetParse('');
-` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'holdLost', 'micStop', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
+` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'holdLost', 'micStop', 'micPage', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
   + page.slice(page.indexOf('/* B162: the mic report\'s pointer'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {}; render();
 // two aborts: one retry by itself, then the words
@@ -691,7 +691,9 @@ starts = 0; listen(); hears(['so', true]); S.view = 'home'; last().end(); S.view
 listen(); for (const w of ['s', 'se', 'sec', 'secret']) hears([w, false]); cut.grow = TK.trail.ev.filter(x => /result/.test(x)).length;
 for (let i = 0; i < 130; i++) micLog('x'); listen(); last().end(); cut.full = [ended(), TK.trail.ev.join().includes('sec')]; sent.length = 0; cut.most = most; TS.mic = 'hold';
 navigator.userAgent = 'UA iPhone'; TK.hold = false; TK.report = TK.trail; let holdReport = '';
-navigator.clipboard = {writeText: async t => { holdReport = t }}; micCopy().then(() => { out.holdReport = holdReport });
+navigator.clipboard = {writeText: async t => { holdReport = t }};
+S.snap = {page: 'aaa'}; out.pages = [micPage()]; PAGE_PRINT = '/' + '*PAGE_PRINT*/'; out.pages.push(micPage()); PAGE_PRINT = 'aaa'; S.snap = {}; out.pages.push(micPage());
+S.snap = {page: 'bbb'}; micCopy().then(() => { out.holdReport = holdReport });
 TS.mic = 'tap'; TK.state = ''; render();
 TK.trail = null; for (let i = 0; i < 130; i++) micLog('x'); out.cap = micReport(TK.trail, ['h']).split('\n').slice(-1)[0];
 // the copy, and what shows where it is refused
@@ -811,7 +813,11 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(b.get('auto'), [1, ['yes'], 'sent 3 letters, ended by the recognizer'], 'auto listen ends at a silence')
     eq((b.get('network'), b.get('left')), ([[], 'kept 2 letters, not sent: nothing heard after them, ended by error network'], [1, ['so']]), 'a failed restart keeps, Talk left sends')
     eq((b.get('grow'), b.get('full'), b.get('most')), (1, ['sent 6 letters, ended by a tap', False], 1), 'the report has its end, and no words')
-    check('mic hold, version' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
+    check("mic hold, the run's version 9.9, open page aaa, not the run's (bbb): not reloaded since it changed, audio session" in got['holdReport'],
+          "the report names the open page and the run's: a page not reloaded is told apart", got['holdReport'][:300])
+    eq(got.get('pages'), ["open page aaa, the same as the run's", "open page not known, the run's page aaa", "open page aaa, the run's page not known"],
+       'the open page is the run\'s, or one of the two is not known')
+    check('mic hold' in got['holdReport'] and 'works as' not in got['holdReport'], 'the report says hold', got['holdReport'][:300])
     eq(got.get('cap'), 'and 10 more', 'the report has an end')
     eq(got.get('copied')[:2] + got.get('copied')[3:4], ['Mic report', 'the note', 'UA'], 'the copy names the note and the browser')
     check('page open ' in got['holdReport'] and 'without' in got['holdReport'], 'B162b1: the report says what the page did before', got['holdReport'][:400])
