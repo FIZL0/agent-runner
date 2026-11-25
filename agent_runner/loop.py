@@ -18,7 +18,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, undo
+from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, freeze, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, stop_now, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -48,11 +48,8 @@ from agent_runner.feed import rc_sweep_stop
 
 
 def nap(s: float) -> None:
-    if READING[0]:
-        WAKE.wait(s)
-        WAKE.clear()
-    else:
-        time.sleep(s)
+    WAKE.wait(s)  # set by a key typed here, or by `stop_now.watch` for one a command left
+    WAKE.clear()
 
 
 def read_keys() -> None:
@@ -80,8 +77,8 @@ runner keys: type one here and press Enter
 
     s        stop gently: no new tasks, the running ones finish and merge, then the run exits
              (its run page stays up)
-    s!       stop now: end the agent sessions (each resumes where it was in the next run),
-             finish the merges under way, then exit (its run page stays up)
+    s!       stop now: end the agent sessions (each resumes where it was in the next run) and the
+             merges under way (the next run makes them again), and exit at once (its run page stays up)
     p        pause: no new tasks, and the run stays up
     u        upgrade agent-runner now (the run restarts on it); restart: only restart, for the settings that apply on the next run
     f        force: start tasks past the session and weekly usage caps (as --force)
@@ -144,8 +141,8 @@ def take_keys() -> None:
                 log('stopping: no new tasks; the running ones finish and merge, then the run ends (s again: undo)')
             elif k == 's!':
                 ask_stop('s!', force=True)
-                log('stopping now: ending the agent sessions (each resumes in the next run); the merges under way '
-                    'finish, then the run ends')
+                log('stopping now: ending the agent sessions (each resumes in the next run) and the merges under way (the '
+                    'next run makes them again)')
             elif k == 'p':
                 PAUSED[0] = not PAUSED[0]
                 log('paused: no new tasks; the run stays up (p again: go on)' if PAUSED[0] else
@@ -252,7 +249,6 @@ def drop_earlier_stop(keep: dict) -> None:
 def end_sessions(procs: dict, running: dict) -> None:
     """`s!`: end every agent session now, each queued to resume in its slot when a run next starts. Its
     worktree stays as the session left it; nothing it did is merged. B803: `[run] on_exit` runs once they ended."""
-    exit_hook.end_forced(procs, end_orphans)
     for n, (pid, sid, _) in list(procs.items()):
         tid = running[n][0]
         if not transcript(sid):  # it never started (held at a dialog): `--resume` would find no session and sit
@@ -260,6 +256,7 @@ def end_sessions(procs: dict, running: dict) -> None:
             continue
         queue_resume(tid, n, sid, 'stopped with s!')
         log(f'slot {n}: {tid} ended (s!); it resumes in this slot in the next run')
+    exit_hook.end_forced(procs, end_orphans)
     exit_hook.start_forced(procs)
     procs.clear()
     running.clear()
@@ -593,7 +590,11 @@ def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
         for s in (signal.SIGTERM, signal.SIGHUP):  # a kill, a closed terminal: the same exit as Ctrl-C
             signal.signal(s, _interrupted)
     try:
-        return run(argv, prog)
+        rc = run(argv, prog)
+        if freeze.STOPPER:  # B827: the threads of the merges it ended are still there
+            sys.stdout.flush()
+            os._exit(rc)
+        return rc
     except KeyboardInterrupt:
         # Exit now: a merge thread would otherwise keep the process up. Its merge worktree is thrown away; the
         # main checkout only ever moves to a tested commit, and a merge open there is waited for (up to a
@@ -681,6 +682,7 @@ def run(argv: list[str], prog: str) -> int:
         return dry_run(slots, branch)
 
     RUN_LOCK.append(wait_last_run())  # B144: held until run() returns; a start after a stop waits for it
+    stop_now.begin()  # B827
     ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
     drop_earlier_stop(keep)
     C.notes('POWER').unlink(missing_ok=True)
@@ -713,7 +715,9 @@ def run(argv: list[str], prog: str) -> int:
         threading.Thread(target=read_keys, daemon=True).start()
         print(keys_help(), flush=True)
     try:
-        return Run(a, slots, once, branch, model, idle, stall, pause).go()
+        it = Run(a, slots, once, branch, model, idle, stall, pause)
+        threading.Thread(target=stop_now.watch, args=(it,), name='stop-now', daemon=True).start()  # B827
+        return it.go()
     finally:
         while RUN_LOCK:  # the run is over (its stop has ended its own processes): the next one may start
             RUN_LOCK.pop().close()
@@ -783,6 +787,7 @@ class Run:
             procs[n], running[n] = proc, task
             free_at.setdefault(n, dt.datetime.min)
 
+        exit_hook.adopt()  # B827: what a stop now left running
         shared_tools.start([n for n in range(1, slots + 1) if n not in procs])  # F168: nothing without [run.tools]
         foreign = self.foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
         sweep_tmp(force=True)
@@ -805,7 +810,11 @@ class Run:
 
     def tick(self) -> int | None:
         """One pass of the loop: None to go on after a nap, else the run's exit code."""
-        self.top()
+        take_keys()
+        if not forced():
+            self.top()
+        if forced():  # B827: with no session left too: merges are ended as well
+            return stop_now.stop(self)
         self.tagged = None
         for n in list(self.free_at):
             self.slot(n)
@@ -813,7 +822,7 @@ class Run:
         return self.end()
 
     def top(self) -> None:
-        """The start of a tick: keys typed, the slot count, forced stops, tells and halts, the stop note."""
+        """The start of a tick: keys typed, the slot count, tells and halts, the stop note."""
         procs, running = self.procs, self.running
         sweep_tmp()
         agent_hold.tick(self)  # F202a, B764c: settings changed, a wrong [run] agent
@@ -826,8 +835,6 @@ class Run:
             self.slots = SLOTS
             for m in range(1, self.slots + 1):
                 self.free_at.setdefault(m, dt.datetime.min)
-        if forced():  # with no session left too: an `on_exit` may still run
-            end_sessions(procs, running)
         tells(procs, running)  # F16: plan tell / change, typed into a running slot's session
         restyles(procs, running, self.branch)  # F19: plan restyle parks a running interface task
         budgets(procs, running, type_into)  # F103: [run] task_tokens / task_usd stop a task at a clean point
@@ -850,7 +857,7 @@ class Run:
         self.watch_stall(n)
         if self.held(n):
             return
-        if n not in self.procs and n in self.waiting and not forced():  # a running task, not a new one: no stop or usage cap holds it
+        if n not in self.procs and n in self.waiting:  # a running task, not a new one: no stop or usage cap holds it
             self.resume_queued(n)
             return
         if n not in self.procs and dt.datetime.now() >= self.free_at[n]:
@@ -1041,8 +1048,7 @@ class Run:
         """Stop the run once a stop has drained it; end `once`, say idle, or power off when nothing may start."""
         procs, waiting, merging, tried = self.procs, self.waiting, self.merging, self.tried
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
-        if stopping() and not procs and (not waiting or forced()) and not merging and \
-                not exit_hook.busy():  # B801; B803: `s!` waits too, not long (`exit_hook.hurry`)
+        if stopping() and not procs and not waiting and not merging and not exit_hook.busy():  # B801; `s!`: stop_now
             how = stopped_by()
             end_own(rc_sweep_stop, log, keep_page=not POWER)  # B144, F402b3a: its own are gone, or its page handed over, before it says so
             clear_stop()

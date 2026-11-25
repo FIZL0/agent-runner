@@ -13,7 +13,7 @@ next task.
     ./run run --dry-run 4     print what 4 free slots would start now, and start nothing
     ./run stop                finish what is running, start nothing new, then exit (or type s + Enter
                               in the run view, `attach`; ? + Enter there lists every key)
-    ./run stop --force        end the sessions now (each resumes in the next run), then exit
+    ./run stop --force        stop the whole run at once (each session resumes in the next run)
     (every form but `once` stays up when the work runs out: it logs `run idle` and waits for more)
 
 docs/REFERENCE.md describes each mechanism. In short:

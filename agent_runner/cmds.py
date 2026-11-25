@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, shared_tools, stack
+from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, shared_tools, stack, stop_now
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -471,7 +471,7 @@ def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     """`./run stop`: the running sessions finish and merge, nothing new starts, and the run exits."""
     ap = argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then the run stops. Its run page stays up (`agent-runner page-only stop` ends it), except after --suspend or --shutdown.')
     ap.add_argument('--force', action='store_true',
-                    help='end the agent sessions now (each resumes in the next run), as s! in the run view')
+                    help='stop the whole run at once, as s! in the run view: end its sessions (each resumes in the next run), merges and gates (the next run makes them again), and wait until its process is gone')
     power = ap.add_mutually_exclusive_group()
     power.add_argument('--suspend', action='store_true', help='then suspend the computer')
     power.add_argument('--shutdown', action='store_true', help='then shut the computer down')
@@ -484,12 +484,12 @@ def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
         send_key('s off') if run_up() else clear_stop()
         print('stop taken back')
         return 0
+    if a.force:
+        return stop_now.command('suspend' if a.suspend else 'shutdown' if a.shutdown else '')
     if a.suspend or a.shutdown:
         P.post(C, 'POWER', 'suspend' if a.suspend else 'shutdown')  # the run's P.take keeps the last one
-    ask_stop(f'{C.command} stop' + (' --force' if a.force else ''), force=a.force)
-    print(f'asked the run to stop ({C.notes("STOP")}); it exits once '
-          + ('its sessions are ended and the merges under way are done' if a.force else
-             'the running tasks are merged')
+    ask_stop(f'{C.command} stop')
+    print(f'asked the run to stop ({C.notes("STOP")}); it exits once the running tasks are merged'
           + (f', then {"suspends" if a.suspend else "shuts down"} the computer' if a.suspend or a.shutdown else '; its page stays up' if page_only.kept() else ''))
     return 0
 

@@ -160,8 +160,8 @@ in one step. Edits already made in the main checkout: add `--here`, and they mov
 
 **Stopping.** Type `s` + Enter in the run view (`agent-runner attach`, or the terminal `run 3` runs in), or
 run `agent-runner stop`. Nothing new starts; the
-running tasks finish and merge, then the run exits and its run page stays up (`s` again takes it back). `s!` (`stop --force`) ends the
-sessions now instead, each to resume in the next run. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `[run] auto_upgrade`, on by default, does it once a release is out, and off, nothing restarts by itself), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
+running tasks finish and merge, then the run exits and its run page stays up (`s` again takes it back). `s!` (`stop --force`, or Stop now on the run page) ends the
+whole run at once instead: its sessions and merges under way are ended, each session to resume in its slot in the next run, and the run exits within a few seconds. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `[run] auto_upgrade`, on by default, does it once a release is out, and off, nothing restarts by itself), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
 `x` suspend or shut the computer down once the run stops (or goes idle); `?` lists the keys. To leave the
 machine to it from the start, run with `--shutdown` or `--suspend`.
 
