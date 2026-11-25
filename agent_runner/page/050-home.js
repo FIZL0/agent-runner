@@ -164,7 +164,7 @@ function projectsHTML(){
   if(HOME_PAGE&&!atAll())return offHTML();
   if(H.tab==='devices')return devOn()?devHTML():devicesHTML();
   const ps=projectsNow(), asks=projectAsks(ps), total=homeNeeds()+H.alerts.length;
-  const alerts=H.alerts.map(a=>card(`<div class="row"><div class="who">${I.alert}</div><div class="grow">${esc(a.what)}</div>${a.clean?`<a class="btn acc" href="${esc(tq(HB+'device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`,'need')).join('');
+  const alerts=H.alerts.map(a=>card(`<div class="row"><div class="who">${I.alert}</div><div class="grow">${esc(a.what)}</div>${a.clean?`<button class="btn acc" data-devopen="${esc(a.device)}">Clean</button>`:''}</div>`,'need')).join('');
   const more=asks.length-ASKS_SHOWN, all=H.more?PGROUPS.length&&projectOrder(ps).filter(p=>(p.asks||[]).length).map(p=>`<div class="qline" data-k="pname:${esc(p.key)}">${esc(p.name||p.key)}</div>${projectAsks([p]).map(askRow).join('')}`).join(''):asks.slice(0,ASKS_SHOWN).map(askRow).join('');
   const needs=`<div class="sec">Needs you${total?` · <span data-k="n:sec" data-roll data-v="${total}">${total}</span>`:''}<span class="ln"></span></div>${alerts}${all}${more>0?`<div data-k="pmore"><button class="btn" data-pmore aria-expanded="${H.more}">${H.more?'Show fewer':`Show ${more} more, by project`}</button></div>`:''}${total?'':emptyCard('Nothing needs you.')}`;
   const groups=PGROUPS.map(([g,label])=>{const l=projectOrder(ps).filter(p=>projectGroup(p)===g);return l.length?`<div class="sec">${label}<span class="ln"></span></div>${l.map(projectCard).join('')}`:''}).join('');

@@ -762,8 +762,14 @@ def test_home_calls():
             eq(d['devices'][2]['verdict']['said'], 'Not answering', 'one that does not answer says so')
             eq(d['devices'][0]['meters'][0]['said'], '12%', 'and its meters')
             pid = d['devices'][1]['id']
-            code, page = get(u + f'/device?t=HT&id={pid}')
-            check(code == 200 and 'Device Vitals' in page, 'the vitals page')
+            for base, tok, dev_id in ((u, 'HT', pid), (u, 'HT', 'local'), (link.split('/?')[0], 'PEERTOKEN', 'local')):
+                with urllib.request.urlopen(base + f'/device?t={tok}&id={dev_id}', timeout=10) as r:
+                    eq(r.url, f'{base}/?t={tok}#device-{dev_id}', 'B818b: the old link sends to the app, that device open')
+                    check('devLink' in r.read().decode(), 'and the app answers there')
+            eq(get(u + '/device?id=local')[0], 403, 'not without the token')
+            eq(V.device_link({}), './#device-local', 'on a trusted network no token is made up')
+            eq(V.device_link({'t': ['a&b'], 'id': ['x\r\n#/']}), './?t=a%26b#device-x%0D%0A%23%2F', 'quoted')
+            check(not hasattr(V, 'VITALS_PAGE'), 'the old page is gone')
             code, dev = get(u + f'/dev/{pid}/vitals/device?t=HT')
             eq((code, dev['host'], dev['id']), (200, 'rycs', pid), 'a peer\'s detail goes through this Home')
             check({'headroom', 'machine', 'spark', 'footprint', 'clean', 'sessions'} <= set(dev), 'every section')

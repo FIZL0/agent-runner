@@ -42,7 +42,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from agent_runner.build_clean import clean_builds
 from agent_runner.build_output import held_files, held_key, held_names
@@ -1211,6 +1211,14 @@ def new_alerts(found: list[dict], said: set[str]) -> tuple[list[dict], set[str]]
     return [a for a in found if a['id'] not in said], now
 
 
+def device_link(query: dict) -> str:
+    """B818b: where the old /device?id= page sends: Home's app with that device open (devLink in page/052-device.js),
+    the token kept as it was given. Relative, so it holds wherever Home is mounted."""
+    tok = query.get('t')
+    return ('./' + (f'?{urlencode({"t": tok[0]})}' if tok else '')
+            + '#device-' + quote((query.get('id') or ['local'])[0], safe=''))
+
+
 # --- the service Home runs -------------------------------------------------------------------------------------
 
 def usage_now() -> dict:
@@ -1552,8 +1560,6 @@ class Vitals:
     def handle(self, method: str, path: str, query: dict, body: bytes) -> tuple[int, dict | str, str]:
         """Answer one of Home's vitals calls: (status, body, content type)."""
         json_t = 'application/json; charset=utf-8'
-        if method == 'GET' and path == '/device':
-            return 200, VITALS_PAGE, 'text/html; charset=utf-8'
         if method == 'GET' and path == '/devices':
             devs = self.devices()
             needs = [{**a, 'device': d['id']} for d in devs for a in d.get('alerts') or []]
@@ -1596,96 +1602,3 @@ class Vitals:
             self.refresh_footprint()
             return 200, res, json_t
         return 404, {'ok': False, 'out': f'no such page: {path}'}, json_t
-
-
-# --- the vitals page -------------------------------------------------------------------------------------------
-
-VITALS_PAGE = r"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Device Vitals</title>
-<style>
-:root{--bg:#f7f6f3;--fg:#1f1e1c;--dim:#6b6860;--card:#fff;--line:#e3e0d8;--accent:#c2410c;--ok:#15803d;--warn:#b45309;--bad:#b91c1c;--track:#ece9e2;color-scheme:light}
-@media (prefers-color-scheme:dark){:root{--bg:#1a1917;--fg:#ecebe8;--dim:#a19e96;--card:#24231f;--line:#3a3833;--accent:#fb923c;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;--track:#33312c;color-scheme:dark}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif;
- padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 24px max(16px,env(safe-area-inset-left))}
-main{max-width:720px;margin:0 auto}h1{font-size:1.3rem;margin:0 0 4px}a{color:var(--accent)}
-.sec{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
-.sec h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:0 0 8px;display:flex;justify-content:space-between}
-.s{color:var(--dim);font-size:.9rem}.big{font-size:1.15rem;font-weight:600}
-.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
-.row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}
-.row span:last-child{color:var(--dim);font-variant-numeric:tabular-nums;text-align:right}
-.row span:first-child{min-width:0;overflow-wrap:anywhere}
-.m{display:grid;grid-template-columns:70px 1fr 110px;gap:8px;align-items:center;margin:6px 0}
-.bar{height:7px;background:var(--track);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}
-.bar i.w{background:var(--warn)}.bar i.b{background:var(--bad)}
-.r{text-align:right;color:var(--dim);font-variant-numeric:tabular-nums;font-size:.9rem}
-svg{width:100%;height:28px;display:block;color:var(--accent)}
-button{font:inherit;font-size:.9rem;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:8px;padding:5px 11px;margin:6px 6px 0 0;cursor:pointer}
-.go{background:var(--accent);color:var(--card);border-color:var(--accent)}
-.more{font-size:.8rem;border:0;background:none;color:var(--accent);padding:0;margin:0}
-label{display:flex;gap:8px;align-items:flex-start;padding:3px 0}label span{min-width:0;overflow-wrap:anywhere}
-#msg{white-space:pre-wrap;font-size:.85rem;color:var(--dim)}
-</style></head><body><main>
-<a id="back" href="#">← Home</a>
-<h1 id="h">Device</h1><div id="v" class="s">Loading…</div>
-<div id="body"></div><div id="msg"></div>
-</main><script>
-const P=new URLSearchParams(location.search),T=P.get('t')||'',ID=P.get('id')||'local';
-const q=p=>p+(p.includes('?')?'&':'?')+'t='+encodeURIComponent(T);
-document.getElementById('back').href=q('./');
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const GB=1073741824;const sz=n=>n==null?'':n>=1099511627776?(n/1099511627776).toFixed(1)+' TB':n>=GB?(n/GB).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(0)+' MB':(n/1024).toFixed(0)+' KB';
-const open={};let busy=false,picked=null;
-function bar(p){const c=p>=90?'b':p>=75?'w':'';return `<div class="bar"><i class="${c}" style="width:${Math.max(0,Math.min(100,p))}%"></i></div>`}
-function spark(v){if(!v)return'';const pts=v.map((x,i)=>x==null?null:[i,x]).filter(Boolean);if(pts.length<2)return'';
- const lo=Math.min(...pts.map(p=>p[1])),hi=Math.max(...pts.map(p=>p[1])),span=hi-lo||1;
- return `<svg viewBox="0 0 ${v.length-1} 28" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${pts.map(p=>p[0]+','+(26-24*(p[1]-lo)/span).toFixed(1)).join(' ')}"/></svg>`}
-function sec(id,title,inner,more){return `<div class="sec"><h2><span>${title}</span>${more?`<button class="more" data-more="${id}">${open[id]?'Less':'More'}</button>`:''}</h2>${inner}${more&&open[id]?more:''}</div>`}
-function rows(list){return list.map(([a,b])=>`<div class="row"><span>${esc(a)}</span><span>${esc(b)}</span></div>`).join('')}
-function render(d){document.getElementById('h').textContent=d.host+(d.here?' · this one':'');document.title=d.host+' · Device Vitals';
- const v=d.verdict||{};document.getElementById('v').innerHTML=`<span class="${esc(v.level)}">${esc(v.said)}</span>`;
- if(!d.ok){document.getElementById('body').innerHTML='';return}
- const h=d.headroom||{},lim=h.limits||{},out=[];
- const why=Object.entries(lim).map(([k,n])=>`${k} ${n}`).join(' · ');
- let plus=(d.running||[]).map(r=>`<button class="go" data-slot="${esc(r.key)}">+ slot${d.running.length>1?' · '+esc(r.key):''}</button>`).join('');
- out.push(sec('room','Headroom',`<div class="big">${esc(h.said||'')}</div><div class="s">Smallest of: ${esc(why)} (at most 6)</div>${plus||'<div class="s">No run up on this device to add a slot to.</div>'}`));
- const m=d.machine||{},sp=d.spark||{},mm=[];
- if(m.cpu){const c=m.cpu;mm.push(`<div class="m"><span>CPU</span>${c.pct!=null?bar(c.pct):'<span></span>'}<span class="r">${c.pct!=null?c.pct.toFixed(0)+'%':''} ${c.threads?c.threads+' thr':''} ${c.load!=null?'load '+c.load:''}</span></div>${spark(sp.cpu)}`);
-  if(c.temp!=null)mm.push(`<div class="m"><span>Temp</span>${bar(c.temp)}<span class="r">${c.temp.toFixed(0)}°C</span></div>${spark(sp.temp)}`)}
- (m.gpus||[]).forEach((g,i)=>{mm.push(`<div class="m"><span>GPU</span>${g.pct!=null?bar(g.pct):'<span></span>'}<span class="r">${g.pct!=null?g.pct.toFixed(0)+'%':''} ${g.temp!=null?g.temp.toFixed(0)+'°':''} ${g.vram_total?sz(g.vram_used)+'/'+sz(g.vram_total):''}</span></div><div class="s">${esc(g.name)}</div>${i==0?spark(sp.gpu):''}`);
-  if(i==0&&g.temp!=null)mm.push(`<div class="m"><span>GPU temp</span>${bar(g.temp)}<span class="r">${g.temp.toFixed(0)}°C</span></div>${spark(sp.gtemp)}`)});
- if(m.mem){const u=m.mem.total-m.mem.avail;mm.push(`<div class="m"><span>Memory</span>${bar(100*u/m.mem.total)}<span class="r">${sz(u)} / ${sz(m.mem.total)}</span></div>${spark(sp.mem)}`)}
- if(m.disk){mm.push(`<div class="m"><span>Disk</span>${bar(100*(1-m.disk.free/m.disk.total))}<span class="r">${sz(m.disk.free)} free</span></div><div class="s">${esc(m.disk.path)} · free GB, last 24 h</div>${spark(sp.disk)}`)}
- let more='';if(m.cpu&&m.cpu.cores)more+='<div class="s" style="margin-top:8px">Per core</div>'+m.cpu.cores.map((c,i)=>`<div class="m"><span>${i}</span>${bar(c)}<span class="r">${c.toFixed(0)}%</span></div>`).join('');
- if(m.sensors)more+='<div class="s" style="margin-top:8px">All sensors</div>'+rows(m.sensors.map(s=>[s.chip+' · '+s.label,s.c.toFixed(0)+'°C']));
- if(m.top)more+='<div class="s" style="margin-top:8px">Top processes</div>'+rows(m.top.map(p=>[p.name+' ('+p.pid+')',p.cpu.toFixed(1)+'% · '+sz(p.rss)]));
- out.push(sec('machine','Machine',mm.join('')||'<div class="s">Nothing here could be read.</div>',more));
- const f=d.footprint||{};const fr=[];
- if(f.worktrees!=null)fr.push(['Worktrees (run homes)',sz(f.worktrees)]);if(f.tmp!=null)fr.push(['Session temp folders',sz(f.tmp)]);
- if(f.logs!=null)fr.push(['Logs',sz(f.logs)]);if(f.wip)fr.push(['wip/ branches',String(f.wip.length)]);
- const cl=d.clean||[];let cin='';
- if(picked){cin='<div class="s" style="margin-top:8px">Clean removes only what you tick:</div>'+cl.map(i=>`<label><input type="checkbox" data-id="${esc(i.id)}"${picked.has(i.id)?' checked':''}><span>${esc(i.path)} <span class="s">· ${esc(i.why)}${i.size?' · '+sz(i.size):''}</span></span></label>`).join('')+
-  `<button class="go" data-clean="go">Remove ticked</button><button data-clean="cancel">Cancel</button>`}
- else{const safe=cl.filter(i=>!i.ask).reduce((a,i)=>a+i.size,0);cin=cl.length?`<button class="go" data-clean="list">Clean ${sz(safe)} safely…</button>`:'<div class="s">Nothing to clean.</div>'}
- const lmore=(f.largest||[]).length?'<div class="s" style="margin-top:8px">Largest folders</div>'+rows(f.largest.map(x=>[x.path,sz(x.size)])):'';
- out.push(sec('foot','Runner footprint'+(f.total!=null?' · '+sz(f.total):''),(fr.length?rows(fr):'<div class="s">Not measured yet.</div>')+cin,lmore));
- const ss=d.sessions||[];
- out.push(sec('sess','Sessions',ss.length?rows(ss.map(s=>[s.project+' '+s.name+(s.what?' · '+s.what:''),s.cpu.toFixed(1)+'% · '+sz(s.rss)])):'<div class="s">No slot or control session running here.</div>'));
- document.getElementById('body').innerHTML=out.join('')}
-let last=null;
-async function load(){if(busy)return;try{const r=await fetch(q('dev/'+encodeURIComponent(ID)+'/vitals/device'));last=await r.json();render(last)}catch(e){}}
-async function post(path,body){busy=true;const m=document.getElementById('msg');m.textContent='…';
- try{const r=await fetch(q(path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();m.textContent=d.out||''}catch(e){m.textContent=String(e)}busy=false;load()}
-document.getElementById('body').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
- if(b.dataset.more){open[b.dataset.more]=!open[b.dataset.more];render(last);return}
- if(b.dataset.slot)return post('dev/'+encodeURIComponent(ID)+'/act',{project:b.dataset.slot,name:'slots',arg:'+1'});
- if(b.dataset.clean==='list'){picked=new Set((last.clean||[]).filter(i=>!i.ask).map(i=>i.id));busy=true;render(last);return}
- if(b.dataset.clean==='cancel'){picked=null;busy=false;render(last);return}
- if(b.dataset.clean==='go'){const ids=[...document.querySelectorAll('[data-id]')].filter(x=>x.checked).map(x=>x.dataset.id);picked=null;busy=false;
-  if(ids.length)post('dev/'+encodeURIComponent(ID)+'/vitals/clean',{items:ids});else render(last)}});
-load();setInterval(load,30000);
-</script></body></html>
-"""

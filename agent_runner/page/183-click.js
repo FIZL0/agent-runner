@@ -50,6 +50,9 @@ document.addEventListener('click',async e=>{
   if(q('[data-devback]')){devBack();return}
   if(q('[data-devload]')){devLoad();render(true);return}
   if(x=q('[data-devmore]')){DV.more[x.dataset.devmore]=!DV.more[x.dataset.devmore];render(true);return}
+  if(x=q('[data-devslot]')){devSlot(x.dataset.devslot);return}  // B818b
+  if(x=q('[data-devclean]')){devClean(x.dataset.devclean);return}
+  if(x=q('[data-devtick]')){devTick(x.dataset.devtick,x.checked);return}
   if(q('[data-pload]')){loadProjects();loadDevices();return}
   if(q('[data-addproject]')){H.said='';openSheet('addproject');const i=$('sheet').querySelector('input');if(i)kbFocus(i);return}
   if(x=q('[data-projmore]')){openSheet('project',x.dataset.projmore);return}

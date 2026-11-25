@@ -1,10 +1,13 @@
-/* B818a: Device Vitals in the app: a device opens as a page under Devices, from its Home's /vitals/device, read only.
-   Which one is open is H.dev, and stands in the history entry (level, tab, dev), so Back and a reload keep the place */
-const DV={d:null,err:'',busy:false,turn:0,more:{}};
+/* B818a: Device Vitals in the app: a device opens as a page under Devices, from its Home's /vitals/device.
+   Which one is open is H.dev, and stands in the history entry (level, tab, dev), so Back and a reload keep the place.
+   B818b: DV.pick is Clean's open tick list, the list as it was when it opened and what is ticked, so a refresh changes
+   neither; DV.act is the press being answered (busy) and what the last one's answer said, by section */
+const devActs=()=>({busy:'',said:{}});
+const DV={d:null,err:'',busy:false,turn:0,more:{},pick:null,act:devActs()};
 H.dev='';
 const devOn=()=>atAll()&&H.tab==='devices'&&H.dev||'';
 const devHere=h=>({level:'all',tab:H.tab,...(h?{dev:h}:{})});
-function devSet(id){if(id!==H.dev){DV.d=null;DV.err='';DV.more={}}H.dev=id;if(devOn())devLoad()}
+function devSet(id){if(id!==H.dev){DV.d=null;DV.err='';DV.more={};DV.pick=null;DV.act=devActs()}H.dev=id;if(devOn())devLoad()}
 function devOpen(id){
   H.tab='devices';tabStore.set('ar-alltab',H.tab);S.drawer=false;
   try{history.replaceState(devHere(),'');history.pushState(devHere(id),'')}catch(e){}
@@ -21,6 +24,50 @@ function devPlace(st){
   if(!atAll()||!st||st.level!=='all')return;
   if('tab' in st){H.tab=st.tab||'';tabStore.set('ar-alltab',H.tab)}
   devSet(st.dev||'');render(true);
+}
+/* Home's own page at #device-ID, where an old /device?id= link leads: that device; the # goes, so a reload keeps the place */
+function devLink(){
+  const m=HOME_PAGE&&!HKEY&&/^#device-(.+)$/.exec(location.hash);if(!m)return false;
+  let id=m[1];try{id=decodeURIComponent(id)}catch(e){}
+  try{history.replaceState(history.state,'',location.pathname+location.search)}catch(e){}
+  devOpen(id);return true;
+}
+/* a press on the open device, sent once: a resend could run it twice. Its answer stands in section `sec`; one that comes
+   after the page has left that device is a toast */
+async function devPost(sec,key,path,body){
+  const a=DV.act;if(a.busy)return null;
+  a.busy=key;a.said={};render(true);let j;
+  try{j=await (await fetch(tq(HB+'dev/'+encodeURIComponent(H.dev)+path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json()}
+  catch(e){j={ok:false,out:`Could not reach Runner Home: ${plainErr(e)}`}}
+  a.busy='';const said=j.out||(j.ok?'Done':'That did not work');
+  if(a!==DV.act){toast(said.split('\n')[0],!j.ok);return null}
+  a.said={[sec]:{text:said,bad:!j.ok}};return j;
+}
+async function devSlot(key){const j=await devPost('room','slot:'+key,'/act',{project:key,name:'slots',arg:'+1'});if(j){render(true);devLoad()}}
+async function devClean(how){
+  if(DV.act.busy)return;
+  if(how==='list'){const l=DV.d&&DV.d.clean||[];DV.act.said={};DV.pick={list:l,on:new Set(l.filter(i=>!i.ask).map(i=>i.id))}}
+  const p=DV.pick, ids=p?p.list.map(i=>i.id).filter(id=>p.on.has(id)):[];
+  if(how==='cancel'||how==='go'&&!ids.length)DV.pick=null;
+  else if(how==='go'){
+    const j=await devPost('foot','clean','/vitals/clean',{items:ids});if(!j)return;
+    if(j.removed)DV.pick=null;  // answered; else the ticks stay to press again
+    devLoad();
+  }
+  render(true);
+}
+/* the box is ticked already: a redraw now would take it from under the finger */
+function devTick(id,on){if(DV.pick)DV.pick.on[on?'add':'delete'](id)}
+const devSaid=sec=>{const s=DV.act.said[sec];return s?`<div class="small devsaid"><span${s.bad?' class="v-bad"':''}>${esc(s.text)}</span></div>`:''};
+const devBtn=(attr,key,label,c='')=>{const b=DV.act.busy;return `<button class="btn${c}${b&&b===key?' busy':''}" ${attr}${b?' disabled':''}>${label}</button>`};
+function devSlots(d){
+  const l=d.running||[];
+  return (l.length?`<div class="btns">${l.map(r=>devBtn(`data-devslot="${esc(r.key)}"`,'slot:'+r.key,'+ slot'+(l.length>1?' · '+esc(r.key):''))).join('')}</div>`:'<div class="small">No run up on this device to add a slot to.</div>')+devSaid('room');
+}
+function devCleanHTML(d){
+  const l=d.clean||[], p=DV.pick;
+  if(!p)return (l.length?`<div class="btns">${devBtn('data-devclean="list"','',`Clean ${sizeWords(l.filter(i=>!i.ask).reduce((n,i)=>n+i.size,0))} safely…`)}</div>`:'<div class="small">Nothing to clean.</div>')+devSaid('foot');
+  return `<div class="small">Clean removes only what you tick:</div>${p.list.map(i=>`<label class="devtick"><input type="checkbox" data-devtick="${esc(i.id)}" data-f="devtick:${esc(i.id)}"${p.on.has(i.id)?' checked':''}${DV.act.busy?' disabled':''}><span>${esc(i.path)} <span class="small">· ${esc(i.why)}${i.size?' · '+sizeWords(i.size):''}</span></span></label>`).join('')}<div class="btns">${devBtn('data-devclean="go"','clean','Remove ticked',' bad')}${devBtn('data-devclean="cancel"','','Cancel')}</div>${devSaid('foot')}`;
 }
 async function devLoad(){
   const id=H.dev, turn=++DV.turn;if(!HB||!id)return;
@@ -71,7 +118,7 @@ function devMachine(d){
 function devFoot(d){
   const f=d.footprint||{}, rows=[['Worktrees (run homes)',f.worktrees],['Session temp folders',f.tmp],['Logs',f.logs]].filter(r=>r[1]!=null).map(([a,n])=>[a,sizeWords(n)]);
   if(f.wip)rows.push(['wip/ branches',String(f.wip.length)]);
-  return devSec('foot',`Runner footprint${f.total!=null?' · '+sizeWords(f.total):''}`,rows.length?devRows(rows):'<div class="small">Not measured yet.</div>',
+  return devSec('foot',`Runner footprint${f.total!=null?' · '+sizeWords(f.total):''}`,(rows.length?devRows(rows):'<div class="small">Not measured yet.</div>')+devCleanHTML(d),
     (f.largest||[]).length?`<div class="small">Largest folders</div>${devRows(f.largest.map(x=>[x.path,sizeWords(x.size)]))}`:'');
 }
 function devHTML(){
@@ -82,7 +129,7 @@ function devHTML(){
     return `<div class="col">${err}${card(`<b>${esc(devName())}</b><div class="v-bad">${esc(said)}</div>${d.out?`<div class="small">${esc(d.out)}</div>`:''}${err?'':retry}`,'','data-k="dev:not"')}</div>`}
   const v=d.verdict||{}, h=d.headroom||{}, ss=d.sessions||[];
   return `<div class="col">${err}${card(`<div><b>${esc(d.host)}</b>${d.here&&H.dev==='local'?' <span class="small">· this one</span>':''}</div><div class="v-${esc(v.level)}">${esc(v.said)}</div>`,'','data-k="dev:said"')}${
-    devSec('room','Headroom',`<b>${esc(h.said||'')}</b><div class="small">Smallest of: ${esc(Object.entries(h.limits||{}).map(([k,n])=>`${k} ${n}`).join(' · '))} (at most 6)</div><div class="btns"><a class="btn" href="${esc(tq(HB+'device?id='+encodeURIComponent(H.dev)))}">Clean or add a slot</a></div>`)}${
+    devSec('room','Headroom',`<b>${esc(h.said||'')}</b><div class="small">Smallest of: ${esc(Object.entries(h.limits||{}).map(([k,n])=>`${k} ${n}`).join(' · '))} (at most 6)</div>${devSlots(d)}`)}${
     devMachine(d)}${devFoot(d)}${
     devSec('sess','Sessions',ss.length?devRows(ss.map(s=>[s.project+' '+s.name+(s.what?' · '+s.what:''),s.cpu.toFixed(1)+'% · '+sizeWords(s.rss)])):'<div class="small">No slot or control session running here.</div>')}</div>`;
 }

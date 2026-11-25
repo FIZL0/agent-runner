@@ -25,10 +25,16 @@ const homeErr = () => '', offHTML = () => '', addEventListener = (n, f) => { on[
 const goUp = stay => { if (!all) { went.push('up'); all = true; H.tab = ''; devSet('') } }, goDown = () => went.push('down');
 // the browser's history, with Back as it comes: a popstate with the entry's state
 const hist = [null]; let at = 0;
-const history = {get state() { return hist[at] }, pushState(s) { hist.length = ++at; hist.push(s) }, replaceState(s) { hist[at] = s }, back() { at--; on.popstate({state: hist[at]}) }, forward() { at++; on.popstate({state: hist[at]}) }};
-const fetch = async u => { hits.push(u); const a = typeof answer === 'function' ? await answer(u) : answer; if (a instanceof Error) throw a; return {json: async () => a} };
+const history = {get state() { return hist[at] }, pushState(s) { hist.length = ++at; hist.push(s) }, replaceState(s, _, u) { hist[at] = s; if (u) urls.push(u) }, back() { at--; on.popstate({state: hist[at]}) }, forward() { at++; on.popstate({state: hist[at]}) }};
+let posts = [], toasts = [], urls = [];
+const location = {hash: '', pathname: '/', search: '?t=TOK'}, toast = (m, bad) => toasts.push([m, !!bad]);
+const fetch = async (u, o) => { hits.push(u); if (o) posts.push([u, JSON.parse(o.body)]); const a = typeof answer === 'function' ? await answer(u) : answer; if (a instanceof Error) throw a; return {json: async () => a} };
 eval([cut('function meterHTML', 'const hobOf'), cut('/* B818a: Device Vitals', '\nfunction chatRow('), cut("addEventListener('popstate'", 'function goProject')].join('\n').replace(/^const /gm, 'var ').replace(/^let /gm, 'var '));
 eval(cut('function deviceCard', 'const ASKS_SHOWN').replace(/^const /gm, 'var '));
+eval(cut('const ASKS_SHOWN', '/* a project with no run up').replace('const ASKS_SHOWN', 'var ASKS_SHOWN').replace(/^const homeErr.*$/m, ''));
+const projectsNow = () => [], projectAsks = () => [], homeNeeds = () => 0, PGROUPS = [], exampleOffer = () => '', EX = {}, askRow = () => '';
+I.alert = '';
+const CLEAN = [{id: 't1', path: '/t<1>', size: 2 ** 30, ask: false, why: 'ended'}, {id: 'w1', path: '/w1', size: 2 ** 20, ask: true, why: 'holds files'}];
 const FULL = {ok: true, host: 'desk<b>', here: true, verdict: {said: 'Room for 3 more agents', level: 'ok'}, headroom: {said: 'Room for 3 more agents', limits: {memory: 3, cpu: 5}},
   machine: {cpu: {pct: 41.4, threads: 16, load: 2.5, temp: 92, cores: [10, 80]}, mem: {total: 32 * 2 ** 30, avail: 8 * 2 ** 30}, disk: {path: '/', free: 100 * 2 ** 30, total: 400 * 2 ** 30},
     gpus: [{name: 'RX', temp: 50, pct: null}], sensors: [{chip: 'k10', label: 'Tctl', c: 60}], top: [{name: 'node', pid: 7, cpu: 3, rss: 2 ** 30}]},
@@ -57,6 +63,27 @@ const tick = () => new Promise(r => setTimeout(r, 0));
   answer = {ok: false, out: 'no such device'}; devLoad(); await tick(); out.home = devHTML();
   let late; answer = u => u.includes('p9') ? {ok: true, host: 'nine'} : new Promise(r => { late = r });
   devLoad(); devBack(); devOpen('p9'); await tick(); late(FULL); await tick(); out.late = allTitle();
+  // B818b: + slot, Clean and the old link
+  devBack(); answer = {...FULL, running: [{key: 'one'}, {key: 'two'}], clean: CLEAN}; devOpen('p1'); await tick(); out.two = devHTML(); devBack();
+  answer = {...FULL, running: [], clean: []}; devOpen('p1'); await tick(); out.none = devHTML(); devBack();
+  answer = u => u.includes('/vitals/device') ? {...FULL, clean: CLEAN} : {ok: true, out: 'slots: 3'};
+  devOpen('p1'); await tick(); out.ready = devHTML();
+  posts = []; const p1 = devSlot('one'); out.adding = devHTML(); devSlot('one'); devClean('list'); await p1; await tick();
+  out.slot = [posts, devSaid('room')];
+  devClean('list'); out.list = devHTML(); devTick('t1', false); devTick('w1', true);
+  const more = [{id: 'new', path: '/new', size: 5, ask: false, why: 'late'}, CLEAN[0]];
+  answer = {...FULL, clean: more}; await devLoad(); out.fresh = devHTML();
+  posts = []; devClean('cancel'); out.cancel = [devHTML(), posts.length];
+  answer = {...FULL, clean: CLEAN}; await devLoad(); devClean('list'); devTick('t1', false); devTick('w1', true);
+  answer = new Error('down'); posts = []; await devClean('go'); await tick(); out.lost = [devHTML(), posts];
+  answer = u => u.includes('/vitals/device') ? {...FULL, clean: [CLEAN[0]]} : {ok: false, out: 'Removed 0 of 1\nnot removed: /w1', removed: []};
+  posts = []; await devClean('go'); await tick(); out.gone = [devHTML(), posts];
+  devClean('list'); devTick('t1', false); posts = []; await devClean('go'); out.empty = [DV.pick, posts.length];
+  let slow; answer = u => u.includes('/vitals/device') ? FULL : new Promise(r => { slow = r });
+  const p2 = devSlot('one'); await tick(); devBack(); devOpen('local'); slow({ok: true, out: 'late\nx'}); await p2; out.left2 = [toasts, DV.act];
+  devBack(); H.tab = ''; H.alerts = [{what: 'hot', device: 'p1', clean: true}]; out.alert = projectsHTML();
+  location.hash = '#device-p%2F1'; out.link = [devLink(), H.tab, H.dev, history.state, urls.at(-1)];
+  location.hash = '#home'; out.nolink = devLink(); HKEY = 'k'; location.hash = '#device-x'; out.inproj = devLink();
   console.log(JSON.stringify(out));
 })();
 """
@@ -78,7 +105,7 @@ def test_device_b818a(tmp: Path) -> None:
         check(s in h, f'the page shows {s}', h)
     eq((h.count('class="spark"'), h.count('data-devmore'), h.count('aria-expanded="false"')), (1, 2, 2), 'a sparkline where there are two points; two folds')
     check('Logs' not in h and '<b>desk<' not in h, 'what was not read is left out, names are escaped')
-    check('device?id=local&#38;t=TOK">Clean or add a slot' in h and 'data-slot' not in h, 'read only: the old page has the actions')
+    check('device?id=' not in h and 'data-devslot="one"' in h and 'data-devclean="list"' in h, 'the actions are here, with no link to the old page')
     check('Per core' not in h and all(s in o['more'] for s in ('Per core', 'All sensors', 'node (7)', '/big', '2.0 TB', 'Less')), 'More shows the rest')
     check('Back to Devices' in o['back'] and o['drawer'] is False, 'the top bar leads back, the drawer is closed')
     eq(o['hist'], [{'level': 'all', 'tab': 'devices'}, {'level': 'all', 'tab': 'devices', 'dev': 'local'}], 'a history entry of its own')
@@ -94,9 +121,33 @@ def test_device_b818a(tmp: Path) -> None:
     eq(o['late'], '<span class="tt">nine</span>', 'a late answer of another device is dropped')
 
 
+    # B818b
+    check('+ slot · one' in o['two'] and '+ slot · two' in o['two'] and '+ slot</button>' in o['ready'], 'a + slot for each run up, named when there are two')
+    check('No run up on this device' in o['none'] and 'Nothing to clean.' in o['none'], 'no run up, nothing to clean: said so')
+    check('Clean 1.0 GB safely…' in o['ready'], 'Clean says what is safe', o['ready'])
+    check('data-devslot="one" disabled' in o['adding'] and 'busy' in o['adding'], 'the press shows at once', o['adding'])
+    eq(o['slot'][0], [['/dev/p1/act?t=TOK', {'project': 'one', 'name': 'slots', 'arg': '+1'}]], '+ slot goes once, to that device')
+    check('slots: 3' in o['slot'][1] and 'v-bad' not in o['slot'][1], 'and its answer shows')
+    ticked = lambda s, i: f'data-f="devtick:{i}" checked' in s
+    check(ticked(o['list'], 't1') and 'devtick:w1' in o['list'] and not ticked(o['list'], 'w1') and '/t&#60;1&#62;' in o['list'], 'the safe ones come ticked')
+    check(not ticked(o['fresh'], 't1') and ticked(o['fresh'], 'w1') and '/new' not in o['fresh'], 'a refresh keeps the list and the ticks')
+    check('devtick' not in o['cancel'][0] and o['cancel'][1] == 0 and 'Clean 1.0 GB' in o['cancel'][0], 'Cancel closes it and removes nothing')
+    want = [['/dev/p1/vitals/clean?t=TOK', {'items': ['w1']}]]
+    eq(o['lost'][1], want, 'Remove ticked sends what is ticked, only that')
+    check(ticked(o['lost'][0], 'w1') and not ticked(o['lost'][0], 't1') and 'Could not reach Runner Home: down' in o['lost'][0], 'out of reach: the ticks stay')
+    eq(o['gone'][1], want, 'and go again on the next press')
+    check('devtick' not in o['gone'][0] and 'not removed: /w1' in o['gone'][0], 'answered: the list closes, what was not removed is said')
+    eq(o['empty'], [None, 0], 'nothing ticked: nothing sent')
+    eq(o['left2'], [[['late', False]], {'busy': '', 'said': {}}], 'an answer for a device that was left is a toast')
+    check('data-devopen="p1">Clean' in o['alert'] and 'device?id=' not in o['alert'], "an alert's Clean opens the device here", o['alert'])
+    eq(o['link'], [True, 'devices', 'p/1', {'level': 'all', 'tab': 'devices', 'dev': 'p/1'}, '/?t=TOK'], 'an old link opens the device; the # goes, the token stays')
+    eq((o['nolink'], o['inproj']), (False, False), 'no other # does')
+
+
 def test_device_wired_b818a(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     check('setInterval(()=>{if(devOn())devLoad()},30000)' in page, 'it refreshes every 30 s while it is open')
+    check('devLink()||devPlace(history.state)' in page and all(s in page for s in ('devSlot(x.dataset.devslot)', 'devClean(x.dataset.devclean)', 'devTick(x.dataset.devtick,x.checked)')), 'the presses and the old link are wired')
     check('devPlace(history.state)' in page and "devLeave()" in page, 'a reload and the tabs are wired')
     eq(page.count('${devBackBtn()}') + page.count(':devBackBtn()}'), 2, "both top bars, Home's and a project's")
 
