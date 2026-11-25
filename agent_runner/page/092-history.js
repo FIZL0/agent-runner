@@ -146,8 +146,8 @@ function pastLook(){
   return true;
 }
 /* B787: the look changed while the history is drawn: the rows cloned from the screen have colours of the old look inline,
-   for its contrast. Each is drawn from its own as the terminal would: a colour that does not read on its ground now is
-   drawn lighter or darker */
+   for its contrast. A colour that does not read on its ground now is drawn lighter or darker, to the terminal's contrast
+   (half for dim words); one that reads stays. The rows still on the screen get the terminal's own colours in pastSee */
 function pastInked(){
   const f=feedScreen(), bg=pastRgb(f&&f.t.options.theme&&f.t.options.theme.background||'#1f1e1d');
   const rows=HX.L.filter(l=>l.own!=null);if(!bg||!rows.length)return;
@@ -156,7 +156,7 @@ function pastInked(){
   $('pastrows').appendChild(box);
   const put=[];
   for(const s of box.querySelectorAll('span')){
-    const c=getComputedStyle(s), fg=pastRgb(c.color), on=pastRgb(c.backgroundColor)||bg, ink=fg&&pastInk(fg,on,4.5);
+    const c=getComputedStyle(s), fg=pastRgb(c.color), on=pastRgb(c.backgroundColor)||bg, ink=fg&&pastInk(fg,on,/xterm-dim/.test(s.className)?2.25:4.5);
     if(ink&&ink!==fg)put.push([s,`rgb(${ink.join(',')})`]);
   }
   for(const [s,c] of put)s.style.color=c;
