@@ -15,11 +15,18 @@ chat is about that was under Needs you (`waits.json`) and has left it, with no e
 a task's ordinary landing says nothing. Sessions the runner cannot type into (opened in a terminal, or by the apps'
 control server) are not told; the needs guide has every session re-read an item before it asks for it.
 
+Repeats (B812): an event like the last one of its item (same `what`, author and reason) is not told again to a session
+told in the last AGAIN s, and takes the place of one still waiting for it: one line. Another event of the item between
+them, also the session's own, ends that. After a told edit, one that says something else is still told. An edit of only
+`--files` or `--pri` records nothing. Known, not handled: a slot's edit in its unmerged worktree is told at once, so
+the plan on main may not show it yet when the session re-reads the item.
+
 The control modules are imported in the functions: `plan` uses the first half from sessions with no run."""
 
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -31,6 +38,7 @@ BY_ENV = 'AGENT_RUNNER_BY'  # who runs a command no session runs, in words (the 
 KEEP = 86400  # s an event no run took, or that could not be typed, is kept
 LEFT_EVERY = 30  # s between two looks for items that left Needs you
 LEFT_GRACE = 120  # s after an item left Needs you before it is told with no event
+AGAIN = 120  # s in which a repeat of an event a session was told is not told again
 LEFT_AT = [0.0]
 TRIES = 3
 ID = r'(?:[A-Z]+\d+[a-z0-9]*|pitch\d+)'
@@ -77,9 +85,11 @@ def save(f: Path, d) -> None:
     tmp.replace(f)
 
 
-def record(c, ids, what: str, reason: str = '', who: dict | None = None, at: float = 0.0) -> None:
+def record(c, ids, what: str, reason: str = '', who: dict | None = None, at: float = 0.0,
+           said: str = '') -> None:
     """Leave one event for the run: item `ids[0]` (the others name the same item) `what` ('was dropped'). Nothing
-    without a control session to tell. Never stops the command that settled it."""
+    without a control session to tell. `said`: the command's words, whole, to know a repeat by.
+    Never stops the command that settled it."""
     try:
         if not any(c.notes().glob('control*.pid')):
             return
@@ -88,6 +98,7 @@ def record(c, ids, what: str, reason: str = '', who: dict | None = None, at: flo
             reason = reason[:199].rsplit(' ', 1)[0] + '…'
         save(folder(c) / f'{time.time_ns()}-{os.getpid()}.json',
              {'ids': list(dict.fromkeys(x for x in ids if x)), 'what': what, 'reason': reason,
+              'said': hashlib.sha256(said.encode()).hexdigest()[:16] if said else '',
               'at': at or time.time(), **(author(c) if who is None else who)})
     except (OSError, AttributeError):
         pass
@@ -133,9 +144,24 @@ def filed_ids(c, sid: str) -> list[str]:
     return read_json(filed_file(c, sid), {}).get('ids', []) if sid else []
 
 
+def substance(rest: list[str]) -> list[str]:
+    """`edit`'s arguments without `--files X` and `--pri X`: [] when it settles nothing (only its files or place)."""
+    out, i = [], 0
+    while i < len(rest):
+        if rest[i] in ('--files', '--pri'):
+            i += 2
+        else:
+            out.append(rest[i])
+            i += 1
+    return out
+
+
 def noting(c, a, todo, run):
     """Run plan subcommand `a` (`run`: its exit code) and record what it settled."""
-    if a.cmd not in VERBS or a.cmd == 'edit' and a.rest[:1] == ['--pri'] and len(a.rest) == 2:  # only its place
+    if a.cmd not in VERBS:
+        return run()
+    said = list(getattr(a, 'rest', None) or [])
+    if a.cmd == 'edit' and not (said := substance(said)):
         return run()
     from agent_runner import plan as P
     ids, needed = [a.id], False
@@ -146,7 +172,8 @@ def noting(c, a, todo, run):
         pass
     rc = run()
     if not rc and (needed or a.cmd != 'tick'):  # an ordinary tick says nothing
-        record(c, ids, VERBS[a.cmd], '' if a.cmd in NO_REASON else ' '.join(getattr(a, 'rest', None) or []))
+        record(c, ids, VERBS[a.cmd], '' if a.cmd in NO_REASON else ' '.join(getattr(a, 'rest', None) or []),
+               said='\n'.join(said))
     return rc
 
 
@@ -246,12 +273,14 @@ def tick(force: bool = False, now: float | None = None) -> None:
     now = time.time() if now is None else now
     d = folder(state.C)
     try:
-        for f in sorted(d.glob('*-*.json')):
-            try:
-                step(f, now)
-            except Exception as e:  # noqa: BLE001 - one event never stops the others
-                state.log(f'{f.name}: a settled item could not be told: {e}')
-                f.unlink(missing_ok=True)
+        files = sorted(d.glob('*-*.json'))
+        for do in (pick, step):  # all picked before any is typed: repeats that came together are one line
+            for f in files:
+                try:
+                    do(f, now)
+                except Exception as e:  # noqa: BLE001 - one event never stops the others
+                    state.log(f'{f.name}: a settled item could not be told: {e}')
+                    f.unlink(missing_ok=True)
         if force or now - LEFT_AT[0] >= LEFT_EVERY:
             LEFT_AT[0] = now
             look_left(d, now)
@@ -259,21 +288,65 @@ def tick(force: bool = False, now: float | None = None) -> None:
         state.log(f'the settled items could not be looked at: {e}')
 
 
-def step(f: Path, now: float) -> None:
-    """One event: choose its sessions the first time, then type it into each that can take it."""
-    from agent_runner import control as K, control_held as H, state
+def told_key(ev: dict) -> list:
+    """What an event and its repeat have in common, besides the item."""
+    return [ev['what'], ev.get('by', ''), ev.get('sid', ''), ev.get('reason', '')]
+
+
+def pick(f: Path, now: float) -> None:
+    """One event, the first time: choose its sessions, without those told the same a moment ago (`told.json`: {item:
+    its last event's key and {sid: who was picked for it}})."""
     ev = read_json(f, {})
     if not ev.get('ids') or now - ev.get('at', 0) > KEEP:
         return f.unlink(missing_ok=True)
+    if 'to' in ev:
+        return
+    ev['to'] = {}
+    told = {i: t for i, t in read_json(f.parent / 'told.json', {}).items()
+            if any(now - x['at'] <= KEEP for x in t['sids'].values())}
+    key, picked, replaced = told_key(ev), {}, {}
+    for n, sid, fx, ids in live():
+        hit = next((i for i in ev['ids'] if i in ids), '')
+        mine = sid == ev['sid'] if ev.get('sid') else n == ev.get('n')
+        if not hit or mine or fx.get('begun', 0) > ev['at']:  # one begun since reads it as it is now
+            continue
+        last = told[hit]['sids'].get(sid) if hit in told and told[hit]['key'] == key else None
+        if last:
+            same = last['said'] == ev.get('said', '')
+            waits = sid in read_json(f.parent / last['file'], {}).get('to', {})
+            if waits and (same or not ev.get('reason')):  # this one takes its place; no words of its line are lost
+                replaced[sid] = last['file']
+            elif not waits and same and ev['at'] - last['at'] <= AGAIN:
+                picked[sid] = last
+                continue
+        ev['to'][sid] = {'id': hit, 'tries': 0}
+        picked[sid] = {'at': ev['at'], 'said': ev.get('said', ''), 'file': f.name}
+    for i in ev['ids']:
+        told[i] = {'key': key, 'sids': picked}
+    save(f, ev)  # first: a run killed here tells a waiting one twice, never not at all
+    for sid, name in replaced.items():
+        if old := read_json(f.parent / name, {}):
+            old['to'].pop(sid, None)
+            save(f.parent / name, old)
+    save(f.parent / 'told.json', {i: t for i, t in told.items() if t['sids']})
+    forget_wait(f.parent, ev['ids'])
+
+
+def not_told(f: Path, ev: dict, sid: str) -> None:
+    """Event `f` could not be typed into session `sid`: a repeat of it is no repeat there."""
+    told = read_json(f.parent / 'told.json', {})
+    for i in ev['ids']:
+        if i in told and told[i]['sids'].get(sid, {}).get('file') == f.name:
+            del told[i]['sids'][sid]
+    save(f.parent / 'told.json', {i: t for i, t in told.items() if t['sids']})
+
+
+def step(f: Path, now: float) -> None:
+    """One picked event: type it into each session that can take it."""
+    from agent_runner import control as K, control_held as H, state
+    ev = read_json(f, {})
     if 'to' not in ev:
-        ev['to'] = {}
-        for n, sid, fx, ids in live():
-            hit = next((i for i in ev['ids'] if i in ids), '')
-            mine = sid == ev['sid'] if ev.get('sid') else n == ev.get('n')
-            if hit and not mine and not fx.get('begun', 0) > ev['at']:  # one begun since reads it as it is now
-                ev['to'][sid] = {'id': hit, 'tries': 0}
-        save(f, ev)
-        forget_wait(f.parent, ev['ids'])
+        return
     for sid, to in list(ev['to'].items()):
         n = H.live_number(sid)
         fx = facts(sid)
@@ -283,6 +356,7 @@ def step(f: Path, now: float) -> None:
         if not state.C.notes(f'control{n}.in').exists():
             state.log(f'control {n}: not told that {to["id"]} {ev["what"]}: it takes no typed text')
             del ev['to'][sid]
+            not_told(f, ev, sid)
             continue
         began = state.C.notes(f'control{n}.pid').stat().st_mtime
         if fx.get('dialog') or H.holds(sid) or now - began < H.HELD_SETTLE[0 if K.remote_on() else 1]:
@@ -295,6 +369,7 @@ def step(f: Path, now: float) -> None:
             ev['to'][sid] = {**to, 'tries': to['tries'] + 1}
         else:
             state.log(f'control {n}: not told that {to["id"]} {ev["what"]}: its session takes no typed text')
+            not_told(f, ev, sid)
     if ev['to']:
         save(f, ev)
     else:
