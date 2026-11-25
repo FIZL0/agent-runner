@@ -812,6 +812,67 @@ def test_project_name_b153(tmp: Path) -> None:
     eq(got[4:], ['ifizbox · runner', 'agent-runner'], 'the window title: the project first')
 
 
+HOME_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1);
+const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].split('if(typeof module').join('if(false&&typeof module');
+const S = {ob: [], atts: {}, f: {}, view: 'home', thread: null, snap: null};
+const no = () => '', env = {S, I: {}, DK: {}, LOGO: no, greeting: no, keysLine: no, ttydLine: no, needsSec: () => '[needs]', dictWhy: no, micWhy: no,
+  shownSession: no, busy: no, sessWorks: no, modelOf: no, enterHint: no, boxKey: () => 'home', obCards: f => S.ob.filter(f).map(x => `[ob ${x.ctl}]`).join('')};
+const names = ['const esc=', 'const card=', 'const controlOf=', 'const ctlBusy=', 'const CTL_ICON=', 'const chatPins=', 'const chats=', 'const chatTitle=', 'const slots=', 'const working_=', 'const homeSums='];
+const src = logic + names.map(line).join('') + ['box', 'homeHTML', 'homeChips', 'homeStatus', 'homePlan'].map(f => grab(`function ${f}(`)).join('');
+const at = new Function('env', 'with(env){' + src.replace(/^const /gm, 'var ') + '; return {home: homeHTML, box: () => box("x")}}')(env);
+const out = JSON.parse(require('fs').readFileSync(0, 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob || []; return at.home() });
+const boxes = [['home', null], ['home', 'c1'], ['home', '+new']].map(([v, t]) => { S.view = v; S.thread = t; return at.box() });
+console.log(JSON.stringify([out, boxes]));
+"""
+
+
+def test_home_f426a(tmp: Path) -> None:
+    """F426a: Home is Talk, the box without dictation, the shortcuts, Needs you, and one line each for Status and Plan."""
+    if not shutil.which('node'):
+        print('  (no node here: the Home test is skipped)')
+        return
+    fake_repo(tmp)
+    ctl = U.controls()
+    chat = [{'name': 'c4'}, {'name': 'c1', 'at': 50}, {'name': 'c3', 'at': 90}, {'name': 'c2', 'at': 70}]
+    slot = [{'name': 's1', 'task': 'F1', 'state': 'live'}, {'name': 's2', 'task': 'F2', 'state': 'live'},
+            {'name': 's3', 'task': 'F3', 'state': 'merging'}]
+    rel = {'id': 'V1', 'title': 'Ship', 'state': 'waits', 'words': 'waits for 2: F1 a, F2 b', 'waits': [{'id': 'F1'}, {'id': 'F2'}]}
+    q = [{'id': 'F1', 'state': 'running'}, {'id': 'F9', 'state': 'ready'}, {'id': 'F8', 'state': 'parked'}, {'id': 'V1', 'state': 'waiting', 'release': rel}]
+    base = {'up': True, 'run': {'state': 'Running'}, 'sessions': chat + slot, 'chat_pins': ['c1'], 'queue': q, 'releases': [rel],
+            'controls': ctl, 'card': ['slot_remove', 'slot_add', 'pause', 'stop'], 'needs': []}
+    paused = {**base, 'run': {'state': 'Paused', 'paused': True}, 'card': ['go_on'], 'sessions': [], 'queue': [], 'releases': []}
+    down = {**base, 'up': False, 'run': {}, 'card': ['start'], 'sessions': [], 'manage_releases': False}
+    nxt = {**rel, 'state': 'next', 'waits': []}
+    cases = [[base], [paused], [down], [{**base, 'queue': [{**q[3], 'release': nxt}], 'releases': [nxt]}],
+             [base, [{'ctl': 'pause:', 'state': 'sending'}, {'ctl': 'stop:', 'state': 'sending'}]]]
+    (tmp / 'driver.js').write_text(HOME_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], input=json.dumps(cases), capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws Home', r.stderr[-1500:])
+    if r.returncode:
+        return
+    (up, pa, dn, free, sent), boxes = json.loads(r.stdout)
+    at = [up.find(x) for x in ('btn acc talkbig" data-view="talk"', 'data-form', 'Last chat', 'Add a task', 'data-ctl="pause"',
+                               'Since my last look', '[needs]', 'data-view="status"', 'data-view="plan"')]
+    check(all(i >= 0 for i in at) and at == sorted(at), 'Talk, the box, the shortcuts, Needs you, Status, Plan', at)
+    eq(up.count('btn acc'), 1, 'Talk is the one accent button')
+    check('data-thread="c3"' in up and up.count('data-thread=') == 1, 'Last chat is the newest, not the pinned or one with nothing said yet; no agent cards', up)
+    for gone in ('What needs me', 'New concept', 'Working now', 'Up next', 'New release', 'data-k="task:'):
+        check(gone not in up, f'no {gone}')
+    words = lambda h: re.findall(r'class="grow ell">([^<]*)<', h)  # noqa: E731
+    eq(words(up), ['2 working, 1 merging', '2 left, next release waits for 2'], 'parked tasks and the release are not counted')
+    eq(words(pa), ['Paused · No agent is working', 'The queue is empty'], 'paused, and nothing left')
+    eq(words(dn), ['No run is up', '2 left'], 'no run; with releases off nothing is said of them')
+    eq(words(free), ['2 working, 1 merging', 'The queue is empty, release next'], 'a release with nothing before it')
+    check('data-ctl="go_on"' in pa and 'data-ctl="pause"' not in pa and 'Last chat' not in pa, 'Go on while paused; no Last chat with no chat', pa)
+    check('data-ctl=' not in dn, 'no run: neither Pause nor Go on', dn)
+    check('[ob pause:]' in sent and '[ob stop:]' not in sent and 'chip busy' in sent, 'a Pause being sent shows on Home', sent)
+    eq(['data-dict' in b for b in boxes], [False, True, True], "no dictation in Home's box; an open chat and a new chat's keep it")
+    check('agentCard' not in W.PAGE.read_text(encoding='utf-8'), 'the agent card is gone')
+
+
 def test_status_view_f124(tmp: Path) -> None:
     """F124 (F120-F122): Status in place of Activity and Agents, its sections in the TUI's order, the state pill, the
     Run card and the More… sheet from the one list of controls, and the swipe that follows the finger."""
@@ -1036,4 +1097,4 @@ def test_page_gzip_b769a(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_home_f426a), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a)]))

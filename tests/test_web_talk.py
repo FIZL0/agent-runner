@@ -1084,8 +1084,7 @@ def test_home_talk_f164(tmp: Path) -> None:
     eq((o['at'], o['draws']), (['talk', None], [['talk', None]]), 'one press opens Talk, in one draw')
     eq((o['heard'], o['loads']), (0, 0), 'the mic does not start and nothing is loaded again')
     page = W.PAGE.read_text(encoding='utf-8')
-    check('.chip[data-view]::after' in page and 'height:var(--tap)' in page.split('.chip[data-view]::after', 1)[1].split('}', 1)[0],
-          'and it is 44px to press')
+    check('class="btn acc talkbig"' in o['b'] and '.btn.talkbig{width:100%;min-height:56px' in page, 'F426a: big, full width, the accent', o['b'])
 
 
 MICTEST_DRIVER = r"""

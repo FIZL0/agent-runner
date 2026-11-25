@@ -40,7 +40,7 @@ def test_server(tmp: Path) -> None:
     try:
         code, page = get(f'{base}/?t={token}')
         eq(code, 200, 'the page is served with the token')
-        for part in ('<title>proj · runner</title>'.encode(), b'EventSource', b'Needs you', b'Working now', b'Up next'):
+        for part in ('<title>proj · runner</title>'.encode(), b'EventSource', b'Needs you', b'Last chat'):
             check(part in page, f'the page has {part.decode()}')
         check(b'JetBrains Mono' not in page and b'lazygit' not in page, 'the terminal-style page is gone')
 
@@ -131,8 +131,8 @@ def test_page(tmp: Path) -> None:
                  'S.snap.machine', 'usage ${esc(use)}',  # the sidebar
                  'side.open', 'class="scrim"', 'data-menu',  # a drawer on a phone
                  'greeting()', 'How can I help with the run?', 'data-quick="since">', 'Since my last look',
-                 'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
-                 '>Needs you<', 'ansBtns(n)', 'restBtns(n)', '>Working now<', '>Up next<',
+                 'Last chat', 'data-about="new">', 'Add a task',  # Home
+                 '>Needs you<', 'ansBtns(n)', 'restBtns(n)', 'homeStatus(', 'homePlan(',
                  'data-about="plan:', 'S.snap.release_acts',
                  "outbox('answer'", "newChat('quick_ask'", "outbox('chat_to'",
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox

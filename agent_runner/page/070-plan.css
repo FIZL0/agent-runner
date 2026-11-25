@@ -18,6 +18,4 @@
   .scrim:not(.sheetscrim),.top .menu{display:none!important}
   .top{padding:12px 18px 6px}
   .top .title{text-align:left}
-  .grid2{grid-template-columns:1fr 1fr}
 }
-.grid2{display:grid;gap:12px}
