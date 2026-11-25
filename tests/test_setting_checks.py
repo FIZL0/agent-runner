@@ -104,16 +104,17 @@ check(row['run', 'test']['warn'] == W._WARNS['run.test'] and not row['run', 'slo
 check(row['run', 'notes']['locked'] and not row['plan', 'dir']['locked'], 'and why a key is not changed there')
 
 print('commands')
-refused('run', 'test', 'if true', 'shell can read')
 refused('run', 'test', '   ', 'only spaces')
-refused('run', 'before_start', 'no-such-prog-f448a --x', 'no command no-such-prog-f448a')
-refused('run', 'build', './gone.sh', r'no command \./gone\.sh')
+if not plat.WINDOWS:  # sh reads it
+    refused('run', 'test', 'if true', 'shell can read')
+    refused('run', 'before_start', 'no-such-prog-f448a --x', 'no command no-such-prog-f448a')
+    refused('run', 'build', './gone.sh', r'no command \./gone\.sh')
+    refused('run', 'tools', {'p': {'check': 'echo "'}}, 'shell can read')
+    refused('run', 'checks', {'p': {'cmd': '('}}, 'shell can read')
 refused('plan', 'brief_extra', 'echo {name}', r'\{id\}')
 refused('plan', 'outline', 'awk {print} {file}', 'written')
 refused('run', 'join', {'*.a': 'echo {mine}'}, 'placeholders')
 refused('run', 'join', {'*.a': 5}, 'command')
-refused('run', 'tools', {'p': {'check': 'echo "'}}, 'shell can read')
-refused('run', 'checks', {'p': {'cmd': '('}}, 'shell can read')
 
 print('patterns')
 for k in ('failures', 'flaky', 'suspect', 'not_attempt'):
