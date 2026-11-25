@@ -939,3 +939,10 @@ _Said_: start card
 _On screen_: Not running, Start the run
 _In code_: homeStart, runStarts
 _Avoid_: run-off banner, start bar, off page, Start run card
+
+**Closed-page bar**:
+The bar under the top bar that replaces the lost-connection notice when Runner Home answers that nothing serves the open run page (its page-only process ended while the page slept): with a Reload button, which starts the page-only process by a page load with Home's key and keeps what is typed. A fetch starts nothing; the bar goes once the page answers again.
+_Said_: the run page is closed
+_On screen_: The run page is closed
+_In code_: lostDraw, askClosed
+_Avoid_: offline bar, lost banner, reconnect notice

@@ -619,7 +619,8 @@ class HomeHandler(BaseHTTPRequestHandler):
         link = self.server.link(root)
         page = method == 'GET' and parts[3] in ('', 'index.html')
         if link is None:
-            return self.off_page(root) if page else self.send(502, {'ok': False, 'out': f'{root.name} has no run up'})
+            return self.off_page(root) if page else self.send(
+                502, {'ok': False, 'out': f'{root.name} has no run up', 'closed': True})  # F432: the open page says Reload
         port, token = link
         if parts[3].startswith('t/'):
             return self.terminal(root, port, token, parts[3], u.query)
