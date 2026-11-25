@@ -116,9 +116,9 @@ value such as `agent = "pi"` is still said.
 
 A task given its own Claude model (`plan add --model opus`) still waits alone, blocked under Needs you, when
 Claude Code is not on the machine. With Claude Code on the machine, such a task does not start past `session_max`
-or `weekly_max`, or while the Claude API is unreachable: it alone waits (or starts on the first free `[models]
-fallback` provider), and other tasks start as before. When nothing else can start, the alarm names the held tasks
-and says they cannot start until the reset; `force` lifts the cap. The usage and the API are read only while such
+or `weekly_max` (it alone waits, or starts on the first free `[models] fallback` provider), and waits alone while
+the Claude API is unreachable, unless the cap moves it to such a provider. Other tasks start as before. When nothing else can start, the alarm names the held task
+and says it cannot start until the reset; `force` lifts the cap. The usage and the API are read only while such
 a task is waiting to start.
 
 ## Provider logins: run login

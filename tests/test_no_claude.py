@@ -254,6 +254,7 @@ def test_task_held(tmp: Path) -> None:
                 mock.patch.object(loop, 'usage_pct', lambda n: reads.append('usage') or usage), \
                 mock.patch.object(loop, 'alarm', lambda *a: alarms.append(a[0])), \
                 mock.patch.object(loop, 'log', lambda s, *a, **k: logs.append(s)), \
+                mock.patch.object(S, 'log', lambda s, *a, **k: logs.append(s)), \
                 mock.patch.object(loop, 'ask_stop', lambda *a: None), mock.patch.object(loop, 'low_disk', lambda *a: False), \
                 mock.patch.object(loop.shared_tools, 'low_memory', lambda: False), \
                 mock.patch('agent_runner.login.missing', lambda m, c: ''):

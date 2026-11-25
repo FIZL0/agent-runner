@@ -46,3 +46,36 @@ def own_tasks(c, branch: str, model: str) -> dict[str, str]:
     ls = plan_text(branch)
     settled = {tid: task_model(tid, model, branch, ls) for tid, *_ in tasks(branch)}
     return {tid: m for tid, m in settled.items() if not harness_model(m, c.providers)}
+
+
+def own_waiting(run) -> dict[str, str]:
+    """B791: the `own_tasks` that `run` (a loop.Run) may still start."""
+    from agent_runner import state
+    gone = run.tried | {t[0] for t in run.running.values()}
+    return {t: m for t, m in own_tasks(state.C, run.branch, run.model).items() if t not in gone}
+
+
+def passed_over(run, own: dict[str, str], held: frozenset) -> tuple[set[str], set[str]]:
+    """The tasks `run` starts nothing of now: (those with no free model past a usage cap, the `own` ones that would
+    start on Claude Code while its API cannot be reached). With `own`, only they are held. The API is said once."""
+    from agent_runner import fallback, state
+    from agent_runner.watch import api_up
+    passed = fallback.no_free(run.branch, run.model, held) if held else set()
+    if own:
+        passed &= own.keys()
+    out = {t for t, m in own.items() if fallback.provider(fallback.start_model(m, held)) == 'claude'}
+    if not out or api_up(True):
+        run.stall_said.discard('api own')
+        return passed, set()
+    if 'api own' not in run.stall_said:
+        run.stall_said.add('api own')
+        state.log(f'the Claude API cannot be reached: {", ".join(sorted(out))} cannot start until it can')
+    return passed, out
+
+
+def cap_alarm(w: str, own: str, detail: str) -> tuple[str, str]:
+    """The usage-cap alarm's line and detail; `own`: the task it holds alone (B791)."""
+    if not own:
+        return f'{w}: no new tasks', detail
+    how = detail[detail.find('To go on now'):]
+    return f'{w}: {own} cannot start until the reset', f'its model is a claude one; tasks on other models still start. {how}'
