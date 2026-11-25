@@ -239,6 +239,9 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd, harness=loop)
     if 'docs' in subagents() and not loop:  # F101; F132: the harness loop has no subagents
         prompt = f'{prompt.rstrip()}\n\n' + DOCS_PROMPT.format(runner=C.command, tid=tid)
+    prompt = f'{prompt.rstrip()}\n\n{READS_PROMPT}'  # F451
+    if agent_tool() and not loop:
+        prompt = f'{prompt} {SEARCH_PROMPT}'
     if big := P.too_big(tid, C, plan_at(cwd) / 'TODO.md'):  # F177
         prompt = f'{prompt.rstrip()}\n\n' + SPLIT_PROMPT.format(runner=C.command, tid=tid, why=big)
     if tools := shared_tools.brief(C.command, tid):  # F168
@@ -380,6 +383,16 @@ Hand CHANGELOG, docs, README, journal and plan-text edits (a `plan add` or `plan
 subagent (the Agent tool, subagent_type "docs"): tell it the file or command, what to say and why, and the \
 facts it needs. Then check its result (`git diff`, `{runner} plan {tid}`) and fix what it got wrong yourself."""
 
+# F451: what a session reads stays in its context and is paid for again every turn
+READS_PROMPT = """\
+Read only the ranges you need: find the place first (`grep -n`, or the file's outline in the brief), then read that \
+range. Do not read a big file whole, or read again a range you already have and that has not changed. Read all the \
+task needs."""
+
+SEARCH_PROMPT = """\
+Hand a broad search over several files to a read-only search subagent (the Agent tool, `Explore`) that returns \
+file:line and a short conclusion; look up a known place yourself."""
+
 SUBAGENTS = {
     'review': ('A fresh spec reviewer for the review before done: give it only the diff and the task brief, '
                'never the conversation, and it lists what is missing, what was not asked and what looks wrong.',
@@ -406,6 +419,14 @@ def subagents() -> dict:
     on = {'review': review_on(), 'docs': True}
     return {role: {'description': desc, 'prompt': prompt, 'model': models[role]}
             for role, (desc, prompt) in SUBAGENTS.items() if on[role] and models.get(role) and not harness_session(models[role])}
+
+
+def agent_tool() -> bool:
+    """F451: a Claude Code task session has the Agent tool: every one that is not lean, else as `slots.lean` gives it."""
+    try:
+        return not C.run['lean'] or review_on() or bool(subagents())
+    except (AttributeError, KeyError, TypeError):  # no config loaded
+        return False
 
 
 def review_on() -> bool:
