@@ -59,25 +59,26 @@ function feedFoot(lines,dim,lit){
     rate:lines.slice(Math.max(0,top-8),top).some(l=>/\b1: \S.*\s2: \S/.test(l)),work:/esc to interrupt/.test(all)||near.some(l=>/^\S \S+… ?(\(|$)/.test(l)),jump:near.some((l,i)=>feedJump(l,cols,lit&&(x=>lit(from+i,x))))};
 }
 /* where the session's frame goes. o: main its room, bar and dock what stands over it, row the slim message box's, high the
-   frame's own height, pad its terminal's, cell a line, rows, foot (feedFoot's; null: show all), short (its words end at
-   this row, with nothing above to scroll to; 0 when it is full), whole, last (whole: the last row with words), off how far the reader has scrolled it down, top: the
+   frame's own height, pad its terminal's, cell a line, rows, foot (feedFoot's; null: show all), short (it is not full:
+   its words, the working lines apart, end at this row, with nothing above to scroll to; 0 when it is full), whole, last (whole: the last row with words), off how far the reader has scrolled it down, top: the
    session has nothing older (its first line may go clear of the bar), hold: the shift to keep (scrolled up: what stands over it may change, its lines stay). t: its shift; off: that, past its rest;
    far: how far it can go; cut: how much of its bottom is hidden */
 const FOOT_ROWS=6;  // rows past the edge for the lines at the bottom, so more or fewer of them never resize the session
 function feedSpot(o){
   if(o.whole||!o.foot)return{t:o.main-o.dock-(o.whole&&o.last?Math.min(o.high,o.pad+o.last*o.cell):o.high),off:0,far:0,cut:0};
   const end=o.pad+o.foot.top*o.cell, words=o.short?o.pad+o.short*o.cell:end;
-  const rest=o.main-o.dock-words, low=Math.max(rest,o.top?o.bar:o.short?rest:Math.min(o.bar,o.main-o.row-end));
+  const rest=o.short?Math.min(o.bar,o.main-o.dock-words):o.main-o.dock-words, low=Math.max(rest,o.top?o.bar:o.short?rest:Math.min(o.bar,o.main-o.row-end));
   const t=o.hold!=null?Math.min(o.hold,low):rest+Math.min(Math.max(o.off||0,0),low-rest);
   return{t,off:Math.max(0,t-rest),far:low-rest,cut:Math.max(0,o.high-end)};
 }
 /* B766: has the screen a gap over the agent CLI's working lines, right above its prompt (row top)? Then it is not full, and
-   there is nothing older to scroll to */
-function feedGap(lines,top){
+   there is nothing older to scroll to. B786: the row the words over the gap end at (0: none);
+   work: only a gap over the agent CLI's working line counts, or one no answer has */
+function feedGap(lines,top,work){
   for(let y=top-1,blank=0,seen=0;y>=0;y--){
-    if(lines[y].trim()){if(seen&&blank>3)return true;if(top-y>8)return false;seen=1;blank=0}else blank++;
+    if(lines[y].trim()){if(seen&&blank>3&&(!work||blank>7||lines.slice(y+1,top).some(l=>/^\S \S+… ?(\(|$)/.test(l))))return y+1;if(top-y>8)return 0;seen=1;blank=0}else blank++;
   }
-  return false;
+  return 0;
 }
 /* B192: a scroll of px (down is more): the part the frame takes, its lines going with the finger; the rest is the session's.
    Up only once the session itself is scrolled up (it stops following its new words) and the bars are away, to bring lines
