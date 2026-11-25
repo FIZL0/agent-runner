@@ -197,7 +197,7 @@ from agent_runner.gitops import git
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
-           'unblock', 'move', 'next_id', 'add', 'similar', 'same_task', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
+           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind',
            'concept', 'concept_done', 'waiting', 'approve', 'revise', 'restyle', 'hold', 'held_on', 'release_held',
            'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve', 'edit', 'needs_lines',
@@ -1362,29 +1362,33 @@ OWN_KEYS = ('split-by', 'held', 'moved', 'ahead')  # fields only a command of th
 
 def _same_key(text: str) -> tuple:
     """What makes two task texts the same one: the words and the fields, whitespace, the level and the `(alone)` tag
-    aside. `text` is a task's lines joined, without its id; a BLOCKED and the notes after its fields are no part."""
-    body = _unblocked(' '.join(text.split()))
-    if last := list(FIELD.finditer(body)):
-        body = body[:last[-1].end()]
+    aside. `text` is a task's lines joined, without its id."""
+    body = ' '.join(text.split())
     keys = {k: tuple(sorted(v)) for k, v in fields(body).items() if k not in OWN_KEYS}
     body = re.sub(rf'^{PRI_TAG.pattern}\s*', '', prose(body).strip()).removeprefix(ALONE)
     return ' '.join(body.split()), tuple(sorted(keys.items()))
 
 
 def same_task(text: str, todo=None, done=None) -> str:
-    """B817: the id of the open or blocked task that says exactly `text` (`_same_key`), else ''. Other checkouts'
+    """B817: the id of the open or blocked task that says exactly `text` (`_same_key`), with or without
+    notes and a BLOCKED after it, else ''. Other checkouts'
     tasks count too, as another slot may have filed it and not merged yet; the first checkout that has an id (this
     one, then the main one) says what it reads, and an id done in any of them is done. A release is never the same."""
     todo, done = ensure(todo, done)
     todos = [Path(todo), *_other_checkouts(todo)]
-    key = _same_key(one_line(text))
+    words, keys = _same_key(one_line(text))
+
+    def same(line: str) -> bool:
+        w, k = _same_key(line)
+        return k == keys and (w == words or w.startswith((f'{words} — ', f'{words} BLOCKED: ')))
+
     seen = {tid.rstrip('.') for t in todos for f in (t, t.with_name(Path(done).name))
             for _, box, tid, _, _ in iter_tasks(lines(f)) if box == 'x'}
     for t in todos:
         ls = lines(t)
         here = [(tid.rstrip('.'), rest, i) for _, _, tid, rest, i in iter_tasks(ls)]
         for tid, rest, i in here:
-            if tid not in seen and not release(tid) and _same_key(' '.join([rest, *_item_block(ls, i)[1:]])) == key:
+            if tid not in seen and not release(tid) and same(' '.join([rest, *_item_block(ls, i)[1:]])):
                 return tid
         seen |= {tid for tid, _, _ in here}
     return ''
@@ -3306,8 +3310,10 @@ def _p_add(a, x):
     if not given and not where and (fam := family_end(kind)):
         w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
     if not release(kind) and (twin := same_task(text, x.todo, x.done)):  # B817: --force and a split change nothing here
-        print(f'{PROG}: not added: {twin} is this task, word for word, and not done; --force does not add it again. '
-              f'`{PROG} note {twin} TEXT` it there, or say what is different', file=sys.stderr)
+        how = (f'`{PROG} note {twin} TEXT` it there, or say what is different' if twin in open_ids(lines(x.todo)) else
+               f'{twin} is in another checkout and not merged here yet; if this is different work, say what is different')
+        print(f'{PROG}: not added: {twin} is this task, word for word, and not done; --force does not add it again. {how}',
+              file=sys.stderr)
         return 3
     fam = kind if re.search(r'\d', kind) else None  # a split is like its parent, by design
     # B99: a release is never the same work as a build, even when its text names what it waits for

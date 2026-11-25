@@ -585,6 +585,10 @@ def test_add_refuses_the_same_text():
         refused('F4', 'and not twice', 'F', 'no fields', '--force')
         plan.block('F4', 'DECIDE: which?', todo=todo, after=[])
         refused('F4', 'nor while it is blocked', 'F', 'no fields', '--force')
+        plan.unblock('F4', 'a note', todo=todo)
+        refused('F4', 'nor once it has a note', 'F', 'no fields', '--force')
+        for v in ('one', 'two'):
+            eq(add('C', f'do it | files: m.py — variant {v}', '--force').returncode, 0, 'words after inline fields count')
         for k in ('V1', 'V2'):
             has(add('V').stdout, f'added {k}', 'a release repeats its text')
         has(add('F', plan.RELEASE_BRIEF, '--after', 'all', '--force').stdout, 'added F5', 'and is no task\'s double')
@@ -595,6 +599,7 @@ def test_add_refuses_the_same_text():
         git(root, 'worktree', 'add', '-q', '-b', 'task/F3', str(wt))
         eq(add('B', 'found in a slot', '--files', 'c.py', cwd=wt).returncode, 0, 'a slot files a follow-up')
         refused('B1', 'which another checkout does not file again', 'B', 'found in a slot', '--files', 'c.py', '--force')
+        has(add('B', 'found in a slot', '--files', 'c.py').stderr, 'another checkout', 'saying where it is')
         plan.edit('F2', 'another text', todo=todo)
         has(add('F', text, '--files', 'a.py', '--after', 'F9', '--force').stdout, 'added F6',
             "a stale checkout's text of a task edited here is no obstacle")
