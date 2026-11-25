@@ -340,7 +340,7 @@ def drop_extra_slots(slots: int, busy) -> None:
 
 from agent_runner.loop_watch import (ci_flows, watch_ci, watch_issues, CI_UNSEEN, CI_RERUN, CI_AT, ISSUES_UNSEEN, ISSUES_AT)  # noqa: F401
 from agent_runner import loop_after  # noqa: E402
-from agent_runner.loop_after import SWEPT, SWEEP_AT, sweep_unmerged  # noqa: E402,F401
+from agent_runner.loop_sweep import SWEPT, SWEEP_AT, sweep_unmerged  # noqa: E402,F401  (C53)
 
 def not_attempt(tid: str, branch: str) -> bool:
     """The session's last commit matches `[run] not_attempt` ({id} = the task): a phase that leaves the task open

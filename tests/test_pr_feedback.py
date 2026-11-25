@@ -407,8 +407,8 @@ def test_loop(tmp: Path):
     watch.queue_resume('F8', 2, SID, 'x')
     run = mock.Mock(branch='main', tried=set(), closed=set(), running={1: ('F7', '', set(), set())}, free_at={}, slots=1,
                     merging=[SimpleNamespace(name='merge:F9', is_alive=lambda: True)])
-    skip = [mock.patch.object(loop_after, f) for f in ('retry_reopened', 'auto_upgrade', 'watch_code', 'watch_ci', 'watch_issues',
-            'auto_release', 'sweep_unmerged', 'keep_claims', 'block_asks', 'restart_if_upgraded')]
+    skip = [mock.patch.object(loop_after, f) for f in ('retry_reopened', 'upgrade_tick', 'watch_ci', 'watch_issues',
+            'auto_release', 'sweep_unmerged', 'keep_claims', 'block_asks')]
     skip += [mock.patch('agent_runner.control_held.controls_tick'), mock.patch('agent_runner.page_copy.page_copy_tick'),
              mock.patch.object(loop_after.undo, 'tick'), mock.patch.object(loop_after.no_commits, 'tick'),
              mock.patch('agent_runner.loop.take_keys')]

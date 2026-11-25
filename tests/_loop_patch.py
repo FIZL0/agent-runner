@@ -5,9 +5,9 @@ from __future__ import annotations
 from contextlib import ExitStack, contextmanager
 from unittest import mock
 
-from agent_runner import loop, loop_after, loop_requests, loop_watch
+from agent_runner import loop, loop_after, loop_requests, loop_sweep, loop_upgrade, loop_watch
 
-MODULES = (loop, loop_requests, loop_watch, loop_after)
+MODULES = (loop, loop_requests, loop_watch, loop_after, loop_sweep, loop_upgrade)
 
 
 @contextmanager
