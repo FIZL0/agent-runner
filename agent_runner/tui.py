@@ -582,7 +582,7 @@ class RunPage:
     def queue_tag(self, it) -> tuple[str, str]:
         """A queue row's right tag: 'sN Nm' (yellow) while a slot runs it, 'critical' (red), 'blocked' (red),
         '⧗ after <id title>' (dim) while it waits, '⧗ waits for iPhone 15, …' (dim) while a shared tool keeps it, 'parked' (dim) at level later (B123: a run never starts it),
-        'shelved' (dim: F184), 'ready' (green)."""
+        'shelved' (dim: F184), 'Split: 2 of 4 parts landed' (dim: B811b), 'ready' (green)."""
         state = str(it.get('state') or '')
         if state in ('parked', 'shelved', 'held'):  # F184, F429
             return state, 'dim'
@@ -597,6 +597,8 @@ class RunPage:
             return f'⧗ after {words}', 'dim'
         if state == 'tool':  # F168
             return f'⧗ {it.get("tool_wait") or "waits for a tool"}', 'dim'
+        if state == 'split' and it.get('split'):  # B811b
+            return it['split']['words'], 'dim'
         return 'ready', 'green'
 
     def kind_word(self, tid: str, width: int) -> str:
@@ -1086,6 +1088,8 @@ class RunPage:
             args['tid'] = ids[0]
         row = next((t for t in self.snap.get('queue') or [] if t.get('id') == args.get('tid')), {}) if c['where'] == 'queue' else {}
         asks = (row.get('asks') or {}).get(key, '')  # F186: the row's own confirm, asked here too
+        if asks and key == 'queue_drop':
+            asks = U.split_ask(row, short=True) or asks  # B811b
         if c['where'] == 'task' and (s := next((s for s in self.snap.get('sessions') or [] if s.get('task') == args.get('tid')), None)):
             asks = U.row_asks('task', s).get(key, '')  # F426d
         if c.get('confirm') and not c.get('tui_sure', True) and not asks:
