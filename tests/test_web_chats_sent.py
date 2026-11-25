@@ -469,5 +469,89 @@ def test_install_command_b761(tmp: Path) -> None:
             eq(W.Terminals('t', 1, '').argv('login', '', 2)[0], str(f), 'and it is the one that is started')
 
 
+RESPONSE_DRIVER = r"""
+const fs = require('fs'), page = fs.readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n'), shared = fs.readFileSync(process.argv[3] + '/030-shared.js', 'utf8');
+const grab = s => { const i = page.indexOf(s); if (i < 0) throw Error(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); if (i < 0) throw Error(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const kept = {}, posts = [], box = {value: '', classList: {contains: () => false}};
+let answers = [];
+/* one load of the page over this browser's storage */
+function load() {
+  return new Function('kept', 'posts', 'box', 'take', `
+const on = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }}, tabStore = {get: () => '', set() {}}, HKEY = 'p', CHATS_OF = 'p:';
+const document = {title: 'p', querySelector: () => box}, addEventListener = (t, f) => { on[t] = f }, setTimeout = () => {}, TOUCH = () => false, typingIn = () => false;
+const S = {snap: {at: 'now', sessions: [], needs: [], concepts: [], chat_quiet: 0}, ob: [], sent: {}, feeds: {}, atts: {}, sel: [], thread: null, view: 'home', f: {}, ren: null};
+const tq = p => p, fetch = async (p, o) => { posts.push(o ? JSON.parse(o.body) : p); return {status: 200, json: async () => o ? take() : {}} };
+const said = [], toast = t => said.push(t), esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'), I = {}, H = {alerts: []}, HI = {}, DK = {}, HOME_PAGE = false, HOLD_MS = 1, PD = {};
+const OB = {tab: 't', kept: true}, OB_TAB = 'tab:', SENT_KEY = 'sent', OB_DEAD = 1, obLoad = () => {}, obBeat = () => {}, obLive = () => [], obDraw = () => {}, takeSnap = () => {}, obTake = async () => true, OB_KEY = 'ob';
+const atAll = () => false, allRow = () => '', walkRow = () => '', chatBar = () => '', homeNeeds = () => 0, histAdd = () => {}, sentMark = () => {}, loadFeed = () => {}, card = h => h, modelOf = () => '';
+const chatRow = (s, q) => '[' + s.name + (q ? ' q' : '') + ']', render = () => {};
+let shown = '';
+const sideShow = h => { shown = h };
+` + logic + shared.split('/* --- a little markdown')[0] + slice('let DR=null;', '/* the sidebar drawn again') + line('const DRAFT_KEY=') + line('const boxKey=')
+  + slice('/* F201: the starting chats', 'function obCards(') + line('const newCid=') + line('function obChange(') + line('const keepSent=') + grab('function addSent(') + grab('function carrySent(') + grab('function boxMove(')
+  + grab('function outbox(') + grab('async function drain(') + grab('function obDone(') + line('const agoWords=') + grab('function responseHTML(') + grab('function chatsSheet(')
+  + line('function open(') + grab('async function send(') + 'function newChat(' + page.split('function newChat(')[1].split('\n}')[0].split('/* F172')[0] + `
+return {S, on, said, side() { side(); return shown }, sheet: chatsSheet, view: () => responseHTML(S.thread), open, send, names: chatNames, retained: () => S.ctx};`)(kept, posts, box, () => answers.shift() || {ok: true});
+}
+const resp = (id, item, at, o) => ({id, item, title: 'Title ' + item, question: 'Which <look>?', ask: 'x', answer: 'Full', note: '', at, ...o});
+const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 2)) };
+(async () => {
+  const out = {}, now = Date.now() / 1000; let p = load(), {S} = p;
+  const snap = o => Object.assign(S.snap, {sessions: [{name: 'c1', at: now - 50, last: 'you', state: 'live'}, {name: 'c2', at: now - 90000, last: 'you', state: 'live'}], responses: [resp('2-1', 'F2', now - 10, {note: 'Keep it <b>small</b>'}), resp('1-1', 'F1', now - 100000)]}, o);
+  snap(); S.seen = {};
+  out.off = p.side(); out.sheet = p.sheet(); out.names = p.names();
+  snap({chat_quiet: 21600}); out.quiet = p.side().match(/qline|\[c[^\]]*\]|data-thread="\+[^"]*"|newlabel/g);
+  p.open('+response:2-1'); out.view = p.view(); out.opened = [S.thread, p.retained().label, posts.length, kept['ar-seen-responses:p']];
+  out.after = (p.side().match(/newlabel/g) || []).length;
+  p.open('c1'); out.other = [(p.side().match(/newlabel/g) || []).length, p.retained()];
+  p = load(); ({S} = p); snap(); S.seen = {}; out.reload = (p.side().match(/newlabel/g) || []).length;
+  // nothing starts until words are sent
+  p.open('+response:2-1'); box.value = '  '; await p.send(); await settle(); out.empty = posts.length;
+  box.value = 'why Full?'; answers = [{ok: false, out: 'no run is up'}]; await p.send(); out.standIn = [S.thread, p.side()]; await settle();
+  out.sent = posts.filter(x => x.name); out.failed = p.side().includes('data-thread="+response:2-1"');
+  S.ob = []; S.thread = null; out.discarded = p.side().includes('data-thread="+response:2-1"');
+  p.open('+response:2-1'); box.value = 'again'; posts.length = 0; answers = [{ok: true, name: 'c3', ask: 'About F2', at: 1}]; await p.send(); await settle();
+  out.went = [posts.filter(x => x.name).map(x => x.name), S.thread, p.side().includes('+response:2-1'), p.side().includes('+response:1-1')];
+  // one whose chat was started elsewhere: the words stay
+  p.open('+response:9-9'); box.value = 'late'; posts.length = 0; await p.send(); out.gone = [posts.length, box.value, p.said.length > 0, p.view().includes('no longer kept')];
+  console.log(JSON.stringify(out)); process.exit(0);
+})();
+"""
+
+
+def test_responses_f425b(tmp: Path) -> None:
+    """F425b: the sent responses are rows in the Chats list's Quiet group: 'new' until opened once, no session on
+    opening one, one on the first words, and then the chat stands in the row's place."""
+    if not shutil.which('node'):
+        print('  (no node here: the sent response script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(RESPONSE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), str(W.PAGE_DIR)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the sent responses', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    row = o['off'].split('<div class="qline">Quiet</div>')
+    check(len(row) == 2 and '+response' not in row[0] and row[1].count('data-thread="+response:') == 2,
+          'with chat_quiet off the rows still stand under Quiet, never in the top list', o['off'])
+    check('F2 Title F2' in row[1] and row[1].count('newlabel') == 2 and 'bdot' not in o['off'] and 'class="n"' not in o['off'] and 'data-del' not in row[1],
+          'each with its id and title and new, with no dot and no count', row[1])
+    check(o['sheet'].count('data-thread="+response:') == 2 and 'Quiet' in o['sheet'] and o['sheet'].count('newlabel') == 2, 'the switcher has them too', o['sheet'])
+    eq(sorted(o['names']), ['c1', 'c2'], 'no chat among the chats a pick takes')
+    eq(o['quiet'], ['[c1]', 'qline', 'data-thread="+response:2-1"', 'newlabel', '[c2 q]', 'data-thread="+response:1-1"', 'newlabel'], 'among the quiet chats, newest first')
+    check(all(t in o['view'] for t in ('Which &lt;look>?', 'Full', 'Keep it &lt;b>small')), 'opened: the question, the answer, the note, escaped', o['view'])
+    eq(o['opened'], ['+response:2-1', 'F2 Title F2', 0, '["2-1"]'], 'opening it asks the run for nothing')
+    eq((o['after'], o['other'], o['reload']), (1, [1, None], 1), 'and takes its label off, for a reload too')
+    eq(o['empty'], 0, 'no words: nothing starts')
+    check(str(o['standIn'][0]).startswith('@') and 'starting' in o['standIn'][1] and 'data-thread="+response:2-1"' not in o['standIn'][1], 'words: the starting chat takes the row\'s place at once', o['standIn'])
+    eq([(x['name'], x['args']) for x in o['sent']], [('response_chat', {'rid': '2-1', 'text': 'why Full?', 'wait': False})], 'one session, about that response')
+    eq((o['failed'], o['discarded']), (False, True), 'a chat that did not start, discarded: the row is back')
+    eq(o['went'], [['response_chat'], 'c3', False, True], 'it started: the chat is open and the row stays away under an older snapshot')
+    eq(o['gone'], [0, 'late', True, True], 'a response that is gone sends nothing and keeps the words')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_install_command_b761)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_install_command_b761), in_tmp(test_responses_f425b)]))

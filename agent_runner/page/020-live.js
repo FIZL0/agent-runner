@@ -75,6 +75,7 @@ function obDone(it,j){
     obChange(b=>obDrop(b,it.cid));for(const c of controlsOf('release'))Object.assign(c,{confirm:j.confirm,seen:j.seen});
     S.sure=it.ctl.split(':')[0];toast(j.confirm,true);snapNow();return}
   if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
+  if(it.name==='response_chat')S.responseGone=[...(S.responseGone||[]),it.args.rid];  // F425b
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){S.came=(S.came||[]).filter(x=>x.name!==j.name&&now-x.at<60000).concat([{name:j.name,was:'@'+it.cid,start:it.at,say:it.say,state:'sending',at:now}]);carrySent(j.name,j,it.ask);boxMove('@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name,true)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154

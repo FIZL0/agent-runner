@@ -110,6 +110,11 @@ function chatGroups(rows,o){
   }
   return{top,quiet};
 }
+/* F425b: the Quiet group's rows: the quiet chats and the sent responses, newest first. responseRows: the kept responses as
+   rows (name: what S.thread holds while one is open), without those whose chat starts (an outbox item) or has started (gone) */
+const responseRows=(kept,ob,gone)=>(kept||[]).filter(r=>!(gone||[]).includes(r.id)&&!(ob||[]).some(x=>x.name==='response_chat'&&x.args.rid===r.id))
+  .map(r=>({...r,response:true,name:ctxKey({kind:'response',id:r.id}),label:[r.item,r.title].filter(Boolean).join(' ')}));
+const quietRows=(quiet,responses)=>(quiet||[]).concat(responses||[]).sort((a,b)=>(b.at||0)-(a.at||0));
 /* F143: a Needs you card's Chat, as its first message shows while the run starts it (need_chat_text then replaces it) */
 function needChatAsk(n){const os=needInputs(n).length?[]:((n&&n.answers)||[]).map(a=>a.label||a.value);
   return `This chat is about ${n.id}${n.title?` '${n.title}'`:''}, which needs me. What was put to me:\n\n${n.ask||n.what||''}${os.length?`\n\nPossible answers:\n${os.map(o=>'- '+o).join('\n')}`:''}`}

@@ -847,8 +847,8 @@ _Avoid_: poll, condition, probe
 **Sent response**:
 What a person answered to a Needs you item with no chat opened for it, kept with its question so a chat about it can still be started; it goes once that chat starts
 _Said_: responses, what I answered
-_On screen_: a dim row in the Chats list's Quiet group
-_In code_: sent_responses, keep_response, response_chat, snapshot responses
+_On screen_: a dim row in the Chats list's Quiet group, with "new" until it is opened once
+_In code_: sent_responses, keep_response, response_chat, snapshot responses, responseRows, responseHTML
 _Avoid_: reply record, answer log
 
 **History view**:

@@ -127,8 +127,16 @@ function feedAgain(){const deaf=FD.muted&&FD.deaf;feedKeep();feedHang();feedBack
 addEventListener('online',()=>{if(FD.n&&FD.want)feedAgain()});  // the socket may be dead and not know it
 /* an ended chat whose last screen is kept: what to do now, over its message box */
 function feedEnd(n){return feedNow(n)==='ended'&&FD.old?`<div class="feedend">${feedHTML(n,true)}</div>`:''}
+/* F425b: an opened sent response: what was asked and answered; words sent here start its chat */
+function responseHTML(n){
+  const r=responseOf(n), part=(head,words)=>`<div><div class="small">${head}</div><div class="said">${esc(words)}</div></div>`;
+  if(!r)return `<div class="col feeds">${card(S.snap.at?`<div class="q">${esc(threadTitle(n))}</div><div class="small">This response is no longer kept, or a chat about it was started.</div>`:'<div class="small">Loading…</div>','',`data-k="feed:${esc(n)}"`)}</div>`;
+  const ago=agoWords(r.at*1000), when=ago?ago==='now'?' · now':` · ${ago} ago`:'';
+  return `<div class="col feeds">${card(`<div class="q said">${esc(r.question||r.label)}</div>${part('Your answer'+when,r.answer)}${r.note?part('Your note',r.note):''}<div class="small">It is sent. A chat about it starts with your first message${modelOf(n)?`, on ${esc(modelOf(n))}`:''}.</div>`,'',`data-k="feed:${esc(n)}"`)}</div>`;
+}
 /* what a chat or slot with no session to show says */
 function feedHTML(n,bare){
+  if(S.ctx&&S.ctx.kind==='response'&&isNew(n))return responseHTML(n);
   if(isNew(n))return `<div class="col feeds">${card(`<div class="q">${esc(threadTitle(n))}</div><div class="small">The chat starts with your first message${modelOf(n)?`, on ${esc(modelOf(n))}`:''}.</div>`,'',`data-k="feed:${esc(n)}"`)}</div>`;  // F172
   const st=feedNow(n), i=(FD.n===n&&FD.info)||{}, last=S.last[n]||{}, link=i.link||(sessionOf(n)||{}).link||last.link||'';
   const open=link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open its session ${I.ext}</a>`:'';
@@ -540,7 +548,9 @@ function statusHTML(){
 
 /* F206: the title's switcher: the chats in the sidebar's order, each with its last line */
 function chatsSheet(){
-  const g=shownChats(), row=s=>{const n=s.name, f=S.feeds[n], said=plain(chatLast(feedOf(n),busy(n))), on=S.thread===n;
+  const g=shownChats(), row=s=>{
+    if(s.response)return `<button class="it swc response" data-thread="${esc(s.name)}" data-k="swc:${esc(s.name)}"><span class="grow"><span class="ell">${esc(s.label)}</span><span class="small ell">${esc('You: '+plain(s.answer))}</span></span>${responseNew(s)}</button>`;  // F425b
+    const n=s.name, f=S.feeds[n], said=plain(chatLast(feedOf(n),busy(n))), on=S.thread===n;
     return `<button class="it swc" data-thread="${esc(n)}" data-k="swc:${esc(n)}"${on?' aria-current="true"':''}><span class="grow"><span class="ell">${esc(chatTitle(s))}</span><span class="small ell">${esc(said||(f?' ':'Loading…'))}</span></span>${replyDue(s)?'<span class="bdot" role="img" aria-label="needs your reply"></span>':on?I.check:''}</button>`};
   const n=S.thread, own=n&&sessionOf(n)&&!isAgent(n);
   return `<h2>Chats</h2>${g.top.map(row).join('')}${g.quiet.length?`<div class="sec">Quiet<span class="ln"></span></div>${g.quiet.map(row).join('')}`:''}${own?`<div class="btns"><button class="btn" data-ren="${esc(n)}">Rename this chat</button></div>`:''}`;
