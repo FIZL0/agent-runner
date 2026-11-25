@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: on the run page's Plan, three dots beside each queue row (a task, a release, the Next release row) open its icons in place: hold (or play, while held), to the top, and remove, which shows a Removed card with Undo for 20 seconds (F429b).
 - Fixed: writing `control-settings.json` in the Notes dir could fail when two processes (a control session starting, or the control server) wrote it at the same moment: both used one temp file name, so the second move could find it gone and a control start could fail with FileNotFoundError. Each writer now has a temp file of its own, removed when the move fails (B806).
 ## 0.68.0 (2026-11-25)
 

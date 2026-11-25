@@ -90,6 +90,19 @@ RUN_CONTROLS = (
      'fits': lambda r: not r.get('started'),
      'confirm_of': lambda r: f'Drop {r["id"]}? It leaves the plan, and nothing is released.' if P.release(r['id']) and releases_on() else '',
      'confirm': 'It leaves the plan, and a slot running it is stopped. Drop it?'},
+    # F429b: the row menu of a Plan queue row (the page alone: no TUI key), on the row's `menu`; a running one has none.
+    # Restore is Undo's: the row is out of the plan, so it fits none and has its place as `text` (`menu_restore`)
+    {'key': 'menu_hold', 'label': "Hold: a run won't start it", 'argv': ('plan', 'hold', '{id}'), 'tui': '', 'where': 'queuemenu',
+     'said': '{id} is held', 'fits': lambda r: menu_on(r) and not r.get('held') and not r.get('no_hold')},
+    {'key': 'menu_unhold', 'label': 'End the hold', 'argv': ('plan', 'unhold', '{id}'), 'tui': '', 'where': 'queuemenu',
+     'said': '{id} is no longer held', 'fits': lambda r: menu_on(r) and bool(r.get('held'))},
+    {'key': 'menu_top', 'label': 'To the top', 'argv': ('plan', 'move', '{id}', 'top'), 'tui': '', 'where': 'queuemenu',
+     'said': '{id} is at the top', 'fits': lambda r: menu_on(r)},
+    {'key': 'menu_remove', 'label': 'Remove', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': '', 'where': 'queuemenu',
+     'why': 'removed from the Plan queue', 'said': '{id} is removed',
+     'fits': lambda r: menu_on(r) and not r.get('blocked')},  # a restored task is open: Undo would lose what it waits for
+    {'key': 'menu_restore', 'label': 'Put back', 'argv': ('plan', 'restore', '{id}'), 'tui': '', 'where': 'queuemenu',
+     'said': '{id} is back', 'fits': lambda r: False},
     # F184: a shelved task's, in the Parked group; never Unpark, which would not reopen it
     {'key': 'shelved_back', 'label': 'Bring back', 'argv': ('plan', 'unshelve', '{id}'), 'tui': 'U', 'where': 'shelved',
      'help': 'bring back (a shelved task)', 'said': '{id} is under Needs you again',
@@ -168,6 +181,58 @@ def _plat():
     return plat
 
 
+def menu_on(row: dict) -> bool:
+    """F429b: can the Plan queue row `row` be moved: a run works on it in no way, and it is not parked?"""
+    state = str(row.get('state') or '')
+    return not (row.get('started') or row.get('under_way') or state == 'parked' or state.startswith('running'))
+
+
+def menu_row(tid: str) -> dict | None:
+    """F429b: the row whose menu `tid` names, the Next release row (`release_moves.NEXT`) too (None: there is none)."""
+    from agent_runner import release_moves
+    if tid != release_moves.NEXT:
+        return queue_row(tid)
+    ls, st = P.lines(S.C.todo), _state(S.run_up())
+    return auto_release_row(ls, 0, release_tasks(ls, st)) if releases_on() else None
+
+
+def menu_place(text: str) -> list[str]:
+    """F429b: where `plan restore` puts a removed row: `text` is the page's JSON {'up': the ids above it in its section,
+    'down': those below, 'in': the section}. The place with the fewest of them on the wrong side now, as others may have
+    moved or landed; its section's end with none left, else the top. ValueError when it does not read."""
+    at = json.loads(text)
+    if not isinstance(at, dict) or not all(isinstance(at.get(k, []), list) for k in ('up', 'down')):
+        raise ValueError('no place')
+    up, down, sec = at.get('up', []), at.get('down', []), str(at.get('in') or '')
+    ls = P.lines(S.C.todo)
+    now = [tid for s, box, tid, _, _ in P.iter_tasks(ls) if box in ' ~' and s == sec]
+    if any(t in up or t in down for t in now):
+        wrong = [sum(t in down for t in now[:n]) + sum(t in up for t in now[n:]) for n in range(len(now) + 1)]
+        n = wrong.index(min(wrong))
+        return ['after', now[n - 1]] if n else ['before', now[0]]
+    return ['in', sec] if sec and f'### {sec}' in (l.strip() for l in ls) else ['top']
+
+
+def menu_restore(tid: str, text: str) -> dict:
+    """F429b: Undo of a Remove: the row is back where it stood (the Next release row's place is its count's)."""
+    from agent_runner import release_moves
+    argv = ['plan', 'restore', tid]
+    if tid != release_moves.NEXT:
+        try:
+            if not TASK_ID.fullmatch(tid or ''):
+                raise ValueError('no task id')
+            argv += menu_place(text)
+        except ValueError as e:
+            return {'ok': False, 'code': 2, 'out': f'menu_restore: {e}', 'argv': []}
+    return menu_said(run_control_of('menu_restore'), tid, call(argv))
+
+
+def menu_said(c: dict, tid: str, r: dict) -> dict:
+    """F429b: the result `r` of the row menu's control `c`, in the page's words once it is done."""
+    from agent_runner import release_moves
+    return r if not r['ok'] else {**r, 'out': c['said'].replace('{id}', 'Next release' if tid == release_moves.NEXT else tid)}
+
+
 def row_acts(where: str, row: dict) -> list[str]:
     """C34: the keys of the actions of panel `where` ('queue') allowed on `row` now, in the list's order."""
     return [c['key'] for c in RUN_CONTROLS if c['where'] == where and c.get('fits', lambda r: True)(row)]
@@ -190,7 +255,7 @@ def queue_row(tid: str) -> dict | None:
     return next((q for q in queue_rows(P.lines(S.C.todo), _state(S.run_up())) if q['id'] == tid), None)
 
 
-ROW_WORDS = {'queue': 'a queued task', 'shelved': 'a shelved task', 'need': 'something that needs you', 'concept': 'a concept waiting',
+ROW_WORDS = {'queue': 'a queued task', 'queuemenu': 'a queued task or release', 'shelved': 'a shelved task', 'need': 'something that needs you', 'concept': 'a concept waiting',
              'session': 'a control session'}
 
 
@@ -198,6 +263,8 @@ def row_of(where: str, tid: str) -> dict | None:
     """C35: the row of panel `where` that `tid` names as the plan has it now (None: it is not there)."""
     if where == 'queue':
         return queue_row(tid)
+    if where == 'queuemenu':
+        return menu_row(tid)
     if where == 'session':
         return {'name': tid} if re.fullmatch(r'c\d+', tid or '') else None
     from agent_runner.status import waiting_ok
@@ -235,6 +302,11 @@ def controls(rel_ask: dict | None = None) -> list[dict]:
             if not (plat.WINDOWS and c['key'] == 'restart')]  # no re-exec there
 
 
+def _next_row() -> str:
+    from agent_runner import release_moves
+    return release_moves.NEXT
+
+
 def control_argv(key: str, n='', tid: str = '', why: str = '', pri: str = '') -> list[str]:
     """The runner command control `key` runs, filled in; ValueError says what is missing or wrong."""
     c = run_control_of(key)
@@ -247,7 +319,8 @@ def control_argv(key: str, n='', tid: str = '', why: str = '', pri: str = '') ->
     if c.get('fix') == 'wip':
         if not re.fullmatch(r'main-checkout-[\w.-]+', tid or ''):
             raise ValueError(f'{key}: which moved-aside edits? not {tid!r}')
-    elif any('{id}' in w for w in words + [c.get('ask') or '']) and not TASK_ID.fullmatch(tid or ''):
+    elif any('{id}' in w for w in words + [c.get('ask') or '']) and not TASK_ID.fullmatch(tid or '') and \
+            not (c['where'] == 'queuemenu' and tid == _next_row()):
         raise ValueError(f'{key}: a task id (F82), not {tid!r}')
     return [w.replace('{n}', n).replace('{id}', tid).replace('{why}', why or c.get('why') or TASK_DROP_WHY)
             .replace('{pri}', pri) for w in words]
@@ -268,6 +341,8 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
         rs = [run_control(key, tid=i) for i in ids]
         bad = next((r for r in rs if not r['ok']), None)
         return bad or {**rs[-1], 'out': ', '.join(r['out'] for r in rs)}
+    if key == 'menu_restore':  # F429b
+        return menu_restore(tid, text)
     pri, row = '', {}
     if c and c['where'] in ROW_WORDS:  # C34, C35: allowed on this row now (the snapshot's `acts`, checked again)
         row = row_of(c['where'], tid)
@@ -278,6 +353,10 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
         if row is None or key not in row_acts(c['where'], row):
             return {'ok': False, 'code': 1, 'out': f'{c["label"]}: {tid or "none"} is not {ROW_WORDS[c["where"]]} it '
                                                    f'fits', 'argv': []}
+        if key == 'menu_remove' and tid != _next_row():  # F429b: as `plan move` and `plan hold` refuse it themselves
+            from agent_runner import row_hold
+            if why := row_hold.under_way(S.C, tid):
+                return {'ok': False, 'code': 1, 'out': f'{tid} cannot be removed: {why}', 'argv': []}
         pri = 'normal' if row.get('pri') == 'critical' else 'critical'
         if c.get('answer'):
             said = answer_of(row, key)
@@ -300,6 +379,8 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
     if c['where'] == 'release':  # F186
         return new_release(argv, text, confirm)
     r = call(argv)
+    if c['where'] == 'queuemenu':
+        return menu_said(c, tid, r)
     FIXUPS[0] = float('-inf')  # what there is to fix is looked up anew
     if r['ok'] and c.get('said'):  # C35
         r.update(said=c['said'].replace('{id}', tid), **({'gone': tid} if c['where'] == 'need' else {}))

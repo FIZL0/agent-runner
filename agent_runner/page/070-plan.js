@@ -14,8 +14,8 @@ function cutsOff(c){
 const ctlSure=(c,tid)=>sureHTML(cutsOff(c)+((((S.snap.queue||[]).find(q=>tid&&q.id===tid)||{}).asks||{})[c.key]||c.confirm.split('{id}').join(tid||'')),c.label.charAt(0).toLowerCase()+c.label.slice(1),`data-ctl="${esc(c.key)}" data-tid="${esc(tid||'')}"`);
 /* C34: a panel's row actions ('queue', 'release': ui_model.RUN_CONTROLS' `where`): the buttons for a row's `acts` (the
    keys ui_model allowed on it), each through the one data-ctl handler, and the confirm one asks in place */
-const obActs=(x,where)=>!!x.ctl&&(controlOf(x.ctl.split(':')[0])||{}).where===where;
-const obRun=x=>!!x.ctl&&!['queue','shelved','release','need','concept'].includes((controlOf(x.ctl.split(':')[0])||{}).where);
+const obActs=(x,where)=>{const w=x.ctl?(controlOf(x.ctl.split(':')[0])||{}).where:'';return w==='queuemenu'?where==='queue'&&x.state==='failed':!!x.ctl&&w===where};  // F429b: the row itself shows a row menu's act
+const obRun=x=>!!x.ctl&&!['queue','queuemenu','shelved','release','need','concept'].includes((controlOf(x.ctl.split(':')[0])||{}).where);
 const actBtns=(acts,tid,labels={},pri='')=>(acts||[]).map(controlOf).filter(Boolean).map(c=>`<button class="btn${c.key===pri?' pri':''}${ctlBusy(c.key,tid)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(tid)}">${esc(labels[c.key]||c.label)}</button>`).join('');
 /* F180: a Needs you row's fixed answers among its actions (the first is the main button; a pitch draws only that one,
    Not this… has the rest), and its other actions */
@@ -248,7 +248,7 @@ const chatBtn=q=>`<button class="btn" data-about="plan:${esc(q.id)}">Chat</butto
 const taskBtns=(q,acts=q.acts)=>`<div class="btns" data-k="acts:${esc(q.id)}">${actBtns(acts,q.id)}${chatBtn(q)}</div>${actSure(acts,q.id)}`;
 /* F186: a release's Drop, there until it starts (ui_model's `acts`) */
 const relDrop=q=>(q.acts||[]).filter(k=>k==='queue_drop');
-const planCard=(q,list='queue')=>card(taskRow(q,q.title||q.id,taskBtns(q),list),'',`data-k="task:${esc(q.id)}"`);
+const planCard=(q,list='queue')=>card(taskRow(q,q.title||q.id,taskBtns(q),list)+rowMenu(q,list),'',`data-k="task:${esc(q.id)}"`);
 /* F426b: an open release: it opens to the tasks it waits for, each a row that opens too; one that waits for none, to its text */
 const relWaits=r=>((r.waits||[]).length?`waits for ${r.waits.length}`:r.words)+(r.note||'');
 function releaseRow(q,list='queue'){
@@ -257,11 +257,11 @@ function releaseRow(q,list='queue'){
     return `<div class="srow" data-k="${esc(in_)}:${esc(w.id)}">${taskRow(t||{...w,state:'open'},(t||w).title||w.id,t?taskBtns(t).replace('data-k="acts:',`data-k="acts:${esc(in_)}:`):'',in_)}</div>`};
   return taskRow(q,r.title||q.title||q.id,taskBtns(q,relDrop(q)),list,(r.waits||[]).length?`<div class="waits">${r.waits.map(one).join('')}</div>`:'');
 }
-const releaseCard=(q,list)=>card(releaseRow(q,list),'',`data-k="task:${esc(q.id)}"`);
+const releaseCard=(q,list)=>card(releaseRow(q,list)+rowMenu(q,list),'',`data-k="task:${esc(q.id)}"`);
 /* F131: the auto release's count, which is no open task, dimmed; F195c: in the Queue */
 const nextReleaseRow=r=>`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc((r.id?r.id+' · ':'')+(r.words||''))}</span></div></div>`;
-const nextReleaseCard=r=>card(nextReleaseRow(r),'relph','data-k="rel:next"');
-const queueCard=q=>q.placeholder?nextReleaseCard(q):q.release?releaseCard(q):planCard(q);
+const nextReleaseCard=r=>card(nextReleaseRow(r)+rowMenu(r),'relph','data-k="rel:next"');
+const queueCard=q=>q.removed?removedCard(q):q.placeholder?nextReleaseCard(q):q.release?releaseCard(q):planCard(q);
 function parkedCard(q,list='parked'){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
   return card(taskRow(q,q.title||q.id,'',list)+taskBtns(q),'',`data-k="task:${esc(q.id)}"`);
 }
