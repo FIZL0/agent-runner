@@ -2794,11 +2794,16 @@ def _push(root: Path) -> str:
     if g('rev-parse', '-q', '--verify', up).stdout != g('rev-parse', 'FETCH_HEAD').stdout:
         up = 'FETCH_HEAD'
     from agent_runner import join  # it reads this module
-    if join.renumber_plan(c, root, up):  # B829: merged, as a rebase would replay the edits made under the old ids
+    renumbered = join.renumber_plan(c, root, up)
+    # B829: merged, as a rebase would replay the edits made under the old ids; so too with an earlier such merge
+    # that was never pushed
+    if renumbered or g('rev-list', '--merges', '-n1', f'{up}..HEAD').stdout.strip():
         if g('merge', '-q', '--no-edit', up).returncode:
             g('merge', '--abort')
             g('reset', '-q', '--keep', was)  # the renumbering goes with the merge it was for
             return f'{branch} and {remote}/{branch} have diverged and do not merge cleanly; pull and push by hand'
+        for then in renumbered:
+            then()
     elif g('rebase', '-q', 'FETCH_HEAD').returncode:
         g('rebase', '--abort')
         return f'{branch} and {remote}/{branch} have diverged and do not rebase cleanly; pull and push by hand'

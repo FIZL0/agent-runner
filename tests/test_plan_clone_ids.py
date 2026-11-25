@@ -122,6 +122,7 @@ def test_pull_undone(tmp: Path):
     check(not plansync.pull(c, force=True), 'the conflict is said')
     eq(git(d, 'rev-parse', 'HEAD'), head, 'the clone is as it was')
     eq(git(d, 'status', '--porcelain'), '', 'with nothing half merged')
+    eq(P.reserved(d), set(), 'and no id used up')
 
     c, _, other = clone(tmp / 'begun')
     git(c.root, 'branch', 'task/B3')  # in the code repo, where a session's branch is
@@ -146,6 +147,27 @@ def test_push(tmp: Path):
     has(t, r'\*\*B5\*\*.*seen on a phone', 'the note is on the local one')
     check('seen on a phone' not in next(l for l in t.splitlines() if '**B3**' in l), 'not on the pushed one', t)
     eq(git(root, 'status', '--porcelain'), '', 'the checkout is clean')
+
+
+def test_push_again(tmp: Path):
+    print('a renumbering merge that was not pushed is not flattened when the remote moves again')
+    root, bare, other = checkout(tmp / 'again')
+    add(root, 'plan/TODO.md', MINE, AFTER)
+    pushed(other, 'plan/TODO.md', PUSHED)
+    hook = bare / 'hooks/pre-receive'
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text('#!/bin/sh\nexit 1\n', encoding='utf-8')
+    hook.chmod(0o755)
+    r = run(root, 'plan', 'note', 'B1', 'a note')
+    has(r.stderr, r'renumbered B3 -> B5', 'it is renumbered and merged')
+    has(r.stderr, r'not pushed', 'and the push is refused')
+    hook.unlink()
+    (other / 'x.py').write_text('x\n', encoding='utf-8')
+    git(other, 'add', '-A')
+    git(other, 'commit', '-qm', 'more')
+    git(other, 'push', '-q', 'origin', 'main')
+    run(root, 'plan', 'note', 'B2', 'another')
+    renumbered(git(bare, 'show', 'main:plan/TODO.md'))
 
 
 def test_push_undone(tmp: Path):
@@ -188,5 +210,5 @@ def test_noted(tmp: Path):
 
 if __name__ == '__main__':
     tmp = Path(tempfile.mkdtemp(prefix='agent-runner-test-plan-clone-ids-'))
-    sys.exit(report([lambda f=f: f(tmp) for f in (test_pull, test_publish, test_pull_undone, test_push,
+    sys.exit(report([lambda f=f: f(tmp) for f in (test_pull, test_publish, test_pull_undone, test_push, test_push_again,
                                                   test_push_undone, test_noted)]))

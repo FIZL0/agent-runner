@@ -111,6 +111,8 @@ def pull(c, force: bool = False) -> bool:
             if renumbered:
                 g('reset', '-q', '--keep', was)  # a renumbering goes with the merge it was for
             return False
+        for then in renumbered:
+            then()
         return True
 
 

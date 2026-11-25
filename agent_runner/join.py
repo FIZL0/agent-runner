@@ -126,7 +126,8 @@ def _next_free(k: str, taken: set[str]) -> str:
     return k + 'r'
 
 
-def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = False, at=None) -> str:
+def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = False, at=None,
+                     held: list | None = None) -> str:
     """`ref`, or a commit on top of it that renumbers the tasks it added under an id `onto` already uses.
 
     A branch files a follow-up with the next id its own copy of the plan has free, while main, meanwhile,
@@ -140,7 +141,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
     branch keeps its id, since its session and its merge go by it; that is logged.
 
     `at` (`renumber_plan`) is the project whose plan is in the repository `cwd`, which may be a `[plan] repo` clone:
-    the paths, the notes folder, the branches and the log are that project's, with no run needed."""
+    the paths, the notes folder, the branches and the log are that project's, with no run needed. What to do once the
+    merge holds (reserve the new ids, log them) goes in `held` then, as calls."""
     rel = (lambda name: os.path.relpath(at.plan_dir / name, cwd).replace(os.sep, '/')) if at else plan_rel
     log_ = (lambda msg: _plan_log(at, msg)) if at else log
     files = [rel('TODO.md'), rel('DONE.md')]
@@ -177,7 +179,9 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
     for k in doubled:
         new[k] = _next_free(k, taken)
         taken.add(new[k])
-    if doubled:
+    if doubled and held is not None:
+        held.append(lambda: P.reserve(cwd, *new.values()))
+    elif doubled:
         P.reserve(cwd, *new.values())  # or the next branch's renumber takes the same one (MD175 -> 180 -> 181 -> 182)
     moved = {**new, **folds}  # a line the branch wrote that names a folded task names the one it went into
     pat = re.compile(r'\b(' + '|'.join(map(re.escape, moved)) + r')\b')
@@ -222,8 +226,11 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path, remote: bool = Fa
         log_(f'{tid}: could not renumber {", ".join([*doubled, *folds])}; the merge may drop or double a task')
         return ref
     if new:
-        log_(f'{tid}: renumbered {pairs}: {onto} gave the id to another task meanwhile')
-        if not at:
+        text = f'{tid}: renumbered {pairs}: {onto} gave the id to another task meanwhile'
+        if held is not None:
+            held.append(lambda: log_(text))
+        else:
+            log_(text)
             note(f'{tid}: renumbered {pairs} before the merge')
     if folds:
         log(f'{tid}: folded {into}: {onto} has the same follow-up, filed by another slot meanwhile; '
@@ -240,19 +247,20 @@ def renumber_upstream(d: Path, up: str, tid: str) -> None:
         log(f'{tid}: the renumbering does not apply in {d}; two tasks may have one id: {r.stderr.strip()[:200]}')
 
 
-def renumber_plan(c, d: Path, up: str) -> bool:
+def renumber_plan(c, d: Path, up: str) -> list:
     """`renumber_upstream` for plan commits taken in outside a run's merge (B829): `d` is project `c`'s main checkout
-    or its `[plan] repo` clone. True when a new commit on `d`'s HEAD renumbers some."""
+    or its `[plan] repo` clone. When a new commit on `d`'s HEAD renumbers some, the calls to make once the merge holds; else []."""
     for a, b in (('HEAD', up), (up, 'HEAD')):
         if not git('merge-base', '--is-ancestor', a, b, cwd=d).returncode:
-            return False  # not diverged: nothing can clash
-    ref = renumber_doubles('HEAD', up, 'plan', d, remote=True, at=c)
+            return []  # not diverged: nothing can clash
+    held: list = []
+    ref = renumber_doubles('HEAD', up, 'plan', d, remote=True, at=c, held=held)
     if ref == 'HEAD':
-        return False
+        return []
     if (r := git('merge', '-q', '--ff-only', ref, cwd=d)).returncode:
         _plan_log(c, f'plan: the renumbering does not apply in {d}; two tasks may have one id: {r.stderr.strip()[:200]}')
-        return False
-    return True
+        return []
+    return held
 
 
 def _plan_log(c, msg: str) -> None:
