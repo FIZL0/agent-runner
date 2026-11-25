@@ -76,3 +76,4 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 - [ ] **B828** (follow-up, normal) Run page, phone: a tall question card can leave the session whole for good: the frame is then so low (a few rows) that Claude Code's prompt does not fit, feedFoot() finds none, and the session stays whole, with no chips and no history (the state in F437c's screenshot, IMG_2406). Read the prompt off a low screen, or give the frame room for it. | files: agent_runner/page/090-chats.js, agent_runner/page/020-chats.logic.js, tests/test_feed.py | after: F437c
 
 ### Parked
+- [ ] **F445** (follow-up, later) Finished work made to be watched or looked at shows under Needs you (split into parts) | files: agent_runner/need_detail.py
