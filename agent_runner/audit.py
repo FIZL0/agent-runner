@@ -1,5 +1,6 @@
 """Auto audit (F417, `[run] auto_audit`): once `every` tasks have landed since the last audit, the idle run queues one
-audit task: what changed since, read for what is stale, dead or wasted, its findings written to a file.
+audit task: what changed since, read for what is stale, dead or wasted, its findings written to a file. F418: by itself it fixes
+dead references only (`audit_fix`), asks the rest on one pick sheet, and carries out the answers.
 
 A task is an audit by the tag `(audit)` that opens its text, so one is added by hand with `plan add` too. The run's
 settings (ROOT, C) are read from `state` when used, not imported, so `init` reaches this module too."""
@@ -21,15 +22,16 @@ TAG_AT = re.compile(r'^\s*- \[.\] \*\*[^*]+\*\*\s*(?:\(follow-up, \w+\)\s*)?(?:\
 EVERY = 50       # tasks landed: `auto_audit = true`
 LOOK_EVERY = 60  # seconds between two looks of an idle run
 LOOKED = [0.0]
+ASKED = 10       # questions on an audit's sheet, at most
 NAMED = 200      # landed tasks a brief names at most, the newest
 AUDITED = re.compile(r'^Audited: \S*\.\.([0-9a-f]{7,40})\s*$', re.M)
 TEXT = (f'{TAG} Audit what changed since the last audit: stale and duplicate tasks, old asks, dead docs, lessons, unused '
-        'code and tests, waste in run cost. Check: the findings file is written.')
+        'code and tests, waste in run cost. Check: the findings file is written, and what needs an answer is on one pick sheet.')
 
 PROMPT = """\
-{tid} is an audit: find what is stale, dead or wasted, and change nothing. Write what you find to `{file}`, the one \
-file you change, and file or edit no task: what is done about a finding is decided later, from that file. Only write \
-there what you checked; nothing found is a finding too, so always write the file.
+{tid} is an audit: find what is stale, dead or wasted. Write what you find to `{file}`. By yourself you fix only dead \
+references in docs, the glossary and lessons; you file, edit and drop no task and change no code or setting. The rest is \
+asked on one pick sheet. Write only what you checked; nothing found is a finding too, so always write the file.
 
 Scope: only what changed since the last audit, {scope}. `git diff --stat {diff}` and `git log --oneline {log}` say \
 what. Read a file that did not change only to check whether something that did left it stale. {left}{landed}
@@ -47,15 +49,43 @@ An open task, question or ask counts whatever its age.
 
 The file starts with the line `Audited: {range}`. Then a heading for each area with a list: the finding, the evidence \
 (path:line, id or command), and what you recommend. Last, `## Not reached`: what you had no room for, or `none`.
-{cap}Write the file as you go, the surest findings first, then run `done`."""
+{cap}Write the file as you go, the surest findings first.
+
+A dead reference names something that was in this repository and is gone. Fix one in place: put the name of what \
+replaced it, or take out the sentence that names it, and no more. `done` reads the diff and refuses the rest: a sentence \
+taken out that names nothing gone, new words other than the name of something that is there, any other file, the \
+changelog and other history. What it refuses goes on the sheet.
+
+{ask}"""
+
+ASK = """\
+Everything else you recommend goes on one pick sheet (its form is said below), at most {most} questions, the ones worth most; group what has \
+one answer. Each has a "recommended", a "why" and a "keep" answer that changes nothing. Beside each finding asked about \
+write its question's id and what each answer does, as commands: `{runner} plan drop`, `plan edit`, `plan note`, or \
+`plan add` for a change of code, docs or a setting. The session that carries out the reply has that file alone. List \
+findings past {most} under `## Not asked`. Publish the sheet, then `done {tid} "<message>" --blocked "DECIDE: \
+<the summary> <its url>"`: the file and the fixes land, and the reply reopens {tid}. Nothing to ask: no sheet, just `done`."""
+
+NO_ASK = """\
+Pick sheets are off here ([run] questionnaires), so ask nothing: everything else stays in the file, as what you \
+recommend. Then run `done`."""
+
+CARRY = """\
+{tid} is an audit whose pick sheet a person answered: carry out the answers noted on its task, and audit no more. \
+`{file}` says what each question's answers do (not there: `git show wip/{tid}:{file}`). A keep answer changes nothing. \
+For the others run what it says: `{runner} plan drop <ID> "<why>"`, `plan edit`, `plan note`, or `plan add` for a \
+change of code, docs or a setting, which is always a task. Do nothing they did not answer. A task that has changed or \
+closed since is left as it is. Under `## Answered` in that file write each question, its answer, and what you did \
+(the ids filed, or why not). Ask no second sheet. Then run `done`."""
 
 CAP = ('It stops at {cap:,} tokens ([run] audit_tokens; input, cache writes and output, subagents too): before that, finish '
-       'with what you have.\n')
+       'with what you have, its sheet too.\n')
 
 # what a session past its cap is told, in place of brief.BUDGET_STOP: its findings land
 STOP = ('Stop now: {tid} has used its cap ({why}). Look at nothing more. If your `{runner} done` is already running, let it '
         'finish and do nothing else. Otherwise put what you have in the findings file, name what you did not reach under '
-        '`## Not reached`, then run `{runner} done {tid} "<message>"` and `{runner} finish`.')
+        '`## Not reached`, then run `{runner} done {tid} "<message>"` (with `--blocked "DECIDE: …"` and its pick sheet when '
+        'something needs an answer; answers noted on the task are carried out first) and `{runner} finish`.')
 
 
 def every_of(v) -> int:
@@ -84,15 +114,38 @@ def open_audit(ls: list[str]) -> bool:
     return any(box != 'x' and tagged(ls[i]) for _, box, _, _, i in P.iter_tasks(ls))
 
 
-def folder() -> str:
+def answered(tid: str, ls: list[str]) -> bool:
+    """Has a person answered the sheet of `tid`, by the plan's lines `ls`: its picks, or words in their place. The
+    merge's own question about a diff past the fix limit is another one."""
+    i = next((i for _, _, t, _, i in P.iter_tasks(ls) if t.rstrip('.') == tid), None)
+    if i is None:
+        return False
+    notes = '\n'.join(P._item_block(ls, i)).split(' — ')[1:]
+    return any(n.startswith(('your answer (DECIDE ', 'you said, on DECIDE ')) and P.RESEARCH_BUTTONS not in n for n in notes)
+
+
+def sheet_problems(spec: dict) -> list[str]:
+    """What an audit's pick sheet `spec` lacks: at most ASKED questions, each with a recommendation, why, and keep."""
+    from agent_runner.sheet import questions
+    qs = questions(spec)
+    out = [f'{len(qs)} questions: an audit asks at most {ASKED}'] if len(qs) > ASKED else []
+    for q in qs:
+        out += [f'question {q["id"]}: no "{k}"' for k in ('recommended', 'keep') if not isinstance(q.get(k), int)]
+        if not str(q.get('why') or '').strip():
+            out.append(f'question {q["id"]}: no "why"')
+    return out
+
+
+def folder(c=None) -> str:
     """Where audits write their findings: `audits/` in the plan directory, `docs/audits` when that is outside the
     repository or its root."""
-    plan = '' if S.C.plan_external else os.path.relpath(S.C.plan_dir, S.C.root).replace(os.sep, '/')
+    c = c or S.C
+    plan = '' if c.plan_external else os.path.relpath(c.plan_dir, c.root).replace(os.sep, '/')
     return 'docs/audits' if plan in ('', '.') else f'{plan}/audits'
 
 
-def findings_file(tid: str) -> str:
-    return f'{folder()}/{tid}.md'
+def findings_file(tid: str, c=None) -> str:
+    return f'{folder(c)}/{tid}.md'
 
 
 def last(branch: str) -> str:
@@ -215,7 +268,12 @@ def model(tid: str, ls: list[str]) -> str:
 
 
 def prompt(tid: str, branch: str, cwd: Path) -> str:
-    """The audit paragraphs of `tid`'s brief, in the worktree `cwd`: its scope, what it looks at, its file and its cap."""
+    """The audit paragraphs of `tid`'s brief, in the worktree `cwd`: its scope, what it looks at, its file and its cap; once its sheet is answered, how it
+    is carried out."""
+    from agent_runner.brief import questionnaires_on
+    if answered(tid, S.plan_text(branch)):
+        return CARRY.format(tid=tid, file=findings_file(tid), runner=S.C.command)
+    ask = (ASK if questionnaires_on() else NO_ASK).format(tid=tid, runner=S.C.command, most=ASKED)
     until = S.git('merge-base', 'HEAD', branch, cwd=cwd).stdout.strip()[:12] or branch
     since = last(branch)[:12]
     ids = landed(branch)
@@ -228,7 +286,7 @@ def prompt(tid: str, branch: str, cwd: Path) -> str:
     scope = f'which read up to {since} ({stamp(since)[:10]})' if since else \
         'and there was none: start at what changed last and go back until the cap'
     cap = S.C.run.get('audit_tokens') or 0
-    left = (f'What the newest file in {folder()}/ lists under `## Not reached` is in scope too. ') if since else ''
+    left = (f'What the newest file in {folder()}/ lists under `## Not asked` or `## Not reached` is in scope too. ') if since else ''
     said = f'Tasks landed since ({len(ids)}{", the newest" if len(ids) > NAMED else ""}): {", ".join(ids[-NAMED:])}.\n' if ids else ''
-    return PROMPT.format(tid=tid, file=findings_file(tid), scope=scope, range=span, diff=diff, log=log, left=left, landed=said, runner=S.C.command,
+    return PROMPT.format(tid=tid, file=findings_file(tid), scope=scope, range=span, diff=diff, log=log, left=left, ask=ask, landed=said, runner=S.C.command,
                          notes=S.C.notes(), days=days, cap=CAP.format(cap=int(cap)) if cap else '')

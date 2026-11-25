@@ -60,12 +60,17 @@ DB_COLLECTION = 'picks'
 
 
 def load(path: Path) -> dict:
-    """The sheet at `path`; ValueError when it is not JSON or not a sheet (`problems`)."""
+    """The sheet at `path`; ValueError when it is not JSON or not a sheet (`problems`), or, an audit's, past what one
+    may ask (`audit.sheet_problems`)."""
     try:
         spec = json.loads(Path(path).read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError) as e:
         raise ValueError(f'{path}: {e}') from None
-    if bad := problems(spec):
+    from agent_runner import audit
+    bad = problems(spec)
+    if not bad and audit.is_audit(Path(path).stem):  # F418
+        bad = audit.sheet_problems(spec)
+    if bad:
         raise ValueError(f'{path}: ' + '; '.join(bad))
     return spec
 
