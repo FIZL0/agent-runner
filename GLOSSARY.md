@@ -939,3 +939,10 @@ _Said_: start card
 _On screen_: Not running, Start the run
 _In code_: homeStart, runStarts
 _Avoid_: run-off banner, start bar, off page, Start run card
+
+**Run wait**:
+What a queued task's Plan row says, on the run page and in the TUI, while no run is up and nothing else keeps the task; it starts once a run does
+_Said_: waits for the run
+_On screen_: Waits for the run to start
+_In code_: RUN_WAIT, wait_for_run, waits_run, addedWaits
+_Avoid_: offline task, not running task, pending start

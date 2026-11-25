@@ -136,5 +136,28 @@ def test_row_actions(tmp: Path) -> None:
             eq(U.run_control('session_close', tid='c6')['out'], 'c6 closed', 'a control session closes')
 
 
+def test_no_run_f402c1(tmp: Path) -> None:
+    """F402c1: with no run up the queue's actions stay on and run, the slot controls are hidden, and an added task says
+    that it waits for the run to start."""
+    fake_run(tmp)
+    snap = U.snapshot(up=False, now=NOW, links={})
+    eq((snap['shown'], snap['card']), (['start'], ['start']), 'Start alone: no pause, slots or stop')
+    acts = {q['id']: q['acts'] for q in snap['queue']}
+    eq((acts['T7'], acts['R8']), (['queue_priority', 'queue_take', 'queue_drop'], ['queue_unpark', 'queue_take', 'queue_drop']), "a row's actions")
+    ran: list = []
+    with mock.patch.object(U.S, 'run_up', lambda: False), \
+            mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'added T7 (low)\nnote'))[1]]), \
+            mock.patch.object(U, 'SEND', [lambda text: {'ok': True, 'code': 0, 'out': 'sent', 'argv': []}]):
+        eq(U.run_control('queue_priority', tid='T7')['ok'], True, 'Priority runs')
+        eq(U.run_control('queue_drop', tid='T7', confirm=True)['ok'], True, 'Drop runs')
+        eq(U.act('chat', text='hello')['ok'], True, 'a message goes')
+        r = U.act('plan_add', kind='T', text='Tidy')
+        eq((r['said'], r['out']), ('added T7: waits for the run to start', 'added T7: waits for the run to start (low)\nnote'), 'an added task says so')
+    with mock.patch.object(U.S, 'run_up', lambda: False), mock.patch.object(U, 'RUN', [lambda argv: (0, 'added R8')]):
+        check('said' not in U.plan_add('R', 'Later'), 'not a parked one')
+    with mock.patch.object(U.S, 'run_up', lambda: True), mock.patch.object(U, 'RUN', [lambda argv: (0, 'added T7')]):
+        check('said' not in U.plan_add('T', 'Tidy'), 'nor with a run up')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_run_controls), in_tmp(test_row_actions)]))
+    raise SystemExit(report([in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_no_run_f402c1)]))

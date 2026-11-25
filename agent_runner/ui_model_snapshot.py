@@ -418,6 +418,19 @@ def fixups(st: dict, ls: list[str]) -> dict:
     return out
 
 
+RUN_WAIT = 'waits for the run to start'
+
+
+def wait_for_run(queue: list[dict]) -> list[dict]:
+    """F402c1: the queue rows `queue` with no run up: one that nothing else keeps says that it waits for the run, in
+    the words of state 'tool', which the run page and the TUI both show. A release's words are its own row's."""
+    for q in queue:
+        if q.get('state') in ('ready', 'critical') and not q.get('release') and not q.get('under_way'):
+            q.update(tool_wait=RUN_WAIT + (', goes first' if q['state'] == 'critical' else ''), state='tool',
+                     waits_run=True)
+    return queue
+
+
 def log_tail(n: int = LOG_TAIL) -> list[str]:
     try:
         return S.C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()[-n:] if n else []
@@ -456,6 +469,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
            'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
            'state': run_state(up, st)}  # F124
     queue = pin_releases(queue_rows(ls, st, now), releases)
+    if not up:
+        queue = wait_for_run(queue)  # F402c1
     tools = tool_rows(bool(up), ls, st, now)  # F168
     for where, rows in (('queue', queue), ('shelved', shelved), ('need', needs), ('concept', concepts), ('session', sessions)):
         for r in rows:
