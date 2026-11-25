@@ -27,6 +27,10 @@ from agent_runner import box_font, plat, session_theme
 # first whole draw, words near its bottom, or null), heard() (when its connection last brought something). So ttyd never draws its Reconnect words, and nothing is loaded again. The next chat's first
 # output starts with ESC c, so what was written before ends there. It says 'up', 'drawn' and 'down'; the app dials again.
 # The login's keeps ttyd's own socket.
+# B845: a mouse over a session that tracks it (Claude Code's full screen): a drag selects words as Shift+drag (Option on a
+# Mac) does, so a press is held back until it is a drag or a click, and a click is sent then; a right click is the browser's
+# menu; while words are selected a bare move is not sent (it would drop them), and Ctrl+C or Cmd+C copies them (a held key
+# once) and is no interrupt. Not the login's.
 # The box font is loaded before xterm.js measures its glyphs (and, when it was late, they are measured again).
 HEAD = '''<meta name="referrer" content="no-referrer"><style>
 __FONT__:root{--ar-bg:__BG__} html,body{overscroll-behavior:none;touch-action:none;background:var(--ar-bg)!important}
@@ -87,6 +91,34 @@ if(!own&&!e.ctrlKey&&e.isTrusted&&parent.feedTake&&parent.feedTake(px)){e.preven
 function ours(e,paste){try{if(parent.feedTyped&&parent.feedTyped(e,paste)){e.preventDefault();e.stopImmediatePropagation()}}catch(x){}}
 addEventListener('keydown',function(e){ours(e)},true);
 addEventListener('paste',function(e){var s=e.clipboardData&&e.clipboardData.getData('text/plain');if(s)ours(e,s)},true);
+var mac=/^Mac/.test(navigator.platform), mouse=false, press=null, copied=false;
+function onScreen(e){var t=window.term;return !own&&mouse&&e.isTrusted&&t&&t.element&&t.element.contains(e.target)&&t.modes.mouseTrackingMode!=='none'}
+function picked(){var t=window.term;return !own&&t&&t.hasSelection()?t.getSelection():''}
+function eat(e){e.preventDefault();e.stopImmediatePropagation()}
+function again(type,e,pick){var s=window.term.element.querySelector('.xterm-screen');
+s.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,view:window,detail:e.detail,screenX:e.screenX,screenY:e.screenY,clientX:e.clientX,clientY:e.clientY,
+button:0,buttons:type==='mousedown'?1:0,ctrlKey:e.ctrlKey,metaKey:e.metaKey,shiftKey:e.shiftKey||!!pick&&!mac,altKey:e.altKey||!!pick&&mac}))}
+function sendClick(p,e){again('mousedown',p.e);again('mouseup',e)}
+addEventListener('pointerdown',function(e){mouse=e.pointerType==='mouse'},true);
+addEventListener('mousedown',function(e){if(!onScreen(e))return;
+if(e.button===2)Object.defineProperty(e,mac?'altKey':'shiftKey',{value:true});
+else if(e.button===0&&mac&&e.ctrlKey){eat(e);window.term.focus()}
+else if(e.button===0&&!(mac?e.altKey:e.shiftKey)){press={e:e,on:false};eat(e);window.term.focus()}},true);
+addEventListener('mousemove',function(e){
+if(press&&!(e.buttons&1))press=null;
+if(press){if(!press.on&&Math.hypot(e.clientX-press.e.clientX,e.clientY-press.e.clientY)>4){press.on=true;again('mousedown',press.e,true)}
+if(!press.on)e.stopImmediatePropagation()}
+else if(!e.buttons&&onScreen(e)&&picked())e.stopImmediatePropagation()},true);
+addEventListener('mouseup',function(e){if(!press||e.button)return;var p=press;press=null;
+if(!p.on){eat(e);sendClick(p,e)}else if(!window.term.hasSelection())setTimeout(sendClick,0,p,e)},true);
+addEventListener('blur',function(){press=null});
+addEventListener('keydown',function(e){if(own||e.keyCode!==67||e.altKey||e.shiftKey||!(e.ctrlKey||e.metaKey))return;
+if(e.repeat&&copied)return eat(e);
+var s=picked(), t=window.term;copied=!!s;if(!s)return;eat(e);
+var ok=false;function put(c){eat(c);c.clipboardData.setData('text/plain',s);ok=true}
+t.textarea.value=s;t.textarea.select();addEventListener('copy',put,true);
+try{document.execCommand('copy')}catch(x){}
+removeEventListener('copy',put,true);t.textarea.value='';if(ok)t.clearSelection()},true);
 addEventListener('dragover',function(e){e.preventDefault()});
 addEventListener('drop',function(e){e.preventDefault();var f=e.dataTransfer?Array.from(e.dataTransfer.files):[];if(f.length)tell({files:f})});
 })()</script>'''
