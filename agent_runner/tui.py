@@ -24,7 +24,7 @@ Panels and their tabs (F76):
                wl-copy/xclip/pbcopy when local); over ssh o opens nothing here: it copies the link and shows it
                as a hyperlink (OSC 8) to Cmd-click
     Queue      a task: direct edit, chat edit; the '+ new task' row: chat edit, direct edit; e edit, E chat edit,
-               n new, J/K reorder, p priority on/off, H do it here, d (or D) drop; a parked task: U unpark (no J/K, p);
+               n new, J/K reorder, p priority (cycles), H do it here, d (or D) drop; a parked task: U unpark (no J/K, p);
                F184: the shelved tasks are its last rows: info, chat edit; U brings one back, d (or D) drops it
     Needs you  answer (a button per possible answer: y yes, n no, or a b c … for options; L later; a reply box),
                info. F175b: an item with inputs has no answers: its steps with their link (Open) and command (Copy),
@@ -582,7 +582,7 @@ class RunPage:
     def queue_tag(self, it) -> tuple[str, str]:
         """A queue row's right tag: 'sN Nm' (yellow) while a slot runs it, 'critical' (red), 'blocked' (red),
         '⧗ after <id title>' (dim) while it waits, '⧗ waits for iPhone 15, …' (dim) while a shared tool keeps it, 'parked' (dim) at level later (B123: a run never starts it),
-        'shelved' (dim: F184), 'Split: 2 of 4 parts landed' (dim: B811b), 'ready' (green)."""
+        'shelved' (dim: F184), 'Split: 2 of 4 parts landed' (dim: B811b), 'high' (yellow: F438), 'ready' (green)."""
         state = str(it.get('state') or '')
         if state in ('parked', 'shelved', 'held'):  # F184, F429
             return state, 'dim'
@@ -599,6 +599,8 @@ class RunPage:
             return f'⧗ {it.get("tool_wait") or "waits for a tool"}', 'dim'
         if state == 'split' and it.get('split'):  # B811b
             return it['split']['words'], 'dim'
+        if it.get('pri') == 'high':  # F438: ready, and tried ahead of the normal ones
+            return 'high', 'yellow'
         return 'ready', 'green'
 
     def kind_word(self, tid: str, width: int) -> str:
@@ -1209,7 +1211,7 @@ class RunPage:
             # it back would cut the task; the title shows under the field instead
             was = {'text': '',
                    'kind': 'F' if new else tid[:1],
-                   'pri': 'normal' if new or it.get('pri') != 'critical' else 'critical',
+                   'pri': it['pri'] if not new and it.get('pri') in ('critical', 'high') else 'normal',
                    'files': '' if new else ','.join(it.get('files') or []),
                    'after': '' if new else ','.join(it.get('after') or []),
                    'needs': '' if new else ','.join(it.get('needs') or [])}
@@ -1246,8 +1248,8 @@ class RunPage:
                  (f' {kind_name}' if kind_name and kind_name != f['kind'] else '', 'fg'))
         k_lines = wrap(kind, width)  # a narrow pane: the run-on indented under the value, never at column 0
         out += k_lines[:1] + [[('    ', '')] + l for k in k_lines[1:] for l in wrap(k, width - 4)]
-        out += [L(*label('p', 'priority', '(on / off)'), ('  ', ''),
-                  (f['pri'], 'red' if f['pri'] == 'critical' else 'fg'))]
+        out += [L(*label('p', 'priority', '(cycles)'), ('  ', ''),
+                  (f['pri'], {'critical': 'red', 'high': 'yellow'}.get(f['pri'], 'fg')))]
         out += [label('f', 'files')] + value('f')
         out += [label('a', 'after')] + value('a')
         out += [L(('    ', ''), (after_hint(f['after'], self.snap.get('queue') or []), 'dim')), L()]
@@ -2072,7 +2074,7 @@ class RunPage:
             if k in ('t', 'f', 'a') or k == 'e' and self.snap.get('tool_names'):
                 self.field(k)
             elif k == 'p':
-                f['pri'], f['field'] = ('normal' if f['pri'] == 'critical' else 'critical'), 'p'
+                f['pri'], f['field'] = U.P.next_pri(f['pri']), 'p'
             elif k == 'TAB' or k == 'BTAB':
                 self.next_field(-1 if k == 'BTAB' else 1)
             elif k == '^S':
