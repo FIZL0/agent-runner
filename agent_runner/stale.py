@@ -24,10 +24,11 @@ from agent_runner.gitops import git, shared_name
 
 class Gone(NamedTuple):
     """Something the diff removed: its kind, its name, what it became ('' = deleted), and other names for it."""
-    kind: str  # file, test, setting, command, workflow
+    kind: str  # file, folder, test, setting, command, workflow
     name: str
     now: str = ''
     also: tuple[str, ...] = ()
+    code: bool = False  # code defined it: a config file that still sets it does not keep it
 
     @property
     def said(self) -> str:
@@ -80,6 +81,8 @@ TEST_DEFS = [re.compile(p, re.M) for p in (
 ENV = re.compile(r'''(?:environ(?:\.get\(|\[)|getenv\(|env::var\(|process\.env\[)\s*['"]([A-Z][A-Z0-9_]+)['"]'''
                  r'''|process\.env\.([A-Z][A-Z0-9_]+)''')
 PARSERS = re.compile(r'''(?:add_parser|\.command)\(\s*['"]([\w:-]+)['"]''')
+FLAGS = re.compile(r'''add_argument\(\s*(?:['"]-\w['"],\s*)?['"](--[\w-]+)['"]''')
+TEST_FILE = re.compile(r'(^|[/._-])(tests?|specs?)([/._-]|$)|(Tests?|Spec)\.\w+$')
 DICT_KEY = re.compile(r'''['"]([\w.-]+)['"]\s*:''')
 CONSTANT = re.compile(r'^([A-Z][A-Z0-9_]+)\s*(?::[^=\n]+)?=(?!=)', re.M)
 FIELD = re.compile(r'^\s+(\w+)\s*:\s*[\w\[\]., |]+=(?!=)', re.M)
@@ -136,13 +139,14 @@ def defined(path: str, text: str) -> set[tuple[str, str]]:
     out: set[tuple[str, str]] = set()
     if LOCKS.search(base):
         return out
-    if re.search(r'test|spec', path, re.I) and sort == 'code':
+    if TEST_FILE.search(path) and sort == 'code':
         return {('test', n) for n in tests_in(text)}
     if any_glob(path, WORKFLOWS):
         return {('workflow', m[1].strip('\'"')) for m in re.finditer(r'^name:\s*(.+?)\s*(?:#.*)?$', text, re.M)}
     if sort == 'code':
         out |= {('setting', m[1] or m[2]) for m in ENV.finditer(text)}
         out |= {('command', m[1]) for m in PARSERS.finditer(text)}
+        out |= {('setting', m[1]) for m in FLAGS.finditer(text)}
         if SETTINGS_FILE.search(stem):
             out |= {('setting', m[1]) for p in (DICT_KEY, CONSTANT, FIELD) for m in p.finditer(text)}
         elif COMMANDS_FILE.match(stem):
@@ -194,7 +198,7 @@ def history(c):
 
     def is_history(path: str) -> bool:
         base = posixpath.basename(path)
-        return (base == 'DONE.md' or base.upper().startswith(('CHANGELOG', 'CHANGES.')) or any_glob(path, globs)
+        return (base == 'DONE.md' or base.upper().startswith('CHANGELOG') or any_glob(path, globs)
                 or plan_dir is not None and posixpath.dirname(path) == ('' if plan_dir == '.' else plan_dir)
                 and bool(plan.TASK_ID.fullmatch(posixpath.splitext(base)[0])))
     return is_history
@@ -205,12 +209,20 @@ def show(root: Path, rev: str, path: str) -> str:
     return '' if r.returncode or '\0' in r.stdout[:8000] else r.stdout
 
 
+def folders_of(files) -> set[str]:
+    """The folders `files` are in, less the top ones: one word finds too much."""
+    return {'/'.join(ps[:i]) for f in files for ps in [f.split('/')] for i in range(2, len(ps))}
+
+
 def removed(root: Path, base: str, tree: str, files: set[str], is_history) -> list[Gone]:
     """What `tree` (its `files`) no longer has of `base`."""
     parts = git('diff', '--name-status', '-z', '-M', base, tree, cwd=root).stdout.split('\0')
     out: list[Gone] = []
-    old: set[tuple[str, str]] = set()
-    new: set[tuple[str, str]] = set()
+    old: set[tuple[str, str, bool]] = set()  # and whether code defines it
+    new: set[tuple[str, str, bool]] = set()
+    folders = folders_of(files)
+    lost: set[str] = set()
+    defs = lambda f, rev: {(*d, sort_of(f) == 'code') for d in defined(f, show(root, rev, f))}  # noqa: E731
     bases = {posixpath.basename(f) for f in files}
     i = 0
     while i + 1 < len(parts):
@@ -218,9 +230,9 @@ def removed(root: Path, base: str, tree: str, files: set[str], is_history) -> li
         was, now = parts[i + 1], parts[i + 2] if status[:1] in 'RC' else parts[i + 1]
         i += 3 if status[:1] in 'RC' else 2
         if status[:1] in 'DMRT' and not is_history(was):
-            old |= defined(was, show(root, base, was))
+            old |= defs(was, base)
         if status[:1] in 'AMRCT' and not is_history(now):
-            new |= defined(now, show(root, tree, now))
+            new |= defs(now, tree)
         if status[:1] not in 'DR' or is_history(was):
             continue
         # no longer tracked, but ignored: something still makes it
@@ -233,13 +245,21 @@ def removed(root: Path, base: str, tree: str, files: set[str], is_history) -> li
                 f in (f'{mod}.py', f'{mod}/__init__.py') or f.startswith(f'{mod}/') for f in files):
             also.append(mod.replace('/', '.'))
         out.append(Gone('file', was, now if status[:1] == 'R' else '', tuple(also)))
-    return out + [Gone(k, n) for k, n in sorted(old - new)]
+        lost |= folders_of({was}) - folders
+    out += [Gone('folder', f) for f in sorted(lost)]
+    for kind, name in sorted({(k, n) for k, n, _ in old}):
+        code = (kind, name, True) in old
+        if (kind, name, True) not in new and (code or (kind, name, False) not in new):
+            out.append(Gone(kind, name, code=code))
+    return out
 
 
 # --- who still names it ----------------------------------------------------------------------------------------
 
 def patterns(g: Gone, bases: set[str]) -> list[str]:
     """The names of `g` to search for."""
+    if g.kind == 'folder':
+        return [g.name] if len(g.name) >= 5 else []
     if g.kind == 'file':
         if '/' in g.name:
             path = [g.name] if len(g.name) >= 5 else []
@@ -275,11 +295,18 @@ def path_at(line: str, at: int, path: str, place: str, files: set[str]) -> str:
     return 'dead' if re.search(r'(\$\w+|[)}])/$', pre) else 'other'
 
 
+IMPORT = re.compile(r'\s*(?:from|import)\s+$')
+
+
 def in_tree(gone: list[Gone], root: Path, tree: str, files: set[str], is_history, glossary: str) -> list[Mention]:
     """The files of `tree` that name something of `gone`; the gone that turn out to be defined there still are
     taken out of `gone`."""
     bases = {posixpath.basename(f) for f in files}
-    names = {n: g for g in gone for n in patterns(g, bases)}
+    names: dict[str, list[Gone]] = {}
+    for g in gone:
+        for n in patterns(g, bases):
+            names.setdefault(n, []).append(g)
+    there = files | folders_of(files)
     if not names:
         return []
     with tempfile.TemporaryDirectory() as tmp:
@@ -296,11 +323,13 @@ def in_tree(gone: list[Gone], root: Path, tree: str, files: set[str], is_history
         place = place.split(':', 1)[1]
         if is_history(place) or LOCKS.search(posixpath.basename(place)):
             continue
-        for name, g in names.items():
-            if name not in text:
-                continue
-            dead = [path_at(text, at, name, place, files) if name == g.name and g.kind == 'file' else 'other'
-                    for at in spots(name, text)]
+        for name, g in ((n, g) for n, gs in names.items() if n in text for g in gs):
+            dead = [path_at(text, at, name, place, there) if name == g.name and g.kind in ('file', 'folder') else
+                    'dead' if place.endswith('.py') and name in g.also and IMPORT.match(text[:at]) else 'other'
+                    for at in spots(name, text)
+                    if g.kind != 'folder' or not re.match(r'/[\w.]', text[at + len(name):])]  # a file in it
+            if g.kind == 'folder' and sort_of(place) == 'code':  # may well be a route, or a module
+                dead = ['other' if d else '' for d in dead]
             if g.kind == 'file' and name != g.name and any(spots(g.name, text)):
                 continue  # the path's own spot says it
             if not (dead := [d for d in dead if d]):
@@ -310,7 +339,7 @@ def in_tree(gone: list[Gone], root: Path, tree: str, files: set[str], is_history
                 nos.append(int(no))
             found[g, place] = nos, was or 'dead' in dead
     defs = {p: defined(p, show(root, tree, p)) for p in {p for _, p in found}}
-    kept = {g for g, p in found if (g.kind, g.name) in defs[p]}
+    kept = {g for g, p in found if (g.kind, g.name) in defs[p] and (sort_of(p) == 'code' or not g.code)}
     gone[:] = [g for g in gone if g not in kept]
     out = []
     for (g, place), (nos, dead) in found.items():

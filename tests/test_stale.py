@@ -143,6 +143,21 @@ def test_dead_path() -> None:
     p.passes('once it is fixed')
 
 
+def test_folder_and_import() -> None:
+    print('a folder that is gone, an import, two files of one name')
+    p = proj(more={'tests/tiles/test_big_tiles.py': 'x = 1\n', '.github/workflows/ci.yml': 'name: ci\nrun: pytest tests/tiles/\n',
+                   'src/use.py': 'import src.tile_sheet\n', 'a/one_thing.sh': 'echo a\n', 'b/one_thing.sh': 'echo b\n',
+                   'docs/a.md': 'b/one_thing.sh and one_thing.sh\n', 'src/route.py': 'get("tests/tiles/")\n'})
+    for f in ('tests/tiles/test_big_tiles.py', 'src/tile_sheet.py', 'a/one_thing.sh', 'b/one_thing.sh'):
+        (p.root / f).unlink()
+    err = p.refused('both are dead paths', r'CI .*ci\.yml:2 names folder `tests/tiles`',
+                    r'src/use\.py:1 names file `src/tile_sheet.py`')
+    check('route.py' not in err, 'a folder named in code is only listed', err)
+    p.write('.github/workflows/ci.yml', 'name: ci\n')
+    p.write('src/use.py', 'pass\n')
+    p.refused('the rest', r'src/route\.py:1 names folder', r'names file `a/one_thing\.sh`|names file `b/one_thing\.sh`')
+
+
 def test_rename() -> None:
     print('a rename')
     p = proj(more={'src/use.py': 'open("src/tile_sheet.py")\n', 'docs/a.md': 'See `tile_sheet.py`.\n'})
@@ -178,6 +193,17 @@ def test_kinds() -> None:
     p.write('tests/test_tiles.py', 'def test_tile_edges():\n    pass\n')
     p.write('tests/test_rows.py', 'def test_tile_rows():\n    pass\n')
     p.passes('moved to another file, none is removed')
+
+    p = proj(more={'src/latest_config.py': 'D = {"tile_width": 4}\n', 'prod.toml': 'tile_width = 5\n',
+                   'src/inspector_cli.py': 'p.add_parser("draw-all")\np.add_argument("-t", "--tile-flag")\n',
+                   'docs/a.md': 'tile_width, draw-all, --tile-flag\n'})
+    p.write('src/latest_config.py', 'D = {}\n')
+    p.write('src/inspector_cli.py', 'pass\n')
+    p.refused('a config file that still sets it hides nothing', r'docs docs/a\.md:1 names setting `tile_width`',
+              r'config prod\.toml:1 names setting `tile_width`', r'names command `draw-all`', r'names setting `--tile-flag`')
+    p = proj(more={'lib/app.toml': 'tile_size = 9\n', 'docs/a.md': 'tile_size\n'})
+    p.write('app.toml', '[app]\n')
+    p.passes('a setting another config file still has')
 
 
 def test_places() -> None:
@@ -257,5 +283,5 @@ def test_ignored_and_stacked() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_names, test_path_at, test_nothing_removed, test_dead_path, test_rename, test_kinds,
+    raise SystemExit(report([test_names, test_path_at, test_nothing_removed, test_dead_path, test_folder_and_import, test_rename, test_kinds,
                              test_places, test_ci_tasks, test_answers, test_ignored_and_stacked]))

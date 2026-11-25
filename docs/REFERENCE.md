@@ -1187,14 +1187,16 @@ code, config, CI workflows, docs, the glossary, lessons, open tasks and their lo
 the project's Claude Code memories (main checkout and worktree). History is exempt: DONE.md, CHANGELOG,
 docs/research, `[run] findings`, the journal and closed tasks' long forms.
 
-A dead path (the removed file's full path) in code, config or CI refuses `done`, and no answer helps; code that must
+A dead path (the removed file's full path, a Python import of it, or in config and CI a folder with no file left)
+in code, config or CI refuses `done`, and no answer helps; code that must
 name it, such as a fixture or migration, can build the path from its parts. The other mentions are a numbered list.
 `done` refuses (exit 2, nothing ticked, no failed gate counted) until each is answered once: fix it (it leaves the
 list), or `--named "1 filed B12; 2-3 kept because <why>"` (no number or `all` means all; `fixed` is accepted only when
 it is gone; a filed ID must be an open task). Answers are kept per task in the worktree's git dir. An answer given
 before the list was shown counts for nothing, and a new mention is asked about on its own.
 
-A file now git-ignored counts as made, not removed; a test, setting or command moved to another file is not removed.
+A file now git-ignored counts as made, not removed; a test, setting or command moved to another file is not removed,
+but one gone from code is, even when a config file still sets it. A command's `--flag` counts as a setting.
 An open auto-filed CI task for a removed test or workflow is listed too. It runs on docs-only diffs and with
 `--no-test`, not with `--blocked`. It reads text only: no model call.
 
