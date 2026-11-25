@@ -557,7 +557,9 @@ class RunPage:
                     (f'{mins} {it.get("state", "")}', 'dim')]
         if n == 4:
             # B152: the short ask, one line; the full ask shows in the pane beside
-            short = ' '.join(str((it.get('detail') or {}).get('summary') or it.get('ask_short') or it.get('title') or it.get('ask', '')).split())
+            d = it.get('detail') or {}
+            said = d.get('summary') if d.get('question') else U.ask_short(d.get('summary') or '')  # B793b: the summary is whole
+            short = ' '.join(str(said or it.get('ask_short') or it.get('title') or it.get('ask', '')).split())
             return [(f'{it["id"]} ', 'yellow'), (short, 'fg'),
                     (f' {it.get("age", "")}', 'dim')]
         if it.get('new'):
