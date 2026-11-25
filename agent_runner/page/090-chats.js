@@ -489,7 +489,7 @@ function homeHTML(){
 }
 /* the chat that last had something said in it, pinned or not, and the one run control that fits now */
 function homeChips(){
-  const last=chatSort(chats(),[])[0], c=controlOf(cardControls(S.snap).find(k=>k==='pause'||k==='go_on'));
+  const last=chatSort(chats(),[]).find(s=>s.at>0), c=controlOf(cardControls(S.snap).find(k=>k==='pause'||k==='go_on'));
   return `<div class="chips homechips">${last?`<button class="chip" data-thread="${esc(last.name)}" title="${esc(chatTitle(last))}">${I.back}Last chat</button>`:''}<button class="chip" data-about="new">${I.plus}Add a task</button>${c?`<button class="chip${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${I[CTL_ICON[c.key]]}${esc(c.label)}</button>`:''}<button class="chip" data-quick="since">${I.clock}Since my last look</button></div>${obCards(x=>/^(pause|go_on):/.test(x.ctl||''))}`;
 }
 const homeSums=()=>card([['status','Status',homeStatus(S.snap,working_())],['plan','Plan',homePlan(S.snap)]].map(([v,l,w])=>`<button class="fold sumrow" data-view="${v}" data-k="sum:${v}" data-v="${esc(w)}"><span class="grow ell">${esc(w)}</span><span class="small">${l}</span><span class="chev">${I.chev}</span></button>`).join(''),'sums','data-k="sums"');

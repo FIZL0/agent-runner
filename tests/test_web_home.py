@@ -836,7 +836,7 @@ def test_home_f426a(tmp: Path) -> None:
         return
     fake_repo(tmp)
     ctl = U.controls()
-    chat = [{'name': 'c1', 'at': 50}, {'name': 'c3', 'at': 90}, {'name': 'c2', 'at': 70}]
+    chat = [{'name': 'c4'}, {'name': 'c1', 'at': 50}, {'name': 'c3', 'at': 90}, {'name': 'c2', 'at': 70}]
     slot = [{'name': 's1', 'task': 'F1', 'state': 'live'}, {'name': 's2', 'task': 'F2', 'state': 'live'},
             {'name': 's3', 'task': 'F3', 'state': 'merging'}]
     rel = {'id': 'V1', 'title': 'Ship', 'state': 'waits', 'words': 'waits for 2: F1 a, F2 b', 'waits': [{'id': 'F1'}, {'id': 'F2'}]}
@@ -858,7 +858,7 @@ def test_home_f426a(tmp: Path) -> None:
                                'Since my last look', '[needs]', 'data-view="status"', 'data-view="plan"')]
     check(all(i >= 0 for i in at) and at == sorted(at), 'Talk, the box, the shortcuts, Needs you, Status, Plan', at)
     eq(up.count('btn acc'), 1, 'Talk is the one accent button')
-    check('data-thread="c3"' in up and up.count('data-thread=') == 1, 'Last chat is the newest, not the pinned; no agent cards', up)
+    check('data-thread="c3"' in up and up.count('data-thread=') == 1, 'Last chat is the newest, not the pinned or one with nothing said yet; no agent cards', up)
     for gone in ('What needs me', 'New concept', 'Working now', 'Up next', 'New release', 'data-k="task:'):
         check(gone not in up, f'no {gone}')
     words = lambda h: re.findall(r'class="grow ell">([^<]*)<', h)  # noqa: E731
