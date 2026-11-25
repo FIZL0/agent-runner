@@ -1183,6 +1183,83 @@ def test_settled_told_once():
         eq(w.typed, [], 'a run killed while it typed does not type it again')
 
 
+def test_settled_repeats_b812():
+    print('B812: an edit of only the files says nothing; the same event again is one line')
+    edit = ('edit', 'R81', 'sign in on the laptop')
+    with settled_world() as w:
+        for rest in (('--files', 'a.py'), ('--files', 'a.py,b.py'), ('--files', 'b.py'),
+                     ('--files', 'b.py', '--pri', 'low'), ('--pri', 'normal', '--files', 'a.py')):
+            eq(w.plan('edit', 'R81', *rest, slot='1'), 0, f'edit {rest}')
+        w.look()
+        eq(w.typed, [], 'files and place: nothing typed')
+        w.plan('edit', 'R81', '--after', 'R90', slot='1')
+        w.look()
+        eq([n for n, _ in w.typed], [4, 5], 'what it waits for is told')
+    with settled_world() as w:
+        w.plan(*edit, slot='1')
+        w.look()
+        w.plan(*edit, '--files', 'a.py', slot='1')
+        w.look()
+        eq([n for n, _ in w.typed], [4, 5], 'the same text again: one line each')
+        w.Z._SEEN.clear()
+        w.plan(*edit, slot='1')
+        w.look()
+        eq(len(w.typed), 2, 'nor by a restarted run')
+        w.plan('edit', 'R81', 'sign in on the tablet', slot='1')
+        w.look()
+        eq(len(w.typed), 4, 'another text is told')
+        w.plan('edit', 'R81', 'sign in on the tablet', slot='2')
+        w.look()
+        eq(len(w.typed), 6, 'another author too')
+        w.plan('drop', 'R81', 'no need', slot='2')
+        w.look()
+        eq([('was dropped' in t) for _, t in w.typed[6:]], [True, True], 'a later drop too')
+        w.plan('restore', 'R81', slot='2')
+        w.plan('drop', 'R81', 'no need', slot='2')
+        w.look()
+        eq(len(w.typed), 12, 'the same drop after a restore is no repeat')
+    with settled_world() as w:
+        w.plan('change', 'R81', 'use the laptop', slot='1')
+        w.look()
+        w.plan('change', 'R81', 'use the tablet', slot='1')
+        w.look()
+        eq(len(w.typed), 4, 'another reason is told')
+    with settled_world() as w:
+        w.plan('drop', 'R81', 'x', slot='1')
+        w.look()
+        w.plan('restore', 'R81', by=4)
+        w.plan('drop', 'R81', 'x', slot='1')
+        w.look()
+        eq([n for n, t in w.typed if n == 4], [4, 4], "a session's own command between them ends the repeat")
+    with settled_world() as w:
+        w.plan(*edit, slot='1')
+        w.plan('edit', 'R81', 'sign in on the tablet', slot='1')
+        w.look()
+        eq([n for n, _ in w.typed], [4, 5], 'two that waited together: one line each')
+    with settled_world() as w:
+        w.plan(*edit, slot='1')
+        with mock.patch.object(w.Z, 'time', types.SimpleNamespace(time=lambda: w.base - w.Z.AGAIN - 60,
+                                                                  time_ns=lambda: 1)):
+            w.plan(*edit, slot='1')
+        for f in w.Z.folder(w.R.C).glob('1-*.json'):
+            check(json.loads(f.read_text(encoding='utf-8'))['at'] < w.base - w.Z.AGAIN, 'an old event')
+        os.utime(w.notes('control4.pid'), (w.base, w.base))  # just started: it waits
+        os.utime(w.notes('control5.pid'), (w.base, w.base))
+        w.look()
+        eq(w.typed, [], 'both wait')
+        w.look(w.base + 200)
+        eq([n for n, _ in w.typed], [4, 5], 'one still waiting is replaced, however old')
+        check(not list(w.Z.folder(w.R.C).glob('*-*.json')), 'no event is left')
+    with settled_world() as w:
+        with mock.patch.object(w.Z, 'time', types.SimpleNamespace(time=lambda: w.base - w.Z.AGAIN - 60,
+                                                                  time_ns=lambda: 1)):
+            w.plan(*edit, slot='1')
+        w.look()
+        w.plan(*edit, slot='1')
+        w.look()
+        eq(len(w.typed), 4, 'past the window it is told again')
+
+
 def test_settled_verbs_and_openers():
     print('F160: what is told, by whom, and which sessions are about an item')
     with settled_world() as w:
@@ -1551,6 +1628,6 @@ if __name__ == '__main__':
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
                              test_first_message_typed_after_remote_control, test_takes_input_b158, test_rename_f129, test_held_delivered_once,
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
-                             test_held_app_session, test_held_app_ended, test_settled_told_once,
+                             test_held_app_session, test_held_app_ended, test_settled_told_once, test_settled_repeats_b812,
                              test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing,
                              test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c, test_settings_two_writers_b806]))
