@@ -15,6 +15,12 @@
 .think{display:flex;align-items:center;gap:8px;font:13px var(--sans);color:var(--muted)}
 .think .logo{width:20px;height:20px;font-size:var(--fs-xs);border-radius:var(--r-s);animation:pulse var(--pulse) infinite}
 
+/* B809c: what explains a control session's question, in its popup */
+.explain{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s2);font-size:var(--fs-b);line-height:1.5;overflow-wrap:anywhere}
+.explain a{color:var(--accent)} .explain .deep1{margin-left:var(--s4)} .explain .deep2{margin-left:var(--s6)}
+.explain code{font-family:var(--mono);font-size:var(--fs-m);background:var(--bubble);border-radius:var(--r-s);padding:1px 5px} .explain pre{font:12.5px/1.55 var(--mono);background:var(--side);border:1px solid var(--line);border-radius:var(--r-m);padding:var(--s2) var(--s3);overflow:auto;margin:0} .explain pre code{background:none;padding:0}
+.explaintab{overflow-x:auto} .explaintab table{border-collapse:collapse;font-size:var(--fs-m)} .explaintab :is(th,td){border:1px solid var(--line);padding:var(--s1) var(--s2);text-align:left;vertical-align:top;overflow-wrap:normal}
+
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);border-radius:var(--r-m);padding:9px 14px;font-size:var(--fs-m);z-index:20;max-width:min(560px,90vw);box-shadow:0 6px 24px var(--shadow)}
 .toast.bad{background:var(--bad);color:var(--onbad)}
 /* notices float over the view: they never push it down */
