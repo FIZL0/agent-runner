@@ -34,3 +34,5 @@ The gate runs all of them in turn. New area: a module and a test file of its own
 
 `docs/REFERENCE.md` is long: find a section with `grep -n '^#' docs/REFERENCE.md`, read just that range, never the whole.
 Others: `docs/SETUP.md`, `docs/FACTORY.md`. The README is for people.
+
+Tasks: this repo is worked by agent-runner. Use the agent-runner skill (or run `agent-runner guide`): queue work with `agent-runner plan add`, never edit the plan's TODO.md by hand, never merge task/* or wip/* branches. Asked to do something now? Use `agent-runner take "what" --kind K` (a worktree of your own; `--here` brings edits already made along); never edit the main checkout.
