@@ -30,8 +30,8 @@ class Track { constructor() { this.readyState = 'live'; this.enabled = true } st
 class AudioContext { constructor() { this.sampleRate = 48000; this.state = 'running'; this.audioWorklet = {addModule: async () => {}}; ctxs.push(this); this.destination = {} }
   async resume() { this.state = 'running' } async suspend() { this.state = 'suspended' } async close() { this.state = 'closed' }
   createMediaStreamSource() { return {connect() {}} } }
-let node = null, tracks = [];
-class AudioWorkletNode { constructor() { node = this; this.port = {postMessage() {}, onmessage: null} } connect() {} }
+let node = null, tracks = [], marks = true;
+class AudioWorkletNode { constructor() { node = this; this.port = {postMessage(m) { if (m === 'mark' && marks) this.onmessage({data: null}) }, onmessage: null} } connect() {} }
 window.AudioContext = AudioContext;
 const getUserMedia = async () => { asks++; if (hold) await hold; if (deny) throw Object.assign(new Error('no'), {name: deny}); const t = new Track(); tracks.push(t); return {getTracks: () => [t], getAudioTracks: () => [t]} };
 class Audio {""", 1)
@@ -101,8 +101,15 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   fresh(); hush(); TK.state = ''; await shown(); out.noAsk = [queries > 0, asks, REC.open]; click('[data-mic]'); await settle(); sound(1); click('[data-mic]'); await tail(); TK.wait = null; TK.state = ''; out.pressed = [asks, !!REC.open, REC.open.track.enabled];
   fresh(); may = 'granted'; navigator.permissions.query = async () => { throw new TypeError('x') }; await shown(); out.cannotSay = asks; navigator.permissions.query = async () => ({state: may});
   fresh(); may = 'granted'; types.length = 0; await tick(500); await shown(); out.opens = [asks, TK.state, REC.now, types.slice(), shows()[4], shows()[1], els.mic.className, sent.length, posts.length];
-  before(3, 0.1); out.kept = Math.round(REC.open.kept / 480) / 100; click('[data-mic]'); out.atOnce = [TK.ear.on, shows()[4], asks]; sound(1); click('[data-mic]'); await tail();
-  const w = posts[0] && Buffer.from(posts[0]); out.preroll = [w && Math.round((w.length - 44) / 3200), w && Math.round(w.readInt16LE(44 + 3200) / 327.67), w && Math.round(w.readInt16LE(44 + 48000) / 327.67), REC.open.kept];
+  before(3, 0.1); out.kept = [REC.open.kept, REC.open.ring.length]; marks = false; click('[data-mic]'); out.atOnce = [TK.ear.on, shows()[4], asks]; before(0.2, 0.1); marks = true; node.port.onmessage({data: null}); sound(1); click('[data-mic]'); await tail();
+  const w = posts[0] && Buffer.from(posts[0]); out.preroll = [w && Math.round((w.length - 44) / 3200), w && Math.round(w.readInt16LE(44 + 3200) / 327.67), w && Math.round(w.readInt16LE(44) / 327.67), REC.open.kept];
+  before(1, 0.1); out.after = [REC.open.kept, REC.open.ring.length];
+  // F161c2: held again while the last words are made: that hold's sound is kept, none from before it; let go again: dropped
+  const heldAgain = async let2 => { fresh(); may = 'granted'; await shown(); before(1, 0.1); TS.mic = 'hold'; let say; answer = () => posts.length > 1 ? 'second' : 'first'; const gate = new Promise(y => say = y); const ask0 = Recorder.prototype.ask; Recorder.prototype.ask = async function (wav) { if (!posts.length) { const a = await ask0.call(this, wav); await gate; return a } return ask0.call(this, wav) };
+    down(); sound(1); up(); await tail(); before(1, 0.1); const idle = REC.open.kept; down(); before(0.05, 0.3); before(1, 0.3); const held = Math.round(REC.open.kept / 4800); if (let2) { up(); before(0.1, 0.1) } const let0 = REC.open.kept; say(); await settle(); await settle(); Recorder.prototype.ask = ask0; if (!let2) { sound(1); up(); await tail() }
+    const b2 = posts[1] && Buffer.from(posts[1]); return [idle, held, let0 > 0, posts.length, b2 ? Math.round((b2.length - 44) / 3200) : 0, b2 ? Math.round(b2.readInt16LE(44) / 327.67) : 0, sent.slice()] };
+  out.heldAgain = await heldAgain(false); out.letAgain = await heldAgain(true);
+  fresh(); may = 'granted'; await shown();
   // a reply: released, and open again after it
   TK.wait = null; TK.state = ''; before(1, 0.1); let k1 = REC.open; lands('A reply.'); out.reply = [k1.track.readyState, REC.open, types[types.length - 1], TK.state]; await tick(500); await shown(); out.during = REC.open; us[us.length - 1].onend({type: 'end'}); await shown(); out.afterReply = [!!REC.open, REC.open && REC.open.kept, types[types.length - 1]];
   // Talk hides: released at once; shown: open again
@@ -229,12 +236,15 @@ def test_recorded_f161b(tmp: Path) -> None:
     eq(g.get('rows'), [False, True, False], "Safari's Allow for good, only with Recorded")
     eq(g.get('parse'), ['recorded', 'browser'], 'kept per browser')
     eq((g.get('noAsk'), g.get('pressed'), g.get('cannotSay')), ([True, 0, None], [1, True, True], 0), 'F161c: the page never asks by itself; the first press opens it, and it stays')
-    eq(g.get('opens'), [1, '', None, ['play-and-record'], 'Tap to talk, the mic is open', 'Talk, the mic is open', 'mic open', 0, 0], 'allowed: open when Talk shows, and it says so; nothing listens or is sent')
-    check(0.9 < (g.get('kept') or 0) <= 1, 'one second is kept, what is older is dropped', str(g.get('kept')))
+    eq(g.get('opens'), [1, '', None, ['play-and-record'], 'Tap to talk, the mic is open, not listening', 'Talk, the mic is open, not listening', 'mic open', 0, 0], 'allowed: open when Talk shows, and it says so; nothing listens or is sent')
+    eq((g.get('kept'), g.get('after')), ([0, 0], [0, 0]), 'F161c2: with no listen on, every piece of sound is dropped at once, before a press and after a clip')
     eq(g.get('atOnce'), [True, 'Listening…', 1], 'a press listens in the press itself')
     p = g.get('preroll') or [0, 0, 0, 1]
-    check(19 <= p[0] <= 21, 'the clip is the second before and the second since', str(p))
-    eq(p[1:], [10, 20, 0], 'the sound before it first; sent sound is not kept for the next')
+    check(9 <= p[0] <= 11, 'the clip is the second since the press', str(p))
+    eq(p[1:], [20, 20, 0], 'no sound from before the press in it, also what the worklet had in hand; sent sound is not kept for the next')
+    h = g.get('heldAgain') or [1]
+    check(h[0] == 0 and 9 <= h[1] <= 11 and h[2:4] == [True, 2] and 19 <= h[4] <= 22 and h[5:] == [30, ['first second']], 'held again while the last words are made: that hold is kept whole', str(h))
+    eq((g.get('letAgain') or [])[2:], [False, 1, 0, 0, ['first']], 'let go again before the words came: dropped')
     eq((g.get('reply'), g.get('during')), (['ended', None, 'playback', 'speaking'], None), 'a reply: the mic is released first')
     eq(g.get('afterReply'), [True, 0, 'play-and-record'], 'and open again after it, with none of its sound')
     eq((g.get('hides'), g.get('backOn')), (['ended', None, 'playback', False], True), 'hidden: released at once; shown: open again')

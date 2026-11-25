@@ -845,10 +845,10 @@ _In code_: homeChips
 _Avoid_: recent chat, previous chat
 
 **Open mic**:
-The mic's stream kept open on Talk with Speech to words: Recorded, so a press listens at once and starts up to a second before it; older sound is dropped, and nothing is sent without a press.
-_Said_: start listening while on that page
-_On screen_: the mic is open
-_In code_: recLook, recAhead, recRing, .mic.open
+The mic's stream kept open on Talk with Speech to words: Recorded, so a press listens at once. It is not listened to until then: with no listen on, its sound is dropped at once, and nothing from before a press is kept or sent.
+_Said_: start listening while on that page; not listen 24/7, but only when the mic is pressed
+_On screen_: the mic is open, not listening
+_In code_: recLook, recAhead, .mic.open
 _Avoid_: hot mic, always listening
 
 **Until check**:

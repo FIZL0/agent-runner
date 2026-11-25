@@ -1,10 +1,11 @@
 /* --- F161b: Recorded, the page: the mic's sound is kept here while the person talks, posted to the run as WAV, and the words
    come back. A Recorder does what a browser's recognizer does (start, stop, abort; onaudiostart, onresult, onerror, onend),
    so hear() and the one-recognizer rules (MIC) treat both the same ------------- */
-const REC_TAIL=200, REC_SILENT=8000, REC_FIRST=3000, REC_POST=50000, REC_AGAIN=500, REC_LOOK=500, REC_MIN=0.15, REC_PRE=1, REC_WAKE=1000, REC_ENDS=3, REC_COMES=1000;  // ms: sound still taken after a stop; a listen nobody speaks in; the mic's first sound; an answer; s: the shortest clip; what is kept from before a press; ms: the sound's start; times a stream the browser ended is opened again; ms: Talk may take to show after its press
-/* the mic's sound in pieces of 2048; its output stays silent, and is there so that every browser runs it */
+const REC_TAIL=200, REC_SILENT=8000, REC_FIRST=3000, REC_POST=50000, REC_AGAIN=500, REC_LOOK=500, REC_MIN=0.15, REC_WAKE=1000, REC_ENDS=3, REC_COMES=1000;  // ms: sound still taken after a stop; a listen nobody speaks in; the mic's first sound; an answer; s: the shortest clip; ms: the sound's start; times a stream the browser ended is opened again; ms: Talk may take to show after its press
+/* the mic's sound in pieces of 2048; its output stays silent, and is there so that every browser runs it. 'mark' drops what
+   is in hand and answers null: every piece after that is from after it */
 const REC_WORKLET=`registerProcessor('rec',class extends AudioWorkletProcessor{
-  constructor(){super();this.b=new Float32Array(2048);this.n=0;this.port.onmessage=e=>{if(e.data==='flush'&&this.n)this.port.postMessage(this.b.slice(0,this.n));this.n=0}}
+  constructor(){super();this.b=new Float32Array(2048);this.n=0;this.port.onmessage=e=>{if(e.data==='flush'&&this.n)this.port.postMessage(this.b.slice(0,this.n));this.n=0;if(e.data==='mark')this.port.postMessage(null)}}
   process(i){const c=i[0]&&i[0][0];if(c)for(const x of c){this.b[this.n++]=x;if(this.n===2048){this.port.postMessage(this.b.slice());this.n=0}}return true}})`;
 /* the kept stream takes sound now, so a press needs to wait for nothing */
 const recLive=()=>!!REC.open&&!REC.open.rest&&REC.open.track.readyState==='live'&&REC.open.ctx.state==='running';
@@ -45,9 +46,9 @@ async function recAsk(gen,own,box){
     const on=Promise.resolve(ctx.resume()).then(ran).catch(()=>{});  // again: a page with the mic may start it with no press
     if(own!==true)await Promise.race([up,on,new Promise(r=>setTimeout(r,REC_WAKE))]);  // with no press it may never settle
     if(gen!==REC.gen)throw new Error('the mic was closed meanwhile');
-    const node=new AudioWorkletNode(ctx,'rec'), track=stream.getAudioTracks()[0], o={ctx,stream,node,track,ring:[],kept:0,rest:false,box};
+    const node=new AudioWorkletNode(ctx,'rec'), track=stream.getAudioTracks()[0], o={ctx,stream,node,track,ring:[],kept:0,ear:null,cut:false,came:false,rest:false,box};
     ctx.createMediaStreamSource(stream).connect(node);node.connect(ctx.destination);
-    node.port.onmessage=e=>{if(REC.now&&REC.now.on)REC.now.take(e.data);else recRing(o,e.data)};
+    node.port.onmessage=e=>{const r=REC.now&&REC.now.on?REC.now:null;if(!e.data){if(r)r.marked=true;return}if(!o.rest)o.came=true;if(r){o.cut=false;r.take(e.data)}else recRing(o,e.data)};
     track.onended=()=>{if(REC.open!==o)return;const r=REC.now;recFree('track ended by the browser');REC.shut=!recEnded(r);if(r)r.cut();recLook()};
     REC.why='';REC.open=o;recLook();
     return o;
@@ -65,19 +66,21 @@ function recEnded(r){
   REC.ends=(REC.ends||0)+1;
   return true;
 }
-/* F161c: between listens the last second is kept for the next press and what is older is dropped. A mic held again while
-   the last words are made keeps all since */
+/* F161c2: with no listen on, every piece of sound is dropped at once. Only a mic held again while the last words are made
+   keeps its sound, for the listen that goes on from them; a first piece that may begin before that hold (cut) is dropped too */
 function recRing(o,x){
   if(o.rest)return;
-  o.ring.push(x);o.kept+=x.length;
-  if(!(TK.ear&&TK.ear.more))while(o.kept>REC_PRE*o.ctx.sampleRate)o.kept-=o.ring.shift().length;
+  const t=TK.ear, keep=!!t&&(t.more||(o.ear===t&&!t.stopped)), cut=o.cut;
+  o.cut=!keep;
+  if(!keep||o.ear!==t){o.ring=[];o.kept=0;o.ear=keep?t:null}
+  if(keep&&!cut){o.ring.push(x);o.kept+=x.length}
 }
 /* while a reply plays no sound is taken. Where the browser allows the mic for good the stream closes, so the sound is as
    with no mic; where a new one could ask again it only rests */
 function recQuiet(){
   const o=REC.open;if(!o||REC.now||o.rest)return;
   if(REC.may)return recFree('freed for a reply');
-  o.rest=true;o.ring=[];o.kept=0;o.track.enabled=false;
+  o.rest=true;o.ring=[];o.kept=0;o.ear=null;o.came=false;o.track.enabled=false;
   try{const p=o.ctx.suspend();if(p)p.catch(()=>{})}catch(e){}
 }
 /* Talk's mic is on screen, Recorded can be used, and the Mic test is closed. A listen under way goes on beside the message box */
@@ -140,7 +143,7 @@ function recAsked(log){
   catch(e){log('permission: the browser cannot say')}
 }
 class Recorder{
-  constructor(){this.recorded=true;this.parts=[];this.n=this.pre=0;this.came=false;this.level={floor:null,spoke:false,quiet:0,all:0}}
+  constructor(){this.recorded=true;this.parts=[];this.n=0;this.came=this.marked=this.ready=this.sound=false;this.level={floor:null,spoke:false,quiet:0,all:0}}
   start(again){
     REC.now=this;
     if(recLive())return this.begin(REC.open,again);  // F161c: in the press itself
@@ -155,17 +158,20 @@ class Recorder{
       if(!this.done&&!this.stopping)this.begin(o,again);
     },e=>{lost();log(`mic not opened${REC.took?': '+recTook(REC.took,at):''}`);throw e}).catch(e=>this.refused(e));
   }
-  /* it listens, from the second before the press */
+  /* it listens, from the press on; one that goes on from the last words has the sound of its hold */
   begin(o,again){
-    REC.shut=REC.denied=false;REC.ends=0;this.rate=o.ctx.sampleRate;this.on=true;
-    this.parts=o.ring;this.n=this.pre=o.kept;o.ring=[];o.kept=0;
+    REC.shut=REC.denied=false;REC.ends=0;this.rate=o.ctx.sampleRate;this.on=true;this.sound=false;
+    if(o.kept&&TK.ear&&o.ear===TK.ear&&TK.rec===this){this.parts=o.ring;this.n=o.kept;this.marked=true;micLog(`kept ${Math.round(1000*this.n/this.rate)} ms of the hold`,false,TK.ear.trail)}
+    else{this.marked=false;o.node.port.postMessage('mark')}
+    o.ring=[];o.kept=0;o.ear=null;this.ready=o.came;
     if(this.onstart)this.onstart();
-    if(this.n){if(TK.ear)micLog(`kept ${Math.round(1000*this.n/this.rate)} ms from before`,false,TK.ear.trail);if(this.onaudiostart)this.onaudiostart()}
+    if(this.ready)this.sounds();  // the open mic gives sound already
     clearTimeout(this.first);
     this.first=setTimeout(()=>{if(this.came||this.done||this.stopping)return;
       recFree('no sound came from it');this.on=false;talkDraw();
       if(!again)this.start(true);else this.fail('No sound came from the mic',true)},REC_FIRST);  // a kept stream can go mute: it is opened afresh once
   }
+  sounds(){if(this.sound)return;this.sound=true;if(this.onaudiostart)this.onaudiostart()}
   refused(e){
     if(this.done)return;
     const n=e&&e.name;
@@ -175,11 +181,11 @@ class Recorder{
   /* falls: nothing was recorded, so the browser's recognition can hear instead */
   fail(why,falls){if(this.done)return;if(falls)REC.shut=true;this.falls=!!falls&&!!SR;if(this.onerror)this.onerror({error:'recorded',message:why+(this.falls?", so the browser's recognition is used":'')});this.end()}
   take(x){
-    if(this.done||!this.on||this.posted||!this.rate)return;
+    if(this.done||!this.on||!this.marked||this.posted||!this.rate)return;
     this.came=true;
     const most=(REC.engine&&REC.engine.seconds)||120;
     if(this.n/this.rate>=most-0.5)return;  // the tail too stays under the run's limit
-    if(!this.n&&this.onaudiostart)this.onaudiostart();
+    this.sounds();
     this.parts.push(x);this.n+=x.length;
     if(this.stopping)return;
     let sq=0;for(const y of x)sq+=y*y;
@@ -193,7 +199,7 @@ class Recorder{
   stop(){
     if(this.done||this.stopping)return;
     if(TK.rec!==this)return this.abort();  // dropped (New Talk chat, a play button): nothing is posted
-    this.stopping=true;this.said=this.n-this.pre;
+    this.stopping=true;this.said=this.n;
     if(!this.on)return this.end();
     const o=REC.open, go=()=>this.post();
     setTimeout(()=>{if(o&&REC.open===o)o.node.port.postMessage('flush');setTimeout(go,20)},REC_TAIL);
@@ -207,7 +213,7 @@ class Recorder{
   async post(){
     if(this.done||this.posted)return;
     this.posted=true;if(REC.now===this)REC.now=null;recLook();
-    if(this.mute||(this.pre?this.said:this.n)<REC_MIN*this.rate){this.parts=[];if(this.mute&&this.onerror)this.onerror({error:'no-speech',message:''});return this.end()}
+    if(this.mute||(this.ready?this.said:this.n)<REC_MIN*this.rate){this.parts=[];if(this.mute&&this.onerror)this.onerror({error:'no-speech',message:''});return this.end()}
     const t=TK.ear;if(t&&TK.rec===this){t.reading=true;talkDraw()}
     const wav=recWav(this.parts,this.rate), at=Date.now(), log=x=>{if(t)micLog(x,false,t.trail)};
     this.parts=[];log(`clip, ${(this.n/this.rate).toFixed(1)} s`);
@@ -251,7 +257,7 @@ function recRow(){
   const on=TS.way==='recorded', why=recWhy(), wait=why&&!REC.engine&&!REC.no&&recCan()&&window.isSecureContext!==false;
   const inst=REC.engine&&!REC.engine.engine&&!HOME_PAGE&&why===REC.engine.why?' Ask a chat to install one.':'';
   return `<label class="it setrow"><span class="grow">Speech to words</span><select class="fld" data-ts="way"><option value="browser" ${on?'':'selected'}>The browser's recognition</option><option value="recorded" ${on?'selected':''}>Recorded</option></select></label>
-      ${why&&(on||!wait)?`<div class="small">${esc(on?`Recorded is not used now: ${why}.${inst}${SR?" The browser's recognition is used.":''}`:`Recorded cannot be used: ${why}.${inst}`)}</div>`:on?'<div class="small">The page records what you say, and the run\'s machine makes the words. The mic is open while Talk shows, with a dot on it: the second before a press is kept, what is older is dropped.</div>':''}
+      ${why&&(on||!wait)?`<div class="small">${esc(on?`Recorded is not used now: ${why}.${inst}${SR?" The browser's recognition is used.":''}`:`Recorded cannot be used: ${why}.${inst}`)}</div>`:on?'<div class="small">The page records what you say, and the run\'s machine makes the words. The mic is open while Talk shows, with a dot on it, but it listens only after a press: what it hears with no listen on is dropped at once.</div>':''}
       ${on&&isSafari(navigator.userAgent)?'<div class="small">If Safari asks for the mic again after a reload: in the address bar\'s page menu, Website Settings, Microphone, Allow.</div>':''}`;
 }
 if(TS.way==='recorded'){recLoad();REC.timer=setTimeout(recLook,0)}
