@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.69.0 (2026-11-25)
+
 - Fixed: `s!` (`stop --force`) now runs `[run] on_exit` for each session it ends, in its slot; before, it ended them without it, so e.g. a device lock it frees stayed held until the resumed session ended. The sessions still resume in the next run. The run waits for every on_exit still running, also one from a session that ended just before `s!`, at most 60 s from `s!` (or `[run] command_timeout` if that comes sooner); one still running is stopped and the log says so (B803).
 - Fixed: a task filed on main after the merge it would start on (F198) used to start on that merge even though the merge's plan has no line for it, so its plan brief was empty and `done` and `done --blocked` refused with "no task" after the gate passed. Now a task starts only on a merge whose plan has its line (a merge built ahead that has it will do); otherwise it waits for the merge and starts on main, as before F198. A plan outside the repo is one copy, so nothing changes there (B805).
 - Changed: on the run page's Talk with Speech to words: Recorded, when the browser ends the Open mic's stream (track ended) while Talk's mic shows, between listens and with no reply being read, the page opens it again by itself, where the Permissions API says granted; at most 3 times (REC_ENDS) until a press listens, Talk shows anew or Speech to words is picked again, then it waits for Talk to show anew or a press. Before, it waited after the first end. An end during a listen (its words go out) or while a reply is read, and an opening by itself that fails, are not tried again by itself until Talk shows anew; a press still tries. Not proven to be the cause of a hold that found no Open mic at the press (B804c).
@@ -13,6 +15,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Changed: Cancel replaces Take back on the run page's slot rows and in `agent-runner ui` (key C, asked first with the minutes worked; H there no longer does anything): `plan cancel ID --yes` stops a running task's agent, keeps its work on wip/ID and parks the task, so no run starts it until it is unparked (F426d).
 - Added: a shared tool in runner.toml and a device may have tool buttons of their own (`[[run.tools.<name>.buttons]]`, and `buttons` saved with the device): each a label and a command that runs once and ends, with an optional question asked first; POST /tools `op: press` runs one, one at a time per tool, and GET /tools lists them (F428c).
 - Added: on the run page's Plan, a thin grip on each queue row; drag it with a mouse, or focus it and press arrow up/down, to move the task, release or Next release row; a running row has none (F429c).
+
 ## 0.68.0 (2026-11-25)
 
 - Added: a shared tool in runner.toml may have a `page` (an http/https address, or `:PORT` of this machine) and a `start` command, served and started as a device's web page is, by `run device start|stop|show NAME` and POST/GET /tools (F428a).
