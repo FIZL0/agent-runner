@@ -51,6 +51,9 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  command that answers it, or the `note` to run
     ./run plan shelve <ID>       later: stays blocked, off Needs you; `unshelve <ID>` brings it back
     ./run plan hold <ID>         it keeps its place in the queue and no run starts it; `unhold <ID>` ends it
+    ./run plan hold|unhold|move|drop|restore next-release …   the same for the Next release row ([run] auto_release),
+                                 which is no task: `move` makes it a release that waits for the tasks above its place,
+                                 `drop … WHY` skips that cut (the count starts from zero) and `restore` undoes it
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
     ./run plan concept "TITLE" --page URL [--files A,B]   a concept page a chat showed inline: filed as a K task
@@ -195,7 +198,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-KEYS = ('files', 'after', 'test', 'journal', 'model', 'needs', 'split-by', 'held')  # F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
+KEYS = ('files', 'after', 'test', 'journal', 'model', 'needs', 'split-by', 'held', 'moved')  # F429a: moved, written by `move` alone (release_moves); F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
 # ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
 FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
@@ -1151,7 +1154,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
             force = True
         elif a == '--last':  # F43: at the end of the leading section, `after: all above`
             last, after_flag, in_where = True, False, False
-        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--') and a not in (f'--{SPLIT_BY}', '--held'):
+        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--') and a not in (f'--{SPLIT_BY}', '--held', '--moved'):
             if k + 1 >= len(rest) or rest[k + 1].startswith('--'):
                 no(f'{a} needs a value')
             if a in vals or (a == '--pri' and pri):
@@ -1306,8 +1309,8 @@ def add(prefix: str, text: str, where: str | None = None, ref: str | None = None
     if pri and not PRI_TAG.search(text):
         text = f'(follow-up, {pri}) {text}'
     j = _place_pri(ls, pri) if pri and not where else _place(ls, where or 'top', ref)
-    from agent_runner import row_hold  # here: row_hold imports this module
-    line = row_hold.cleared(_unheld(f'- [ ] **{tid}** {text}'))  # only this sets a split hold, `hold` a held task
+    from agent_runner import release_moves, row_hold  # here: they import this module
+    line = release_moves.cleared(row_hold.cleared(_unheld(f'- [ ] **{tid}** {text}')))  # only this sets a split hold, `hold` a held task
     if split_c and _big([line], tid, split_c):  # in the same write: no run reads the task without it
         line += f' | {SPLIT_BY}: {split_stamp()}'
     ls[j:j] = [line]
@@ -1429,6 +1432,7 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
         new = dict(FIELD.findall(text))
         new.pop(SPLIT_BY, None)
         new.pop('held', None)  # F429: `hold` alone writes it
+        new.pop('moved', None)  # F429a: `move` alone writes it
         # continuation lines before the first sub-item are description too (and `note` appends to a block's
         # last line): they go, sub-items stay, and a BLOCKED on a dropped last line moves to the first line
         k = next((n for n, l in enumerate(rest_blk) if ITEM.match(l)), len(rest_blk))
@@ -3303,14 +3307,26 @@ def _p_tick(a, x):
 
 
 def _p_drop(a, x):
+    from agent_runner import release_moves
+    if a.id == release_moves.NEXT:
+        print(release_moves.drop_next(x.todo, _text(a)))
+        return 0
     whole = drop(a.id, _text(a))
-    return x.say(f'dropped {a.id}' + ''.join(
+    skipped = release(a.id) and release_moves.removed(a.id)
+    return x.say(f'dropped {a.id}' + (f': that cut is skipped, and the count starts from zero (`{PROG} restore {a.id}` '
+                                      'undoes it)' if skipped else '') + ''.join(
         f'\nno part of {k} landed, so {k} is one whole task again (`{PROG} {k}`: edit it if its text lacks the work '
         f'the parts held)' for k in whole))
 
 
 def _p_restore(a, x):
+    from agent_runner import release_moves
+    if a.id == release_moves.NEXT:
+        print(release_moves.restore_next())
+        return 0
     restore(a.id, a.rest[0] if a.rest else 'top', ' '.join(a.rest[1:]) or None)
+    if release(a.id):
+        release_moves.restored(a.id)
     return x.say(f'restored {a.id}: open again in {Path(x.todo).name}')
 
 
@@ -3347,7 +3363,19 @@ def _p_unblock(a, x):
 
 
 def _p_move(a, x):
-    move(a.id, a.rest[0], ' '.join(a.rest[1:]) or None)
+    from agent_runner import release_moves, row_hold
+    where, ref = a.rest[0], ' '.join(a.rest[1:]) or None
+    if a.id == release_moves.NEXT:
+        tid = release_moves.move_next(where, ref, x.todo)
+        return x.say(f'moved {a.id} {_text(a)}: it is {tid} now, and waits for the tasks above it')
+    _find(lines(x.todo), a.id)
+    if why := row_hold.under_way(x.c, a.id):
+        print(f'{PROG}: {a.id} cannot be moved: {why}', file=sys.stderr)
+        return 1
+    move(a.id, where, ref)
+    if release(a.id):
+        release_moves.rewait(a.id, x.todo)
+        return x.say(f'moved {a.id} {_text(a)}: it waits for the tasks above it')
     return x.say(f'moved {a.id} {_text(a)}')
 
 
@@ -3487,7 +3515,10 @@ def _p_unshelve(a, x):
 
 
 def _p_hold(a, x):
-    from agent_runner import row_hold
+    from agent_runner import release_moves, row_hold
+    if a.id == release_moves.NEXT:
+        print(release_moves.hold_next(x.todo))
+        return 0
     _find(lines(x.todo), a.id)
     if why := row_hold.under_way(x.c, a.id):
         print(f'{PROG}: {a.id} cannot be held: {why}', file=sys.stderr)
@@ -3499,7 +3530,10 @@ def _p_hold(a, x):
 
 
 def _p_unhold(a, x):
-    from agent_runner import row_hold
+    from agent_runner import release_moves, row_hold
+    if a.id == release_moves.NEXT:
+        print(release_moves.unhold_next())
+        return 0
     if not row_hold.unhold_task(a.id, x.todo):
         print(f'{a.id} is not held')
         return 0

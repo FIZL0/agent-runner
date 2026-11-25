@@ -32,8 +32,9 @@ def landed_since_release(branch: str) -> list[str]:
     """The tasks landed since the last release, oldest first: the ids of the run's landed events (a part
     landing too) after the later of the last release task's landing and the newest version tag on `branch`.
     Release tasks are not counted, and none at all when nothing outside the plan changed since that tag
-    (plan-only and release commits)."""
+    (plan-only and release commits). A removed cut (F429a) starts the count again, as a landed one does."""
     from agent_runner.land import RELEASE_TAG, _vtuple
+    from agent_runner import release_moves
     from agent_runner.status import read_events
     git = S.git
     since = ''
@@ -50,7 +51,7 @@ def landed_since_release(branch: str) -> list[str]:
         if git('diff', '--quiet', tag, branch, '--', *spec).returncode == 0:
             return []
     evs = [e for e in read_events() if e['kind'] in (EV_LANDED, EV_PART) and e.get('id')]
-    since = max([since, *(e['time'][:19] for e in evs if P.release(e['id']))])
+    since = max([since, release_moves.skipped_at(), *(e['time'][:19] for e in evs if P.release(e['id']))])
     out: list[str] = []
     for e in evs:
         if e['time'][:19] > since and not P.release(e['id']) and e['id'] not in out:
@@ -65,13 +66,13 @@ LOOK_AGAIN = 600  # s: a release that stopped the count may have let go with no 
 def waiting_releases(branch: str, ls: list[str]) -> set[str]:
     """F195a: the open releases in `ls` that only wait in the queue for open tasks (`after: all` say), so a count goes
     on beside them. Not one that may start, is releasing, is taken by a person or another runner, is blocked or held
-    (F429), or stands in a section no run starts."""
-    from agent_runner import merge, row_hold, sched
+    (F429), was moved and so is the next cut (F429a), or stands in a section no run starts."""
+    from agent_runner import merge, release_moves, row_hold, sched
     ready = {t[0] for t in sched.tasks(branch)}
     busy = {merge.releasing('', branch), *sched.taken(), *(t for t, cl in plansync.claims(S.C).items() if not plansync.stale(cl)),
             *(q[0] for q in S.queued().values())}
     return {tid for section, box, tid, _, _ in P.iter_tasks(ls) if P.release(tid) and box == ' '
-            and not section.startswith(P.SKIPPED)} - ready - busy - row_hold.held_ids(ls)
+            and not section.startswith(P.SKIPPED)} - ready - busy - row_hold.held_ids(ls) - release_moves.moved_ids(ls)
 
 
 def auto_release(branch: str, idle: bool = False) -> str:
@@ -109,6 +110,9 @@ def auto_release(branch: str, idle: bool = False) -> str:
             return ''
         waits = waiting_releases(branch, ls) if open_ else set()
         if open_ - waits:
+            return ''
+        from agent_runner import release_moves
+        if release_moves.cuts().held:  # F429a: the person holds the next release
             return ''
         landed = landed_since_release(branch)
         cut = bool(every) and len(landed) >= every

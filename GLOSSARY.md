@@ -878,3 +878,10 @@ _Said_: chat about this
 _On screen_: Chat about this, not your answer, with the question, above the message box
 _In code_: questionMark, questionMarkHTML, QN.mark, .qabout
 _Avoid_: quoted question, reply context
+
+**Removed cut**:
+An automatic release the person removed, or the Next release row removed: no release is cut then, and only tasks landed after the removal count to the next; it can be restored
+_Said_: skip this release
+_On screen_: that cut is skipped, and the count starts from zero
+_In code_: release_moves.removed, release_moves.drop_next, EV_CUT_REMOVED, next-release
+_Avoid_: cancelled release, skipped release
