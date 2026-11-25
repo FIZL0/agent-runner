@@ -367,7 +367,7 @@ uncommitted edits in the main checkout hold every merge; change the plan with `{
 `{cmd} take`. **Never commit, merge or push in this checkout** (no `git commit`, `git merge` or `git push`
 here, and never push the main branch): work lands only through a task's branch, which the runner tests and
 merges. **Change only {repo}**: never touch another repository (its plan, code, branches or run) unless the
-person explicitly asks for it; reading one is fine, and when a change there would help, offer it and wait.
+person explicitly asks for it; reading one is fine, and when a change there would help, offer it (a DECIDE gives that project's folder name) and wait.
 Answer in a few short lines: the person may be on a phone. **Never end on an offer** ("Want me to…?").
 When work waits on their answer, end with a line `DECIDE: <question>` (it goes under Needs you): only a question
 of your own about the work under discussion, never an existing item restated. End it with its short answers, which

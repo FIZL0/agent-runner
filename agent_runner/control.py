@@ -16,7 +16,7 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import control_harness, control_settled, no_push, plan as P, plansync, plat, session_theme
+from agent_runner import control_harness, control_other, control_settled, no_push, plan as P, plansync, plat, session_theme
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.control_settled import LEAD  # F160: how the runner's own typed line starts
 from agent_runner.config import RUNNER, runner_cmd
@@ -948,7 +948,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
             return ''  # somebody mid-edit, or the main checkout on another branch: the next look files it
         where = link or f'resume it with `{control_harness.resume_hint(sid)}`'
         tid = P.add(CONTROL_ASK_KIND, f'Control session {n} asked the person: "{q}" Carry on from their '
-                    f'answer (the session, closed while it waited: {where})', todo=ROOT / rel, pri='normal')
+                    f'answer (the session, closed while it waited: {where}). {control_other.ROUTE}', todo=ROOT / rel, pri='normal')
         P.block(tid, f'DECIDE: {q} {link}'.strip(), todo=ROOT / rel, after=[])
         if not commit_plan(f'Plan: {tid}, control {n} asked the person', rel):
             if not C.plan_external:

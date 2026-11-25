@@ -1521,7 +1521,11 @@ Each session also gets `AGENT_RUNNER=1`, `AGENT_SLOT=<n>` and anything `[run] sl
 environment, so your tools can tell slots apart, for example to give each one its own port or emulator
 instance. `AGENT_RUNNER_WORKTREE` names the slot's worktree: while it is set, plan writes (`plan add`,
 `note`, `tick` and the other edits) and `done` refuse, with nothing written, when the current directory is in
-another project, and say to run the command from that worktree (B103).
+another project, and say to run the command from that worktree (B103). One exception (B785): when a
+control session's question (its `DECIDE:` line, filed as a task when the run closed the session) names another
+project by its folder name and the person's answer is a yes (a word of yes, or one of the question's options that is not a no), the slot on that task may run `plan add` in that
+project's checkout. A project that only the options name counts only when the answer names it. The other plan writes and `done` there stay refused, as do any other task's slot and any
+project the question does not name; a later "do this instead" from the person withdraws it.
 
 `include_task_id_in_commit = false` tells sessions to omit the task ID from the commit subject; `done` also
 removes a leading `<ID>:` if a session includes one anyway. The default is `true`. An old `comment_policy` is ignored: write its wording in `prompt_extra`.
