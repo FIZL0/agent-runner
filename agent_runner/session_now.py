@@ -164,7 +164,7 @@ _TASKS: dict[str, tuple[int, list[dict]]] = {}  # transcript -> (its size, its t
 def live(name: str) -> dict:
     """The page's word on session `name`: {'ok', 'status', 'since' (when it began, epoch s), 'mode' (its permission mode
     as the transcript has it), 'queued' (F190b: how many sent messages are queued in it), 'ask' (F192a: the question a chat's last answer ends on,
-    `chat_question.ask`; None for none), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
+    `chat_question.ask`; None for none; F192a3: with 'need' and 'answered', `chat_question.joined`), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
     'tail'), 'harness' (F406g: on the harness loop)}."""
     rec = record(name)
     if not rec:
@@ -196,7 +196,7 @@ def live(name: str) -> dict:
     waits = queued(rec, rows[0]['ops'] if rows else ())
     ask = rows[0]['ask'] if rows and not waits else None  # queued words: the person has spoken since
     return {'ok': True, **({'harness': True} if rec.get('harness') else {}), 'status': str(rec.get('status') or ''), 'since': (rec.get('statusUpdatedAt') or 0) / 1000,
-            'mode': mode, 'ask': ask, 'queued': waits, 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
+            'mode': mode, **chat_question.joined(ask, U.session_sid(name) if name[0] == 'c' and U.S.C else ''), 'queued': waits, 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
                                      **({'tail': output_tail(t['out'])} if t.get('out') else {})} for t in run + done]}
 
 

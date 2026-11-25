@@ -263,6 +263,21 @@ def need_chat(tid: str, wait: bool = True) -> dict:
     return new_control(need_chat_text(row), wait)
 
 
+def question_answer(chat: str, id: str, text: str) -> dict:
+    """F192a3: the option `text` picked on the question card of `chat` (c6) for its question `id`, which waits under
+    Needs you: settles that item as its answer button does (`answer`). The chat is told as of any item it is about
+    (`control_settled`), not typed the option too: whoever takes the item carries the answer out."""
+    from agent_runner import chat_question
+    if not re.fullmatch(r'c\d+', chat or '') or not isinstance(text, str) or not text.strip():
+        return {'ok': False, 'code': 2, 'out': f'question_answer: a chat and an option; not {chat!r} {text!r}', 'argv': []}
+    if not (tid := chat_question.need_of(chat, id, session_sid(chat))):
+        return {'ok': False, 'code': 1, 'out': 'That question no longer needs you (answered already?)', 'argv': []}
+    return answer(tid, text, button=True)
+
+
+ACTIONS['question_answer'] = question_answer
+
+
 def item_state(tid: str) -> str:
     """F425a: where item `tid` stands now, in words, for the chat about a sent response."""
     try:
