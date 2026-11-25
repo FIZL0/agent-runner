@@ -319,13 +319,7 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         if n is not None:
             pid, sid, _ = procs.pop(n)
             running.pop(n)
-            plat.terminate(pid)
-            end = time.monotonic() + 10
-            while plat.alive(pid) and time.monotonic() < end:
-                time.sleep(0.2)
-            if plat.alive(pid):  # it ignored SIGTERM: its tree gets one, then whatever is left is ended below
-                for p in [*plat.descendants(pid), pid]:
-                    plat.terminate(p)
+            exit_hook.end_session(pid)
             stopped = f'stopped s{n}'
         elif q is not None:
             n, sid = q, queued()[q][1]
@@ -340,7 +334,8 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         if n is not None:
             end_orphans()
             if n not in procs:  # B801: for a queued resume too: `s!` or a run that died ended its session without it
-                exit_hook.start(n)
+                if n not in exit_hook.busy():  # else the one its own exit started
+                    exit_hook.start(n)
                 exit_hook.wait(n)
         did = discard_task(tid, n, sid) if n is not None else []
         if n is not None:

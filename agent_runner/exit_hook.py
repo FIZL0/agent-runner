@@ -14,6 +14,27 @@ GOING: list[tuple[int, sp.Popen, float, str]] = []  # (slot, process, when it is
 SOON = 5.0  # s a halt waits for it, so a quick one ends before the worktree is reset and the task starts again
 
 
+def gone(pid: int, seconds: float) -> bool:
+    end = time.monotonic() + seconds
+    while plat.alive(pid) and time.monotonic() < end:
+        time.sleep(0.2)
+    return not plat.alive(pid)
+
+
+def end_session(pid: int) -> None:
+    """End a halted task's session before its `on_exit` starts, which must not free what the session still uses."""
+    plat.terminate(pid)
+    if gone(pid, 10):
+        return
+    for p in [*(plat.descendants(pid) if plat.WINDOWS else []), pid]:  # it ignored SIGTERM: its tree gets one
+        plat.terminate(p)
+    if not gone(pid, 2) and not plat.WINDOWS:
+        try:
+            os.kill(pid, signal.SIGKILL)  # what it started is ended after it (watch.end_orphans)
+        except OSError:
+            pass
+
+
 def start(n: int) -> None:
     """Run `[run] on_exit` in slot n's worktree with the slot's env, for at most `[run] command_timeout`. Its output
     goes nowhere: a pipe would be held open by whatever it leaves in the background."""

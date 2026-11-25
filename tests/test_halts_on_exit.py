@@ -128,6 +128,46 @@ def test_queued(hook: Hook):
         eq(loop.queued(), {}, f'{how}: the resume is gone')
 
 
+def test_queued_busy(hook: Hook):
+    print('a resume taken back while its own exit still runs on_exit: no second one beside it')
+    hook.fresh()
+    hook.hold(True)
+    exit_hook.start(1)
+    with mock.patch.object(exit_hook, 'SOON', 0.2):
+        halt(hook, 'take', [], queued=True)
+    hook.hold(False)
+    settle()
+    eq(len(hook.ran()), 1, 'once')
+
+
+def test_stubborn(hook: Hook):
+    print('a session that ignores SIGTERM is gone before on_exit starts')
+    if loop.plat.WINDOWS:
+        return
+    hook.fresh()
+    code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('up', flush=True); time.sleep(120)"
+    agent = subprocess.Popen([sys.executable, '-c', code], stdout=subprocess.PIPE)
+    agent.stdout.readline()
+    alive = []
+    (R.P.halt_dir(R.C) / 'H1.json').write_text(json.dumps({'how': 'drop'}), encoding='utf-8')
+
+    def start(n):
+        end = time.monotonic() + 5  # SIGKILL is delivered a moment later
+        while loop.plat.alive(agent.pid) and time.monotonic() < end:
+            time.sleep(0.02)
+        alive.append(loop.plat.alive(agent.pid))
+
+    try:
+        with mock.patch.object(loop, 'end_orphans', lambda: None), mock.patch.object(exit_hook, 'start', start):
+            loop.halts({1: (agent.pid, '', None)}, {1: ('H1', 'Later', {'a.py'}, set())}, {1: dt.datetime.max},
+                       set(), 'main', 'm', 30, 1)
+    finally:
+        agent.kill()
+        agent.wait()
+        agent.stdout.close()
+    eq(alive, [False], 'gone')
+
+
 def new_run() -> loop.Run:
     return loop.Run(argparse.Namespace(force=False), 1, False, 'main', 'm', 30, 600, 0)
 
@@ -215,7 +255,8 @@ def test_none(hook: Hook):
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         hook = Hook(Path(tmp))
-        return report([lambda: test_stopped(hook), lambda: test_queued(hook), lambda: test_slow(hook),
+        return report([lambda: test_stopped(hook), lambda: test_queued(hook), lambda: test_queued_busy(hook),
+                       lambda: test_stubborn(hook), lambda: test_slow(hook),
                        lambda: test_reap(hook), lambda: test_timeout(hook), lambda: test_none(hook)])
 
 
