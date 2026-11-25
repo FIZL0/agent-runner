@@ -72,18 +72,46 @@ def test_brief_outline():
         git(root, 'init', '-q')
         (root / 'plan').mkdir()
         (root / 'src').mkdir()
-        (root / 'src/ab.py').write_text('def one():\n    pass\n\ndef two():\n    pass\n', encoding='utf-8')
         (root / 'outline.py').write_text('import sys\nfor l in open(sys.argv[1]):\n'
                                           '    print(l.rstrip()) if l.startswith("def ") else None\n')
         (root / 'runner.toml').write_text('[plan]\noutline = "python3 outline.py {file}"\n', encoding='utf-8')
-        (root / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **D1** both | files: src/ab.py, src/new.py\n',
-                                           encoding='utf-8')
+        (root / 'plan/TODO.md').write_text(
+            '# TODO\n\n### Next\n\n- [ ] **D1** both | files: src/ab.py, src/at.py, src/new.py\n', encoding='utf-8')
         (root / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+        (root / 'src/ab.py').write_text('def one():\n    pass\n\ndef two():\n' + '    pass\n' * 297, encoding='utf-8')
+        (root / 'src/at.py').write_text('def short():\n' + '    pass\n' * 299, encoding='utf-8')
         git(root, 'add', '-A')
         out = '\n'.join(plan.brief('D1', root=root))
-        has(out, r'`src/ab\.py` \(5 lines\)\n  outline:\n    def one\(\):\n    def two\(\):',
-            "each file's outline goes under it")
-        check(out.count('outline:') == 1, 'a file the task creates gets none')
+        has(out, r'`src/ab\.py` \(301 lines\)\n  outline:\n    def one\(\):\n    def two\(\):',
+            "a file over 300 lines has its outline under it")
+        check(out.count('outline') == 1, 'a file of 300 lines, and one the task creates, get none')
+        has('\n'.join(plan.outline('echo no {file} >&2; exit 3', 'src/ab.py', root)), r'failed: no src/ab\.py',
+            'a command that fails says so')
+
+
+def outlines(texts):
+    blocks, note = plan.fit_outlines(texts, 'python3 tools/outline.py {file}')
+    return blocks, note, plan.outline_bytes([l for b in blocks.values() for l in b] + note)
+
+
+def test_outline_cap():
+    print('plan: the outlines of a brief stay within the cap')
+    big = [f'{i} def función_{i}' for i in range(500)]  # ñ, ó: bytes, not chars
+    blocks, note, size = outlines({'a': big, 'b': ['1 def only'], 'c': big})
+    check(plan.OUTLINE_MAX == 2048, 'the cap is 2 KB')
+    check(1800 < size <= plan.OUTLINE_MAX, 'two big files and a small one fill it and stay within', str(size))
+    check(blocks['b'] == ['  outline:', '    1 def only'], 'the small one is whole')
+    has(blocks['a'][0], r'trimmed evenly: \d+ of 500 lines', 'a trimmed one says so')
+    check(abs(len(blocks['a']) - len(blocks['c'])) <= 1, 'the big ones share the rest evenly')
+    at = [int(l.split()[0]) for l in blocks['a'][1:]]
+    gaps = [b - a for a, b in zip(at, at[1:])]
+    check(at[0] == 0 and max(gaps) - min(gaps) <= 1 and at[-1] + max(gaps) >= 500, 'lines from the whole file', str(at))
+    has(note[0], r'trimmed to 2048 bytes in all; a whole one: `python3 tools/outline\.py \{file\}`', 'the note')
+    blocks, note, size = outlines({f'f{i}': big for i in range(100)})
+    check(size <= plan.OUTLINE_MAX, 'a hundred big files stay within it too', str(size))
+    has(note[0], r'; \d+ files have none here', 'and it says which many have none')
+    blocks, note, size = outlines({'a': big[:20]})
+    check(not note and len(blocks['a']) == 21, 'what fits is whole, with no note')
 
 if __name__ == '__main__':
-    sys.exit(report([test_brief, test_brief_outline]))
+    sys.exit(report([test_brief, test_brief_outline, test_outline_cap]))

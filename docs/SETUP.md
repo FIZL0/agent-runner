@@ -279,7 +279,7 @@ first, a custom conflict join, a program per slot) is a setting now: see the hoo
 | `[run] copies` | git-ignored files copied into each new worktree once (a local config) |
 | `[plan] journal` | per-task journal folders; the newest entry goes into the brief |
 | `[plan] brief_extra` | a command (`{id}`) whose output ends the brief |
-| `[plan] outline` | a command (`{file}`) printing one file's outline, shown under each file the task line names |
+| `[plan] outline` | a command (`{file}`) printing one file's outline, shown under each file the task line names over 300 lines; 2 KB for the whole brief |
 | `[run] untested` | globs of files the gate can't see (`!glob` takes one back); a merge differing only in them isn't retested |
 | `[run] failures`, `retest` | a regex naming failed tests in the gate output, and the gate for just `{names}`: rerun alone, then on the base |
 | `[run] flaky` | a regex naming tests a *passing* gate passed only on its own rerun; each (and each `retest` pass) gets a critical T follow-up to make it robust |
