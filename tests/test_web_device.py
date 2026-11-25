@@ -47,6 +47,8 @@ const tick = () => new Promise(r => setTimeout(r, 0));
   answer = FULL; devOpen('local');
   out.loading = devHTML(); out.titleFirst = allTitle(); await tick();
   out.hit = hits[0]; out.html = devHTML(); out.title = allTitle(); out.back = devBackBtn(); out.drawer = S.drawer;
+  out.devs = devicesHTML();
+  DV.d = {...FULL, verdict: {said: 'hot', level: 'bad'}, headroom: {said: 'No room', limits: {}}}; out.alerted = devHTML(); DV.d = FULL;
   DV.more = {machine: true, foot: true}; out.more = devHTML();
   // Back, Forward, the Back button, another tab, down and up again, a reload
   out.hist = hist.slice(); history.back(); out.b1 = [H.tab, H.dev, devOn()]; history.forward(); out.f1 = [H.tab, H.dev];
@@ -100,10 +102,16 @@ def test_device_b818a(tmp: Path) -> None:
     check('Loading' in o['loading'] and o['titleFirst'] == '<span class="tt">desk</span>', 'its name at once, Loading until it answers')
     eq(o['hit'], '/dev/local/vitals/device?t=TOK', 'it reads the device with the token')
     h = o['html']
-    for s in ('desk&#60;b&#62;', '· this one', 'v-ok">Room for 3 more agents', 'Smallest of: memory 3 · cpu 5', '41%', '16 threads', 'class="b" style="width:92%',
+    for s in ('>This one<', 'v-ok">Room for 3 more agents', 'Smallest of: memory 3 · cpu 5', '41%', '16 threads', 'class="b" style="width:92%',
               '24.0 GB / 32.0 GB', '100.0 GB free', 'Runner footprint · 2.0 GB', 'Session temp folders', 'wip/ branches', 'one s1 · B1', '12.0% · 1 MB'):
         check(s in h, f'the page shows {s}', h)
     eq((h.count('class="spark"'), h.count('data-devmore'), h.count('aria-expanded="false"')), (1, 2, 2), 'a sparkline where there are two points; two folds')
+    check('desk&#60;b&#62;' in o['title'] and 'desk&#60;b&#62;' not in h, 'B818c: the name is said once, in the top bar')
+    eq(h.count('Room for 3 more agents'), 1, 'B818c: the verdict is said once')
+    check('No room</b>' in o['alerted'] and '>hot<' in o['alerted'], 'B818c: headroom is said when the verdict is another', o['alerted'])
+    check('Devices' not in o['devs'] and 'tap devcard' in o['devs'], 'B818c: the list does not repeat the title', o['devs'])
+    check('>41%</span></div><div class="small">16 threads · load 2.5</div><svg' in h, "B818c: a meter's details and sparkline stand under it")
+    check('safely…</button><button class="btn" data-devmore="foot"' in h, 'B818c: Clean and More share a row', h)
     check('Logs' not in h and '<b>desk<' not in h, 'what was not read is left out, names are escaped')
     check('device?id=' not in h and 'data-devslot="one"' in h and 'data-devclean="list"' in h, 'the actions are here, with no link to the old page')
     check('Per core' not in h and all(s in o['more'] for s in ('Per core', 'All sensors', 'node (7)', '/big', '2.0 TB', 'Less')), 'More shows the rest')

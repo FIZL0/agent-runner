@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: Devices and a device's page follow the app's style: the title and verdict are said once, meters line up, details and sparkline sit under their meter, and Clean is beside More (B818c).
+
 ## 0.73.0 (2026-11-25)
 
 - Fixed: on the run page's Plan queue, a shut waiting release row says "Waits for everything above" or "Waits for 3 tasks" (or "next") instead of naming its tasks; opened, it still lists them (B825).

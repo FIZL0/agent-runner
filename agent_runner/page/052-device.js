@@ -64,10 +64,11 @@ function devSlots(d){
   const l=d.running||[];
   return (l.length?`<div class="btns">${l.map(r=>devBtn(`data-devslot="${esc(r.key)}"`,'slot:'+r.key,'+ slot'+(l.length>1?' · '+esc(r.key):''))).join('')}</div>`:'<div class="small">No run up on this device to add a slot to.</div>')+devSaid('room');
 }
-function devCleanHTML(d){
+/* Clean as [what stands under the rows, its button], the button beside More */
+function devCleanParts(d){
   const l=d.clean||[], p=DV.pick;
-  if(!p)return (l.length?`<div class="btns">${devBtn('data-devclean="list"','',`Clean ${sizeWords(l.filter(i=>!i.ask).reduce((n,i)=>n+i.size,0))} safely…`)}</div>`:'<div class="small">Nothing to clean.</div>')+devSaid('foot');
-  return `<div class="small">Clean removes only what you tick:</div>${p.list.map(i=>`<label class="devtick"><input type="checkbox" data-devtick="${esc(i.id)}" data-f="devtick:${esc(i.id)}"${p.on.has(i.id)?' checked':''}${DV.act.busy?' disabled':''}><span>${esc(i.path)} <span class="small">· ${esc(i.why)}${i.size?' · '+sizeWords(i.size):''}</span></span></label>`).join('')}<div class="btns">${devBtn('data-devclean="go"','clean','Remove ticked',' bad')}${devBtn('data-devclean="cancel"','','Cancel')}</div>${devSaid('foot')}`;
+  if(!p)return [(l.length?'':'<div class="small">Nothing to clean.</div>')+devSaid('foot'),l.length?devBtn('data-devclean="list"','',`Clean ${sizeWords(l.filter(i=>!i.ask).reduce((n,i)=>n+i.size,0))} safely…`):''];
+  return [`<div class="small">Clean removes only what you tick:</div>${p.list.map(i=>`<label class="devtick"><input type="checkbox" data-devtick="${esc(i.id)}" data-f="devtick:${esc(i.id)}"${p.on.has(i.id)?' checked':''}${DV.act.busy?' disabled':''}><span>${esc(i.path)} <span class="small">· ${esc(i.why)}${i.size?' · '+sizeWords(i.size):''}</span></span></label>`).join('')}<div class="btns">${devBtn('data-devclean="go"','clean','Remove ticked',' bad')}${devBtn('data-devclean="cancel"','','Cancel')}</div>${devSaid('foot')}`,''];
 }
 async function devLoad(){
   const id=H.dev, turn=++DV.turn;if(!HB||!id)return;
@@ -93,22 +94,25 @@ function sparkHTML(v){
   return `<svg class="spark" viewBox="0 0 ${v.length-1} 28" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts.map(p=>p[0]+','+(26-24*(p[1]-lo)/span).toFixed(1)).join(' ')}"/></svg>`;
 }
 const devRows=l=>l.map(([a,b])=>`<div class="lrow"><span>${esc(a)}</span><span class="small">${esc(b)}</span></div>`).join('');
-function devSec(id,title,inner,more){
-  const on=!!DV.more[id];
-  return `<div class="sec">${title}<span class="ln"></span></div>${card(`${inner}${more?`<div class="btns"><button class="btn" data-devmore="${id}" aria-expanded="${on}">${on?'Less':'More'}</button></div>${on?`<div class="foldin">${more}</div>`:''}`:''}`,'devcard',`data-k="dev:${id}"`)}`;
+/* a meter with what belongs to it under it: a line of details, a sparkline */
+const devPart=(name,pct,said,info,spark)=>`<div class="devpart">${devMeter(name,pct,said)}${info?`<div class="small">${esc(info)}</div>`:''}${spark||''}</div>`;
+const devVerdict=v=>`<div class="devverdict v-${esc(v.level)}">${esc(v.said)}</div>`;
+function devSec(id,title,inner,more,btn=''){
+  const on=!!DV.more[id], btns=btn+(more?`<button class="btn" data-devmore="${id}" aria-expanded="${on}">${on?'Less':'More'}</button>`:'');
+  return `<div class="sec">${title}<span class="ln"></span></div>${card(`${inner}${btns?`<div class="btns">${btns}</div>`:''}${more&&on?`<div class="foldin">${more}</div>`:''}`,'devcard',`data-k="dev:${id}"`)}`;
 }
 function devMachine(d){
   const m=d.machine||{}, sp=d.spark||{}, c=m.cpu, out=[], say=(...l)=>l.filter(Boolean).join(' · ');
   if(c){
-    out.push(devMeter('CPU',c.pct,say(c.pct!=null&&c.pct.toFixed(0)+'%',c.threads&&c.threads+' threads',c.load!=null&&'load '+c.load))+sparkHTML(sp.cpu));
-    if(c.temp!=null)out.push(devMeter('Temp',c.temp,c.temp.toFixed(0)+'°C')+sparkHTML(sp.temp));
+    out.push(devPart('CPU',c.pct,c.pct!=null?c.pct.toFixed(0)+'%':'',say(c.threads&&c.threads+' threads',c.load!=null&&'load '+c.load),sparkHTML(sp.cpu)));
+    if(c.temp!=null)out.push(devPart('Temp',c.temp,c.temp.toFixed(0)+'°C','',sparkHTML(sp.temp)));
   }
   (m.gpus||[]).forEach((g,i)=>{
-    out.push(devMeter('GPU',g.pct,say(g.pct!=null&&g.pct.toFixed(0)+'%',i&&g.temp!=null&&g.temp.toFixed(0)+'°C',g.vram_total&&sizeWords(g.vram_used)+' / '+sizeWords(g.vram_total)))+`<div class="small">${esc(g.name)}</div>`+(i?'':sparkHTML(sp.gpu)));
-    if(!i&&g.temp!=null)out.push(devMeter('GPU temp',g.temp,g.temp.toFixed(0)+'°C')+sparkHTML(sp.gtemp));
+    out.push(devPart('GPU',g.pct,g.pct!=null?g.pct.toFixed(0)+'%':'',say(g.name,i&&g.temp!=null&&g.temp.toFixed(0)+'°C',g.vram_total&&sizeWords(g.vram_used)+' / '+sizeWords(g.vram_total)),i?'':sparkHTML(sp.gpu)));
+    if(!i&&g.temp!=null)out.push(devPart('GPU temp',g.temp,g.temp.toFixed(0)+'°C','',sparkHTML(sp.gtemp)));
   });
-  if(m.mem)out.push(devMeter('Memory',100*(m.mem.total-m.mem.avail)/m.mem.total,sizeWords(m.mem.total-m.mem.avail)+' / '+sizeWords(m.mem.total))+sparkHTML(sp.mem));
-  if(m.disk)out.push(devMeter('Disk',100*(1-m.disk.free/m.disk.total),sizeWords(m.disk.free)+' free')+`<div class="small">${esc(m.disk.path)} · free GB, last 24 h</div>`+sparkHTML(sp.disk));
+  if(m.mem)out.push(devPart('Memory',100*(m.mem.total-m.mem.avail)/m.mem.total,sizeWords(m.mem.total-m.mem.avail)+' / '+sizeWords(m.mem.total),'',sparkHTML(sp.mem)));
+  if(m.disk)out.push(devPart('Disk',100*(1-m.disk.free/m.disk.total),sizeWords(m.disk.free)+' free',m.disk.path+' · free GB, last 24 h',sparkHTML(sp.disk)));
   const part=(t,h)=>`<div class="small">${t}</div>${h}`;
   const more=(c&&c.cores?part('Per core',c.cores.map((p,i)=>devMeter(i,p,p.toFixed(0)+'%')).join('')):'')
     +(m.sensors?part('All sensors',devRows(m.sensors.map(s=>[s.chip+' · '+s.label,s.c.toFixed(0)+'°C']))):'')
@@ -118,8 +122,9 @@ function devMachine(d){
 function devFoot(d){
   const f=d.footprint||{}, rows=[['Worktrees (run homes)',f.worktrees],['Session temp folders',f.tmp],['Logs',f.logs]].filter(r=>r[1]!=null).map(([a,n])=>[a,sizeWords(n)]);
   if(f.wip)rows.push(['wip/ branches',String(f.wip.length)]);
-  return devSec('foot',`Runner footprint${f.total!=null?' · '+sizeWords(f.total):''}`,(rows.length?devRows(rows):'<div class="small">Not measured yet.</div>')+devCleanHTML(d),
-    (f.largest||[]).length?`<div class="small">Largest folders</div>${devRows(f.largest.map(x=>[x.path,sizeWords(x.size)]))}`:'');
+  const [clean,btn]=devCleanParts(d);
+  return devSec('foot',`Runner footprint${f.total!=null?' · '+sizeWords(f.total):''}`,(rows.length?devRows(rows):'<div class="small">Not measured yet.</div>')+clean,
+    (f.largest||[]).length?`<div class="small">Largest folders</div>${devRows(f.largest.map(x=>[x.path,sizeWords(x.size)]))}`:'',btn);
 }
 function devHTML(){
   const d=DV.d, retry=`<div class="btns"><button class="btn${DV.busy?' busy':''}" data-devload>Retry</button></div>`;
@@ -128,8 +133,8 @@ function devHTML(){
   if(!d.ok){const l=devListed(), said=d.verdict&&d.verdict.said||l.ok===false&&l.verdict&&l.verdict.said||'Not answering';
     return `<div class="col">${err}${card(`<b>${esc(devName())}</b><div class="v-bad">${esc(said)}</div>${d.out?`<div class="small">${esc(d.out)}</div>`:''}${err?'':retry}`,'','data-k="dev:not"')}</div>`}
   const v=d.verdict||{}, h=d.headroom||{}, ss=d.sessions||[];
-  return `<div class="col">${err}${card(`<div><b>${esc(d.host)}</b>${d.here&&H.dev==='local'?' <span class="small">· this one</span>':''}</div><div class="v-${esc(v.level)}">${esc(v.said)}</div>`,'','data-k="dev:said"')}${
-    devSec('room','Headroom',`<b>${esc(h.said||'')}</b><div class="small">Smallest of: ${esc(Object.entries(h.limits||{}).map(([k,n])=>`${k} ${n}`).join(' · '))} (at most 6)</div>${devSlots(d)}`)}${
+  return `<div class="col">${err}${card(`${devVerdict(v)}${d.here&&H.dev==='local'?'<div class="small">This one</div>':''}`,'','data-k="dev:said"')}${
+    devSec('room','Headroom',`${h.said&&h.said!==v.said?`<b>${esc(h.said)}</b>`:''}<div class="small">Smallest of: ${esc(Object.entries(h.limits||{}).map(([k,n])=>`${k} ${n}`).join(' · '))} (at most 6)</div>${devSlots(d)}`)}${
     devMachine(d)}${devFoot(d)}${
     devSec('sess','Sessions',ss.length?devRows(ss.map(s=>[s.project+' '+s.name+(s.what?' · '+s.what:''),s.cpu.toFixed(1)+'% · '+sizeWords(s.rss)])):'<div class="small">No slot or control session running here.</div>')}</div>`;
 }
