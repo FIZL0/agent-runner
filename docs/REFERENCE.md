@@ -388,7 +388,7 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   Start the run and Fix up, Force and Caps back on by run state, Fix up only with something to fix) and `card` (the Run
   card's everyday keys). Each session row has `task_controls` (`ui_model.task_controls_on`, off while merging or in a
   control session). The TUI's control rows are `ui_model.CONTROL_ROWS`.
-- **Settings.** The run app's Settings page: about 24 everyday settings in Speed and limits, Landing work, Models and Chats, each with its control on its row. The rest sit behind Advanced, and commands, paths, patterns and rules behind Project file, read only ("Ask a chat to change it"). Each setting has a home: this device saves to `runner.local.toml`, or everyone saves to `runner.toml`, when Save is pressed. The changes for everyone are committed alone on the shared branch and pushed as a plan edit is; it never queues a task. It waits up to 60 s for a merge landing in the main checkout (not one still in its test gate). Saves that come together are one commit. Nothing is changed, and it says so, when runner.toml has uncommitted edits, another branch is out in the main checkout, or a merge or rebase is under way there. A failed push says `saved here, not pushed: why`. With `[run] approve` it is pushed with the next approved change. A runner.toml that git ignores, or one outside the repo (`AGENT_RUNNER_CONFIG`), is written without a commit; with no runner.toml, one is made. Changes do not save as they are made: each changed row says "Not saved yet", and the Settings bar at the foot of the page says "N changes not saved" with Undo (drops them) and Save (writes them all). After a Save it says "N changes saved" with Undo (puts the earlier values back, unset ones included; one changed since by something else is left and said) and a close x. Unsaved changes are kept per browser when the page is left or reloaded. Typed text counts as it is typed. When this device's runner.local.toml overrides the key, the row says "This device overrides everyone's (value)" and the run is not told. The other home is in the row's More…. A value set on this device wins and is what the row edits. Changed lists what differs from its default, with Reset, and the lines the run ignores or moved. Dependent rows show with their parent (`approve_wait` and `approve_batch` with `approve` on). Release by itself has two controls on a line under its description: Every (Off, 5, 10, 20 tasks; a count of your own already set is kept and shown) and When idle (a switch). Changing one keeps the other, and both off writes `false`. Search finds names, descriptions and code names. Find a setting is cleared when Settings is left for 5 minutes or more (another view, a thread, or the page hidden; the time away goes on over a Refresh of the page), and a shorter trip keeps it; the Changed filter and unsaved words in other fields stay (F204b). A "N changes wait for a restart" card counts only the settings that apply on the next run (`[run] web`, `web_port`, `web_https`, `home`, `notes`; `[plan] dir`, `repo`; `[git] master_branch`, `no_push`) and has Restart the run; the others apply now. `agent-runner settings` still prints the developer notes. The words the page shows are in `agent_runner/setting_words.py`. Under Advanced > This machine, Claude Code program (`[run] agent`) is a picker of the Claude Code programs found on this machine (PATH, then ~/.local/bin, ~/.claude/local, /opt/homebrew/bin, /usr/local/bin; a link to the same file is listed once), each with its name, version and path, and a pick waits in the Settings bar until Save. A kept value that is wrong stays listed, marked not found, with the reason; Other path… takes a wrapper, checked by the save as before (a wrapper is not started to ask its version). Below it, Providers lists claude, copilot, codex, gemini, ollama and those in `[models.providers]`, each with its login (logged in and where it is kept, or the `run login` command; claude's own login is not checked; never a secret) and a Log in or Log in again button (claude's opens the existing Log in again sheet; ollama and local ones have none), and says a provider is chosen per role in `[models]`, not here; "Show the model settings" lists those settings.
+- **Settings.** The run app's Settings page: about 24 everyday settings in Speed and limits, Landing work, Models and Chats, each with its control on its row. The rest sit behind Advanced, and commands, paths, patterns and rules behind Project file, read only ("Ask a chat to change it"). Each setting has a home: this device saves to `runner.local.toml`, or everyone saves to `runner.toml`, when Save is pressed. The changes for everyone are committed alone on the shared branch and pushed as a plan edit is; it never queues a task. It waits up to 60 s for a merge landing in the main checkout (not one still in its test gate). Saves that come together are one commit. Nothing is changed, and it says so, when runner.toml has uncommitted edits, another branch is out in the main checkout, or a merge or rebase is under way there. A failed push says `saved here, not pushed: why`. With `[run] approve` it is pushed with the next approved change. A runner.toml that git ignores, or one outside the repo (`AGENT_RUNNER_CONFIG`), is written without a commit; with no runner.toml, one is made. Changes do not save as they are made: each changed row says "Not saved yet", and the Settings bar at the foot of the page says "N changes not saved" with Undo (drops them) and Save (writes them all). After a Save it says "N changes saved" with Undo (puts the earlier values back, unset ones included; one changed since by something else is left and said) and a close x. Unsaved changes are kept per browser when the page is left or reloaded. Typed text counts as it is typed. When this device's runner.local.toml overrides the key, the row says "This device overrides everyone's (value)" and the run is not told. The other home is in the row's More…. A value set on this device wins and is what the row edits. Changed lists what differs from its default, with Reset, and the lines the run ignores or moved. Dependent rows show with their parent (`approve_wait` and `approve_batch` with `approve` on). Release by itself has two controls on a line under its description: Every (Off, 5, 10, 20 tasks; a count of your own already set is kept and shown) and When idle (a switch). Changing one keeps the other, and both off writes `false`. Search finds names, descriptions and code names. Find a setting is cleared when Settings is left for 5 minutes or more (another view, a thread, or the page hidden; the time away goes on over a Refresh of the page), and a shorter trip keeps it; the Changed filter and unsaved words in other fields stay (F204b). A "N changes wait for a restart" card counts only the settings that apply on the next run (`[run] web`, `web_port`, `web_https`, `home`, `notes`; `[plan] dir`, `repo`; `[git] master_branch`, `no_push`, `pr`) and has Restart the run; the others apply now. `agent-runner settings` still prints the developer notes. The words the page shows are in `agent_runner/setting_words.py`. Under Advanced > This machine, Claude Code program (`[run] agent`) is a picker of the Claude Code programs found on this machine (PATH, then ~/.local/bin, ~/.claude/local, /opt/homebrew/bin, /usr/local/bin; a link to the same file is listed once), each with its name, version and path, and a pick waits in the Settings bar until Save. A kept value that is wrong stays listed, marked not found, with the reason; Other path… takes a wrapper, checked by the save as before (a wrapper is not started to ask its version). Below it, Providers lists claude, copilot, codex, gemini, ollama and those in `[models.providers]`, each with its login (logged in and where it is kept, or the `run login` command; claude's own login is not checked; never a secret) and a Log in or Log in again button (claude's opens the existing Log in again sheet; ollama and local ones have none), and says a provider is chosen per role in `[models]`, not here; "Show the model settings" lists those settings.
 - **Home.** The person's view, in this order: a greeting; Talk, one full-width accent button (at least 56px) that opens Talk in the page without a reload and never starts the mic; the message box, with no dictation button (open chats and new chat views keep theirs); a ttyd notice when there is one; shortcut chips: Last chat (the chat with the newest activity, pinned or not; absent with no chat), Add a task, Pause or Go on (the one that fits; none with no run up; while being sent it shows busy, with its outbox stand-in under the chips) and Since my last look; then
   Needs you (each item is one short card: what is wanted and where, in everyday words, its title, at most two lines of
   what to do, and Press for details; a DECIDE's heading is its question, its task's title small under it, then its
@@ -673,6 +673,49 @@ The run app and `agent-runner ui` offer the same choices per change.
 `agent-runner status` and the run page say "3 changes wait to be pushed (1 pitch for you to approve)". Release tasks
 (V) do not start while anything waits. If the remote moved, the next merge takes it in, and the approved work goes out
 with that merge once it is approved.
+
+### PR mode
+
+Off by default. `[git] pr = true` turns it on, from the next run. It is for a repository on GitHub where a person
+must review each change. It is refused with `[run] approve`, and it refuses `approve`: the config does not load with
+both on, and Settings refuses the second one set. GitHub only.
+
+It needs:
+
+- A push remote on github.com (`[git] push`).
+- `[plan] repo`, outside this repository and not this repository. Plan commits would otherwise reach main.
+- Main protected on GitHub, so this machine's `gh` token cannot bypass it. Use either a ruleset that requires a pull
+  request, with `current_user_can_bypass` set to `never`, or classic branch protection that requires a pull request,
+  holds for admins and has no bypass for the token. Only an admin token can read classic protection, so for any other
+  token use a ruleset.
+
+The check reads gh's token, not git's push credentials. `agent-runner setup` and the run's start check it, and refuse
+with why. What GitHub cannot be asked about counts as refused, so a start needs the network.
+
+What happens to a task:
+
+- `done` refuses without `.runner/pitches/<ID>.json` (what, why, try, risk). With `[run] review` on, it also refuses
+  without a last line `review: …`. Concept tasks are exempt from the review line.
+- The task is not ticked yet. Main is merged into `task/<ID>` in the merge worktree, with conflict fix and repair
+  sessions as for a merge, and the gate runs on the result.
+- The branch is pushed, never by force, and one pull request is opened, ready for review. Its body holds each task's
+  what, why, how to try it and risk, its spec review, its text and the gate.
+- The parts of a split task share the branch `pr/<KEY>` and one pull request, which opens once the last part
+  finishes. A part started after another begins on that branch.
+- A part that waits for another task, where that task waits for these parts, or that is blocked on one of them, gets
+  a pull request of its own.
+- A blocked task opens no pull request. Its commits stay on `wip/<ID>`.
+- A session that never passed `done` opens none. It is parked.
+
+After that, every 60 s the run asks gh about each pull request. A pull request merged by merge commit, squash or
+rebase ticks its tasks with that commit and removes their branches, once the local main has followed. Local main
+moves fast-forward only. If uncommitted edits or local commits on main stop it, an alarm says so. A pull request
+closed without a merge is said in the run log, and its tasks stay open. If GitHub or the push cannot be reached, the
+run tries again.
+
+Nothing on main is pushed or committed by the runner. Settings for everyone are refused (this device's still save),
+and the rules pointer is not added. A task never starts on an unmerged task's merge. The state is in
+`.runner/prs.json`.
 
 ### No-push policy
 
@@ -1768,6 +1811,7 @@ push_merge = true         # push the shared branch after each tested merge
 # with `[run] test` empty (no gate) only when set here: the default never pushes untested merges
 land_edited = "wait"      # a tested merge held by uncommitted edits in the main checkout: "wait" for them, or
                           # "wip": move them to a wip/main-checkout-<time> branch and land (see Stopping a run)
+pr = false                # true: a finished task is a pull request on GitHub that a person merges (### PR mode)
 no_push = false           # true: the runner pushes nothing and git refuses a push in every session (### No-push policy)
 
 [ui]
