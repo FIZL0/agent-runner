@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page's Plan queue, the row grip of a row with no row menu (a running or under-way task's) stood outside the card, 16px left of its edge, because `.card>.grip` had no grid column of its own and was placed from the card's padding box; it now has one and sits inside the card, where it is on a row with a menu, shut and open (B830).
 - Fixed: in PR mode, after the feedback round on a closed pull request the run log names that pull request's number (it said #0); a new pull request has the time it was opened in Needs you (it kept its record's old time, so it looked minutes old at once); and during a GitHub outage a run log line that differs only in GitHub's request id (or a time of day) is written once instead of every minute (B823).
 - Fixed: on the run page's Status view, an opened Merging row whose merge the run log has not yet mentioned no longer reads "Its merge is built and tested, or waits its turn."; it says "Testing the merge" while a gate runs on its merge, "Waiting to merge" while another task's merge is in its gate or being fixed, and "Not merged yet" when the run cannot tell (B831).
 - Fixed: Devices and a device's page follow the app's style: the title and verdict are said once, meters line up, details and sparkline sit under their meter, and Clean is beside More (B818c).
