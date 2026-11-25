@@ -81,6 +81,7 @@ TWO_COLUMNS = 70  # narrower than this: one column, the panels or the main pane
 SHORT = 3  # rows an unfocused panel shows
 BOX_LINES = 6  # most lines a typing box grows to
 DIFF_LINES = 3000  # most lines of a slot's diff shown
+RUN_START_WAIT = 10  # s F402c2: a run whose start worked but is not up by then: the panel says Not running again
 STARTING_WAIT = 60  # s F112: a new chat that started but is not listed by then: its 'starting...' row goes
 
 PANELS = [(1, 'Status', 'status'), (2, 'Sessions', 'sessions'), (3, 'Queue', 'queue'),
@@ -345,6 +346,8 @@ class RunPage:
         self.bar_only = False  # F112 `ui --bar`: only the top bar (the top pane of tmux's full-screen layout)
         self.repaint = False  # B136: an in-process action may have written to the terminal; clear it next frame
         self.starting: dict | None = None  # F112: the new control session n started, until its row is up
+        self.run_start: dict | None = None  # F402c2: the run T starts, until it is up or its start failed
+        self.run_failed = ''  # F402c2: why the last start failed, until the next one or a run is up
         self.get_snap = get_snap or (lambda: U.snapshot())
         self.diff_of = diff or slot_diff
         self.out = out or term_write  # B125: escape sequences for the terminal itself (OSC 52, OSC 8)
@@ -437,7 +440,8 @@ class RunPage:
         if isinstance(it, dict):
             return f'{self.panel}:{it.get("id") or it.get("name") or ""}'
         if self.panel == 1 and it is not None:  # a status line by its first word: its numbers change
-            return f'1:{str(it).split(":")[0].split()[0] if str(it).split() else ""}'
+            word = str(it).split(':')[0].split()[0] if str(it).split() else ''
+            return '1:run' if str(it).startswith('no run') else f'1:{word}'  # F402c2: one row, its tab kept as a run comes up
         return str(self.panel)
 
     def tab(self) -> tuple[str, list[str]]:
@@ -541,6 +545,10 @@ class RunPage:
 
     def row(self, n: int, it) -> list[tuple[str, str]]:
         if n == 1:
+            if self.off_row(it):
+                said = self.off_said()
+                return [('● ', 'yellow' if self.run_start else 'red'), (said.splitlines()[0], 'fg')] + \
+                    ([] if self.run_start or self.run_failed else [(' · ', 'dim'), ('T', 'hkey'), (' start', 'dim')])
             colour = 'green' if it.startswith('run up') else 'red' if it.startswith('no run') else \
                 'yellow' if it.startswith(('usage', U.NO_SETTINGS, '[run] agent', 'Claude login', 'No Claude login')) else 'magenta' if it.startswith('release') else 'dim'
             return [('● ', colour), (it, 'fg')]
@@ -599,6 +607,8 @@ class RunPage:
     def row_lines(self, n: int, it, width: int, open_: bool) -> list:
         """A row as lines of segments within `width`; the selected row of the focused queue (`open_`) wraps to
         show its whole title and its tag (the after line) under it."""
+        if n == 1 and open_ and self.run_failed and self.off_row(it):  # F402c2: why, whole
+            return [[('● ' if i == 0 else '  ', 'red')] + l for i, l in enumerate(text_lines(self.off_said(), 'fg', max(width - 2, 4)))]
         if n != 3:
             return [self.row(n, it)]
         rel = it if it.get('placeholder') else it.get('release')
@@ -979,6 +989,8 @@ class RunPage:
             return [buttons(*[button(c['tui'], c['label'].lower()) for c in cs])]
         fix = self.snap.get('fixups') or {}
         shown = U.controls_shown(bool(self.snap.get('up')), self.snap.get('run') or {}, fix)['shown']  # C33
+        if self.run_start:  # F402c2: it is starting
+            shown = [k for k in shown if k != 'start']
         rows = [[button(c['tui'], c['label'].lower() + (f' ({len(fix[c["fix"]])})' if c.get('fix') else ''))
                  for c in cs if c['key'] in g and c['key'] in shown] for g in U.CONTROL_ROWS]
         return [buttons(*r) for r in rows if r]
@@ -986,12 +998,15 @@ class RunPage:
     def controls_pane(self, width: int) -> list:
         L = lambda *segs: list(segs)  # noqa: E731
         run = self.snap.get('run') or {}
-        said = 'no run is up' if not self.snap.get('up') else ', '.join(
-            w for k, w in (('paused', 'paused'), ('stopping', 'stopping')) if run.get(k)) or 'running'
-        out = [L(('run ', 'dim'), (said, 'fg'), (f' · {self.snap.get("slots", 0)} slots', 'dim')), L()]
+        up = bool(self.snap.get('up'))
+        said = ', '.join(w for k, w in (('paused', 'paused'), ('stopping', 'stopping')) if run.get(k)) or 'running'
+        out = [L(('run ', 'dim'), (said, 'fg'), (f' · {self.snap.get("slots", 0)} slots', 'dim')), L()] if up else \
+            text_lines(self.off_said(), 'red' if self.run_failed else 'fg', width) + \
+            ([] if self.run_start else [L(('No task starts until the run does.', 'dim'))]) + [L()]
         for row in self.control_buttons('run'):
             out += [row, L()]
-        out.append(L(('A slot on a task: C cancels it, D drops it (Sessions [2]).', 'dim')))
+        if up:
+            out.append(L(('A slot on a task: C cancels it, D drops it (Sessions [2]).', 'dim')))
         if self.output:
             out += [L()] + [L((l, 'fg')) for l in self.output]
         if self.confirm:
@@ -1052,6 +1067,9 @@ class RunPage:
             return
         if not c.get('up', True) and self.snap.get('up'):
             self.msg, self.msg_ok = 'a run is up already', True
+            return
+        if key == 'start':
+            self.start_run()
             return
         if c.get('fix') and not c.get('each') and not args.get('tid'):  # F124: which one of those to fix
             ids = [x['id'] for x in (self.snap.get('fixups') or {}).get(c['fix']) or []]
@@ -1452,6 +1470,9 @@ class RunPage:
                 keys.append(('^F', 'normal size' if self.full else 'full-screen'))
             keys.append(('Esc', 'back'))
             return keys
+        if self.panel == 1 and not self.snap.get('up'):  # F402c2: no slot, pause or stop keys
+            return [('⏎', 'open'), *([] if self.run_start else [('T', 'start')]),
+                    *([('R', 'release')] if self.manage_releases() else [])]
         if self.panel == 1:
             return [('⏎', 'open'), *([('R', 'release')] if self.manage_releases() else []), ('+/-', 'slots'), ('P/G', 'pause, go on'), ('S', 'stop')]
         if self.panel == 2:
@@ -1596,12 +1617,17 @@ class RunPage:
 
     def refresh(self) -> None:
         at = self.sel(4) if self.panel == 4 and self.give_inputs(self.sel(4)) else {}
+        was_up, picked = bool(self.snap.get('up')), {n: self.row_name(self.sel(n)) for n in self.cur}
         try:
             self.snap = self.get_snap()
             self.got = time.time()
         except Exception as e:  # noqa: BLE001 - keep the last snapshot on screen, say why it is old
             self.msg, self.msg_ok = f'could not read the run: {e}', False
             return
+        if bool(self.snap.get('up')) != was_up:
+            self.keep_rows(picked)
+        if self.snap.get('up'):
+            self.run_failed = ''
         if at:  # F175b: the selection stays on the item whose fields are open
             self.cur[4] = next((i for i, n in enumerate(self.items(4)) if n.get('id') == at['id']), self.cur[4])
         self.give_forget()
@@ -1611,6 +1637,68 @@ class RunPage:
             self.restart = True
         if self.side.pane and not self.side.alive():  # F112: detached or ended: its pane closed itself
             self.side.gone()
+
+    # --- F402c2: the run starts from here ----------------------------------------------------------------------
+
+    def off_row(self, it) -> bool:
+        """Is `it` Status's row that says no run is up?"""
+        return not self.snap.get('up') and str(it).startswith('no run')
+
+    def off_said(self) -> str:
+        """What the panel says while no run is up, in the Start card's words: Not running, Starting the run…, or Not
+        started: why."""
+        return 'Starting the run…' if self.run_start else f'Not started: {self.run_failed}' if self.run_failed else 'Not running'
+
+    @staticmethod
+    def row_name(it) -> str:
+        """What a row is found by again after the run came up or stopped: its id or name, a status line's first word."""
+        if isinstance(it, dict):
+            return str(it.get('id') or it.get('name') or '')
+        return 'run' if str(it or '').startswith('no run') else (str(it or '').split() or [''])[0]
+
+    def keep_rows(self, picked: dict) -> None:
+        """The run came up or stopped, so rows came and went: each panel's selection stays on the row it was on."""
+        for n, name in picked.items():
+            names = [self.row_name(it) for it in self.items(n)]
+            if name and name in names:
+                self.cur[n] = names.index(name)
+
+    def start_run(self) -> None:
+        """T: start the run on a thread, as the start takes seconds; `poll_run_start` says how it went. The view stays."""
+        if self.run_start:
+            self.msg, self.msg_ok = 'the run is starting already', True
+            return
+        st: dict = {}
+        self.run_start, self.run_failed = st, ''
+
+        def start() -> None:
+            try:
+                st['r'] = U.run_control('start')
+            except Exception as e:  # noqa: BLE001 - said on the panel
+                st['r'] = {'ok': False, 'out': str(e)}
+        import threading
+        st['thread'] = threading.Thread(target=start, daemon=True)
+        st['thread'].start()
+        self.msg, self.msg_ok = 'Starting the run…', True
+
+    def poll_run_start(self) -> None:
+        """The starting run's progress: a failure's reason goes on the panel; it has started once the snapshot says up."""
+        st = self.run_start
+        r = st.get('r') if st else None
+        if st is None or (r is None and not self.snap.get('up')):
+            return
+        if r and 'until' not in st:
+            st['until'] = time.time() + RUN_START_WAIT
+            self.refresh()
+        if self.snap.get('up'):
+            self.run_start = None
+            self.msg, self.msg_ok = 'the run is up', True
+        elif not r['ok']:
+            self.run_start = None
+            self.run_failed = (r.get('out') or '').strip() or 'it did not work'
+            self.msg, self.msg_ok = f'Not started: {self.run_failed.splitlines()[0]}', False
+        elif time.time() > st['until']:
+            self.run_start = None
 
     # --- F112: the session beside the TUI, a new chat on its way up -------------------------------------------
 
@@ -1784,6 +1872,7 @@ class RunPage:
         if self.starting:
             self.starting['on'] = self.panel == 2 and self.sel() is self.starting
         self.poll_new_chat()
+        self.poll_run_start()
         self.give_forget()
         self.sync()
         return quit_
@@ -2692,6 +2781,7 @@ def page_loop(curses, win, page: RunPage, box: dict | None) -> int:
             page.refresh()
             if not page.bar_only:
                 page.sync()  # F112: the selected row may have gone, or its pane closed itself
+        page.poll_run_start()
         if page.starting:
             page.poll_new_chat()
             page.sync()
