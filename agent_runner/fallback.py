@@ -77,12 +77,13 @@ def chain_next(model: str, capped: dict | None = None, whole: bool = False) -> s
     """The chain's model to go on with after `model`: the first entry after it (after none when it is not in the
     chain) on another provider that is not capped and has its login; None when there is none, or no chain. `whole`: the
     whole chain's first such entry (a new task: no entry before its model has been tried)."""
+    from agent_runner.claude_use import lacking
     from agent_runner.login import missing
     chain = state.C.fallback
     after = chain[chain.index(model) + 1:] if model in chain and not whole else chain
     capped = capped_now() if capped is None else capped
     return next((m for m in after if provider(m) != provider(model) and not is_capped(provider(m), capped)
-                 and not missing(m, state.C)), None)  # F106e: a provider with no login is passed over
+                 and not missing(m, state.C) and not lacking(m, state.C)), None)  # F106e: a provider with no login is passed over
 
 
 def harness_chain(model: str) -> list[str]:

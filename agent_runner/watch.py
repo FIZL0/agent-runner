@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import cost, gitops, plat, shared_tools
+from agent_runner import claude_use, cost, gitops, plat, shared_tools
 from agent_runner.config import finished_mark, runner_cmd
 from agent_runner.tools import ended
 from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING,
@@ -466,8 +466,9 @@ def api_down(said: set[str]) -> bool:
 
 def api_up() -> bool:
     """Whether the agent's API can be reached (a TCP connect), checked at most every 10 s. A session started
-    or resumed while it cannot be dies at its first call. True for another agent, or behind a proxy."""
-    if C.run['agent'] != 'claude' or any(os.environ.get(k) for k in ('HTTPS_PROXY', 'https_proxy')):
+    or resumed while it cannot be dies at its first call. True for another agent, with no role
+    on Claude Code (F406h), or behind a proxy."""
+    if not claude_use.account(C) or any(os.environ.get(k) for k in ('HTTPS_PROXY', 'https_proxy')):
         return True
     if time.time() - _api[0] >= 10:
         host = re.sub(r'^\w+://|[:/].*$', '', os.environ.get('ANTHROPIC_BASE_URL') or 'api.anthropic.com')
@@ -553,8 +554,9 @@ def claude_login(now: float | None = None, path: Path | None = None, agent: str 
 
 
 def claude_login_line() -> str:
-    """F126: `claude_login` and the command that renews it, as `status` and the TUI say it; '' when it is fine."""
-    said = claude_login(agent=C.run['agent'])
+    """F126: `claude_login` and the command that renews it, as `status` and the TUI say it; '' when it is fine, or no role
+    runs on it (F406h)."""
+    said = claude_login(agent=C.run['agent']) if claude_use.uses(C) else ''
     return f'{said} ({LOGIN_CMD})' if said else ''
 
 

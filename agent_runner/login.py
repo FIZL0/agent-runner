@@ -120,6 +120,10 @@ def missing(model: str, c) -> str:
     return '' if login_of(provider, c.providers)[0] else provider
 
 
+# F406h: a task whose own model is claude's, in a project that runs on other providers, with no Claude Code here
+NO_CLAUDE = 'BLOCKED: {tid} names a claude model and Claude Code is not on this machine: install it, or change its model'
+
+
 def why_for(provider: str, tid: str) -> str:
     return (WHY_HEAD.format(cmd=RUNNER, provider=provider) + f': {tid} runs on {provider}, which has no login '
             f'here; run it on this machine and {tid} starts again')
@@ -133,7 +137,8 @@ def park_unlogged(tid: str, model: str, branch: str) -> bool:
     `retry_reopened`); not blocked yet (a merge holds the plan, TODO.md has edits), `retry_held` hands it back
     after HELD_RETRY s."""
     from agent_runner import state
-    if not (provider := missing(model, state.C)):
+    from agent_runner.claude_use import lacking
+    if not (provider := missing(model, state.C) or ('claude' if lacking(model, state.C) else '')):
         return False
     HELD[tid] = time.time()
     if park_now(tid, provider, branch):
@@ -155,7 +160,8 @@ def retry_held(now: float | None = None) -> set[str]:
 
 
 def park_now(tid: str, provider: str, branch: str) -> bool:
-    """Block `tid` on `run login <provider>` and commit it; False when that cannot be done now."""
+    """Block `tid` on `run login <provider>` (F406h: 'claude', on Claude Code being installed) and commit it; False when
+    that cannot be done now."""
     from agent_runner import state
     from contextlib import ExitStack
     from agent_runner import plan as P, plansync
@@ -173,14 +179,15 @@ def park_now(tid: str, provider: str, branch: str) -> bool:
                                     git('branch', '--show-current').stdout.strip() != branch):
             return False
         try:
-            P.block(tid, why_for(provider, tid), todo=root / rel, after=[])
+            P.block(tid, NO_CLAUDE.format(tid=tid) if provider == 'claude' else why_for(provider, tid), todo=root / rel, after=[])
         except SystemExit:
             return True  # ticked or dropped meanwhile
-        if not commit_plan(f'Plan: block {tid}, {provider} has no login', rel):
+        if not commit_plan(f'Plan: block {tid}, ' + ('no Claude Code here' if provider == 'claude' else f'{provider} has no login'), rel):
             if not C.plan_external:
                 git('checkout', '-q', '--', rel)
             return False
-        log(f'{tid}: not started: {provider} has no login; `{RUNNER} login {provider}` is under Needs you')
+        log(f'{tid}: not started: no Claude Code here; it is under Needs you' if provider == 'claude' else
+            f'{tid}: not started: {provider} has no login; `{RUNNER} login {provider}` is under Needs you')
         return True
     finally:
         hold.close()
