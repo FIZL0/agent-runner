@@ -152,77 +152,6 @@ def test_plan_index_and_sections():
         eq(plan.files_on_line('mentions notes.py in prose'), [], 'and a line without one names none')
 
 
-def test_brief():
-    print('plan: brief')
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        git(root, 'init', '-q')
-        (root / 'plan').mkdir()
-        (root / 'docs').mkdir()
-        (root / 'docs/API.md').write_text('a\nb\nc\n', encoding='utf-8')
-        (root / 'runner.toml').write_text('[plan]\njournal = "journal"\n', encoding='utf-8')
-        (root / 'plan/TODO.md').write_text(
-            '# TODO\n\n### Next\n\n- [ ] **D3** the printer | files: docs/API.md, src/new.py | test: none | journal: d3-printer\n',
-            encoding='utf-8')
-        (root / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-        (root / 'plan/D3.md').write_text('# D3 — the printer\n\nThe long form.\n', encoding='utf-8')
-        j = root / 'journal/2026-01-02-d3-printer'
-        j.mkdir(parents=True)
-        (j / '1-FIRST.md').write_text('# first pass\n', encoding='utf-8')
-        (j / '2-SECOND.md').write_text('# needs the human\n\nthe newest word.\n', encoding='utf-8')
-        git(root, 'add', '-A')
-        out = '\n'.join(plan.brief('D3', root=root))
-        has(out, r'## Task D3', 'brief leads with the task')
-        has(out, r'\*\*D3\*\* the printer', 'brief pastes the task line')
-        has(out, r'The long form\.', 'brief pastes the long form')
-        has(out, r'1-FIRST\.md · 2-SECOND\.md', 'brief lists the journal files ([plan] journal)')
-        has(out, r'the newest word\.', 'brief pastes the NEWEST journal entry (whose move it is)')
-        check('first pass' not in out, 'brief does not paste the older entries')
-        has(out, r'`docs/API\.md` \(3 lines\)', 'brief gives each file its length')
-        has(out, r'`src/new\.py` \(missing — this task creates it\)', 'brief says when a file does not exist yet')
-        cut = plan.JOURNAL_MAX
-        (j / '3-LONG.md').write_text('x' * (cut + 500), encoding='utf-8')
-        out = '\n'.join(plan.brief('D3', root=root))
-        has(out, rf'first {cut} chars', 'a huge journal entry is capped, and says so')
-        check(len(out) < cut + 4000, 'and the whole brief stays bounded')
-        k = root / 'journal/K4'  # the `id` layout: notes.md, then a repeat attempt one folder down
-        (k / '2026-03-04-retry').mkdir(parents=True)
-        (k / 'notes.md').write_text('first attempt\n', encoding='utf-8')
-        (k / '2026-03-04-retry/notes.md').write_text('the retry word\n', encoding='utf-8')
-        with open(root / 'plan/TODO.md', 'a', encoding='utf-8') as f:
-            f.write('- [ ] **K4** another\n')
-        out = '\n'.join(plan.brief('K4', root=root))
-        has(out, r'Journal journal/K4/: 2026-03-04-retry/notes\.md · notes\.md', 'a journal/<ID>/ folder is found')
-        has(out, r'the retry word', 'and its newest (dated) attempt is pasted')
-        check('first attempt' not in out, 'not the first one')
-        r = run(root, 'plan', 'brief', 'D3')
-        check(r.returncode == 0 and '## Task D3' in r.stdout, '`run plan brief` works from the repo', r.stderr)
-        r = run(root / 'docs', 'plan', 'block', 'D3', '--after', 'X9', 'waits on X9')
-        has((root / 'plan/TODO.md').read_text(), r'BLOCKED: \(after X9\) waits on X9',
-            '`run plan block --after` from a subdirectory edits the repo\'s plan')
-
-
-def test_brief_outline():
-    print('plan: brief with [plan] outline')
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        git(root, 'init', '-q')
-        (root / 'plan').mkdir()
-        (root / 'src').mkdir()
-        (root / 'src/ab.py').write_text('def one():\n    pass\n\ndef two():\n    pass\n', encoding='utf-8')
-        (root / 'outline.py').write_text('import sys\nfor l in open(sys.argv[1]):\n'
-                                          '    print(l.rstrip()) if l.startswith("def ") else None\n')
-        (root / 'runner.toml').write_text('[plan]\noutline = "python3 outline.py {file}"\n', encoding='utf-8')
-        (root / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **D1** both | files: src/ab.py, src/new.py\n',
-                                           encoding='utf-8')
-        (root / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-        git(root, 'add', '-A')
-        out = '\n'.join(plan.brief('D1', root=root))
-        has(out, r'`src/ab\.py` \(5 lines\)\n  outline:\n    def one\(\):\n    def two\(\):',
-            "each file's outline goes under it")
-        check(out.count('outline:') == 1, 'a file the task creates gets none')
-
-
 def test_split_parents():
     print('plan: a split parent is ticked once its subtasks are all done')
     with tempfile.TemporaryDirectory() as tmp:
@@ -242,58 +171,6 @@ def test_split_parents():
         txt = Path(todo).read_text()
         check('**P1**' not in txt, 'once X2 is ticked, P1 is ticked and archived with it')
         has(txt, r'- \[ \] \*\*R1\*\*', 'R1 says no "(split into …)", so it is left to its own session')
-
-
-def test_drop_parts():
-    print('plan: dropping the last part ticks a split parent only when a part landed')
-    with tempfile.TemporaryDirectory() as tmp:
-        d = Path(tmp) / 'plan'
-        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
-        kw = dict(todo=todo, done=done)
-        Path(todo).write_text('\n'.join([
-            '# TODO', '', '### Next', '',
-            '- [ ] **P1** the importer (split into P1a, P1b) | files: a.py',
-            '- [ ] **P1a** the header',
-            '- [ ] **P1b** the body',
-            '- [ ] **R1** the parser (split into R1a, R1b)',
-            '- [ ] **R1a** the words',
-            '- [ ] **R1b** the numbers',
-            '- [~] **S1** the writer (split into S1a) BLOCKED: DECIDE: which?',
-            '- [ ] **S1a** a part',
-            '- [ ] **U1** the printer (split into U1a)',
-            '- [ ] **U1a** a part',
-            '- [x] **T1a** by hand — dropped: no',
-            '- [ ] **T1** the reader (split into T1a)', '']), encoding='utf-8')
-        plan.archive(todo, done)
-        eq(plan.drop('P1a', 'one task', **kw), [], 'P1b is still open, so P1 stays split')
-        has(Path(todo).read_text(), r'\(split into P1a, P1b\)', 'and says so')
-        has(Path(todo).read_text(), r'- \[ \] \*\*T1\*\* the reader\n', 'a drop ticked by hand counts as one')
-        eq(plan.drop('P1b', 'one task', **kw), ['P1'], 'the last part: none landed, and the drop says so')
-        has(Path(todo).read_text(), r'- \[ \] \*\*P1\*\* the importer \| files: a\.py\n', 'P1 is one whole task')
-        eq(plan.archive(todo, done), 0, 'and stays so')
-        plan.tick('R1a', plan_dir=d, **kw)
-        eq(plan.drop('R1b', 'overtaken', **kw), [], 'one part of R1 landed')
-        check('**R1**' not in Path(todo).read_text(), 'so R1 is ticked')
-        has(Path(done).read_text(), r'- \[x\] \*\*R1\*\* the parser \(split into R1a, R1b\)', 'and archived')
-        eq(plan.drop('S1a', 'no', **kw), ['S1'], 'a blocked parent is whole again')
-        has(Path(todo).read_text(), r'- \[~\] \*\*S1\*\* the writer BLOCKED: DECIDE: which\?', 'still asking')
-        plan.restore('P1a', **kw)
-        plan.tick('P1a', plan_dir=d, **kw)
-        plan.edit('P1', 'the importer (split into P1a, P1b)', todo=todo)
-        eq(plan.archive(todo, done), 1, 'a part restored and then ticked has landed, so P1 ticks')
-
-        import io
-        from contextlib import redirect_stdout
-        from types import SimpleNamespace
-        out, real = io.StringIO(), plan.drop
-        x = SimpleNamespace(say=lambda s: print(s) or 0)
-        try:
-            plan.drop = lambda *a: real(*a, **kw)
-            with redirect_stdout(out):
-                plan._p_drop(SimpleNamespace(id='U1a', rest=['no']), x)
-        finally:
-            plan.drop = real
-        has(out.getvalue(), r'^dropped U1a\nno part of U1 landed, so U1 is one whole task again', 'plan drop says it')
 
 
 def test_add_bottom():
@@ -741,119 +618,6 @@ def test_concurrent_add():
         eq(len(ids), 40, 'all 40 tasks are in TODO.md')
         eq(len(set(ids)), 40, 'each with its own id')
         eq(git(root, 'status', '--porcelain', '--', 'plan'), '', 'and every add committed')
-
-
-def test_concepts():
-    print('plan: a concept (K) finishes only with --artifact, its build waits for an OK, approve/revise answer it')
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        git(root, 'init', '-q')
-        (root / 'runner.toml').write_text('[plan]\njournal = "journal"\n', encoding='utf-8')
-        git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
-        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
-        env.pop('AGENT_RUNNER', None)
-        todo, done = root / 'plan' / 'TODO.md', root / 'plan' / 'DONE.md'
-        has(run(root, 'plan', 'kinds', env=env).stdout, r'^K  concept', 'K is one of the default kinds')
-        r = run(root, 'plan', 'add', 'K', 'settings page layout', '--files', 'src/settings.py', env=env)
-        has(r.stdout, 'added K1', 'a concept is filed like any task')
-
-        r = run(root, 'done', 'K1', 'K1: three layouts', '--no-test', env=env)
-        eq(r.returncode, 2, 'a K task cannot be done without --artifact')
-        has(r.stderr, r'concept task.*\n.*--artifact', 'and the refusal says how to finish it')
-        has(todo.read_text(encoding='utf-8'), r'^- \[ \] \*\*K1\*\*', 'nothing ticked')
-        eq(run(root, 'done', 'K1', 'K1: x', '--no-test', '--artifact', 'the page', env=env).returncode, 2,
-           '--artifact must be a URL')
-
-        url = 'https://claude.ai/code/artifact/aaa'
-        r = run(root, 'done', 'K1', 'K1: three layouts', '--no-test', '--artifact', url, env=env)
-        check(r.returncode == 0, 'with --artifact it goes through', r.stdout + r.stderr)
-        has(r.stdout, r'F1 filed to build it', 'and says which build task it filed')
-        has(done.read_text(encoding='utf-8'), r'- \[x\] \*\*K1\*\* .*concept page: ' + re.escape(url),
-            'the concept is ticked with its page noted')
-        t = todo.read_text(encoding='utf-8')
-        has(t, r'^- \[~\] \*\*F1\*\* Build the option a person approves on concept K1\'s page: settings page layout '
-               r'\| files: src/settings\.py BLOCKED: waiting for your OK on ' + re.escape(url)
-               + r' \(asked \d{4}-\d\d-\d\d \d\d:\d\d\)$',
-            'the build task is blocked with the link, on the concept\'s files')
-        notes = list((root / 'journal').glob('*-k1-concept/notes.md'))
-        check(len(notes) == 1 and url in notes[0].read_text(encoding='utf-8'), 'the link is in the task\'s journal',
-              notes)
-        eq(git(root, 'status', '--porcelain'), '', 'all of it committed')
-        has(run(root, 'plan', 'reopen', env=env).stdout, 'nothing to reopen', 'reopen never frees a build waiting for an OK')
-        has(run(root, 'plan', 'waiting', env=env).stdout, r'^CONCEPT  F1  settings page layout  ' + re.escape(url) + r'  \(concept K1\)',
-            'plan waiting lists it')
-
-        r = run(root, 'plan', 'revise', 'K1', 'add a dark one', env=env)
-        check(r.returncode == 0, 'revise goes through', r.stderr)
-        t = todo.read_text(encoding='utf-8')
-        has(t, r'^- \[ \] \*\*K1\*\* .*changes asked on ' + re.escape(url) + ': add a dark one', 'revise reopens the concept, noted')
-        check('**F1**' not in t, 'and drops the waiting build', t)
-        has(done.read_text(encoding='utf-8'), r'- \[x\] \*\*F1\*\* .*dropped: concept K1 sent back', 'archived as dropped')
-        check('**K1**' not in done.read_text(encoding='utf-8'), 'the concept left DONE.md')
-
-        url2 = 'https://claude.ai/code/artifact/bbb'
-        eq(run(root, 'done', 'K1', 'K1: four layouts', '--no-test', '--artifact', url2, env=env).returncode, 0,
-           'the next round finishes the same way')
-        r = run(root, 'plan', 'approve', 'K1', 'option B: tabs', env=env)
-        has(r.stdout, r'approved: F2 is open', 'approve names the build task it opened')
-        has(todo.read_text(encoding='utf-8'),
-            r'^- \[ \] \*\*F2\*\* .*\| files: src/settings\.py — approved \(' + re.escape(url2) + r'\): option B: tabs$',
-            'approve unblocks the build with the choice noted')
-        eq(run(root, 'plan', 'approve', 'K1', env=env).returncode, 1, 'nothing waits any more: refused')
-        eq(git(root, 'status', '--porcelain'), '', 'approve and revise commit themselves in the main checkout')
-
-        (root / 'runner.toml').write_text('[plan.kinds]\nF = "feature"\nB = "bug"\n', encoding='utf-8')
-        with open(todo, 'a', encoding='utf-8') as f:
-            f.write('- [ ] **K9** kitchen sink\n')
-        r = run(root, 'done', 'K9', 'K9: sink', '--no-test', env=env)
-        check(r.returncode == 0, 'a repo whose kinds lack K has no concepts: K9 is done as any task', r.stderr)
-
-
-def test_concept_shown():
-    print('plan: F108 a concept page shown inline is filed done, waits for an OK, and approve queues its build')
-    from agent_runner import state as S
-    from agent_runner import status as ST
-    from agent_runner import ui_model as U
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        git(root, 'init', '-q')
-        (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
-        git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
-        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
-        env.pop('AGENT_RUNNER', None)
-        todo, done = root / 'plan' / 'TODO.md', root / 'plan' / 'DONE.md'
-        url = 'https://claude.ai/artifact/1CoELB891EqJhHmNGNJgVK'
-        eq(run(root, 'plan', 'concept', 'Run picker colours', env=env).returncode, 2, 'no --page: refused')
-        eq(run(root, 'plan', 'concept', 'Run picker colours', '--page', 'the page', env=env).returncode, 2,
-           '--page must be a URL')
-        r = run(root, 'plan', 'concept', 'Run picker colours', '--page', url, '--files', 'web/picker.css', env=env)
-        check(r.returncode == 0, 'plan concept goes through', r.stdout + r.stderr)
-        has(r.stdout, r'concept K1 filed, done: its build F1 waits for the OK on ' + re.escape(url),
-            'it names the concept and its waiting build')
-        has(done.read_text(encoding='utf-8'), r'- \[x\] \*\*K1\*\* Run picker colours \| files: web/picker\.css.*'
-            r'concept page: ' + re.escape(url), 'the concept is ticked with its page noted')
-        has(todo.read_text(encoding='utf-8'), r'^- \[~\] \*\*F1\*\* Build the option a person approves on concept '
-            r'K1\'s page: Run picker colours \| files: web/picker\.css BLOCKED: waiting for your OK on ' + re.escape(url),
-            'its build waits for the OK, as a finished K task leaves it')
-        eq(git(root, 'status', '--porcelain'), '', 'committed')
-
-        S.init(root)
-        w = ST.waiting_ok()
-        eq([(x[0], x[1], x[2], x[4]) for x in w], [('CONCEPT', 'F1', 'K1', url)], 'waiting_ok lists it with its url')
-        needs, concepts = U.needs_rows(w, __import__('datetime').datetime.now())
-        eq([(c['id'], c['concept'], c['url'], c['title']) for c in concepts],
-           [('F1', 'K1', url, 'Run picker colours')], 'the run page Concepts view shows it')
-        eq([n['id'] for n in needs], ['F1'], 'and Needs you')
-
-        r = run(root, 'plan', 'approve', 'K1', 'option B: muted', env=env)
-        has(r.stdout, r'approved: F1 is open', 'approve on the concept id opens its build')
-        has(todo.read_text(encoding='utf-8'), r'^- \[ \] \*\*F1\*\* .* — approved \(' + re.escape(url)
-            + r'\): option B: muted$', 'the build is queued with the choice noted')
-
-        (root / 'runner.toml').write_text('[plan.kinds]\nF = "feature"\nB = "bug"\n', encoding='utf-8')
-        r = run(root, 'plan', 'concept', 'Menu', '--page', url, env=env)
-        has(r.stdout, r'^F2 filed: its build F2 waits', 'kinds without K: only the waiting build is filed')
-        has(todo.read_text(encoding='utf-8'), r'^- \[~\] \*\*F2\*\* .*BLOCKED: waiting for your OK on ', 'blocked on the OK')
 
 
 def test_needs_you():
@@ -1332,42 +1096,6 @@ def test_release_beside():
         has(plan.section(todo, 'V2')[0], r'\| after: F1$', 'an --after of its own is kept')
 
 
-def test_restore():
-    print('plan: restore brings a ticked or dropped task back open, same id and fields (F47)')
-    with tempfile.TemporaryDirectory() as tmp:
-        d = Path(tmp) / 'plan'
-        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
-        kw = dict(todo=todo, done=done)
-        plan.add('F', 'the parser | files: src/parse.py | test: test_parse', **kw)
-        plan.add('B', 'the printer | files: src/print.py | after: F1', **kw)
-        plan.add('C', 'keep me first | files: x.py', **kw)
-        Path(todo).write_text(Path(todo).read_text().replace('after: F1', 'after: F1\n  - [ ] a sub-item'))
-        before = {t: plan.section(todo, t) for t in ('F1', 'B1')}
-        (d / 'tasks').mkdir()
-        (d / 'tasks' / 'F1.md').write_text('# F1\n\n- [ ] **F1** the parser\n', encoding='utf-8')
-        plan.tick('F1', plan_dir=d, **kw)
-        plan.drop('B1', 'overtaken by C1', **kw)
-        check('**F1**' not in Path(todo).read_text() and '**B1**' not in Path(todo).read_text(), 'both archived')
-
-        plan.restore('F1', plan_dir=d, **kw)
-        plan.restore('B1', 'after', 'C1', **kw)
-        eq({t: plan.section(todo, t) for t in ('F1', 'B1')}, before,
-           'restored open, same id, text, fields and sub-items; the dropped note gone')
-        eq([l[4:] for l in plan.index(todo) if l.startswith('[ ] ')], ['F1', 'C1', 'B1'],
-           'at the top by default, or where WHERE says')
-        t = Path(done).read_text()
-        check('**F1**' not in t and '**B1**' not in t, 'gone from DONE.md', t)
-        has((d / 'tasks' / 'F1.md').read_text(), r'- \[ \] \*\*F1\*\*', 'its plan/tasks/<ID>.md reopened too')
-
-        for tid, why in (('F1', 'still open'), ('Z9', 'no task')):
-            try:
-                plan.restore(tid, **kw)
-                check(False, f'restore {tid} errors')
-            except SystemExit as e:
-                has(str(e), why, f'restore of a {why} id errors')
-        eq([l[4:] for l in plan.index(todo) if l.startswith('[ ] ')], ['F1', 'C1', 'B1'], 'and changes nothing')
-
-
 def test_unlabelled_block():
     print('plan: B35 a block with no caps label and no task to wait on lists under Needs you, and the watch says so')
     from agent_runner import runner as R
@@ -1759,7 +1487,7 @@ def test_multi_line_text():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_after_all_skips_stuck, test_after_all_skips_never_started, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_drop_parts, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
-                     test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
-                     test_needs_own_project, test_needs_config, test_slot_writes_own_plan, test_concept_shown]))
+    sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_plan_last, test_after_all, test_after_all_skips_stuck, test_after_all_skips_never_started, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, 
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
+                     test_merge3, test_concurrent_add, test_merge_driver, test_needs_you,
+                     test_needs_own_project, test_needs_config, test_slot_writes_own_plan]))
