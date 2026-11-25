@@ -27,6 +27,7 @@ from agent_runner.state import C, clean, git, hook, log, note, ROOT, SLOTS_DIR
 from agent_runner.state import EV_STARTED
 from agent_runner.state import EV_DRIFT
 from agent_runner.brief import prompt_for, review_on, subagents
+from agent_runner.brief_arrives import MARKER, with_brief
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
 from agent_runner.stream import run_stream, stream_message, StreamInput  # noqa: F401 (StreamInput: runner.X)
 from agent_runner.tools import end_mark, FENCE_TOOLS
@@ -199,13 +200,14 @@ class Claude:
         if len(prompt.encode('utf-8')) > ARG_PROMPT_MAX:
             pf = pf.with_suffix('.cmd-prompt')
             pf.write_text(self.long_brief(prompt, sid), encoding='utf-8')
+            flags = with_brief(flags, C.notes(f'{sid}.brief'))
         return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(flags)
 
     def argv(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> list[str]:
         if stream_engine():  # F106b: the brief is the first stream-json message on stdin (`run_stream`), any length
             return [plat.exe(C.run['agent']), *flags]
         if len(prompt) > ARGV_PROMPT_MAX:
-            prompt = self.long_brief(prompt, sid)
+            prompt, flags = self.long_brief(prompt, sid), with_brief(flags, C.notes(f'{sid}.brief'))
         return [plat.exe(C.run['agent']), prompt, *flags]
 
     @staticmethod
@@ -214,9 +216,8 @@ class Claude:
         start and resume of `sid` as the system prompt (a resumed session does not keep the one it started
         with); the short first message that points at it. Read whole, unlike a file the agent would have to
         page through with its Read tool."""
-        marker = 'agent-runner task brief'
-        C.notes(f'{sid}.brief').write_text(f'# {marker}\n\n{prompt}', encoding='utf-8')
-        return LONG_BRIEF.format(marker=marker)
+        C.notes(f'{sid}.brief').write_text(f'# {MARKER}\n\n{prompt}', encoding='utf-8')
+        return LONG_BRIEF.format(marker=MARKER)
 
     @staticmethod
     def trust(d: Path) -> None:
