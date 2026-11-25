@@ -34,8 +34,8 @@ def test_manage_releases_f193(tmp: Path) -> None:
     snap = lambda: U.snapshot(up=True, now=NOW, links={})  # noqa: E731
     parts = lambda s: (s['manage_releases'], s['releases'], s['release'], s['release_acts'], s['release_said'])  # noqa: E731
     on = snap()
-    eq((on['manage_releases'], {r['id'] for r in on['releases']}), (True, {'V5', 'V6', 'V1'}), 'on: the rows')
-    eq({q['id'] for q in on['queue'] if 'release' in q}, {'V5', 'V6'}, 'on: pinned with their rows')
+    eq((on['manage_releases'], {r['id'] for r in on['releases']}), (True, {'V5', 'V6', 'V1', ''}), 'on: the rows, the count of the next one too')
+    eq({q['id'] for q in on['queue'] if 'release' in q}, {'V5', 'V6'}, 'on: at their place with their rows')
     check('V1' in on['release'] and any(l.startswith('release: ') for l in on['status']), 'on: status says them', on['status'])
     S.C.run['releases'] = False
     off = snap()

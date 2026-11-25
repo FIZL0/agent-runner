@@ -78,6 +78,7 @@ def test_releases() -> None:
         one = lambda ls, st=None: U.release_rows(ls, st)[0]  # noqa: E731
         ls = NEXT + [V5, LATER]
         eq(one(ls)['text'], 'V5 Release · waits for 2: F1 one, F2 two', 'one open: what it waits for, by id and title')
+        S.C.run['auto_release'] = False
         eq(R.release_line(ls, {}), 'release: ' + one(ls)['text'], "one 'release:' line, no 'last:'")
         eq((one(NEXT[:4] + [V5])['words'], one(NEXT[:4] + [V5])['state']), ('next', 'next'), 'nothing ahead')
         many = NEXT + [f'- [ ] **F{n}** t{n} | files: f.py' for n in range(3, 9)] + [V5]
@@ -101,8 +102,37 @@ def test_releases() -> None:
         waits = NEXT + ['- [~] **V5** Release: x', '  BLOCKED: (after F1) its code']
         eq(one(waits)['words'], 'waits for 1: F1 one', 'blocked until another task lands')
         q = U.pin_releases(U.queue_rows(ls), U.release_rows(ls))
-        eq([x['id'] for x in q], ['F1', 'F2', 'F3', 'V5'], 'pinned at the end, past a task queued after it')
-        eq(q[-1]['release']['state'], 'waits', 'with its row')
+        eq([x['id'] for x in q], [x['id'] for x in U.queue_rows(ls)], 'F195c: at its place')
+        eq([x['id'] for x in q if 'release' in x], ['V5'], 'with its row')
+
+
+def test_count_beside_f195c() -> None:
+    """F195c: the count shows beside an open release that only waits, not beside one that stops it; its place in the queue
+    is after as many tasks as it still needs."""
+    with tempfile.TemporaryDirectory() as t:
+        repo(Path(t), {'every': 3, 'idle': True})
+        ids = lambda ls, st=None, n=2: [r['id'] or r['text'] for r in U.release_rows(ls, st, landed=n)]  # noqa: E731
+        ph = 'Next release · auto at 3 landed: 2/3'
+        ls = NEXT + [V5, LATER]
+        eq(ids(ls), ['V5', ph], 'beside one that waits, without idle')
+        eq(ids(ls, {'running': {'1': 'V5'}}), ['V5'], 'releasing: no count')
+        eq(ids(ls, {'merging': ['V5']}), ['V5'], 'merging: no count')
+        eq(ids(NEXT[:4] + [V5]), ['V5'], 'next: no count')
+        eq(ids(NEXT + [V5.replace('[ ]', '[~]'), '  BLOCKED: (after F1) its code']), ['V5'], 'blocked: no count')
+        eq(ids(ls + ['', '### Parked', '', V5.replace('V5', 'V6')]), ['V5'], 'a Parked one beside it: no count')
+        with mock.patch('agent_runner.sched.taken', lambda: {'V5': {}}):
+            eq(ids(ls), ['V5'], 'taken by a person: no count')
+        S.C.run['auto_release'] = {'idle': True}
+        eq(ids(ls), ['V5'], 'idle alone: queues none while one is open')
+        S.C.run['auto_release'] = {'every': 3}
+
+        def before(n, ls):
+            rows = U.release_rows(ls, landed=n)
+            U.pin_releases(U.queue_rows(ls), rows)
+            return next(r['before'] for r in rows if r['state'] == 'auto')
+        eq([before(n, ls) for n in (0, 1, 2, 3, 9)], ['', 'F3', 'F2', 'F1', 'F1'], 'after the tasks it still needs')
+        stuck = NEXT[:4] + ['- [~] **F1** one | files: a.py', '  BLOCKED: CONFIRM: is it ok?', NEXT[5], LATER]
+        eq(before(2, stuck), 'F3', 'a blocked task is not one that lands')
 
 
 def test_released() -> None:
@@ -162,4 +192,4 @@ def test_lately() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_placeholder, test_releases, test_released, test_plan_index, test_lately]))
+    raise SystemExit(report([test_placeholder, test_releases, test_count_beside_f195c, test_released, test_plan_index, test_lately]))

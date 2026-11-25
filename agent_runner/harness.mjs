@@ -628,7 +628,15 @@ function clip(text) {
 const RUNNING = new Set(); // the tools' processes, ended with a chat
 const STOPPED = 130;
 
-function killTree(p) { try { process.kill(-p.pid, 'SIGKILL'); } catch { try { p.kill('SIGKILL'); } catch {} } }
+function killTree(p) {
+  if (process.platform === 'win32') { // no process groups: taskkill ends the tree; a child it missed must not hold the call
+    if (p.pid) spawnSync('taskkill', ['/T', '/F', '/PID', String(p.pid)], { stdio: 'ignore', windowsHide: true });
+    p.stdout?.destroy();
+    p.stderr?.destroy();
+    return;
+  }
+  try { process.kill(-p.pid, 'SIGKILL'); } catch { try { p.kill('SIGKILL'); } catch {} }
+}
 
 function run(argv, cwd, input, timeout, signal) {
   return new Promise((resolve) => {

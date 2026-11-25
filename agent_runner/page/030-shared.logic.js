@@ -34,11 +34,15 @@ const taskControlsOn=s=>!!(s&&s.task_controls);  // C33: ui_model.task_controls_
 const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.state==='parked')];
 /* F193: [run] releases; on from a run that does not say */
 const releasesOn=snap=>!(snap&&snap.manage_releases===false);
-/* F185: the Plan view's Releases group: each open release (its queue task, which carries its row as `release`), then the
-   rows that are no task (the auto release's count, the last one released); and the Queue under it, without them */
+/* F185: the releases, as Status and Home say them: each open release (its queue task, which carries its row as `release`), then the
+   rows that are no task (the auto release's count, the last one released); and the Queue's tasks, without them. F195c: planRows, the
+   Plan view's Queue: its tasks and releases in plan order, the auto release's count before the row its `before` names */
 const planReleases=snap=>{const q=(snap&&snap.queue)||[];
   return ((snap&&snap.releases)||[]).map(r=>r.placeholder?r:q.find(x=>x.id===r.id)).filter(Boolean)};
 const planQueue=snap=>queueGroups(snap&&snap.queue)[0].filter(q=>!q.release);
+const planRows=snap=>{const qs=queueGroups(snap&&snap.queue)[0].slice();
+  for(const r of (releasesOn(snap)&&snap&&snap.releases)||[])if(r.placeholder&&r.state!=='released'){const i=qs.findIndex(q=>r.before&&q.id===r.before);qs.splice(i<0?qs.length:i,0,r)}
+  return qs};
 /* F87: a concept card's buttons, in order: one per option (pick: its index, rec: the recommended one, named
    without its '(recommended)'), then Chat, and View when it has a local copy or a page */
 const optionName=o=>o.name.replace(/\s*[(\[—–-]*\s*recommended\s*[)\]]?\s*$/i,'')||o.name;

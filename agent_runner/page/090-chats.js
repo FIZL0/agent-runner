@@ -406,8 +406,10 @@ async function liveLoad(){
   FD.liveAt=Date.now();
   const j=await liveGet(n);
   if(turn!==FD.turn||FD.n!==n||!j)return;
-  const same=JSON.stringify(FD.live)===JSON.stringify(j);FD.live=j;
+  const first=!FD.live, same=JSON.stringify(FD.live)===JSON.stringify(j);FD.live=j;
+  const moved=same?()=>{}:questionMove(n,first);  // F192a1
   if(!same){render();sendRedraw()}
+  moved();
 }
 const workFor=()=>FD.live&&FD.live.status==='busy'&&FD.live.since?'Working '+forWords(Date.now()/1000-FD.live.since):'Working';
 /* B192: the message box's one row while the reader is scrolled up: its words, Working (its sheet) and Stop */
@@ -423,11 +425,11 @@ const modelOf=n=>/^c\d+$/.test(n||'')?(sessionOf(n)||{}).model||(FD.n===n&&FD.li
 /* the row above the box: what there is to say, each a sheet; a menu or a question has the key row in its place */
 function sessRow(n){
   const st=feedNow(n);if(st!=='session'&&!(st==='loading'&&sessionOf(n)))return '';  // F206a: there from the first frame, so what stands over it does not move
-  const model=modelOf(n);
-  if(!model&&FD.foot===null&&FD.whole)return TOUCH()&&!S.keys?keyButtons():'';
+  const model=modelOf(n), ask=questionCard(n);
+  if(!model&&FD.foot===null&&FD.whole)return ask+(TOUCH()&&!S.keys?keyButtons():'');
   const w=sessWorks(n), icon={work:'<span class="livedot"></span>',update:'<span class="bdot"></span>'};
   setTimeout(slimDraw,0);
-  return `<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w,model}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
+  return ask+`<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w,model}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
 }
 const sessTasks=kind=>((FD.live||{}).tasks||[]).filter(t=>t.kind===kind);
 const taskWhen=t=>t.running?`running${t.at?' '+forWords(Date.now()/1000-t.at).replace(/ \d+s$/,''):''}`:'done';
@@ -516,12 +518,12 @@ function relCard(){
 }
 /* F193: with releases off, only a New release sent before that, until it is settled */
 /* F186: New release: says which release is open already, and then asks before it queues another */
-function newReleaseCard(rows=''){
+function newReleaseCard(){
   if(!releasesOn(S.snap))return obCards(x=>obActs(x,'release'));
   const ws=working_(), said=S.snap.release_said||'';
   const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait').map(controlOf).filter(Boolean);
   const sure=acts.filter(c=>c.confirm&&S.sure===c.key).map(c=>ctlSure(c)).join('');
-  return obCards(x=>obActs(x,'release'))+card(`${rows}<div class="srow"><div class="row"><div class="grow"><b>New release</b>${sure?'':`<div class="small" data-k="relsaid" data-v="${esc(said)}">${esc(said?said+'.':ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')}</div>`}</div></div>${sure||`<div class="btns">${acts.map((c,i)=>`<button class="btn ${i===0?'acc':''}${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`}</div>`,'','data-k="release"')}
+  return obCards(x=>obActs(x,'release'))+card(`<div class="srow"><div class="row"><div class="grow"><b>New release</b>${sure?'':`<div class="small" data-k="relsaid" data-v="${esc(said)}">${esc(said?said+'.':ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')}</div>`}</div></div>${sure||`<div class="btns">${acts.map((c,i)=>`<button class="btn ${i===0?'acc':''}${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`}</div>`,'','data-k="release"')}
 /* F124: the Status view: one scroll in the TUI's order: the run (its slots and controls), usage, landed lately, the
    release, then the run log. C50: no Needs you here; Home has it */
 const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};

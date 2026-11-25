@@ -646,7 +646,7 @@ def cmd_background(argv: list[str], by: str = 'bare agent-runner') -> int:
     log_file = C.notes('run.log')
     since = events_file().stat().st_size if events_file().exists() else 0
     out = C.notes('background.out')
-    proc = plat.spawn_detached(background_argv(), out=out)
+    proc = plat.spawn_detached([*plat.service_scope(), *background_argv()], out=out)
     slots = wait_started(since, lambda: proc.poll() is not None)
     if slots is None:
         try:

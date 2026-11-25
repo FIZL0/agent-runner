@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 import json
 import os
 import random
@@ -810,7 +811,7 @@ def test_provider_login_f406c(tmp: Path) -> None:
     if r.returncode:
         return
     o = json.loads(r.stdout)
-    check(f'{CF.RUNNER} login copilot' in o['nokey'] and 'data-plogin' not in o['nokey'], 'where /logins is refused: the command', o['nokey'])
+    check(f'{html.escape(CF.RUNNER)} login copilot' in o['nokey'] and 'data-plogin' not in o['nokey'], 'where /logins is refused: the command', o['nokey'])
     check('copilot is not logged in. Its tasks wait for the login.' in o['none'] and 'data-plogin="copilot"' in o['none']
           and '>Log in</button>' in o['none'], 'no login: said, with Log in', o['none'])
     check('data-plogin' not in o['other'], 'a setting on claude has none')

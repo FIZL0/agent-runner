@@ -1,0 +1,5 @@
+/* F192a1: the question card, above a chat's message box */
+.qcard{max-width:720px;margin:0 auto var(--s2);padding:var(--s3);gap:var(--s2);max-height:min(400px,45dvh);overflow-y:auto;overscroll-behavior:contain}
+.app.kb .qcard{max-height:40cqh}
+.qcard .btn{min-height:var(--tap);text-align:left;overflow-wrap:anywhere;min-width:0} .qcard>.btn{width:100%}
+.qheld .grow{min-width:0;overflow-wrap:anywhere} .qheld .row{flex-wrap:nowrap} .qheld .btn{flex:none}

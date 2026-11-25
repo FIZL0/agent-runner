@@ -9,7 +9,7 @@ bottom line. The focused panel takes the spare height; every other panel shows 3
 Panels and their tabs (F76):
     Status     a status line: log (the quick asks s y w u on its buttons: a new session answers), release,
                controls; the release line: release first; R (only here) opens the release tab
-               (F193: with Manage releases off, no release tab, line or R here, nor a Releases group in the queue)
+               (F193: with Manage releases off, no release tab, line or R here, nor a release row in the queue)
     Sessions   a control session cN, an idle slot: session; a slot on a task: session, diff. F112: the session
                tab is the real Claude Code session, not a chat view of ours: a tmux pane beside the TUI's pane
                runs `attach NAME` on its socket (F88; `SidePane`: split off when a session row is selected,
@@ -309,20 +309,16 @@ def buttons(*bs) -> list[tuple[str, str]]:
     return out
 
 
-def release_group(snap: dict) -> list:
-    """F185: the queue panel's Releases group, its first rows: each open release (its queue task, carrying its row
-    as `release`), then the rows that are no task (the auto release's count, the last one released)."""
-    queue = {t.get('id'): t for t in snap.get('queue') or []}
-    return [dict(r, new=True, placeholder=True, id='released' if r.get('id') else 'release') if r.get('placeholder')
-            else queue[r['id']] for r in snap.get('releases') or [] if r.get('placeholder') or r.get('id') in queue]
-
-
-def group_head(rows: list, i: int) -> str:
-    """The group name drawn above the queue panel's row `i` ('' for none): Releases and Queue, with any release."""
-    rel = [bool(isinstance(t, dict) and (t.get('placeholder') or t.get('release'))) for t in rows[:i + 1]]
-    if not rel or not (rows[0].get('placeholder') or rows[0].get('release')):
-        return ''
-    return 'Releases' if i == 0 else 'Queue' if not rel[i] and rel[i - 1] else ''
+def queue_with_releases(snap: dict) -> list:
+    """F195c: the queue panel's rows: the queue's, each release at its place, and the auto release's count (no task)
+    before the row its `before` names, else after the last one that is not parked."""
+    rows = list(snap.get('queue') or [])
+    for r in snap.get('releases') or []:
+        if r.get('placeholder') and not r.get('id'):
+            i = next((i for i, t in enumerate(rows) if r.get('before') and t.get('id') == r['before']),
+                     1 + max((i for i, t in enumerate(rows) if t.get('state') != 'parked'), default=-1))
+            rows.insert(i, dict(r, new=True, id='release'))
+    return rows
 
 
 def after_hint(after: str, queue: list) -> str:
@@ -396,9 +392,7 @@ class RunPage:
         rows = list(self.snap.get(key) or [])
         if key == 'concepts':
             return rows + [NEW_CONCEPT]
-        rel = release_group(self.snap) if key == 'queue' else []
-        rows = [t for t in rows if not t.get('release')] if key == 'queue' else rows
-        return rel + rows + [NEW_TASK] + list(self.snap.get('shelved') or []) \
+        return queue_with_releases(self.snap) + [NEW_TASK] + list(self.snap.get('shelved') or []) \
             if key == 'queue' else rows  # F184: the shelved tasks after the queue, which they are not in
 
     def empty_line(self, n: int) -> str:
@@ -1282,8 +1276,7 @@ class RunPage:
 
     def heights(self, body: int) -> dict[int, int]:
         """Each panel's box height: SHORT rows (fewer when it has fewer) unfocused, the rest for the focused."""
-        heads = sum(bool(group_head(self.items(3), i)) for i in range(len(self.items(3))))  # F185
-        hs = {n: min(max(len(self.items(n)), 1), SHORT) + 2 + (heads if n == 3 else 0) for n, _, _ in PANELS if n != self.panel}
+        hs = {n: min(max(len(self.items(n)), 1), SHORT) + 2 for n, _, _ in PANELS if n != self.panel}
         if self.walk and not self.walk.off:  # F194c: the card takes rows: fewer rows in each, so every panel shows
             for n in (5, 2, 4, 3, 1):
                 if n in hs:
@@ -1308,11 +1301,6 @@ class RunPage:
             self.put(win, y + 1, x + 2, [(self.empty_line(n), 'dim')], w - 4)
             return
         lines = [self.row_lines(n, it, w - 4, on and i == cur) for i, it in enumerate(rows)]
-        heads = [group_head(rows, i) if n == 3 else '' for i in range(len(rows))]  # F185
-        if inner < len(lines[cur]) + 1:  # no room for a heading over the selected row
-            heads = [''] * len(rows)
-        heads = [h + (' · R new release' if h == 'Releases' else '') for h in heads]  # F186
-        lines = [([[(h, 'dim')]] if h else []) + l for h, l in zip(heads, lines)]
         top = cur
         used = len(lines[cur])
         while top > 0 and used + len(lines[top - 1]) <= inner:
@@ -1324,7 +1312,7 @@ class RunPage:
             for k, segs in enumerate(lines[i]):
                 if r >= y + 1 + inner:
                     return
-                ground = ('sel' if on else 'cur') if i == cur and not (heads[i] and k == 0) else ''
+                ground = ('sel' if on else 'cur') if i == cur else ''
                 if ground:
                     self.put(win, r, x + 1, [(' ' * (w - 2), '')], w - 2, ground=ground)
                 self.put(win, r, x + 2, segs, w - 4, ground=ground)
@@ -2183,13 +2171,16 @@ class RunPage:
     def reorder(self, step: int) -> None:
         """F70: Shift+J / Shift+K: the selected queued task one place down / up (`plan move ID after|before
         <neighbour>`); the selection follows it."""
-        if self.sel(3).get('release'):  # F131: pinned; and no task moves past it, or the release would not wait for it
-            self.msg, self.msg_ok = f'{self.sel(3)["id"]} stays in Releases', True
+        if self.sel(3).get('release'):  # F131
+            self.msg, self.msg_ok = f'{self.sel(3)["id"]} is a release: it stays at its place', True
             return
-        tasks = [t for t in self.items(3) if not t.get('new') and not t.get('release') and t.get('state') != 'shelved']
+        tasks = [t for t in self.items(3) if not t.get('new') and t.get('state') != 'shelved']
         i = next(j for j, t in enumerate(tasks) if t['id'] == self.sel(3)['id'])
         if not 0 <= i + step < len(tasks):
             self.msg, self.msg_ok = f'{tasks[i]["id"]} is already {"last" if step > 0 else "first"}', True
+            return
+        if tasks[i + step].get('release'):  # it would no longer wait for the task, or wait for one it did not
+            self.msg, self.msg_ok = f'{tasks[i]["id"]} does not move past the release {tasks[i + step]["id"]}', True
             return
         r = U.move(tasks[i]['id'], 'after' if step > 0 else 'before', tasks[i + step]['id'])
         self.done(r)

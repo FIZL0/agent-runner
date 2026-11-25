@@ -199,6 +199,10 @@ def test_need_detail_f162(tmp: Path) -> None:
     eq((len(got['B177']['steps']), len(got['B177']['expect'])), (3, 1), 'B177: then is a step, the colon what to see')
     eq((len(got['R6']['steps']), got['R6']['expect']), (3, ['Is the run still going?']), 'R6: (1) and (2)')
     eq(N.detail('DECIDE', 'F1', 'Which look: Full, Small?', '', '')['question'], 'Which look: Full, Small?', 'a question is one piece')
+    for ask in ('Stuck: 1) do this. 2) do that', 'Stuck: (1) do this. (2) do that', 'Stuck: 1. do this. 2. do that - reply with what to do'):  # B797
+        eq(''.join(p for _, p in N.split_ask(ask, False)), ask, f'joined back: {ask!r}')
+        d = N.detail('STUCK', 'B9', ask, 'A task', '')
+        eq((d['steps'], d['summary']), (['Do this.', 'Do that'], 'Do this.'), f'no step of Stuck alone: {ask!r}')
     for semi, do, see in (  # F162a1: after a colon each piece after a ';' is classed again
             ('Tap Save: it says Saved; tap Undo; the list returns', ['Tap Save', 'Tap Undo'], ['It says Saved', 'The list returns']),
             ('Tap Save: it says Saved; and the list returns; and tap Undo', ['Tap Save', 'And tap Undo'], ['It says Saved', 'And the list returns']),

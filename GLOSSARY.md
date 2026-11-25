@@ -557,10 +557,10 @@ _In code_: C.fallback, agent_runner/fallback.py, chain_next, capped.json
 _Avoid_: failover, backup model
 
 **Release row**:
-The row, or rows, that say how each release stands: each open release at the top of the plan view in its Releases group, then the newest one that landed (not on the run page's Plan view); or, with auto release on and none queued, how close the next one is
+The row, or rows, that say how each release stands: each open release as a row of the Queue at its place in the plan order (no Releases group); the auto release's count, dimmed, before the task it stands before, when auto release is counting; then the newest one that landed (in status and `agent-runner plan`, not in the Queue)
 _Said_: next release
 _On screen_: V17 Release · waits for 2: F1 one, F2 two / releasing now / V16 Release 0.62.0 · released 17:06 / Next release · auto at 10 landed: 6/10
-_In code_: ui_model.release_rows, ui_model.pin_releases, status.release_line, planReleases, plan._releases
+_In code_: ui_model.release_rows, ui_model.pin_releases, status.release_line, planRows, queueCard, queue_with_releases, planReleases, plan._releases
 _Avoid_: release banner
 
 **Pitch**:
@@ -857,3 +857,10 @@ _Said_: History
 _On screen_: History
 _In code_: historyHTML, histRow, past_releases, NAV
 _Avoid_: Activity, archive, timeline
+
+**Question card**:
+The question a chat's last answer ends on, when it has options to pick from, shown as a card above the message box; it goes once the person answers
+_Said_: answer buttons in a chat
+_On screen_: the question and one button per option above a chat's message box, or the Sending row with Undo while an answer waits
+_In code_: chat_question.ask, /live's ask, questionCard, questionHTML, .qcard
+_Avoid_: poll, prompt card, quick replies

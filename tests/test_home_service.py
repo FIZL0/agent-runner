@@ -15,6 +15,7 @@ import socket
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 from contextlib import redirect_stdout
@@ -318,6 +319,150 @@ def test_routing(tmp: Path) -> None:
     finally:
         srv.stop()
         run_srv.stop()
+
+
+def test_opens_off(tmp: Path) -> None:
+    print('F402b2: a person opening a project with no run up starts its page-only process, and nothing else does')
+    started: list[Path] = []
+    came, go = threading.Event(), threading.Event()
+
+    def open_off(root: Path) -> str:
+        started.append(root)
+        came.set()
+        go.wait(20)
+        raise SystemExit('bad settings')  # it cannot start
+    alpha, beta, gone = tmp / 'alpha', tmp / 'beta', tmp / 'gone'
+    with socket.socket() as s:
+        s.bind(('127.0.0.1', 0))
+        dead = s.getsockname()[1]
+    srv = H.serve_home('HT', 0, '127.0.0.1', roots=lambda: [alpha, beta, gone], rows=lambda: [], open_off=open_off,
+                       link=lambda r: (dead, 'RT') if r == gone else None)
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    nav = {'Accept': 'text/html,*/*;q=0.8'}
+    sec = {**nav, 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document'}
+
+    def ask(path: str, **h) -> tuple[int, bool]:
+        try:
+            with urllib.request.urlopen(urllib.request.Request(base + path, headers=h), timeout=10) as r:
+                return r.status, b'const HOME_PAGE=true;' in r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, False
+    try:
+        with mock.patch.object(H.sys, 'stderr', io.StringIO()) as err:
+            H.save_registry({**H.load_registry(), 'trusted_networks': [H.trust.TAILNET]})
+            eq([ask('/p/alpha/', **nav), ask('/p/alpha/?t=WRONG', **nav)], [(403, False)] * 2, 'no key: refused')
+            eq(ask('/p/alpha/', **sec, **{'X-Forwarded-For': '100.101.1.2'}), (200, True), 'a trusted network with no key: the off page')
+            eq(ask('/p/alpha/pick?id=a&o=b&k=c', **nav)[0], 502, 'the pick route')
+            eq(ask('/p/alpha/pick?t=HT', **nav)[0], 502, 'with the key too')
+            eq([ask('/p/alpha/?t=HT', **h) for h in (
+                {'Accept': '*/*'}, {**nav, 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty'},
+                {**sec, 'Sec-Fetch-Dest': 'iframe'}, {**sec, 'Sec-Purpose': 'prefetch'})], [(200, True)] * 4,
+               'a fetch, a frame, a prefetch: the off page')
+            eq([ask(f'/p/alpha/{p}?t=HT', **nav)[0] for p in ('snapshot', 'events', 'act')], [502] * 3, 'another path')
+            eq([ask('/?t=HT', **sec)[0], ask('/projects?t=HT', **nav)[0]], [200, 200], "Home's own")
+            eq((srv.opening, started), (set(), []), 'none of them starts anything')
+            eq(ask('/p/alpha/?t=HT', **sec), (200, True), 'opened: the off page, at once')
+            check(came.wait(10), 'and it is started')
+            eq((ask('/p/alpha/?t=HT', **nav), started), ((200, True), [alpha]), 'opened again meanwhile: not started twice')
+            came.clear()
+            eq(ask('/p/beta/?t=HT', **nav), (200, True), 'over plain http, which has no Sec-Fetch headers')
+            check(came.wait(10), 'it is started too')
+            came.clear()
+            eq(ask('/p/gone/?t=HT', **sec), (200, True), 'one whose page does not answer any more')
+            check(came.wait(10), 'is started as well')
+            go.set()
+            eq(until(lambda: not srv.opening), True, 'it could not start')
+            check(until(lambda: err.getvalue().count('bad settings') == 3), 'why is in its log', err.getvalue())
+            came.clear()
+            eq(ask('/p/alpha/?t=HT', **sec), (200, True), 'the off page stays')
+            check(came.wait(10), 'and the next opening tries again')
+            eq(until(lambda: not srv.opening), True, 'ended')
+    finally:
+        go.set()
+        srv.stop()
+
+    root = project(tmp / 'proj')
+    from agent_runner import page_only
+    for info, n in (({'up': True}, 0), ({}, 0), ({'up': False}, 1)):
+        with mock.patch('agent_runner.cmds.run_info', return_value=info), \
+                mock.patch.object(page_only, 'start', return_value='') as start:
+            eq((H.open_off_page(root), start.call_count), ('', n), f'run_info {info}: started {n} times')
+
+
+def until(f, limit: float = 20.0) -> bool:
+    end = time.monotonic() + limit
+    while not (got := f()) and time.monotonic() < end:
+        time.sleep(0.05)
+    return bool(got)
+
+
+def test_off_page_for_real(tmp: Path) -> None:
+    print("F402b2: the whole way: the off page, then the run page at /p/KEY/; Home says off, and its Start takes the page over")
+    if os.name == 'nt':  # test_page_only starts real runs on POSIX only too
+        return
+    root, mine = tmp / 'proj', tmp / 'me'
+    (root / 'plan').mkdir(parents=True)
+    mine.mkdir()
+    (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    (root / 'runner.toml').write_text('[run]\ntest = "true"\nremote = false\ninstall_skill = false\nmin_free_gb = 0\n'
+                                      'auto_upgrade = false\n', encoding='utf-8')
+    (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n', encoding='utf-8')
+    (root / 'plan' / 'DONE.md').write_text('# DONE\n', encoding='utf-8')
+    git(root, 'init', '-q', '-b', 'main')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'start')
+    (tmp / 'bin').mkdir()
+    fake = tmp / 'bin' / 'claude'
+    fake.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+    fake.chmod(0o755)
+    env = {'HOME': str(mine), 'CLAUDE_CONFIG_DIR': str(mine / '.claude'), 'AGENT_RUNNER_NO_WEB': '',
+           'AGENT_RUNNER_HOME': str(tmp / 'runs'), 'PATH': str(tmp / 'bin') + os.pathsep + os.environ['PATH']}
+    from agent_runner import page_only, plat
+    from agent_runner.cmds import run_info
+    with mock.patch.dict(os.environ, env):
+        H.mark_installed(True)
+        srv = H.serve_home(H.home_token(), 0, '127.0.0.1', roots=lambda: [root],
+                           rows=lambda: [H.project_row('proj', root, needs=lambda r: (0, []))])
+        port = srv.server_address[1]
+        H.save_registry({**H.load_registry(), 'port': port})
+        key = H.home_token()
+        page = f'http://127.0.0.1:{port}/p/proj/?t={key}'
+        pids: list[int] = []
+
+        def is_home(url: str = page) -> bool:
+            req = urllib.request.Request(url, headers={'Accept': 'text/html'})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return b'const HOME_PAGE=true;' in r.read()
+
+        def row() -> dict:
+            return json.loads(get(f'http://127.0.0.1:{port}/projects?t={key}')[1])['projects'][0]
+        try:
+            eq((row()['state'], row()['page'], page_only.serving(root)), ('off', '', False), 'off, and the list starts nothing')
+            check(is_home(), 'the off page as the wait')
+            check(until(lambda: page_only.serving(root), 60), 'the page-only process serves')
+            pids.append(int(page_only.notes(root, 'page.live').read_text()))
+            r = row()
+            eq((r['state'], r['page'], r['slots']), ('off', 'p/proj/', None), 'the list says off, and that the page answers (the off page turns into it)')
+            check(not is_home(), 'the full run page at /p/proj/')
+            src = (Path(H.__file__).parent / 'page' / '050-home.js').read_text(encoding='utf-8')
+            check('&&!p.page' in src.split('function goDown(')[1].split('\n}')[0], 'down from All projects: no reload while its page is served')
+            snap = json.loads(get(page.replace('/?', '/snapshot?'))[1])
+            eq((snap.get('up'), run_info(root)['up']), (False, False), 'and no run is up')
+            got = H.run_action(root, 'start')
+            check(got['ok'] and until(lambda: run_info(root).get('up')), "Home's Start works while it serves", got)
+            check(until(lambda: not plat.alive(pids[0]) and not is_home(), 40), 'and the run has the page')
+        finally:
+            if run_info(root).get('up'):
+                H.run_action(root, 'stop')
+                check(until(lambda: not run_info(root).get('up'), 60), 'the run ended')
+            until(lambda: not srv.opening, 60)
+            if page_only.serving(root):  # the stop's handover
+                pids.append(int(page_only.notes(root, 'page.live').read_text()))
+            for p in pids:
+                if plat.alive(p):
+                    plat.terminate(p)
+            until(lambda: not page_only.held(root))
+            srv.stop()
 
 
 class FakeTtyd(BaseHTTPRequestHandler):
@@ -1191,6 +1336,7 @@ def test_trusted_networks(tmp: Path) -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
+                           in_tmp(test_opens_off), in_tmp(test_off_page_for_real),
                            in_tmp(test_terminal_tab), in_tmp(test_restart_on_upgrade), in_tmp(test_restart_waits),
                            in_tmp(test_restart_on_windows),
                            in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),

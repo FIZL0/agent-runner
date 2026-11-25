@@ -2130,16 +2130,21 @@ def test_project_name_b153() -> None:
 
 
 def test_release_row_f131() -> None:
-    """F131, F185: the releases are the queue panel's first rows, a group with a heading: dimmed while auto release
+    """F131, F185, F195c: the releases are rows of the queue panel at their place: dimmed while auto release
     counts (its tab is release), in the row's own words once queued; J and K move no task past one."""
     words = 'Next release · auto at 10 landed: 6/10'
-    p = page(dict(SNAP, releases=[{'id': '', 'placeholder': True, 'text': words}]))
-    eq(p.items(3)[0].get('text'), words, 'the placeholder first')
-    eq(p.row_lines(3, p.items(3)[0], 60, False), [[(words, 'dim')]], 'dimmed')
+    last = page(dict(SNAP, releases=[{'id': '', 'placeholder': True, 'text': words, 'before': ''}])).items(3)
+    eq(last[len(SNAP['queue'])].get('text'), words, "the placeholder at the queue's end")
+    parked = dict(SNAP['queue'][0], id='Q99', state='parked')
+    last = page(dict(SNAP, queue=SNAP['queue'] + [parked], releases=[{'id': '', 'placeholder': True, 'text': words, 'before': ''}])).items(3)
+    eq([t.get('id') for t in last[-3:-1]], ['release', 'Q99'], 'before the parked tasks, as on the run page')
+    p = page(dict(SNAP, releases=[{'id': '', 'placeholder': True, 'text': words, 'before': SNAP['queue'][1]['id']}]))
+    eq(p.items(3)[1].get('text'), words, 'or before the task its place names')
+    eq(p.row_lines(3, p.items(3)[1], 60, False), [[(words, 'dim')]], 'dimmed')
     p.key('3')
-    p.cur[3] = 0
+    p.cur[3] = 1
     text = '\n'.join(drawn(p).lines())
-    check('Releases' in text and 'Queue' in text, 'under its heading', text)
+    check(words[:20] in text and 'Releases' not in text, 'no group heading', text)
     eq(p.tab()[1], ['release'], 'its tab is release')
     with mock.patch.object(U, 'RUN', [lambda argv: check(False, 'no task action on the placeholder', str(argv))]):
         for k in 'eEdDHpJKU':
@@ -2152,25 +2157,28 @@ def test_release_row_f131() -> None:
     rows = [row('V5', 'releasing now'), row('V6', 'waits for 1: V5 Release')]
     vs = [dict(SNAP['queue'][8], id=r['id'], title='Release: bump the version', release=r) for r in rows]
     done = {'id': 'V4', 'title': 'Release 1.2.0', 'placeholder': True, 'text': 'V4 Release 1.2.0 · released 10:00'}
-    p = page(dict(SNAP, queue=SNAP['queue'] + vs, releases=rows + [done]))
+    q = SNAP['queue']
+    p = page(dict(SNAP, queue=q[:1] + vs[:1] + q[1:] + vs[1:], releases=rows + [done]))
     items = p.items(3)
-    eq([t['id'] for t in items][:4], ['V5', 'V6', 'released', SNAP['queue'][0]['id']], 'the releases first, once each')
-    eq([''.join(s for s, _ in p.row_lines(3, t, 60, False)[0]) for t in items[:3]],
-       [r['text'] for r in rows + [done]], "in the rows' words")
-    check('F9 nine' in ''.join(s for l in p.row_lines(3, items[1], 200, True) for s, _ in l), 'selected: every task')
-    eq([T.group_head(items, i) for i in range(5)], ['Releases', '', '', 'Queue', ''], 'the headings')
-    eq([T.group_head(page(SNAP).items(3), i) for i in range(2)], ['', ''], 'none with no release')
+    ids = [t['id'] for t in items if t.get('id')]
+    eq((ids[:3], ids.count('V5'), ids.count('V6'), 'V4' in ids, 'released' in ids), ([q[0]['id'], 'V5', q[1]['id']], 1, 1, False, False),
+       'each at its place, once; a landed one is past')
+    v5, v6 = ids.index('V5'), ids.index('V6')
+    eq([''.join(s for s, _ in p.row_lines(3, items[i], 60, False)[0]) for i in (v5, v6)], [r['text'] for r in rows], "in the rows' words")
+    check('F9 nine' in ''.join(s for l in p.row_lines(3, items[v6], 200, True) for s, _ in l), 'selected: every task')
     p.key('3')
     with mock.patch.object(U, 'RUN', [lambda argv: check(False, 'nothing moves', str(argv))]):
-        p.cur[3] = 11
-        p.key('J')
-        eq(p.msg, 'Q9 is already last', 'J moves no task past a release')
-        p.cur[3] = 3
-        p.key('K')
-        eq(p.msg, f'{SNAP["queue"][0]["id"]} is already first', 'nor K')
         p.cur[3] = 0
+        p.key('J')
+        eq(p.msg, f'{q[0]["id"]} does not move past the release V5', 'J moves no task past a release')
+        p.cur[3] = 2
         p.key('K')
-        eq(p.msg, 'V5 stays in Releases', 'the release stays there')
+        eq(p.msg, f'{q[1]["id"]} does not move past the release V5', 'nor K')
+        p.cur[3] = v5
+        p.key('K')
+        eq(p.msg, 'V5 is a release: it stays at its place', 'the release stays there')
+    p.key('ENTER')
+    eq((p.main, p.sel()['id'], p.tab()[0]), (True, 'V5', 'direct edit'), 'Enter opens its details')
 
 
 def test_new_drop_release_f186() -> None:
@@ -2195,9 +2203,8 @@ def test_new_drop_release_f186() -> None:
     with mock.patch.object(U, 'run_control', control):
         p = page_of(rel('V6', False))
         p.key('3')
-        p.cur[3] = 0
-        text = '\n'.join(drawn(p).lines())
-        check('Releases · R new release' in text, 'the group says how to make one', text)
+        p.cur[3] = len(SNAP['queue'])
+        eq(('R', 'new release') in p.hint_keys(), True, 'its row says how to make one')
         p.key('R')
         eq((p.panel, p.tab()[0]), (1, 'release'), 'R in the Queue: the release tab')
         text = '\n'.join(drawn(p).lines())
@@ -2218,7 +2225,7 @@ def test_new_drop_release_f186() -> None:
         ran.clear()
         p.key('ESC')
         p.key('3')
-        p.cur[3] = 0
+        p.cur[3] = len(SNAP['queue'])
         p.key('d')
         eq((p.msg, ran), (f'{drop} D again: yes', []), 'd on its row asks')
         p.key('d')
@@ -2226,7 +2233,7 @@ def test_new_drop_release_f186() -> None:
         ran.clear()
         p = page_of(rel('V5', True))
         p.key('3')
-        p.cur[3] = 0
+        p.cur[3] = len(SNAP['queue'])
         p.key('d')
         p.key('d')
         p.key('R')
@@ -2281,17 +2288,16 @@ def test_manage_releases_f193() -> None:
         p = page(snap)
         p.key('3')
         ids = [t['id'] for t in p.items(3) if t.get('id')]
-        eq((ids.index('V5'), ids.count('V5')), (0 if has else 1, 1), said + 'where V5 is')
+        eq((ids.index('V5'), ids.count('V5')), (len(q) if has else 1, 1), said + 'where V5 is')
         p.cur[3] = ids.index('V5')
         text = drawn(p).text()
-        eq('Releases' in text, has, said + 'the group')
         eq('V5 Release · next' in text, has, said + 'the row in its own words')
         eq('Release: bump the version' in text, True, said + 'V5 shows')
         eq(('R', 'new release') in p.hint_keys(), has, said + 'the hint on V5')
         eq(p.tab()[1], ['direct edit', 'chat edit'], said + 'its tabs')
         with mock.patch.object(U, 'move', lambda *a: {'ok': True, 'out': 'moved'}):
             p.key('J')
-        eq(p.msg == 'V5 stays in Releases', has, said + 'J')
+        eq(p.msg == 'V5 is a release: it stays at its place', has, said + 'J')
     live = dict(on)  # turned off while its tab is open
     p = page(live)
     p.key('R')
