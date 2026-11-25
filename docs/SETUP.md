@@ -167,7 +167,7 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    `runner-setup-backup-<date>` (`-2`, `-3` … when one exists), and it prints the name. Your checkout, its
    index and its branch are not changed: the files stay uncommitted where they are.
 2. It writes `runner.toml` when there is none, with the gate guessed from `package.json`, `Cargo.toml`,
-   `go.mod`, a Makefile `test`/`check` target or a `tests/` folder. An existing one is left as it is.
+   `go.mod`, a Makefile `test`/`check` target or a `tests/` folder. An existing one is left as it is, except for step 5's answer.
 3. When ttyd is not found, it asks in one line to install it, naming this machine's command, before the
    Claude session. The run page needs ttyd to show sessions. Yes runs the command in
    this terminal. On no, with no terminal or no package manager, or when the install fails, it says the command
@@ -183,7 +183,11 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    one, and Ollama also sets `local = true`. A kind in `[models.kinds]` on another provider moves to the
    pick too, because a kind wins over `code`. A failed login is said, and the models are still written: the pick's tasks wait for the login. With no terminal it
    asks nothing and prints the login commands. `--yes` does not answer it.
-5. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
+5. At a terminal it asks once whether the run audits by itself, `Audit by itself … [y/N]`, default no. Yes writes
+   `auto_audit = { every = 50 }` to the project's settings file (runner.toml), no writes `auto_audit = false`, so it
+   is not asked again. It is not asked when `auto_audit` is already set in runner.toml or runner.local.toml. Ctrl-C
+   or Ctrl-D writes nothing and goes on. With no terminal it is not asked, and `--yes` does not answer it.
+6. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
    lean brief) that reads the repo, checks the gate, writes the goal and a first task list with
    `agent-runner plan goal` and `plan add`, adds a short `## Agent notes` section to CLAUDE.md or AGENTS.md,
    and commits it all. With no Claude Code here, setup does not fail. If no role or kind needs Claude
@@ -191,7 +195,7 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    needs Node.js and the provider's login; if either is missing, setup says so in one line and starts no session.
    If a role still needs Claude Code, setup says in one line what cannot run yet (the setup session, chats, spec
    reviews, tasks on a claude model) and starts no session.
-6. It prints what it set up; `agent-runner` then opens the run picker, where `s` starts the run.
+7. It prints what it set up; `agent-runner` then opens the run picker, where `s` starts the run.
 
 Run again on a repo that has a plan, it asks before the session touches it (`--yes`: go on without asking).
 

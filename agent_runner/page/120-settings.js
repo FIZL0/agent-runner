@@ -45,16 +45,19 @@ function settingLogins(k,side){
   return loginNote(settingId(k),k.key,vals.filter(r=>!r.err).flatMap(r=>modelProviders(k.key,k.key==='kinds'?{...k.default,...r.v}:r.v,names)));
 }
 const setUnset=f=>!!((S.draft||{})[f]||{}).unset;
-/* F174: its two controls; on its row a change goes to the draft */
+/* F174: its two controls; on its row a change goes to the draft. F422: with `on`, the count shows while the switch is on */
 function partsField(k,side,onRow){
-  const t=settingNow(k,side,true), v=partsNow(t), p=k.parts, d=`data-id="${esc(settingId(k))}" data-side="${side}"${onRow?' data-now':''}`, at=esc(`, ${k.name}, ${PLACE[side]}`);
-  return `<div class="setparts"><label>${esc(p.every.label)} <select class="fld" data-setpart="every" ${d} aria-label="${esc(p.every.label)}${at}">${partOptions(k,t).map(([n,l])=>`<option value="${n}" ${n===v.every?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
-    <label>${esc(p.idle.label)} <input type="checkbox" role="switch" class="sw" data-setpart="idle" ${d} aria-label="${esc(p.idle.label)}${at}" ${v.idle?'checked':''}></label></div>`;
+  const t=settingNow(k,side,true), v=partsNow(t,k), p=k.parts, sw=p.on?'on':'idle', d=`data-id="${esc(settingId(k))}" data-side="${side}"${onRow?' data-now':''}`, at=esc(`, ${k.name}, ${PLACE[side]}`);
+  const count=`<label>${esc(p.every.label)} <select class="fld" data-setpart="every" ${d} aria-label="${esc(p.every.label)}${at}">${partOptions(k,t).map(([n,l])=>`<option value="${n}" ${n===v.every?'selected':''}>${esc(l)}</option>`).join('')}</select></label>`;
+  const flip=`<label>${esc(p[sw].label)} <input type="checkbox" role="switch" class="sw" data-setpart="${sw}" ${d} aria-label="${esc(p[sw].label)}${at}" ${(p.on?v.every:v.idle)?'checked':''}></label>`;
+  return `<div class="setparts">${p.on?flip+(v.every?count:''):`${count}
+    ${flip}`}</div>`;
 }
 function savePart(el){
   const {id,side,setpart}=el.dataset, k=settingOf(id);if(!k)return;
-  S.f[setField(id,side)]=partSet(settingNow(k,side,true),setpart,setpart==='idle'?el.checked:Number(el.value));
-  if(el.dataset.now!==undefined){draftSet(id,side,{text:S.f[setField(id,side)]});render(true)}
+  S.f[setField(id,side)]=partSet(settingNow(k,side,true),setpart,setpart==='every'?Number(el.value):el.checked,k);
+  if(el.dataset.now!==undefined)draftSet(id,side,{text:S.f[setField(id,side)]});
+  if(el.dataset.now!==undefined||setpart==='on')render(true);
 }
 /* F405: the program a session runs: a pick of those found here; Other path… brings a field, kept in S.f (so a
    refused path stays) until it is what is saved */

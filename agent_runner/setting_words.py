@@ -84,6 +84,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.review_min_lines': ('work', 'Smallest change to review', 'A change with fewer lines than this skips the review. Lower reviews more.'),
     'run.split_files': ('work', 'Split busy files', 'When slots stand free because 3 tasks wait for one file, a task to split that file is queued. Off: they wait.'),
     'run.auto_audit': ('work', 'Audit by itself', 'When the run is idle and so many tasks have landed, one looks for what is stale, unused or wasted. Off: none.'),
+    'models.audit': ('work', 'Audit model', 'The model that audits what changed, also in an audit you add. A cheaper one finds less.'),
     'run.audit_tokens': ('work', 'Token cap per audit', 'An audit that uses more tokens than this stops and keeps what it found. 0: no cap.'),
     'run.task_tokens': ('work', 'Token cap per task', 'A task that uses more tokens than this stops and is parked. 0: no cap.'),
     'run.task_usd': ('work', 'Dollar cap per task', 'A task that costs more than this at list price stops and is parked. 0: no cap.'),
@@ -97,7 +98,6 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'models.kinds': ('roles', 'Model for each kind', 'The model a task runs on, by the letter of its id. It wins over Other tasks.'),
     'models.code': ('roles', 'Other tasks', 'The model for a task whose kind has none. Every kind has one, so this rarely changes anything.'),
     'models.fix': ('roles', 'Conflict fixes', 'The model that resolves conflicts and repairs merges. A cheaper one fails more often.'),
-    'models.audit': ('roles', 'Audits', 'The model that audits what changed. A cheaper one finds less.'),
     'models.docs': ('roles', 'Docs helper', 'The model that writes docs and changelog lines for a task. Off: the task writes them itself.'),
     'models.feed': ('roles', 'Run page copy', 'The model that publishes the run page copy on claude.ai. It is short work, so a cheap one does it.'),
     'models.fallback': ('roles', 'When a limit is reached', 'Other models a task goes on with at a limit, in order. Empty: it waits for the reset.'),
@@ -177,9 +177,11 @@ _CHOICES: dict[str, dict[str, str]] = {
     'models.control': {'opus': 'opus', 'sonnet': 'sonnet', 'haiku': 'haiku'},
     'models.review': {'opus': 'opus', 'sonnet': 'sonnet', 'haiku': 'haiku'},
 }
-# F174: a table value set by two controls on its row: each one's label, and a count's choices
+# F174: a table value set by two controls on its row: each one's label, and a count's choices. F422: with 'on', the switch
+# turns the count on at its 'every'
 _PARTS: dict[str, dict] = {
     'run.auto_release': {'every': {'label': 'Every', 'counts': [5, 10, 20], 'unit': 'tasks'}, 'idle': {'label': 'When idle'}},
+    'run.auto_audit': {'on': {'label': 'On', 'every': 50}, 'every': {'label': 'Every', 'counts': [25, 50, 100], 'unit': 'tasks'}},
 }
 _UNITS: dict[str, str] = {
     'run.weekly_max': '%', 'run.session_max': '%', 'run.approve_wait': 'min', 'run.slot_max_gb': 'GB',

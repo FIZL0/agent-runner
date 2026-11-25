@@ -4,7 +4,7 @@
    runner-setup-backup-<date>, through a scratch index, so the checkout, its index and HEAD stay as they were.
 2. Write runner.toml when there is none, with a guessed gate, and add an empty `## Tools` section to CLAUDE.md
    when it has none (B80). Without ttyd, offer at a terminal to install it (F403). Ask there which providers to
-   use, and log in to them (F406d, setup_models).
+   use, and log in to them (F406d, setup_models), and once whether the run audits by itself (F422).
 3. Start one full Claude session (normal tools, CLAUDE.md, not the lean slot brief) whose first message asks it to
    read the repo and write the plan through `plan goal` / `plan add`, set the gate and a short notes section.
 4. Print what it set up, and `agent-runner` to start the run (s in its launcher).
@@ -275,6 +275,39 @@ def offer_models(root: Path) -> list[str]:
     return offer(root, at_terminal())
 
 
+def offer_audit(root: Path) -> str | None:
+    """F422: ask at a terminal, once for a project, whether the run audits by itself ([run] auto_audit, default no). The
+    answer, a no too, goes to the project's settings file, so it is not asked again; Ctrl-C or Ctrl-D leaves it open.
+    The line to say about it; None when nothing was asked. Never fails setup."""
+    from agent_runner import audit
+    from agent_runner import config as CF
+    if not at_terminal():
+        return None
+    try:
+        snap = CF.settings_snapshot(root)
+        row = next(k for t in snap['tables'] if t['table'] == 'run' for k in t['keys'] if k['key'] == 'auto_audit')
+        f = CF.config_file(root)
+    except (Exception, SystemExit):  # a config that does not load is the session's to mend
+        return None
+    if not snap['ok'] or not f or row['has_project'] or row['has_device']:
+        return None
+    try:
+        yes = input(f'Audit by itself: when the run is idle and {audit.EVERY} tasks have landed, one looks for what is stale, '
+                    'unused or wasted? [y/N] ').strip().lower() in ('y', 'yes')
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+    try:
+        f = f.resolve()
+        out = CF.setting_edit(f.read_bytes(), 'run', 'auto_audit', {'every': audit.EVERY} if yes else False, name=f.name)
+        CF.write_whole(f, out, f.stat().st_mode & 0o777)
+    except (OSError, ValueError) as e:
+        return f'[run] auto_audit is not written to {f.name}: {e}'
+    CF._cfg.cache_clear()
+    return f'the run audits by itself every {audit.EVERY} tasks ([run] auto_audit in {f.name}: commit it)' if yes else \
+        f'no audit by itself ([run] auto_audit = false in {f.name}: commit it; once committed, Settings on the run page can turn it on)'
+
+
 def no_claude(root: Path) -> str:
     """F406d: what cannot run while this machine has no Claude Code, in one line; '' when it has one."""
     from agent_runner import setup_models as M
@@ -338,6 +371,9 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     for line in offer_models(root):
         said.append(line)
         print(f'agent-runner setup: {line}')
+    if audits := offer_audit(root):
+        said.append(audits)
+        print(f'agent-runner setup: {audits}')
     todo = todo_path(root)
     existing = todo.is_file()
     text = prompt(root, gate, existing)

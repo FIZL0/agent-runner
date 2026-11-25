@@ -54,7 +54,7 @@ def setup(root: Path, answers=(), claude: str = '', terminal: bool = True, creds
 
     out = io.StringIO()
     CF._cfg.cache_clear()
-    with mock.patch.object(S, 'offer_ttyd', lambda: None), mock.patch.object(S, 'at_terminal', lambda: terminal), \
+    with mock.patch.object(S, 'offer_ttyd', lambda: None), mock.patch.object(S, 'offer_audit', lambda root: None), mock.patch.object(S, 'at_terminal', lambda: terminal), \
             mock.patch.object(M, 'claude_program', lambda r: claude), mock.patch.object(builtins, 'input', answer), \
             mock.patch.object(login, 'stored', lambda: creds or {}), mock.patch.object(subprocess, 'run', run), \
             mock.patch.dict('os.environ', {'GEMINI_API_KEY': ''}), contextlib.redirect_stdout(out):
