@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a conflict in the glossary file (`[plan] glossary`, GLOSSARY.md) is joined by term entry with no setting: terms added on either side are both kept, and an entry changed on one side takes that side; one changed differently on both sides, or a side that does not parse, goes to a fix session and the run log says why (T31).
 ## 0.69.0 (2026-11-25)
 
 - Fixed: `s!` (`stop --force`) now runs `[run] on_exit` for each session it ends, in its slot; before, it ended them without it, so e.g. a device lock it frees stayed held until the resumed session ended. The sessions still resume in the next run. The run waits for every on_exit still running, also one from a session that ended just before `s!`, at most 60 s from `s!` (or `[run] command_timeout` if that comes sooner); one still running is stopped and the log says so (B803).

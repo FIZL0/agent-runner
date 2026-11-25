@@ -9,7 +9,7 @@ import re
 import subprocess as sp
 from pathlib import Path
 
-from agent_runner import plan as P, plat
+from agent_runner import glossary, plan as P, plat
 from agent_runner.state import C, git, hook, log, note, plan_rel
 
 
@@ -25,7 +25,27 @@ def joinable(f: str) -> bool:
     """
     if f in (plan_rel('TODO.md'), plan_rel('DONE.md')):
         return False  # git merged it by task already (`plan.merge3`): what still conflicts there is prose
-    return any(fnmatch.fnmatch(f, g) for g in [*C.run['joinable'], *C.run['join']])
+    return is_glossary(f) or any(fnmatch.fnmatch(f, g) for g in [*C.run['joinable'], *C.run['join']])
+
+
+def is_glossary(f: str) -> bool:
+    """True when `f` is the project's glossary (`[plan] glossary`): its conflicts join by entry (`glossary_join`)."""
+    p = glossary.path(C)
+    return p is not None and f == os.path.relpath(p, C.root).replace(os.sep, '/')
+
+
+def glossary_join(f: str, tid: str, cwd: Path) -> str | None:
+    """The glossary `f` with both sides of its conflict joined by entry (`glossary.join3`), or None to refuse: an
+    entry both sides changed differently, a side that does not parse, or one that has no such file any more."""
+    base, ours, theirs = (git('show', f':{stage}:{f}', cwd=cwd) for stage in (1, 2, 3))
+    if ours.returncode or theirs.returncode:  # no base is fine: both sides started one
+        log(f'{tid}: the conflict in {f} is not joined: one side removed the file')
+        return None
+    try:
+        return glossary.join3('' if base.returncode else base.stdout, ours.stdout, theirs.stdout)
+    except glossary.CannotJoin as e:
+        log(f'{tid}: the conflict in {f} is not joined: {e}')
+        return None
 
 
 def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str | None:
@@ -66,8 +86,15 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
 
 def union(files: list[str], tid: str, cwd: Path) -> bool:
     """Join both sides of a conflict in every file `joinable` allows; a file with a `[run.join]` command
-    goes through it (`custom_join`), which may refuse."""
+    goes through it (`custom_join`), which may refuse, and the glossary without one joins by entry (`glossary_join`)."""
     for f in files:
+        own = any(fnmatch.fnmatch(f, g) for g in C.run['join'])
+        if not own and is_glossary(f):
+            if (text := glossary_join(f, tid, cwd)) is None:
+                return False
+            (cwd / f).write_text(text, encoding='utf-8')
+            git('add', f, cwd=cwd)
+            continue
         sides = []
         for stage in (2, 1, 3):  # ours, base, theirs
             t = C.notes(f'union.{tid}.{stage}')  # per task: joins run in threads at once
@@ -75,7 +102,7 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
             sides.append(str(t))
         out = git('merge-file', '-p', '--union', *sides, cwd=cwd)
         text = out.stdout if out.returncode >= 0 else None
-        if text is not None and any(fnmatch.fnmatch(f, g) for g in C.run['join']):
+        if text is not None and own:
             text = custom_join(f, sides, text, tid, cwd)
         for t in sides:
             Path(t).unlink(missing_ok=True)

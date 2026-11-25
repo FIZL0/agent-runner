@@ -232,6 +232,114 @@ def show(c, word: str = '') -> tuple[int, str]:
     return 0, render(term, parse(text)[term])
 
 
+# --- joining a merge conflict (T31) --------------------------------------------------------------------------
+
+class CannotJoin(ValueError):
+    """The sides of a glossary conflict need somebody to read them: a fix session."""
+
+
+def _outline(text: str) -> tuple[dict, dict]:
+    """A glossary as (sections, entries): {heading path: the prose under that heading} and {term, lower case:
+    (heading path, the entry's text)}, both in file order. CannotJoin when some of the text is neither."""
+    sections: dict[tuple, list[str]] = {(): []}
+    entries: dict[str, tuple[tuple, list[str]]] = {}
+    path: tuple = ()
+    body = None  # the open entry's lines
+    closed = False  # an entry of this section ended: only another entry or a heading may follow
+    if '\ufffd' in text:
+        raise CannotJoin('it is not all UTF-8')
+    for n, raw in enumerate(text.split('\n'), 1):
+        line = raw.rstrip()
+        if re.match(r'(<{7}|={7}|>{7}|\|{7})', line) or line.lstrip().startswith(('```', '~~~')):
+            raise CannotJoin(f'line {n} is a conflict mark or a code fence')
+        if not line:
+            closed, body = closed or body is not None, None
+            if not closed:
+                sections[path].append('')
+        elif line.startswith('#'):
+            m = re.match(r'(#{1,6})\s+\S', line)
+            if not m or body is not None:  # right under an entry's line it may be part of that entry
+                raise CannotJoin(f'line {n} is no heading of its own')
+            path = (*(h for h in path if len(h) - len(h.lstrip('#')) < len(m.group(1))), line)
+            if path in sections:
+                raise CannotJoin(f'the section {line!r} is there twice')
+            sections[path], body, closed = [], None, False
+        elif line.startswith('**'):
+            m = re.fullmatch(r'\*\*(.+?)\*\*:', line)
+            if not m or body is not None:
+                raise CannotJoin(f'line {n} does not start an entry of its own')
+            key = _one_line(m.group(1)).lower()
+            if key in entries:
+                raise CannotJoin(f'the term {m.group(1)!r} is there twice')
+            body = [line]
+            entries[key] = (path, body)
+        elif body is not None:
+            body.append(line)
+        elif closed:
+            raise CannotJoin(f'line {n} is text after an entry')
+        else:
+            sections[path].append(raw)
+    if bare := next((b[0] for _, b in entries.values() if len(b) < 2), None):
+        raise CannotJoin(f'{bare} has no definition')
+    if {_one_line(t).lower() for t in parse(text)} != set(entries):
+        raise CannotJoin('its entries do not parse')
+    return ({k: '\n'.join(v).strip('\n') for k, v in sections.items()},
+            {k: (s, '\n'.join(b)) for k, (s, b) in entries.items()})
+
+
+def _pick(base: dict, ours: dict, theirs: dict, what: str) -> dict:
+    """{key: value} of a three-way merge by key: a key changed, added or removed on one side takes that side."""
+    out = {}
+    for k in dict.fromkeys([*ours, *theirs, *base]):
+        b, o, t = base.get(k), ours.get(k), theirs.get(k)
+        if o != t and b not in (o, t):
+            raise CannotJoin(f'both sides changed the {what} {k[-1:] if isinstance(k, tuple) else k!r} differently')
+        if (v := t if o == b else o) is not None:
+            out[k] = v
+    return out
+
+
+def _order(base: list, ours: list, theirs: list, keep) -> list:
+    """The keys of `keep` in order: a side that moved keys gives the order, and each key only the other side has
+    comes after the one it follows there (and after what the first side added at that place)."""
+    b, o, t = ([k for k in side if k in keep] for side in (base, ours, theirs))
+    every = set(b) & set(o) & set(t)
+    bo, oo, to = ([k for k in side if k in every] for side in (b, o, t))
+    if to not in (bo, oo):
+        if oo != bo:
+            raise CannotJoin('both sides moved the same entries or sections')
+        o, t = t, o
+    out = list(o)
+    for i, k in enumerate(t):
+        if k in out:
+            continue
+        at = out.index(t[i - 1]) + 1 if i else 0
+        while at < len(out) and out[at] not in t:
+            at += 1
+        out.insert(at, k)
+    return out
+
+
+def join3(base: str, ours: str, theirs: str) -> str:
+    """The glossary with both sides' changes since `base`, joined by entry and not by line; CannotJoin when an
+    entry (or a section's prose) was changed differently on both sides, or a side does not parse."""
+    sides = [_outline(t) for t in (base, ours, theirs)]
+    sections = _pick(*(s for s, _ in sides), 'section')
+    entries = _pick(*(e for _, e in sides), 'term')
+    if lost := next((k for k, (s, _) in entries.items() if s not in sections), None):
+        raise CannotJoin(f'one side removed the section the other has the term {lost!r} in')
+    order = _order(*(list(s) for s, _ in sides), sections)
+    blocks = []
+    for s in order:
+        blocks += [*s[-1:], *([sections[s]] if sections[s] else [])]
+        mine = {k for k, (at, _) in entries.items() if at == s}
+        blocks += [entries[k][1] for k in _order(*([k for k in e if e[k][0] == s] for _, e in sides), mine)]
+    text = '\n\n'.join(blocks) + '\n'
+    if _outline(text) != (sections, entries):  # dicts: the order aside, nothing lost, doubled or moved
+        raise CannotJoin('the joined text does not hold what both sides have')
+    return text
+
+
 # --- scan: what a seed or a new term is drawn from -----------------------------------------------------------
 
 CODE_EXT = {'.py', '.rs', '.go', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.rb', '.java', '.kt', '.swift', '.cs',
