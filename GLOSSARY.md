@@ -810,7 +810,7 @@ _In code_: .pastjump, pastDown
 _Avoid_: scroll button, pill
 
 **Page-only process**:
-A background process of one project that serves its whole run page while no run is up, so chats and the plan work there; it starts no work, and ends when a run starts or after some time with no page open; a run's stop hands its page to one
+A background process of one project that serves its whole run page while no run is up, so chats and the plan work there; it starts no work, and ends when a run starts, on `agent-runner page-only stop`, or after some time with no page open where Runner Home can start it again; a run's stop hands its page to one
 _Said_: open the page without starting the run
 _On screen_: opening the run page…
 _In code_: page_only.serve, page_only.open_page, page_only.hand_over, web.start_web(only=True)
@@ -925,3 +925,10 @@ _Said_: hold and drag
 _On screen_: hold a Plan queue row until it lifts, then drag
 _In code_: liftRow, liftUp, liftMove, liftEnd, LF
 _Avoid_: long press, drag mode
+
+**Run-off banner**:
+A bar under the top bar that says The run is not running, with one Start the run button, while no run is up and the page-only process serves the run page. It shows on every view but Status (whose Run card says it), not on Home's page or All projects, and only from a fresh snapshot.
+_Said_: the not running bar
+_On screen_: The run is not running
+_In code_: runOff, offDraw, #runoff
+_Avoid_: stopped notice, off bar

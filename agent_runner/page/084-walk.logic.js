@@ -6,7 +6,7 @@ const WALK_STEPS=
   "text": "Each task names the files it changes. Tasks that share no files run side by side, one agent each. A task can also wait for another one to land first.",
   "keys": "It is Queue [3]; Enter there opens a task."},
  {"id": "start", "title": "Start run",
-  "up": "The run is up. Its agents work on the queue, on your own Claude usage. A run starts only when you start it. Stop lets the running tasks finish, then ends the run.",
+  "up": "The run is up. Its agents work on the queue, on your own Claude usage. A run starts only when you start it. Stop lets the running tasks finish, then ends the run. This page stays.",
   "off": "Start run sets agents to work on the queue, on your own Claude usage. Nothing starts until you press it.",
   "keysUp": "Stop is S on Status [1].",
   "keysOff": "It is T on Status [1]."},

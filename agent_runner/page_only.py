@@ -4,8 +4,8 @@ never holds run.lock, so `state.run_up` stays False and `status` says that no ru
 
 `agent-runner page-only` is the process; the launcher's w starts it detached and opens its page (`open_page`). One at most
 per project: it holds <notes>/page.lock while it serves, and <notes>/page.live is there once its page answers. It ends
-when a run starts (`take_over`, called by the run's start_web, which then has the port and web.url), or after IDLE s with
-no page open. Chats are detached processes of their own, so none ends with it.
+when a run starts (`take_over`, called by the run's start_web, which then has the port and web.url), at `agent-runner
+page-only stop`, or after IDLE s with no page open where Runner Home can start it again (`home_starts`). Chats are detached processes of their own, so none ends with it.
 
 F402b3a: a run's stop hands its page to one (`hand_over`): the same address, port, key and https rule.
 
@@ -29,7 +29,8 @@ from urllib.parse import urlsplit
 from agent_runner import plat
 from agent_runner import state as S
 
-IDLE = 600.0  # s with no page open (no request under way; an open page holds its events stream) before it ends
+IDLE = 600.0  # s with no page open (no request under way; an open page holds its events stream) before it may end
+HOME_AGAIN = 30.0  # s between two looks at whether Home can start it again, once idle
 LOOK = 0.5  # s between two looks at whether to end
 START_WAIT = 40.0  # s the launcher waits for the page to answer (Tailscale Serve may take 15)
 TAKE_WAIT = 20.0  # s a run's start waits for it to give up the page (turning Tailscale Serve off may take 10)
@@ -157,7 +158,8 @@ def take_over(wait: float = TAKE_WAIT) -> int:
 
 
 def asked_to_end() -> bool:
-    """A run that is starting wants the page (`take_over`). A note whose run is gone says nothing."""
+    """A run that is starting wants the page (`take_over`), or a command ends it (`end_page`). A note whose writer is
+    gone says nothing."""
     from agent_runner.slots import marker_pid
     pid = marker_pid(S.C.notes('page.stop'))
     return bool(pid and plat.alive(pid))
@@ -259,6 +261,16 @@ def take_page(end: threading.Event):
     return srv
 
 
+def end_page(wait: float = TAKE_WAIT) -> tuple[int, str]:
+    """`agent-runner page-only stop`: (exit code, what to say)."""
+    if not held():
+        return 0, 'no page-only process serves this project'
+    take_over(wait)
+    if held():
+        return 1, f'the page-only process did not end in {wait:g} s'
+    return 0, 'the page-only process ended: the run page is closed, chats go on'
+
+
 # --- the process ------------------------------------------------------------------------------------------------
 
 class Use:
@@ -315,6 +327,31 @@ def held_messages() -> None:
         S.log(f'run page: the messages chats hold could not be looked at ({type(e).__name__}: {e})')
 
 
+def home_starts() -> bool:
+    """F402b3b: can Runner Home start this process again when a person opens the project? Not with no Home, a web_port
+    of its own, a Home that does not answer, or one that does not list the project."""
+    try:
+        from agent_runner import web
+        from agent_runner.home import site_links
+        return web.home_only() and bool(site_links(S.C.root, https=lambda port, token: []))
+    except Exception as e:  # noqa: BLE001 - the page goes on
+        S.log(f'run page: looking for Runner Home failed ({type(e).__name__}: {e})')
+        return False
+
+
+class Idle:
+    """Is the page in no use, and is that a reason to end? Home is asked only then, every HOME_AGAIN s."""
+
+    def __init__(self, use: Use):
+        self.use, self.next = use, 0.0
+
+    def ends(self) -> bool:
+        if self.use.idle() < IDLE or time.monotonic() < self.next:
+            return False
+        self.next = time.monotonic() + HOME_AGAIN
+        return home_starts() and self.use.idle() >= IDLE  # Home may take seconds to answer: a page may be open by now
+
+
 def only_one():
     """page.lock, held while this process serves; None when another one has it. Tried for a second: a look at whether
     it is held takes it for a moment (`held`)."""
@@ -326,7 +363,8 @@ def only_one():
 
 
 def serve(end: threading.Event, handed: bool = False) -> int:
-    """Serve the page until a run takes it over, it was idle for IDLE s, or `end` is set (a signal). The exit code.
+    """Serve the page until it is asked to end (a run takes it over, `end_page`), it was idle for IDLE s where Home can
+    start it again, or `end` is set (a signal). The exit code.
     `handed`: a stopping run, still up, hands it its page."""
     lock = only_one()
     if lock is None:
@@ -351,10 +389,10 @@ def serve(end: threading.Event, handed: bool = False) -> int:
                 return 1
         counted(srv, use)
         live.write_text(str(os.getpid()), encoding='utf-8')
-        why = ''
+        why, idle = '', Idle(use)
         while not why:
             held_messages()
-            why = 'a run takes it over' if asked_to_end() else f'no page was open for {IDLE:g} s' if use.idle() >= IDLE \
+            why = 'a run or a command asked' if asked_to_end() else f'no page was open for {IDLE:g} s' if idle.ends() \
                 else 'ended' if end.wait(LOOK) else ''
         S.log(f'run page: the page-only process ends ({why}); chats go on')
     finally:
@@ -372,16 +410,20 @@ def serve(end: threading.Event, handed: bool = False) -> int:
 
 
 def main(words: list[str]) -> int:
-    """`agent-runner page-only`: the process itself (see above), in the foreground."""
-    handed = words == [HANDED]
-    if words and not handed:
-        print('agent-runner page-only takes nothing more', file=sys.stderr)
+    """`agent-runner page-only`: the process itself (see above), in the foreground. `stop` ends the one that serves."""
+    handed, stop = words == [HANDED], words == ['stop']
+    if words and not handed and not stop:
+        print('agent-runner page-only takes nothing more than `stop`, which ends the one that serves', file=sys.stderr)
         return 2
     from agent_runner.loop import drop_session_env
     drop_session_env()
     for k in NOT_OURS:
         os.environ.pop(k, None)
     S.init()
+    if stop:
+        code, said = end_page()
+        print(said, file=sys.stderr if code else sys.stdout)
+        return code
     end = threading.Event()
     for s in (signal.SIGTERM, signal.SIGINT):
         signal.signal(s, lambda *_: end.set())
