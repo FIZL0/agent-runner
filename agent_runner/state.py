@@ -33,7 +33,7 @@ C: Config
 # import ROOT`), so a module-level setting one of them changes (ROOT, SLOTS, POWER, MUX, …) goes to all through
 # `share`; runner.py sends its own attribute writes (a test's stand-in, a wrapping project's PROMPT) the same way.
 FAMILY = ('runner', 'state', 'brief', 'sched', 'slots', 'watch', 'join', 'land', 'merge', 'control', 'status',
-          'feed', 'loop', 'cmds')
+          'feed', 'loop', 'loop_requests', 'loop_watch', 'loop_after', 'cmds')
 
 
 def share(**values) -> None:

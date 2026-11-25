@@ -63,7 +63,8 @@ C3 split this file by responsibility; each module imports only the ones before i
     control  control sessions, closing idle ones, the control server, Remote Control processes
     status   status, since, follow, Needs you lines
     feed     ending an older version's runner feed, handing a feed message on, opening a control session
-    loop     the run: keys, halts and tells, CI, finish, the loop (cmd_run)
+    loop     the run: keys, finish, the loop (cmd_run); C51: its areas are loop_requests (halts, tells, restyles),
+             loop_watch (CI, issues) and loop_after (the end of a tick), re-exported by loop
     cmds     the other commands: take, resume, key, upgrade, status, since, needs, sheet, stop,
              control, background and attach
 This module re-exports every name of theirs, so `runner.X` reads as before; `runner.X = v` reaches every

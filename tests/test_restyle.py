@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 from _check import check, eq, git, has, report, run
+from _loop_patch import patched
 
 import test_runner as TR  # noqa: E402  (its make_repo: a throwaway repo with a bare origin)
 from agent_runner import loop as L  # noqa: E402
@@ -130,7 +131,7 @@ def test_run_parks(repo: Path, tmp: Path):
             return True
 
     P.request(R.C, 'restyle', 'T2', {'rid': rid, 'style': STYLE}, 0)
-    with mock.patch.object(L, 'MUX', Mux()):
+    with patched(MUX=Mux()):
         L.restyles({1: (os.getpid(), 'sid', None)}, {1: ('T2', '', set(), set())}, 'main')
     eq(len(sent), 1, 'the run types one message into the slot\'s pane')
     has(sent[0][1], r'Stop at a clean point.*let it finish.*commit what is solid.*journal.*wip/T2',
@@ -154,7 +155,7 @@ def test_run_parks(repo: Path, tmp: Path):
         return  # never touch a real run's slot mark
     R.finished_mark(1).touch()
     P.request(R.C, 'restyle', 'T1', {'rid': rid, 'style': STYLE}, 0)
-    with mock.patch.object(L, 'MUX', Mux()):
+    with patched(MUX=Mux()):
         L.restyles({1: (os.getpid(), 'sid', None)}, {1: ('T1', '', set(), set())}, 'main')
     R.finished_mark(1).unlink()
     eq(len(sent), 1, 'nothing typed: it is not stopped')

@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest import mock
 
 from _check import check, eq, git, report
+from _loop_patch import patched
 
 from agent_runner import control as K  # noqa: E402
 
@@ -147,9 +148,8 @@ def test_take_back_from_a_slot_just_started():
     here = os.getcwd()
     os.chdir(d)  # take reads the repository around the current directory, as from a control session
     with mock.patch.object(P, 'run_on', lambda c, tid: 's5' if tid == 'T1' and 5 in running else ''), \
-            mock.patch.object(L, 'end_orphans', lambda: None), \
-            mock.patch.object(L, 'log', lambda msg, kind=None, *a, **k: logged.append((msg, kind))), \
-            mock.patch.object(L, 'note', lambda *a, **k: None):
+            patched(end_orphans=lambda: None, log=lambda msg, kind=None, *a, **k: logged.append((msg, kind)),
+                    note=lambda *a, **k: None):
         t = threading.Thread(target=the_run, daemon=True)
         t.start()
         with redirect_stderr(take), redirect_stdout(io.StringIO()):

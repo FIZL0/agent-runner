@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from _check import check, eq, git, report
+from _loop_patch import patched
 
 from agent_runner import exit_hook, loop, state
 from agent_runner import runner as R
@@ -91,8 +92,7 @@ def halt(hook: Hook, how: str, starts: list, queued: bool = False, tried: set | 
         return None
 
     try:
-        with mock.patch.object(loop, 'end_orphans', lambda: None), mock.patch.object(loop, 'start', start), \
-                mock.patch.object(loop, 'agent_held', lambda: False):
+        with patched(end_orphans=lambda: None, start=start, agent_held=lambda: False):
             loop.halts(procs, running, free_at, tried, 'main', 'm', 30, 1)
         if agent:
             check(agent.wait(15) is not None, 'the session is ended')
@@ -158,7 +158,7 @@ def test_stubborn(hook: Hook):
         alive.append(loop.plat.alive(agent.pid))
 
     try:
-        with mock.patch.object(loop, 'end_orphans', lambda: None), mock.patch.object(exit_hook, 'start', start):
+        with patched(end_orphans=lambda: None), mock.patch.object(exit_hook, 'start', start):
             loop.halts({1: (agent.pid, '', None)}, {1: ('H1', 'Later', {'a.py'}, set())}, {1: dt.datetime.max},
                        set(), 'main', 'm', 30, 1)
     finally:

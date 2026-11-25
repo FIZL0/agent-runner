@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest import mock
 
 from _check import check, eq, git, report
+from _loop_patch import patched as loop_patched
 
 from agent_runner import config as CF, plan as P, runner as R  # noqa: E402
 from agent_runner import sched as S  # noqa: E402
@@ -559,9 +560,8 @@ def test_agent_held(tmp: Path):
 
         run = run_of('pi')
         gone = {'T1': 'change'}
-        with mock.patch.object(loop, 'halt_requests', lambda: gone), mock.patch.object(loop, 'halt_answer', lambda *a: None), \
-                mock.patch.object(loop, 'queued', lambda: {}), mock.patch.object(loop, 'discard_task', lambda *a: []), \
-                mock.patch.object(loop, 'end_orphans', lambda: None), mock.patch.object(loop.plat, 'terminate', lambda p: None), \
+        with loop_patched(halt_requests=lambda: gone, halt_answer=lambda *a: None, queued=lambda: {},
+                     discard_task=lambda *a: [], end_orphans=lambda: None), mock.patch.object(loop.plat, 'terminate', lambda p: None), \
                 mock.patch.object(loop.plat, 'alive', lambda p: False):
             started.clear()
             procs, running = {1: (1, 'sid', 0)}, {1: ('T1', 'Next', {'a.py'}, set())}
