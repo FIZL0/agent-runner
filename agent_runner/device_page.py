@@ -114,21 +114,6 @@ def tail(d: Path) -> bytes:
 
 # --- start and stop ------------------------------------------------------------------------------------------------
 
-def _scope() -> list[str]:
-    """What takes a process out of the service it would be started in (Runner Home's): systemd ends all of a stopped
-    service's processes. [] when this is in none, or systemd does not do it."""
-    if not sys.platform.startswith('linux'):
-        return []
-    try:
-        if not Path('/proc/self/cgroup').read_text().strip().endswith('.service'):
-            return []
-        argv = ['systemd-run', '--user', '--scope', '--quiet', '--collect', '--']
-        r = sp.run([*argv, 'true'], stdin=sp.DEVNULL, capture_output=True, timeout=2)
-        return argv if r.returncode == 0 else []
-    except (OSError, sp.SubprocessError):
-        return []
-
-
 def start(d: Path, cmd: str, cwd: Path) -> bool:
     """Start `cmd`, once: False when it is running already. Raises OSError when the keeper does not come up."""
     if state(d) == 'running':
@@ -136,8 +121,8 @@ def start(d: Path, cmd: str, cwd: Path) -> bool:
     (d / 'stop').unlink(missing_ok=True)
     (d / 'log').unlink(missing_ok=True)
     _write(d, {'cmd': cmd, 'cwd': str(cwd), 'boot': _boot(), 'mark': os.urandom(8).hex()})
-    p = plat.spawn_detached([*_scope(), sys.executable, '-c', KEEPER, str(Path(__file__).resolve().parents[1]), str(d)],
-                            cwd=Path.home())
+    p = plat.spawn_detached([*plat.service_scope(), sys.executable, '-c', KEEPER,
+                             str(Path(__file__).resolve().parents[1]), str(d)], cwd=Path.home())
     end = time.monotonic() + UP
     while not {'pid', 'end'} & _record(d).keys():
         if time.monotonic() > end or p.poll() is not None:

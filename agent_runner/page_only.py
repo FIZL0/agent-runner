@@ -102,7 +102,7 @@ def start(root: Path, wait: float = START_WAIT) -> str:
         out.unlink(missing_ok=True)  # only its last start's words
     env = {k: v for k, v in os.environ.items() if k not in NOT_OURS}
     try:
-        proc = plat.spawn_detached(argv(), out=out, cwd=root, env=env)
+        proc = plat.spawn_detached([*plat.service_scope(), *argv()], out=out, cwd=root, env=env)
     except OSError as e:
         return f'the run page did not start: {e}'
     end = time.monotonic() + wait
