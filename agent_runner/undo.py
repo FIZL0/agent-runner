@@ -150,15 +150,16 @@ def _undo(x: dict, branch: str) -> str:
         S.git('checkout', '-q', '--detach', cwd=d)
 
 
-def tick(branch: str, merging: list) -> None:
-    """From the run loop: the pitches' own tick, and an undo, when one waits, in a thread among the merges."""
+def tick(branch: str, merging: list, hold: bool = False) -> None:
+    """From the run loop: the pitches' own tick, and an undo, when one waits, in a thread among the merges (`hold`: a restart is due, so none
+    starts now)."""
     if not pitch.on():
         return
     pitch.tick()
     if WAITS[0] and agent_held():
         return
     WAITS[0] = False
-    if pitch.undoing() and not S.stopping() and not any(t.name == 'undo' for t in merging):
+    if not hold and pitch.undoing() and not S.stopping() and not any(t.name == 'undo' for t in merging):
         t = threading.Thread(target=undo_changes, args=(branch,), name='undo')
         t.start()
         merging.append(t)

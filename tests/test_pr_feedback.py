@@ -405,7 +405,7 @@ def test_loop(tmp: Path):
     print('the loop says which tasks are busy')
     repo, origin, hub = opened(tmp, 'loop')
     watch.queue_resume('F8', 2, SID, 'x')
-    run = mock.Mock(branch='main', tried=set(), closed=set(), running={1: ('F7', '', set(), set())}, free_at={}, slots=1,
+    run = mock.Mock(branch='main', tried=set(), closed=set(), running={1: ('F7', '', set(), set())}, free_at={}, slots=1, restart_due=False, held_merges=[],
                     merging=[SimpleNamespace(name='merge:F9', is_alive=lambda: True)])
     skip = [mock.patch.object(loop_after, f) for f in ('retry_reopened', 'upgrade_tick', 'watch_ci', 'watch_issues',
             'auto_release', 'sweep_unmerged', 'keep_claims', 'block_asks')]

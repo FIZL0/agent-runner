@@ -35,10 +35,11 @@ def after(run) -> None:
         from agent_runner.page_copy import page_copy_tick
         page_copy_tick()  # F68: the claude.ai copy of the run page (B122: a one-shot, never c1)
     if not stopping():
-        sweep_unmerged(branch, run.merging)
-    undo.tick(branch, run.merging)  # F98
+        if not run.restart_due:  # B227: a restarted run finds them as it starts
+            sweep_unmerged(branch, run.merging)
+    undo.tick(branch, run.merging, run.restart_due)  # F98
     pr.tick(branch, {t[0] for t in run.running.values()} | {q[0] for q in queued().values()} | set(taken()) |
-            {t.name.removeprefix('merge:') for t in run.merging if t.is_alive()})  # F419, F423
+            {t.name.removeprefix('merge:') for t in run.merging if t.is_alive()} | {m[0] for m in run.held_merges})  # F419, F423
     keep_claims(run.running, branch)
     no_commits.tick(branch)  # B774
     block_asks(branch, run.tried)  # F102: an ask whose block could not be committed when it was parked
