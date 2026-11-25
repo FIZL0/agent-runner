@@ -8,6 +8,7 @@ The repo, its remote and the pull requests are test_pr's; a round's session is p
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -310,6 +311,22 @@ def test_blocked(tmp: Path):
     eq([x['key'] for x in rec['round']['items']], ['c1'], 'the comment is asked again')
     has(F.message('F1', 'main'), 'it is k', 'with the answer')
 
+    for name, act, want in (('plain', lambda: unblock('use key k — the new one'), 'with this note: use key k — the new one$'),
+                            ('edit', lambda: (P.edit('F1', keyed=' | files: z.py', todo=S.C.todo), unblock('use key k')), 'use key k$'),
+                            ('none', lambda: unblock(''), 'no answer was noted')):
+        repo, origin, hub = opened(tmp, f'blk-{name}')
+        P.note('F1', 'your answer (BLOCKED: an older one): old', todo=S.C.todo)
+        hub.comment(1, 'ann', 'use the new key')
+        look(hub)
+        P.block('F1', 'BLOCKED: give me the key', todo=S.C.todo, after=[])
+        session(repo, hub, 'half', done=False)
+        look(hub)
+        act()
+        look(hub)
+        text = F.message('F1', 'main').split('Review comments')[0].strip()
+        check(re.search(want, text, re.M), f'plan unblock, {name}: the note is told', text)
+        check('an older one' not in text, f'plan unblock, {name}: no older answer', text)
+
 
 def test_closed(tmp: Path):
     print('closed without a merge: Needs you with the reason')
@@ -329,6 +346,22 @@ def test_closed(tmp: Path):
     unblock('your answer (DECIDE: What now for F1? ann closed its pull request): make it smaller')
     check(look(hub)['round'], 'the answer starts a round')
     has(F.message('F1', 'main'), 'make it smaller', 'and is told')
+
+    repo, origin, hub = opened(tmp, 'plain')
+    hub.prs[0]['state'] = 'CLOSED'
+    look(hub)
+    unblock('use two lines')
+    look(hub)
+    has(F.message('F1', 'main'), 'with this note: use two lines', 'a plain unblock note is told too')
+    has(F.message('F1', 'main'), 'opens a new one', 'for the new pull request')
+
+    repo, origin, hub = opened(tmp, 'shut2')
+    hub.prs[0]['state'] = 'CLOSED'
+    hub.by = 'ann'
+    look(hub)
+    unblock('your answer (DECIDE: What now for F1? ann closed its pull request): make it smaller')
+    look(hub)
+    has(F.message('F1', 'main'), 'The person said.*make it smaller', 'an answer is the person\'s')
     with mock.patch.object(M, 'tested', return_value='the gate fails'):
         session(repo, hub, 'bad')
     look(hub)

@@ -198,7 +198,7 @@ def look(branch_name: str, got: dict, branch: str, gh: ci.Gh, busy: set[str]) ->
     if box == '~':
         need = rec.get('need')
         if not need:  # its session blocked it, or a person did
-            _set(rec, need={'tid': tid, 'kind': 'blocked', 'q': ''})
+            _set(rec, need={'tid': tid, 'kind': 'blocked', 'q': '', 'line': _asked_line(ls, tid)})
         elif need['kind'] == 'closed' and got['state'] == 'OPEN':  # a person opened it again
             if _plan(lambda: P.unblock(tid, 'its pull request is open again', todo=S.C.todo), f'unblock {tid}'):
                 _set(rec, need=None)
@@ -208,9 +208,9 @@ def look(branch_name: str, got: dict, branch: str, gh: ci.Gh, busy: set[str]) ->
     repo = pr.slug(S.ROOT, S.C.push_remote or 'origin')
     if need := rec.get('need'):  # answered
         old = rec.get('round') or need  # what its session was on, or what was left after its tries
-        answer = P.last_answer(tid, todo=S.C.todo, about=need['q'])
+        answer = _noted(ls, tid, need)
         if begin(rec, tid, old.get('items', []), old.get('red', {}), bool(old.get('conflict')), branch,
-                 answer=answer or 'It is open again; no answer was noted.', closed=got['state'] == 'CLOSED'):
+                 answer=answer or 'none (no answer was noted)', closed=got['state'] == 'CLOSED'):
             _set(rec, need=None, tries={})
         return
     if rec['pushed'] != rec['head'] or not pr.holds(tid):
@@ -243,6 +243,28 @@ def look(branch_name: str, got: dict, branch: str, gh: ci.Gh, busy: set[str]) ->
                    ['Answer with what to do: its session goes on with your answer, with new tries', 'Or drop the task'],
                    items=items, red=red, conflict=conflict)
     begin(rec, tid, items, red, conflict, branch, tries={**tries, **{k: tries.get(k, 0) + 1 for k in kinds}})
+
+
+def _asked_line(ls: list[str], tid: str) -> str:
+    """The line of a blocked task that takes its notes (its block's last), as `plan unblock` with no note leaves it."""
+    i = P._find(ls, tid)
+    end = i + len(P._item_block(ls, i)) - 1
+    ls = list(ls)
+    P._mark(ls, i, ' ')
+    return P._unblocked(ls[end]) if end == i else ls[end].split(' BLOCKED: ')[0]
+
+
+def _noted(ls: list[str], tid: str, need: dict) -> str:
+    """What was noted on the task as it was opened again (`plan confirm`, `change` or `unblock`) and since; '' for nothing."""
+    was = need.get('line')
+    if was is None:  # a record of an older version
+        return P.last_answer(tid, todo=S.C.todo, about=need['q'])
+    i = P._find(ls, tid)
+    now = ls[i + len(P._item_block(ls, i)) - 1]
+    if now == was or now.startswith(was + ' — '):
+        return now[len(was):].removeprefix(' — ').strip()
+    old = [P.prose(x).strip() for x in was.split(' — ')]  # the task's own text was edited too
+    return ' — '.join(x for x in (P.prose(x).strip() for x in now.split(' — ')[1:]) if x and x not in old)
 
 
 def _trouble(rec: dict, got: dict) -> tuple[dict, bool]:
@@ -322,7 +344,8 @@ def message(tid: str, branch: str, where: str = 'your worktree') -> str:
         return ''
     parts = []
     if r['answer']:
-        parts.append(f'The person said: {r["answer"]}' + (
+        said = r['answer'].startswith(('your answer (', 'you said'))  # else any `plan unblock`: the runner's or an agent's too
+        parts.append(f'{"The person said" if said else "The task was blocked and is open again, with this note"}: {r["answer"]}' + (
             '\nThe pull request was closed without a merge; the run opens a new one once you finish.' if r['closed'] else ''))
     if r['items']:
         shown = [{'key': x['key'], 'from': x['login'], 'on': x['where'], 'says': x['body']} for x in r['items']]
@@ -457,14 +480,16 @@ def ask(rec: dict, tid: str, kind: str, q: str, summary: str, steps: list[str], 
     """Block `tid` under Needs you with the question `q`; the rest is in its ask file. `left`: what the round that
     follows the answer still has to settle."""
     from agent_runner.asks import ask_file
+    line: list[str] = []
 
     def block() -> None:
         f = ask_file(tid, S.C)
         f.parent.mkdir(parents=True, exist_ok=True)
         write_whole(f, json.dumps({'summary': summary, 'where': 'GitHub', 'steps': steps}).encode())
         P.block(tid, f'DECIDE: {q} {rec["url"]}', todo=S.C.todo, after=[], keep_ask=True)
+        line.append(_asked_line(P.lines(S.C.todo), tid))
     if _plan(block, f'block {tid}, its pull request needs a person'):
-        _set(rec, need={'tid': tid, 'kind': kind, 'q': q, **left})
+        _set(rec, need={'tid': tid, 'kind': kind, 'q': q, 'line': line[0], **left})
         S.note(f'{tid}: {summary[:300]}')
         S.log(f'{tid}: pull request #{rec["number"]} needs you: {q} {rec["url"]}')
 
