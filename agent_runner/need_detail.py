@@ -177,7 +177,8 @@ def shot_file(src: str) -> Path | None:
                 f.suffix.lower() not in types or f.stat().st_size > SHOT_MAX:
             return None
         with f.open('rb') as h:
-            return f if shot_type(h.read(HEAD)) in types.values() else None
+            got = shot_type(h.read(HEAD))
+        return f if (got == types[f.suffix.lower()] if types is VIDEO_TYPES else got in types.values()) else None
     except (OSError, ValueError, AttributeError):
         return None
 

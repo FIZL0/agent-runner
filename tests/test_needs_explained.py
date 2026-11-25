@@ -136,7 +136,7 @@ def ask_videos(repo: Path) -> Path:
         (notes / d).mkdir(parents=True, exist_ok=True)
     for f, data in {'asks/D3/a.mp4': MP4, 'uploads/b.WEBM': WEBM, 'asks/D3/p.png': b'\x89PNG\r\n\x1a\nfake', 'secret.mp4': MP4,
                     'asks/D3/text.mp4': b'not a video at all', 'asks/D3/png.mp4': b'\x89PNG\r\n\x1a\nfake', 'asks/D3/mp4.png': MP4,
-                    'asks/D3/a.mov': MP4, 'asks/D3/mkv.webm': WEBM.replace(b'webm', b'mkv!')}.items():
+                    'asks/D3/a.mov': MP4, 'asks/D3/mp4.webm': MP4, 'asks/D3/mkv.webm': WEBM.replace(b'webm', b'mkv!')}.items():
         (notes / f).write_bytes(data)
     return notes
 
@@ -145,7 +145,7 @@ def test_video_types(tmp: Path) -> None:
     """F445a: an ask file's shots may be mp4 and webm videos, with a picture's folder and size checks."""
     notes = ask_videos(fake_repo(tmp))
     files = ['D3/a.mp4', 'D3/p.png', 'uploads/b.WEBM', str(notes / 'asks/D3/a.mp4'), 'D3/text.mp4', 'D3/png.mp4', 'D3/mp4.png', 'D3/a.mov',
-             'D3/mkv.webm', '../secret.mp4', str(notes / 'secret.mp4'), 'D3/gone.mp4']
+             'D3/mkv.webm', 'D3/mp4.webm', '../secret.mp4', str(notes / 'secret.mp4'), 'D3/gone.mp4']
     (notes / 'asks' / 'D3.json').write_text(json.dumps({'shots': [{'file': f, 'caption': 'c'} for f in files]}), encoding='utf-8')
     eq([(s['src'], s.get('video')) for s in N.asks_file('D3')['shots']],
        [('asks/D3/a.mp4', True), ('asks/D3/p.png', None), ('uploads/b.WEBM', True), ('asks/D3/a.mp4', True)], 'only real ones, in the two folders')

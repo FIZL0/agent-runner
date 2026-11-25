@@ -79,7 +79,7 @@ function fieldHTML(el,h,f){
 function patchKids(box,want,stay,at){
   const side=(olds,news,end)=>{
     for(let j=0;j<news.length;j++){const i=olds.findIndex(x=>sameVideo(x,news[j]));if(i<0)continue;  // F445a: first, whatever is round it
-      side(olds.slice(0,i),news.slice(0,j),olds[i]);patchIn(olds[i],news[j]);return side(olds.slice(i+1),news.slice(j+1),end)}
+      side(olds.slice(0,i),news.slice(0,j),olds[i]);patchIn(olds[i],news[j])||sameAttrs(olds[i],news[j]);return side(olds.slice(i+1),news.slice(j+1),end)}
     for(let j=0;j<news.length;j++){const i=olds.findIndex(x=>x.isEqualNode(news[j]));if(i<0)continue;
       side(olds.slice(0,i),news.slice(0,j),olds[i]);return side(olds.slice(i+1),news.slice(j+1),end)}
     if(olds.length===1&&news.length===1&&patchIn(olds[0],news[0]))return;
