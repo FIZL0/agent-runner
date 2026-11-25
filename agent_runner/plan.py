@@ -2853,6 +2853,8 @@ def main(argv: list[str] | None = None) -> int:
         with plansync.locked(c):  # a read pulls too, so it sees other people's edits
             plansync.pull(c, force=bool(editing))
             rc = _main(argv, c)
+    if not argv:  # B821: the index, an edit of nothing
+        return rc
     if not rc and argv[0] == 'edit' and len(argv) > 2:  # F45: a slot running it hears of it, as on a change
         got = section(ensure()[0], argv[1])[:1]
         now = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', _unblocked(got[0])) if got else ''
