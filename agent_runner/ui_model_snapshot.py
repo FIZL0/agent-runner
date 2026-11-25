@@ -280,6 +280,7 @@ def usage_rows(st: dict) -> list[dict]:
 
 _LATELY: list = [None, [], []]  # the event log's path, size and time, and what lately() and past_releases() read from it
 LATELY_MAX, PAST_RELEASES = 60, 20  # rows a snapshot carries
+LATELY_ALL = 6  # of every kind, newest first; past these a row is a landing
 
 
 def landed_row(at: str, tid: str, text: str) -> dict:
@@ -304,7 +305,8 @@ def _landings(titles: dict[str, str]) -> tuple[list[dict], list[dict]]:
     if mark is None or _LATELY[0] != mark:
         try:
             evs = read_events()
-            rows = [landed_row(*m) for m in lately_events(evs[-2000:], titles)[-LATELY_MAX:]][::-1]
+            rows = [landed_row(*m) for m in lately_events(evs[-2000:], titles)][::-1]
+            rows = [r for i, r in enumerate(rows) if i < LATELY_ALL or r['kind']][:LATELY_MAX]
             past: list[dict] = []
             for j in range(len(evs) - 1, -1, -1):
                 tid = evs[j].get('id') or ''

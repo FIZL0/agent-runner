@@ -148,7 +148,7 @@ function compose(ctx,text,paths){
   if(ctx&&ctx.kind==='new')msg=`Add a task: ${text}`;
   else if(ctx&&ctx.kind==='newconcept')msg=`Concept: ${text}`;  // F183: guide concepts: the options page in that chat
   else if(ctx&&ctx.kind==='plan')msg=`About ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
-  else if(ctx&&ctx.kind==='report')msg=`A problem with ${ctx.id}${ctx.title?` (${ctx.title})`:''}, which has landed: ${text}\n\nFind out what is wrong, and add a bug task for it.`;  // F426c
+  else if(ctx&&ctx.kind==='report')msg=`A problem with ${ctx.id}${ctx.title?` (${ctx.title})`:''}, which ${ctx.did||'has landed'}: ${text}\n\nFind out what is wrong, and add a bug task for it.`;  // F426c
   else if(ctx&&ctx.kind==='concept'&&ctx.lead)msg=ctx.lead+(text?`\n\n${text}`:'');  // B219a: what the chat is about (ui_model.concept_chat_text), then your words
   else if(ctx&&ctx.kind==='concept')msg=`About concept ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
   else if(ctx&&ctx.kind==='setting')msg=`Change the setting ${ctx.id} (${ctx.title}) in the project file: ${text}`;

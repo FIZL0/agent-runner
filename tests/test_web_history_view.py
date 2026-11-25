@@ -11,6 +11,7 @@ from pathlib import Path
 
 from _check import check, eq, report
 
+from agent_runner import plan_search as PS  # noqa: E402
 from agent_runner import state as S  # noqa: E402
 from agent_runner import ui_model as U  # noqa: E402
 from agent_runner import web as W  # noqa: E402
@@ -20,6 +21,12 @@ from _web import fake_repo, in_tmp, logic_js  # noqa: E402
 def events(*evs: tuple) -> None:
     S.C.notes('events.jsonl').write_text(''.join(
         json.dumps({'time': at, 'kind': kind, 'id': tid, **more}) + '\n' for at, kind, tid, more in evs), encoding='utf-8')
+
+
+def done_file(tmp: Path) -> Path:
+    f = tmp / 'DONE-search.md'
+    f.write_text('# DONE\n' + ''.join(f'- [x] **{t}** An old thing\n' for t in ('V5', 'F100', 'C9')), encoding='utf-8')
+    return f
 
 
 def test_snapshot(tmp: Path) -> None:
@@ -44,12 +51,19 @@ def test_snapshot(tmp: Path) -> None:
     eq(late[2]['text'].startswith(f'part landed'), True, 'the words are as before')
     eq(snap['past_releases'], [{'id': 'V6', 'title': 'Release 1.3.0', 'at': '2026-11-22T09:00:00'},
                                {'id': 'V5', 'title': 'Release 1.2.0', 'at': '2026-11-21T09:00:00'}], 'newest first')
+    hits = {h['id']: h for h in PS.search('old', done=done_file(tmp))['done']}
+    eq((hits['V5'].get('at'), hits['V5'].get('release'), hits['F100'].get('at'), 'at' in hits['C9']),
+       ('2026-11-21T09:00:00', True, '2026-11-20T10:00:00', False), 'a search hit says when it landed')
     S.C.run['releases'] = False
     off = U.snapshot(up=True, links={})
     eq(off['past_releases'], [], 'none with releases off')
     S.C.run['releases'] = True
     events(*[('2026-11-20T10:00:00', S.EV_LANDED, f'F{i}', {}) for i in range(1, 201)])
     eq(len(U.snapshot(up=True, links={})['lately']), U.LATELY_MAX, 'capped')
+    events(*[('2026-11-20T10:00:00', S.EV_LANDED, f'F{i}', {}) for i in range(1, 31)],
+           *[('2026-11-20T11:00:00', S.EV_IDLE, '', {})] * 100)
+    late = U.snapshot(up=True, links={})['lately']
+    eq((len(late), sum(r['kind'] == 'landed' for r in late)), (36, 30), 'other events do not crowd the landings out')
 
 
 def test_links() -> None:
@@ -92,7 +106,7 @@ new Function('env', 'with(env){' + src + ';Object.assign(env,{historyHTML,histAc
   env.S.taskOpen = {landed: 'F1'}; out.loading = env.historyHTML();
   env.S.tasks.F1 = {text: 'the whole text'}; out.open = env.historyHTML();
   env.S.taskOpen = {}; env.S.f.histq = 'OLD thing'; out.wait = env.historyHTML();
-  env.reply = {ok: true, q: 'OLD thing', open: [], parked: [], done: [{id: 'F9', title: 'Old thing', state: 'done'}, {id: 'F8', title: 'Old thing dropped', state: 'dropped'}], more: 2};
+  env.reply = {ok: true, q: 'OLD thing', open: [], parked: [], done: [{id: 'F9', title: 'Old thing', state: 'done', at: '2026-01-02T10:00:00'}, {id: 'F7', title: 'By hand', state: 'done'}, {id: 'V1', title: 'Old release', state: 'done', at: '2026-01-02T10:00:00', release: true}, {id: 'F8', title: 'Old thing dropped', state: 'dropped'}], more: 2};
   env.fire(); await new Promise(r => setImmediate(r)); out.found = env.historyHTML();
   env.S.f.histq = 'started'; out.log = env.historyHTML();
   env.reply = {ok: true, q: 'started', open: [], parked: [], done: [], more: 0};
@@ -135,7 +149,9 @@ def test_view(tmp: Path) -> None:
     check(all(i >= 0 for i in at) and at == sorted(at), 'What changed, Report a problem, Chat last', op)
     eq(op.count('<fold>'), 1, 'that row alone')
     check('Loading…' in o['wait'], 'a search waits', o['wait'])
-    check('data-task="F9"' in o['found'] and 'F8' not in o['found'] and '2 more landed tasks' in o['found'], 'older landed tasks, not a dropped one', o['found'])
+    check('data-task="F9"' in o['found'] and 'F8' not in o['found'] and '2 more done tasks' in o['found'], 'older landed tasks, not a dropped one', o['found'])
+    check('data-task="F9" data-list="landed"' in o['found'] and 'data-task="F7" data-list="donelist"' in o['found']
+          and 'data-task="V1" data-list="pastrel"' in o['found'], 'one that landed, one that did not, a release', o['found'])
     check('plan-search?q=OLD%20thing' in o['asked'][0], 'the server is asked', o['asked'])
     check('10:00 started F1' in o['log'] and '10:05' not in o['log'], 'the run log is searched', o['log'])
     check('[empty Nothing matches.]' in o['none'], 'nothing found', o['none'])

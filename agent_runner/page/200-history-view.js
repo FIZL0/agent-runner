@@ -34,7 +34,7 @@ function histRow(l,list){
   const open=taskIsOpen(list,l.id), t=S.tasks[l.id], when=histWhen(l.at), rel=list==='pastrel', part=l.kind==='part';
   const text=t&&t.text?`<pre class="tasktext" data-k="text:${esc(list+':'+l.id)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>';
   const b=(act,word)=>`<button class="btn${act==='changed'?' pri':''}" data-hist="${act}" data-id="${esc(l.id)}">${word}</button>`;
-  const small=[l.id,part?'part landed':'',agoWords(l.at)].filter(Boolean).join(' · ');
+  const small=[l.id,part?'part landed':'',l.at?agoWords(l.at):''].filter(Boolean).join(' · ');
   return `<div class="srow" data-k="${esc(list+':'+l.id)}"><button class="fold" data-task="${esc(l.id)}" data-list="${list}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(l.title||l.id)}</b><span class="small">${esc(small)}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(list+':'+l.id,`${when?`<div class="small">${rel?'Released':part?'Part landed':'Landed'} at ${esc(when)}.</div>`:''}${text}<div class="btns">${b('changed','What changed')}${b('report','Report a problem')}${b('chat','Chat')}</div>`):''}</div>`;
 }
 function histSec(name,rows,empty,k){return rows.length||empty?`<div class="sec">${name}<span class="ln"></span></div>${rows.length?card(rows.join(''),'',`data-k="${k}"`):emptyCard(empty)}`:''}
@@ -53,12 +53,13 @@ function historyHTML(){
 function histFound(q,land,past,log){
   const h=histState(), words=q.toLowerCase().split(/\s+/), same=h.got&&h.got.q===q, done=same?h.got.done.filter(x=>x.state==='done'):[], hit=new Set(done.map(x=>x.id));
   const match=l=>hit.has(l.id)||histMatch(words,l.id,l.title||''), known=new Set([...land,...past].map(l=>l.id));
-  const ls=[...land.filter(match),...done.filter(x=>!known.has(x.id))], rs=past.filter(match), gs=log.filter(l=>histMatch(words,l));
+  const old=done.filter(x=>!known.has(x.id)), isRel=x=>x.release&&releasesOn(S.snap);
+  const ls=[...land.filter(match),...old.filter(x=>x.at&&!isRel(x))], rs=[...past.filter(match),...old.filter(isRel)], ds=old.filter(x=>!x.at), gs=log.filter(l=>histMatch(words,l));
   const err=h.err?card(`${h.old?oldRunHTML(h.err):`<div class="small v-bad">${esc(h.err)}</div>`}<div class="btns"><button class="btn" data-histload>Try again</button></div>`):'';
   const more=same&&h.got.more||0;
-  return err+histSec('Landed',ls.map(x=>histRow(x,'landed')),'','landed')+(more?`<div class="small">${more} more landed ${more===1?'task':'tasks'}. Add a word to find fewer.</div>`:'')
+  return err+histSec('Landed',ls.map(x=>histRow(x,'landed')),'','landed')+histSec('Done',ds.map(x=>histRow(x,'donelist')),'','donelist')+(more?`<div class="small">${more} more done ${more===1?'task':'tasks'}. Add a word to find fewer.</div>`:'')
     +histSec('Releases',rs.map(x=>histRow(x,'pastrel')),'','pastrel')+(gs.length?`<div class="sec">Run log<span class="ln"></span></div>${histLog(gs)}`:'')
-    +(ls.length||rs.length||gs.length||err?'':emptyCard(same?'Nothing matches.':'Loading…'));
+    +(ls.length||ds.length||rs.length||gs.length||err?'':emptyCard(same?'Nothing matches.':'Loading…'));
 }
 /* the field in use stays the same element, as in Plan */
 function histDraw(el,h){
@@ -73,11 +74,12 @@ function histOf(id){
 function histAct(act,id){
   const l=histOf(id);if(!l)return;
   const title=l.title||id;
-  if(act==='changed'){S.ctx=null;const ask=histChangedAsk(id,title);return newChat('new_control',{ask},`What changed in ${id}`,ask)}
-  S.ctx={kind:act==='report'?'report':'plan',id,title,label:act==='report'?`Problem with ${id} ${title}`:`${id} ${title}`};
+  if(act==='changed'){S.ctx=null;const ask=histChangedAsk(id,title,histDid(l));return newChat('new_control',{ask},`What changed in ${id}`,ask)}
+  S.ctx={kind:act==='report'?'report':'plan',id,title,...(act==='report'?{did:histDid(l)}:{}),label:act==='report'?`Problem with ${id} ${title}`:`${id} ${title}`};
   open(ctxKey(S.ctx));const ta=document.querySelector('[data-in]');if(ta)kbFocus(ta);  // in the tap itself, as about() does
 }
-function histChangedAsk(id,title){return `What changed in ${id} (${title}), which has landed? Read its commits and tell me in a few plain lines what is different now. Change nothing.`}
+function histDid(l){return l.kind==='part'?'has landed in part':l.at?'has landed':'is done'}
+function histChangedAsk(id,title,did){return `What changed in ${id} (${title}), which ${did}? Read its commits and tell me in a few plain lines what is different now. Change nothing.`}
 document.addEventListener('click',e=>{
   const q=s=>e.target.closest(s);let x;
   if(x=q('[data-hist]')){histAct(x.dataset.hist,x.dataset.id);return}
