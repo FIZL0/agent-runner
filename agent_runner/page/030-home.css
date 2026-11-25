@@ -10,7 +10,7 @@
 .pcard.opening{border-color:var(--accent)} .opening .livedot{display:inline-block;vertical-align:middle}
 .pcard .ell{min-width:0} .ptasks{display:grid;gap:2px;min-width:0}
 .top button.title{min-width:32px} .top [data-home]~.pill{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis} .top .plus{flex:none;white-space:nowrap;padding:6px 12px} .top .plus svg{width:15px;height:15px;stroke-width:2.2}
-.btn.talkbig{width:100%;min-height:56px;justify-content:center;font-size:var(--fs-l)} .talkbig svg{width:22px;height:22px} .btn.talkbig:hover{background:var(--accent2)}  /* F426a: Home */
+.btn.talkbig{width:100%;min-height:56px;justify-content:center;font-size:var(--fs-l)} .talkbig svg{width:22px;height:22px} .btn.acc.talkbig:hover{background:var(--accent2)}  /* F426a: Home */
 .chip.busy{opacity:.7;cursor:progress} .card.sums{gap:0;padding-block:var(--s1)} .fold.sumrow{min-height:var(--tap)} .sumrow+.sumrow{border-top:1px solid var(--line)}
 .meter{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:var(--fs-m)}
 .meter .bar{height:6px;background:var(--line);border-radius:var(--r-xs);overflow:hidden} .meter .bar i{display:block;height:100%;background:var(--ok)}

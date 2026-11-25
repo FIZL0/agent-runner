@@ -821,7 +821,7 @@ const S = {ob: [], atts: {}, f: {}, view: 'home', thread: null, snap: null};
 const no = () => '', env = {S, I: {}, DK: {}, LOGO: no, greeting: no, keysLine: no, ttydLine: no, needsSec: () => '[needs]', dictWhy: no, micWhy: no,
   shownSession: no, busy: no, sessWorks: no, modelOf: no, enterHint: no, boxKey: () => 'home', obCards: f => S.ob.filter(f).map(x => `[ob ${x.ctl}]`).join('')};
 const names = ['const esc=', 'const card=', 'const controlOf=', 'const ctlBusy=', 'const CTL_ICON=', 'const chatPins=', 'const chats=', 'const chatTitle=', 'const slots=', 'const working_=', 'const homeSums='];
-const src = logic + names.map(line).join('') + ['box', 'homeHTML', 'homeChips', 'homeStatus', 'homePlan'].map(f => grab(`function ${f}(`)).join('');
+const src = logic + names.map(line).join('') + ['box', 'homeHTML', 'homeStart', 'homeChips', 'homeStatus', 'homePlan'].map(f => grab(`function ${f}(`)).join('');
 const at = new Function('env', 'with(env){' + src.replace(/^const /gm, 'var ') + '; return {home: homeHTML, box: () => box("x")}}')(env);
 const out = JSON.parse(require('fs').readFileSync(0, 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob || []; return at.home() });
 const boxes = [['home', null], ['home', 'c1'], ['home', '+new']].map(([v, t]) => { S.view = v; S.thread = t; return at.box() });

@@ -69,6 +69,7 @@ async function drain(){
 function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
   const later=it.set&&S.ob.some(x=>x.cid!==it.cid&&x.set&&x.set.id===it.set.id&&x.name===it.name&&x.state==='sending');  // F174: the field holds a newer value that goes next
+  if(it.ctl==='start:'&&j&&j.ok){S.startOk=now;snapNow()}  // F402c: starting until a snapshot says that it is up
   if(it.setbar&&!oldRun(j)){settingsDone(it,j);return}  // F202b
   if(it.set&&!later&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
   if(j&&j.seen&&j.confirm&&it.ctl){  // F186: a release the last snapshot did not show is open: asked where New release stands

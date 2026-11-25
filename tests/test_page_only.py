@@ -497,7 +497,8 @@ const die = () => { const s = last(); s.readyState = 2; const f = s.onerror; f()
   out.kept = JSON.stringify([S.view, S.thread, S.f, S.ob]) === kept;
   offDraw(); out.off = [els.runoff.hidden, els.runoff.h];
   busy = true; offDraw(); out.busy = els.runoff.h; busy = false;
-  S.thread = null; S.view = 'status'; offDraw(); out.status = els.runoff.hidden; S.view = 'home';
+  S.thread = null; S.view = 'status'; offDraw(); out.status = els.runoff.hidden;
+  S.view = 'home'; offDraw(); out.home = els.runoff.hidden; S.thread = 'c3'; offDraw(); out.homeChat = els.runoff.hidden; S.thread = null; S.view = 'plan';
   all = true; offDraw(); out.all = els.runoff.hidden; all = false;
   const b = S.snap.boot; delete S.snap.boot; offDraw(); out.old = els.runoff.hidden; S.snap.boot = b;
   die(); out.again = go();
@@ -527,6 +528,7 @@ def test_open_page(tmp: Path) -> None:
     check(not o['off'][0] and 'not running' in o['off'][1] and 'data-ctl="start"' in o['off'][1], 'no run: said, with Start', o['off'])
     check('Starting the run' in o['busy'] and ' busy"' in o['busy'], 'Start under way', o['busy'])
     eq((o['status'], o['all'], o['old']), (True, True, True), "not on Status (its Run card says it), All projects, or from a kept snapshot")
+    eq((o['home'], o['homeChat']), (True, False), 'F402c: not on Home (its Start card says it), but in a chat opened from it')
     eq((o['again'], o['back']), (1000, True), 'the next time it dials at once again, and a run that is up takes the banner away')
     eq(o['feed'], ['words'], "an answer that nothing serves the page leaves the chat's words")
     check('id="runoff"' in W.page_html().decode(), 'the page has its place')
