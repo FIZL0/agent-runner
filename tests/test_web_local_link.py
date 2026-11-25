@@ -14,6 +14,7 @@ from _web import fake_repo, in_tmp
 
 from agent_runner import cmds as M
 from agent_runner import devices
+from agent_runner import home as H
 from agent_runner import page_only as P
 from agent_runner import state as S
 from agent_runner import web as W
@@ -89,6 +90,29 @@ def test_behind_home(tmp: Path) -> None:
         srv.stop()
 
 
+def test_own_port_and_home(tmp: Path) -> None:
+    fake_repo(tmp)
+    srv, log = started(SITE, 0)  # Home routes it, and its own port is open too
+    try:
+        port = srv.server_address[1]
+        said = ' '.join(log).replace(' or ', ' ').split()
+        links = [x for x in said if x.startswith('http')]
+        eq((links[0], links[-1], len(links)), (SITE[0], SITE_HERE, 3), "Home's, its own, then Home's localhost link")
+        check(f':{port}/' in links[1], 'its own address by hostname', links)
+    finally:
+        srv.stop()
+
+
+def test_home_opens_it(tmp: Path) -> None:
+    fake_repo(tmp)
+    home = H.serve_home('HT', 0, rows=lambda: [])
+    try:
+        with urllib.request.urlopen(f'http://localhost:{home.server_address[1]}/?t=HT', timeout=10) as r:
+            eq((r.status, b'<html' in r.read()), (200, True), 'Home takes its localhost link')
+    finally:
+        home.stop()
+
+
 def facts_of(root: Path, own: list[str], site: list[str], https) -> dict:
     S.C.todo.parent.mkdir(parents=True, exist_ok=True)
     S.C.todo.write_text('- [ ] **B1** one\n', encoding='utf-8')
@@ -131,6 +155,10 @@ def test_page_only(tmp: Path) -> None:
         eq(P.open_page(root, opener), ('opened', HTTPS), 'no run up: the launcher shows the https link')
         with mock.patch.object(W, 'site_urls', lambda *a, **k: SITE):
             eq(P.open_page(root, opener)[0], 'opened', 'and through Home')
+        with mock.patch.object(W, 'run_trusted', lambda: ['10.0.0.0/24']), mock.patch.object(P, 'urls', lambda r=None: OWN[1:]), \
+                mock.patch.object(W, 'tailscale_https_urls', NONE):
+            eq(P.open_page(root, opener), ('opened', 'http://10.0.0.5:8770/'), 'on a trusted network')
+            eq(opened.pop(), HERE, 'localhost is opened with its key')
     with mock.patch.object(P, 'start', lambda r: ''), mock.patch.object(P, 'links', lambda r: []), \
             mock.patch.object(M, 'run_info', lambda r: {'up': True}), \
             mock.patch.object(M, 'run_facts', lambda r, run: {'link': HTTPS, 'local': HERE}):
@@ -139,5 +167,5 @@ def test_page_only(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_listed), in_tmp(test_served), in_tmp(test_behind_home), in_tmp(test_picker),
-                             in_tmp(test_page_only)]))
+    raise SystemExit(report([in_tmp(test_listed), in_tmp(test_served), in_tmp(test_behind_home),
+                             in_tmp(test_own_port_and_home), in_tmp(test_home_opens_it), in_tmp(test_picker), in_tmp(test_page_only)]))

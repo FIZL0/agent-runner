@@ -148,7 +148,7 @@ def local_link(urls: list[str]) -> str:
     """B815b: the page by localhost, for this machine's own browser (a secure context, so Talk's mic works there): the
     first http address of `urls` (a run's own_links, or Runner Home's) with that host, its key kept (a loopback client is
     never trusted). '' for none: a page only Home opens has no own_links."""
-    for x in urls:
+    for x in sorted(urls, key=lambda x: urlsplit(x).hostname != 'localhost'):  # one listed already: it has its key
         u = urlsplit(x)
         if u.scheme == 'http' and u.port and u.hostname != LOCAL:
             return u._replace(netloc=f'localhost:{u.port}').geturl()

@@ -1068,8 +1068,7 @@ def run_facts(root: Path, run: dict, https=None, site=None) -> dict:
             if us:
                 from agent_runner import home, web  # F165: own_links: never a page only Home opens
                 us = (site or home.site_links)(root) or web.own_links(us)
-            out['link'] = page_link(us, https)
-            out['local'] = web.local_link(us) if us else ''
+            out['link'], out['local'] = page_link(us, https), web.local_link(us) if us else ''
     except (OSError, SystemExit, ValueError, KeyError, TypeError):
         pass
     return out
@@ -1389,8 +1388,7 @@ def open_ui(root: Path) -> str:
     from agent_runner.tui import PICK_RC, PICKER_ENV, refusal
     if why := refusal():
         f = run_facts(root, {'up': True}) if plat.WINDOWS else {}
-        link = f.get('local') or f.get('link', '')
-        return f'{why} {link}'.rstrip()
+        return f'{why} {f.get("local") or f.get("link", "")}'.rstrip()
     rc = sp.call([*runner_cmd(), 'ui'], cwd=str(root), env=dict(os.environ, **{PICKER_ENV: '1'}))
     return PICK if rc == PICK_RC else ''
 
