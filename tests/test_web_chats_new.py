@@ -277,7 +277,7 @@ def test_plus_hold_b213(tmp: Path) -> None:
 
 
 PLUS_CHAT_DRIVER = r"""
-const page = require('fs').readFileSync(0, 'utf8');
+const page = require('fs').readFileSync(0, 'utf8').replace(/\r\n/g, '\n');
 const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
 const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
 const at = (thread, view, HOME_PAGE, all) => new Function('S', 'I', 'HOME_PAGE', 'atAll', 'PLUS_HOLD', 'controlOf',
