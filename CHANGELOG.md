@@ -5,6 +5,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - Fixed: a task on a claude model in a project whose roles and kinds all name another provider, on a machine with Claude Code, no longer starts past `[run] session_max` or `weekly_max`, or while the Claude API is unreachable; past a cap it alone waits (or starts on the first free `[models] fallback` provider), other tasks start as before, and when nothing else can start the alarm names the held task and says it cannot start until the reset. `force` lifts the cap (B791).
+- Fixed: in a project whose roles and kinds all name another provider, a cut-off session on a claude model (a task's own model), or one queued to go on with a claude model from `[models] fallback`, was resumed while the Claude API was unreachable and died at its first call. Now it alone waits until the API answers, and the run log says once that it cannot resume; sessions on other providers resume as before. Only with Claude Code as `[run] agent` (B799).
+
 ## 0.67.0 (2026-11-24)
 
 - Changed: on the run page, the Status view has no Needs you section; Home keeps it (C50).
