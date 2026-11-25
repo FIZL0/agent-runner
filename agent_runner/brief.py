@@ -177,7 +177,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         tid=tid, n=n, runner=C.command, branch=branch,
         publish=publish(tid),
         others=OTHERS if slots > 1 else '',
-        earlier=(f'An earlier attempt that could not be merged is on wip/{tid} (`git log {branch}..wip/{tid}`, '
+        earlier=(f'An earlier attempt that did not land is on wip/{tid} (or the newest wip/{tid}-N; `git log {branch}..wip/{tid}`, '
                  f'and the ledger line in {r["notes"]}/ledger.md says why). Read it before starting over.\n'
                  if wip else ''),
         rules=f'read {r["rules"]} first' if r['rules'] else 'the README, and AGENTS.md or CLAUDE.md if there is one',

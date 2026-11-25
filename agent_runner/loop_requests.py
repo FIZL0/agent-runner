@@ -143,7 +143,9 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         halt_answer(tid, msg, EV_DROPPED if how == 'drop' else None)
 
 
-CANCELLED: set[str] = set()  # F426d: cancelled and not seen parked yet: no slot starts one meanwhile
+def cancelled_marks() -> Path:
+    """F426d: a file for each task cancelled and not seen parked yet: no slot of this run or the next starts one."""
+    return C.notes('cancelled', 'x').parent
 
 
 def keep_work(tid: str, n: int | None, branch: str) -> tuple[str, str]:
@@ -167,7 +169,8 @@ def keep_work(tid: str, n: int | None, branch: str) -> tuple[str, str]:
         git('branch', '-D', f'task/{tid}')
         wip = ''
     elif git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
-        return '', f'task/{tid} could not be renamed to {wip}: rename it by hand, or a run merges it'
+        why = f'task/{tid} could not be renamed to {wip}: rename it by hand, or a run merges it'
+        return f'task/{tid}', f'{bad}; {why}' if bad else why
     else:
         forgive_park(tid, wip)
         out = push(ROOT, wip)
@@ -182,11 +185,15 @@ def keep_work(tid: str, n: int | None, branch: str) -> tuple[str, str]:
 def cancels(procs: dict, running: dict, free_at: dict, tried: set, branch: str) -> None:
     """F426d: act on `plan cancel`: the task's session is ended, its work kept (`keep_work`) and its slot freed; the
     command then parks the task. One that is finished or merging is refused, and nothing of it changes."""
-    parked = {tid for section, _, tid, _, _ in P.iter_tasks(plan_text(branch)) if section.startswith(P.PARKED)} \
-        if CANCELLED else set()
-    for tid in CANCELLED & parked:
-        CANCELLED.discard(tid)
-        tried.discard(tid)  # parked: once the person unparks it, that is a new attempt in this run
+    if marks := list(cancelled_marks().iterdir()):
+        waiting = {tid for section, box, tid, _, _ in P.iter_tasks(plan_text(branch))
+                   if box != 'x' and not section.startswith(P.PARKED)}
+        for m in marks:
+            if m.name in waiting:
+                tried.add(m.name)
+            else:
+                m.unlink(missing_ok=True)
+                tried.discard(m.name)  # parked: once the person unparks it, that is a new attempt in this run
     for tid, req in P.requests(C, 'cancel').items():
         n = next((m for m, t in running.items() if t[0] == tid), None)
         q = next((m for m, x in queued().items() if x[0] == tid), None)
@@ -225,7 +232,7 @@ def cancels(procs: dict, running: dict, free_at: dict, tried: set, branch: str) 
         if sid:
             drop_session_tmp(sid)
         tried.add(tid)
-        CANCELLED.add(tid)
+        (cancelled_marks() / tid).touch()
         plansync.release(C, tid)
         msg = f'cancelled {tid}; {stopped}; ' + (f'its work is on {wip}' if wip else 'nothing to keep') + (
             f'; {bad}' if bad else '')

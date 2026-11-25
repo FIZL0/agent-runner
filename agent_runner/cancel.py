@@ -67,8 +67,8 @@ def stop(c, tid: str, words: list[str], wait: float | None = None) -> tuple[int,
     said = P.request(c, KIND, tid, {'how': 'cancel'}, P.HALT_WAIT if wait is None else wait)
     after = '' if mins is None else f' after {mins} min'
     if said is None:  # it stays asked; parked now, so the run starts it again in no case
-        return 0, f'asked the run to stop {where}: within seconds its work is on wip/{tid}', \
-            f'cancelled{after}: what was done is on the newest wip/{tid} branch, go on from there'
+        return 0, f'asked the run to stop {where}: within seconds its work is on wip/{tid}, unless it lands first', \
+            f'asked to cancel{after}: if it was stopped, what was done is on the newest wip/{tid} branch, go on from there'
     try:
         got = json.loads(said)
     except ValueError:

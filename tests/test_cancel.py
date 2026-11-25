@@ -95,7 +95,6 @@ class Proj:
         if self.agent:
             self.agent.kill()
             self.agent.wait()
-        loop_requests.CANCELLED.clear()
         self.lock.close()
 
 
@@ -142,6 +141,7 @@ def test_kept_parked_unparked(p: Proj):
     eq([t[0] for t in sched.tasks('main')], ['H2'], 'so no run takes it')
     eq(sched.parked_attempts(), {}, 'it counts as no failed merge')
     p.tick()
+    eq(list(loop_requests.cancelled_marks().iterdir()), [], 'no mark is left')
     check('H1' not in p.tried, 'parked, it is no longer a tried task')
     rc, out, err = p.cmd('edit', 'H1', '--pri', 'normal')
     eq(rc, 0, f'it is unparked ({err})')
@@ -183,6 +183,27 @@ def test_uncommittable(p: Proj):
     eq((rc, p.branches()), (0, ['wip/H1']), 'parked, on wip/H1')
     has(out, r'could not be committed: they are still in s1', 'said')
     eq((d / 'half.py').read_text(), 'half\n', 'and the edits are there')
+
+
+def test_not_parked(p: Proj):
+    """stopped but never parked (the command died): neither this run nor the next starts it"""
+    p.start()
+    P.channel(R.C, cancel.KIND).joinpath('H1.json').write_text('{"how": "cancel"}')
+    p.tick()
+    p.tried = set()  # the next run's
+    p.tick()
+    check('H1' in p.tried, 'held back')
+
+
+def test_no_rename(p: Proj):
+    """task/H1 that cannot be renamed: said, and the note names where the work is"""
+    p.start()
+    real = loop_requests.git
+    fails = lambda *a, **k: subprocess.CompletedProcess(a, 1, '', 'no') if a[:2] == ('branch', '-M') else real(*a, **k)  # noqa: E731
+    with mock.patch.object(loop_requests, 'git', fails):
+        rc, out, err = p.cmd('cancel', 'H1', '--yes')
+    has(out, r'could not be renamed', 'said')
+    has(p.todo(), r'its work is on task/H1', 'the note')
 
 
 def test_queued_resume(p: Proj):
@@ -249,4 +270,4 @@ def test_unanswered(p: Proj):
 
 if __name__ == '__main__':
     sys.exit(report([in_proj(t) for t in (test_asks, test_kept_parked_unparked, test_again, test_nothing_done,
-                                          test_uncommittable, test_queued_resume, test_refused, test_unanswered)]))
+                                          test_uncommittable, test_not_parked, test_no_rename, test_queued_resume, test_refused, test_unanswered)]))
