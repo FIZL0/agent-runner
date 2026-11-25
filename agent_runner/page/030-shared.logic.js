@@ -51,7 +51,7 @@ function conceptButtons(c){
 const NO_CONCEPT='No concept waits for a pick.';
 /* F93: Talk. The sidebar's views, Talk first; its control session: the one this browser remembers while it is
    live, else a live chat titled Talk, else '' (the next send opens one) */
-const NAV=[['talk','Talk'],['home','Home'],['status','Status'],['plan','Plan'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']];
+const NAV=[['talk','Talk'],['home','Home'],['status','Status'],['plan','Plan'],['history','History'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']];
 /* F124: Agents and Activity are one view now, Status */
 const viewOf=v=>v==='agents'||v==='activity'?'status':v;
 /* B177: what a reload opens: {v: the view, t: the chat ('' for none), link: the link named it}. hash: the link's #,

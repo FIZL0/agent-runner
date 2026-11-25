@@ -850,3 +850,10 @@ _Said_: responses, what I answered
 _On screen_: a dim row in the Chats list's Quiet group
 _In code_: sent_responses, keep_response, response_chat, snapshot responses
 _Avoid_: reply record, answer log
+
+**History view**:
+The run page's History view, opened from the NAV row after Plan: one scroll with a Find in history field, Landed (the newest landed tasks, each opening in place to what it is, its text, What changed, Report a problem and Chat last), Releases (past ones, newest 20; with Manage releases off the section goes), and the Run log with its Since my last look and Since yesterday chips.
+_Said_: History
+_On screen_: History
+_In code_: historyHTML, histRow, past_releases, NAV
+_Avoid_: Activity, archive, timeline

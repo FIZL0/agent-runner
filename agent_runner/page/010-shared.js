@@ -40,6 +40,7 @@ const I={
  send:ic('<path d="M12 19V5M6 11l6-6 6 6"/><path class="forcemark" d="M6 18l6-6 6 6"/>'),  // B208: its second head shows for Force send alone
  stop:ic('<rect x="7" y="7" width="10" height="10" rx="1.5"/>'),
  back:ic('<path d="M15 5l-7 7 7 7"/>'),
+ history:ic('<path d="M4 12a8 8 0 1 0 2.6-5.9L4 8.5"/><path d="M4 4v4.5h4.5M12 8v4l3 2"/>'),  // F426c
  chev:ic('<path d="M9 6l6 6-6 6"/>'),
  clock:ic('<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>'),
  check:ic('<path d="M5 12.5l4.5 4.5L19 7"/>'),

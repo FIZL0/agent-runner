@@ -47,8 +47,17 @@ def rows(ls: list[str]) -> list[dict]:
     return out
 
 
+def landings() -> dict[str, str]:
+    """F426c: when each task landed, by the event log: {id: its newest landing's stamp}."""
+    from agent_runner.status import read_events
+    try:
+        return {e['id']: e['time'][:19] for e in read_events() if e['kind'] == S.EV_LANDED and e.get('id')}
+    except Exception:  # noqa: BLE001 - no event log: the hits have no time
+        return {}
+
+
 def search(query: str, todo=None, done=None) -> dict:
-    """{'ok', 'q', 'open', 'parked', 'done': [{'id', 'title', 'state'}], 'more': done tasks left out}. A plan that
+    """{'ok', 'q', 'open', 'parked', 'done': [{'id', 'title', 'state'}], a done one with 'at' when it landed (and 'release')], 'more': done tasks left out}. A plan that
     cannot be read is {'ok': False, 'q', 'out'}."""
     out: dict = {'ok': True, 'q': query, 'open': [], 'parked': [], 'done': [], 'more': 0}
     words = query.casefold().split()
@@ -72,4 +81,8 @@ def search(query: str, todo=None, done=None) -> dict:
         out[group] = [{k: t[k] for k in ('id', 'title', 'state')} for _, _, t in sorted(hits, key=lambda h: h[:2])]
     out['more'] = max(0, len(out['done']) - DONE_MAX)
     out['done'] = out['done'][:DONE_MAX]
+    at = landings() if out['done'] else {}
+    for r in out['done']:
+        if r['id'] in at:
+            r.update(at=at[r['id']], **({'release': True} if P.release(r['id']) else {}))
     return out

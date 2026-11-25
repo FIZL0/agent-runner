@@ -72,7 +72,7 @@ $('file').addEventListener('change',e=>{holdPlus();[...e.target.files].forEach(u
 document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files'))e.preventDefault()});
 document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length){e.preventDefault();[...e.dataTransfer.files].forEach(upload)}});
 /* F114, F204a: a key of the row, or the search's x, keeps the field's focus (and its keyboard) */
-for(const t of ['pointerdown','mousedown'])document.addEventListener(t,e=>{if(e.target.closest&&e.target.closest('.keys .tool,[data-feedkeys],[data-setqclear]'))e.preventDefault()});
+for(const t of ['pointerdown','mousedown'])document.addEventListener(t,e=>{if(e.target.closest&&e.target.closest('.keys .tool,[data-feedkeys],[data-setqclear],[data-histqclear]'))e.preventDefault()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)loadFeed(S.thread)});
 /* F204b: every draw looks whether Settings is in view (render()), so any way out or back counts, and so does the page hidden
    or kept by the browser; true when its search was cleared */
