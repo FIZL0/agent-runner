@@ -2,7 +2,7 @@
 let RUN_VERSION='';  // F90
 /* F149: the popup over the view when the run serves another page than this one, or needs a restart (pageNews). Refresh
    keeps what is written: boxes and the outbox are kept as they are typed, the rest by keepTyped(). */
-const LATER_KEY='ar-later', TYPED_KEY='ar-typed:'+(HKEY||document.title);
+const LATER_KEY='ar-later', TYPED_KEY='ar-typed:'+(HOME_PAGE?'home:':'')+(HKEY||document.title);  // F432: the off page leaves the run page's words alone
 S.later=tabStore.get(LATER_KEY).split(' ').filter(Boolean);
 const newsNow=()=>pageNews(S.snap,PAGE_PRINT.startsWith('/*')?'':PAGE_PRINT,S.later);
 function newsHTML(x){
@@ -65,12 +65,20 @@ function takeSnap(s){
   render();S.live=true;if(S.needGo)needGo();
 }
 let lost=0;  /* the banner shows only when no snapshot came for a while, not on every reconnect */
+/* F432: the words of the lost-connection bar. closed: Runner Home answers that nothing serves this page (its page-only
+   process ended while this page slept); a fetch starts nothing there, a page load does */
+function lostDraw(closed){setHTML($('offline'),closed?'<span>The run page is closed</span><button class="btn acc" data-newsrefresh>Reload</button>':"Lost the run page's connection: trying again…")}
+async function askClosed(){
+  let closed=false;
+  try{const r=await fetch(tq('snapshot'));closed=r.status===502&&(await r.json()).closed===true}catch(e){}
+  if(lost)lostDraw(closed);
+}
 function connect(n=0){
   let es;try{es=new EventSource(tq('events'))}catch(e){return poll()}
-  const fine=()=>{n=0;clearTimeout(lost);lost=0;$('offline').hidden=true};
+  const fine=()=>{n=0;clearTimeout(lost);lost=0;$('offline').hidden=true;lostDraw(false)};
   es.onmessage=e=>{fine();try{takeSnap(JSON.parse(e.data))}catch(x){}};
   es.onerror=()=>{if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000);
-    if(es.readyState===2){es.onerror=null;setTimeout(()=>connect(n+1),dialWait(n))}};  // F402b3b
+    if(es.readyState===2){es.onerror=null;askClosed();setTimeout(()=>connect(n+1),dialWait(n))}};  // F402b3b
 }
 async function poll(){try{takeSnap(await (await fetch(tq('snapshot'))).json())}catch(e){}setTimeout(poll,4000)}
 async function loadFeed(n){

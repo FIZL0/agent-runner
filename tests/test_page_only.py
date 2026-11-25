@@ -504,6 +504,13 @@ const die = () => { const s = last(); s.readyState = 2; const f = s.onerror; f()
   say({up: true, boot: 'run2', shown: ['stop']}); offDraw(); out.back = els.runoff.hidden;
   S.feeds.c3 = {entries: ['words']}; answer = {status: 502, json: async () => ({ok: false})};
   await loadFeed('c3'); out.feed = S.feeds.c3.entries;
+  // F432: through Runner Home, which says that nothing serves the page
+  const tick = () => new Promise(f => setImmediate(f)), timer = () => timers.filter(t => t && !t[2]).pop()[0]();
+  answer = {status: 502, json: async () => ({ok: false, closed: true})};
+  die(); await tick(); out.closedEarly = els.offline.hidden; timer(); out.closed = [els.offline.hidden, els.offline.h];
+  go(); answer = {status: 502, json: async () => { throw 1 }}; die(); await tick(); out.proxy = els.offline.h;
+  go(); answer = {status: 502, json: async () => ({ok: false, closed: true})}; die(); say({up: false, boot: 'page', shown: ['start']});
+  await tick(); out.woken = [els.offline.hidden, els.offline.h];
   console.log(JSON.stringify(out));
 })();
 """
@@ -529,6 +536,9 @@ def test_open_page(tmp: Path) -> None:
     eq((o['status'], o['all'], o['old']), (True, True, True), "not on Status (its Run card says it), All projects, or from a kept snapshot")
     eq((o['again'], o['back']), (1000, True), 'the next time it dials at once again, and a run that is up takes the banner away')
     eq(o['feed'], ['words'], "an answer that nothing serves the page leaves the chat's words")
+    check(o['closedEarly'] and not o['closed'][0] and 'data-newsrefresh>Reload<' in o['closed'][1], 'F432: Home says nothing serves it: Reload', o['closed'])
+    check('Reload' not in o['proxy'], 'a 502 that is not Home\'s word: no Reload', o['proxy'])
+    check(o['woken'][0] and 'Reload' not in o['woken'][1], 'it answers again: no Reload, also when the look ends later', o['woken'])
     check('id="runoff"' in W.page_html().decode(), 'the page has its place')
 
 

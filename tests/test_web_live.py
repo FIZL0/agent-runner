@@ -144,6 +144,7 @@ S.atts = {c1: [{name: 'p.png', path: '/up/p.png', thumb: 'data:'}], c2: []}; S.o
 ta = {value: 'half a thought'}; store.set('d:home', ta.value);
 out.kept = go();
 fresh({}); takeTyped(); out.back = [S.f, S.f.padd, S.ren, S.setOpen, S.atts]; out.once = tabStore.get(TYPED_KEY);
+HOME_PAGE = true; out.homeKey = eval(part.match(/TYPED_KEY=([^;]*);/)[1]) !== TYPED_KEY; HOME_PAGE = false;  // F432
 fresh({}); ta = null; out.nothing = [go(), tabStore.get(TYPED_KEY)];
 fresh({}); tabStore.set(TYPED_KEY, JSON.stringify({atts: [{name: 'o', path: '/o'}]})); takeTyped(); out.oldAtts = S.atts;  // kept by a page before B182
 fresh({}); S.atts = {c9: [{name: 'x'}]}; out.uploading = go();
@@ -206,6 +207,7 @@ def test_news_f149(tmp: Path) -> None:
                    {'c1': [{'name': 'p.png', 'path': '/up/p.png'}]}], 'and what was written comes back, an attachment to its own box')
     eq(o['oldAtts'], {'home': [{'name': 'o', 'path': '/o'}]}, "B182: an older page's attachments come back in the open box")
     eq((o['once'], o['nothing']), ('', [[1, ''], '']), 'once; with nothing written nothing is kept')
+    check(o['homeKey'], "F432: the off page in between (Home's, same project) does not take them")
     for k, word in (('uploading', 'uploading'), ('mic', 'mic'), ('dict', 'mic'), ('unkept', 'cannot keep'), ('dead', 'cannot keep'),
                     ('deadOb', 'cannot keep')):
         check(o[k][0] == 0 and word in o[k][1], f'{k}: Refresh waits and says why', o[k])

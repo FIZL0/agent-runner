@@ -360,6 +360,11 @@ def test_opens_off(tmp: Path) -> None:
                'a fetch, a frame, a prefetch: the off page')
             eq([ask(f'/p/alpha/{p}?t=HT', **nav)[0] for p in ('snapshot', 'events', 'act')], [502] * 3, 'another path')
             eq([ask('/?t=HT', **sec)[0], ask('/projects?t=HT', **nav)[0]], [200, 200], "Home's own")
+            try:
+                urllib.request.urlopen(f'{base}/p/alpha/snapshot?t=HT', timeout=10)
+                check(False, 'F432: refused')
+            except urllib.error.HTTPError as e:
+                check(json.loads(e.read()).get('closed') is True, 'F432: its answer says the page is closed, so an open page says Reload')
             eq((srv.opening, started), (set(), []), 'none of them starts anything')
             eq(ask('/p/alpha/?t=HT', **sec), (200, True), 'opened: the off page, at once')
             check(came.wait(10), 'and it is started')
