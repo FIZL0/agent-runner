@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, fallback as FB, settings_live, ci, file_split, gitops, no_push, plan as P, plansync, plat, shared_tools, stack, undo
+from agent_runner import agent_hold, brief_arrives, fallback as FB, settings_live, ci, file_split, gitops, no_push, plan as P, plansync, plat, shared_tools, stack, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -1206,6 +1206,7 @@ class Run:
         tells(procs, running)  # F16: plan tell / change, typed into a running slot's session
         restyles(procs, running, self.branch)  # F19: plan restyle parks a running interface task
         budgets(procs, running, type_into)  # F103: [run] task_tokens / task_usd stop a task at a clean point
+        brief_arrives.check(procs, running)  # B775: a session whose brief did not arrive is ended
         FB.caps(procs, running, type_into)  # F106g: a Claude Code task at a usage cap goes on down the chain
         halts(procs, running, self.free_at, self.tried, self.branch, self.model, self.idle,
               self.slots)  # B19: plan drop / change of a running task
@@ -1235,6 +1236,7 @@ class Run:
         save what it left and merge its task."""
         procs, r, branch = self.procs, self.r, self.branch
         if n in procs and not plat.alive(procs[n][0]):
+            brief_arrives.check(procs, self.running)  # B775: it may have ended since `top` looked
             (pid, sid, since), task = procs.pop(n), self.running.pop(n)
             if over := context_over(sid, r.get('context_warn')):  # F25: soft only, the exit line says it
                 log(f'slot {n}: {task[0]} exited ({stats(sid)}); {task[0]} {over[0]}', kind=EV_CONTEXT,
