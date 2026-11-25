@@ -172,7 +172,7 @@ def test_idle_and_resume(env: Env, p, sid: str):
     out = K.close_controls(force=True, now=now + 100000)
     eq([(n, how) for n, how, _ in out], [(2, 'closed')], 'closed when idle')
     until(lambda: p.poll() is not None)
-    eq(p.returncode, 0, 'the process ends')
+    eq(p.returncode, 1 if plat.WINDOWS else 0, 'the process ends')  # Windows: taskkill, whose exit code is 1
     has(K.C.notes('run.log').read_text(encoding='utf-8'), rf'control --resume {sid}', 'the run log says how to go on with it')
     was = len(env.calls())
     p2, sid2 = env.start(2, reopen=True)
@@ -241,9 +241,9 @@ def test_fence(env: Env):
 
     def fence(tool, **inp):
         return CH.fence(tool, inp, env.repo, env.repo, R.SLOTS_DIR, K.C.notes(), True)
-    eq(fence('Bash', command=f'cd {wt} && git commit -m "x"'), None, 'a commit in a take worktree runs')
-    check(fence('Bash', command=f'git -C {wt} push'), 'a push there does not')
-    eq(fence('Bash', command=f'git -C {other} push'), None, 'another repository is not fenced')
+    eq(fence('Bash', command=f'cd {wt.as_posix()} && git commit -m "x"'), None, 'a commit in a take worktree runs')
+    check(fence('Bash', command=f'git -C {wt.as_posix()} push'), 'a push there does not')
+    eq(fence('Bash', command=f'git -C {other.as_posix()} push'), None, 'another repository is not fenced')
     for cmd in ('bash -c "git push"', '(cd /tmp); git push', 'cd /nowhere-at-all || git commit -m x', 'sh -c "git merge main"'):
         check(fence('Bash', command=cmd), f'refused: {cmd}')
     check(fence('Bash', command='git reset --hard'), 'git reset --hard does not run')

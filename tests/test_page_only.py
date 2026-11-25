@@ -142,8 +142,18 @@ def test_serves(tmp: Path) -> None:
 
             # a run takes it over: the same key, the same port; an open page's stream ends, so it connects again
             stream, read = urllib.request.urlopen(f'{base}/events?t={t}', timeout=30), []
-            reader = threading.Thread(target=lambda: read.append(stream.read()), daemon=True)
+
+            def drain():
+                while True:
+                    try:
+                        if not (line := stream.readline()):
+                            return
+                    except OSError:  # Windows resets the connection of a process that ended
+                        return
+                    read.append(line)
+            reader = threading.Thread(target=drain, daemon=True)
             reader.start()
+            check(until(lambda: read), 'an open page has its stream')  # unread, it is lost with a reset connection
             lock = until(lambda: plat.lock(S.C.notes('run.lock')))  # as loop.run before start_web
             srv = None
             try:
@@ -152,7 +162,8 @@ def test_serves(tmp: Path) -> None:
                 eq((srv.server_address[1], srv.token), (port, t), "the run's page: the same port and key")
                 check(f':{port}/' in P.urls(root)[0], 'and web.url is its own', P.urls(root))
                 reader.join(10)
-                check(not reader.is_alive() and read[0].startswith(b'data: '), "the open page's stream ended")
+                check(not reader.is_alive() and read and read[0].startswith(b'data: '), "the open page's stream ended",
+                      (reader.is_alive(), read[:1]))
                 check(ended(root, live[0]), 'the page-only process is gone')
                 eq(get(f'{base}/?t={t}')[0], 200, 'and the run answers there')
                 eq((P.serving(root), S.C.notes('page.stop').exists()), (False, False), 'nothing of it is left')
