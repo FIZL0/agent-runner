@@ -1525,8 +1525,8 @@ instance. `AGENT_RUNNER_WORKTREE` names the slot's worktree: while it is set, pl
 `note`, `tick` and the other edits) and `done` refuse, with nothing written, when the current directory is in
 another project, and say to run the command from that worktree (B103). One exception (B785): when a
 control session's question (its `DECIDE:` line, filed as a task when the run closed the session) names another
-project by its folder name and the person's answer is not a no, the slot on that task may run `plan add` in that
-project's checkout. The other plan writes and `done` there stay refused, as do any other task's slot and any
+project by its folder name and the person's answer is a yes (a word of yes, or one of the question's options that is not a no), the slot on that task may run `plan add` in that
+project's checkout. A project that only the options name counts only when the answer names it. The other plan writes and `done` there stay refused, as do any other task's slot and any
 project the question does not name; a later "do this instead" from the person withdraws it.
 
 `include_task_id_in_commit = false` tells sessions to omit the task ID from the commit subject; `done` also

@@ -10,14 +10,27 @@ from pathlib import Path
 ASKED = re.compile(r'\*\* \([^)]*\) Control session \d+ asked the person: "(.*?)" Carry on from their answer ')
 ROUTE = ('When the answer is to queue work in another project the question names, run `plan add` in that project\'s '
          'own checkout: the answer allows that one command there')
-NO = re.compile(r'\W*(?:no|nope|nah|not|never|don\W?t|do not|cancel|skip|stop|nothing|none|later)\b', re.I)
+NO = re.compile(r'\W*(?:no|not|never|don\W?t|do not|cancel|skip|stop|nothing|none|neither|later|keep|leave|wait|hold|only here|here)\b', re.I)
+YES = re.compile(r'\W*(?:yes|yep|yeah|ok|okay|sure|go|do it|do so|please|queue|add|file|both|all)\b', re.I)
+
+
+def says_yes(said: str, question: str, project: str) -> bool:
+    """Whether the answer `said` is a yes to `question` for `project`: a word of yes, or one of the options in the
+    question's closing bracket that is not a no. A project only the options name must be in the answer."""
+    b = re.search(r'\[([^\[\]]+)\](?:\s+https?://\S+)*\s*$', question)
+    options = [o.replace('(recommended)', '').strip() for o in re.split(r'\s+/\s+', b[1])] if b else []
+    names = re.compile(rf'(?<![\w-]){re.escape(project)}(?![\w-])')
+    if not names.search(question[:b.start()] if b else question) and not (names.search(question) and names.search(said)):
+        return False
+    return not NO.match(said) and bool(YES.match(said) or any(o and said.lower().startswith(o.lower()) for o in options))
 
 
 def allowed(line: str, project: str) -> bool:
     """Whether the task text `line` is a control session's question that names `project` (its folder's name, as a
-    whole word) and whose last answer by the person is not a no. A change of direction ('do this instead') withdraws it."""
+    whole word) and the person's last answer to it is a yes (`says_yes`). A change of direction ('do this instead')
+    withdraws it."""
     m = ASKED.search(line)
-    if not m or not re.search(rf'(?<![\w-]){re.escape(project)}(?![\w-])', m[1]):
+    if not m:
         return False
     from agent_runner.plan import URL
     q = ' '.join(URL.sub('', m[1].split(' — ')[0], count=1).split()).rstrip(' :,;')  # as `plan.asks` reads it
@@ -26,7 +39,7 @@ def allowed(line: str, project: str) -> bool:
     if len(answers) < 2:
         return False
     said = answers[-1]
-    return not NO.match(said) and ' — you said' not in said
+    return ' — you said' not in said and says_yes(said.split(' — ')[0], m[1], project)
 
 
 def may_add(wt: str, mine: Path, here: Path) -> bool:

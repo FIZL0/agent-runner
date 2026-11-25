@@ -3074,7 +3074,7 @@ def main(argv: list[str] | None = None) -> int:
         print(HELP)
         return 0
     c = cfg()
-    if argv[:1] and (argv[0] in EDITS or argv[0] == 'goal' and len(argv) > 1) and (why := other_project(c, cmd=argv[0])):
+    if argv[:1] and (argv[0] in EDITS or argv[0] == 'goal' and len(argv) > 1) and (why := other_project(c, '', argv[0])):
         print(why, file=sys.stderr)
         return 3
     if argv[:1] == ['tell']:  # F16: no plan edit, so no lock

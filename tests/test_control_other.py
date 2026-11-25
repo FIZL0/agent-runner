@@ -66,12 +66,15 @@ def test_answers():
     head = (f'- [ ] **F9** (follow-up, normal) Control session 5 asked the person: "{Q}" Carry on from their answer (x). '
             f'{O.ROUTE}')
     yes = head + f' — your answer (DECIDE {Q}): '
-    for said in ('Yes, all', 'Only one', 'done', 'Yes — your answer (BLOCKED Log in): Done'):
+    for said in ('Yes, all', 'Only one', 'ok, go', 'Yes — your answer (BLOCKED Log in): Done'):
         check(O.allowed(yes + said, 'iFizBox'), f'allowed: {said}')
-    for said in ('No', 'no, leave it', "Don't", 'Not now', f'Yes — your answer (DECIDE {Q}): No',
+    for said in ('No', 'no, leave it', "Don't", 'Not now', 'done', 'Wait', 'Let me think', 'Keep it here', f'Yes — your answer (DECIDE {Q}): No',
                  f'Yes — you said, on DECIDE {Q}: do this instead: nothing'):
         check(not O.allowed(yes + said, 'iFizBox'), f'refused: {said}')
     check(not O.allowed(head, 'iFizBox'), 'no answer')
+    where = 'Where does it go? [iFizBox (recommended) / Clay / Neither]'
+    eq([O.says_yes(s, where, p) for s, p in (('iFizBox', 'iFizBox'), ('Clay', 'iFizBox'), ('Neither', 'Clay'))],
+       [True, False, False], 'a project only an option names needs that option picked')
     for q in ('Queue it in iFizBox — now? [Yes / No]', 'Queue it in iFizBox? [Yes / No] https://example.com/a'):
         with tempfile.TemporaryDirectory() as tmp:
             R.init(project(Path(tmp) / 'mine'))
