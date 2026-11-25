@@ -44,6 +44,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.ci_watch': ('landing', 'Fix failed GitHub checks', 'A check that fails on GitHub is filed as an urgent bug. Off: nobody looks.'),
     'run.issues_watch': ('landing', 'Take GitHub issues', 'Each new open issue becomes a task. Off: issues stay on GitHub.'),
     'run.issues_trust': ('landing', 'Trust what an issue says', 'Check first: the agent confirms it in the code. Do as written: it is done as asked and the issue closed.'),
+    'models.provider': ('models', 'Provider', "Where your models run. Opus, sonnet and haiku become its matching models. A model set as provider:model keeps its own."),
     'models.control': ('models', 'Chats', 'The model your chats run on. A stronger one answers better and uses more of your limit.'),
     'models.review': ('models', 'Reviews', 'The model that reviews each task. A cheaper one finds less.'),
     'run.remote': ('chats', 'Steer from the Claude apps', 'Your chats show in the Claude apps on your phone. Auto: on when it can work.'),
@@ -103,6 +104,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'models.feed': ('roles', 'Run page copy', 'The model that publishes the run page copy on claude.ai. It is short work, so a cheap one does it.'),
     'models.fallback': ('roles', 'When a limit is reached', 'Other models a task goes on with at a limit, in order. Empty: it waits for the reset.'),
     'models.local': ('roles', 'Allow local models', 'Lets a role name a model that runs on your own network. Off: such a name is refused.'),
+    'models.tiers': ('roles', 'Opus, sonnet and haiku elsewhere', "The model each name means on another provider, like { copilot = { opus = \"claude-opus-5.5\" } }. Empty: the built-in ones."),
     # the project file, read only here
     'run.test': ('commands', 'Test command', 'Every task and merge must pass it. Empty: nothing is tested.'),
     'run.done_test': ('commands', 'Test before a commit', 'What a task must pass before its commit, in place of the test command. A merge still runs that. Empty: the test command.'),
@@ -176,6 +178,7 @@ _CHOICES: dict[str, dict[str, str]] = {
     'run.control_idle': {'1h': '1 hour', '3h': '3 hours', '6h': '6 hours', '12h': '12 hours', 'false': 'Never'},
     'run.control_ask': {'1h': '1 hour', '2h': '2 hours', '6h': '6 hours', '12h': '12 hours', 'false': 'Off'},
     'ui.chat_quiet': {'1h': '1 hour', '3h': '3 hours', '6h': '6 hours', '12h': '12 hours', '1d': '1 day', 'false': 'Off'},
+    'models.provider': {'claude': 'Claude Code', 'copilot': 'GitHub Copilot', 'codex': 'Codex', 'gemini': 'Gemini', 'ollama': 'Ollama'},
     'models.control': {'opus': 'opus', 'sonnet': 'sonnet', 'haiku': 'haiku'},
     'models.review': {'opus': 'opus', 'sonnet': 'sonnet', 'haiku': 'haiku'},
 }

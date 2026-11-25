@@ -273,6 +273,9 @@ DEFAULTS: dict = {
                                 # [] = the key always. Through Runner Home its own list counts (`home trust`)
     },
     'models': {
+        'provider': 'claude',   # the provider of every model below written as a bare name (opus, sonnet, haiku
+                                # or the provider's own id): claude, copilot, codex, gemini, ollama or one of
+                                # [models.providers]. One written '<provider>:<model>' keeps its own provider
         'code': 'opus',         # a task's own session when its kind has no model below
         'review': 'opus',       # the `review` subagent the spec review before done runs in; a one-shot (`run
                                 # review`) when it, or the task's session, is another provider's
@@ -296,6 +299,9 @@ DEFAULTS: dict = {
                                 # hits its cap (a Claude usage limit, a provider's quota error), in order; new
                                 # tasks go back to their own model once the cap resets. Empty: a task waits
                                 # for the reset
+        'tiers': {},            # [models.tiers.<provider>]: what opus, sonnet and haiku mean on a provider other
+                                # than claude, e.g. copilot = { opus = "claude-opus-5.5" }; laid over the built-in
+                                # ones (TIERS) name by name. A bare name with none goes to the provider as it is
     },
 }
 
@@ -304,7 +310,14 @@ PROVIDERS = ('claude', 'copilot', 'codex', 'gemini', 'ollama')
 LOCAL_PROVIDERS = ('ollama',)
 PROVIDER_KINDS = ('openai', 'anthropic')
 # the [models] keys that are not roles
-MODEL_SETTINGS = ('kinds', 'local', 'providers', 'fallback')
+MODEL_SETTINGS = ('kinds', 'local', 'providers', 'fallback', 'provider', 'tiers')
+# F443: the claude model names a bare role value may use on any provider, and what each means on a built-in one
+TIER_NAMES = ('opus', 'sonnet', 'haiku')
+TIERS: dict[str, dict[str, str]] = {
+    'copilot': {'opus': 'claude-opus-5.5', 'sonnet': 'claude-sonnet-5.5', 'haiku': 'claude-haiku-5.5'},
+    'codex': {'opus': 'gpt-6.2-sol', 'sonnet': 'gpt-6.1-terra', 'haiku': 'gpt-6-luna'},
+    'gemini': {'opus': 'gemini-pro-latest', 'sonnet': 'gemini-flash-latest', 'haiku': 'gemini-flash-lite-latest'},
+}
 
 # the [models] roles that run as Claude Code subagents of a task session (`--agents`), not sessions of their own
 SUBAGENT_ROLES = ('review', 'docs')
@@ -409,6 +422,43 @@ def claude_model(value: str, providers: dict[str, dict] | None = None, local: bo
     if provider == 'claude':
         return model
     return f'{provider}:{model}'
+
+
+def model_provider(given: object, providers: dict[str, dict] | None = None, local: bool = False) -> str:
+    """F443: `[models] provider`, checked: a built-in or `providers` name, a local one only with `local`."""
+    providers = providers or {}
+    if not isinstance(given, str) or given not in (*PROVIDERS, *providers):
+        raise SystemExit(f'agent-runner: [models] provider must be one of {", ".join([*PROVIDERS, *providers])}, '
+                         f'not {given!r}')
+    if not local and (given in LOCAL_PROVIDERS or providers.get(given, {}).get('local')):
+        raise SystemExit(f'agent-runner: [models] provider = {given!r} is a local provider, refused unless '
+                         '[models] local = true')
+    return given
+
+
+def model_tiers(given: object, providers: dict[str, dict] | None = None) -> dict[str, dict[str, str]]:
+    """F443: `[models.tiers]` laid over TIERS provider by provider, name by name; refuses (SystemExit) an unknown
+    provider, a name other than opus, sonnet or haiku, and an empty model."""
+    if not isinstance(given, dict):
+        raise SystemExit(f'agent-runner: [models.tiers] is a table of providers, not {given!r}')
+    out = {p: dict(t) for p, t in TIERS.items()}
+    for p, t in given.items():
+        where = f'agent-runner: [models.tiers.{p}]'
+        if p == 'claude' or p not in (*PROVIDERS, *(providers or {})):
+            raise SystemExit(f'{where}: not a provider other than claude')
+        if not isinstance(t, dict) or not all(k in TIER_NAMES and isinstance(v, str) and v and ':' not in v
+                                              for k, v in t.items()):
+            raise SystemExit(f'{where} maps opus, sonnet or haiku to a model id (opus = "x"), not {t!r}')
+        out[p] = {**out.get(p, {}), **t}
+    return out
+
+
+def on_provider(value: str, provider: str = 'claude', tiers: dict[str, dict[str, str]] | None = None) -> str:
+    """F443: a bare model name as `provider`'s ('<provider>:<model>', opus/sonnet/haiku through its `tiers`); a
+    value that names its provider, and any value on claude, is left as it is."""
+    if provider == 'claude' or ':' in value:
+        return value
+    return f'{provider}:{(tiers or {}).get(provider, {}).get(value, value)}'
 
 
 def harness_model(value: str, providers: dict | None = None) -> bool:
@@ -783,11 +833,14 @@ class Config:
         if not isinstance(self.models_local, bool):
             raise SystemExit(f'agent-runner: [models] local must be true or false, not {self.models_local!r}')
         self.providers = model_providers(m.pop('providers', {}))
+        # F443: [models] provider takes every bare name (opus through [models.tiers]); one naming its own keeps it
+        self.model_provider = model_provider(m.pop('provider', 'claude'), self.providers, self.models_local)
+        self.tiers = model_tiers(m.pop('tiers', {}), self.providers)
         # F106g: [models] fallback, each entry settled as a role is (claude's a bare name)
         chain = m.pop('fallback', [])
         if not isinstance(chain, list) or not all(isinstance(v, str) and v for v in chain):
             raise SystemExit(f'agent-runner: [models] fallback is a list of "<provider>:<model>", not {chain!r}')
-        self.fallback = [claude_model(v, self.providers, self.models_local, '[models] fallback') for v in chain]
+        self.fallback = [self.settle(v, '[models] fallback') for v in chain]
         for role, v in given.items():
             if role in DEFAULTS['models'] and role not in MODEL_SETTINGS \
                     and not (isinstance(v, str) or (v is False and role == 'docs')):
@@ -808,14 +861,22 @@ class Config:
         refs.update({f'[models.kinds] {k}': k for k in m['kinds']})
         for where, key in refs.items():
             table = m['kinds'] if where.startswith('[models.kinds]') else m
-            table[key] = claude_model(table[key], self.providers, self.models_local, where)
+            table[key] = self.settle(table[key], where)
         r['model'], r['fix_model'] = m['code'], m['fix']
         return m
+
+    def settle(self, value: str, where: str = '[models]') -> str:
+        """A model as given (a role, a kind, `--model`) as a session runs it (`claude_model`), a bare name on
+        `[models] provider` (F443)."""
+        return claude_model(on_provider(value, self.model_provider, self.tiers), self.providers, self.models_local,
+                            where)
 
     def task_model(self, tid: str, own: str = '') -> str:
         """F105: the model a task's own session runs on: its own (`plan add --model`, `own`), else its kind's in
         `[models.kinds]` (the id's letters: 'P17a' is P), else `[models] code`."""
         if own:  # F106a: 'claude:<model>' runs as the bare name; F106c: another provider's as '<provider>:<model>'
+            if own.partition(':')[0] not in (*PROVIDERS, *self.providers):
+                own = on_provider(own, self.model_provider, self.tiers)  # F443: a bare name is the provider's
             provider, model = parse_model(own, self.providers, True, 'model') \
                 if own.partition(':')[0] in (*PROVIDERS, *self.providers) else ('claude', own)
             return model if provider == 'claude' else f'{provider}:{model}'
@@ -1292,6 +1353,8 @@ def setting_check(root: Path, table: str, key: str, v, device: bool = False) -> 
     snap[(table, key)] = v
     try:
         providers, local = model_providers(snap['models', 'providers']), bool(snap['models', 'local'])
+        model_provider(snap['models', 'provider'], providers, local)  # F443
+        model_tiers(snap['models', 'tiers'], providers)
         named = v.values() if key == 'kinds' else v if key == 'fallback' else \
             [v] if key not in MODEL_SETTINGS and isinstance(v, str) else []
         for m in named:
@@ -1422,7 +1485,7 @@ def settled(c: Config) -> dict[tuple[str, str], object]:
     """Every setting as `c` runs on it."""
     out = {(t, k): c.raw[t].get(k) for t, keys in DEFAULTS.items() for k in keys}
     return {**out, ('models', 'local'): c.models_local, ('models', 'providers'): c.providers,
-            ('models', 'fallback'): c.fallback}
+            ('models', 'fallback'): c.fallback, ('models', 'provider'): c.model_provider, ('models', 'tiers'): c.tiers}
 
 
 def _keep(c: Config, values: dict) -> None:

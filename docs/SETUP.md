@@ -76,6 +76,15 @@ code = "copilot:<model>"  # a model your account lists; a bare name or claude:<m
 
 `[models] control` can name a provider too; a control session on it then runs on the harness loop as well.
 
+To move everything at once, set the provider for every model written as a bare name (Provider, the first row of
+Models in the run app's Settings, does the same):
+
+```toml
+[models]
+provider = "copilot"      # opus, sonnet and haiku become Copilot's (see [models.tiers] in REFERENCE.md)
+code = "claude:opus"      # a model that names its provider keeps it
+```
+
 The session runs on the [harness loop](REFERENCE.md#the-harness-loop), a Node program that needs Node.js 22 or later
 on PATH. Log in once with `agent-runner login copilot` (for enterprise Copilot, `--enterprise company.ghe.com`; see
 [Provider logins](#provider-logins-run-login)). `agent-runner login` with no argument lists the providers the repo
