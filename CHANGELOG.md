@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: on the run page's Plan, hold a queue row (a task, a release, the Next release row) still for 350 ms on touch and it lifts; drag it to move it, as the grip does, with the same look and edge scroll. A move, a scroll or a second finger first means no lift, and a lift opens nothing (F429d).
+
 ## 0.69.0 (2026-11-25)
 
 - Fixed: `s!` (`stop --force`) now runs `[run] on_exit` for each session it ends, in its slot; before, it ended them without it, so e.g. a device lock it frees stayed held until the resumed session ended. The sessions still resume in the next run. The run waits for every on_exit still running, also one from a session that ended just before `s!`, at most 60 s from `s!` (or `[run] command_timeout` if that comes sooner); one still running is stopped and the log says so (B803).
