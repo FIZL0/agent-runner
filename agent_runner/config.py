@@ -235,6 +235,8 @@ DEFAULTS: dict = {
                                 # test phone). check = a command that exits 0 free, 75 busy, 69 missing, its first
                                 # output line the holder or why; label; connect = what Needs you asks when missing;
                                 # description = what it is, for agents
+        'checks': {},           # the checks a blocked task can wait on, [run.checks.<name>]: cmd = a command that exits 0
+                                # passed, 75 not yet, anything else cannot run (main checkout, 10 s); label
         'command_timeout': 3600,  # seconds the gate, a retest or a hook command (join, before_start, on_exit,
                                 # `done`'s gate) may run before it is stopped and counts as failed
         'needs_order': 'oldest',  # what waits on a person (Needs you): oldest first; "newest" first; "plan":
@@ -743,6 +745,8 @@ class Config:
             raise SystemExit(f'agent-runner: {problem}')
         if problem := tools_problem(self.run['tools']):  # F168
             raise SystemExit(f'agent-runner: {problem}')
+        if problem := checks_problem(self.run['checks']):  # F427a
+            raise SystemExit(f'agent-runner: {problem}')
         self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
         self.models = self.resolve_models(given_models)
         self.loaded = copy.deepcopy(settled(self))  # F202a: what the files said
@@ -1004,6 +1008,8 @@ def setting_problem(table: str, key: str, v) -> str:
         return f'{where} must be {kind}{" or false" if "off" in also else ""}, not {v!r}'
     if (table, key) == ('run', 'tools') and (problem := tools_problem(v)):  # F168
         return problem
+    if (table, key) == ('run', 'checks') and (problem := checks_problem(v)):  # F427a
+        return problem
     if (table, key) == ('ui', 'trusted_networks'):  # F136
         from agent_runner.trust import network_problem
         if problem := next((p for x in v if (p := network_problem(x))), ''):
@@ -1072,6 +1078,24 @@ def tools_problem(v) -> str:
             return f'{where} needs check, the command that says whether it is free'
         if bad := [k for k in t if k not in ('check', 'label', 'connect', 'description')]:
             return f'{where}: {bad[0]} is not one of check, label, connect, description'
+        if bad := [k for k, x in t.items() if not isinstance(x, str)]:
+            return f'{where}: {bad[0]} must be text'
+    return ''
+
+
+def checks_problem(v) -> str:
+    """F427a: why `v` cannot be `[run] checks` ('' when it can): {name: {cmd, label}}, all text."""
+    import re
+    if not isinstance(v, dict):
+        return f'[run] checks is a table of checks ([run.checks.vm]), not {v!r}'
+    for name, t in v.items():
+        where = f'[run.checks.{name}]'
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', str(name)):
+            return f'{where}: a name is letters, digits, - and _ (vm)'
+        if not isinstance(t, dict) or not isinstance(t.get('cmd'), str) or not t['cmd'].strip():
+            return f'{where} needs cmd, the command that says whether it passes'
+        if bad := [k for k in t if k not in ('cmd', 'label')]:
+            return f'{where}: {bad[0]} is not one of cmd, label'
         if bad := [k for k, x in t.items() if not isinstance(x, str)]:
             return f'{where}: {bad[0]} must be text'
     return ''

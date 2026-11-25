@@ -1221,6 +1221,31 @@ command on this machine. A person adds it on the run app's Tools page. Each proj
   ssh-agent while a connection is made. What would: run the agents as a separate OS user, with the secrets and a small
   service that signs in kept under the person's own user.
 
+### Until checks
+
+An until check is something this machine can read by itself, with no agent session and no model call, that a blocked
+task can wait on. Written `kind:value`; four kinds, and anything else is refused: a free command is never taken.
+
+- **`version:X.Y.Z`** is passed when the agent-runner serving this run is at least that. With no run up, the installed
+  one counts.
+- **`login:PROVIDER`** is passed when that login works, read from this machine's files and environment only. For
+  `claude` that is Claude Code's credentials file: missing or expired is not yet, and an API key or another provider
+  set up for sessions counts as passed. A login kept in the macOS Keychain, or behind a wrapper as `[run] agent`,
+  cannot run. The others are read as `run login` lists them; an OAuth login that has expired and cannot be renewed is
+  not yet.
+- **`tool:NAME`** is passed when a shared tool or device is free; busy or missing is not yet; unknown cannot run.
+- **`check:NAME`** is `[run.checks.NAME]` in runner.toml: exit 0 is passed, 75 not yet, anything else or a run past
+  10 s cannot run. It runs in the main checkout, and its first output line is the words shown.
+
+```toml
+[run.checks.vm]
+cmd = "tools/vm-ready.sh"   # exit 0 passed, 75 not yet, anything else cannot run
+label = "the test VM"       # what the screens say; default: the name
+```
+
+Each answers passed, not yet or cannot run, with a few words saying why. An unknown kind or name is refused with what
+there is, and a bad `[run.checks]` is named when the config loads.
+
 ### Waiting for memory
 
 Claude Code stops a background command when memory is low, and tells the agent not to start it again unless
@@ -1803,6 +1828,7 @@ needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "n
 
 
 [run.tools]               # shared tools, one [run.tools.<name>] each: check, label, connect, description (### Shared tools)
+[run.checks]              # checks a blocked task can wait on, one [run.checks.<name>] each: cmd, label (### Until checks)
 ```
 
 ### Models per role

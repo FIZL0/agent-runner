@@ -830,3 +830,9 @@ _Said_: last chat
 _On screen_: Last chat
 _In code_: homeChips
 _Avoid_: recent chat, previous chat
+
+**Until check**:
+Something a blocked task waits on that the machine can read by itself: a version, a login, a tool or a named command. It passes, has not passed yet, or cannot run
+_On screen_: Until checks
+_In code_: until.py, [run.checks]
+_Avoid_: poll, condition, probe
