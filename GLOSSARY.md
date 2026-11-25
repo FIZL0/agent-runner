@@ -865,10 +865,10 @@ _In code_: historyHTML, histRow, past_releases, NAV
 _Avoid_: Activity, archive, timeline
 
 **Question card**:
-The question a chat's last answer ends on, when it has options to pick from, shown as a card above the message box; it goes once the person answers. When the question was filed as a Needs you item, the card and that item are one question: an option picked on the card, or an answer under Needs you, closes both. The person can minimize it to one line and show it again (its − and ^), which answers nothing
+The question a chat's last answer ends on, when it has options to pick from, shown as a card above the message box; it goes once the person answers. When the question was filed as a Needs you item, the card and that item are one question: an option picked on the card, or an answer under Needs you, closes both. The person can minimize it to one line and show it again (its − and ^), which answers nothing. It hides while the person is scrolled up, and is back at the bottom
 _Said_: answer buttons in a chat
 _On screen_: the question and one button per option above a chat's message box, a Chat about this button last among them, a Minimize question − at its top right, minimized one line with a Show question ^, or the Sending row with Undo while an answer waits
-_In code_: chat_question.ask, chat_question.needs, /live's ask, questionCard, questionHTML, questionMinimize, QN.gone, QN.min, .qcard, question_answer
+_In code_: chat_question.ask, chat_question.needs, /live's ask, questionCard, questionHTML, questionMinimize, questionScroll, QN.away, QN.gone, QN.min, .qcard, question_answer
 _Avoid_: poll, prompt card, quick replies
 
 **Held task**:

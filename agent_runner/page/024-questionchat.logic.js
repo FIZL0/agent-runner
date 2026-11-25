@@ -2,7 +2,7 @@
 // chat_question.py reads past the messages that begin so
 const QUESTION_ABOUT='About your question “', QUESTION_NOT='” (not my answer): ';
 /* how the box's words go to chat n (send()): as they are, until 095-question.js sets its questionGo() here */
-const questionOn={send:(n,text,go)=>go(text,{})};
+const questionOn={send:(n,text,go)=>go(text,{}),scroll:()=>{},room:()=>0};
 /* what is sent for a message with the question marked above the box. A command goes as it is, and the mark stays */
 const questionWraps=text=>!/^\/[a-z][\w:-]*(\s|$)/i.test(text);
 const questionAbout=(ask,text)=>QUESTION_ABOUT+ask.question+QUESTION_NOT+text;

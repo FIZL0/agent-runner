@@ -164,9 +164,10 @@ function feedKey(k){const t=feedTerm();if(!t)return toast('The session is not co
   t.input(feedBytes(k,!!(t.modes&&t.modes.applicationCursorKeysMode)),true)}
 const keyButtons=()=>`<div class="keys" role="toolbar" aria-label="Keys for the session">${FEED_KEYS.map(([k,l])=>`${k==='left'?'<button type="button" class="tool" data-feedtext title="The screen as text, to copy">Text</button>':''}<button type="button" class="tool" data-feedkey="${k}"${/\w/.test(l)?'':` aria-label="${k.charAt(0).toUpperCase()+k.slice(1)} arrow"`}>${l}</button>`).join('')}</div>`;
 /* F437b: no key row with an open question card, unless the keyboard button opened it there; S.keys stays, for after it */
-const keysCard=()=>sessUp(S.thread)?questionUp(S.thread):'';
-const keysShown=()=>{const k=keysCard();return k?QN.keys===k:!!S.keys};
-function keysFlip(){const k=keysCard();if(k)QN.keys=QN.keys===k?'':k;else S.keys=!S.keys}
+const keysCard=()=>sessUp(S.thread)&&!questionAway(S.thread)?questionUp(S.thread):'';
+const keysShown=()=>{const k=keysCard();return k?QN.keys===k:!!S.keys||keysLeft()};
+const keysLeft=()=>!!QN.keys&&questionAway(S.thread)&&QN.keys===questionUp(S.thread);  // F437c: opened under the card, which hides
+function keysFlip(){const k=keysCard();if(k)QN.keys=QN.keys===k?'':k;else{const on=keysShown();if(keysLeft())QN.keys='';S.keys=!on}}
 const keysRow=()=>keysShown()?keyButtons():'';
 /* the screen's text in a sheet, to select and copy with a finger */
 function feedText(){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
@@ -377,7 +378,7 @@ function feedPlace(){
   pastPlace();
 }
 /* the bars and the box away, or back. Never while the person types, or while a menu, a question or a sheet is open */
-const slimMay=()=>!FD.whole&&!!FD.foot&&(pastUp()||FD.jump&&FD.far>8)&&!S.sheet&&!slashOpen()&&!kbH&&Date.now()-FD.typed>2500&&!(document.activeElement&&document.activeElement.matches('[data-in]')&&document.activeElement.value.trim());
+const slimMay=()=>!QN.held.has(FD.n)&&!FD.whole&&!!FD.foot&&(pastUp()||FD.jump&&FD.far>8)&&!S.sheet&&!slashOpen()&&!kbH&&Date.now()-FD.typed>2500&&!(document.activeElement&&document.activeElement.matches('[data-in]')&&document.activeElement.value.trim());
 function feedSlim(on){if(on&&!slimMay())return;FD.run=0;if(FD.slim!==on){slimSize();FD.slim=on;feedClass();slimDraw()}}
 /* a drag or a wheel of px (down is more): the bars go or come, and what is left of it for the session to scroll */
 function feedScroll(px){
@@ -439,7 +440,7 @@ const sessUp=n=>{const st=feedNow(n);return st==='session'||st==='loading'&&sess
 function sessRow(n){
   if(!sessUp(n))return QN.mark.has(n)?questionCard(n):'';  // F192a2: what is sent is still about it; F206a: there from the first frame, so what stands over it does not move
   const model=modelOf(n), ask=questionCard(n);
-  if(!model&&FD.foot===null&&FD.whole)return ask+(TOUCH()&&!S.keys&&!keysCard()?keyButtons():'');
+  if(!model&&FD.foot===null&&FD.whole)return ask+(TOUCH()&&!keysShown()&&!keysCard()?keyButtons():'');
   const w=sessWorks(n), icon={work:'<span class="livedot"></span>',update:'<span class="bdot"></span>'};
   setTimeout(slimDraw,0);
   return ask+`<div class="schips" role="group" aria-label="The session">${sessionChips({foot:FD.foot,live:FD.live,working:w,model}).map(c=>`<button type="button" class="chip${c.key==='update'?' up':''}" data-sheet="${c.key==='mode'?'sessmode':'sess'+c.key}">${icon[c.key]||''}${c.key==='work'?'<span data-workfor>Working</span>':esc(c.label)}</button>`).join('')}</div>`;
