@@ -136,9 +136,8 @@ def save_chat_order(order=None, pins=None) -> dict:
     p = chat_order_path()
     if not p:
         return {'ok': False, 'code': 2, 'out': 'chat_order: no project here to keep it in', 'argv': []}
-    tmp = p.with_name(p.name + '.tmp')  # written whole, then moved in: a snapshot never reads half a file
-    tmp.write_text(json.dumps({'pins': pins}), encoding='utf-8')
-    os.replace(tmp, p)
+    from agent_runner.whole_write import write_whole
+    write_whole(p, json.dumps({'pins': pins}).encode('utf-8'))  # a snapshot never reads half a file
     return {'ok': True, 'code': 0, 'out': 'chat order kept', 'argv': []}
 
 
