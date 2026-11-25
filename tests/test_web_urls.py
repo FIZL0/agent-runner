@@ -22,6 +22,7 @@ SERVE = {'TCP': {'8771': {'HTTPS': True}},
          'Web': {'box.tail.ts.net:8771': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770'}}}}}
 HTTPS = 'https://box.tail.ts.net:8771/?t=TK'
 RUN = subprocess.run
+HERE = 'http://localhost:8770/?t=TK'  # B815b: last in what is printed
 PLAIN = ['http://box:8770/?t=TK', 'http://10.0.0.5:8770/?t=TK']
 
 
@@ -96,16 +97,16 @@ def test_shown(tmp: Path) -> None:
                     'base': W.https_base(), 'why': W.no_https_why(), 'hint': devices.https_link()}
     off, ts = Tailscale('Stopped'), Tailscale('Running')
     got = within(off, links)
-    eq(got['line'], f'run page: {PLAIN[0]} (or {PLAIN[1]})', 'stopped: status, the terminal UI and the picker say the plain links')
-    eq(got['shown'], PLAIN, 'the run log too')
+    eq(got['line'], f'run page: {PLAIN[0]} (or {PLAIN[1]} or {HERE})', 'stopped: status, the terminal UI and the picker say the plain links')
+    eq(got['shown'], PLAIN + [HERE], 'the run log too')
     eq(got['home'], PLAIN, "and Home's links")
     eq((got['base'], got['hint']), ('', ''), "no https for option links or the page's https hint")
     eq(got['why'], 'Tailscale is not connected', 'and why')
     check(all(a in (['serve', 'status', '--json'], ['status', '--json']) for a in off.asked),
           'the saved rule is only read', off.asked)
     got = within(ts, links)
-    eq(got['line'], f'run page: {HTTPS} (or {PLAIN[0]})', 'connected: https first')
-    eq(got['shown'], [HTTPS] + PLAIN, 'in the run log too')
+    eq(got['line'], f'run page: {HTTPS} (or {PLAIN[0]} or {HERE})', 'connected: https first')
+    eq(got['shown'], [HTTPS] + PLAIN + [HERE], 'in the run log too')
     eq(got['home'], [HTTPS] + PLAIN, "and Home's links")
     eq((got['base'], got['hint']), ('https://box.tail.ts.net:8771', HTTPS + '#tools'), 'option links and the hint')
 
