@@ -26,7 +26,7 @@ function plusBtn(){
 /* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, and the view's + (F150) */
 function topHTML(){
   const n=S.thread, p=runPill(S.snap), x=n&&sessionOf(n);
-  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}${x&&!isAgent(n)?`<button type="button" class="title" data-chats aria-haspopup="dialog" title="Switch chat"><span class="tt">${esc(threadTitle(n))}</span>${I.chev}</button>`:`<div class="title">${n?`<span class="tt">${esc(threadTitle(n))}</span>`:{talk:'Talk',home:'',status:'Status',plan:'Plan',history:'History',concepts:'Concepts',tools:'Tools',settings:'Settings',projects:H.tab==='devices'?'Devices':'Overview'}[S.view]}</div>`}${p.text&&!atAll()?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-roll data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${plusBtn()}`;
+  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:devBackBtn()}${x&&!isAgent(n)?`<button type="button" class="title" data-chats aria-haspopup="dialog" title="Switch chat"><span class="tt">${esc(threadTitle(n))}</span>${I.chev}</button>`:`<div class="title">${n?`<span class="tt">${esc(threadTitle(n))}</span>`:{talk:'Talk',home:'',status:'Status',plan:'Plan',history:'History',concepts:'Concepts',tools:'Tools',settings:'Settings',projects:allTitle()}[S.view]}</div>`}${p.text&&!atAll()?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-roll data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${plusBtn()}`;
 }
 function render(force){
   keepPlace();  // B177
@@ -37,7 +37,7 @@ function render(force){
   obHide();
   const n=S.thread, body=$('body'), dockEl=$('dock');
   if(HOME_PAGE){S.thread=null;if(!HKEY||S.view!=='projects')S.view=HKEY?'home':'projects'}
-  const place=HOME_PAGE?'home page:'+S.view+(H.tab||''):n?'t:'+n:'v:'+S.view+(S.view==='projects'&&H.tab?':'+H.tab:''), moved=place!==lastPlace, chatOn=!!n||S.view==='talk';
+  const place=HOME_PAGE?'home page:'+S.view+(H.tab||'')+(H.dev?':'+H.dev:''):n?'t:'+n:'v:'+S.view+(S.view==='projects'&&H.tab?':'+H.tab+(H.dev?':'+H.dev:''):''), moved=place!==lastPlace, chatOn=!!n||S.view==='talk';
   if(moved&&(lastPlace||talkLate())&&!HOME_PAGE&&chatShown())talkBack();  // B802
   const put=keepScroll(body), had=keysIn(body), hadTop=keysIn($('top')), keep=keepFields(body);
   if(moved)scrollStop(body);
@@ -50,7 +50,7 @@ function render(force){
   setBarDraw();  // F202b
   rowSettle();side();sheetDraw();
   if(HOME_PAGE){  // F134: Home's own page: All projects, and F150 a project with no run up
-    setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button><div class="title">${atAll()?H.tab==='devices'?'Devices':'Overview':esc((projectOf(HKEY)||{}).name||HKEY)}</div>${plusBtn()||'<span class="icon"></span>'}`);
+    setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${devBackBtn()}<div class="title">${atAll()?allTitle():esc((projectOf(HKEY)||{}).name||HKEY)}</div>${plusBtn()||'<span class="icon"></span>'}`);
     if(moved)body._h=null;
     const ph=projectsHTML(), spot=moved||body._h===ph?null:glideSpot(body);
     if(setHTML(body,ph)){keep();if(moved){body.scrollTop=S.at[place]||0;if(S.live&&lastPlace)viewIn(body)}else{put();enter(body,had);glide(body,body,spot);leaving(body)}loopsInStep(body)}

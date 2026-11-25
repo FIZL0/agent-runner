@@ -447,7 +447,7 @@ _Avoid_: quota, limit
 Runner Home's view of each machine that runs agent-runner: how many more agents fit, its CPU, GPU, memory, disk and temperatures over the last day, what the runner keeps on its disk, and each session's share
 _Said_: vitals, device vitals
 _On screen_: Devices; Device Vitals
-_In code_: vitals.py, Vitals, /devices, /device
+_In code_: vitals.py, Vitals, /devices, /device, page/052-device.js, devHTML
 _Avoid_: monitor, stats, health
 
 **Headroom**:

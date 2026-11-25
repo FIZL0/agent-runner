@@ -96,7 +96,7 @@ const projectOf=key=>projectsNow().find(p=>p.key===key);
 /* up to the list, with Back to come down again (the drawer stays open), and down to the open project where it was left */
 function goUp(stay,keys){
   if(atAll()||!HB||oneProject(H.projects))return;
-  S.below={v:S.view,t:S.thread,c:S.ctx};H.tab='';tabStore.set('ar-alltab','');
+  S.below={v:S.view,t:S.thread,c:S.ctx};H.tab='';tabStore.set('ar-alltab','');devSet('');
   if(!stay)try{history.pushState({level:'all'},'')}catch(e){}
   const open=S.drawer;goView('projects');if(open){S.drawer=true;render(true)}
   if(keys)focusSide('[data-alltab]');
@@ -111,7 +111,7 @@ function goDown(stay,keys){
   if(keys)focusSide('[data-up]');
 }
 function focusSide(s){const el=$('sidein').querySelector(s);if(el)el.focus({preventScroll:true})}
-addEventListener('popstate',e=>{if(e.state&&e.state.level==='all')goUp(true);else if(atAll())goDown(true)});
+addEventListener('popstate',e=>{if(e.state&&e.state.level==='all'){goUp(true);devPlace(e.state)}else if(atAll())goDown(true)});
 function goProject(r){if(r.on)atAll()?goDown():0;else openProject(r.key,r.href)}
 /* B769b: a pressed project is marked as opening at once, until its page comes. A load that fails without leaving this page
    says so only where there is a Navigation API, so the mark also goes after OPEN_MS; navigateerror of a load that a newer
@@ -154,7 +154,7 @@ function askRow(a){const here=a.key===HKEY&&!HOME_PAGE;
   return card(`<div class="row"><div class="grow"><b class="ell2">${esc(a.what)}</b><div class="small">${esc(a.name)}${a.id?` · ${esc(a.id)}`:''}</div></div><a class="btn" href="${esc(projectLink(HB,a.key,T)+('#'+(a.id?'need-'+a.id:'home')))}"${here?` data-askhere="${esc(a.id)}"`:''}>Open</a></div>`,'need',`data-k="ask:${esc(a.key)}:${esc(a.id||a.what)}"`)}
 function deviceCard(d){const v=d.verdict||{};
   return card(`<div class="row"><div class="grow"><b>${esc(d.host)}</b>${d.here?' <span class="small">· this one</span>':''}<div class="v-${esc(v.level)}" style="font-weight:500">${esc(v.said)}</div></div></div>${(d.meters||[]).map(meterHTML).join('')}`,
-    'tap',`data-pgo="${esc(tq(HB+'device?id='+encodeURIComponent(d.id)))}"`);
+    'tap',`tabindex="0" role="button" data-devopen="${esc(d.id)}" data-k="device:${esc(d.id)}"`);
 }
 const ASKS_SHOWN=3;
 const homeErr=()=>H.err?card(`<div class="small"><span class="v-bad">${esc(H.err)}</span></div><div class="btns"><button class="btn" data-pload>Retry</button></div>`):'';
@@ -162,7 +162,7 @@ function devicesHTML(){const ds=H.devices;
   return `<div class="col">${homeErr()}<div class="sec">Devices<span class="ln"></span></div>${ds===null?emptyCard('Loading…'):ds.length?ds.map(deviceCard).join(''):emptyCard('No devices.')}</div>`}
 function projectsHTML(){
   if(HOME_PAGE&&!atAll())return offHTML();
-  if(H.tab==='devices')return devicesHTML();
+  if(H.tab==='devices')return devOn()?devHTML():devicesHTML();
   const ps=projectsNow(), asks=projectAsks(ps), total=homeNeeds()+H.alerts.length;
   const alerts=H.alerts.map(a=>card(`<div class="row"><div class="who">${I.alert}</div><div class="grow">${esc(a.what)}</div>${a.clean?`<a class="btn acc" href="${esc(tq(HB+'device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`,'need')).join('');
   const more=asks.length-ASKS_SHOWN, all=H.more?PGROUPS.length&&projectOrder(ps).filter(p=>(p.asks||[]).length).map(p=>`<div class="qline" data-k="pname:${esc(p.key)}">${esc(p.name||p.key)}</div>${projectAsks([p]).map(askRow).join('')}`).join(''):asks.slice(0,ASKS_SHOWN).map(askRow).join('');
