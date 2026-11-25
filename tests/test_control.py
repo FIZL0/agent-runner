@@ -1258,6 +1258,18 @@ def test_settled_repeats_b812():
         w.plan(*edit, slot='1')
         w.look()
         eq(len(w.typed), 4, 'past the window it is told again')
+    with settled_world() as w:
+        with mock.patch.object(w.Z, 'time', types.SimpleNamespace(time=lambda: w.base - 42, time_ns=lambda: 1)):
+            w.plan(*edit, slot='1')
+        w.look()
+        w.plan(*edit, slot='1')
+        w.look()
+        eq(len(w.typed), 2, '42 s later it is not')
+    with settled_world() as w:
+        for end in ('laptop', 'tablet'):
+            w.plan('change', 'R81', 'sign in ' + 'again ' * 40 + end, slot='1')
+        w.look()
+        eq(len(w.typed), 4, 'two reasons that differ only past the cut are both told')
 
 
 def test_settled_verbs_and_openers():

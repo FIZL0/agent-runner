@@ -12,14 +12,14 @@ told, in one typed line (`line`), when that item is dropped, changed, confirmed,
 
 A settling no command here announces (a landing, a pull of the plan, a hand edit) is found by looking: an item a live
 chat is about that was under Needs you (`waits.json`) and has left it, with no event in LEFT_GRACE s (`look_left`). So
-a task's ordinary landing says nothing. Repeats (B812): an event like the last one of its item (same `what`, author and reason) is not told again to a session
+a task's ordinary landing says nothing. Sessions the runner cannot type into (opened in a terminal, or by the apps'
+control server) are not told; the needs guide has every session re-read an item before it asks for it.
+
+Repeats (B812): an event like the last one of its item (same `what`, author and reason) is not told again to a session
 told in the last AGAIN s, and takes the place of one still waiting for it: one line. Another event of the item between
 them, also the session's own, ends that. After a told edit, one that says something else is still told. An edit of only
 `--files` or `--pri` records nothing. Known, not handled: a slot's edit in its unmerged worktree is told at once, so
 the plan on main may not show it yet when the session re-reads the item.
-
-Sessions the runner cannot type into (opened in a terminal, or by the apps'
-control server) are not told; the needs guide has every session re-read an item before it asks for it.
 
 The control modules are imported in the functions: `plan` uses the first half from sessions with no run."""
 
@@ -88,7 +88,8 @@ def save(f: Path, d) -> None:
 def record(c, ids, what: str, reason: str = '', who: dict | None = None, at: float = 0.0,
            said: str = '') -> None:
     """Leave one event for the run: item `ids[0]` (the others name the same item) `what` ('was dropped'). Nothing
-    without a control session to tell. `said`: the command's words, whole, to know a repeat by. Never stops the command that settled it."""
+    without a control session to tell. `said`: the command's words, whole, to know a repeat by.
+    Never stops the command that settled it."""
     try:
         if not any(c.notes().glob('control*.pid')):
             return
@@ -311,9 +312,11 @@ def pick(f: Path, now: float) -> None:
             continue
         last = told[hit]['sids'].get(sid) if hit in told and told[hit]['key'] == key else None
         if last:
-            if sid in read_json(f.parent / last['file'], {}).get('to', {}):  # it waits: this one takes its place
+            same = last['said'] == ev.get('said', '')
+            waits = sid in read_json(f.parent / last['file'], {}).get('to', {})
+            if waits and (same or not ev.get('reason')):  # this one takes its place; no words of its line are lost
                 replaced[sid] = last['file']
-            elif last['said'] == ev.get('said', '') and ev['at'] - last['at'] <= AGAIN:
+            elif not waits and same and ev['at'] - last['at'] <= AGAIN:
                 picked[sid] = last
                 continue
         ev['to'][sid] = {'id': hit, 'tries': 0}
