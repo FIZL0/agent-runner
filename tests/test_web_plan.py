@@ -325,7 +325,7 @@ def test_release_row_f131(tmp: Path) -> None:
     """F131, F185, F195c: the releases, each open one once in its row's words, then the rows that are no task; the Queue
     has them at their place, the auto release's count dimmed."""
     page = W.PAGE.read_text(encoding='utf-8')
-    check('qs=planRows(S.snap)' in page and '.card.relph{opacity' in page, 'the Plan view draws planRows, a placeholder dimmed')
+    check('qs=menuRows(planRows(S.snap))' in page and '.card.relph{opacity' in page, 'the Plan view draws planRows, a placeholder dimmed')
     if not shutil.which('node'):
         print('  (no node here: the release row script test is skipped)')
         return
@@ -360,7 +360,7 @@ const S = {ob: [], taskOpen: {}, sure: null, snap: {controls, queue: [v5, v6], r
 const working_ = () => [{}], cutsOff = () => '', taskRow = (q, t, more) => q.id + more, obCards = () => '', toast = () => {}, obChange = f => { S.ob = f(S.ob) }, obDrop = (b, c) => b.filter(x => x.cid !== c);
 globalThis.fetch = async () => { throw 0 };
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planQueue='].map(line).join('')
-  + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto') + slice('const queueGroups=', '/* F185') + line('const releasesOn=') + slice('const planReleases=', 'const planQueue=') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
+  + slice('/* F429b: the menu on a Plan', 'function rowMenuOpen(') + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto') + slice('const queueGroups=', '/* F185') + line('const releasesOn=') + slice('const planReleases=', 'const planQueue=') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
   + grab('function controlReq(') + line('function controlClick(');
 new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + `
   const out = {rel: relCard(), v5: releaseCard(env.v5), v6: releaseCard(env.v6)};
@@ -455,7 +455,7 @@ const S = {ob: [], taskOpen: {}, sure: null, snap: null, f: {}};
 const no = () => '', env = {S, taskChip: no, landedText: no, planField: no, planWant: no, planAsk: no, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
   ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}, upNext: () => S.snap.queue, LOGO: no, greeting: no, box: no, keysLine: no, homeChips: no, runPill: () => ({text: ''}), esc: no};
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
-  + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto')
+  + slice('/* F429b: the menu on a Plan', 'function rowMenuOpen(') + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto')
   + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + slice('const planRows=', '/* F87') + ['relCard', 'newReleaseCard', 'statusHTML', 'planHTML', 'homeStatus', 'homePlan', 'homeHTML'].map(f => grab(`function ${f}(`)).join('') + line('const homeSums=');
 const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), statusHTML(), homeHTML()]}')(env);
 const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw() });
@@ -579,7 +579,7 @@ const kbFocus = e => e.focus(), $ = () => root, grow = () => {}, calls = []; let
 const setTimeout_ = setTimeout, fetch = url => new Promise((ok, no) => calls.push({url, say: j => ok({json: async () => j}), fail: () => no(Error('down'))}));
 { const setTimeout = f => timers.push(f), clearTimeout = i => { timers[i - 1] = null };
 eval(logic + line('const esc=') + line('const taskChip=') + line('const tq=') + slice('const actBtns=', '\n') + '\n' + slice('function setHTML(', '/* F83') + slice('function keepFields(', '/* a press under way')
-  + slice('function fieldHTML(', '/* F189b: a press in the sheet') + line('const taskIsOpen=') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + line('const chatBtn=') + slice('const taskBtns=', '/* F186: a release') + line('const planCard=') + line('const queueCard=') + grab('function parkedCard(') + grab('function shelvedCard(')
+  + slice('function fieldHTML(', '/* F189b: a press in the sheet') + line('const taskIsOpen=') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + line('const chatBtn=') + slice('/* F429b: the menu on a Plan', 'function rowMenuOpen(') + slice('const taskBtns=', '/* F186: a release') + line('const planCard=') + line('const queueCard=') + grab('function parkedCard(') + grab('function shelvedCard(')
   + line('const obActs=') + slice('/* F212: the search', '/* F87: the Concepts view') + grab('function setqClear(') + line("document.addEventListener('input',") + slice("/* F114, F204a", "document.addEventListener('visibilitychange'")
   + "function render() { const keep = keepFields(body), h = planHTML(); " + slice('const drew=', '\n').replace("!n&&S.view==='settings'?settingsDraw(body,h):", '') + " if (drew) keep() }"
   + "press = q => { " + slice("if(q('[data-planqclear]'))", "if(q('[data-setqclear]'))") + " };"
@@ -665,7 +665,7 @@ const S = {f: {}, ob: [], taskOpen: {}, tasks: {}, sure: null, snap: JSON.parse(
 const obCards = () => '', oldRunHTML = x => x, emptyCard = t => t, taskInView = () => {}, working_ = () => [], render = () => { root.innerHTML = planHTML() };
 const fetch = async () => ({json: async () => ({ok: true, text: 'whole text'})});
 eval(logic + ['const esc=', 'const taskChip=', 'const tq=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const taskIsOpen=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard='].map(line).join('')
-  + slice('const taskBtns=', '/* F186: a release') + line('const relDrop=') + slice('/* F426b: an open release', '/* F131: the auto') + ['function taskRow(', 'async function openTask(', 'function parkedCard(', 'function shelvedCard(', 'function newReleaseCard('].map(grab).join('')
+  + slice('/* F429b: the menu on a Plan', 'function rowMenuOpen(') + slice('const taskBtns=', '/* F186: a release') + line('const relDrop=') + slice('/* F426b: an open release', '/* F131: the auto') + ['function taskRow(', 'async function openTask(', 'function parkedCard(', 'function shelvedCard(', 'function newReleaseCard('].map(grab).join('')
   + slice('/* F212: the search', '/* F87: the Concepts view') + "const cutsOff=()=>'';Object.assign(globalThis, {render, openTask});");
 const opened = () => root.querySelectorAll('[data-task]').filter(e => e.getAttribute('aria-expanded') === 'true').map(e => e.dataset.list + ' ' + e.dataset.task);
 const btns = () => root.querySelectorAll('[data-k]').filter(e => e.dataset.k.startsWith('acts:')).map(e => [e.dataset.k, e.all.filter(b => b.nodeName === 'button').map(b => b.text)]);

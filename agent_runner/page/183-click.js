@@ -13,6 +13,10 @@ document.addEventListener('click',async e=>{
     try{await navigator.clipboard.writeText(S.feedText||'');toast('Copied')}catch(err){pick();toast('Selected: copy it with your own Copy')}return}
   if(x=q('[data-resume]')){const n=x.dataset.resume;outbox('resume_chat',{chat:n},{res:n,say:`Resume ${threadTitle(n)}`});return}
   if(q('#sheetscrim')||q('[data-closesheet]')){closeSheet();return}
+  if(S.planMenu&&!q('.qacts,[data-planmenu]'))setTimeout(rowMenuShut);  // F429b: what was pressed goes on
+  if(x=q('[data-planmenu]')){rowMenuOpen(x.dataset.planmenu);return}
+  if(x=q('[data-menuact]')){menuAct(x.dataset.menuact,x.dataset.tid);return}
+  if(x=q('[data-menuundo]')){menuUndo(x.dataset.menuundo);return}
   if(q('.rowacts'))S.rowOpen='';  // F187: its own handler goes on
   if(q('[data-slimbox]')){feedSlim(false);const t=document.querySelector('[data-in]');if(t)kbFocus(t);return}  // B218b: in this very tap, as iOS opens a keyboard for no other focus
   if(x=q('[data-halt]')){const n=x.dataset.halt;act('stop_session',{session:n}).then(()=>liveLoad());return}

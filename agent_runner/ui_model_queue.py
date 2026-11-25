@@ -47,6 +47,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     where = slot_of(st or {}, time.time() if now is None else now)
     tool_waits, tool_names = split_wait_words(ls, st, now) | tool_wait_words(ls, st, now), project_tools()
     untils = until_wait_words(ls)
+    busy = busy_ids(st or {})  # F429b
     for section, box, tid, rest, i in tasks:
         if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
             continue
@@ -64,14 +65,27 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1]['tool_wait'] = tool_waits[tid]
         if tid in untils and tid not in where:  # F427b: neither the person nor a slot: it says what it waits for
             out[-1].update(state='tool', tool_wait=untils[tid])
+        from agent_runner import row_hold
+        if tid in busy:
+            out[-1]['under_way'] = True
+        if row_hold._not_queued(ls, i):  # F429b: `plan hold` refuses it
+            out[-1]['no_hold'] = True
         if 'held' in f:  # F429
             out[-1]['held'] = True
-            from agent_runner import row_hold
             if row_hold.shows_held(ls, i) and out[-1]['state'] != 'parked' and tid not in where:
                 out[-1]['state'] = 'held'
         if P.release(tid) and releases_on():  # F186: one that started cannot be dropped from its row
             out[-1]['started'] = release_started(tid, st or {})
     return out
+
+
+def busy_ids(st: dict) -> set[str]:
+    """F429b: the tasks no slot of STATE `st` runs that are under way all the same: merging, taken by hand, or waiting to
+    resume (`row_hold.under_way`'s cheap part: it runs no git)."""
+    if not S.C:
+        return set()
+    from agent_runner.sched import taken
+    return {*(st.get('merging') or []), *taken(), *(q[0] for q in S.queued().values())}
 
 
 def releases_on() -> bool:
@@ -326,11 +340,31 @@ def auto_release_row(ls: list[str], landed: int | None = None, rows: list[dict] 
         return None
     if every and landed is None:
         landed = landed_count()
+    held = next_held()
     count = '' if landed is None else f': {landed}/{every}'
-    words = ' · '.join(([f'auto at {every} landed{count}'] if every else []) +
+    words = ' · '.join((['held'] if held else []) + ([f'auto at {every} landed{count}'] if every else []) +
                        (['when the run goes idle'] if idle else []))
     return {'id': '', 'title': 'Next release', 'state': 'auto', 'words': words, 'all': words, 'placeholder': True,
-            'left': max(every - landed, 0) if every and landed is not None else None, 'before': '', 'waits': [], 'text': f'Next release · {words}', 'note': ''}
+            'left': max(every - landed, 0) if every and landed is not None else None, 'before': '', 'waits': [], 'text': f'Next release · {words}', 'note': '', **({'held': True} if held else {})}
+
+
+_NEXT_HELD: list = [None, False]  # `next_held`: the event log's mark when last read, and what it said
+
+
+def next_held() -> bool:
+    """F429b: is the Next release row held (`plan hold next-release`)?"""
+    if not S.C:
+        return False
+    from agent_runner import release_moves
+    f = S.C.notes('events.jsonl')
+    try:
+        s = f.stat()
+        mark = (str(f), s.st_size, s.st_mtime_ns)
+        if _NEXT_HELD[0] != mark:
+            _NEXT_HELD[:] = [mark, release_moves.cuts().held]
+    except (OSError, KeyError, ValueError):  # no event log yet
+        return False
+    return _NEXT_HELD[1]
 
 
 _LAST_RELEASE: list = [None, None]  # `last_release`: the event log's mark when last read, and (stamp, id, title)
@@ -389,12 +423,15 @@ def landed_count() -> int | None:
 def pin_releases(queue: list[dict], rows: list[dict]) -> list[dict]:
     """The queue with each release task `rows` stand for carrying `release`: its row, at its place (F195c). The auto
     release's row, which is no task, gets `before`: the id of the task it stands before, after as many that may land as
-    it still needs ('' for the queue's end)."""
+    it still needs ('' for the queue's end). F429b: each has `menu`, the keys of its row menu."""
     by = {r['id']: r for r in rows if not r.get('placeholder')}
     for r in rows:
         if r.get('state') == 'auto' and r.get('left') is not None:
             tasks = [q['id'] for q in queue if q['id'] not in by and q['state'] not in ('parked', 'blocked', 'held')]
             r['before'] = tasks[r['left']] if r['left'] < len(tasks) else ''
+        if r.get('state') == 'auto':
+            r['menu'] = row_acts('queuemenu', r)
+    queue = [dict(q, menu=row_acts('queuemenu', q)) for q in queue]
     return [dict(q, release=by[q['id']]) if q['id'] in by else q for q in queue]
 
 
