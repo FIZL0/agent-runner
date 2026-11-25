@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 from contextlib import ExitStack
 
-from agent_runner import pitch, plan as P, plat, plansync, pr, stack
+from agent_runner import audit_fix, pitch, plan as P, plat, plansync, pr, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -883,8 +883,8 @@ def research_code(tid: str, branch: str) -> list[str]:
     """F36: the files task/<tid> changes beyond its findings (`brief.findings_globs`, the list its brief names)
     when `tid` is a research task; [] for any other task or a findings-only diff. Files that are new and empty
     (`new_empty`) count only beside real code (B224)."""
-    if not research_task(tid):
-        return []
+    if (own := audit_fix.beyond(tid, branch)) is not None or not research_task(tid):  # F418
+        return own or []
     globs = findings_globs()
     files = git('diff', '--name-only', '--no-renames', '-z', f'{branch}...task/{tid}').stdout.split('\0')
     code = [f for f in files if f and not docs_only([f], globs)]
