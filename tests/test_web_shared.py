@@ -536,7 +536,7 @@ def test_folds_f189b(tmp: Path) -> None:
         eq([x['room'] for x in o[k]], ['', ''], f'{k}: no room kept')
     page = W.PAGE.read_text(encoding='utf-8')
     check("if(q('[aria-expanded],#sheet button'))MO.folded=Date.now()" in page, 'a press on a fold, or on a button of a sheet, moves it')
-    for name, k in (('a Needs you fold', "foldIn('ask:'"), ('a task', 'foldIn(q.id'), ('a setting', "foldIn('set:'"), ('the models of a few kinds', "foldIn('kinds:'"),
+    for name, k in (('a Needs you fold', "foldIn('ask:'"), ('a task', 'foldIn(k,(lead'), ('a setting', "foldIn('set:'"), ('the models of a few kinds', "foldIn('kinds:'"),
                     ('Advanced and Project file', "foldIn('#'+id"), ('Not this', "foldIn('pitch:'"), ('Fix up', "foldIn('fix:'")):
         check(k in page, f'{name}: what it shows is one box')
 

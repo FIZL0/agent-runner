@@ -557,7 +557,7 @@ _In code_: C.fallback, agent_runner/fallback.py, chain_next, capped.json
 _Avoid_: failover, backup model
 
 **Release row**:
-The row, or rows, that say how each release stands: each open release at the top of the plan view in its Releases group, then the newest one that landed; or, with auto release on and none queued, how close the next one is
+The row, or rows, that say how each release stands: each open release at the top of the plan view in its Releases group, then the newest one that landed (not on the run page's Plan view); or, with auto release on and none queued, how close the next one is
 _Said_: next release
 _On screen_: V17 Release · waits for 2: F1 one, F2 two / releasing now / V16 Release 0.62.0 · released 17:06 / Next release · auto at 10 landed: 6/10
 _In code_: ui_model.release_rows, ui_model.pin_releases, status.release_line, planReleases, plan._releases

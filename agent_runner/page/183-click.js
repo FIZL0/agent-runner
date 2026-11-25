@@ -103,7 +103,7 @@ document.addEventListener('click',async e=>{
     if(!x.hasAttribute('data-sure')){S.sure=`pitch:${n.id}:${how}:${tid}`;render(true);return}
     const why=x.closest('#sheet')?String(S.f[askField(n.id)]||'').trim():'';
     S.sure=null;outbox('pitch_no',{pid:n.id,how,tid,confirm:true,...(why?{why}:{})},{need:n.id,say:`${n.id} · Not this${tid?': '+tid:''}`});return}
-  if(x=q('[data-task]')){openTask(x.dataset.task);return}  // F85
+  if(x=q('[data-task]')){openTask(x.dataset.task,x.dataset.list);return}  // F85
   if(x=q('[data-setopen]')){const id=x.dataset.setopen;S.setOpen[id]=!S.setOpen[id];render(true);return}  // F97
   if(q('[data-setload]')){loadSettings();return}
   if(x=q('[data-setsave]')){saveSetting(x.dataset.id,x.dataset.setsave);return}

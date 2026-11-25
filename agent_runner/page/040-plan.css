@@ -33,7 +33,6 @@
 .btn.pri{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .btn.acc{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}
 .btn:disabled{opacity:.5;cursor:default}
-.card.relph{opacity:.6}
 .btn.busy{opacity:.7;cursor:progress}
 .btn.bad{background:var(--bad);color:var(--onbad);border-color:var(--bad)}
 .sure{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
