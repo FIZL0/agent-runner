@@ -90,7 +90,7 @@ def test_control_rows(tmp: Path) -> None:
         eq([s['name'] for s in json.loads(get(f'{base}/snapshot?t={token}')[1])['sessions']], ['c1', 'c6', 's2'],
            'the snapshot carries c6 and the idle s2')
         for part in (b"S.snap.sessions.filter(s=>/^c\\d+$/.test(s.name))",  # F133: then put in the kept order
-                     b"const working_=()=>slots().filter(s=>s.task)", b'<b>Idle</b>'):
+                     b"const working_=()=>slots().filter(s=>s.task)", b'Idle: nothing it can start right now'):
             check(part in page, f'the app lists cN as a chat, a slot on a task as working: {part.decode()}')
         asked = []
         with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \

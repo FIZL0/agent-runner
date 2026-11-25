@@ -40,7 +40,6 @@ const replyDue=s=>needsReply(s,(S.seen||{})[s.name])&&!(S.thread===s.name&&!s.ne
 const groupChats=rows=>chatGroups(rows,{pins:chatPins(),quiet:+S.snap.chat_quiet||0,now:Date.now()/1000,seen:S.seen||{},up:S.thread&&S.up});
 const shownChats=()=>groupChats(chats());
 const threadTitle=n=>{if(isNew(n))return S.ctx?S.ctx.label:'New chat';if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
-const upNext=()=>S.snap.queue.filter(q=>q.state!=='running'&&q.state!=='parked');
 const feedOf=n=>(S.feeds[n]||{}).entries||[];
 function lastWords(n){const e=feedOf(n).filter(x=>x.kind==='say');return e.length?plain(e[e.length-1].text):''}
 const busy=n=>working(feedOf(n))||!!(S.sent[n]&&Date.now()-S.sent[n].at<90000&&feedOf(n).length<=S.sent[n].len);

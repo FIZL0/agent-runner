@@ -823,3 +823,10 @@ _Said_: have both as an option
 _On screen_: Recorded
 _In code_: recorded.py, /recorded, Recorder, 172-talk.js
 _Avoid_: STT, transcription
+
+**Last chat**:
+The shortcut on a run page's Home that opens the chat with the newest activity, pinned or not
+_Said_: last chat
+_On screen_: Last chat
+_In code_: homeChips
+_Avoid_: recent chat, previous chat

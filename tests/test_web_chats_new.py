@@ -190,9 +190,7 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     eq(o['left'], ['c1', None], 'another chat opened over it is that chat')
     eq(o['c1'], ['chat_to', {'text': 'hello', 'to': 'c1'}], 'and a message there goes there')
     home, some, none = o['buttons']
-    check('<span class="chips"><button class="chip" data-about="new">' in home
-          and 'Add a task</button><button class="chip" data-about="newconcept">' in home and 'New concept</button></span>' in home,
-          "F183: Home has New concept beside Add a task, the two on one row when a phone's width wraps the chips", home)
+    check('newconcept' not in home, 'F426a: New concept is the Concepts view\'s + button, not on Home', home)
     check('.chips{display:flex;gap:8px;flex-wrap:wrap' in page, "the chips wrap to a phone's width")
     check("concepts:()=>b('data-about=\"newconcept\"','Concept'" in page, "F150: the Concepts view's button is + Concept, at the top right")
     check('No concept waits' in none and 'No concept waits' not in some, 'the empty state stays', none)

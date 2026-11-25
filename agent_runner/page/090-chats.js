@@ -482,14 +482,26 @@ async function sessTask(t,what){
   }finally{FD.task=''}
 }
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
+/* F426a: Home is about the person: talk, answer, jump; the run and the plan are one line each, which opens its view */
 function homeHTML(){
-  const ws=working_(), nx=upNext().slice(0,3);
-  return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div>${box('How can I help with the run?',keysLine(!!S.snap.chat_model))}${ttydLine()}
-    <div class="chips"><button class="chip" data-view="talk">${I.talk}Talk</button><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><span class="chips"><button class="chip" data-about="new">${I.plus}Add a task</button><button class="chip" data-about="newconcept">${I.plus}New concept</button></span></div>
-    ${needsSec()}
-    <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:emptyCard(S.snap.up===false?'No run is up.':'No agent is working right now.')}
-    <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):emptyCard('The queue is empty.')}
-    ${relCard()}</div>`;
+  return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div><button class="btn acc talkbig" data-view="talk">${I.talk}Talk</button>${box('How can I help with the run?',keysLine(!!S.snap.chat_model))}${ttydLine()}
+    ${homeChips()}${needsSec()}${homeSums()}</div>`;
+}
+/* the chat that last had something said in it, pinned or not, and the one run control that fits now */
+function homeChips(){
+  const last=chatSort(chats(),[])[0], c=controlOf(cardControls(S.snap).find(k=>k==='pause'||k==='go_on'));
+  return `<div class="chips homechips">${last?`<button class="chip" data-thread="${esc(last.name)}" title="${esc(chatTitle(last))}">${I.back}Last chat</button>`:''}<button class="chip" data-about="new">${I.plus}Add a task</button>${c?`<button class="chip${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${I[CTL_ICON[c.key]]}${esc(c.label)}</button>`:''}<button class="chip" data-quick="since">${I.clock}Since my last look</button></div>${obCards(x=>/^(pause|go_on):/.test(x.ctl||''))}`;
+}
+const homeSums=()=>card([['status','Status',homeStatus(S.snap,working_())],['plan','Plan',homePlan(S.snap)]].map(([v,l,w])=>`<button class="fold sumrow" data-view="${v}" data-k="sum:${v}" data-v="${esc(w)}"><span class="grow ell">${esc(w)}</span><span class="small">${l}</span><span class="chev">${I.chev}</span></button>`).join(''),'sums','data-k="sums"');
+function homeStatus(snap,ws){
+  if(snap.up===false)return 'No run is up';
+  const m=ws.filter(s=>s.state==='merging').length, n=ws.length-m, st=runPill(snap).text;
+  return(st&&st!=='Running'?st+' · ':'')+([n?`${n} working`:'',m?`${m} merging`:''].filter(Boolean).join(', ')||'No agent is working');
+}
+function homePlan(snap){
+  const n=planQueue(snap).length, q=releasesOn(snap)&&planReleases(snap).find(x=>!x.placeholder), r=q&&q.release;
+  const w=r&&({releasing:'releasing now',blocked:'next release blocked',next:'release next',waits:`next release waits for ${(r.waits||[]).length}`})[r.state];
+  return(n?`${n} left`:'The queue is empty')+(w?', '+w:'');
 }
 /* B120: without ttyd, one line says a chat needs it to show its session, with this machine's install command */
 const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>A chat shows the real session with ttyd, which this machine lacks: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';

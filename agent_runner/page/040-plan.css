@@ -43,8 +43,6 @@
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-m);padding:7px 12px;font-size:var(--fs-m);cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:var(--fg)}
 .chip svg{width:15px;height:15px;color:var(--muted)}
 .chip:hover{background:var(--bubble)}
-.chip[data-view]{position:relative}  /* F164: Talk is 44px to press with any pointer, and looks like the chips beside it */
-.chip[data-view]::after{content:'';position:absolute;left:0;right:0;top:50%;height:var(--tap);transform:translateY(-50%)}
 .ev{display:flex;gap:12px;align-items:flex-start;padding:4px 2px;min-width:0}
 .ev .ic{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--bubble);color:var(--muted)}
 .ev .ic svg{width:14px;height:14px}

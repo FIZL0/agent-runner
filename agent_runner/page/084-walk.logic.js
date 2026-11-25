@@ -13,7 +13,7 @@ const WALK_STEPS=
  {"id": "session", "title": "A session",
   "text": "Each task has an agent session of its own.",
   "pageWorking": "Open one to watch it work and to write to it.",
-  "pageIdle": "It shows under Working now while it works, and opening it lets you watch it and write to it.",
+  "pageIdle": "It shows on Status while it works, and opening it lets you watch it and write to it.",
   "keysWorking": "Select one in Sessions [2] to watch it work; Enter goes into it to write to it, and Ctrl-h comes back.",
   "keysIdle": "It lists in Sessions [2] while it works. Select it there to watch it; Enter goes into it to write to it, and Ctrl-h comes back.",
   "noRun": "Start the run to see one."},
