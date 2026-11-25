@@ -1,7 +1,7 @@
 """F170: what a chat's or slot's Claude session is doing, for the controls the run page has in place of the lines at the
 bottom of its window: its status (`status`), its background shells and agents (`tasks`), Stop and Force send, the
 commands it takes (`skills`), and Claude Code's update. Read from what Claude Code keeps: `<claude dir>/sessions/PID.json`
-and the session's transcript.
+and the session's transcript. F406g: a chat on the harness loop says it in `<notes>/SID.now` instead (`control_harness.now`).
 """
 from __future__ import annotations
 
@@ -35,6 +35,10 @@ def record(name: str) -> dict:
             continue
         if isinstance(d, dict) and plat.alive(p):
             return d
+    if name[0] == 'c':  # F406g
+        from agent_runner import control_harness
+        if d := control_harness.now(U.session_sid(name)):
+            return {**d, 'harness': True}
     return {}
 
 
@@ -85,6 +89,8 @@ def queued(rec: dict, ops) -> int:
     """`queued_in` for the process of `rec` (`record`); 0 while it rests: what was queued has gone in."""
     if rec.get('status') in (None, '', 'idle', 'shell'):
         return 0
+    if rec.get('harness'):
+        return int(rec.get('queued') or 0)
     return queued_in(ops, (rec.get('startedAt') or 0) / 1000)
 
 
@@ -158,7 +164,7 @@ _TASKS: dict[str, tuple[int, list[dict]]] = {}  # transcript -> (its size, its t
 def live(name: str) -> dict:
     """The page's word on session `name`: {'ok', 'status', 'since' (when it began, epoch s), 'mode' (its permission mode
     as the transcript has it), 'queued' (F190b: how many sent messages are queued in it), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
-    'tail')}."""
+    'tail'), 'harness' (F406g: on the harness loop)}."""
     rec = record(name)
     if not rec:
         return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'queued': 0, 'tasks': []}
@@ -186,7 +192,7 @@ def live(name: str) -> dict:
     done = [t for t in rows[1:] if not t['running']][-3:]
     if rec.get('status') == 'idle':  # nothing of it runs any more, whatever the transcript missed
         run = [t for t in run if t['kind'] == 'agent']
-    return {'ok': True, 'status': str(rec.get('status') or ''), 'since': (rec.get('statusUpdatedAt') or 0) / 1000,
+    return {'ok': True, **({'harness': True} if rec.get('harness') else {}), 'status': str(rec.get('status') or ''), 'since': (rec.get('statusUpdatedAt') or 0) / 1000,
             'mode': mode, 'queued': queued(rec, rows[0]['ops'] if rows else ()), 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
                                      **({'tail': output_tail(t['out'])} if t.get('out') else {})} for t in run + done]}
 
@@ -209,14 +215,15 @@ AGAIN = 3.0  # s until Stop sends another: its status may still say busy for a m
 
 def stop(session: str) -> dict:
     """The page's Stop: one Ctrl+C to `session` while it works, never to an idle one (twice in a row closes Claude
-    Code). A session whose status is not known (the harness loop) gets Escape, which is harmless idle."""
+    Code). A session on the harness loop, or whose status is not known, gets Escape, which is harmless idle."""
     with _STOP_LOCK:
-        st = status(session)
+        rec = record(session)
+        st = str(rec.get('status') or '') if rec.get('harness') else status(session)
         if st == BUSY:
             if time.monotonic() - _STOPPED.get(session, -AGAIN) < AGAIN:
                 return {'ok': True, 'code': 0, 'out': f'{session} is stopping', 'argv': []}
             _STOPPED[session] = time.monotonic()
-            r = U.keys(session, key='C-c')
+            r = U.keys(session, key='Escape' if rec.get('harness') else 'C-c')
             return {**r, 'out': f'stopped {session}'} if r['ok'] else r
     if st:
         return _fail(f'{session} is not working, so there is nothing to stop')
@@ -253,6 +260,8 @@ def force_send(session: str, text: str, send, unsent: bool = False, force: bool 
         return send(session, text)
     if busy and (why := rest(session)):
         return _fail(why)
+    if record(session).get('harness'):  # F406g: nothing is put back in its input
+        return send(session, text)
     # ctrl+j: a new line in Claude Code's input. A command must stand first, so before one ctrl+s sets the prompt that
     # was put back aside: it comes back once the command is sent
     U.keys(session, text='\x13' if text[:1] in '!/' else '\n')
@@ -381,7 +390,7 @@ def claude_update(cmd: str) -> dict:
 def restart_chat(chat: str) -> dict:
     """Restart an idle chat: its Claude Code ends and its conversation comes up again under its number, with
     the version and look there are now."""
-    from agent_runner import control as K, control_reopen
+    from agent_runner import control as K, control_harness, control_reopen
     m = re.fullmatch(r'c(\d+)', str(chat))
     if not m:
         return _fail(f'restart_chat: a chat, not {chat!r}', 2)
@@ -393,6 +402,8 @@ def restart_chat(chat: str) -> dict:
         return _fail(f'{chat} has nothing said in it to restart with')
     if bad := K.agent_held():  # B764c: ended now, it could not come up again
         return _fail(f'{chat} was not restarted: {bad}')
+    if why := control_harness.cannot_resume(sid):
+        return _fail(f'{chat} was not restarted. {why}')
     K.control_keep_sid(n, sid)
     plat.terminate(int(rec['pid']))
     end = time.monotonic() + 15

@@ -62,7 +62,8 @@ const boxEnter=(e,touch)=>e.key!=='Enter'||composing(e)?'':(touch?e.ctrlKey||e.m
 /* F205: is there something to send (words or an uploaded attachment), and is an attachment still uploading? */
 const sendHas=(words,atts)=>!!String(words||'').trim()||(atts||[]).some(a=>a.path);
 const sendWaits=atts=>(atts||[]).some(a=>!a.path&&!a.err);
-const keysLine=()=>'<span class="keysl">'+BOX_KEYS.map(([k,d])=>`${k} ${d}`).join(' · ')+'</span>';
+/* F406g: noSlash: a chat that takes no commands */
+const keysLine=noSlash=>'<span class="keysl">'+BOX_KEYS.filter(([k])=>!noSlash||k!=='/').map(([k,d])=>`${k} ${d}`).join(' · ')+'</span>';
 /* B120: the chat's message history (kept per chat): HIST_MAX the most it keeps; histPush the list once `text` is
    sent (not twice in a row); histEdge whether ArrowUp / ArrowDown leaves the box's text for history (the caret on
    its first / last line, nothing selected); histStep the place after the key, n meaning the unsent draft */

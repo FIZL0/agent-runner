@@ -86,10 +86,12 @@ function feedGap(lines,top){
 function feedShare(px,o){return px<0?o.top||o.jump&&o.slim?-Math.min(Math.max(0,o.far-o.off),-px):0:Math.min(o.off,px)}
 /* B192: the bars after a scroll of px. o: slim (they are away), run (how far it went one way). Away 8px up, back 8px down */
 function feedBars(px,o){const run=px*o.run<0?px:o.run+px;return{run,slim:run<=-8?true:run>=8?false:o.slim}}
-/* which chips a session has: only what there is to say. o: foot, live (the run's /live), working */
+/* which chips a session has: only what there is to say. o: foot, live (the run's /live), working, model (F406g: the
+   provider's name and model of a chat on the harness loop, which has no modes, shells, agents or updates) */
 function sessionChips(o){
   const f=o.foot||{}, l=o.live||{}, run=k=>(l.tasks||[]).filter(t=>t.kind===k&&t.running).length, out=[];
   if(o.working)out.push({key:'work',label:'Working'});
+  if(o.model){out.push({key:'model',label:o.model});return out}
   const mode=FEED_MODES.find(m=>m[0]===(f.mode||l.mode));
   out.push({key:'mode',label:mode?mode[1].replace(' permissions',''):'Session'});
   const sh=run('shell')||f.shells||0, ag=run('agent')||f.agents||0;

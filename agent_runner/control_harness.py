@@ -104,10 +104,59 @@ def resume_hint(sid: str) -> str:
     return f'{plat.exe(state.C.run["agent"])} --resume {sid}'
 
 
+def model_words(model: str) -> str:
+    """F406g: settled `model` as the run page says it: its provider's name and its own ('Codex · gpt-6-sol')."""
+    from agent_runner.setup_models import NAMES
+    provider, _, name = model.partition(':')
+    return f'{NAMES.get(provider, provider)} · {name}'
+
+
+def chat_model(sid: str) -> str:
+    """F406g: `model_words` of what session `sid` on the harness loop runs on now (a cap may have moved it down
+    [models] fallback); '' for a Claude Code one."""
+    from agent_runner import control as K
+    if not harness_session(sid):
+        return ''
+    try:
+        model = state.C.notes(f'{sid}.model').read_text(encoding='utf-8').strip()
+    except OSError:
+        model = ''
+    if not model:
+        model = K.control_model()
+    return model_words(model) if ':' in model else ''
+
+
+def new_chat_model() -> str:
+    """F406g: `model_words` of what a new chat runs on; '' with [models] control on Claude Code."""
+    from agent_runner import control as K
+    return model_words(K.control_model()) if harness_control() else ''
+
+
+def now(sid: str) -> dict:
+    """F406g: what the harness loop says of chat `sid` (`<notes>/<sid>.now`): pid, sessionId, status, statusUpdatedAt,
+    startedAt, queued; {} for none, or one whose process is gone."""
+    from agent_runner import plat
+    try:
+        d = json.loads(state.C.notes(f'{sid}.now').read_text(encoding='utf-8')) if sid else {}
+        return d if isinstance(d, dict) and plat.alive(int(d['pid'])) else {}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+def cannot_resume(sid: str) -> str:
+    """F406g: why a chat on session `sid` cannot come up again now, for the person; '' when it can."""
+    if not other_kind(sid):
+        return ''
+    was = 'another provider' if harness_session(sid) else 'Claude Code'
+    return f'It ran on {was}, which the Chats setting no longer names, so it cannot be resumed.'
+
+
 def argv(n: int, sid: str, resume: bool, ask: str = '') -> list[str]:
     """Control session `n` as the harness loop in chat mode; `ask` is its first message."""
     from agent_runner import control as K, slots
     C, H, model = state.C, slots.HARNESS, K.control_model()
+    from agent_runner.fallback import note_model
+    note_model(sid, model)
     C.notes(f'{sid}.brief').write_text(K.control_brief(harness=True), encoding='utf-8')  # every start: --system-file
     pf = C.notes(f'control{n}.prompt')
     pf.write_text(ask, encoding='utf-8')

@@ -351,6 +351,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   `feedEnd()`). After a reload, with nothing kept, the card is in the body as before.
 - **New chat opens at once.** A press that starts a chat about something (Chat on a plan task, concept or setting, Add a task, New concept) opens the
   empty new chat view over the view pressed in, with its box focused. Nothing is sent or started until the first message.
+- **A chat on the harness loop.** Its terminal has no prompt lines to hide, so the frame is whole. Its chips are only Working and the model (`Codex · gpt-5.6-sol`, from `modelOf()`, sheet `sessmodel`), also on touch, where the key row otherwise stands in place of the chips. It has no mode, shells, agents or update chip. Its box has no slash menu and no / button, and no "/ commands" in the box's keys line.
 
 ## Touch, keys and access
 

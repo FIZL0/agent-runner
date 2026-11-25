@@ -26,11 +26,14 @@ _CHAT_STATE: dict[str, tuple[tuple, dict]] = {}  # transcript -> (its size and t
 def chat_state(n: int, sid: str) -> dict:
     """F128: control session `n`'s state for its row: {'link', 'last' (who spoke last), 'at' (its last activity, epoch
     s, 0 unknown), 'needs_reply' (Claude spoke last and its message has an open question), 'renamed', 'title' (the
-    person's own name for it)}. Read again only when its transcript changed."""
+    person's own name for it), and for one on the harness loop 'model' (F406g: its provider's name and model)}. Read again only when its transcript changed."""
     out = {'link': '', 'last': '', 'at': 0, 'needs_reply': False, 'renamed': False, 'title': ''}
     try:
         from agent_runner import control as K
+        from agent_runner.control_harness import chat_model
         from agent_runner.control_names import person_name
+        if model := chat_model(sid):
+            out['model'] = model
         from agent_runner.slots import entries, transcript
         path = str(sid and transcript(sid) or '')
         st: dict = {}
@@ -68,6 +71,15 @@ def _bridge_link(sid: str) -> str:
         from agent_runner.slots import entries
         return control_link(control_state(entries(sid, skip_bad=True))['bridge'])
     except Exception:  # noqa: BLE001 - a link is a nicety: a missing transcript or backend leaves it ''
+        return ''
+
+
+def new_chat_model() -> str:
+    """F406g: the provider's name and model of a new chat ('Codex · gpt-6-sol'); '' on Claude Code."""
+    try:
+        from agent_runner import control_harness
+        return control_harness.new_chat_model()
+    except Exception:  # noqa: BLE001 - settings that cannot be read are said elsewhere
         return ''
 
 
@@ -434,7 +446,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'agent_problem': agent_problem(st=st if up else None),  # B764b
             'claude_login': login,  # F126a
             'unpushed': unpushed_line(),  # F98
-            'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(),
+            'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(), 'chat_model': new_chat_model(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
 
 
