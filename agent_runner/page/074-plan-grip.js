@@ -62,14 +62,16 @@ function gripKeep(el){
   const a=document.activeElement, id=a&&a!==el&&el.contains(a)&&a.dataset&&a.dataset.grip;
   return()=>{if(id)gripFocus(id)};
 }
-/* the drag: the row goes with the mouse, the others make room; a redraw midway drew other cards, which go on from there */
+/* the drag: the row goes with the mouse, the others make room; it
+   stays within the Queue; a redraw midway drew other cards, which go on from there */
 function gripDraw(){
   const d=GR.d, b=$('body'), card=d&&gripCard(d.id), col=card&&card.parentElement;
   if(!card||!GR.rows.some(q=>menuId(q)===d.id&&gripOn(q)))return gripEnd();
-  d.card=card;const a=MO.fly.get(card);if(a)a.cancel();
+  hintHide();d.card=card;const a=MO.fly.get(card);if(a)a.cancel();
   const gap=parseFloat(getComputedStyle(col).rowGap)||0, c0=col.getBoundingClientRect().top, H=card.offsetHeight+gap;
   const at=c=>c.offsetParent===col?c.offsetTop+col.clientTop:c.offsetTop-col.offsetTop;  // where it is laid out
-  const here=at(card), top=d.y-d.grab-c0, low=top+card.offsetHeight, block=gripBlock(GR.rows,d.id);
+  const cs=GR.rows.map(q=>gripCard(menuId(q))).filter(Boolean), end=at(cs[cs.length-1])+cs[cs.length-1].offsetHeight;
+  const here=at(card), top=Math.max(at(cs[0]),Math.min(d.y-d.grab-c0,end-card.offsetHeight)), low=top+card.offsetHeight, block=gripBlock(GR.rows,d.id);
   const rest=GR.rows.filter(q=>!block.includes(q)).map(q=>gripCard(menuId(q)));
   const past=rest.map(c=>{if(!c)return false;const m=at(c)+c.offsetHeight/2;return at(c)<here?top>=m:low>m});
   d.g=past.filter(Boolean).length;

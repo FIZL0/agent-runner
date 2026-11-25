@@ -898,3 +898,10 @@ _Said_: the menu on the row
 _On screen_: ⋯ on a Plan queue row: Hold or End the hold, To the top, Remove with Undo
 _In code_: rowMenu, menuRows, menu_hold, menu_unhold, menu_top, menu_remove, menu_restore, queuemenu
 _Avoid_: context menu, kebab menu
+
+**Row grip**:
+The thin handle on a Plan queue row that moves it: dragged by a mouse, or with arrow up and down while it has the focus
+_Said_: the grip
+_On screen_: six dots at the left of a Plan queue row: Move ID: drag, or arrow up and down
+_In code_: rowGrip, gripRows, gripMove, gripDraw, data-grip
+_Avoid_: drag handle, gripper

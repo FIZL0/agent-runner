@@ -41,7 +41,7 @@ DRIVER = MENU.split('(async () => {\n  const out')[0] \
 const on = {}, window = {addEventListener: (t, f) => (on[t] = on[t] || []).push(f)}, $ = () => root, frames = [], requestAnimationFrame = f => frames.push(f);
 const document = {body: root, get activeElement() { return doc.activeElement }, querySelector: () => null, addEventListener: (t, f) => (on[t] = on[t] || []).push(f)};
 const fire = (t, e) => { let kept = false; const ev = {preventDefault() { kept = true }, stopImmediatePropagation() {}, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, ...e}; for (const f of on[t] || []) f(ev); return kept };
-let noClick = false, scrolled = 0; const getComputedStyle = () => ({rowGap: '10px'}), shiftOf = () => ({m42: 0}), glideTo = () => {}, flying = () => 0, scrollGlide = () => { scrolled++ }; MO.fly = new Map();
+let noClick = false, scrolled = 0; const getComputedStyle = () => ({rowGap: '10px'}), shiftOf = () => ({m42: 0}), glideTo = () => {}, flying = () => 0, hintHide = () => {}, scrollGlide = () => { scrolled++ }; MO.fly = new Map();
 const els = () => root.querySelectorAll('[data-k]').filter(e => /^(task:|rel:next)/.test(e.dataset.k) && e.parentNode.nodeName === 'div');
 Object.defineProperties(Node.prototype, {style: {get() { return this._s = this._s || {} }}, parentElement: {get() { return this.parentNode }},
   classList: {get() { const s = this._c = this._c || new Set(); return {add: c => s.add(c), remove: c => s.delete(c), contains: c => s.has(c)} }},
