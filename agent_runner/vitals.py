@@ -1355,9 +1355,10 @@ class Vitals:
 
     def clear_builds(self, projs: list[Project], now: float) -> None:
         """F424: remove the old build output of projects whose run is off, and log what that freed."""
-        for d, count, freed in clean_builds(projs, self.run_off, lambda: busy_dirs(self.sampler.proc), now, du):
+        def said(d: Path, count: int, freed: int) -> None:
             self.log(f'{time.strftime("%Y-%m-%d %H:%M:%S")} removed {count} old build folders in {d}, '
                      f'freed {size_words(freed) or "0 B"}')
+        clean_builds(projs, self.run_off, lambda: busy_dirs(self.sampler.proc), now, du, said=said)
 
     def run_off(self, p: Project) -> bool:
         """Is `p`'s run off now? Not when that cannot be told."""

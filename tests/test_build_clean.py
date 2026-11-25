@@ -74,6 +74,7 @@ def test_removed():
             write(t / 'game.ipa'), d / 'build' / 'check.log', d / 'build' / 'fco' / 'out.txt', d / 'notes.txt',
             d / 'modding' / 'a.py', write(d / 'false' / 'x')]
     profile(own / 'target' / 'debug')
+    kept.append(profile(own / 'debug'))
     write(own / 'target' / 'CACHEDIR.TAG', CARGO)
     age(d)
     got = run(root, d)
@@ -169,6 +170,25 @@ def test_kept():
     git(d, 'clone', '-q', str(root), str(b / 'mine'))
     age(d)
     eq(run(root, d), [], 'one in a repository of its own, and one that holds one')
+
+    print('a Cargo target folder inside a CMake folder')
+    for rel, stays in (('debug/deps/b', False), ('m157-float/src/lib.rs', True)):
+        root, d, b = built()
+        write(b / 'rust' / 'CACHEDIR.TAG', CARGO)
+        profile(b / 'rust' / 'debug')
+        write(b / 'rust' / rel)
+        age(d)
+        run(root, d)
+        eq(b.exists(), stays, f'with {rel}')
+
+    print('a folder that cannot be read')
+    root, d, b = built()
+    write(d / '.cache' / 'x')
+    age(d)
+    os.chmod(d / '.cache', 0)
+    run(root, d)
+    os.chmod(d / '.cache', 0o700)
+    check(not b.exists() and (d / '.cache' / 'x').is_file(), 'stays; the rest is still cleared')
 
     print('an uncommitted change')
     root, d, b = built()

@@ -15,12 +15,12 @@ import shutil
 import subprocess as sp
 from pathlib import Path
 
-from agent_runner.build_output import (CACHEDIR_SIGNATURE, CMAKE_FILES, NOTES, _cargo_target, _fetched_only,
+from agent_runner.build_output import (CACHEDIR_SIGNATURE, CMAKE_FILES, NOTES, _cargo_target, _fetched_only, _held,
                                        _out_of_source, _read)
 
 BUILD_QUIET = 3 * 24 * 3600.0  # s with no write to any of a worktree's build output before it is old
 RUNNER_TREE = re.compile(r's\d+|merge\d*|fix\d+')
-TRIPLE = re.compile(r'[a-z0-9_.]+(-[a-z0-9_.]+){1,4}')  # x86_64-unknown-linux-gnu, wasm32-wasip1
+TRIPLE = re.compile(r'(x86_64|i[3-6]86|aarch64|arm|thumb|wasm|riscv|powerpc|s390x|loongarch|mips|sparc)\w*(-[\w.]+){1,4}')  # x86_64-unknown-linux-gnu, wasm32-wasip1
 
 
 def _git(cwd: Path, *args: str) -> bytes | None:
@@ -76,7 +76,7 @@ def _marked(p: Path) -> list[Path]:
         return []
     kids = _kids(p)
     names = {k.name for k in kids}
-    if '.git' in names:
+    if not kids or '.git' in names:  # empty, or cannot be read
         return []
     if p.name == 'node_modules' or 'pyvenv.cfg' in names:
         return []  # installed, not built (uv tags its .venv as a cache); a build inside is part of it
@@ -109,7 +109,8 @@ def _profile(p: Path) -> bool:
 
 def holds_own(p: Path) -> bool:
     """Does build folder `p` hold something that may be a person's: a repository (but for one CMake fetched, under
-    the folder's _deps, with nothing of its own), or a notes file straight in it?"""
+    the folder's _deps, with nothing of its own), a notes file straight in it, or a Cargo target folder with more
+    than Cargo's own in it?"""
     cmake = (p / 'CMakeCache.txt').is_file()
     if (cmake or _profile(p)) and any(k.suffix.lower() in NOTES and k.name not in CMAKE_FILES and k.is_file()
                                       for k in _kids(p)):
@@ -120,6 +121,8 @@ def holds_own(p: Path) -> bool:
             fetched = cmake and Path(top).relative_to(p).parts[:1] == ('_deps',)
             if not fetched or not _fetched_only(Path(top)):
                 return True
+        if _cargo_target(Path(top)) and _held(Path(top), '')[0]:
+            return True
         dirs[:] = [x for x in dirs if x != '.git']
     return bool(unread)
 
@@ -163,10 +166,11 @@ def trees_of(p) -> list[Path]:
         return []
 
 
-def clean_builds(projects: list, off, cwds, now: float, size, rm=shutil.rmtree) -> list[tuple[Path, int, int]]:
+def clean_builds(projects: list, off, cwds, now: float, size, rm=shutil.rmtree, said=None) -> list[tuple]:
     """Remove the old build output of each runner worktree of `projects` whose run is off: `off(project)` and
     `cwds()` (every process's working folder) say how things are now. Each folder is looked at again just before
-    it goes. [(the worktree, folders removed, bytes freed)], those that lost something."""
+    it goes. [(the worktree, folders removed, bytes freed)], those that lost something; `said` is called with each
+    as soon as it is known."""
     out = []
     for p in projects:
         for d in trees_of(p):
@@ -175,23 +179,28 @@ def clean_builds(projects: list, off, cwds, now: float, size, rm=shutil.rmtree) 
             if worked_in(d, cwds()) or not worktree_of(p.root, d):
                 continue
             count, freed = 0, 0
-            for f in build_folders(d) or []:
-                # the slow looks first: those at the run and the processes come last
-                found = build_folders(d) or []
-                if f not in found or not quiet(found, now):
-                    break
-                if f.resolve() != d.resolve() / f.relative_to(d) or not git_lets_go(d, f) or holds_own(f):
-                    continue
-                n = size(f)
-                if not quiet([f], now) or worked_in(d, cwds()) or not off(p):
-                    break
-                try:
-                    rm(f)
-                except OSError:
-                    pass  # what is left stays, and is looked at on a later walk
-                gone = not f.exists()
-                count += gone
-                freed += n if gone else max(0, n - size(f))
+            try:
+                for f in build_folders(d) or []:
+                    # the slow looks first: those at the run and the processes come last
+                    found = build_folders(d) or []
+                    if f not in found or not quiet(found, now):
+                        break
+                    if f.resolve() != d.resolve() / f.relative_to(d) or not git_lets_go(d, f) or holds_own(f):
+                        continue
+                    n = size(f)
+                    if not quiet([f], now) or worked_in(d, cwds()) or not off(p):
+                        break
+                    try:
+                        rm(f)
+                    except OSError:
+                        pass  # what is left stays, and is looked at on a later walk
+                    gone = not f.exists()
+                    count += gone
+                    freed += n if gone else max(0, n - size(f))
+            except OSError:
+                pass  # a folder that cannot be looked at: the other worktrees still are
             if count or freed:
                 out.append((d, count, freed))
+                if said:
+                    said(d, count, freed)
     return out
