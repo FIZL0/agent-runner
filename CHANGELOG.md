@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page's Plan queue, a task a slot works on now says "s2 is on it · 4 min", and one under way another way (merging, taken by hand, or waiting to resume) says "Being worked on", where both said "Ready to start when a slot is free"; a blocked row keeps "Waits for you", and with no run up a task that waits to resume still says it waits for the run to start (B824a).
 - Added: `plan edit ID --wait-for X,Y` sets what a queued task waits for to exactly those tasks, and `--wait-for none` clears it (a blocked task reopens with its notes kept; a person's check that waited goes back to Needs you); the run app's `set_waits` does the same. Refused with the reason and nothing changed for an unknown or done task, a circle, a started task, a release, a shelved one and similar. In the Plan queue (run page and terminal UI) a task blocked on open tasks now reads what it waits for, where it read "Waits for you" or blocked (F441).
 ## 0.73.0 (2026-11-25)
 

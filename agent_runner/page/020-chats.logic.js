@@ -131,8 +131,10 @@ function working(entries){
 function planWords(q,sessions){
   const s=(sessions||[]).find(x=>x.task===q.id);
   if(q.release)return q.release.words;  // F131, F185: its row's words, as status says them
-  if(q.state==='running')return s?`${s.name} is on it${s.minutes!=null?` · ${s.minutes} min`:''}`:'Being worked on';
+  const on=/^running(?: (\S+))?(?: (\d+)m)?$/.exec(q.state||'');  // B824a: 'running s2 4m' (queue_state)
+  if(on){const name=s?s.name:on[1], min=s?s.minutes:on[2];return name?`${name} is on it${min!=null?` · ${min} min`:''}`:'Being worked on'}
   if(q.state==='blocked')return 'Waits for you';
+  if(q.under_way&&!q.waits_run)return 'Being worked on';  // B824a: merging, taken by hand, waiting to resume; with no run up that one waits for the run
   if(q.state==='critical')return 'Goes first, as soon as a slot is free';
   if(q.state==='after')return q.after_title?`Waits for ${q.after_title}`:'Waits for another task';
   if(q.state==='tool'&&q.tool_wait)return q.tool_wait.charAt(0).toUpperCase()+q.tool_wait.slice(1);  // F168

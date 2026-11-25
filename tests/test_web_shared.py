@@ -201,6 +201,31 @@ def test_logic(tmp: Path) -> None:
     eq(got[21], 'Waits for V5 Release', "B115: an after shows the id and its short title (the model's after_title)")
 
 
+def test_under_way_b824a(tmp: Path) -> None:
+    """B824a: a Plan row that is under way says so, never Ready, with the state the real snapshot has."""
+    if not shutil.which('node'):
+        print('  (no node here: the page script test is skipped)')
+        return
+    fake_repo(tmp)
+    ls = ['# TODO', '', '## Now', ''] + [f'- [ ] **F{n}** (follow-up, normal) Task {n}' for n in range(1, 7)]
+    st = {'running': {'1': 'F1', '2': 'F2'}, 'since': {'2': 1000.0}, 'merging': ['F3']}
+    S.C.notes('F4.resume').write_text('{"slot": 3, "sid": "x", "why": "cut off"}', encoding='utf-8')
+    with mock.patch('agent_runner.sched.taken', lambda: {'F6': tmp}):
+        q = {r['id']: r for r in U.queue_rows(ls, st, 1000.0 + 250)}
+    eq([q['F1']['state'], q['F2']['state']], ['running s1', 'running s2 4m'], 'the states the snapshot has')
+    on = [{'name': 's2', 'task': 'F2', 'minutes': 5}]
+    none = {**q['F4'], 'state': 'tool', 'tool_wait': U.RUN_WAIT, 'waits_run': True}
+    states = ('critical', 'after', 'tool', 'split', 'held', 'parked')
+    got = logic_js([['planWords', q['F2'], on], ['planWords', q['F2'], []], ['planWords', q['F1'], []],
+                    ['planWords', q['F3'], []], ['planWords', q['F4'], []], ['planWords', q['F6'], []], ['planWords', q['F5'], []],
+                    ['planWords', none, []], ['planWords', {**q['F4'], 'state': 'blocked'}, []]]
+                   + [['planWords', {**q['F4'], 'state': x}, []] for x in states])
+    eq(got[:3], ['s2 is on it · 5 min', 's2 is on it · 4 min', 's1 is on it'], "the session's minutes, else the state's")
+    eq(got[3:7], ['Being worked on'] * 3 + ['Ready to start when a slot is free'], 'merging, waiting to resume, taken by hand; a free one')
+    eq(got[7:9], ['Waits for the run to start', 'Waits for you'], 'no run up, and one that needs the person, keep their words')
+    eq(got[9:], ['Being worked on'] * len(states), 'whatever else its state is')
+
+
 def test_extras(tmp: Path) -> None:
     """F79: the app's snapshot carries this machine's name and each concept's options, read from its copy."""
     fake_repo(tmp)
@@ -780,4 +805,4 @@ def test_page_parts_c41a(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_small_fixes_f426f), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_kinds_f195b), in_tmp(test_icon_hints_f195b), in_tmp(test_hold_selects_b814), in_tmp(test_page_parts_c41a)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_small_fixes_f426f), in_tmp(test_page), in_tmp(test_logic), in_tmp(test_under_way_b824a), in_tmp(test_extras), in_tmp(test_views), in_tmp(test_page_copy_options), in_tmp(test_page_copy_publish), in_tmp(test_motion_f147), in_tmp(test_jumps_f189a), in_tmp(test_folds_f189b), in_tmp(test_style_f83), in_tmp(test_kinds_f195b), in_tmp(test_icon_hints_f195b), in_tmp(test_hold_selects_b814), in_tmp(test_page_parts_c41a)]))
