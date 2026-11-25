@@ -115,10 +115,10 @@ addEventListener('blur',function(){press=null});
 addEventListener('keydown',function(e){if(own||e.keyCode!==67||e.altKey||e.shiftKey||!(e.ctrlKey||e.metaKey))return;
 if(e.repeat&&copied)return eat(e);
 var s=picked(), t=window.term;copied=!!s;if(!s)return;eat(e);
-function put(c){eat(c);c.clipboardData.setData('text/plain',s)}
+var ok=false;function put(c){eat(c);c.clipboardData.setData('text/plain',s);ok=true}
 t.textarea.value=s;t.textarea.select();addEventListener('copy',put,true);
 try{document.execCommand('copy')}catch(x){}
-removeEventListener('copy',put,true);t.textarea.value='';t.clearSelection()},true);
+removeEventListener('copy',put,true);t.textarea.value='';if(ok)t.clearSelection()},true);
 addEventListener('dragover',function(e){e.preventDefault()});
 addEventListener('drop',function(e){e.preventDefault();var f=e.dataTransfer?Array.from(e.dataTransfer.files):[];if(f.length)tell({files:f})});
 })()</script>'''
