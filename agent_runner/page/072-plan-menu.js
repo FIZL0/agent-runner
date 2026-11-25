@@ -35,10 +35,13 @@ function rowMenu(q,list='queue'){
   if(list!=='queue'||!acts.length)return '';
   const name=menuName(id);
   if(S.planMenu!==id)return `<button class="qmenu" data-planmenu="${esc(id)}" aria-expanded="false" aria-label="More for ${esc(name)}">${I.dots}</button>`;
+  const waits=waitMay(q)?`<button data-waitset="${esc(id)}" aria-label="Wait for…">${I.wait}</button>`:'';
   const keys=[...new Set(acts.map(k=>k==='menu_hold'||k==='menu_unhold'?(q.held?'menu_unhold':'menu_hold'):k))].filter(controlOf);
-  return `<span class="qacts" role="group" aria-label="${esc(name)}">${keys.map(k=>`<button data-menuact="${k}" data-tid="${esc(id)}" aria-label="${esc(controlOf(k).label)}">${I[MENU_ICON[k]]}</button>`).join('')}</span>`;
+  return `<span class="qacts" role="group" aria-label="${esc(name)}">${keys.map(k=>`<button data-menuact="${k}" data-tid="${esc(id)}" aria-label="${esc(controlOf(k).label)}">${I[MENU_ICON[k]]}</button>${k.endsWith('hold')?waits:''}`).join('')}${keys.some(k=>k.endsWith('hold'))?'':waits}</span>`;
 }
 const removedCard=q=>card(`<div class="row">${q.id?taskChip(q.id):''}<div class="grow"><b class="ell">${esc(q.title||q.id)}</b><span class="small">Removed</span></div><button class="btn" data-menuundo="${esc(menuId(q))}">Undo</button></div>`,'',`data-k="${q.placeholder?'rel:next':'task:'+esc(q.id)}"`);
+/* F442: can what row q waits for be set: a task no run has started, not parked, and not one that waits on a person or a check */
+const waitMay=q=>!!q.id&&!q.release&&!q.removed&&(q.menu||[]).length>0&&!(q.blocked&&['blocked','tool'].includes(q.state));
 /* where a row stands in its section, for Undo */
 function menuPlace(q){
   const xs=(S.snap.queue||[]).filter(x=>x.section===q.section), i=xs.findIndex(x=>x.id===q.id), ids=l=>l.map(x=>x.id);
