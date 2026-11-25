@@ -232,5 +232,117 @@ def test_held() -> None:
     eq(W.at_start(d), True, 'and the next start switches')
 
 
+def other(d: Path) -> tuple[Path, Path]:
+    """`d` with a remote, and another machine's clone of it (no local dev)."""
+    remote = d.parent / (d.name + '-origin')
+    git(d.parent, 'clone', '-q', '--bare', str(d), str(remote))
+    git(d, 'remote', 'add', 'origin', str(remote))
+    git(d, 'fetch', '-q')
+    b = d.parent / (d.name + '-other')
+    git(d.parent, 'clone', '-q', str(remote), str(b))
+    return remote, b
+
+
+def value_in(d: Path, v: str, msg: str) -> None:
+    (d / 'runner.toml').write_text(f'[run]\ntest = "true"\n[git]\npush = false\nmaster_branch = "{v}"\n', encoding='utf-8')
+    git(d, 'commit', '-qam', msg)
+
+
+SAVED = 'settings: [git] master_branch = "dev"'
+
+
+def test_other_machine() -> None:
+    print('another machine that pulls a save for everyone switches at its next start, with the same holds')
+    for how in (('pull', '-q', '--ff-only'), ('pull', '-q', '--no-rebase', '--no-edit'), ('pull', '-q', '--rebase')):
+        d = project()
+        _, b = other(d)
+        eq(U.setting_project('git', 'master_branch', 'dev')['ok'], True, 'saved on the first machine')
+        git(d, 'push', '-q', 'origin', 'main')
+        if '--ff-only' not in how:
+            (b / 'mine.txt').write_text('mine\n', encoding='utf-8')
+            git(b, 'add', '-A')
+            git(b, 'commit', '-qm', 'mine')
+        fresh(b)
+        check(not W.waits(b), 'nothing waits before the pull')
+        git(b, *how)
+        fresh(b)
+        eq((S.default_branch(), S.C.master_branch, W.waits(b)), ('main', None, True), f'{how}: goes on with main, a switch waits')
+        eq(W.pending(b), {'now': 'main', 'next': 'dev'}, 'to dev')
+        r = run(b, 'run', '--dry-run')
+        eq(r.returncode, 0, f'a command works: {r.stderr[-200:]}')
+        (b / 'new.txt').write_text('mine\n', encoding='utf-8')
+        eq((W.at_start(b), out(b, 'branch', '--list', 'dev')), (False, ''), 'an uncommitted edit holds it, and no branch is made')
+        (b / 'new.txt').unlink()
+        with mock.patch.object(W, '_switch', lambda *a: 'no'):
+            eq((W.at_start(b), out(b, 'branch', '--list', 'dev')), (False, ''), 'one made for a switch that fails goes')
+        eq(W.at_start(b), True, 'switched')
+        fresh(b)
+        eq((out(b, 'branch', '--show-current'), S.default_branch(), W.waits(b)), ('dev', 'dev', False), 'on dev, nothing waits')
+        eq((out(b, 'status', '--porcelain'), (b / 'dev.txt').exists()), ('', True), "clean, with the remote's dev")
+        git(b, 'checkout', '-q', 'main')
+        check(not W.waits(b), 'left by hand: it is not switched again')
+
+
+def test_other_machine_reset() -> None:
+    print('a pulled reset to the branch found by itself switches too, and a save on that machine takes it back')
+    d = project()
+    git(d, 'checkout', '-q', 'dev')
+    value_in(d, 'dev', 'settings: the working branch is dev')
+    git(d, 'checkout', '-q', 'main')
+    _, b = other(d)
+    git(b, 'checkout', '-q', 'dev')
+    fresh(b)
+    check(not W.waits(b), 'on dev')
+    git(d, 'checkout', '-q', 'dev')
+    (d / 'runner.toml').write_text('[run]\ntest = "true"\n[git]\npush = false\n', encoding='utf-8')
+    git(d, 'commit', '-qam', 'settings: [git] master_branch is reset')
+    git(d, 'push', '-q', 'origin', 'dev')
+    git(b, 'pull', '-q')
+    fresh(b)
+    eq((S.default_branch(), W.pending(b)), ('dev', {'now': 'dev', 'next': 'main'}), 'dev until the start')
+    eq(U.setting_device('git', 'master_branch', 'dev')['ok'], True, 'this device keeps dev')
+    fresh(b)
+    eq((S.default_branch(), W.pending(b)), ('dev', {}), 'and nothing waits')
+    (b / 'runner.local.toml').unlink()
+    fresh(b)
+    eq((W.at_start(b), out(b, 'branch', '--show-current')), (True, 'main'), 'without it: switched to main')
+
+
+def test_by_hand() -> None:
+    print('a value changed by hand is refused as before')
+
+    def refused(b: Path, what: str) -> None:
+        fresh(b)
+        check(not W.waits(b), f'{what}: no switch waits')
+        try:
+            S.default_branch()
+            check(False, f'{what}: refused')
+        except SystemExit as e:
+            has(str(e), 'working branch', f'{what}: refused')
+    d = project()
+    value_in(d, 'dev', SAVED)
+    refused(d, 'committed here')
+    d = project()
+    git(d, 'checkout', '-q', '-b', 'side')
+    value_in(d, 'dev', SAVED)
+    git(d, 'checkout', '-q', 'main')
+    git(d, 'merge', '-q', 'side')
+    refused(d, 'merged from a branch of this machine')
+    d = project()
+    (d / 'runner.local.toml').write_text('[git]\nmaster_branch = "dev"\n', encoding='utf-8')
+    refused(d, "this device's file")
+    d = project()
+    _, b = other(d)
+    (b / 'runner.toml').write_text('[git]\nmaster_branch = "dev"\n', encoding='utf-8')
+    git(b, 'branch', 'dev', 'origin/dev')
+    refused(b, 'an edit not committed')
+    git(b, 'checkout', '-q', '--', 'runner.toml')
+    value_in(d, 'dev', 'use dev')
+    git(d, 'push', '-q', 'origin', 'main')
+    git(b, 'pull', '-q')
+    refused(b, 'changed by hand on the other machine and pulled')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_refused, test_pr_mode, test_waits, test_picks, test_switch, test_run_start, test_held]))
+    raise SystemExit(report([test_refused, test_pr_mode, test_waits, test_picks, test_switch, test_run_start, test_held, test_other_machine,
+                             test_other_machine_reset, test_by_hand]))
