@@ -215,7 +215,7 @@ def write_state(running: dict) -> None:
     since = {n: RUNNING_SINCE.setdefault((n, tid), now) for n, tid in work.items()}
     merging = sorted({t.name[6:] for t in threading.enumerate() if t.name.startswith('merge:') and t.is_alive()})
     # what the cap last read (`capped`, the start line); never a fetch of its own from here
-    got = _account[1] if isinstance(_account[1], dict) else {}
+    got = _account[1] if isinstance(_account[1], dict) and claude_use.account(C) else {}
     use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
     tmp = C.notes('STATE.tmp')
     from agent_runner.ui_model import agent_problem, no_settings

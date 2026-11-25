@@ -4,18 +4,21 @@ from __future__ import annotations
 
 
 def uses(c, flag: str = '') -> bool:
-    """A session of config `c` may run on Claude Code: a role, a kind, a [models] fallback entry or `run --model`
-    (`flag`, else the one `c` was given) names a claude model. Not [models] docs: that is a subagent of a Claude Code
+    """A session of config `c` may run on Claude Code: a role, a kind or `run --model` (`flag`, else the one `c`
+    was given) names a claude model, or a [models] fallback entry does and Claude Code is here (a missing one is passed
+    over: fallback.chain_next). Not [models] docs: that is a subagent of a Claude Code
     task session, so with none it never runs. A claude model on a task's own line is not counted: only that task
     waits for Claude Code (login.unlogged)."""
-    from agent_runner.config import harness_model
+    from agent_runner.config import agent_missing, harness_model
     models = getattr(c, 'models', None)
     if not isinstance(models, dict):
         return True
     named = [v for k, v in models.items() if k not in ('kinds', 'docs') and isinstance(v, str)]
     named += (models.get('kinds') or {}).values()
-    named += [*c.fallback, *filter(None, [flag or c.run.get('model_flag')])]
-    return any(not harness_model(m, c.providers) for m in named)
+    named += filter(None, [flag or c.run.get('model_flag')])
+    if any(not harness_model(m, c.providers) for m in named):
+        return True
+    return any(not harness_model(m, c.providers) for m in c.fallback) and not agent_missing(c.root, str(c.run['agent']))
 
 
 def account(c) -> bool:

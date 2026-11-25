@@ -231,6 +231,9 @@ For models Claude Code doesn't serve (GitHub Copilot, Codex, other provider logi
 `agent = "pi"`, `backend = "pi"` or `AGENT_RUNNER_BACKEND=pi`, or the run refuses to start. See
 [Other providers](docs/SETUP.md#other-providers).
 
+A project whose models all name another provider needs no Claude Code at all: a missing `claude` then holds
+nothing, and no Claude login or usage is read. See [With no Claude Code at all](docs/SETUP.md#with-no-claude-code-at-all).
+
 > [!NOTE]
 > Keep Claude models on Claude Code: a `claude:` or bare model name runs there, not on the harness loop.
 

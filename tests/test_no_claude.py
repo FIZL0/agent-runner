@@ -118,11 +118,17 @@ def test_uses(tmp: Path) -> None:
              ('docs alone: a subagent of a Claude Code session', base.replace(f'docs = "{MODEL}"', 'docs = "haiku"'), False),
              ('docs = false', base.replace(f'docs = "{MODEL}"', 'docs = false'), False),
              ('a kind', ROLES + KINDS.replace(f'R = "{MODEL}"', 'R = "sonnet"'), True),
-             ('a fallback', base + 'fallback = ["gemini:pro", "opus"]\n', True),
+             ('a fallback, with no Claude Code here', base + 'fallback = ["gemini:pro", "opus"]\n', False),
              ('a fallback on others', base + 'fallback = ["gemini:pro"]\n', False)]
     for i, (what, models, want) in enumerate(cases):
         c = Config(repo_at(tmp / f'uses{i}', models))
         eq(claude_use.uses(c), want, what)
+    from agent_runner import fallback as FB
+    c = load(repo_at(tmp / 'chain', base + 'fallback = ["opus", "codex:other", "gemini:pro"]\n'))
+    with mock.patch('agent_runner.login.missing', lambda m, c: ''):
+        eq((sched.agent_held(), FB.chain_next(MODEL)), ('', 'gemini:pro'), 'which a cap then passes over')
+        c = load(repo_at(tmp / 'chain2', base + 'fallback = ["opus", "gemini:pro"]\n', run=f'agent = "{sys.executable}"'))
+        eq((claude_use.uses(c), FB.chain_next(MODEL)), (True, 'opus'), 'a fallback on a Claude Code that is here')
     c = Config(repo_at(tmp / 'flag'))
     c.run['model_flag'] = 'opus'
     eq(claude_use.uses(c), True, '`run --model opus`')

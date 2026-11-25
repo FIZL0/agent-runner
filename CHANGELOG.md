@@ -5,6 +5,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - Changed: a run's stop no longer closes its run page. Before the run says `run stopped`, it starts a detached page-only process that takes the page over (same address, port and key; web.url and the Tailscale Serve https rule kept, with or without Runner Home), and a run started right after takes it back. If the handover fails, the run still stops, the page closes and the run log says why. No page stays after a stop with suspend or shutdown, or with `[run] web = false`; Ctrl-C, a kill or a crash still takes the page with it. Before, a stop closed the page (F402b3a).
+- Added: a project whose models all name another provider needs no Claude Code: a missing `claude` holds nothing, no Claude login, usage, API check or headroom limit is read or shown, and `agent-runner setup` picks the other roles too and runs its session on the harness loop when no role needs Claude Code (F406h).
 ## 0.66.0 (2026-11-24)
 
 - Added: `POST /recorded` on the run turns a clip the page recorded (16 kHz mono WAV) into words with whisper.cpp, installed by `agent-runner speech install whisper`; nothing on the page uses it yet (F161a).
