@@ -32,5 +32,5 @@ The gate runs all of them in turn. New area: a module and a test file of its own
 
 ## Docs
 
-`docs/REFERENCE.md` is long: open it by section (`./run plan "<section>"`), never whole.
+`docs/REFERENCE.md` is long: find a section with `grep -n '^#' docs/REFERENCE.md`, read just that range, never the whole.
 Others: `docs/SETUP.md`, `docs/FACTORY.md`. The README is for people.
