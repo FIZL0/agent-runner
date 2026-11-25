@@ -944,8 +944,9 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
     as `watch_ci` commits its tasks (MERGE free, TODO.md clean). Its id, or '' when it could not be filed now.
     F192a3: the chat's question card knows its item (`control_settled.filed_question`); a question that still waits
     there (the chat was resumed and left) is not filed again."""
-    from agent_runner import chat_question
-    ask = chat_question.ask(entries(sid, skip_bad=True))
+    from agent_runner import chat_question, control_ask
+    rows = list(entries(sid, skip_bad=True))
+    ask = chat_question.ask(rows)
     if ask and (tid := chat_question.needs(sid).get(ask['id'])):
         return tid
     if not MERGE.acquire(blocking=False):
@@ -967,6 +968,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
             if not C.plan_external:
                 git('checkout', '-q', '--', rel)
             return ''
+        control_ask.filed(tid, sid, q, rows, n)  # B809b: after the commit, as a block takes the ask file away
         control_settled.filed(C, [tid], {'n': n, 'sid': sid})  # F209a: reopened, it is about its question
         if what := ask and next((a[3] for a in P.asks(ROOT / rel, all=True) if a[1] == tid), ''):
             control_settled.filed_question(C, sid, tid, ask['id'], what)
@@ -978,7 +980,8 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
 
 def close_controls(branch: str = '', force: bool = False, now: float | None = None) -> list[tuple[int, str, str]]:
     """B26: close the idle ones (see above) every CONTROL_CLOSE_EVERY s: [(n, 'closed' | 'asked', why or task id)]."""
-    from agent_runner import control_held
+    from agent_runner import control_ask, control_held
+    control_ask.fill()  # B809b
     cf = control_cfg()
     if not (cf['idle'] or cf['ask_idle']) or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
         return []

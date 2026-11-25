@@ -224,6 +224,29 @@ def reopened(tid: str, todo: str | Path | None = None) -> None:
         no_commits.reopened(tid, c)
 
 
+def keep_explained(tid: str, d: dict, pics: list[tuple[bytes, str, str]] | tuple = (), c=None) -> None:
+    """B809b: add `d` (text, session, project: what explains a control session's question) and the pictures `pics`
+    ((bytes, suffix, caption) each) to task `tid`'s ask file, whose own fields stay; `clear_ask` takes them away."""
+    f = ask_file(tid, c or S.C)
+    try:
+        old = json.loads(f.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        old = {}
+    if not isinstance(old, dict):
+        raise ValueError(f'{f} is no ask file')
+    shots = [{'file': f'{tid}/explained-{i}{suffix}', 'caption': caption} for i, (_, suffix, caption) in enumerate(pics, 1)]
+    for s, (data, _, _) in zip(shots, pics):
+        at = f.parent / s['file']
+        at.parent.mkdir(parents=True, exist_ok=True)
+        at.write_bytes(data)
+    if shots:
+        had = old.get('shots') if isinstance(old.get('shots'), list) else []
+        d = {**d, 'shots': [*had, *shots]}
+    tmp = f.with_name(f'{tid}.json-tmp')
+    tmp.write_text(json.dumps({**old, **d}, ensure_ascii=False), encoding='utf-8')
+    os.replace(tmp, f)
+
+
 def _clear_sheet(c, tid: str) -> None:
     """Take the pick sheet itself away (its claude.ai page stays where it was published; the run page's copy goes)."""
     d = c.notes('x').parent

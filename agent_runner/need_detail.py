@@ -2,7 +2,7 @@
 pictures.
 
 They come from the optional file <notes>/asks/ID.json, {summary, where, steps: [...], expect: [...], shots: [{file,
-caption}], inputs: [...], options: [...]}, each field standing in for what the ask's own words give. Those are split by rule (`split_ask`), with no AI
+caption}], inputs: [...], options: [...], text, session, project}, each field standing in for what the ask's own words give. Those are split by rule (`split_ask`), with no AI
 and nothing lost: the pieces joined are the ask. A missing, broken or oversized file is never an error.
 """
 from __future__ import annotations
@@ -329,7 +329,8 @@ def decide_options(tid: str, what: str, text: str = '') -> tuple[list[dict], str
 
 
 def asks_file(tid: str) -> dict:
-    """<notes>/asks/ID.json as {summary, where, steps, step_more, expect, inputs, options, shots}, only what is well formed; {}
+    """<notes>/asks/ID.json as {summary, where, steps, step_more, expect, inputs, options, shots, text, session,
+    project}, only what is well formed; {}
     without one."""
     if not re.fullmatch(r'[\w.-]+', tid or ''):
         return {}
@@ -342,7 +343,9 @@ def asks_file(tid: str) -> dict:
         return {}
     if not isinstance(d, dict):
         return {}
-    out: dict = {k: ' '.join(d[k].split()) for k in ('summary', 'where') if isinstance(d.get(k), str)}
+    out: dict = {k: ' '.join(d[k].split()) for k in ('summary', 'where', 'session', 'project') if isinstance(d.get(k), str)}
+    if isinstance(d.get('text'), str):  # B809b: its lines are kept
+        out['text'] = ''.join(x for x in d['text'].strip() if x in '\n\t' or x.isprintable() or x == '\u200d')
     steps, more = _steps(d.get('steps'))
     out.update(steps=steps, step_more=more, expect=_strings(d.get('expect')), inputs=_inputs(d.get('inputs')),
                options=_options(d.get('options')))
@@ -595,7 +598,8 @@ def detail(label: str, tid: str, ask: str, title: str, text: str) -> dict:
     """What the card and the popup of one item say: said, title, where, summary, lead, steps, expect, notes and shots;
     B794: `why`, the reason a BLOCKED without its ask file's steps stopped ([] for the others);
     B223a: `question`, what a DECIDE asks ('' for the others), which is its summary too; it has steps only from its ask file.
-    F175: `step_more` (each step's link, cmd and on) and `inputs` (what the person gives, `ui_model.need_give`). `text` is its task's text. B793b: the title and the summary are whole; a view with one line shortens them itself."""
+    F175: `step_more` (each step's link, cmd and on) and `inputs` (what the person gives, `ui_model.need_give`). `text` is its task's text. B809b: 'text', the message that explains a control session's
+    question, and that session's name and project ('' for the others). B793b: the title and the summary are whole; a view with one line shortens them itself."""
     d = asks_file(tid)
     pieces = split_ask(ask, label in ('CONFIRM', 'BLOCKED'))
     of = lambda kind: [s for k, p in pieces if k == kind and (s := shown(p))]  # noqa: E731
@@ -619,5 +623,6 @@ def detail(label: str, tid: str, ask: str, title: str, text: str) -> dict:
     return {'said': SAID.get(label, label), 'title': P.short_title(title, sys.maxsize) if title else tid,
             'where': d.get('where') or place(ask), 'summary': summary, 'question': question,
             'why': why, 'lead': lead, 'steps': steps, 'expect': expect, 'notes': notes,
+            'text': d.get('text') or '', 'session': d.get('session') or '', 'project': d.get('project') or '',
             'shots': shots, 'step_more': d.get('step_more') or [],
             'inputs': (d.get('inputs') or []) if label in INPUT_LABELS else []}
