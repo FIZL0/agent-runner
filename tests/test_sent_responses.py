@@ -181,14 +181,14 @@ def test_note_chat(tmp: Path) -> None:
     todo, sent, ran = repo / 'plan' / 'TODO.md', [], []
     closed = 'confirmed and ticked B2'
     with sends(sent):
-        r = U.act('run_control', key='need_yes', tid='B2', text='Yes', note=' but  the icon is grey ')  # the real plan confirm
+        r = U.act('run_control', key='need_yes', tid='B2', text='Yes', note=' but  the icon is grey\nand small ')  # the real plan confirm
     eq((r['ok'], r['gone'], r['said']), (True, 'B2', 'B2 ticked. Your note opened a chat'), 'answered, and the toast')
     check('**B2**' not in todo.read_text(encoding='utf-8') or '- [x] **B2**' in todo.read_text(encoding='utf-8'), 'B2 is closed')
     eq((len(sent), said()), (1, []), 'one chat, no sent response')
     m = control_settled.OPENED.match(sent[0])
     eq(m and (m[1] or m[2]), 'B2', 'control_settled knows the item')
     for part in ('About B2 (Fix the merge retry): ', 'The question: Look at it', 'My answer: Yes\n',
-                 'My note with it: but the icon is grey', 'The task is closed', 'act on the note'):
+                 'My note with it: but  the icon is grey\nand small\n', 'The task is closed', 'act on the note'):
         check(part in sent[0], f'it says {part!r}', sent[0])
     todo.write_text(PLAN, encoding='utf-8')
     with ran_by(ran, closed):
@@ -228,20 +228,24 @@ def test_note_chat_fails(tmp: Path) -> None:
         eq((r['ok'], r['gone'], said()), (True, 'B2', [('B2', 'Yes', 'on wifi')]), f'{why}: answered, and kept')
         check(r['said'].startswith(f'B2 ticked. The chat with your note did not start ({why})'), 'the toast says so', r)
         R.take(R.recent()[0]['id'])
-    go, kept = threading.Event(), threading.Event()
-    real = R.keep
+    go, logged = threading.Event(), threading.Event()
 
     def slow(text):
         go.wait(60)
         return {'ok': False, 'code': 1, 'out': 'too late', 'argv': []}
 
     with ran_by([], closed), mock.patch.object(U, 'SEND', [slow]), mock.patch.object(U, 'NOTE_CHAT_WAIT', 0.01), \
-            mock.patch.object(R, 'keep', lambda *a: (real(*a), kept.set())):
+            mock.patch.object(U.S, 'log', lambda *a: logged.set()):
         r = U.answer('B2', 'Yes', True, 'on wifi')
-        eq((r['ok'], r['said'], said()), (True, 'B2 ticked. A chat with your note is starting', []), 'a slow one is not waited for')
+        eq((r['ok'], r['said'], said()), (True, 'B2 ticked. A chat with your note is starting', [('B2', 'Yes', 'on wifi')]), 'a slow one is not waited for')
         go.set()
-        check(kept.wait(60), 'it failed after all')
-    eq(said(), [('B2', 'Yes', 'on wifi')], 'and is kept then')
+        check(logged.wait(60), 'it failed after all, and the run log says so')
+    eq(said(), [('B2', 'Yes', 'on wifi')], 'and it stays kept')
+    R.take(R.recent()[0]['id'])
+    with ran_by([], closed), mock.patch.object(threading.Thread, 'start', side_effect=RuntimeError('no threads')):
+        r = U.answer('B2', 'Yes', True, 'on wifi')
+    check(r['ok'] and 'did not start (no threads)' in r['said'], 'no thread to be had: the toast says so', r)
+    eq(said(), [('B2', 'Yes', 'on wifi')], 'and it is kept')
 
 
 def test_state(tmp: Path) -> None:

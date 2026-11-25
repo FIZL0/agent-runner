@@ -50,18 +50,21 @@ def _one_line(s) -> str:
     return ' '.join(str(s or '').split())
 
 
-def keep(item: str, title: str, question: str, ask: str, answer: str, note: str = '') -> None:
-    """Keep one response. Never raises: the answer it records is done already."""
+def keep(item: str, title: str, question: str, ask: str, answer: str, note: str = '') -> str:
+    """Keep one response: its id, '' when it could not. Never raises: the answer it records is done already."""
+    rid = f'{time.time_ns()}-{os.getpid()}'
     try:
-        _save({'id': f'{time.time_ns()}-{os.getpid()}', 'item': item, 'title': _one_line(title), 'question': question,
+        _save({'id': rid, 'item': item, 'title': _one_line(title), 'question': question,
                'ask': ask, 'answer': answer, 'note': _one_line(note), 'at': time.time()})
         for f in _files()[KEEP:]:
             f.unlink(missing_ok=True)
+        return rid
     except Exception as e:  # noqa: BLE001
         try:
             S.log(f'{item}: the answer is sent; it could not be kept as a sent response: {type(e).__name__}')
         except Exception:  # noqa: BLE001
             pass
+        return ''
 
 
 def recent() -> list[dict]:

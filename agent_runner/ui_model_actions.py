@@ -161,14 +161,14 @@ def pitch_waits(pid: str) -> bool:
         return False
 
 
-def keep_response(tid: str, row: dict, said: str, note: str = '') -> None:
-    """F425a: keep the sent response to the item `tid` (`row`: `need_row`, read before), which opened no chat. Never
-    fails the answer."""
+def keep_response(tid: str, row: dict, said: str, note: str = '') -> str:
+    """F425a: keep the sent response to the item `tid` (`row`: `need_row`, read before), which opened no chat: its id,
+    '' when it could not be kept. Never fails the answer."""
     try:
         from agent_runner import sent_responses
-        sent_responses.keep(*response_of(tid, row), said, note)
+        return sent_responses.keep(*response_of(tid, row), said, note)
     except (Exception, SystemExit):  # noqa: BLE001
-        pass
+        return ''
 
 
 def response_of(tid: str, row: dict) -> tuple[str, str, str, str]:
@@ -184,9 +184,9 @@ NOTE_CHAT_WAIT = 3.0  # s the answer's result waits to hear whether the chat abo
 
 def note_chat(tid: str, row: dict, said: str, note: str) -> str:
     """F452: a new chat with the `note` of the answer `said`, which closed `tid` (`row`: `need_row`, read before), and
-    what to say of it. Never fails the answer, nor holds it longer than NOTE_CHAT_WAIT: it starts in a thread. One
-    that could not start keeps the sent response, also when that is known only later."""
-    send, over = SEND[0], []  # over: why it did not start, '' when it did
+    what to say of it. Never fails the answer, nor holds it longer than NOTE_CHAT_WAIT: it starts in a thread. The
+    sent response is kept first and goes once the chat starts, so a run that ends meanwhile loses no note."""
+    rid, send, over = keep_response(tid, row, said, note), SEND[0], []  # over: why it did not start, '' when it did
 
     def go() -> None:
         why = 'it failed'
@@ -198,8 +198,9 @@ def note_chat(tid: str, row: dict, said: str, note: str) -> str:
             why = str(e) or type(e).__name__
         try:
             if why:
-                keep_response(tid, row, said, note)
                 S.log(f'{tid}: closed; the chat with its note did not start ({why})')
+            else:
+                sent_responses.take(rid)
         finally:
             over.append(why)
 
@@ -207,8 +208,8 @@ def note_chat(tid: str, row: dict, said: str, note: str) -> str:
         t = threading.Thread(target=go, daemon=True)
         t.start()
     except RuntimeError as e:  # no thread to be had
-        keep_response(tid, row, said, note)
         over.append(str(e) or 'no thread')
+        S.log(f'{tid}: closed; the chat with its note did not start ({over[0]})')
     else:
         t.join(NOTE_CHAT_WAIT)
     if not over:
@@ -253,7 +254,7 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
             r.update(said=done, gone=tid)
             words = ' '.join((note or '').split())
             if words and argv[:2] == ['plan', 'confirm'] and CLOSED.search(r['out'] or ''):  # F452: no agent gets it
-                r['said'], to_chat = f'{done}. {note_chat(tid, row, (text or "").strip(), words)}', True
+                r['said'], to_chat = f'{done}. {note_chat(tid, row, (text or "").strip(), note.strip())}', True
             if not to_chat and not (argv[0] == 'pitch' and pitch_waits(tid)):  # a part of a pitch settles nothing yet
                 said = (text or '').strip()
                 keep_response(tid, row, sheet_said(tid, said) if argv[0] == 'sheet' else said, note)
