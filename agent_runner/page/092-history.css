@@ -1,13 +1,13 @@
 /* F191b: the session history, a native scroller over the session's frame; see-through until it is armed (092-history.js) */
 .feedpast{position:absolute;inset:0;overflow:hidden scroll;overscroll-behavior:none;overflow-anchor:none;opacity:0;background:var(--feed);scrollbar-width:none;pointer-events:none;touch-action:pan-y pinch-zoom;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;outline:0}
 .feedpast::-webkit-scrollbar{display:none}
-.feedpast.armed{opacity:1}
-.feedpast.up{pointer-events:auto;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.feedpast.armed{opacity:1;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.feedpast.up{pointer-events:auto}
 .feedpast.up:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 @media (pointer:coarse){.feedpast{pointer-events:auto}}
-#pastterm{position:static;padding:0;cursor:text} .feedpast:not(.up) #pastterm{pointer-events:none} #pastrows{position:relative;overflow:hidden}
+#pastterm{position:static;padding:0;cursor:text} .feedpast:not(.armed) #pastterm{pointer-events:none} #pastrows{position:relative;overflow:hidden}
 .hchunk{position:absolute;left:var(--hleft,14px);right:0;margin-top:var(--hpad,0)} .hchunk>div{height:var(--hcell);line-height:var(--hcell);white-space:pre;overflow:hidden}
-.feedpast.up .hchunk *{-webkit-user-select:text;user-select:text}
+.feedpast.armed .hchunk *{-webkit-user-select:text;user-select:text}
 .hchunk b{display:inline-block;width:calc(var(--w)*var(--hw));font-weight:inherit;letter-spacing:0;overflow:visible}
 .hm{color:var(--hmuted)} .hb{font-weight:bold} .hi{font-style:italic} .hu{text-decoration:underline} .hx{text-decoration:line-through} .hd{opacity:.5}
 .hc{color:var(--hcode)} .hl{color:var(--hlink)} .hr{color:var(--hbad)} .hk{color:var(--hok)} .hw{color:var(--hwarn)}

@@ -22,9 +22,9 @@ let frames = new Map(), ids = 0, clock = 0, now = 1000;
 const requestAnimationFrame = f => { frames.set(++ids, f); return ids }, cancelAnimationFrame = id => frames.delete(id);
 const performance = {now: () => clock}, matchMedia = () => ({matches: false});
 Date.now = () => now;
-const setTimeout = () => 0, clearTimeout = () => {};
-let SW = null, steps = 0, FEED_LINES = 1, opened = 0;
-const feedScreen = () => ({cell: 17}), feedScroll = px => { steps++; return px }, feedSteps = () => [1, 0], feedWheel = () => {}, feedClick = () => {}, feedText = () => {}, feedTake = () => {}, pastStop = () => {};
+const timers = new Map(), setTimeout = f => { timers.set(++ids, f); return ids }, clearTimeout = id => timers.delete(id);
+let SW = null, steps = 0, FEED_LINES = 1, opened = 0, clicks = 0, sheets = 0;
+const feedScreen = () => ({cell: 17}), feedScroll = px => { steps++; return px }, feedSteps = () => [1, 0], feedWheel = () => {}, feedClick = () => clicks++, feedText = () => sheets++, feedTake = () => {}, pastStop = () => {};
 BLOCK
 const layer = $('feedtouch'), slim = $('slimbox');
 const run = n => { for (let i = 0; i < n; i++) { clock += 16; const f = [...frames.values()]; frames.clear(); for (const g of f) g(clock) } };
@@ -57,6 +57,8 @@ fling(); out.cancel = press(button, {cancel: true});
 fling(); slim.fire('click', {target: button}); out.click = going();
 opened = 0; out.rest = press(button);
 fling(); out.again = going();
+const touch = hold => { run(400); clicks = sheets = 0; layer.fire('touchstart', ev(other, 100, 100, 0)); if (hold) for (const f of [...timers.values()]) f(); const e = ev(other, 100, 100, 600); e.touches = []; layer.fire('touchend', e); return [clicks, sheets, e.prevented] };
+out.layerTap = touch(false); out.layerHold = touch(true);
 console.log(JSON.stringify(out));
 """
 
@@ -86,6 +88,9 @@ def test_tap_in_a_fling_b218b1(tmp: Path) -> None:
     eq(o.get('click'), False, 'a click alone (a mouse, Enter) ends the scroll')
     eq(o.get('rest'), [False, 1, 1, False], 'from rest: one click')
     eq(o.get('again'), True, 'a new touch scroll glides again')
+
+    # each: [clicks in the session, sheets, the browser's own click prevented]
+    eq((o.get('layerTap'), o.get('layerHold')), ([1, 0, 1], [0, 0, 0]), 'B792: on the touch layer a tap clicks, a long press opens nothing and clicks nothing')
 
 
 if __name__ == '__main__':

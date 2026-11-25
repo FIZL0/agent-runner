@@ -7,7 +7,7 @@
    (the marks), hist (their lines), L (the lines drawn), at (the screen's first line in L), pad, cell, y0 (where the
    screen's first line stands in the session), high (the content's height), y (the scroll last seen), touch, news (there are new words) */
 const HX={n:'',st:'',none:false,pages:[],before:'',since:'',cols:0,hist:[],L:[],at:0,pad:0,cell:17,y0:0,high:0,y:0,touch:false,news:false,busy:false,asked:0,late:[],lateT:0,warmT:0,newT:0,above:0,gap:false,chunks:new Map(),look:''};
-const PAST_CHUNK=40, PAST_OVER=2000, PAST_IDLE=160, PAST_WARM=700, PAST_NEW=2500, PAST_BAND=56, PAST_AGAIN=5000;
+const PAST_CHUNK=40, PAST_OVER=2000, PAST_IDLE=160, PAST_WARM=700, PAST_NEW=2500, PAST_BAND=56, PAST_AGAIN=5000, PAST_HOLD=450, PAST_LIFT=350;
 const pastUp=()=>HX.st==='up';
 /* may the history stand in for the session? Not over a menu or a question, nor one scrolled by someone else */
 const pastMay=()=>FD.shown&&FD.up&&FD.drawn&&!FD.whole&&!!FD.foot&&!FD.foot.text&&!FD.foot.bash&&!FD.jump&&!(FD.off>0)&&HX.n===FD.n&&!HX.none;
@@ -38,7 +38,7 @@ async function pastLoad(){
   HX.busy=false;
   if(!j){HX.n='';pastClass();return}  // the run cannot be asked now: a later draw asks again
   HX.none=!j.ok;
-  if(j.ok){HX.pages=[j.entries];HX.before=j.before;HX.since=j.since;pastRows();if(HX.st==='armed')pastReady();else pastWarm()}
+  if(j.ok){HX.pages=[j.entries];HX.before=j.before;HX.since=j.since;pastRows();if(HX.st&&pastPicked())pastSlide();else if(HX.st==='armed')pastReady();else pastWarm()}
   pastClass();
 }
 function pastRows(){HX.cols=(feedTerm()||{}).cols||HX.cols||80;HX.hist=HX.pages.flatMap(p=>pastLines(p,HX.cols))}
@@ -58,6 +58,8 @@ async function pastNew(){
   }}finally{HX.busy=false}
   pastRows();
 }
+/* the transcript came after a word of the screen was picked: its lines go in over it later (pastPut), so the pick stays */
+function pastSlide(){const j=pastJoin(HX.hist,HX.L);HX.late=j<0?HX.hist:HX.hist.slice(0,j);HX.drawnCols=HX.cols;if(HX.late.length)pastIdle()}
 /* an older page: its lines go in over the others while nothing scrolls, so a fling goes on */
 async function pastOlder(){
   if(HX.busy||!HX.before||HX.late.length)return;
@@ -207,7 +209,7 @@ function pastArm(touch){
 /* the live session again, in this very frame */
 function pastLive(){
   if(!HX.st)return;
-  if(HX.touch&&pastMay())HX.st='armed';else HX.st='';
+  if((HX.touch||pastPicked())&&pastMay())HX.st='armed';else HX.st='';
   HX.news=false;FD.run=0;feedSlim(false);pastClass();
   if(!HX.st){if(pastMay())pastWarm();pastNewSoon()}
 }
@@ -226,6 +228,7 @@ function pastSee(){
   if(HX.n!==FD.n||HX.none){pastLoad();if(HX.n!==FD.n||HX.none)return}  // a new chat's transcript comes a little later
   if(!HX.st){pastClass();if(!$('feedpast').hidden){pastWarm();pastNewSoon()}return}
   if(pastLook())pastInked();
+  if(HX.st==='armed'&&!HX.touch&&!pastMay()){pastDown();return}  // a menu shows over words picked at its end
   if(FD.whole||!FD.foot){if(pastUp()&&!HX.news){HX.news=true;pastJumpDraw()}return}
   if(FD.foot.text||FD.foot.bash||FD.jump||HX.gap)return;
   if((feedTerm()||{}).cols!==HX.cols){pastWidth();return}
@@ -236,9 +239,11 @@ function pastSee(){
   pastTail(HX.L.slice(0,j),s);
 }
 function pastTail(before,s){
-  const last=l=>{const i=l.findLastIndex(x=>x.t.trim());return i<0?'':pastKey(l[i].t)}, had=last(HX.L), end=!pastUp();
+  const last=l=>{const i=l.findLastIndex(x=>x.t.trim());return i<0?'':pastKey(l[i].t)}, had=last(HX.L), held=pastUp()||pastPicked();
+  const grew=held&&!pastUp()&&before.length>HX.at;if(grew)HX.st='up';  // words picked at its end stay where they are
   pastSet([...before,...s],before.length,true);pastSize();
-  if(end)pastToEnd();else{if(last(HX.L)!==had)HX.news=true}
+  if(grew){if($('feedpast').scrollTop>=pastEnd()-1)HX.st='armed';pastClass()}
+  if(!held)pastToEnd();else if(pastUp()&&last(HX.L)!==had)HX.news=true;
   pastDraw();pastJumpDraw();
 }
 /* another width (a rotation): its lines are broken anew, what was at the top stays there as near as can be */
@@ -283,7 +288,7 @@ function pastStop(){const el=$('feedpast');if(!el||!HX.st)return;scrollStop(el);
 /* to the live session: it glides when a press asked for it */
 function pastDown(press){
   if(!HX.st)return;
-  const el=$('feedpast');pastStop();
+  const el=$('feedpast');pastStop();if(pastPicked())getSelection().removeAllRanges();
   if(press&&!calm())scrollGlide(el,pastEnd);else{pastToEnd();HX.touch=false;pastLive()}
 }
 /* a wheel step over the session (a mouse): the first one up opens the history, then the browser scrolls it */
@@ -300,7 +305,12 @@ function pastPress(e){
   if(!by||e.shiftKey||e.altKey||e.metaKey||/Home|End/.test(e.key)&&!e.ctrlKey||!HX.st&&!pastMay())return false;
   return pastWheel(by);
 }
-/* a touch: at rest a tap clicks in the session and a long press gives its text, as on #feedtouch */
+/* at its end and let go, with nothing picked: see-through again. Later, where a long press may still pick its word */
+function pastRest(){if(HX.st!=='armed'||HX.touch||pastPicked()||$('feedpast').scrollTop<pastEnd()-1)return;HX.st='';pastClass();pastWarm()}
+const pastRestSoon=()=>{clearTimeout(HX.restT);HX.restT=setTimeout(pastRest,PAST_LIFT)};
+document.addEventListener('selectionchange',()=>{if(HX.st==='armed'&&!HX.touch)pastRestSoon()});
+/* a touch: at rest a tap clicks in the session; a long press is the browser's, which selects the word. With words picked a
+   tap is the browser's too */
 {const el=$('feedpast');let T1=null;
 const at=t=>{const r=el.getBoundingClientRect();return[t.clientX-r.left,t.clientY-r.top]};
 const drop=()=>{if(T1)clearTimeout(T1.hold);T1=null};
@@ -308,15 +318,16 @@ el.addEventListener('touchstart',e=>{
   drop();HX.touch=true;
   if(e.target!==el)for(const n of ['touchend','touchcancel'])e.target.addEventListener(n,end,{passive:false,once:true});  // a row drawn again under the finger
   if(pastUp()||e.touches.length!==1){pastArm(true);return}
-  if(!pastArm(true))return;
+  if(!pastArm(true)||pastPicked())return;
   const t=e.touches[0], [x,y]=at(t), g=T1={x,y,x0:t.clientX,y0:t.clientY};
-  g.hold=setTimeout(()=>{if(T1===g&&!pastUp()&&!(SW&&SW.on)){T1=null;feedText()}},550)},{passive:true});
+  g.hold=setTimeout(()=>{if(T1===g)T1=null},PAST_HOLD)},{passive:true});
 el.addEventListener('touchmove',e=>{const t=e.touches[0];if(T1&&(pastUp()||SW&&SW.on||e.touches.length!==1||Math.abs(t.clientX-T1.x0)>8||Math.abs(t.clientY-T1.y0)>8))drop()},{passive:true});
 const end=e=>{
   const g=T1;drop();if(e.touches.length)return;
   HX.touch=false;
-  if(HX.st==='armed'){if($('feedpast').scrollTop>=pastEnd()-1){HX.st='';pastClass();pastWarm()}}
-  if(g&&!pastUp()&&e.type==='touchend'){if(e.cancelable)e.preventDefault();feedClick(g.x,g.y)}
+  const tap=g&&!pastUp()&&!pastPicked()&&e.type==='touchend';
+  if(tap)pastRest();else pastRestSoon();
+  if(tap){if(e.cancelable)e.preventDefault();feedClick(g.x,g.y)}
   if(HX.late.length)pastIdle();
 };
 el.addEventListener('touchend',end,{passive:false});el.addEventListener('touchcancel',end,{passive:true});

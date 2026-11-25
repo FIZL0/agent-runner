@@ -21,7 +21,7 @@
 .dock{padding:8px 12px 14px;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));background:linear-gradient(transparent,var(--bg) 30%)}
 .dock .box{max-width:720px;margin:0 auto}
 /* F114: a chat or slot: the real session (ttyd's page, #feed) fills the space above the message box. On a touch device
-   #feedtouch lies over it: a drag scrolls the session, a tap clicks in it, a long press gives its text */
+   #feedtouch lies over it: a drag scrolls the session, a tap clicks in it, a long press does nothing */
 .feed{flex:1;min-height:0;position:relative;background:var(--feed)}
 .feed iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
 /* F170: the session fills the view behind the top bar and the message box (feedPlace sets #feedframe's place), the lines at

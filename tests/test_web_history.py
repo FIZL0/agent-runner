@@ -112,7 +112,7 @@ function El() {
   const e = {on: {}, kids: [], style: {setProperty(k, v) { this[k] = v }}, classList: cls(), attrs: {}, hidden: false, _top: 0, _html: '', offsetHeight: 180, isConnected: true,
     addEventListener(t, f) { (e.on[t] = e.on[t] || []).push(f) }, fire(t, ev = {}) { for (const f of e.on[t] || []) f({target: e, type: t, touches: [], changedTouches: [{clientX: 9, clientY: 9}], cancelable: true, preventDefault() { e.stopped = true }, closest: () => null, ...ev}) },
     setAttribute(k, v) { e.attrs[k] = v }, getAttribute: k => e.attrs[k], removeAttribute(k) { delete e.attrs[k] }, getBoundingClientRect: () => ({left: 0, top: 0, width: 390, height: VIEW}),
-    appendChild(k) { e.kids.push(k); k.parent = e }, insertBefore(k, n) { const i = n ? e.kids.indexOf(n) : e.kids.length; e.kids.splice(i, 0, k); k.parent = e }, remove() { e.parent.kids = e.parent.kids.filter(k => k !== e) }, contains: () => false,
+    appendChild(k) { e.kids.push(k); k.parent = e }, insertBefore(k, n) { const i = n ? e.kids.indexOf(n) : e.kids.length; e.kids.splice(i, 0, k); k.parent = e }, remove() { e.parent.kids = e.parent.kids.filter(k => k !== e) }, contains: () => true,
     get children() { return e.kids }, get lastChild() { return e.kids[e.kids.length - 1] }, get firstElementChild() { return e.kids[0] },
     set textContent(v) { e.kids = [] }, get innerHTML() { return e._html }, set innerHTML(v) { e._html = v }, querySelectorAll: () => spans(e), querySelector: () => null, clientHeight: VIEW};
   return e;
@@ -122,8 +122,9 @@ const jump = El(); $('pastjump').kids = [jump];
 const past = $('feedpast');
 Object.defineProperty(past, 'scrollTop', {get: () => past._top, set(v) { past._top = Math.max(0, Math.min(v, past.scrollHeight - VIEW)) }});
 Object.defineProperty(past, 'scrollHeight', {get: () => Math.max(VIEW, parseFloat($('pastrows').style.height) || 0)});
-const document = {hidden: false, createElement: El, head: El(), querySelector: s => s === '.dockwrap' ? $('dockwrap') : null};
-const window = {}, getSelection = () => null, setTimeout = (f, ms) => timers.push(f), clearTimeout = () => {}, Date = {now: () => now};
+const doc = El(); let picked = false, unpicked = 0;
+const document = {hidden: false, addEventListener: doc.addEventListener, createElement: El, head: El(), querySelector: s => s === '.dockwrap' ? $('dockwrap') : null};
+const window = {}, getSelection = () => ({isCollapsed: !picked, anchorNode: null, removeAllRanges() { picked = false; unpicked++ }}), setTimeout = (f, ms) => timers.push(f), clearTimeout = () => {}, Date = {now: () => now};
 const run = () => { const t = timers; timers = []; t.forEach(f => f()) };
 const S = {snap: {}}, SW = null, MO = {scroll: new Map()}, calm = () => calmNow, tq = p => p, slimRow = () => 56, feedSkinOf = () => 'page-dark', feedLook = () => 'dark', moAnim = () => {};
 let glides = []; const scrollGlide = (el, to) => { glides.push(to()); }, scrollStop = () => {}, feedClick = () => clicks++, feedText = () => sheets++;
@@ -182,9 +183,19 @@ out.wheel = [pastWheel(-60), HX.st, pastWheel(-60), pastEnd() - past.scrollTop, 
 pastWheel(-400); jump.fire('click'); out.glide = [glides.length, glides[0] === pastEnd(), HX.st]; calmNow = true; jump.fire('click'); out.calm = [glides.length, HX.st, past.scrollTop === pastEnd()]; calmNow = false;
 // the tap that ends a fling has no click of its own
 pastWheel(-400); glides = []; jump.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}); jump.fire('touchend'); out.fling = [glides.length, jump.stopped]; pastDown();
-// a tap and a long press at rest are the session's
+// at rest a tap is the session's; a long press is the browser's: it picks a word, which stays as the finger lifts
 run(); clicks = 0; past.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}); past.fire('touchend'); out.tap = [clicks, HX.st];
-timers = []; past.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}); run(); past.fire('touchend'); out.press = [sheets, clicks, HX.st];
+timers = []; past.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}); run(); past.stopped = false; past.fire('touchend'); run(); out.press = [sheets, clicks, HX.st, !!past.stopped];
+const down = () => { timers = []; past.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}) }, change = p => { picked = p; doc.fire('selectionchange') };
+const hold = (end = 'touchend', late) => { clicks = sheets = 0; past.stopped = false; down(); run(); if (!late) change(true); past.fire(end); if (late) change(true); run(); return [sheets, clicks, HX.st, !!past.stopped, past.classList.contains('armed')] };
+out.pick = hold(); run(); out.kept = [HX.st, picked];
+down(); past.fire('touchend'); out.pickTap = [clicks, !!past.stopped, HX.st]; change(false); run(); out.unpick = HX.st;
+out.cancel = hold('touchcancel', true); change(false); run();
+// new words: what is picked at the end stays where it is, then it is as scrolled up
+hold(); const p0 = where('● message 203'); show(208); pastSee(); out.pickNew = [HX.st, where('● message 203') - p0, HX.news, picked]; scroll(pastEnd()); out.pickEnd = [HX.st, HX.news]; change(false); run(); out.pickDone = HX.st;
+hold(); show(208, ['', '● part']); pastSee(); out.pickPart = HX.st; pastDown(true); run(); out.pickDown = [picked, unpicked]; pastDown(); out.pickLive = HX.st; show(208); pastSee();
+// a menu shows over words picked at the end
+hold(); FD.whole = true; FD.foot = null; pastSee(); out.pickMenu = [HX.st, picked]; FD.whole = false; FD.foot = {top: 36, text: '', bash: false};
 // where it cannot stand in, the session scrolls as it did
 const may = o => { const was = {...FD}; Object.assign(FD, o); pastClass(); const r = [past.hidden, pastWheel(-60), HX.st]; Object.assign(FD, was); pastClass(); return r };
 out.whole = may({whole: true}); out.words = may({foot: {top: 36, text: 'draft', bash: false}}); out.jumped = may({jump: true}); out.down = may({drawn: false});
@@ -205,6 +216,10 @@ pastWheel(-400); show(204); pastSee();
 const l0 = where('● message 170'), y0 = past.scrollTop; out.upOld = HX.L.filter((l, i) => l.own != null && i < HX.at).length > 0;
 out.flips = []; for (const to of [LIGHT, DARK, LIGHT]) { look(...to); pastSee(); out.flips.push([...inks(), where('● message 170') - l0, past.scrollTop - y0, HX.st]) }
 FD.whole = true; FD.foot = null; look(...DARK); pastSee(); out.flipMenu = [...inks(), where('● message 170') - l0];
+// a chat just opened: its transcript comes after the word is picked, and goes in over it once nothing is
+FD.whole = false; FD.foot = {top: 36, text: '', bash: false}; pastReset(); FD.n = 'c2'; now += 9000; pages[''] = {ok: true, entries: msgs(100, 208), before: '', since: 'j:1'}; show(208); pastSee();
+out.first = hold(); const f0 = where('● message 207'); await settle(); run(); out.under = [HX.at, HX.late.length > 100, where('● message 207') - f0];
+change(false); timers.forEach(f => f()); timers = []; out.underPut = [HX.at > 100, HX.st];
 console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1) });
 function histMay0() { return pastMay() }
@@ -242,7 +257,15 @@ def test_swap(tmp: Path) -> None:
     eq(o['wheel'], [True, 'up', True, 120, True, '', True], 'a wheel up opens it, scrolls it, and down to its end; none goes to the session')
     eq((o['glide'], o['calm']), ([1, True, 'up'], [1, '', True]), 'the button glides to the end; at once under calm()')
     eq(o['fling'], [1, True], 'a tap that ends a fling is one press')
-    eq((o['tap'], o['press']), ([1, ''], [1, 1, '']), "at rest a tap clicks in the session, a long press gives its text")
+    eq((o['tap'], o['press']), ([1, ''], [0, 1, '', False]), 'B792: at rest a tap clicks in the session; a long press opens no sheet, clicks nothing and is left to the browser')
+    eq((o['pick'], o['kept']), ([0, 0, 'armed', False, True], ['armed', True]), 'B792: the word a long press selects stays as the finger lifts')
+    eq((o['pickTap'], o['unpick']), ([0, False, 'armed'], ''), 'a tap then is the browser\'s, and with nothing selected the live session shows')
+    eq(o['cancel'], [0, 0, 'armed', False, True], 'a touch the system took, its word selected a little later')
+    eq((o['pickNew'], o['pickEnd'], o['pickDone']), (['up', 0, True, True], ['armed', False], ''), 'new words move nothing that is selected')
+    eq((o['pickPart'], o['pickDown'][0], o['pickLive']), ('up', False, ''), 'the jump button lets go of it')
+    eq(o['pickMenu'], ['', False], 'a menu shows over it')
+    eq((o['first'], o['under']), ([0, 0, 'armed', False, True], [0, True, 0]), 'a chat just opened: the first long press selects, and the transcript leaves it alone')
+    eq(o['underPut'], [True, ''], 'and goes in after')
     for k in ('whole', 'words', 'jumped', 'down', 'none'):
         eq(o[k], [True, False, ''], f'{k}: the session scrolls as before')
     eq(o['key'], [True, 'up', True, '', False, False], 'PageUp and Ctrl+End scroll it, other keys are the session\'s')
@@ -259,14 +282,15 @@ def test_swap(tmp: Path) -> None:
 def test_page(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     css = page[page.index('.feedpast{'):page.index('.pastjump svg')]
-    for part in ('overscroll-behavior:none', 'touch-action:pan-y pinch-zoom', 'overflow:hidden scroll', '.feedpast.up{pointer-events:auto;-webkit-user-select:text',
+    for part in ('overscroll-behavior:none', 'touch-action:pan-y pinch-zoom', 'overflow:hidden scroll', '.feedpast.armed{opacity:1;-webkit-user-select:text', '.feedpast.armed .hchunk *{-webkit-user-select:text', '.feedpast.up{pointer-events:auto}',
                  '@media (pointer:coarse){.feedpast{pointer-events:auto}}', 'width:var(--tap);height:var(--tap)', '.main.still .pastjump{transition:none}'):
         check(part in css, f'the scroller has {part}')
     wrap, button = (css.split(sel + '{', 1)[1].split('}', 1)[0] for sel in ('\n.pastjump', '\n.pastjump button'))
     check('background' not in wrap and 'pointer-events:none' in wrap, 'the jump button floats: nothing drawn beside it, and a press there is the text\'s (B788)', wrap)
     check(all(x in button for x in ('background:var(--surface)', 'border:1px solid', 'pointer-events:auto')), 'its button has its own fill and border, and takes the press', button)
-    check('.feedpast:not(.up) #pastterm{pointer-events:none}' in css, 'at rest the touch is on the scroller, never on a row that is drawn again')
+    check('.feedpast:not(.armed) #pastterm{pointer-events:none}' in css, 'at rest the touch is on the scroller, never on a row that is drawn again')
     check('if(pastWheel(px))return true;' in page.split('function feedTake(', 1)[1][:60], 'a wheel over the frame is the history\'s first')
+    eq([page.count('feedText()'), page.count('[data-feedtext]')], [2, 1], 'B792: only the key row\'s Text opens the sheet, no long press')
     check('pastStop()}return el}' in page, 'a press on the slim message box ends a fling (B218b1)')
     check('(pastUp()||FD.jump&&FD.far>8)' in page, 'the bars go away over the history')
 
