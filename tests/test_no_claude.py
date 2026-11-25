@@ -374,9 +374,17 @@ def test_run(tmp: Path) -> None:
     root = repo_at(tmp / 'repo')
     git(root, 'config', 'core.autocrlf', 'false')
     main = tmp / 'main_moves.py'  # what makes the conflict: main changes a.txt while the task works
-    main.write_text('import subprocess, sys, pathlib\n'
+    # The run's own `git status` there holds the index lock for a moment; a commit that meets it fails at once and would
+    # leave a.txt edited for good, which holds the merge: it is tried again until the lock is free.
+    main.write_text('import subprocess, sys, pathlib, time\n'
                     f'r = {str(root)!r}\npathlib.Path(r, "a.txt").write_text("from main\\n")\n'
-                    'subprocess.run(["git", "-C", r, "commit", "-qam", "main moves"], check=True)\n', encoding='utf-8')
+                    'end = time.monotonic() + 30\n'
+                    'while True:\n'
+                    '    p = subprocess.run(["git", "-C", r, "commit", "-qam", "main moves"], capture_output=True, text=True)\n'
+                    '    if not p.returncode or "index.lock" not in p.stderr or time.monotonic() > end:\n'
+                    '        break\n'
+                    '    time.sleep(0.05)\n'
+                    'sys.exit(p.stderr if p.returncode else 0)\n', encoding='utf-8')
     bash = lambda c: ['bash', {'command': c}]  # noqa: E731
     (tmp / 'script.json').write_text(json.dumps({
         'task': [[['write', {'path': 'a.txt', 'content': 'from F1\n'}], bash('git add a.txt && git commit -qm "F1 a"')],
