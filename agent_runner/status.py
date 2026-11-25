@@ -109,6 +109,9 @@ def release_line(ls: list[str], st: dict | None = None, rows=None) -> str:
         kind = 'release' if RELEASE_TASK.match(rest) or P.release(tid) else 'last'
         if kind == 'release' and not on:  # F193
             continue
+        if checks := P.until_of(ls, i):  # F427b
+            out.append(f'{kind}: waits for {P.until_label(checks, C)} ({tid})')
+            continue
         if P._waits_all(ls, i):  # `after: all` (F35): a count of what is still before it, not an id list
             held = [t for t in P.before_all(ls, i) if t in live and t != tid]
             skipped = P.not_waiting_on(ls, i)  # B101, B207: said, not waited on
@@ -653,6 +656,14 @@ def tool_lines(st: dict) -> list[str]:
         return split
 
 
+def until_lines() -> list[str]:
+    """F427b: a line per task blocked on until checks, run up or not: '  F1 waits for version 0.66.0'."""
+    try:
+        return [f'  {t} {said}' for t, said in P.until_waits(P.lines(C.todo), C).items()]
+    except (OSError, AttributeError):  # no plan, or no init
+        return []
+
+
 def spend_shown(st: dict, n: str) -> str:
     """F103: what slot n's task has spent so far ('1.2M tok $3.40'), as the run last wrote it to STATE."""
     got = (st.get('spend') or {}).get(n)
@@ -718,6 +729,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
         out.append('  no task running')
     if up:
         out += tool_lines(st)  # F168
+    out += until_lines()
     if st.get('merging'):
         out.append('merging: ' + ', '.join(f'{titles[t]} [{t}]' if titles.get(t) else t for t in st['merging']))
     events = lately_events(log_lines[-2000:], titles)

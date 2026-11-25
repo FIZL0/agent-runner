@@ -23,6 +23,10 @@ skips the gate: `done` says 'docs only, gate skipped' and runs `[run] docs_check
 `--blocked WHY` marks it `[~]` instead. Say what would unblock it. If what it waits on is another task
 landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reopen it once they merge.
 
+`--until CHECK[,CHECK]`, with `--blocked`, is for a wait this machine can check by itself (`version:X.Y.Z`,
+`login:PROVIDER`, `tool:NAME`, `check:NAME`; all must pass), in place of `--after`. A bad check is refused before the
+gate runs.
+
 `--artifact URL` is the page a concept task (kind K) published: required for one, which builds nothing.
 It notes the link on the task (and in its journal), and files the build task blocked until a person
 approves an option (`plan approve`). F74: it also keeps a local copy of the page at <notes>/concepts/<ID>.html
@@ -102,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--blocked', metavar='WHY', help='mark it [~] instead of done: why, and what unblocks it')
     ap.add_argument('--after', metavar='IDS', default=None,
                     help='with --blocked: the tasks it waits on, comma-separated (default: read off WHY)')
+    ap.add_argument('--until', metavar='CHECKS', default=None,
+                    help='with --blocked: what it waits on that this machine checks by itself, comma-separated '
+                         '(version:X.Y.Z, login:PROVIDER, tool:NAME, check:NAME); all must pass')
     ap.add_argument('--artifact', metavar='URL',
                     help="the page a concept task (K) published; required for one: its build waits for a person's OK")
     ap.add_argument('--page', metavar='FILE',
@@ -111,6 +118,9 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     c = cfg()
     cwd = c.root
+    if why := until_refusal(a, c):  # F427b
+        print(why, file=sys.stderr)
+        return 2
     if not a.blocked and tested_tick(a.id, c) and not git('status', '--porcelain', cwd=cwd).stdout.strip():
         print(f'{a.id} is already ticked and committed, and its gate passed on this commit: nothing to do again')
         push_task(c)  # a `done` cut off before its push
@@ -197,7 +207,7 @@ def record(a, c) -> int:
             plan.note(a.id, f'page: {a.artifact}')
     if a.blocked:
         plan.block(a.id, a.blocked, after=None if a.after is None else [t for t in a.after.split(',') if t],
-                   keep_ask=True)
+                   keep_ask=True, **({} if a.until is None else {'until': a.until.split(',')}))
         print(f'blocked {a.id}')
         if said := asks.long_line(a.id, a.blocked, c):  # F156
             print(f'note: {said}')
@@ -399,6 +409,21 @@ def gate_limit(a, cwd: Path) -> str | None:
              if n == MAX_FAILS else 'no more are run until it is blocked. Commit')
     return (f'{PROG}: the test gate failed {n} times on {a.id}: {again} what is solid and\n'
             f'    {PROG} {a.id} "<msg>" --blocked "{BLOCK_WHY}"\nNothing ticked.')
+
+
+def until_refusal(a, c) -> str | None:
+    """F427b: why `done` refuses its `--until`, or None."""
+    if a.until is None:
+        return None
+    if not a.blocked:
+        return f'{PROG}: --until goes with --blocked WHY. Nothing ticked.'
+    if a.after:
+        return plan.UNTIL_AFTER.format(prog=PROG)
+    try:
+        plan.until_list(a.until, c)
+    except SystemExit as e:
+        return str(e).replace(plan.PROG, PROG, 1)
+    return None
 
 
 def artifact_refusal(a) -> str | None:

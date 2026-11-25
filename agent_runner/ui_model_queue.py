@@ -46,6 +46,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     landed = {tid for _, box, tid, _, _ in tasks if box not in ' ~'} | done_ids()
     where = slot_of(st or {}, time.time() if now is None else now)
     tool_waits, tool_names = split_wait_words(ls, st, now) | tool_wait_words(ls, st, now), project_tools()
+    untils = until_wait_words(ls)
     for section, box, tid, rest, i in tasks:
         if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
             continue
@@ -61,6 +62,8 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
         elif tid in tool_waits:  # B184: memory; B196: its author's split
             out[-1]['tool_wait'] = tool_waits[tid]
+        if tid in untils and tid not in where:  # F427b: neither the person nor a slot: it says what it waits for
+            out[-1].update(state='tool', tool_wait=untils[tid])
         if P.release(tid) and releases_on():  # F186: one that started cannot be dropped from its row
             out[-1]['started'] = release_started(tid, st or {})
     return out
@@ -155,6 +158,14 @@ def tool_wait_words(ls: list[str], st: dict | None, now: float | None = None) ->
         return {}
 
 
+def until_wait_words(ls: list[str]) -> dict[str, str]:
+    """F427b: {task: 'waits for version 0.66.0'} for the tasks blocked on until checks."""
+    try:
+        return P.until_waits(ls, S.C)
+    except Exception:  # noqa: BLE001 - costs the words, not the snapshot
+        return {}
+
+
 def split_wait_words(ls: list[str], st: dict | None, now: float | None = None) -> dict[str, str]:
     """B196: {task: 'waits to be split, starts in 4 min if it is not'}; not one running or taken by hand."""
     from agent_runner import sched
@@ -210,7 +221,8 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
             continue
         titles = titles or {t: after_name(_no_tag(r)) for _, _, t, r, _ in tasks}
         note, held = '', []
-        waits = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' else []
+        checks = P.until_of(ls, i)
+        waits = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' and not checks else []
         if tid in (st.get('running') or {}).values() or tid in (st.get('merging') or []):
             state = 'releasing'
         elif box == '~' and not waits:
@@ -233,6 +245,8 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
         names = [f'{t} {titles.get(t, "")}'.rstrip() for t in held]
         more = len(names) - RELEASE_SHOWN
         words = full = {'releasing': 'releasing now', 'blocked': 'blocked', 'next': 'next'}.get(state, '')
+        if checks and state == 'blocked':  # F427b
+            words = full = f'waits for {P.until_label(checks, S.C)}'
         if held:
             full = f'waits for {len(names)}: {", ".join(names)}'
             words = f'waits for {len(names)}: {", ".join(names[:RELEASE_SHOWN])}, and {more} more' if more > 0 else full
