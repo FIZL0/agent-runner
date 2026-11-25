@@ -39,11 +39,15 @@ class Audio {""", 1)
               .replace("+ page.slice(page.indexOf(\"document.addEventListener('visibility", "+ page.slice(page.indexOf('/* --- F161b: Recorded'), page.indexOf('/* B162b1: the Mic test')) + page.slice(page.indexOf(\"document.addEventListener('visibility", 1)
               .replace("talkSet = (k, v) => { TS = {...TS, [k]: v} }", "talkSet = (k, v) => { TS = {...TS, [k]: v}; if (k === 'way') recPick() }", 1)
               .replace('const micWhy = () => \'\'', "const micWhy = () => micProblem(window.isSecureContext !== false, true)", 1) + r"""
+let may = 'prompt', queries = 0; navigator.permissions = {query: async () => { queries++; return {state: may} }};
+// before: sound with no listen
+const before = (s, v) => { for (let i = 0; i < s * 48000 / 2048; i++) node.port.onmessage({data: new Float32Array(2048).fill(v)}) };
+const shown = async () => { recLook(); await settle(); await settle() };
 // s seconds of sound, in the worklet's pieces; loud: somebody speaks
 const sound = (s, loud = true) => { for (let i = 0; i < s * 48000 / 2048; i++) if (REC.now) node.port.onmessage({data: new Float32Array(2048).fill(loud ? 0.2 : 0.0005)}) };
 const tail = async () => { await tick(200); await tick(20); await settle() };
 const down = () => fire('pointerdown', press('[data-mic]')), up = () => fire('pointerup', press('[data-mic]'));
-const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); hush(); TK.ear = TK.rec = TK.wait = null; MIC.rec = MIC.next = null; TK.state = TK.note = ''; TK.hold = false; sent.length = notes.length = posts.length = recs.length = types.length = 0; asks = 0; deny = ''; hold = null; answer = 'hello run'; REC.no = ''; REC.engine = engine; TS.mic = 'tap'; TS.way = 'recorded'; TS.auto = false; TS.read = true; S.view = 'talk'; AU.got = null; timers = [] };
+const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); hush(); TK.ear = TK.rec = TK.wait = null; MIC.rec = MIC.next = null; TK.state = TK.note = ''; TK.hold = false; sent.length = notes.length = posts.length = recs.length = types.length = 0; asks = 0; deny = ''; hold = null; answer = 'hello run'; REC.no = ''; REC.engine = engine; TS.mic = 'tap'; TS.way = 'recorded'; TS.auto = false; TS.read = true; S.view = 'talk'; AU.got = null; timers = []; may = 'prompt'; REC.may = REC.shut = REC.query = REC.sign = false; REC.timer = 0; document.hidden = false; kept.tm = '' };
 (async () => {
   const out = {}; await settle();
   out.start = TS.way; click('[data-mic]'); out.browser = [recs.length, asks]; mic().end(); await settle(); await tick(250); click('[data-mic]'); mic().end();
@@ -93,6 +97,29 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   fresh(); click('[data-mic]'); await settle(); sound(1); const o = REC.open; S.view = 'home'; await tick(500); await tail(); await tick(500); out.left = [sent.length, REC.open, o.track.readyState, o.ctx.state];
   out.rows = [(TS.way = 'browser', recRow().includes('Website Settings')), (TS.way = 'recorded', recRow().includes('Website Settings, Microphone, Allow')), isSafari('Mozilla Chrome/140 Safari/537')];
   out.parse = [talkSetParse('{"way":"recorded"}').way, talkSetParse('{"way":"x"}').way];
+  // F161c: the mic is open before the press, where the browser allows it
+  fresh(); hush(); TK.state = ''; await shown(); out.noAsk = [queries > 0, asks, REC.open]; click('[data-mic]'); await settle(); sound(1); click('[data-mic]'); await tail(); TK.wait = null; TK.state = ''; out.pressed = [asks, !!REC.open, REC.open.track.enabled];
+  fresh(); may = 'granted'; navigator.permissions.query = async () => { throw new TypeError('x') }; await shown(); out.cannotSay = asks; navigator.permissions.query = async () => ({state: may});
+  fresh(); may = 'granted'; types.length = 0; await tick(500); await shown(); out.opens = [asks, TK.state, REC.now, types.slice(), shows()[4], shows()[1], els.mic.className, sent.length, posts.length];
+  before(3, 0.1); out.kept = Math.round(REC.open.kept / 480) / 100; click('[data-mic]'); out.atOnce = [TK.ear.on, shows()[4], asks]; sound(1); click('[data-mic]'); await tail();
+  const w = posts[0] && Buffer.from(posts[0]); out.preroll = [w && Math.round((w.length - 44) / 3200), w && Math.round(w.readInt16LE(44 + 3200) / 327.67), w && Math.round(w.readInt16LE(44 + 48000) / 327.67), REC.open.kept];
+  // a reply: released, and open again after it
+  TK.wait = null; TK.state = ''; before(1, 0.1); let k1 = REC.open; lands('A reply.'); out.reply = [k1.track.readyState, REC.open, types[types.length - 1], TK.state]; await tick(500); await shown(); out.during = REC.open; us[us.length - 1].onend({type: 'end'}); await shown(); out.afterReply = [!!REC.open, REC.open && REC.open.kept, types[types.length - 1]];
+  // Talk hides: released at once; shown: open again
+  k1 = REC.open; document.hidden = true; fire('visibilitychange', {}); out.hides = [k1.track.readyState, REC.open, types[types.length - 1], REC.sign]; document.hidden = false; fire('visibilitychange', {}); await settle(); out.backOn = !!REC.open;
+  for (const [n, on, off] of [['left', () => S.view = 'home', () => S.view = 'talk'], ['thread', () => S.thread = 'c1', () => S.thread = null], ['test', () => S.sheet = 'mictest', () => S.sheet = ''], ['typing', () => kept.tm = 'type', () => kept.tm = '']]) { on(); await tick(500); out['rel_' + n] = REC.open; off(); await shown(); out['back_' + n] = !!REC.open }
+  // hidden while it opens: closed; a press joins the opening: one ask
+  fresh(); may = 'granted'; hold = new Promise(y => yes = y); await shown(); document.hidden = true; fire('visibilitychange', {}); yes(); await settle(); await settle(); out.hidOpening = [REC.open, tracks[tracks.length - 1].readyState];
+  fresh(); may = 'granted'; hold = new Promise(y => yes = y); await shown(); click('[data-mic]'); yes(); await settle(); await settle(); out.joins = [asks, TK.state, TK.ear && TK.rec.on];
+  // it cannot open by itself: not again until Talk shows anew, and the press asks; the mic taken away (a call): the same
+  fresh(); may = 'granted'; deny = 'NotReadableError'; await shown(); await tick(500); await shown(); out.failed = [asks, notes.length, REC.no]; deny = ''; click('[data-mic]'); await settle(); out.failedPress = [asks, recs.length, TK.rec.on];
+  fresh(); may = 'granted'; await shown(); REC.open.track.onended(); await shown(); out.taken = [asks, REC.open]; S.view = 'home'; await tick(500); S.view = 'talk'; await shown(); out.takenBack = asks;
+  // a press opened it and a new stream could ask: it only rests while a reply plays
+  fresh(); click('[data-mic]'); await settle(); sound(1); click('[data-mic]'); await tail(); TK.wait = null; TK.state = ''; before(1, 0.1); k1 = REC.open; lands('A reply.'); before(1, 0.1); out.rests = [REC.open === k1, k1.track.enabled, k1.ctx.state, k1.kept, types[types.length - 1], asks]; us[us.length - 1].onend({type: 'end'}); await shown(); out.wakes = [REC.open === k1, k1.track.enabled, k1.ctx.state, asks, types[types.length - 1]];
+  // a press with only what came before it sends nothing; the browser's way opens nothing
+  fresh(); may = 'granted'; await shown(); before(2, 0.1); answer = 'stray'; click('[data-mic]'); click('[data-mic]'); sound(0.2); await tail(); out.onlyBefore = [posts.length, sent.length];
+  fresh(); may = 'granted'; await shown(); REC.engine = {engine: false, why: 'x'}; await tick(500); out.gone = REC.open;
+  fresh(); may = 'granted'; TS.way = 'browser'; await shown(); out.wayBrowser = [asks, REC.open];
   console.log(JSON.stringify(out, (k, v) => v === undefined ? null : v));
 })();`);
 """)
@@ -103,6 +130,7 @@ def test_recorded_f161b(tmp: Path) -> None:
     page = W.page_html().decode()
     check('${recRow()}' in page.split('  talk(){', 1)[1].split('\n  },', 1)[0], 'Talk settings has the setting')
     check('recFree()' in page.split('function dictate(', 1)[1].split('\n}\n', 1)[0], 'dictation releases the mic first')
+    check('recLoad();REC.timer=setTimeout(recLook,0)' in page, 'F161c: a reload on Talk looks whether the mic may open')
     if not shutil.which('node'):
         print('  (no node here: the recording script test is skipped)')
         return
@@ -114,15 +142,15 @@ def test_recorded_f161b(tmp: Path) -> None:
     eq(g.get('line'), ['Starting the mic…', 'Listening…', ['play-and-record']], 'it says when it listens, in the audio session for the mic')
     eq(g.get('reading'), 'Getting the words…', 'and that the words are on their way')
     eq(g.get('wav'), ['RIFF', 16000, 1, 16, True, 10, 20], 'a 16 kHz mono 16-bit WAV of the second, as loud as it was')
-    eq(g.get('tap'), [['what is running'], 'thinking', 0, None, 'playback'], 'Tap: its words are sent, and the session is for playing again')
-    eq(g.get('rest'), [False, 'suspended', 1], 'between listens the stream is kept and takes no sound')
+    eq(g.get('tap'), [['what is running'], 'thinking', 0, None, 'play-and-record'], 'Tap: its words are sent, and the session stays the open mic\'s')
+    eq(g.get('rest'), [True, 'running', 1], 'between listens the stream stays open')
     check('running' not in (g.get('report') or 'running') and 'clip, ' in g['report'], 'the mic report has no words', str(g.get('report')))
     eq((g.get('again'), g.get('two')), ([True, 1], [2, 1]), 'one ask for two listens')
     eq(g.get('stray'), 2, 'sound outside a listen goes nowhere')
     eq((g.get('notYet'), g.get('pause')), (False, ['hello run']), 'a pause of 2 s ends a Tap')
     eq(g.get('silent'), [0, 0, True, ''], 'nobody speaks: no clip leaves the page')
     eq(g.get('noWords'), [0, True, ''], 'no words: the line says so')
-    eq(g.get('early'), [0, '', True, None, False], 'stopped before it was on: nothing, and the mic takes no sound')
+    eq(g.get('early'), [0, '', True, None, True], 'stopped before it was on: nothing is posted')
     eq((g.get('held'), g.get('hold')), (['listening', 0], ['hello run']), 'Hold: silence does not end it, letting go sends')
     eq(g.get('auto'), [0, '', 'Tap to talk'], 'auto listen: a silent turn ends it')
     eq((g.get('autoOn'), g.get('autoSent')), (['listening', 1, 0], ['hello run']), 'auto listen records after a reply, and sends')
@@ -147,6 +175,25 @@ def test_recorded_f161b(tmp: Path) -> None:
     eq(g.get('left'), [1, None, 'ended', 'closed'], 'Talk left: the words go out and the mic is released')
     eq(g.get('rows'), [False, True, False], "Safari's Allow for good, only with Recorded")
     eq(g.get('parse'), ['recorded', 'browser'], 'kept per browser')
+    eq((g.get('noAsk'), g.get('pressed'), g.get('cannotSay')), ([True, 0, None], [1, True, True], 0), 'F161c: the page never asks by itself; the first press opens it, and it stays')
+    eq(g.get('opens'), [1, '', None, ['play-and-record'], 'Tap to talk, the mic is open', 'Talk, the mic is open', 'mic open', 0, 0], 'allowed: open when Talk shows, and it says so; nothing listens or is sent')
+    check(0.9 < (g.get('kept') or 0) <= 1, 'one second is kept, what is older is dropped', str(g.get('kept')))
+    eq(g.get('atOnce'), [True, 'Listening…', 1], 'a press listens in the press itself')
+    p = g.get('preroll') or [0, 0, 0, 1]
+    check(19 <= p[0] <= 21, 'the clip is the second before and the second since', str(p))
+    eq(p[1:], [10, 20, 0], 'the sound before it first; sent sound is not kept for the next')
+    eq((g.get('reply'), g.get('during')), (['ended', None, 'playback', 'speaking'], None), 'a reply: the mic is released first')
+    eq(g.get('afterReply'), [True, 0, 'play-and-record'], 'and open again after it, with none of its sound')
+    eq((g.get('hides'), g.get('backOn')), (['ended', None, 'playback', False], True), 'hidden: released at once; shown: open again')
+    for n in ('left', 'thread', 'test', 'typing'):
+        eq((g.get('rel_' + n), g.get('back_' + n)), (None, True), f'{n}: released, then open again')
+    eq((g.get('hidOpening'), g.get('joins')), ([None, 'ended'], [1, 'listening', True]), 'hidden while it opens: closed; a press joins the opening')
+    eq((g.get('failed'), g.get('failedPress')), ([1, 0, ''], [2, 0, True]), 'it cannot open: quiet, once, and the press tries itself')
+    eq((g.get('taken'), g.get('takenBack')), ([1, None], 2), 'the mic taken away: open again only when Talk shows anew')
+    eq((g.get('rests'), g.get('wakes')), ([True, False, 'suspended', 0, 'playback', 1], [True, True, 'running', 1, 'play-and-record']), 'where a new stream could ask: it rests while a reply plays, and wakes')
+    eq(g.get('onlyBefore'), [0, 0], 'sound from before a press is not sent alone')
+    eq(g.get('gone', 1), None, 'the engine gone: released')
+    eq(g.get('wayBrowser'), [0, None], "the browser's recognition: no open mic")
 
 
 if __name__ == '__main__':
