@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page's Needs you, a Stuck item whose reason starts with numbered steps ("1) do this. 2) do that") showed "Stuck" alone as its first step and its summary; now the summary and first step are the first real step (B797).
 - Fixed: in a project whose roles and kinds all name another provider, a cut-off session on a claude model (a task's own model), or one queued to go on with a claude model from `[models] fallback`, was resumed while the Claude API was unreachable and died at its first call. Now it alone waits until the API answers, and the run log says once that it cannot resume; sessions on other providers resume as before. Only with Claude Code as `[run] agent` (B799).
 - Added: on the run page, a History view after Plan (the NAV row's History): a Find in history field, Landed (the newest landed tasks), Releases (past ones) and the Run log, with a landed or release row opening to What changed, Report a problem and Chat last (F426c).
 - Fixed: a task on a claude model in a project whose roles and kinds all name another provider, on a machine with Claude Code, no longer starts past `[run] session_max` or `weekly_max`, or while the Claude API is unreachable; past a cap it alone waits (or starts on the first free `[models] fallback` provider), other tasks start as before, and when nothing else can start the alarm names the held task and says it cannot start until the reset. `force` lifts the cap (B791).

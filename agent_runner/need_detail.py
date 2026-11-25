@@ -141,9 +141,9 @@ def split_ask(ask: str, sees: bool = True) -> list[tuple[str, str]]:
 
 
 def shown(piece: str) -> str:
-    """A piece as a list's line: without its number, its 'then' and the mark that ended it."""
+    """A piece as a list's line ('' for a 'Stuck:' alone, before numbered steps): without its number, its 'then' and the mark that ended it."""
     s = ' '.join(piece.split())
-    s = re.sub(r'^stuck:\s+|^- ', '', s, flags=re.I)
+    s = re.sub(r'^stuck:(?:\s+|$)|^- ', '', s, flags=re.I)
     s = re.sub(r'^(?:\(\d+\)|\d+[.)])\s+', '', s)
     s = re.sub(r'^(?:and\s+)?then,?\s+(?=\S)', '', s, flags=re.I)
     s = re.sub(r'(?:,?\s+and|[\s,;:]+)$', '', s)
