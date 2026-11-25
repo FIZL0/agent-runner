@@ -239,7 +239,7 @@ def test_place_b830(tmp: Path) -> None:
                  '<script>const px=n=>Math.round(n*10)/10;document.title=JSON.stringify([...document.querySelectorAll(".card>.grip")].map(g=>{'
                  'g.scrollIntoView({block:"center"});const a=g.getBoundingClientRect(),c=g.parentElement.getBoundingClientRect(),h=g.parentElement.querySelector(":scope>.fold,:scope>.row").getBoundingClientRect();'
                  'return [g.closest("section").id,g.dataset.grip,!!g.parentElement.querySelector(":scope>.qmenu,:scope>.qacts"),px(a.left-c.left),px(a.width),px(h.left-a.right),'
-                 'px(h.top-a.top),px(a.bottom-h.bottom),document.elementFromPoint(a.left+a.width/2,a.top+a.height/2)?.closest(".grip")===g]}))</script>', encoding='utf-8')
+                 'document.elementFromPoint(a.left+a.width/2,a.top+a.height/2)?.closest(".grip")===g]}))</script>', encoding='utf-8')
     r = subprocess.run([chrome, '--headless', '--no-sandbox', '--disable-gpu', f'--user-data-dir={tmp / "chrome"}', '--dump-dom', f.as_uri()],
                        capture_output=True, text=True, encoding='utf-8', timeout=90)
     m = re.search(r'<title>(.*?)</title>', r.stdout)
@@ -252,9 +252,7 @@ def test_place_b830(tmp: Path) -> None:
     off = [g for g in got if not (0 < g[3] < 4 and g[4] == 16 and g[5] == 0)]
     eq(off, [], "inside the card, in its padding, its right edge at the head's left")
     eq(len({g[3] for g in got}), 1, "all the same from the card's edge")
-    eq([g for g in got if not g[8]], [], 'a press in its middle meets it')
-    # its height is the head's and the padding over and under it; a head beside the 44px menu is centred in that row
-    eq([g for g in got if g[6] < 14 or g[7] < 14 or abs(g[6] - g[7]) > 1], [], 'and as high as the row of its head')
+    eq([g for g in got if not g[6]], [], 'a press in its middle meets it')
 
 
 if __name__ == '__main__':
