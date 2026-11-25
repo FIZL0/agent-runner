@@ -38,7 +38,8 @@ REPO, TAG = 'https://github.com/ggml-org/whisper.cpp', 'v1.9.6'
 COMMIT = '96ec4d9823e9d0211944172da35f9f29134af990'
 EXE = 'whisper-cli.exe' if os.name == 'nt' else 'whisper-cli'
 WORDS = 'Talk, Kokoro, Piper, iPhone, agent-runner, Hold'
-IDS_MAX, TERMS_MAX = 25, 20  # whisper keeps the last 224 tokens of a prompt
+IDS_MAX, TERMS_MAX = 25, 15  # whisper keeps the last 224 tokens of a prompt, so the ids come last
+CLIP_OLD = 600  # s: no clip is read for that long
 NO_WINDOW = getattr(sp, 'CREATE_NO_WINDOW', 0)
 
 
@@ -83,7 +84,7 @@ def prompt() -> str:
     except Exception:  # noqa: BLE001 - no project, or a plan that cannot be read: the fixed words still help
         pass
     words = ', '.join(dict.fromkeys(w for w in (*terms, name, *WORDS.split(', ')) if w))
-    return f'Task ids like {", ".join(ids or ["R16", "B162", "T19"])}. Words: {words}.'
+    return f'Words: {words}. Task ids like {", ".join(ids or ["R16", "B162", "T19"])}.'
 
 
 def check_clip(data: bytes) -> bool:
@@ -108,9 +109,18 @@ def check_clip(data: bytes) -> bool:
 
 def clean(text: str) -> str:
     """The engine's answer on one line, without its marks for what is not speech ([BLANK_AUDIO], (buzzing))."""
-    text = ' '.join(text.split())
-    return '' if not re.sub(r'\[[^\]]*\]|\([^)]*\)|[\s.♪]', '', text) else \
-        ' '.join(re.sub(r'\[[A-Z_ ]+\]', ' ', text).split())
+    text = ' '.join(re.sub(r'\[[^\]]*\]|\([^)]*\)|♪', ' ', text).split())
+    return text if re.search(r'\w', text) else ''
+
+
+def sweep() -> None:
+    """Clips a run left behind when it was killed while one was read."""
+    for d in Path(tempfile.gettempdir()).glob('agent-runner-clip-*'):
+        try:
+            if time.time() - d.stat().st_mtime > CLIP_OLD:
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
 
 
 class Listener:
@@ -139,6 +149,7 @@ class Listener:
             self.lock.release()
 
     def _run(self, data: bytes, end: float) -> str:
+        sweep()
         # no error below holds the engine's own output: it may be the words
         try:
             with tempfile.TemporaryDirectory(prefix='agent-runner-clip-', ignore_cleanup_errors=True) as d:
@@ -240,5 +251,6 @@ def install(out=print) -> None:
     if gpu:
         get(GPU_MODEL)
     else:
+        (folder() / GPU_MODEL).unlink(missing_ok=True)  # 5 s a clip on a CPU
         out('It runs on the CPU here. With a GPU, install the Vulkan and SPIR-V headers and glslc, then run this again '
             'for the better model.')

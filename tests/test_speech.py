@@ -152,7 +152,7 @@ mode = os.environ.get('STUB', '')
 json.dump({'argv': argv, 'size': os.path.getsize(clip), 'clip': clip}, open(os.environ['STUB_SEEN'], 'w'))
 sys.stdout.reconfigure(encoding='utf-8')
 if mode == 'hang': time.sleep(60)
-print({'blank': ' [BLANK_AUDIO]', 'noise': ' (buzzing)', 'two': ' One.\\n [BLANK_AUDIO] Two (really).'}.get(mode, ' Open task R16 \\u2013 now.\\n'))
+print({'blank': ' [BLANK_AUDIO]', 'noise': ' (buzzing)', 'two': ' One.\\n [BLANK_AUDIO] Two (buzzing)'}.get(mode, ' Open task R16 \\u2013 now.\\n'))
 sys.exit(3 if mode == 'fail' else 0)
 """, encoding='utf-8')
 os.environ['STUB_SEEN'] = str(SEEN)
@@ -191,18 +191,21 @@ try:
     seen = json.loads(SEEN.read_text())
     a = seen['argv']
     eq(seen['size'], len(wav()), 'the engine read the whole clip')
-    check(Path(a[a.index('-m') + 1]).name == Rec.CPU_MODEL and a[a.index('--prompt') + 1].startswith('Task ids like '),
+    check(Path(a[a.index('-m') + 1]).name == Rec.CPU_MODEL and a[a.index('--prompt') + 1].startswith('Words: '),
           'with base.en and a prompt', a)
     put(HOME / 'whisper' / Rec.GPU_MODEL)
     eq(json.loads(call()[2])['model'], Rec.GPU_MODEL, 'the large model when it is installed (a GPU)')
     check(CLIPS in Path(seen['clip']).parents and not list(CLIPS.iterdir()), 'the clip is deleted')
-    for mode, want in (('blank', ''), ('noise', ''), ('two', 'One. Two (really).')):
+    for mode, want in (('blank', ''), ('noise', ''), ('two', 'One. Two')):
         eq(post(mode=mode)[1].get('words'), want, f'what is not speech: {mode}')
     SEEN.unlink()
     eq((post(wav(loud=0)), SEEN.exists()), ((200, {'ok': True, 'words': ''}), False), 'silence: no words, the engine not asked')
+    left = CLIPS / 'agent-runner-clip-old'
+    put(left / 'clip.wav')
+    os.utime(left, (1, 1))
     code, got = post(mode='fail')
     eq((code, got['out']), (503, 'the speech recognition failed (exit 3)'), 'a failure says why, without the words')
-    check(not list(CLIPS.iterdir()), 'the clip is deleted on a failure')
+    check(not list(CLIPS.iterdir()), 'the clip is deleted on a failure, and one a killed run left')
     kept, srv.listener = srv.listener, stub(timeout=3.0)
     code, got = post(mode='hang')
     eq((code, got['out'], list(CLIPS.iterdir())), (503, 'the speech recognition took too long', []), 'a stuck engine: ended, clip deleted')
@@ -241,21 +244,24 @@ said = Rec.prompt()
 W.S.C, W.S.project, glossary.path = None, lambda: 1 / 0, keep[2]
 bare = Rec.prompt()
 W.S.C, W.S.project = keep[:2]
-check(said.startswith('Task ids like Q7, Q9. Words: Slot, Held message, Clay, Talk,'), "open ids, the glossary's terms, the name", said)
-check(bare.startswith('Task ids like R16') and 'agent-runner' in bare, 'no project: the fixed words', bare)
+check(said.startswith('Words: Slot, Held message, Clay, Talk,') and said.endswith('Task ids like Q7, Q9.'), "open ids, the glossary's terms, the name", said)
+check(bare.endswith('T19.') and 'agent-runner' in bare, 'no project: the fixed words', bare)
 
 # the install: the model follows the GPU
 asked = []
 real = (Rec.program, Rec.uses_gpu, Rec.speech.fetch, Rec.build)
 Rec.program, Rec.build = lambda: 'whisper-cli', lambda *a: asked.append('build')
 Rec.speech.fetch = lambda url, to, sha, out: asked.append((to.name, len(sha)))
-for gpu in (False, True):
+for gpu in (True, False):
     for f in (HOME / 'whisper').iterdir():
         f.unlink()
+    if not gpu:
+        put(HOME / 'whisper' / Rec.GPU_MODEL)
     asked.clear()
     Rec.uses_gpu = lambda: gpu
     Rec.install(out=lambda s: None)
     eq(asked, [(Rec.CPU_MODEL, 64)] + [(Rec.GPU_MODEL, 64)] * gpu, f'install, GPU {gpu}: its models, checked')
+    check(gpu or not (HOME / 'whisper' / Rec.GPU_MODEL).exists(), 'no GPU any more: the large model goes')
 Rec.program, Rec.uses_gpu, Rec.speech.fetch, Rec.build = real
 
 # --- the page ----------------------------------------------------------------------------------------------------
