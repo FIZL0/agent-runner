@@ -298,6 +298,40 @@ def test_styles(tmp: Path):
         check('F2' in [t[0] for t in sched.tasks('main')], f'{how}: what waited for it may start')
 
 
+def test_left_over(tmp: Path):
+    print('a newer commit that missed the merge is kept')
+    repo, origin, gh = make(tmp, 'left')
+    with using(gh):
+        work(repo, 'F1', 'a.py')
+        git(repo, 'checkout', '-q', 'task/F1')
+        git(repo, 'commit', '-q', '--allow-empty', '-m', 'F1: more')
+        more = git(repo, 'rev-parse', 'HEAD')
+        git(repo, 'checkout', '-q', 'main')
+        with mock.patch.object(pr, '_net', lambda cwd: lambda *a: answer(a, code=1, err='offline')):
+            eq(M.merge('F1', 'main'), False, 'taken in, not pushed')
+        gh.merge(1, 'squash', tmp / 'left' / 'person')
+        with mock.patch.object(pr, 'open_due'):  # the merge came before the next push
+            pr.look('main', gh)
+    eq(boxes()['F1'], 'x', 'ticked')
+    eq(git(repo, 'rev-parse', 'leftover/F1'), more, 'its newer commit is on leftover/F1')
+
+
+def test_second_group(tmp: Path):
+    print('parts filed while the first pull request is open get one of their own')
+    repo, origin, gh = make(tmp, 'second', tasks='- [ ] **P5a** first | files: c.py\n- [ ] **P5b** second | files: d.py\n')
+    with using(gh):
+        work(repo, 'P5a', 'c.py')
+        work(repo, 'P5b', 'd.py')
+        first = git(origin, 'rev-parse', 'pr/P5')
+        S.C.todo.write_text(S.C.todo.read_text(encoding='utf-8') + '- [ ] **P5c** third | files: a.py\n'
+                            '- [ ] **P5d** fourth | files: b.py\n', encoding='utf-8')
+        work(repo, 'P5c', 'a.py')
+        work(repo, 'P5d', 'b.py')
+    eq(([x['head'] for x in gh.prs], [x['ids'] for x in pr.read()]),
+       (['pr/P5', 'pr/P5-2'], [['P5a', 'P5b'], ['P5c', 'P5d']]), 'two pull requests')
+    eq(git(origin, 'rev-parse', 'pr/P5'), first, 'the first is as it was')
+
+
 def test_main_held(tmp: Path):
     print('merged, but main here cannot follow: not ticked until it does')
     repo, _, gh = make(tmp, 'held')
@@ -422,7 +456,7 @@ def test_parts_apart(tmp: Path):
         eq([x['head'] for x in gh.prs], ['pr/P5'], 'it opens once no part is missing')
 
 
-TESTS = [test_refusals, test_approve, test_opens, test_no_main, test_styles, test_main_held, test_not_ready,
+TESTS = [test_refusals, test_approve, test_opens, test_no_main, test_styles, test_left_over, test_second_group, test_main_held, test_not_ready,
          test_main_moved, test_parts, test_parts_apart]
 
 if __name__ == '__main__':

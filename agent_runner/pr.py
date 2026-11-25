@@ -316,7 +316,11 @@ def submit(tid: str, branch: str):
         parts = group(tid, ls, _opened(d))
         if not rec:
             key = min(parts, key=lambda t: (len(t), t))
-            root = re.match(r'[A-Za-z]*\d*', key).group()
+            root = name = re.match(r'[A-Za-z]*\d*', key).group()
+            n = 1
+            while any(x['branch'] == f'pr/{root}' for x in d):  # an earlier one of the same task is still open
+                n += 1
+                root = f'{name}-{n}'
             rec = {'key': root if len(parts) > 1 else tid, 'ids': [], 'tips': {}, 'head': '', 'base': '', 'gate': '',
                    'number': 0, 'url': '', 'pushed': '', 'state': '', 'at': time.time(),
                    'branch': f'pr/{root}' if len(parts) > 1 else f'task/{tid}'}
@@ -590,7 +594,7 @@ def _look_at(rec: dict, branch: str, gh: ci.Gh) -> None:
 
 def landed(rec: dict, commit: str, head: str, branch: str) -> None:
     """A person merged `rec`'s pull request, as `commit` on main: its tasks are ticked, and its branches go. A commit a
-    branch got that was not in the pull request stays, on wip/<ID>."""
+    branch got that was not in the pull request stays, on leftover/<ID>."""
     from agent_runner import land, merge as M
     from agent_runner.slots import free_branch
     S.git('fetch', '-q', S.C.push_remote, f'refs/pull/{rec["number"]}/head')
@@ -598,8 +602,9 @@ def landed(rec: dict, commit: str, head: str, branch: str) -> None:
         for tid in rec['ids']:
             land.land_tick(tid, commit)
             tip = rev(f'refs/heads/task/{tid}')
-            if tip and tip != rec['tips'].get(tid) and not (head and rev(head) and _has(head, tip)):
-                S.git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}'))
+            inside = _has(head, tip) if head and rev(head) else tip == rec['tips'].get(tid) and rec['pushed'] == rec['head']
+            if tip and not inside:  # not wip/, which goes with the tick
+                S.git('branch', '-M', f'task/{tid}', wip := free_branch(f'leftover/{tid}'))
                 S.log(f'{tid}: task/{tid} has commits that were not in the merged pull request; kept on {wip}')
             elif tip:
                 S.git('branch', '-D', f'task/{tid}')

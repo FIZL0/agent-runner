@@ -702,13 +702,15 @@ What happens to a task:
   what, why, how to try it and risk, its spec review, its text and the gate.
 - The parts of a split task share the branch `pr/<KEY>` and one pull request, which opens once the last part
   finishes. A part started after another begins on that branch.
+- Parts filed while that pull request is open share one of their own, `pr/<KEY>-2`.
 - A part that waits for another task, where that task waits for these parts, or that is blocked on one of them, gets
   a pull request of its own.
 - A blocked task opens no pull request. Its commits stay on `wip/<ID>`.
 - A session that never passed `done` opens none. It is parked.
 
 After that, every 60 s the run asks gh about each pull request. A pull request merged by merge commit, squash or
-rebase ticks its tasks with that commit and removes their branches, once the local main has followed. Local main
+rebase ticks its tasks with that commit and removes their branches, once the local main has followed. A commit that was
+not in the merged pull request stays on `leftover/<ID>`. Local main
 moves fast-forward only. If uncommitted edits or local commits on main stop it, an alarm says so. A pull request
 closed without a merge is said in the run log, and its tasks stay open. If GitHub or the push cannot be reached, the
 run tries again.
