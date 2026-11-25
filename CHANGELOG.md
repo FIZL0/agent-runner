@@ -4,7 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
-- Fixed: in PR mode, a note on a blocked task whose pull request was closed, whose session blocked it in a feedback round, or whose 3 tries ran out now reaches its session however it was opened again (plan unblock, confirm or change); before, only the answers of plan confirm and change did, a plan unblock note was lost (the session was told no answer was noted, and for a closed pull request an identical one was opened). A note that is not a person's answer is told as a note, not as what the person said; an answer to an earlier question is not told again (B820).
+- Fixed: in PR mode, a note on a blocked task whose pull request was closed, whose session blocked it in a feedback round, or whose 3 tries ran out now reaches its session however it was opened again (plan unblock, confirm or change); before, only the answers of plan confirm and change did, a plan unblock note was lost (the session was told no answer was noted, and for a closed pull request an identical one was opened). With no person's answer in it, it is told as a note, not as what the person said; an answer to an earlier question is not told again (B820).
 
 ## 0.73.0 (2026-11-25)
 

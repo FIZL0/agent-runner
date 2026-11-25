@@ -202,6 +202,8 @@ def look(branch_name: str, got: dict, branch: str, gh: ci.Gh, busy: set[str]) ->
         elif need['kind'] == 'closed' and got['state'] == 'OPEN':  # a person opened it again
             if _plan(lambda: P.unblock(tid, 'its pull request is open again', todo=S.C.todo), f'unblock {tid}'):
                 _set(rec, need=None)
+        elif 'line' not in need:  # kept by an older version
+            _set(rec, need={**need, 'line': _asked_line(ls, tid)})
         return
     if box != ' ' or S.stopping() or S.PAUSED[0]:
         return
@@ -263,8 +265,13 @@ def _noted(ls: list[str], tid: str, need: dict) -> str:
     now = ls[i + len(P._item_block(ls, i)) - 1]
     if now == was or now.startswith(was + ' — '):
         return now[len(was):].removeprefix(' — ').strip()
-    old = [P.prose(x).strip() for x in was.split(' — ')]  # the task's own text was edited too
-    return ' — '.join(x for x in (P.prose(x).strip() for x in now.split(' — ')[1:]) if x and x not in old)
+    old, new = [P.prose(x).strip() for x in was.split(' — ')[1:]], []  # the task's own text was edited too
+    for x in (P.prose(x).strip() for x in now.split(' — ')[1:]):
+        if x in old:
+            old.remove(x)  # once: the same words noted again are new
+        elif x:
+            new.append(x)
+    return ' — '.join(new)
 
 
 def _trouble(rec: dict, got: dict) -> tuple[dict, bool]:
@@ -344,8 +351,8 @@ def message(tid: str, branch: str, where: str = 'your worktree') -> str:
         return ''
     parts = []
     if r['answer']:
-        said = r['answer'].startswith(('your answer (', 'you said'))  # else any `plan unblock`: the runner's or an agent's too
-        parts.append(f'{"The person said" if said else "The task was blocked and is open again, with this note"}: {r["answer"]}' + (
+        said = any(x.startswith(('your answer (', 'you said')) for x in r['answer'].split(' — '))  # else the runner's or an agent's, maybe
+        parts.append(f'{"The person said" if said else "The task is open again, with this note"}: {r["answer"]}' + (
             '\nThe pull request was closed without a merge; the run opens a new one once you finish.' if r['closed'] else ''))
     if r['items']:
         shown = [{'key': x['key'], 'from': x['login'], 'on': x['where'], 'says': x['body']} for x in r['items']]
@@ -392,6 +399,9 @@ def kept(tid: str, rec: dict, why: str | None) -> bool:
         if out := push(S.ROOT, wip):
             S.log(f'{tid}: {out}')
     S.git('update-ref', ref, rec['tips'][tid])
+    ls = P.lines(S.C.todo)
+    if why is None and not rec.get('need') and any(b == '~' and t == tid for _, b, t, _, _ in P.iter_tasks(ls)):
+        _set(rec, need={'tid': tid, 'kind': 'blocked', 'q': '', 'line': _asked_line(ls, tid)})  # now: the answer may be quick
     _set(rec, failed=why or '')
     return False
 

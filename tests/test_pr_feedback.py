@@ -320,7 +320,8 @@ def test_blocked(tmp: Path):
         look(hub)
         P.block('F1', 'BLOCKED: give me the key', todo=S.C.todo, after=[])
         session(repo, hub, 'half', done=False)
-        look(hub)
+        if name != 'plain':  # answered before the next look
+            look(hub)
         act()
         look(hub)
         text = F.message('F1', 'main').split('Review comments')[0].strip()
