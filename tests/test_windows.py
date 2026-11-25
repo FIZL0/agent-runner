@@ -199,7 +199,7 @@ p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])  # 
 print('KID', p.pid, flush=True)
 print('READY', flush=True)
 line = input()
-print('GOT', line, 'END', flush=True)
+print(f'GOT {line} END', flush=True)  # one write: a resize's repaint can come between two (B784)
 sys.exit(7)
 """
 
@@ -329,13 +329,19 @@ def test_conpty_attach(tmp: Path):
         bad.close()
     c = A.connect(sock)
     c.settimeout(20)
-    c.sendall(A.attach_size_frame(30, 100) + A.attach_input_frames(b'by attach\r'))
     seen = b''
-    try:
-        while b'END' not in seen and (data := c.recv(65536)):
-            seen += data
-    except OSError:
-        pass
+
+    def see(word: bytes) -> None:
+        nonlocal seen
+        try:
+            while word not in seen and (data := c.recv(65536)):
+                seen += data
+        except OSError:
+            pass
+    c.sendall(A.attach_size_frame(30, 100))
+    see(b'READY')  # the size draws the screen again; typed before that, the answer can be cut in two by it (B784)
+    c.sendall(A.attach_input_frames(b'by attach\r'))
+    see(b'END')
     c.close()
     out = d / 'seen'
     out.write_bytes(seen)
