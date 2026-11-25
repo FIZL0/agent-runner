@@ -261,10 +261,11 @@ def split_ask(row: dict, short: bool = False) -> str:
     parts = (row.get('split') or {}).get('open') or []
     if not parts:
         return ''
+    stops = ' A slot running it is stopped.' if str(row.get('state') or '').startswith('running') else ''
     if short:
-        return f'Drop {row["id"]}? {", ".join(p["id"] for p in parts)} {"stays" if len(parts) == 1 else "stay"} open.'
+        return f'Drop {row["id"]}?{stops} {", ".join(p["id"] for p in parts)} {"stays" if len(parts) == 1 else "stay"} open.'
     n, names = len(parts), ', '.join(f'{p["id"]} {p["title"]}'.rstrip() for p in parts)
-    return f'Drop {row["id"]}? ' + ('Its open part stays' if n == 1 else f'Its {n} open parts stay') + f' in the plan: {names}.'
+    return f'Drop {row["id"]}?{stops} ' + ('Its open part stays' if n == 1 else f'Its {n} open parts stay') + f' in the plan: {names}.'
 
 
 def queue_row(tid: str) -> dict | None:

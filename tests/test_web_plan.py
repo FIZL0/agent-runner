@@ -94,6 +94,10 @@ def test_split_b811b(tmp: Path) -> None:
     for was, state in (('- [ ] **B763** Run', '- [~] **B763** Run'), 'blocked'), (('| files: a.py', '| files: a.py | held: yes'), 'held'):
         eq(rows(SPLIT_TODO.replace(*was, 1))['B763']['state'], state, f'{state} keeps its word')
     eq(rows(SPLIT_TODO, {'running': {'1': 'B763'}})['B763']['state'], 'running s1', 'so does a running one')
+    run = rows(SPLIT_TODO.replace('Merge rows |', 'Merge rows (split into B763d1) |'), {'running': {'1': 'B763'}})['B763']
+    eq((U.row_asks('queue', run)['queue_drop'], U.split_ask(run, short=True)),
+       (ask.replace('?', '? A slot running it is stopped.'), 'Drop B763? A slot running it is stopped. B763c, B763d stay open.'),
+       'a running one says its slot is stopped; a part split itself is named without its list')
     off = U.wait_for_run([dict(b)])[0]
     eq((off['state'], 'waits_run' in off), ('split', False), 'with no run up too')
     page = next(c for c in vars(tui).values() if hasattr(c, 'queue_tag'))

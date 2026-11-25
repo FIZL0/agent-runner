@@ -54,7 +54,7 @@ def split_parts(ls: list[str], tid: str, i: int, tasks: list[tuple], done: list[
     for x, rows in ((done, P.iter_tasks(done)), (ls, tasks)):
         for _, box, t, rest, j in rows:
             if box in ' ~':
-                known[t] = after_name(rest)
+                known[t] = after_name(P.SPLIT.sub('', rest))
             elif not P._dropped(x, j):
                 known[t] = None
     kids = P.subtasks(tid, ls[i], known)
