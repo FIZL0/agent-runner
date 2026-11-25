@@ -1,5 +1,6 @@
-"""Auto release (F63, `[run] auto_release`): the run queues a release by itself, as `plan add V` with no text
-does, once `every` tasks have landed since the last release, or when it goes idle with landed work.
+"""Auto release (F63, `[run] auto_release`): the run queues a release by itself: once `every` tasks have landed since
+the last release, one that starts at once with what has landed (F195a: a cut, as `plan add V --now`), or when it goes
+idle with landed work, as `plan add V` with no text does.
 
 The run's settings (ROOT, C) are read from `state` when used, not imported, so `init` reaches this module too."""
 from __future__ import annotations
@@ -59,9 +60,23 @@ def landed_since_release(branch: str) -> list[str]:
 AUTO_RELEASE_SEEN = [None]  # events.jsonl's and TODO.md's size and mtime at the last count by `every`: neither changed, no new count
 
 
+def waiting_releases(branch: str, ls: list[str]) -> set[str]:
+    """F195a: the open releases in `ls` that only wait in the queue for open tasks (`after: all` say), so a count goes
+    on beside them. Not one that may start, is releasing, is taken by a person or another runner, is blocked, or
+    stands in a section no run starts."""
+    from agent_runner import merge, sched
+    ready = {t[0] for t in sched.tasks(branch)}
+    busy = {merge.releasing('', branch), *sched.taken(), *(t for t, cl in plansync.claims(S.C).items() if not plansync.stale(cl)),
+            *(q[0] for q in S.queued().values())}
+    return {tid for section, box, tid, _, _ in P.iter_tasks(ls) if P.release(tid) and box == ' '
+            and not section.startswith(P.SKIPPED)} - ready - busy
+
+
 def auto_release(branch: str, idle: bool = False) -> str:
-    """Queue a release, as `plan add V` with no text does, when `every` tasks have landed since the last
-    release, or with `idle` (the run just went idle) when anything landed. Never while a release task is open, nor with `[run] releases` off (F193).
+    """Queue a release that starts at once when `every` tasks have landed since the last release (F195a): an open one
+    queued the old way (`P.waiting_default`) is made that release. Or, with `idle` (the run just went idle), one as
+    `plan add V` with no text does when anything landed, never while a release task is open. By count, one
+    that only waits in the queue (`waiting_releases`) is no hindrance; any other open one is. Never with `[run] releases` off (F193).
     Committed in the main checkout as `loop.watch_issues` commits its tasks. The id queued, or ''."""
     C, git, rel = S.C, S.git, S.plan_rel('TODO.md')
     every, on_idle = auto_release_of(C.run.get('auto_release', False))
@@ -86,17 +101,28 @@ def auto_release(branch: str, idle: bool = False) -> str:
         if C.plan_external:
             hold.enter_context(plansync.locked(C))
             plansync.pull(C, force=True)
-        if P.open_release(P.lines(S.ROOT / rel)):
+        ls = P.lines(S.ROOT / rel)
+        open_ = {t for t in P.open_ids(ls) if P.release(t)}
+        if open_ and not every:
+            return ''
+        waits = waiting_releases(branch, ls) if open_ else set()
+        if open_ - waits:
             return ''
         landed = landed_since_release(branch)
-        why = f'{len(landed)} landed' if every and len(landed) >= every else 'idle' if idle and on_idle and landed else ''
+        cut = bool(every) and len(landed) >= every
+        why = f'{len(landed)} landed' if cut else 'idle' if idle and on_idle and landed and not open_ else ''
         if not why:
             return ''
         if git('branch', '--show-current').stdout.strip() != branch or \
                 git('status', '--porcelain', '--', S.plan_rel('')).stdout.strip():
             AUTO_RELEASE_SEEN[0] = None
             return ''
-        tid = P.add_release(todo=S.ROOT / rel)
+        if cut:
+            from agent_runner.status import read_events
+            queued = {e.get('id') for e in read_events() if e['kind'] == EV_AUTO_RELEASE} if waits else ()
+            tid = P.cut_release(P.waiting_default(ls, waits, queued), todo=S.ROOT / rel)
+        else:
+            tid = P.add_release(todo=S.ROOT / rel)
         if not S.commit_plan(f'Plan: {tid}, auto release ({why})', rel):
             git('checkout', '-q', '--', rel)
             AUTO_RELEASE_SEEN[0] = None

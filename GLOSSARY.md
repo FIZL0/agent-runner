@@ -158,10 +158,10 @@ _In code_: issues_watch, issues_trust, watch_issues, agent_runner/issues.py
 _Avoid_: ticket import
 
 **Auto release**:
-The run queuing a release task by itself, after a set number of tasks have landed or when it goes idle with landed work
+The run queuing a release task by itself, after a set number of tasks have landed (it then starts at once) or when it goes idle with landed work
 _Said_: auto release
 _On screen_: queued V<n> (auto_release: 10 landed / idle)
-_In code_: [run] auto_release, autorelease.auto_release, autorelease.landed_since_release, plan.add_release, EV_AUTO_RELEASE
+_In code_: [run] auto_release, autorelease.auto_release, autorelease.landed_since_release, plan.add_release, plan.cut_release, EV_AUTO_RELEASE
 _Avoid_: auto publish, auto version
 
 **Manage releases**:

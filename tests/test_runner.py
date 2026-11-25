@@ -5325,7 +5325,8 @@ def test_auto_release(repo: Path):
         check(tid.startswith('V'), 'the third landing queues one', tid)
         line = next(l for l in releases() if f'**{tid}**' in l)
         has(line, re.escape(P.RELEASE_BRIEF), 'with the default release brief, as plan add V')
-        eq(P.fields(line).get('after'), [P.ALL], 'waiting on what is ahead of it, as plan add V (F99)')
+        check('after' not in P.fields(line) and '(follow-up, critical)' in line, 'F195a: a cut waits for no task', line)
+        check(tid in [t[0] for t in R.tasks('main')], 'with open tasks ahead of it or not, it may start', line)
         has(git(repo, 'log', '-1', '--format=%s'), rf'^Plan: {tid}, auto release \(3 landed\)', 'committed')
         eq(git(repo, 'status', '--porcelain', '--', 'plan'), '', 'clean')
         eq(said[-1][0], f'queued {tid} (auto_release: 3 landed)', 'the run log says why')
@@ -5341,8 +5342,76 @@ def test_auto_release(repo: Path):
                                                   'with no new landing', tid1)
         tid = tid1
 
-        print('run: auto_release idle = true queues one on idle with landed work, none with nothing landed (F63)')
         drop(tid)
+        print('run: F195a every = N cuts at N while a release waits, and cuts one queued the old way')
+        tasks = todo.read_text(encoding='utf-8')
+
+        def plan(*ls):
+            """TODO.md with an open task and then `ls` at the top of its leading section, committed; a fresh count of 3."""
+            nonlocal stamp
+            todo.write_text('# TODO\n\n### Next\n\n- [ ] **F950** open | files: x.py\n' + ''.join(l + '\n' for l in ls) + '\n'
+                            + tasks.partition('\n')[2], encoding='utf-8')
+            git(repo, 'commit', '-qam', 'plan for F195a')
+            evf.write_text('', encoding='utf-8')
+            R.AUTO_RELEASE_SEEN[0] = None
+            land('F951', 'F952', 'F953')
+        at = lambda t: next(l for l in releases() if f'**{t}**' in l)  # noqa: E731
+        ids = lambda: sorted(re.search(r'V\d+', l)[0] for l in releases())  # noqa: E731
+        plan()
+        tid = R.auto_release('main')
+        check(tid.startswith('V') and tid in [t[0] for t in R.tasks('main')], 'an open task ahead: cut at once', tid)
+        eq(todo.read_text(encoding='utf-8').splitlines()[4].split('**')[1], tid, 'at the top')
+        land('F954', 'F955', 'F956')
+        eq(R.auto_release('main'), '', 'the cut one not landed yet: no second')
+        evf.write_text('', encoding='utf-8')
+        drop(tid)
+        mine = '- [ ] **V901** Release by hand | after: all'
+        plan(mine)
+        tid = R.auto_release('main')
+        check(tid.startswith('V') and tid != 'V901', 'a waiting V does not stop the count', tid)
+        eq((ids(), at('V901')), (sorted([tid, 'V901']), mine), "a person's own waiting release stays as it is")
+        eq((R.auto_release('main'), R.auto_release('main', idle=True)), ('', ''), 'one cut at a time')
+        drop(tid)
+        land(tid)
+        stamp = (R.dt.datetime.now() + R.dt.timedelta(minutes=3)).isoformat(timespec='seconds')
+        land('F957', 'F958')
+        eq(R.auto_release('main'), '', 'the cut landed, two since: none until N more land')
+        old = f'- [ ] **V902** (follow-up, critical) {P.RELEASE_BRIEF} | after: all'
+        plan(mine, old)
+        eq((R.auto_release('main'), ids()), ('V902', ['V901', 'V902']), 'one queued the old way is cut, no new one')
+        check('after' not in P.fields(at('V902')) and P.RELEASE_BRIEF in at('V902'), 'waiting no more', at('V902'))
+        check('V902' in [t[0] for t in R.tasks('main')], 'it may start')
+        eq(git(repo, 'status', '--porcelain', '--', 'plan'), '', 'committed')
+        older = '- [ ] **V903** Release: as an older version said | after: all'
+        plan(older)
+        with open(evf, 'a', encoding='utf-8') as f:
+            f.write(json.dumps({'time': stamp, 'kind': R.EV_AUTO_RELEASE, 'id': 'V903', 'text': 'queued V903'}) + '\n')
+        eq((R.auto_release('main'), ids()), ('V903', ['V903']), "one auto release queued with an older brief too")
+        plan(old)
+        git(repo, 'branch', 'task/V902')
+        eq((R.auto_release('main'), at('V902')), ('', old), 'a release releasing now: no cut')
+        git(repo, 'branch', '-D', 'task/V902')
+        R.AUTO_RELEASE_SEEN[0] = None
+        R.C.run['releases'] = False
+        eq((R.auto_release('main'), at('V902')), ('', old), 'releases off: an old one is left as it is')
+        R.C.run['releases'] = True
+        R.C.run['auto_release'] = {'idle': True}
+        eq((R.auto_release('main', idle=True), at('V902')), ('', old), 'idle only: none while one is open, and it waits on')
+        R.C.run['auto_release'] = {'every': 4, 'idle': True}
+        eq((R.auto_release('main'), R.auto_release('main', idle=True), at('V902')), ('', '', old), 'under N: idle cuts none')
+        plan('- [ ] **V904** Release now')
+        R.C.run['auto_release'] = {'every': 3}
+        eq((R.auto_release('main'), ids()), ('', ['V904']), 'one that may start is the next cut')
+        v = lambda t: (t, 'Next', set(), set())  # noqa: E731
+        check(R.sched.clash(v('V904'), v('V905'), set()), 'one releasing at a time')
+        eq(R.sched.clash_why(v('V904'), v('V905'), set()), ('one release at a time', 'V905 is releasing'), 'and why')
+        check(not R.sched.clash(v('V904'), v('F950'), set()), 'a task beside a release still runs')
+        todo.write_text(tasks, encoding='utf-8')
+        git(repo, 'commit', '-qam', 'the plan as before F195a')
+        R.AUTO_RELEASE_SEEN[0] = None
+        stamp = (R.dt.datetime.now() + R.dt.timedelta(minutes=4)).isoformat(timespec='seconds')
+
+        print('run: auto_release idle = true queues one on idle with landed work, none with nothing landed (F63)')
         R.C.run['auto_release'] = {'idle': True}
         evf.write_text('', encoding='utf-8')
         eq((R.auto_release('main', idle=True), releases()), ('', []), 'idle with nothing landed: none')
@@ -5350,6 +5419,7 @@ def test_auto_release(repo: Path):
         eq(R.auto_release('main'), '', 'idle only: a landing alone queues none')
         tid2 = R.auto_release('main', idle=True)
         check(tid2.startswith('V') and tid2 != tid, 'idle with one landed: one queued', tid2)
+        eq(P.fields(at(tid2)).get('after'), [P.ALL], 'waiting on what is ahead of it, as plan add V (F99)')
         has(git(repo, 'log', '-1', '--format=%s'), r'auto release \(idle\)$', 'saying idle')
         drop(tid2)
         land(f'{tid2}')
