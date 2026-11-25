@@ -18,7 +18,7 @@ RUN_CONTROL_ARGV = {  # F82: each run control and the runner command it must run
     'slot_add': ['slots', '+1'], 'slot_remove': ['slots', '-1'], 'slots_set': ['slots', '4'],
     'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
     'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
-    'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY],
+    'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY], 'task_cancel': ['plan', 'cancel', 'F1', '--yes'],  # F426d
     'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x'],  # C26: the run's u, z, x keys
     'restart': ['key', 'restart'], 'start': [], 'resume': ['resume', 'F1'], 'unclaim': ['plan', 'unclaim', 'F1'],  # F124
     'wip_show': ['wip', 'show', 'main-checkout-1'], 'wip_restore': ['wip', 'restore', 'main-checkout-1'],
@@ -33,7 +33,7 @@ def test_run_controls(tmp: Path) -> None:
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
                                                                              'argv': []})[1]]):
         for windows in (False, True):  # B163: no re-exec on Windows, so no restart there
-            want = {*RUN_CONTROL_ARGV, 'task_take', 'queue_take', 'queue_drop', 'queue_priority', 'queue_unpark',
+            want = {*RUN_CONTROL_ARGV, 'queue_take', 'queue_drop', 'queue_priority', 'queue_unpark',
                     'menu_hold', 'menu_unhold', 'menu_top', 'menu_remove', 'menu_restore',  # F429b
                     'shelved_back', 'shelved_drop', 'release_wait', 'release_now', 'need_later', 'need_chat', 'need_drop', 'concept_chat',
                     'need_yes', 'need_no', *(f'need_answer{j}' for j in range(1, U.ANSWER_MAX + 1)),  # F180
@@ -52,9 +52,21 @@ def test_run_controls(tmp: Path) -> None:
         eq((r['ok'], r['code'], ran, r['confirm'] == U.STOP_NOW_ASK), (False, 3, [], True),
            'stop now without its confirm runs nothing and asks')
         eq(U.run_control('stop_now', confirm='yes')['ok'], False, 'only confirm=true confirms')
-        r = U.act('run_control', key='task_take', tid='F1', wait=False)
+        r = U.act('run_control', key='queue_take', tid='F1', wait=False)
         eq((r['ok'], sent, ran), (True, [], [['control', '--new', '--no-wait', '--ask', 'do F1 here', '--no-feed']]),
-           'B139: take back asks a new control session "do F1 here", not c1')
+           'B139: Do it here asks a new control session "do F1 here", not c1')
+        ran.clear()
+        with mock.patch.object(U.S, 'run_up', lambda: True), mock.patch.object(U.time, 'time', lambda: NOW):
+            r = U.run_control('task_cancel', tid='F1')
+            eq((r['ok'], r['code'], ran), (False, 3, []), 'F426d: Cancel asks first')
+            check(r['confirm'].startswith('F1 has worked 14 min in s1. ') and r['confirm'].endswith('Cancel F1?'),
+                  'with the minutes worked', r['confirm'])
+            r = U.run_control('task_cancel', tid='B2', confirm=True)
+            eq((r['ok'], r['code'], ran), (False, 1, []), 'and is refused while the task lands')
+            r = U.run_control('task_cancel', tid='F1', confirm=True)
+            eq((r['ok'], ran), (True, [['plan', 'cancel', 'F1', '--yes']]), 'then runs')
+        r = U.run_control('task_take', tid='F1', confirm=True)
+        eq(r['ok'], False, 'Take back is gone')
         ran.clear()
         for bad in ({'key': 'slots_set', 'n': '-2'}, {'key': 'slots_set', 'n': '4; rm'}, {'key': 'slots_set'},
                     {'key': 'task_drop', 'tid': '--force'}, {'key': 'nope'}, {'key': 'resume'},
@@ -63,7 +75,7 @@ def test_run_controls(tmp: Path) -> None:
             eq((r['ok'], r['code']), (False, 2), f'refused: {bad}')
         eq(ran, [], 'a refused control runs nothing')
         by = {c['key']: c for c in U.controls()}
-        eq((by['slots_set']['needs'], by['task_drop']['needs'], by['task_take']['needs'], by['pause']['needs']),
+        eq((by['slots_set']['needs'], by['task_drop']['needs'], by['task_cancel']['needs'], by['pause']['needs']),
            ('n', 'id', 'id', ''), 'what each needs typed')
 
 

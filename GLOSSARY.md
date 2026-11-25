@@ -898,3 +898,10 @@ _Said_: the menu on the row
 _On screen_: ⋯ on a Plan queue row: Hold or End the hold, To the top, Remove with Undo
 _In code_: rowMenu, menuRows, menu_hold, menu_unhold, menu_top, menu_remove, menu_restore, queuemenu
 _Avoid_: context menu, kebab menu
+
+**Cancel**:
+Stop the run of a running task without removing it: its agent is stopped, its work is kept on wip/ID and the task is parked, so no agent starts it until the person unparks it; not while the task lands
+_Said_: cancel instead of take back
+_On screen_: Cancel on a running slot; Yes, cancel
+_In code_: cancel.py, task_cancel, plan cancel, cancels, keep_work
+_Avoid_: take back, abort, kill

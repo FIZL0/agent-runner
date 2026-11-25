@@ -24,6 +24,9 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
                                  a slot running it is stopped, its branch deleted unmerged (B19). The last open
                                  part of a split task: that ticks if a part landed, else is one whole task again
+    ./run plan cancel <ID> [--yes]   stop the slot running it, keep its work on wip/<ID> and park it (as --pri later), so
+                                 no run starts it until `edit <ID> --pri normal`; says the minutes worked and stops
+                                 nothing without --yes; refused while it lands
     ./run plan restore <ID> [WHERE]   undo a mistaken tick or drop: back from DONE.md as open [ ], same id, text
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
@@ -3137,7 +3140,7 @@ def _push(root: Path) -> str:
 
 EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise',
          'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit', 'restyle', 'concept',
-         'hold', 'unhold')
+         'hold', 'unhold', 'cancel')
 
 
 WORKTREE_ENV = 'AGENT_RUNNER_WORKTREE'  # B103: a slot's own worktree, set in its pane (slots.slot_env)
@@ -3176,6 +3179,11 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     if argv[:1] == ['tell']:  # F16: no plan edit, so no lock
         return _tell(c, argv[1:])
+    if argv[:1] == ['cancel']:  # F426d: the run stops it first, outside the lock, as it reads the plan; then it is parked
+        from agent_runner import cancel
+        rc, argv = cancel.main(c, argv[1:])
+        if rc:
+            return rc
     restart = False
     if argv[:1] == ['change'] and '--restart' in argv[2:]:
         restart, argv = True, [a for a in argv if a != '--restart']
@@ -3540,6 +3548,12 @@ def _p_unhold(a, x):
     return x.say(f'{a.id} is no longer held')
 
 
+def _p_cancel(a, x):
+    from agent_runner import cancel
+    cancel.park(a.id, _text(a))
+    return x.say(f'cancelled {a.id}: parked, so no run starts it (`{PROG} edit {a.id} --pri normal` unparks it)')
+
+
 def _p_kinds(a, x):
     k, own = kinds()
     return x.say('\n'.join(f'{p}  {m}' for p, m in k.items())
@@ -3756,6 +3770,7 @@ SUBCOMMANDS = {
     'unshelve': (('id',), None, _p_unshelve),
     'hold': (('id',), None, _p_hold),
     'unhold': (('id',), None, _p_unhold),
+    'cancel': (('id',), 0, _p_cancel),
     'kinds': ((), None, _p_kinds),
     'add': (('kind',), 1, _p_add),
     'note': (('id',), 1, _p_note),

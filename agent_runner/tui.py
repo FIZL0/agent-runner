@@ -991,7 +991,7 @@ class RunPage:
         out = [L(('run ', 'dim'), (said, 'fg'), (f' · {self.snap.get("slots", 0)} slots', 'dim')), L()]
         for row in self.control_buttons('run'):
             out += [row, L()]
-        out.append(L(('A slot on a task: H takes it back, D drops it (Sessions [2]).', 'dim')))
+        out.append(L(('A slot on a task: C cancels it, D drops it (Sessions [2]).', 'dim')))
         if self.output:
             out += [L()] + [L((l, 'fg')) for l in self.output]
         if self.confirm:
@@ -1068,6 +1068,8 @@ class RunPage:
             args['tid'] = ids[0]
         row = next((t for t in self.snap.get('queue') or [] if t.get('id') == args.get('tid')), {}) if c['where'] == 'queue' else {}
         asks = (row.get('asks') or {}).get(key, '')  # F186: the row's own confirm, asked here too
+        if c['where'] == 'task' and (s := next((s for s in self.snap.get('sessions') or [] if s.get('task') == args.get('tid')), None)):
+            asks = U.row_asks('task', s).get(key, '')  # F426d
         if c.get('confirm') and not c.get('tui_sure', True) and not asks:
             args['confirm'] = True  # the page asks; here the key is the answer
         if c.get('confirm') and not args.get('confirm'):
@@ -1462,7 +1464,7 @@ class RunPage:
             if isinstance(it, dict) and 'diff' in self.tab_list(2, it):
                 keys.append(('g', 'session' if self.tab()[0] == 'diff' else 'diff'))
             if self.task_controls_on(it):
-                keys += [('H', 'take back'), ('d', 'drop')]
+                keys += [('C', 'cancel'), ('d', 'drop')]
             keys += [(c['tui'], c['label'].lower()) for c in self.row_controls(it, 'session')]  # F116
             return keys
         if self.panel == 3:

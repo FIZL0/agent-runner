@@ -1442,7 +1442,7 @@ def test_run_controls() -> None:
     for windows in (False, True):
         with mock.patch('agent_runner.plat.WINDOWS', windows):
             lists[windows] = U.controls()
-    double = {c['tui'] for c in lists[False] if c['confirm']}
+    double = {c['tui'] for c in lists[False] if c['confirm'] and c['where'] == 'run'}
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'sent to the run'))[1]]), \
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
                                                                              'argv': []})[1]]):
@@ -1522,13 +1522,21 @@ def test_run_controls() -> None:
         p.cur[2] = 2  # s1 on F1
         p.key('ENTER')
         win = drawn(p)
-        check('[H take back]' in win.text() and '[D drop]' in win.text(), "a slot's feed shows its task controls",
+        check('[C cancel]' in win.text() and 'take back' not in win.text() and '[D drop]' in win.text(), "a slot's feed shows its task controls",
               win.text())
         p.key('D')
         eq(ran, [['plan', 'drop', 'F1', U.TASK_DROP_WHY]], 'D on a slot drops its task from the slot')
+        ran.clear()
         p.key('H')
-        eq((sent, ran[-1]), ([], ['control', '--new', '--ask', 'do F1 here', '--no-feed']),
-           'H on a slot takes its task back (B139: a new control session does it here)')
+        eq((sent, ran), ([], []), 'F426d: H on a slot does nothing: Take back is gone')
+        p.key('C')
+        check(ran == [] and p.msg.startswith('F1 has worked ') and p.msg.endswith('Cancel F1? C again: yes'),
+              'C on a slot asks, with the minutes worked', p.msg)
+        p.key('x')
+        eq(ran, [], 'any other key: no')
+        p.key('C')
+        p.key('C')
+        eq(ran, [['plan', 'cancel', 'F1', '--yes']], 'C C cancels its task')
         ran.clear()
         p.cur[2] = 0  # c1: no task controls
         p.key('D')

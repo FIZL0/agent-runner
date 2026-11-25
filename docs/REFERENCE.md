@@ -937,6 +937,8 @@ lines is the order of the work. `plan add` puts a person's new task at the top; 
 
 `plan hold ID` keeps a queued task, or a release, at its place in the queue, and no run starts it until `plan unhold ID` ends the hold. It is the field `| held: yes` on the task's line, written only by hold (edit and move keep it, add ignores it). A task that is running, taken by hand, merging, finished and waiting to merge, or claimed by another runner cannot be held (refused, exit 1). A held task is not under Needs you, and an `after: all` or `all above` release does not wait for it or for one that waits on it; a held release is not cut while tasks land. Unlike a parked task (later, in the Parked section) or a shelved one (a Needs you item), it is skipped until the person ends the hold. The queue row says held, and the dry run says `held`. A release moved with `plan move` (F429a) waits for the tasks above its new place, and the Next release row can be held, moved or dropped the same way: see Moved and removed releases under Auto release.
 
+`plan cancel ID` stops a running task (or one cut off and waiting to resume) without removing it. Without `--yes` it stops nothing: it prints the question with the minutes worked and exits 3. With `--yes` the run ends the agent's session, commits its uncommitted edits and renames task/ID to wip/ID (wip/ID-2, … when one exists; pushed; with nothing done there is no branch), and frees the slot. The command then parks the task (as `--pri later`) with a note naming the branch, so no run starts it. Unpark it with Unpark on the Plan or `plan edit ID --pri normal`: its next agent is pointed at that work. It does not count as a failed merge. It is refused (exit 1, nothing changed) when the task is not running, is finished or merging, or has just asked the person. If the run does not answer in 30 s the task is parked anyway and the run stops the agent within seconds. Edits that cannot be committed stay in the slot, and it says so.
+
 A follow-up an agent files gets a level (`--pri`, default `normal`), tagged on its line as
 `(follow-up, LEVEL)`, and is filed so the work a person queued comes first:
 
@@ -2180,7 +2182,7 @@ server on a port. Give each slot its own copy and let the runner tell it which:
 - `slot_env` hands every slot its number, so the project's tools pick their copy: a port, a profile
   directory, a lock file. `EMU_SLOT={n}` and a launcher that reads it is all it takes.
 - `pass_env` passes on what the whole run shares (a cap on how long one session may hold the program).
-- `on_exit` closes the slot's copy when its session ends, with that slot's env. It also runs when a drop, `plan change --restart`, a take back or `s!` stops the session (with `s!` the run waits for it, at most 60 s, see above), and the slot starts nothing until it has ended.
+- `on_exit` closes the slot's copy when its session ends, with that slot's env. It also runs when a drop, `plan change --restart`, a take back, a cancel or `s!` stops the session (with `s!` the run waits for it, at most 60 s, see above), and the slot starts nothing until it has ended.
 - `before_start` holds new sessions while the program cannot run (no display, device unplugged). The run
   logs it once, rings the bell, and resumes once the check passes.
 - `prompt_extra` tells the session it has its own copy and how to drive it (`{n}` is the slot).

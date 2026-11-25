@@ -6,12 +6,13 @@ const controlOf=k=>(S.snap.controls||[]).find(c=>c.key===k);
 const ctlBusy=(k,tid)=>S.ob.some(x=>x.ctl===k+':'+(tid||'')&&x.state==='sending');
 /* a confirm, asked where the control stands (docs/STYLE.md): attr, the Yes button's own data- attributes */
 const sureHTML=(q,yes,attr)=>`<div class="sure" data-k="sure" role="group"><div class="small">${esc(q)}</div><div class="btns"><button class="btn bad" ${attr} data-sure>Yes, ${esc(yes)}</button><button class="btn" data-unsure>No</button></div></div>`;
-/* what a control would cut off: each slot's task and how long it has run (stop now, suspend, shut down) */
-function cutsOff(c){
+/* what a control would cut off: each slot's task and how long it has run (stop now, suspend, shut down; Cancel, its own task) */
+function cutsOff(c,tid){
+  if(c.key==='task_cancel'){const s=slots().find(s=>s.task===tid);return s&&s.minutes!=null?`${tid} has worked ${s.minutes} min in ${s.name}. `:''}  // F426d
   if(!['stop_now','suspend','shutdown'].includes(c.key)||c.key===(S.snap.run||{}).power)return '';
   const ws=working_();return ws.length?`Cuts off ${ws.map(w=>`${w.task} in ${w.name}${w.minutes!=null?` (${w.minutes} min in)`:''}`).join(', ')}. `:'';
 }
-const ctlSure=(c,tid)=>sureHTML(cutsOff(c)+((((S.snap.queue||[]).find(q=>tid&&q.id===tid)||{}).asks||{})[c.key]||c.confirm.split('{id}').join(tid||'')),c.label.charAt(0).toLowerCase()+c.label.slice(1),`data-ctl="${esc(c.key)}" data-tid="${esc(tid||'')}"`);
+const ctlSure=(c,tid)=>sureHTML(cutsOff(c,tid)+((((S.snap.queue||[]).find(q=>tid&&q.id===tid)||{}).asks||{})[c.key]||c.confirm.split('{id}').join(tid||'')),c.label.charAt(0).toLowerCase()+c.label.slice(1),`data-ctl="${esc(c.key)}" data-tid="${esc(tid||'')}"`);
 /* C34: a panel's row actions ('queue', 'release': ui_model.RUN_CONTROLS' `where`): the buttons for a row's `acts` (the
    keys ui_model allowed on it), each through the one data-ctl handler, and the confirm one asks in place */
 const obActs=(x,where)=>{const w=x.ctl?(controlOf(x.ctl.split(':')[0])||{}).where:'';return w==='queuemenu'?where==='queue'&&x.state==='failed':!!x.ctl&&w===where};  // F429b: the row itself shows a row menu's act
@@ -28,7 +29,7 @@ const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+
 function slotRow(s){
   if(!s.task)return `<div class="srow" data-k="slot:${esc(s.name)}:"><div class="row"><div class="who">${esc(s.name)}</div><div class="grow small">Idle: nothing it can start right now</div></div></div>`;
   const w=lastWords(s.name), tc=taskControlsOn(s)?controlsOf('task'):[];
-  return `<div class="srow" data-k="slot:${esc(s.name)}:${esc(s.task)}"><button class="fold" data-thread="${esc(s.name)}"><span class="who">${esc(s.name)}</span>${taskChip(s.task)}<span class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></span><span class="chev">${I.chev}</span></button>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn${ctlBusy(c.key,s.task)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}</div>`;
+  return `<div class="srow" data-k="slot:${esc(s.name)}:${esc(s.task)}"><button class="fold" data-thread="${esc(s.name)}"><span class="who">${esc(s.name)}</span>${taskChip(s.task)}<span class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></span><span class="chev">${I.chev}</span></button>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn${ctlBusy(c.key,s.task)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}${tc.filter(c=>S.sure===c.key+':'+s.task).map(c=>ctlSure(c,s.task)).join('')}</div>`;
 }
 /* F168: the shared tools in words, the same as status says */
 const toolsWords=ts=>'Tools: '+ts.map(t=>`${t.label}: ${t.words}`).join(' · ');
