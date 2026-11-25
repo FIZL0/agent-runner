@@ -180,7 +180,7 @@ function feedWheel(n,x,y){
 }
 function feedClick(x,y){const f=feedScreen();if(!f)return;[x,y]=feedAt(x,y);
   for(const type of ['mousemove','mousedown','mouseup','click'])f.el.dispatchEvent(new f.win.MouseEvent(type,{clientX:x,clientY:y,button:0,buttons:type==='mousedown'?1:0,detail:1,bubbles:true,cancelable:true,view:f.win}))}
-/* the touch layer over the frame: a drag scrolls (and glides on), a tap clicks, a long press gives the text. The
+/* the touch layer over the frame: a drag scrolls (and glides on), a tap clicks, a long press does nothing. The
    drawer's swipe has the touch first: once it is on, this leaves it alone */
 {let G=null, glide=0;
 const layer=$('feedtouch'), at=t=>{const r=layer.getBoundingClientRect();return[t.clientX-r.left,t.clientY-r.top]};
@@ -188,7 +188,7 @@ const step=by=>{const f=feedScreen(), px=feedScroll(by);if(!f||!px)return;const 
 layer.addEventListener('touchstart',e=>{cancelAnimationFrame(glide);if(G)clearTimeout(G.hold);
   if(e.touches.length!==1){G=null;return}
   const t=e.touches[0], [x,y]=at(t);G={x,y,y0:t.clientY,x0:t.clientX,ly:t.clientY,lt:e.timeStamp,v:0,rest:0,on:false};
-  const g=G;g.hold=setTimeout(()=>{if(G===g&&!g.on&&!(SW&&SW.on)){G=null;feedText()}},550)},{passive:true});
+  const g=G;g.hold=setTimeout(()=>{if(G===g&&!g.on)G=null},450)},{passive:true});
 layer.addEventListener('touchmove',e=>{
   if(!G)return;
   if(SW&&SW.on||e.touches.length!==1){clearTimeout(G.hold);G=null;return}

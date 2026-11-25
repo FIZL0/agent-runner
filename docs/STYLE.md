@@ -344,7 +344,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   never does. A tap on the box takes the focus back. So does typing in the session while its prompt is hidden (see above).
 - **Touch layer.** On a touch device a layer over the frame takes the touch: a drag scrolls the session, or its history
   when that stands in (see History; a wheel steps the session, and it glides), a tap clicks in it without opening the
-  keyboard, and a long press or the key row's Text opens a sheet with the screen's text to select and copy. A horizontal
+  keyboard, a long press selects the word under the finger, at the live end too (see History; on `#feedtouch` it opens nothing and sends no click), and the key row's Text opens a sheet with the screen's text to select and copy. A horizontal
   swipe still opens the drawer.
 - **History.** A drag (touch) or a wheel up (desktop) over a chat's or slot's session scrolls its history: a native
   scroller (`#feedpast`) laid over the live frame, which the page draws from `GET /history/NAME`. The transcript's lines are
@@ -355,7 +355,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   own lines, and the history meets the screen where the same lines stand (`pastJoin()`). While reading, new words are
   added at the end and nothing on screen moves (`pastSee()`, `pastTail()`); older pages are loaded on demand and put in
   only while nothing scrolls (`pastPut()`). Only chunks near the view are in the DOM (`pastDraw()`), and text can be
-  selected in it. The jump button (`.pastjump`, see Jump button in GLOSSARY.md) floats over the lines just above the box,
+  selected in it. At the live end a long press selects the word under the finger, the browser's own selection, as it does scrolled up; it stays when the finger lifts and while the history holds the place (`pastPicked()`): with words selected, new words move nothing on screen and the history stays up; with nothing selected the live session shows again (`pastRest()`). A menu or question at the live end, the jump button or a sent message lets go of the selection; a tap still clicks, and while words are selected a tap is the browser's. The jump button (`.pastjump`, see Jump button in GLOSSARY.md) floats over the lines just above the box,
   with its own fill and border and no ground behind or beside it, so text shows on both sides and stays pressable,
   selectable and scrollable; it glides to the live session (`scrollGlide()`, at once under `calm()`). Sending a message also goes
   to the live session, and a fling ends on a press on the slim message box or the button (`pastStop()`). Where the history
