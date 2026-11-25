@@ -385,9 +385,11 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
                       'detail': need_detail.detail(label, tid, ask, title, texts.get(tid, ''), ask_short)})  # F162
         if devs := _need_devices(texts.get(tid, '')):  # F408
             needs[-1]['devices'] = devs
+        if label == 'DECIDE' and not url:
+            needs[-1].update(sheet_copy(tid))  # F411
         if opts:
             needs[-1]['options'] = opts
-        elif label == 'DECIDE' and url and (easy := sheet_options(tid, texts.get(tid, ''))):  # F181b
+        elif label == 'DECIDE' and (url or needs[-1].get('page')) and (easy := sheet_options(tid, texts.get(tid, ''))):  # F181b
             needs[-1].update(options=easy, picks={o['name']: o.pop('send') for o in easy})
         if label == 'PITCH':  # F98
             from agent_runner import pitch

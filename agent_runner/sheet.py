@@ -18,7 +18,8 @@ list, to `<notes>/sheets/<ID>.json`:
 nothing, so the sheet can count "N changes picked". Text is plain; `backticks` show as code. `agent-runner
 sheet <ID> --html FILE` renders the page (one question per card, its answers as buttons with the recommended
 one preselected and labelled, a collapsible Why, and a sticky bar: N changes picked, Recommended, Send), which
-the agent publishes with the Artifact tool and names in its DECIDE line. Needs you and the feed then show one
+the agent names in its DECIDE line. F411: `sheet <ID> --publish` publishes it, with no Artifact tool in the slot
+(`publish`: the one-shot of `run publish-page`; where claude.ai is not available, the run page's own copy). Needs you and the feed then show one
 line, '<summary>. Pick on the sheet or reply go', with the sheet's link.
 
 Send shows the picks as one reply line, `<ID> picks: backend=a batch=b` (letters in answer order; 'go' when
@@ -35,10 +36,12 @@ from __future__ import annotations
 import html
 import json
 import re
+import subprocess as sp
+import sys
 from pathlib import Path
 
 __all__ = ['load', 'problems', 'questions', 'render', 'parse_picks', 'picks_note', 'changes', 'GO',
-           'CAPABILITIES', 'DB_COLLECTION']
+           'CAPABILITIES', 'DB_COLLECTION', 'publish', 'local_page', 'local_id']
 
 GO = ('go', 'recommended')  # a reply that takes the recommended set
 # F54: the sheet's page keeps the picks Send sent in its artifact db, document `picks/<ID>`. The owner (who
@@ -158,10 +161,11 @@ def _rich(s) -> str:
     return re.sub(r'`([^`]+)`', r'<code>\1</code>', html.escape(str(s)))
 
 
-def render(spec: dict, tid: str, pick: str = '') -> str:
+def render(spec: dict, tid: str, pick: str = '', local: bool = False) -> str:
     """The pick sheet's page (the Artifact tool's page contract: no html/head/body of its own). F138: `pick`, the
     run page's /pick link for this sheet with no option (`web.pick_links`), makes Send also show a plain link
-    that answers the run with the picks; '' (no https address) keeps today's flow."""
+    that answers the run with the picks; '' (no https address) keeps today's flow. F411: `local`, the
+    run page's own copy: its sandbox opens no new tab, so that link opens in place."""
     groups = []
     for g in spec['groups']:
         qs = []
@@ -171,10 +175,63 @@ def render(spec: dict, tid: str, pick: str = '') -> str:
         groups.append({'h': _rich(g.get('heading') or ''), 'qs': qs})
     data = json.dumps({'tid': tid, 'groups': groups, 'pick': pick if pick.startswith('https://') else ''}).replace('</', '<\\/')
     title = html.escape(str(spec.get('title') or f'{tid} pick sheet'))
-    return (PAGE.replace('{{title}}', title)
+    page = PAGE.replace(' target="_blank" rel="noreferrer"', ' rel="noreferrer"') if local else PAGE
+    return (page.replace('{{title}}', title)
             .replace('{{intro}}', _rich(spec.get('intro') or spec['summary']))
             .replace('{{tid}}', html.escape(tid))
             .replace('{{data}}', data))
+
+
+def local_id(tid: str) -> str:
+    """F411: the name the run page keeps `tid`'s sheet under (/concept/<name>), apart from a page the task published."""
+    return f'{tid}_sheet'
+
+
+def local_page(tid: str) -> str:
+    """Where the run page shows `tid`'s sheet when it has no claude.ai page."""
+    return f'/concept/{local_id(tid)}'
+
+
+def publish(spec: dict, tid: str, pick: str = '', one_shot=None) -> str:
+    """F411: publish `tid`'s sheet to claude.ai with `CAPABILITIES`, as `run publish-page` does (`one_shot`, default
+    `page_copy.page_copy_publish`), and return its URL. The URL is kept beside the sheet, so a second publish updates
+    the same page; both go with the sheet (`asks.clear_ask`). With no claude.ai here (no agent program, or a feed model
+    of another provider) the run page keeps a copy and its `local_page` is returned. '' when the one-shot ran and did
+    not publish."""
+    from agent_runner import page_copy as PC, state as S
+    PC.C = S.C  # not one `state.share` sets
+    page, urlf = S.C.notes('sheets', f'{tid}.html'), S.C.notes('sheets', f'{tid}.url')
+    old = urlf.read_text(encoding='utf-8').strip() if urlf.is_file() else ''
+    old = old if PC.ARTIFACT_URL.fullmatch(old) else ''
+    copy = S.C.notes('concepts', f'{local_id(tid)}.html')
+    if not PC.feed_on_harness():
+        page.write_text(render(spec, tid, pick=pick), encoding='utf-8')
+        try:
+            got = (one_shot or PC.page_copy_publish)(page, old, icon='options', caps=CAPABILITIES)
+        except FileNotFoundError as e:  # no agent on this machine: the run page's copy
+            S.log(f'sheet {tid}: no claude.ai page: {e}')
+        except (OSError, sp.SubprocessError) as e:
+            S.log(f'sheet {tid}: {e}')
+            return ''
+        else:
+            if got:
+                urlf.write_text(got + '\n', encoding='utf-8')
+                copy.unlink(missing_ok=True)
+            return got
+    copy.write_text(render(spec, tid, pick=pick, local=True), encoding='utf-8')
+    return local_page(tid)
+
+
+def cmd_publish(spec: dict, tid: str, pick: str, prog: str) -> int:
+    """`agent-runner sheet ID --publish`."""
+    url = publish(spec, tid, pick)
+    if not url:
+        print(f'{prog}: the one-shot could not publish the sheet to claude.ai (the run log says why). Run this again, or '
+              f'block with the DECIDE line and no link: the person can still reply go.', file=sys.stderr)
+        return 1
+    print(f'no claude.ai page without Claude Code: the run page shows the sheet, with Open on its Needs you item ({url}); '
+          'leave the link out of the DECIDE line' if url == local_page(tid) else f'published: {url}')
+    return 0
 
 
 PAGE = """<title>{{title}}</title>

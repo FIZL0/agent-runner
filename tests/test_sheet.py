@@ -113,7 +113,8 @@ def test_db():
     has(G.topic('needs'), r'ArtifactData tool \(`get`, the\s+sheet\'s url, collection `picks`',
         'the needs guide (C2: the control brief points at it) reads the db')
     has(G.CONTROL, r'`\{cmd\} guide needs`', 'and the control brief points at it')
-    has(R.SHEET_PROMPT, re.escape('capabilities {{"db": {{}}}}'), 'the slot brief says to publish with the db')
+    has(R.SHEET_PROMPT, r'\{runner\} sheet \{tid\} --publish', 'F411: the slot brief says to let the runner publish it')
+    check('Artifact' not in R.SHEET_PROMPT, 'and names no Artifact tool')
 
 
 def test_needs_you():
@@ -150,7 +151,7 @@ def test_needs_you():
         p = R.prompt_for('F2', 1, 1, root, 'main')
         has(p, r'When you block with `DECIDE:` on a choice', 'the slot brief says when to write a sheet')
         has(p, re.escape(str(f)), 'and where')
-        has(p, re.escape(f'{R.C.command} sheet F2 --html'), 'and how to render it')
+        has(p, re.escape(f'{R.C.command} sheet F2 --publish'), 'and how to publish it')
         has(p, r'no option numbers anywhere', 'questions with answers, not a numbered list')
 
         R.C.run['questionnaires'] = False
@@ -179,7 +180,7 @@ def test_answer():
         r = run(root, 'sheet', 'F2', '--html', str(out), env=env)
         check(r.returncode == 0 and out.is_file() and 'How should the runner' in out.read_text(encoding='utf-8'),
               '--html writes the page', r.stdout + r.stderr)
-        has(r.stdout, re.escape('capabilities {"db": {}}'), 'and says to publish it with the db capability')
+        has(r.stdout, r'sheet F2 --publish', 'and says how to publish it')
         r = run(root, 'sheet', 'F2', '--picks', 'F2 picks: backend=z', env=env)
         check(r.returncode == 2 and 'backend=z' in r.stderr, 'a pick the sheet has not is refused', r.stderr)
         has(todo.read_text(encoding='utf-8'), r'^- \[~\] \*\*F2\*\*', 'and the task still waits')
@@ -305,5 +306,70 @@ def test_clear_b204():
         gone('drop')
 
 
+ONE_SHOT = """#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ['FAKE_ONESHOT_LOG'], 'a', encoding='utf-8') as f:
+    f.write(json.dumps(sys.argv[1:]) + chr(10))
+if os.environ.get('FAKE_FAIL'):
+    sys.exit(1)
+print('https://claude.ai/code/artifact/f2-sheet')
+"""
+
+
+def test_publish_f411():
+    print('F411: sheet ID --publish: the runner publishes the sheet with its db, and prints and keeps the URL')
+    if R.plat.WINDOWS:
+        print('  (skipped on Windows: the fake one-shot is a POSIX script)')
+        return
+    with tempfile.TemporaryDirectory() as t:
+        agent = Path(t) / 'claude'
+        agent.write_text(ONE_SHOT, encoding='utf-8')
+        agent.chmod(0o755)
+        root, env = make(Path(t), f'agent = "{agent}"\n')
+        log = Path(t) / 'log.jsonl'
+        env |= {'FAKE_ONESHOT_LOG': str(log)}
+        f = root / '.runner' / 'sheets' / 'F2.json'
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(SPEC), encoding='utf-8')
+        r = run(root, 'sheet', 'F2', '--publish', env={**env, 'FAKE_FAIL': '1'})
+        check(r.returncode == 1 and 'could not publish' in r.stderr, 'a one-shot that fails is a failure', r.stdout + r.stderr)
+        copy = root / '.runner' / 'concepts' / 'F2_sheet.html'
+        check(not copy.exists(), 'with no local copy standing in')
+        r = run(root, 'sheet', 'F2', '--publish', env=env)
+        check(r.returncode == 0, 'published', r.stdout + r.stderr)
+        has(r.stdout, r'published: https://claude\.ai/code/artifact/f2-sheet', 'the URL is printed')
+        argv = json.loads(log.read_text(encoding='utf-8').splitlines()[-1])
+        page = f.with_suffix('.html')
+        check(str(page) in argv[1] and json.dumps(S.CAPABILITIES) in argv[1] and 'as a new artifact' in argv[1],
+              'the one-shot is asked to publish the page with the db capability', argv[1])
+        check('>Send</button>' in page.read_text(encoding='utf-8'), 'the page it is handed is the sheet')
+        run(root, 'sheet', 'F2', '--publish', env=env)
+        argv = json.loads(log.read_text(encoding='utf-8').splitlines()[-1])
+        check('f2-sheet' in argv[1] and json.dumps(S.CAPABILITIES) in argv[1], 'a second publish updates the same page', argv[1])
+        run(root, 'done', 'F2', 'F2: audit', '--no-test', '--blocked', f'DECIDE: cleanups ready {URL}', env=env)
+        check(f.with_suffix('.url').exists(), 'kept while it waits')
+        run(root, 'sheet', 'F2', '--go', env=env)
+        check(not f.with_suffix('.url').exists() and not page.exists(),
+              'answered: its URL goes, so a later ask gets a page with none of the old picks')
+
+        # no agent program here: the run page's copy (the other task: one answered on a sheet gets no buttons)
+        toml = root / 'runner.toml'
+        toml.write_text(toml.read_text(encoding='utf-8').replace(str(agent), str(agent) + '-gone'), encoding='utf-8')
+        f = f.with_name('F1.json')
+        copy = copy.with_name('F1_sheet.html')
+        f.write_text(json.dumps(SPEC), encoding='utf-8')
+        r = run(root, 'sheet', 'F1', '--publish', env=env)
+        check(r.returncode == 0 and '/concept/F1_sheet' in r.stdout, 'no claude.ai: the run page shows it', r.stdout + r.stderr)
+        check('target="_blank"' not in copy.read_text(encoding='utf-8'), "its link opens in place (the copy's sandbox opens no tab)")
+        run(root, 'done', 'F1', 'F1: audit', '--no-test', '--blocked', 'DECIDE: cleanups ready', env=env)
+        R.init(root)
+        from agent_runner import ui_model as U
+        row = next(n for n in U.needs_rows(R.waiting_ok(), dt.datetime.now())[0] if n['id'] == 'F1')
+        eq((row.get('page'), row.get('copy')), ('concept/F1_sheet', str(copy)), 'its Needs you item opens that copy')
+        check(U.SHEET_GO_LABEL in [o['name'] for o in row.get('options') or []], 'and has the recommended picks button', row)
+        run(root, 'sheet', 'F1', '--go', env=env)
+        check(not copy.exists(), 'answered: the copy goes')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_spec, test_page, test_db, test_needs_you, test_answer, test_go, test_clear_b204, test_pick_links_f138]))
+    raise SystemExit(report([test_spec, test_page, test_db, test_needs_you, test_answer, test_go, test_clear_b204, test_publish_f411, test_pick_links_f138]))

@@ -150,22 +150,24 @@ def page_copy_html(snap: dict) -> str:
             + box(5, 'Concepts', concepts, 'none') + box(6, 'Log', [log_], '') + '</div>\n')
 
 
-def page_copy_ask(path: Path, url: str, icon: str = 'dashboard') -> str:
+def page_copy_ask(path: Path, url: str, icon: str = 'dashboard', caps: dict | None = None) -> str:
     """The one-shot publisher's prompt: publish `path`, to `url` when there is one, and answer with the URL alone
-    (it cannot write files, so the run writes the URL file from that answer)."""
+    (it cannot write files, so the run writes the URL file from that answer). F411: `caps`, the capabilities the page
+    declares (a pick sheet's db)."""
     where = (f'to the existing artifact {url}: read it first with action "read" (a publish to it is refused until '
              'then), then publish the file to that url; the file replaces the page whole' if url else
              f'as a new artifact with icon "{icon}"')
+    where += f'. Pass capabilities {json.dumps(caps)} exactly' if caps else ''
     return (f'Publish the HTML file {path} with the Artifact tool {where}. Do nothing else, and answer with the '
             "artifact's claude.ai URL alone.")
 
 
-def page_copy_argv(path: Path, url: str, icon: str = 'dashboard') -> list[str]:
+def page_copy_argv(path: Path, url: str, icon: str = 'dashboard', **caps) -> list[str]:
     """B122: the one-shot headless session that publishes the copy: `claude -p`, Haiku, the Artifact tool and
     Read only (B180: `--tools` denies Read when it is left out, and Artifact then refuses to publish a file;
     dontAsk refuses the rest and any read outside its folder), no settings sources or MCP servers, a few turns.
     Never a control session."""
-    return [plat.exe(C.run['agent']), '-p', page_copy_ask(path, url, icon), '--model', feed_model(),
+    return [plat.exe(C.run['agent']), '-p', page_copy_ask(path, url, icon, **caps), '--model', feed_model(),
             '--tools', 'Artifact,Read', '--allowedTools', 'Artifact', '--permission-mode', 'dontAsk',
             '--strict-mcp-config', '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),
             '--max-turns', '6']
@@ -178,9 +180,9 @@ def page_copy_said(r) -> str:
     return ' | '.join(e for e in ends if e)
 
 
-def page_copy_publish(path: Path, url: str, icon: str = 'dashboard') -> str:
+def page_copy_publish(path: Path, url: str, icon: str = 'dashboard', **caps) -> str:
     """Run the one-shot (`page_copy_argv`; `harness_once` for another provider's feed model) and return the URL it
-    published to, '' when it did not. Raises OSError when the agent cannot be started at all. B764c: FileNotFoundError
+    published to, '' when it did not (`caps`: see `page_copy_ask`). Raises OSError when the agent cannot be started at all. B764c: FileNotFoundError
     while [run] agent is wrong and the feed model is Claude's."""
     if feed_on_harness():  # F406e: no claude.ai page from there, whatever it says: the local copy stands
         said, why = harness_once(feed_model(), page_copy_ask(path, url, icon) + ' With no Artifact tool, publish it '
@@ -189,7 +191,7 @@ def page_copy_publish(path: Path, url: str, icon: str = 'dashboard') -> str:
         return ''
     if bad := agent_held():  # B764c: as no agent here (F406e): the local copy is the answer
         raise FileNotFoundError(bad)
-    r = sp.run(page_copy_argv(path, url, icon), cwd=str(path.parent), env=control_env(), stdin=sp.DEVNULL,
+    r = sp.run(page_copy_argv(path, url, icon, **caps), cwd=str(path.parent), env=control_env(), stdin=sp.DEVNULL,
                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=PAGE_COPY_TIMEOUT)
     got = ARTIFACT_URL.findall(r.stdout or '')
     if r.returncode != 0 or not got:

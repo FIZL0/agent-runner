@@ -144,6 +144,15 @@ def need_answers(row: dict) -> list[dict]:
     return [{'label': n[:1].upper() + n[1:], 'value': n[:1].upper() + n[1:]} for n in names]
 
 
+def sheet_copy(tid: str) -> dict:
+    """F411: {copy, page} of `tid`'s pick sheet that has no claude.ai page: the run page's own copy, as a file and where
+    the run page shows it; {} for none."""
+    from agent_runner import sheet
+    from agent_runner.brief import has_sheet
+    copy = concept_copy(sheet.local_id(tid)) if has_sheet(tid) else ''
+    return {'copy': copy, 'page': sheet.local_page(tid)[1:]} if copy else {}
+
+
 SHEET_GO_LABEL = 'Go with the recommended picks'
 
 

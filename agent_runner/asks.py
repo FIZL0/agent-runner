@@ -218,9 +218,9 @@ def clear_ask(tid: str, todo: str | Path | None = None) -> None:
 
 
 def _clear_sheet(c, tid: str) -> None:
-    """Take the pick sheet itself away (its page stays where it was published)."""
-    d = c.notes('x').parent / 'sheets'
-    for f in (f'{tid}.json', f'{tid}.taken'):
+    """Take the pick sheet itself away (its claude.ai page stays where it was published; the run page's copy goes)."""
+    d = c.notes('x').parent
+    for f in (*(f'sheets/{tid}.{x}' for x in ('json', 'taken', 'url', 'html')), f'concepts/{tid}_sheet.html'):
         try:
             (d / f).unlink(missing_ok=True)
         except OSError:

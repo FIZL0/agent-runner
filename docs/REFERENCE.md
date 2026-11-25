@@ -608,7 +608,7 @@ is answered (confirm, change, unblock), the task is ticked or dropped, it blocks
 and `run ask`, which may have written it), or a new session starts on the task. A block that waits on a task first and
 then returns to the person keeps the file. `plan confirm ID` and `plan change ID` also settle an ask the run has not blocked yet (its block is held, e.g. by a merge): the answer is noted, the item never shows under Needs you, and the session resumes with the answer.
 
-The task's pick sheet (`<notes>/sheets/ID.json`) goes in the same cases, so a later `sheet ID --go` cannot run an old one; one written just before its own block (`done --blocked`, `run ask`) is kept, and a second `done --blocked` while still blocked removes a sheet not written since the last block, whether or not the ask file goes, and a block that waits on a task first keeps it.
+The task's pick sheet (`<notes>/sheets/ID.json`, with its published URL in `sheets/ID.url` and its copy `sheets/ID.html`) goes in the same cases, so a later `sheet ID --go` cannot run an old one; one written just before its own block (`done --blocked`, `run ask`) is kept, and a second `done --blocked` while still blocked removes a sheet not written since the last block, whether or not the ask file goes, and a block that waits on a task first keeps it.
 
 ### Approve to push
 
@@ -1061,6 +1061,14 @@ With no Claude Code program on this machine, or `[models] feed` on another provi
 command exits 0, says there is no claude.ai page, and records `/concept/<ID>` in `<notes>/concepts/<ID>.url`, which
 `done` takes as the concept's page. In the TUI, O on such a concept opens the local copy. A one-shot that ran and
 failed still exits 1.
+
+**Publish a pick sheet (F411).** `agent-runner sheet ID --publish` checks and renders the task's pick sheet, then has the
+runner publish it to claude.ai with the same one-shot as `publish-page`, with the page's db capability so Send still writes
+the picks there, and prints the URL. The URL is kept in `<notes>/sheets/ID.url`, so a second publish updates the same page.
+A slot runs this from SHEET_PROMPT in its brief and needs no Artifact tool. With no Claude Code program on this machine, or
+`[models] feed` on another provider, the command exits 0 and the run page keeps the sheet at `/concept/ID_sheet`: its Needs you
+item has Open (O in the TUI opens the copy), the DECIDE line has no link, and Send there gives its Pick link (https) or a line
+to paste, since there is no db. A one-shot that ran and failed exits 1. `--html FILE` still writes the page, to look at.
 
 **Spec review one-shot (F406e).** `agent-runner review [ID] [--base BRANCH]` runs the spec review before `done` as a
 fresh one-shot on `[models] review`, given only `git diff BASE...HEAD` (BASE: `--base`, default the shared branch)
