@@ -507,7 +507,7 @@ const kb = h => { document.activeElement = h ? ta : null; VVS.height = h || doc;
 const out = {};
 let stay = false;
 const trip = k => out[k] = [at(), kb(420), (boxH = 73, at()), (boxH = 27, at()), kb(380)[0], kb(0)];
-trip('rest'); FD.short = 6; trip('short'); FD.short = 0;
+trip('rest'); FD.short = 34; trip('short'); FD.short = 6; trip('fits'); FD.short = 0;
 FD.whole = true; FD.last = 31; trip('whole'); FD.last = 9; trip('asked'); FD.whole = false;
 at(); FD.jump = true; FD.t += 80; FD.off = 80; trip('up'); out.kept = FD.off; const t0 = FD.t; extra = 40; at(); out.chip = FD.t - t0; extra = 0; at(); FD.jump = false; FD.off = 0; at();
 const dk = {children: [], animate: anim('box')}, tb = {closest: k => k === '.dock' ? dk : {animate() {}}};
@@ -543,6 +543,9 @@ def test_keyboard_feed_b214(tmp: Path) -> None:
         eq([here, grown, back, taller], [[high, gap]] * 4, f'{k}: one size, the last line as far from the box, keyboard open, box grown')
         eq((opened, closed), ([[high, gap], [['dock', 340, 250, 'ease-out'], ['frame', 340, 250, 'ease-out']]],
                               [[high, gap], [['dock', -380, 250, 'ease-out'], ['frame', -380, 250, 'ease-out']]]), f'{k}: the frame goes with the box')
+    fits = got.get('fits') or [None] * 6
+    eq((fits[0], fits[1], fits[5]), ([812, 431], [[812, 91], [['dock', 340, 250, 'ease-out']]], [[812, 431], [['dock', -380, 250, 'ease-out']]]),
+       'B786: a short one that fits stands under the top bar, keyboard open or closed, and does not move')
     eq((got.get('grown'), got.get('grownCalm')), ([['frame', 46, 250, 'ease-out'], ['box', 46, 250, 'ease-out']], 0), 'a box that grew: the frame goes with it; none when calm')
     eq(got.get('kept'), 80, 'scrolled up, as far past its rest as before')
     eq(got.get('chip'), 0, 'scrolled up, a chip row that comes moves nothing')
@@ -1126,7 +1129,7 @@ def test_session_controls_f170(tmp: Path) -> None:
     eq(got[8], {'t': -152, 'off': 0, 'far': 152, 'cut': 128}, 'at rest the words end on the box')
     eq(got[9]['t'], 0, 'scrolled down all the way, they end on the slim message box')
     eq(got[10], {'t': -232, 'off': 0, 'far': 232, 'cut': 128}, 'a box that grows moves the frame: its size stays')
-    eq((got[11]['t'], got[11]['far']), (508, 0), 'B214: a short chat ends on the box too, with nothing to pull')
+    eq((got[11]['t'], got[11]['far']), (60, 0), 'B786: a short chat starts under the top bar, with nothing to pull')
     eq((got[12], got[13]), ({'t': -280, 'off': 0, 'far': 0, 'cut': 0}, {'t': -280, 'off': 0, 'far': 0, 'cut': 0}), 'nothing is cut while all shows')
     eq([c['label'] for c in got[14]], ['Working', 'Plan', '1 shell'], 'only what runs')
     eq([c['label'] for c in got[15]], ['Bypass', '2 agents', 'Update'], 'what the screen says')

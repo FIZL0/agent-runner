@@ -186,6 +186,12 @@ const may = o => { const was = {...FD}; Object.assign(FD, o); pastClass(); const
 out.whole = may({whole: true}); out.words = may({foot: {top: 36, text: 'draft', bash: false}}); out.jumped = may({jump: true}); out.down = may({drawn: false});
 HX.none = true; out.none = may({}); HX.none = false;
 FD.n = 'c7'; pastReset(); pages[''] = null; pastSee(); pastClass(); await settle(); pages[''] = {ok: true, entries: msgs(0, 5), before: '', since: 'g:1'}; pastSee(); out.soon = HX.none; now += 6000; pastSee(); await settle(); out.late = [HX.none, HX.pages.length]; FD.n = 'c8'; pages[''] = null; pastSee(); await settle(); pastClass(); out.notranscript = [HX.none, past.hidden];
+// B786: a new chat that works, resting under the top bar: the history on the same pixels, nothing to scroll
+FD.n = 'c9'; FD.t = FD.bar; FD.short = FD.gap = 3; pages[''] = {ok: true, entries: [{kind: 'you', text: 'hello'}], before: '', since: 'h:1'};
+screen = ['', '❯ hello', '● on it', ...Array(31).fill(''), '● Churning… (7s)', '', 'rule', '❯', 'rule', 'foot']; pastSee(); await settle(); run(); pastPlace();
+const g0 = [where('❯ hello'), where('● Churning… (7s)')]; past.fire('touchstart', {touches: [{clientX: 9, clientY: 9}]}); scroll(-50); pastPlace();
+out.gap = [HX.st, where('❯ hello') - g0[0], where('● Churning… (7s)') - g0[1], pastEnd(), $('pastjump').classList.contains('on')]; past.fire('touchend');
+FD.t = 20; pastPlace(); out.gapOver = [HX.st, past.scrollTop === pastEnd(), $('pastjump').classList.contains('on')];
 console.log(JSON.stringify(out));
 })().catch(e => { console.error(e); process.exit(1) });
 function histMay0() { return pastMay() }
@@ -228,6 +234,7 @@ def test_swap(tmp: Path) -> None:
         eq(o[k], [True, False, ''], f'{k}: the session scrolls as before')
     eq(o['key'], [True, 'up', True, '', False, False], 'PageUp and Ctrl+End scroll it, other keys are the session\'s')
     eq((o['soon'], o['late']), (True, [False, 1]), 'a transcript that comes later is found')
+    eq((o['gap'], o['gapOver']), (['armed', 0, 0, 0, False], ['', True, False]), 'B786: a new chat that works rests the same, with no up and no button')
     eq(o['notranscript'], [True, True], 'a session with no transcript: as before')
 
 

@@ -212,7 +212,7 @@ layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r
    transform, never by a resize: the bars come and go, the box grows, and the session's size stays. B192: the bars going or
    coming never moves it; only a scroll does (feedScroll), and the session's own going to its end. Whole (a menu, a
    question, unsent words, a look feedFoot does not know): it fits its room exactly, all of it shown. */
-Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',above:0,last:0,run:0,rest:0,slim:false,jump:false,top:false,still:'',rows:'',stillT:0,typed:0,full:0,wide:0,doc:0,live:null,liveAt:0,task:''});
+Object.assign(FD,{shown:false,foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',above:0,last:0,run:0,rest:0,slim:false,jump:false,top:false,gap:0,still:'',rows:'',stillT:0,typed:0,full:0,wide:0,doc:0,live:null,liveAt:0,task:''});
 const KB_PAD=6;  // .dock's bottom padding: 14px, and 8px in .app.kb
 const SLIM_H=56, FOOT_WAIT=400, TEXT_WAIT=1200, LIVE_EVERY=2000;
 const pageDark=()=>{const t=document.documentElement.dataset.theme;return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches};
@@ -242,10 +242,13 @@ function feedSee(){
   const lit=(y,x)=>{const l=b.getLine(b.baseY+y), c=l&&l.getCell(x);return!!(c&&!c.isBgDefault())};
   if(!lines.some(l=>l)){if(FD.fresh&&FD.foot===undefined){FD.foot=null;feedWhole(true)}return}  // not drawn yet
   FD.last=b.viewportY<b.baseY?t.rows:lines.findLastIndex(l=>l.trim())+1;
-  const foot=feedFoot(lines,dim,lit), was=FD.foot;
+  const foot=feedFoot(lines,dim,lit), was=FD.foot, wasShort=FD.short, still=!FD.fresh&&!!was&&!FD.whole&&!FD.jump&&!FD.off;
   FD.foot=foot;
   let blank=0;if(foot)while(blank<foot.top&&!lines[foot.top-1-blank].trim())blank++;
   FD.short=foot&&(!b.baseY||t.modes.mouseTrackingMode!=='none')&&(blank>3||foot.end<t.rows-FOOT_ROWS-2)?Math.max(1,foot.top-blank):0;
+  // B786: the working lines stand right above the prompt, with the gap over them: its words end over the gap
+  FD.gap=!FD.short&&foot&&!foot.jump&&!foot.rate&&feedOldest(t)?feedGap(lines,foot.top,true):0;
+  if(FD.gap)FD.short=FD.gap;
   const all=!foot||!!foot.text||foot.bash;
   if(all!==FD.whole&&FD.fresh)feedWhole(all);
   else if(all!==FD.whole){if(!FD.wait)FD.wait=setTimeout(()=>{FD.wait=0;const f=FD.foot;if(f===undefined)return;const now=!f||!!f.text||f.bash;if(now!==FD.whole)feedWhole(now)},foot&&foot.text?TEXT_WAIT:FOOT_WAIT)}
@@ -256,7 +259,7 @@ function feedSee(){
   if(ended)FD.off=0;  // at its end the last lines stand on the box
   FD.top=FD.off>0&&FD.top||feedOldest(t)&&(!jump&&!!foot&&(!!FD.short||feedGap(lines,foot.top))||!FD.slim&&!!FD.still&&feedRows(lines)===FD.still);  // once pulled, it stays till it is back
   if(ended&&FD.slim)feedSlim(false);
-  feedPlace();
+  if(still&&foot&&!FD.whole&&!jump&&FD.short!==wasShort&&!pastUp())feedGlide(feedTop());else feedPlace();
   if(left&&FD.run<=-8)feedSlim(true);
   pastSee();
   const key=f=>f?[f.mode,f.shells,f.tasks,f.agents,f.update,f.status.join('|'),f.work].join():String(f);

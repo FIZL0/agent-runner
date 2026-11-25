@@ -334,13 +334,68 @@ def test_first_lines_b766(tmp: Path) -> None:
                     ['feedShare', -10, {**state, 'top': True}], ['feedShare', -10, {**state, 'top': True, 'off': 208}],
                     ['feedShare', -10, {**state, 'top': True, 'off': 212}], ['feedShare', 10, {**state, 'top': True, 'off': 212}],
                     ['feedShare', -10, state]])
-    eq(got[:5], [True, False, False, False, False], 'a gap over the working lines, and nothing else, is seen')
+    eq(got[:5], [4, 0, 0, 0, 0], 'a gap over the working lines, and nothing else, is seen')
     eq((got[5]['t'], got[5]['far']), (-152, 212), 'at rest the working lines stand on the box')
     eq(got[6]['t'], 60, 'pulled down, the first line is clear of the bar')
     eq(got[7]['far'], 124, 'a long chat goes as far as it did')
-    eq((got[8]['t'], got[8]['far']), (508, 0), 'a screen whose words fit has nothing to pull')
+    eq((got[8]['t'], got[8]['far']), (60, 0), 'a screen whose words fit has nothing to pull')
     eq((got[9]['t'], got[10]['t']), (60, 60), 'a short one too long for its room is reached; pulled, its place is kept')
     eq(got[11:], [-10, -4, 0, 10, 0], "the frame's share, to its end, and back; with older lines the session's first")
+
+
+REST_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const ROWS = 46, TOP = 40, RULE = '─'.repeat(40);
+let lines = [], moves = [], up = false;
+const term = {rows: ROWS, modes: {mouseTrackingMode: 'any'}, buffer: {active: {baseY: 0, viewportY: 0, getLine: y => ({translateToString: () => lines[y] || '', getCell: () => null})}}};
+const feedTerm = () => term, feedTop = () => 0, feedKeep = () => {}, liveLoad = () => {}, render = () => {}, pastSee = () => {}, feedSlim = () => {}, pastUp = () => up, feedWhole = on => { FD.whole = on };
+const KEPT = new Map(), FEED_KEEP = 2000, FOOT_WAIT = 400, TEXT_WAIT = 1200, setTimeout = f => 1, clearTimeout = () => {};
+const FD = {n: 'c1', shown: true, drawn: true, foot: undefined, whole: false, wait: 0, off: 0, jump: false, top: false, gap: 0, short: 0, still: '', run: 0, slim: false, keptAt: Infinity, fresh: true};
+const feedPlace = () => { FD.at = feedSpot({main: 800, bar: 60, dock: 180, row: 56, high: 900, pad: 12, cell: 20, foot: FD.foot, short: FD.short, whole: FD.whole, off: FD.off, top: FD.top}) };
+const feedGlide = () => { moves.push(1); feedPlace() };
+const foot = ['❯ ', RULE, '  ⏵⏵ bypass permissions on', '', ''];
+const screen = (words, low = []) => [...words, ...Array(TOP - words.length - low.length).fill(''), ...low, RULE, ...foot];
+const words = n => Array.from({length: n}, (x, i) => i ? 'words ' + i : '❯ my message'), spin = ['● Churning… (7s)', ''];
+eval(logic + slice('function feedLines(', '/* B766: the session has') + slice('const feedOldest=', 'function feedStill()') + slice('const STILL_ROWS', '// the terminal') + `
+const see = l => { lines = l; moves = []; feedSee(); FD.fresh = false; return [FD.at.t, FD.gap, FD.at.off, FD.at.far, moves.length] };
+const out = {};
+out.first = see(screen(words(5)));
+out.work = see(screen(words(5), spin)); out.grow = see(screen(words(20), spin)); out.done = see(screen(words(20)));
+out.over = see(screen(words(30), spin)); out.overDone = see(screen(words(30)));
+out.closed = see(screen(words(37), spin)); out.full = see(screen(words(39), ['x']));
+out.todos = see(screen(words(5), ['✻ Running all the tests… (12s)', ...Array.from({length: 12}, (x, i) => '  ☐ step ' + i), '']));
+out.named = see(screen(words(33), ['✻ Running tests… (12s)', '']));
+out.noted = see(screen(words(5), ['  Session renamed to: x', '']));
+out.code = see([...words(30), ...Array(5).fill(''), 'x', 'y', 'z', ...Array(1).fill(''), '', RULE, ...foot]);
+out.rate = see(screen(words(5), ['● How is Claude doing?', '  1: Bad  2: Fine', '']));
+term.modes.mouseTrackingMode = 'none'; term.buffer.active.viewportY = term.buffer.active.baseY = 3; out.older = see([...Array(3).fill(''), ...screen(words(5), spin)]);
+term.modes.mouseTrackingMode = 'any'; term.buffer.active.viewportY = term.buffer.active.baseY = 0;
+up = true; see(screen(words(5), spin)); out.reading = [FD.gap, moves.length]; up = false;
+see(screen(words(5), spin)); lines = ['Do you want to proceed?', '❯ 1. Yes', '  2. No', '', 'Esc to cancel']; feedSee(); out.menu = [FD.foot, FD.gap, FD.short];
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_rest_b786(tmp: Path) -> None:
+    """B786: a session that is not full rests with its first line under the top bar, working or not, while its words fit."""
+    if not shutil.which('node'):
+        print('  (no node here: the rest test is skipped)')
+        return
+    (tmp / 'rest.js').write_text(REST_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'rest.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs feedSee()', r.stderr[-900:])
+    o = json.loads(r.stdout or '{}')
+    eq(o.get('first'), [60, 0, 0, 0, 0], 'a new chat starts under the top bar')
+    eq((o.get('work'), o.get('grow'), o.get('done')), ([60, 5, 0, 0, 0], [60, 20, 0, 0, 1], [60, 0, 0, 0, 0]), 'working, more words, at rest again: it stays there, and nothing is to pull')
+    eq((o.get('over'), o.get('overDone')), ([8, 30, 0, 52, 1], [8, 0, 0, 52, 0]), 'words that no longer fit end on the box, the working line there or not')
+    eq((o.get('closed'), o.get('full')[0]), ([-192, 0, 0, 124, 1], -192), 'the gap closes: all of it ends on the box, by a glide')
+    eq((o.get('todos')[:2], o.get('named')[1]), ([60, 5], 33), 'a list under the working line, a name of several words')
+    eq(o.get('noted')[:2], [60, 5], 'a notice alone under the gap')
+    eq((o.get('code')[1], o.get('rate')[1], o.get('older')[1]), (0, 0, 0), 'blank lines in an answer, a survey to answer, older lines: as a full one')
+    eq(o.get('reading')[1], 0, 'while the history is read nothing glides')
+    eq(o.get('menu'), [None, 0, 0], 'a menu or a question: no such rest')
 
 
 def test_chat_order_f133(tmp: Path) -> None:
@@ -456,4 +511,4 @@ def test_chats_newest_f201(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_new_chat), in_tmp(test_new_chat_view_f172), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762), in_tmp(test_first_lines_b766), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201)]))
+    raise SystemExit(report([in_tmp(test_new_chat), in_tmp(test_new_chat_view_f172), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762), in_tmp(test_first_lines_b766), in_tmp(test_rest_b786), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201)]))

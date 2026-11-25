@@ -78,7 +78,7 @@ function pastPut(){
 /* the screen's own lines, over its prompt, as the terminal draws them */
 function pastScreen(){
   const f=feedScreen(), rows=f&&f.t.element.querySelector('.xterm-rows');if(!rows||!FD.foot)return null;
-  const n=Math.min(FD.foot.top,FD.short||FD.foot.top,rows.children.length), out=[];
+  const n=Math.min(FD.foot.top,!FD.gap&&FD.short||FD.foot.top,rows.children.length), out=[];
   for(let y=0;y<n;y++){const r=rows.children[y];out.push({t:r.textContent.replace(/ /g,' ').trimEnd(),h:r.innerHTML})}
   return out;
 }
