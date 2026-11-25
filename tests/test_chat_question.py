@@ -14,6 +14,10 @@ from agent_runner import chat_question as Q, session_now as N, web as W
 
 ASK = 'Two ways to draw it.\n\nDECIDE: Which look? [Small / Full (recommended) / No change]'
 AT = '2026-11-24T10:00:00.000Z'
+LINK = 'https://omarchy-desktop.example.ts.net:8771/p/iFizBox/concept/F440b'
+LONG_Q = ('Should I attach both showcase videos to iFizBox\'s "Watch the new showcase video" item in Needs you, so they play there '
+          "(on an iPhone too, though that is untested)? This changes only that item's attachments in the iFizBox project.")
+LONG = f'Both are ready.\n\nDECIDE: {LONG_Q} [Attach both videos (recommended) / Leave the item as it is] {LINK}'  # B840
 SHOWN = [{'name': 'Full', 'rec': True}, {'name': 'Small', 'rec': False}, {'name': 'No change', 'rec': False}]
 
 
@@ -45,6 +49,17 @@ def test_options(tmp: Path) -> None:
     eq(Q.ask([say(ASK), think, watch])['id'], 'u1', 'thinking, or the standing watch set again, after it: the same question')
     a, b = Q.ask_of(ASK), Q.ask_of(ASK.replace('Which look?', 'Which size?'))
     eq((a['id'] == Q.ask_of(ASK)['id'], a['id'] == b['id']), (True, False), 'with no uuid the id is the question\'s own')
+
+
+def test_whole_b840(tmp: Path) -> None:
+    fake_run(tmp)
+    eq(Q.ask_of(LONG, 'u1'), {'id': 'u1', 'question': LONG_Q, 'options': [
+        {'name': 'Attach both videos', 'rec': True}, {'name': 'Leave the item as it is', 'rec': False}]}, 'the whole question')
+    plain = ('word ' * 100).strip() + '?'
+    eq(Q.decide_question(f'DECIDE: {plain}'), plain, 'over 240, with no bracket')
+    old = Q.cut_question(Q.decide_question(LONG))
+    check('…' in old and len(old) <= 240, 'as it was cut before', old)
+    eq(Q.ask_of(LONG)['id'], Q.ask_of(f'DECIDE: {old}')['id'], 'with no uuid, it has the id it had then')
 
 
 def test_none(tmp: Path) -> None:
@@ -176,5 +191,5 @@ def test_about_words(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_options), in_tmp(test_none), in_tmp(test_subagent), in_tmp(test_live),
+    raise SystemExit(report([in_tmp(test_options), in_tmp(test_whole_b840), in_tmp(test_none), in_tmp(test_subagent), in_tmp(test_live),
                              in_tmp(test_about), in_tmp(test_about_live), in_tmp(test_about_words)]))

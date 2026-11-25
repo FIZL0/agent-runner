@@ -3534,13 +3534,28 @@ DECIDE_LINE = re.compile(r'^[\s>*_`]*DECIDE:[\s*_`]*(.+?)[\s*_`]*$')  # F135: a 
 
 def decide_question(text: str) -> str:
     """F135: the question work waits on in Claude's last message `text`, '' for none: its last non-empty line
-    `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none). F181d: a long
-    one is cut before the bracket of options (and any links) that ends it, which is kept for its buttons."""
+    `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none). B840: it is whole
+    up to QUESTION_MAX, and `on_a_line`."""
     q = ' '.join(m[1].split()) if text.strip() and (m := DECIDE_LINE.match(text.strip().splitlines()[-1])) else ''
-    if len(q) <= 240:
+    return cut_question(on_a_line(q), QUESTION_MAX)
+
+
+QUESTION_MAX = 2000  # B840: a guard only; a view with little room cuts the question itself
+
+
+def on_a_line(q: str) -> str:
+    """B840: question `q` without the two marks that end or begin a block on a task line (`asks`, `_block_at`), so its
+    item under Needs you keeps all of it. As long as before."""
+    return q.replace(' — ', ' – ').replace(' BLOCKED: ', ' BLOCKED; ')
+
+
+def cut_question(q: str, most: int = 240) -> str:
+    """Question `q` in `most` characters. F181d: a long one is cut before the bracket of options (and any links) that
+    ends it, which is kept for its buttons. 240: as questions were filed before B840, to know one by those words."""
+    if len(q) <= most:
         return q
     end = m[0] if (m := re.search(r' \[[^\[\]]+ / [^\[\]]+\]\.?(?: https?://\S+)*$', q)) else ''
-    head, room = q[:len(q) - len(end)], max(239 - len(end), 100)  # a long bracket still leaves the question 100
+    head, room = q[:len(q) - len(end)], max(most - 1 - len(end), 100)  # a long bracket still leaves the question 100
     return q if len(head) <= room else head[:room].rsplit(' ', 1)[0] + '…' + end
 
 
