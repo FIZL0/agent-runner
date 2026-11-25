@@ -558,7 +558,10 @@ class RunPage:
         if n == 4:
             # B152: the short ask, one line; the full ask shows in the pane beside
             d = it.get('detail') or {}
-            said = d.get('summary') if d.get('question') else U.ask_short(d.get('summary') or '')  # B793b: the summary is whole
+            said, flat = d.get('summary') or '', ' '.join(str(it.get('ask', '')).split()).casefold()
+            if not U.need_detail.ASKS.fullmatch(d.get('question') or '') and \
+                    (said in [*d.get('steps', []), *d.get('expect', [])] or said.casefold() in flat):
+                said = U.ask_short(said)  # B793b: the ask's own words, whole in detail; a question and an ask file's summary stay
             short = ' '.join(str(said or it.get('ask_short') or it.get('title') or it.get('ask', '')).split())
             return [(f'{it["id"]} ', 'yellow'), (short, 'fg'),
                     (f' {it.get("age", "")}', 'dim')]

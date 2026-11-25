@@ -1920,6 +1920,12 @@ def test_short_ask_b152() -> None:
     check(all('\n' not in t for t, _ in row) and 'Glint downloads.' in ''.join(t for t, _ in row),
           'the panel row is the short ask on one line', row)
     eq(row[1][0], n['ask_short'], 'B793b: the row is short though its detail is whole')
+    for label, what in (('DECIDE', 'The log (done.log) is old. Pick one'), ('CONFIRM', 'Open the log (done.log); tap Undo')):
+        m = U.needs_rows([(label, 'R45', '', what, '', 'T', False, '')], dt.datetime(2026, 11, 23))[0][0]
+        check('(done.log)' in m['detail']['summary'] and 'log' in p.row(4, m)[1][0] and '(' not in p.row(4, m)[1][0],
+              f'B793b: {label}: the row drops the aside its detail keeps', (m['detail']['summary'], p.row(4, m)))
+    own = dict(n, detail=dict(n['detail'], summary='Try it (on the phone)'))
+    eq(p.row(4, own)[1][0], 'Try it (on the phone)', "an ask file's summary stays as written")
     check('(iFizBox' in n['detail']['summary'], 'and the detail keeps the aside', n['detail']['summary'])
     lines = drawn(p).lines()
     at = [i for i, l in enumerate(lines) if 'R45 ' in l and 'Sign in to Chariz' in l]

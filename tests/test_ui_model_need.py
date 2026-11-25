@@ -298,7 +298,7 @@ def test_decide_question_b223a(tmp: Path) -> None:
 
 
 def test_whole_b793b(tmp: Path) -> None:
-    """B793b: detail's title is the task's first sentence whole, and its summary the whole ask, for each label; the
+    """B793b: detail's title is the task's first sentence whole, and its summary the whole first step or question, for each label, every step whole; the
     row's ask_short stays cut."""
     fake_run(tmp)
     title = 'Show the whole title of a task ' + 'that has many words ' * 6 + 'up to here'
@@ -311,6 +311,9 @@ def test_whole_b793b(tmp: Path) -> None:
             eq(d['title'], title, f'{label}: the title')
             eq(d['summary'], ask, f'{label}: the summary')
             check(len(row['ask_short']) <= U.ASK_SHORT, f'{label}: ask_short is cut', row['ask_short'])
+        if label in ('CONFIRM', 'BLOCKED'):
+            d = U.needs_rows([(label, 'D9', '', f'1) {step}. 2) {step}', '', title, False)], NOW)[0][0]['detail']
+            eq((d['summary'], d['steps']), (step + '.', [step + '.', step]), f'{label}: two long steps, each whole')
 
 
 def test_old_script_c37a(tmp: Path) -> None:
