@@ -27,7 +27,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PI_AI = '@earendil-works/pi-ai';
 const PI_AI_VERSION = '1.6.0'; // the version Pi 1.6.0 depends on
@@ -638,6 +638,13 @@ function killTree(p) {
   try { process.kill(-p.pid, 'SIGKILL'); } catch { try { p.kill('SIGKILL'); } catch {} }
 }
 
+// B798: `argv` in a Windows job object (job_object.py), so killTree ends the Git Bash children too, whose parent is
+// gone and taskkill misses; as it is without a runner command, whose Python runs it
+function inJob(argv, runner) {
+  if (process.platform !== 'win32' || !runner) return argv;
+  return [runner[0], '-I', '-S', fileURLToPath(new URL('job_object.py', import.meta.url)), ...argv];
+}
+
 function run(argv, cwd, input, timeout, signal) {
   return new Promise((resolve) => {
     const p = spawn(argv[0], argv.slice(1), { cwd, env: process.env, detached: process.platform !== 'win32',
@@ -716,7 +723,7 @@ class Session {
 
   async tool_bash(a) {
     const timeout = Math.min(Math.max(Number(a.timeout) || BASH_TIMEOUT, 1), BASH_TIMEOUT_MAX);
-    const r = await run(['bash', '-c', String(a.command || '')], this.cwd, '', timeout, this.ctl?.signal);
+    const r = await run(inJob(['bash', '-c', String(a.command || '')], this.a.runner), this.cwd, '', timeout, this.ctl?.signal);
     const tail = r.timedOut ? `\n[timed out after ${timeout} s; the command was killed]` :
       r.code ? `\n[exit code ${r.code}]` : '';
     return [clip(r.out) + tail || '(no output)', Boolean(r.code)];

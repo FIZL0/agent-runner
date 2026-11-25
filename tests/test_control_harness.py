@@ -154,6 +154,36 @@ def test_chat(env: Env):
     return p, sid
 
 
+def msys_pids() -> set[int]:
+    return {pid for pid, _, name in plat._snapshot() if name.lower() in ('sleep.exe', 'cat.exe')}
+
+
+def test_stopped_tool(env: Env, p, sid: str):
+    print('Windows: a stopped tool call leaves no Git Bash child')
+    if not plat.WINDOWS:
+        return
+    for i, cmd in enumerate(('sleep 61; echo x', '(sleep 61; echo x) & wait', 'sleep 61 | cat')):
+        before = msys_pids()
+        tell(p, f'run: {cmd}')
+        check(until(lambda: msys_pids() - before), f'it runs: {cmd}')
+        time.sleep(0.5)  # `cat` too
+        mine = msys_pids() - before
+        escape(p)
+        tell(p, f'stopped {i}')
+        check(answered(sid, f'answer to stopped {i}'), 'Escape stops it', state(sid))
+        check(until(lambda: not mine & msys_pids(), 10), 'and no child of it is left', mine & msys_pids())
+    tell(p, 'run: echo "a*"\'\\"\'; exit 3')
+    check(answered(sid, 'answer to tool (a*\\"'), 'a command reaches bash as it is', state(sid))
+    has(state(sid)['text'], r'exit code 3', 'and its exit code comes back')
+    before = msys_pids()
+    tell(p, 'run: sleep 30 >/dev/null 2>&1 </dev/null & echo left')
+    check(answered(sid, 'answer to tool (left'), 'a call that ends by itself', state(sid))
+    left = msys_pids() - before
+    check(left, 'leaves its background process going')
+    for pid in left:
+        subprocess.run(['taskkill', '/F', '/PID', str(pid)], capture_output=True)
+
+
 def test_title(env: Env, sid: str):
     print('its title')
     with mock.patch.object(K, 'control_type', lambda *a: check(False, 'nothing is typed into it', a)), \
@@ -299,6 +329,7 @@ def main() -> int:
 
         def chat():
             p, sid = test_chat(env)
+            test_stopped_tool(env, p, sid)
             test_title(env, sid)
             test_idle_and_resume(env, p, sid)
         try:
