@@ -3,11 +3,12 @@
    cid}; back: when an Undo brought a card back. In memory only: a reload in the hold sends nothing, the card is there again */
 const QN={held:new Map(),sent:new Map(),back:0};
 const questionAsk=n=>FD.n===n&&FD.live&&FD.live.ask||null;
+const questionSpoken=n=>questionSpoke(n,S.ob,(S.sent[n]&&S.sent[n].pending)||[],Date.now()-((S.sent[n]||{}).at||0));
 /* the card of chat n, drawn over its chips (sessRow) */
 function questionCard(n){
   if(!/^c\d+$/.test(n||''))return '';
-  const sent=questionSent(QN.sent.get(n),S.ob,(S.sent[n]&&S.sent[n].pending)||[]);if(sent)QN.sent.set(n,sent);
-  return questionHTML(n,questionAsk(n),QN.held.get(n),sent);
+  const sent=questionSent(QN.sent.get(n),S.ob,(S.sent[n]||{}).at);if(sent)QN.sent.set(n,sent);
+  return questionHTML(n,questionSpoken(n)?null:questionAsk(n),QN.held.get(n),sent);
 }
 /* before a draw that may bring, change or take the card; what it returns is called after: the card fades in and the frame
    glides with the dock. still: the chat was just opened, so nothing moves */
@@ -33,17 +34,20 @@ function questionUndo(n){
   clearTimeout(h.timer);QN.held.delete(n);QN.back=Date.now();
   questionDraw();
 }
-/* /live was read: an answer held to a question that is gone (answered elsewhere, the chat went on) is not sent */
+/* /live was read: an answer held to a question that is gone (answered elsewhere or in words, the chat went on) is not sent */
 function questionSee(n){
-  const h=QN.held.get(n);if(!h||FD.n!==n||questionOpen(FD.live,h.id))return;
+  const h=QN.held.get(n);if(!h||!questionSpoken(n)&&(FD.n!==n||questionOpen(FD.live,h.id)))return;
   clearTimeout(h.timer);QN.held.delete(n);toast(`“${h.name}” was not sent: the question is no longer open`,true);
 }
 async function questionSend(n,h){
-  if(Date.now()-h.at>QUESTION_HOLD+2000&&FD.n===n)await liveLoad();  // the page slept through the hold: what is asked now?
+  if(Date.now()-h.at>QUESTION_HOLD+2000&&FD.n===n){  // the page slept through the hold: what is asked now?
+    if(document.hidden){h.timer=setTimeout(()=>questionSend(n,h),1000);return}  // liveLoad asks nothing then
+    await liveLoad();
+  }
   questionSee(n);
   if(QN.held.get(n)!==h)return;  // Undo, or no longer asked
   QN.held.delete(n);
-  const moved=questionMove(n,false), it={id:h.id,name:h.name,cid:''};
+  const moved=questionMove(n,false), it={id:h.id,name:h.name,cid:'',at:Date.now()};
   QN.sent.set(n,{...it,over:true});  // answered, before outbox() draws
   sendHold(n,SEND_HOLD);
   if(FD.shown&&FD.n===n)feedRest();

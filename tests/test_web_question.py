@@ -23,7 +23,7 @@ Date.now = () => now;
 setTimeout = (fn, ms) => { const t = {fn, at: now + ms}; timers.push(t); return t };
 clearTimeout = t => { timers = timers.filter(x => x !== t) };
 const pass = async ms => { const end = now + ms;
-  for (let t; t = timers.filter(x => x.at <= end).sort((a, b) => a.at - b.at)[0];) { now = t.at; clearTimeout(t); await t.fn() }
+  for (let t; t = timers.filter(x => x.at <= end).sort((a, b) => a.at - b.at)[0];) { now = Math.max(now, t.at); clearTimeout(t); await t.fn() }
   now = end };
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const document = {querySelector: () => null, addEventListener: (k, f) => { clicks.push(f) }};
@@ -36,7 +36,7 @@ const outbox = (name, args, more) => { const it = {cid: 'k' + sent.length, name,
 const live = ask => { FD.live = {ok: true, ask}; if (FD.n) questionSee(FD.n); render() };
 const tap = (data, detail = 1) => clicks[0]({detail, target: {closest: () => ({dataset: data})}});
 const pick = (i, id = 'u1') => tap({qpick: String(i), q: id}), undo = () => tap({qundo: 'c1'});
-const went = text => { S.ob = []; (S.sent.c1 = {pending: [{text}]}); render() };
+const went = text => { S.ob = []; S.sent.c1 = {at: now, pending: [{text}]}; render() };
 const kind = () => dock.includes('data-qundo') ? 'held' : dock.includes('data-qpick') ? 'card' : '';
 const ASK = JSON.parse(process.argv[2]), out = [];
 const say = (...a) => out.push(a);
@@ -77,7 +77,7 @@ def test_send(tmp: Path) -> None:
       live(ASK); pick(1); say(kind(), sent.length); pick(0); pick(1);
       await pass(4900); say(kind(), sent.length); await pass(200); say(kind(), sent.length, sent[0].name, sent[0].args, holds);
       pick(0); await pass(6000); say(kind(), sent.length);
-      went('Small & flat'); say(kind()); S.sent = {}; render(); say(kind());
+      went('Small & flat'); say(kind()); S.sent.c1.pending = []; render(); say(kind());
       live({...ASK, id: 'u2'}); say(kind());
       pick(0, 'u1'); say(kind());""")
     if out is None:
@@ -119,6 +119,25 @@ def test_gone_in_hold(tmp: Path) -> None:
     eq(out[3], [['c1']], 'a chat that was left, or a run that could not say, still gets its answer')
 
 
+def test_typed(tmp: Path) -> None:
+    out = run(tmp, """
+      live(ASK); outbox('chat_to', {text: 'blue', to: 'c1'}); say(kind()); S.ob[0].state = 'failed'; render(); say(kind());
+      S.ob = []; pick(0); outbox('chat_to', {text: 'blue', to: 'c1'}); await pass(6000); say(sent.map(x => x.args.text), toasts.length);""")
+    if out is None:
+        return
+    eq(out[:2], [[''], ['card']], 'a typed message takes the card at once; one that failed does not')
+    eq(out[2], [['blue', 'blue'], 1], 'typed in the hold: the held answer is not sent as well')
+
+
+def test_slept(tmp: Path) -> None:
+    out = run(tmp, """
+      live(ASK); pick(0); document.hidden = true; now += 60000; await pass(0); say(sent.length);
+      document.hidden = false; FD.live = {ok: true, ask: null}; await pass(2000); say(sent.length);""")
+    if out is None:
+        return
+    eq(out, [[0], [0]], 'a hold slept through waits for the page to be seen, then goes only if it is still asked')
+
+
 def test_called(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     row = page[page.index('function sessRow('):]
@@ -129,4 +148,4 @@ def test_called(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(f) for f in (test_drawing, test_send, test_undo, test_gone_in_hold, test_called)]))
+    raise SystemExit(report([in_tmp(f) for f in (test_drawing, test_send, test_undo, test_gone_in_hold, test_typed, test_slept, test_called)]))
