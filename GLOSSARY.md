@@ -837,3 +837,9 @@ _Said_: start listening while on that page
 _On screen_: the mic is open
 _In code_: recLook, recAhead, recRing, .mic.open
 _Avoid_: hot mic, always listening
+
+**Until check**:
+Something a blocked task waits on that the machine can read by itself: a version, a login, a tool or a named command. It passes, has not passed yet, or cannot run
+_On screen_: Until checks
+_In code_: until.py, [run.checks]
+_Avoid_: poll, condition, probe
