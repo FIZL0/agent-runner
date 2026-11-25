@@ -230,6 +230,26 @@ def test_busy_loop(tmp: Path) -> None:
         it.close()
 
 
+def test_landing(tmp: Path) -> None:
+    print('a stop while the main checkout moves: that git command ends, and what landed is recorded')
+    it = project(tmp)
+    try:
+        hook = it.root / '.git/hooks/post-merge'
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text(f'#!/bin/sh\n[ "$(pwd)" = "{it.root}" ] || exit 0\ntouch {tmp}/landing\nsleep 2\n')
+        hook.chmod(0o755)
+        p = it.start()
+        check(until((tmp / 'landing').exists), 'it is landing', it.log())
+        r, took = it.stop('--force')
+        check(r.returncode == 0 and 'run stopped' in r.stdout and took < SOON, 'run stopped', (r, took))
+        check(until(lambda: p.poll() is not None, 5) and (it.root / 'a.py').exists(), 'landed')
+        eq(git(it.root, 'status', '--porcelain').strip(), '', 'the checkout is clean')
+        check('T1: merged' in it.log() and not git(it.root, 'branch', '--list', 'task/T1').strip()
+              and not it.notes('landed.json').exists(), 'and recorded', it.log()[-2000:])
+    finally:
+        it.close()
+
+
 def test_gentle(tmp: Path) -> None:
     print('a gentle stop still waits for the merge under way')
     it = project(tmp)
@@ -352,5 +372,5 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    runs = [] if plat.WINDOWS else [test_long_gate, test_key, test_hung, test_busy_loop, test_gentle]
+    runs = [] if plat.WINDOWS else [test_long_gate, test_key, test_hung, test_busy_loop, test_landing, test_gentle]
     sys.exit(report([test_freeze, *map(in_tmp, [test_half_merge, test_page, *runs])]))

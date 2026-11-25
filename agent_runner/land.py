@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import os
 import re
 import subprocess as sp
@@ -278,6 +279,24 @@ def record_landed(tid: str, branch: str, base: str, merged: str, M) -> None:
     note(msg)
     log(msg, EV_PART if state == 'blocked' else EV_LANDED, tid)
     reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
+    keep_landed()
+
+
+def keep_landed() -> None:
+    """B827: what landed and is not recorded yet, for the next run (`load_landed`) when this one is cut off."""
+    f = C.notes('landed.json')
+    if LANDED:
+        f.write_text(json.dumps(LANDED), encoding='utf-8')
+    else:
+        f.unlink(missing_ok=True)
+
+
+def load_landed() -> None:
+    try:
+        LANDED.update({t: tuple(v) for t, v in json.loads(C.notes('landed.json').read_text(encoding='utf-8')).items()})
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+
 
 
 def published(tid: str, branch: str) -> None:

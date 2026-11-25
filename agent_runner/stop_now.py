@@ -16,13 +16,13 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import exit_hook, freeze, plat
+from agent_runner import exit_hook, freeze, plan as P, plat
 from agent_runner import state as S
 
 TAKE = 3.0  # s the loop has to begin the stop, before `watch` does it without the loop
-QUIET = 3.0  # s a git command that moves the main checkout gets to end
+QUIET = 5.0  # s a git command that moves the main checkout gets to end
 OWN = 5.0  # s the run's own processes and its page's handover get
-HANG = 12.0  # s the whole stop may take: past it the run exits as it is
+HANG = 18.0  # s the whole stop may take: past it the run exits as it is
 BEGIN = 5.0  # s a command waits for the run to begin the stop, before it ends the run
 TERM = 2.0  # s the run gets after SIGTERM, before SIGKILL
 FROM = 'AGENT_RUNNER_ACT_OF'  # the pid of the process whose action a command is
@@ -32,7 +32,12 @@ LANDS = re.compile(r'\S+: the tested merge, onto commits ')  # what `land` calls
 # --- in the run ------------------------------------------------------------------------------------------------
 
 def begin() -> None:
-    """A run's start, run.lock held: what a stop now from another process goes by."""
+    """A run's start, run.lock held: what a stop now from another process goes by, and what one that was cut off left."""
+    from agent_runner import land
+    if S.forced():
+        clear_merges()
+    land.load_landed()
+    record_landed(S.default_branch())
     freeze.RECORD[:] = [S.C.notes('merge.procs')]
     freeze.RECORD[0].unlink(missing_ok=True)
     say_pid()
@@ -49,12 +54,19 @@ def say_pid(stopping: bool = False) -> None:
         pass
 
 
+def typed() -> bool:
+    try:
+        return 's!' in S.C.notes('KEYS').read_text(encoding='utf-8').lower().split()
+    except OSError:
+        return False
+
+
 def watch(run) -> None:
-    """A daemon thread's loop: wake the loop for a stop now (and for any key a command left); stop without it when it
+    """A daemon thread's loop: wake the loop for a stop now (asked for, or an `s!` typed in the run view); stop without it when it
     does not begin, and exit as it is when the stop itself hangs."""
     while True:
         time.sleep(0.25)
-        if S.C.notes('KEYS').exists():
+        if typed():
             S.WAKE.set()
         if not S.forced():
             continue
@@ -83,6 +95,9 @@ def stop(run) -> int:
             time.sleep(60)
     say_pid(stopping=True)
     how = S.stopped_by()
+    if power := P.take(S.C, 'POWER'):  # the loop may not have got to it
+        loop.POWER = power[-1]
+        S.share(POWER=loop.POWER)
     S.log(f'stopping now ({how}): the sessions and the merges under way are ended')
     ending = threading.Thread(target=end_merges_soon, daemon=True)
     ending.start()
@@ -177,6 +192,7 @@ def record_landed(branch: str) -> None:
         except Exception as e:  # noqa: BLE001 - the stop goes on
             S.log(f'{tid}: landed, but could not be recorded: {e!r}')
         merge.LANDED.pop(tid, None)
+        land.keep_landed()
 
 
 # --- from another process --------------------------------------------------------------------------------------
@@ -200,7 +216,6 @@ def say(text: str, err: bool = False) -> None:
 
 def command(power: str = '') -> int:
     """`stop --force`: ask, wait until the run's process is gone (end it when it hangs), then say so."""
-    from agent_runner import plan as P
     if not S.run_up():
         say('no run is up here: nothing to stop', err=True)
         return 1
@@ -224,7 +239,7 @@ def command(power: str = '') -> int:
             return 1
         say('run stopped')
         return 0
-    if gone(rec, time.monotonic()):
+    if gone(rec, time.monotonic()) and not S.forced():  # it takes the request back as the last thing it does
         say('run stopped')
         return 0
     say('the run did not stop by itself; ending it')
@@ -237,7 +252,8 @@ def command(power: str = '') -> int:
         return 1
     clean_up()
     say('run stopped')
-    if power and P.take(S.C, 'POWER'):  # the run never took it
+    if power:  # the run did not get to it
+        P.take(S.C, 'POWER')
         S.log(f'run stopped: {"suspending" if power == "suspend" else "shutting down"} the computer', S.EV_STOPPED)
         (plat.suspend if power == 'suspend' else plat.power_off)()
     return 0

@@ -29,7 +29,7 @@ from agent_runner.state import (C, clean, commit_plan, EV_LANDED, EV_LEFT, EV_PA
 from agent_runner.slots import (backend, entries, env_vars, merge_env, MUX, slot_env, trim, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
 from agent_runner.land import (announce_release, BROKEN, flaky, land, land_tick, published, push_landed,
-    record_landed, reopen_landed, UNPUSHED)
+    keep_landed, record_landed, reopen_landed, UNPUSHED)
 
 
 def left_merging() -> set[str]:
@@ -1440,6 +1440,7 @@ def batch_land(t: BatchTurn, last: bool = False):
         pitch.landed(t.merged, not why)
         if not why:
             LANDED.update({x: (t.base, t.merged) for x in [t.tid, *t.riders]})
+            keep_landed()
     return BATCH_RETRY if why == 'conflict' and not last else why
 
 

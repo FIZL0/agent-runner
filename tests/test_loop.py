@@ -201,6 +201,18 @@ def test_end():
         eq(busy.end(), None, 'a stop waits for the running sessions')
 
 
+def test_stop_now_tick():
+    print('B827: a stop now, asked before the tick or by a key in it, is the whole tick')
+    for asked in ([True, True], [False, True]):
+        run, said, looks = new_run(), [], iter(asked)
+        with ExitStack() as st:
+            stubs(st, said, take_keys=None, forced=lambda: next(looks))
+            top = st.enter_context(mock.patch.object(loop.Run, 'top'))
+            fill = st.enter_context(mock.patch.object(loop.Run, 'slot'))
+            st.enter_context(mock.patch.object(loop.stop_now, 'stop', lambda r: 0))
+            eq((run.tick(), top.called, fill.called), (0, not asked[0], False), 'the run stops, no slot is filled')
+
+
 def test_stop_ends_own_b144():
     print('B144: `run stopped` is said only once the board, control server and page are gone; a start right '
           'after a stop waits for that run to end')
@@ -256,7 +268,7 @@ def test_stop_ends_own_b144():
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         R.init(make(Path(t)))
-        return report([test_state, test_reap, test_answered_ask_and_tell, test_reap_finish_and_ask, test_fill, test_end, test_stop_ends_own_b144])
+        return report([test_state, test_reap, test_answered_ask_and_tell, test_reap_finish_and_ask, test_fill, test_end, test_stop_now_tick, test_stop_ends_own_b144])
 
 
 if __name__ == '__main__':
