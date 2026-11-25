@@ -576,7 +576,7 @@ answered in that project's control session; a project that needs another's state
 The card and popup of a Needs you item say what the ask is in short. Optionally, `<notes>/asks/ID.json` gives them
 their own words, each field standing in for what the ask's text gives: `summary` (the card's line), `where`, `steps`
 (What to do; each a words string, or `{text, link, cmd, on}`: `link` a web address, `cmd` a command for the machine
-`on` names, this one when none is named), `expect` (What you should see), `shots` (pictures, each with a `caption`) and
+`on` names, this one when none is named), `expect` (What you should see), `shots` (pictures or videos, each with a `caption`) and
 `inputs` (below). A BLOCKED item's steps, links, commands and inputs all go here, and a secret in `<notes>/asks/ID.env`;
 an old script left in `<notes>/wizards/ID.sh` shows as text steps in the detail and is never run:
 
@@ -591,9 +591,9 @@ A DECIDE is a question, not steps: its heading is the question (the last sentenc
 
 A missing, broken or over 64 KB file is ignored. Without one, the ask is split by rule (at sentences, numbered steps,
 `;`, `then` and colons), with nothing lost and no AI. A `file` is relative to `<notes>/asks`, or `uploads/NAME`, or an
-absolute path inside one of those two folders. A picture is png, jpg, gif or webp, served by a token-checked
-`GET /shot/uploads/…` or `/shot/asks/…` and never from anywhere else; a picture under `<notes>/uploads` that the task's
-line names shows too. The TUI's Needs you pane shows the same steps, expected list and picture paths.
+absolute path inside one of those two folders. A picture is png, jpg, gif or webp, and a video is mp4 or webm (same 50 MB limit, content checked against its suffix), served by a token-checked
+`GET /shot/uploads/…` or `/shot/asks/…` and never from anywhere else, answering Range requests (206, 416; several ranges or a malformed one get the whole file), which Safari needs; a picture under `<notes>/uploads` that the task's
+line names shows too, but only a picture. The TUI's Needs you pane shows the same steps, expected list, picture paths and, under Videos, video paths with their captions.
 
 A control session's filed question also gets `text` in its ask file (the lines kept, cut at 12000 characters), `session` and `project`, written by the run for that question and cleared with the file. `need_detail.detail` returns them, `''` when absent. Its local pictures are copied to `<notes>/asks/ID/explained-N.*` and added to `shots`, allowed types only (png, jpg, gif, webp).
 

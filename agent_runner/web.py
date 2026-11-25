@@ -35,7 +35,7 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
     GET  /task/ID?t=TOKEN        F85: task ID's whole text (`plan ID`), for its row folded open
     GET  /plan-search?q=WORDS&t=TOKEN   F212: the tasks of TODO.md and DONE.md that match (`plan_search.search`)
     GET  /why/ID?t=TOKEN         F162: why a Needs you item waits: its agent's last words (`ui_model.need_why`)
-    GET  /shot/DIR/FILE?t=TOKEN  F162: a Needs you item's picture, an image under <notes>/uploads or <notes>/asks
+    GET  /shot/DIR/FILE?t=TOKEN  F162: a Needs you item's picture or video (Range too), under <notes>/uploads or <notes>/asks
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
     GET  /speech?t=TOKEN         F158: the voices this machine can read Talk's replies with (`speech.voices`)
     POST /speech?t=TOKEN         F158: {"text", "voice"}: that text as a WAV clip (`speech.Speaker`)
@@ -90,6 +90,20 @@ def _load_parts(parts) -> None:
 
 
 _load_parts(PARTS)
+
+
+def byte_range(asked: str, size: int) -> tuple[int, int] | None:
+    """F445a: the [start, end) of a file of `size` bytes a Range header asks for, (0, 0) when the file has none of
+    it; None for the whole file: no Range, several, or one that is malformed."""
+    m = re.fullmatch(r'bytes=(\d*)-(\d*)', asked.strip(), re.A)
+    if not m or len(asked) > 60 or not (m[1] or m[2]):
+        return None
+    if not m[1]:
+        return (max(0, size - int(m[2])), size) if int(m[2]) and size else (0, 0)
+    start, last = int(m[1]), int(m[2]) if m[2] else size
+    if last < start:
+        return None if m[2] else (0, 0)
+    return (start, min(last + 1, size)) if start < size else (0, 0)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -385,22 +399,39 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def shot(self, src: str) -> None:
-        """F162: a Needs you item's picture ('uploads/a.png', 'asks/b.png'): images of those two folders only."""
+        """F162: a Needs you item's picture or video ('uploads/a.png', 'asks/b.mp4'): those of those two folders only.
+        F445a: in parts as asked for (Range), which Safari needs to play a video at all."""
         f = need_detail.shot_file(src)
         try:
-            data = f.read_bytes() if f else b''
+            h = f.open('rb') if f else None
         except OSError:
-            data = b''
-        if not data:
-            return self.send(404, json.dumps({'ok': False, 'out': 'no such picture'}))
-        self.send_response(200)
-        self.send_header('Content-Type', need_detail.image_type(data[:16]))
-        self.send_header('Content-Length', str(len(data)))
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.end_headers()
-        self.wfile.write(data)
+            h = None
+        if h is None:
+            return self.send(404, json.dumps({'ok': False, 'out': 'no such picture or video'}))
+        with h:
+            size = os.fstat(h.fileno()).st_size
+            part = byte_range(self.headers.get('Range') or '', size)
+            start, end = part or (0, size)
+            self.send_response(416 if start >= end else 206 if part else 200)
+            self.send_header('Content-Type', need_detail.shot_type(h.read(need_detail.HEAD)))
+            self.send_header('Content-Length', str(end - start))
+            self.send_header('Accept-Ranges', 'bytes')
+            if part:
+                self.send_header('Content-Range', f'bytes {start}-{end - 1}/{size}' if start < end else f'bytes */{size}')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Referrer-Policy', 'no-referrer')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            h.seek(start)
+            left = end - start
+            try:
+                while left and (data := h.read(min(left, 1 << 18))):
+                    self.wfile.write(data)
+                    left -= len(data)
+            except OSError:  # the player went away: it seeks by asking again
+                left = -1
+            if left:
+                self.close_connection = True
 
     def events(self) -> None:
         self.send_response(200)

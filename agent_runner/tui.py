@@ -788,9 +788,10 @@ class RunPage:
                     if xs is d['steps']:
                         self.step_lines(it, j - 1, width, out)
         self.give_fields(it, width, out)
-        if d['shots']:
-            out += [L(), L(('Pictures', 'dim'))]
-            for s in d['shots']:
+        for head, video in (('Videos', True), ('Pictures', False)):  # F445a: a terminal plays none: where it is
+            shots = [s for s in d['shots'] if bool(s.get('video')) == video]
+            out += [L(), L((head, 'dim'))] if shots else []
+            for s in shots:
                 out += text_lines(s['path'], 'blue', width)
                 out += text_lines(s['caption'], 'dim', width) if s.get('caption') else []
         if d['notes']:

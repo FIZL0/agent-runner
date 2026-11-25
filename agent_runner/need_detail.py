@@ -30,6 +30,8 @@ SHOTS_MAX = 20
 SHOT_DIRS = ('uploads', 'asks')  # under the notes dir, the only folders pictures are shown from
 SHOT_TYPES = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
               '.webp': 'image/webp'}
+VIDEO_TYPES = {'.mp4': 'video/mp4', '.webm': 'video/webm'}  # F445a: what an ask file's shots may be too
+HEAD = 64  # bytes `shot_type` reads
 
 PREP = re.compile(r'(?:and |then )?(?:on|in|at|after|before|once|with|when|while|for|from|using|if)\b', re.I)
 SEE = re.compile(r'(?:the|it|its|they|each|all of|both|nothing|no|there|taps|you should|you see)\b', re.I)
@@ -161,8 +163,8 @@ def place(ask: str) -> str:
 
 
 def shot_file(src: str) -> Path | None:
-    """The picture `src` ('uploads/a.png', 'asks/B160/1.png') names, under the notes dir; None unless it is an image
-    really under <notes>/uploads or <notes>/asks (no way out by .. or a symlink)."""
+    """The picture or video `src` ('uploads/a.png', 'asks/B160/1.mp4') names, under the notes dir; None unless it is
+    one really under <notes>/uploads or <notes>/asks (no way out by .. or a symlink)."""
     src = str(src or '').replace('\\', '/')
     top, _, rest = src.partition('/')
     if top not in SHOT_DIRS or not rest or '\0' in src:
@@ -170,13 +172,24 @@ def shot_file(src: str) -> Path | None:
     try:
         base = Path(os.path.realpath(S.C.notes(top, 'x').parent))
         f = Path(os.path.realpath(base / rest))
-        if not f.is_relative_to(base) or not f.is_file() or Path(rest).suffix.lower() not in SHOT_TYPES or \
-                f.suffix.lower() not in SHOT_TYPES or f.stat().st_size > SHOT_MAX:
+        types = VIDEO_TYPES if f.suffix.lower() in VIDEO_TYPES else SHOT_TYPES
+        if not f.is_relative_to(base) or not f.is_file() or Path(rest).suffix.lower() not in types or \
+                f.suffix.lower() not in types or f.stat().st_size > SHOT_MAX:
             return None
         with f.open('rb') as h:
-            return f if image_type(h.read(16)) else None
+            got = shot_type(h.read(HEAD))
+        return f if (got == types[f.suffix.lower()] if types is VIDEO_TYPES else got in types.values()) else None
     except (OSError, ValueError, AttributeError):
         return None
+
+
+def shot_type(head: bytes) -> str:
+    """The type of the picture or video whose first HEAD bytes are `head`; '' for anything else."""
+    if head[4:8] == b'ftyp':
+        return 'video/mp4'
+    if head.startswith(b'\x1aE\xdf\xa3') and b'webm' in head[:HEAD]:
+        return 'video/webm'
+    return image_type(head)
 
 
 def image_type(head: bytes) -> str:
@@ -192,7 +205,7 @@ def image_type(head: bytes) -> str:
 
 def _shot(file: str, caption: str) -> dict | None:
     """A picture's row from the file a task or an asks file names: relative to <notes>/asks, 'uploads/…', or the
-    whole path; None when it cannot be shown."""
+    whole path; None when it cannot be shown. A video's has `video`."""
     file = file.replace('\\', '/')
     tries = [file] if file.split('/')[0] in SHOT_DIRS else [f'asks/{file}']
     if Path(file).is_absolute():
@@ -203,7 +216,8 @@ def _shot(file: str, caption: str) -> dict | None:
             return None
     for src in tries:
         if f := shot_file(src):
-            return {'src': src, 'path': str(f), 'caption': caption}
+            return {'src': src, 'path': str(f), 'caption': caption,
+                    **({'video': True} if f.suffix.lower() in VIDEO_TYPES else {})}
     return None
 
 

@@ -27,7 +27,7 @@ function drawerBlur(){if(TOUCH()&&typingIn(document.activeElement))document.acti
 document.addEventListener('touchstart',e=>{
   if(SW&&SW.on&&!SW.sheet){if(e.touches.length>1&&!SW.pl)return;swipeEnd(false)}  // B167: a second finger does not end the lock
   SW=null;const t=e.touches[0], el=e.target;
-  if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop,.cview,.mic.hold')||DR&&DR.on)return;
+  if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,video,[contenteditable],iframe,.obpop,.cview,.mic.hold')||DR&&DR.on)return;
   if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,ly:t.clientY,lt:e.timeStamp,v:0,base:0};return}
   const scr=scrollers(el), dr=drawerOn()&&!(el.closest('#body,#dock')&&sideways(el)), pull=pullPane(el,scr);
   if(!dr&&!pull)return;
