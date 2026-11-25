@@ -117,3 +117,19 @@ def first_message(d: dict, state: str, words: str) -> str:
                'my words below ask for it.')
     out.append(f'My words:\n{words.strip()}')
     return '\n\n'.join(out)
+
+
+def note_message(item: str, title: str, question: str, ask: str, answer: str, note: str) -> str:
+    """F452: the first message of the chat about the `note` of an answer that closed `item`. Its start is what
+    `control_settled.OPENED` reads the item from."""
+    title = _one_line(title)
+    out = [f"About {item}{f' ({title})' if title else ''}: my answer in Needs you closed this task, and it came with a "
+           'note.']
+    if question:
+        out.append(f'The question: {question}')
+    if ask and ask != question:
+        out.append(f'The whole ask: {ask}')
+    out.append(f'My answer: {answer}')
+    out.append(f'My note with it: {note}')
+    out.append('The task is closed, so no agent of it gets the note: act on the note now, in this chat.')
+    return '\n\n'.join(out)

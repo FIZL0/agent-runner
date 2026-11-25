@@ -7,6 +7,7 @@ The fake run and the helpers are in tests/_ui_model.py.
 """
 from __future__ import annotations
 import json
+import threading
 from pathlib import Path
 from unittest import mock
 from _check import check, eq, report
@@ -173,6 +174,76 @@ def test_chat(tmp: Path) -> None:
     eq([x['id'] for x in R.recent()], [rid['D3']], 'leaves the response')
 
 
+@mock.patch.object(U, 'NOTE_CHAT_WAIT', 60)
+def test_note_chat(tmp: Path) -> None:
+    """F452: a note on an answer that closes its task starts a chat with it, and no response is kept."""
+    repo = plan(tmp)
+    todo, sent, ran = repo / 'plan' / 'TODO.md', [], []
+    closed = 'confirmed and ticked B2'
+    with sends(sent):
+        r = U.act('run_control', key='need_yes', tid='B2', text='Yes', note=' but  the icon is grey ')  # the real plan confirm
+    eq((r['ok'], r['gone'], r['said']), (True, 'B2', 'B2 ticked. Your note opened a chat'), 'answered, and the toast')
+    check('**B2**' not in todo.read_text(encoding='utf-8') or '- [x] **B2**' in todo.read_text(encoding='utf-8'), 'B2 is closed')
+    eq((len(sent), said()), (1, []), 'one chat, no sent response')
+    m = control_settled.OPENED.match(sent[0])
+    eq(m and (m[1] or m[2]), 'B2', 'control_settled knows the item')
+    for part in ('About B2 (Fix the merge retry): ', 'The question: Look at it', 'My answer: Yes\n',
+                 'My note with it: but the icon is grey', 'The task is closed', 'act on the note'):
+        check(part in sent[0], f'it says {part!r}', sent[0])
+    todo.write_text(PLAN, encoding='utf-8')
+    with ran_by(ran, closed):
+        U.answer('B2', 'Yes', True, 'on wifi')
+    eq([a[:4] for a in ran], [['plan', 'confirm', 'B2', 'Yes: on wifi'], ['control', '--new', '--no-wait', '--ask']],
+       'after the answer, a new control session')
+    sent.clear()
+    with ran_by([], closed), sends(sent):
+        for note in ('', '  '):
+            U.answer('B2', 'Yes', True, note)
+        eq((sent, said()), ([], [('B2', 'Yes', '')] * 2), 'no note: no chat, kept as ever')
+    with mock.patch.object(U, 'RUN', [lambda argv: (1, 'no')]), sends(sent):
+        check(not U.answer('B2', 'Yes', True, 'on wifi')['ok'], 'an answer that failed')
+    eq((sent, len(said())), ([], 2), 'starts none')
+    for f in R.folder().iterdir():
+        f.unlink()
+    with sends(sent):  # the real plan commands: each reopens its task
+        for tid, text in (('B2', 'No'), ('D3', 'lazy'), ('F1', 'Done')):
+            r = U.answer(tid, text, True, 'a note')
+            check(r['ok'] and f'- [ ] **{tid}**' in todo.read_text(encoding='utf-8'), f'{tid} is open again', r)
+            check('chat' not in r['said'], 'no chat in the toast', r)
+    eq((sent, [x[2] for x in said()]), ([], ['a note'] * 3), 'no chat: the agent gets the note')
+
+
+@mock.patch.object(U, 'NOTE_CHAT_WAIT', 60)
+def test_note_chat_fails(tmp: Path) -> None:
+    """F452: a chat that does not start, or is slow to, never fails or holds the answer; its response is kept."""
+    plan(tmp)
+    closed = 'confirmed and ticked B2'
+
+    def broken(text):
+        raise OSError('no python')
+
+    for send, why in ((lambda t: {'ok': False, 'code': 1, 'out': 'no room\nmore', 'argv': []}, 'no room'), (broken, 'no python')):
+        with ran_by([], closed), mock.patch.object(U, 'SEND', [send]):
+            r = U.answer('B2', 'Yes', True, 'on wifi')
+        eq((r['ok'], r['gone'], said()), (True, 'B2', [('B2', 'Yes', 'on wifi')]), f'{why}: answered, and kept')
+        check(r['said'].startswith(f'B2 ticked. The chat with your note did not start ({why})'), 'the toast says so', r)
+        R.take(R.recent()[0]['id'])
+    go, kept = threading.Event(), threading.Event()
+    real = R.keep
+
+    def slow(text):
+        go.wait(60)
+        return {'ok': False, 'code': 1, 'out': 'too late', 'argv': []}
+
+    with ran_by([], closed), mock.patch.object(U, 'SEND', [slow]), mock.patch.object(U, 'NOTE_CHAT_WAIT', 0.01), \
+            mock.patch.object(R, 'keep', lambda *a: (real(*a), kept.set())):
+        r = U.answer('B2', 'Yes', True, 'on wifi')
+        eq((r['ok'], r['said'], said()), (True, 'B2 ticked. A chat with your note is starting', []), 'a slow one is not waited for')
+        go.set()
+        check(kept.wait(60), 'it failed after all')
+    eq(said(), [('B2', 'Yes', 'on wifi')], 'and is kept then')
+
+
 def test_state(tmp: Path) -> None:
     """The item's state now."""
     repo = plan(tmp)
@@ -187,4 +258,5 @@ def test_state(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(f) for f in (test_answers, test_sheet, test_pitch, test_give, test_not_kept, test_chat, test_state)]))
+    raise SystemExit(report([in_tmp(f) for f in (test_answers, test_sheet, test_pitch, test_give, test_not_kept, test_chat, test_note_chat, test_note_chat_fails,
+                                             test_state)]))
