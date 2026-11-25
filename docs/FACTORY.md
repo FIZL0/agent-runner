@@ -50,12 +50,12 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 
 | source | what stops it filing the same task twice |
 |---|---|
-| a person / control session (`plan add`, `take "TEXT"`) | `similar()` refuses a strong match with any open or blocked task (exit 3, `plan note` it instead, `--force` to override), under the plan lock |
-| agents' follow-ups in slots | `similar()` against the slot's branch copy at add; at the merge, against the open tasks the target got since the branch forked: a strong match becomes a note on that task (`fold_doubles`, B33) |
+| a person / control session (`plan add`, `take "TEXT"`) | `same_task()` refuses an add whose text and fields equal an open or blocked task's (exit 3, names it, even with `--force`); `similar()` refuses a strong match (`plan note` it instead, `--force` to override); both under the plan lock |
+| agents' follow-ups in slots | `same_task()` at add, also against the other worktrees' TODO.md, so an unmerged follow-up of another slot counts; `similar()` against the slot's branch copy at add; at the merge, against the open tasks the target got since the branch forked: a strong match becomes a note on that task (`fold_doubles`, B33) |
 | CI watch | one task per workflow while one is open, each run judged once (`.seen`), a rerun before filing; the third in a week waits on a person (B34) |
 | flaky / broken / runaway tests | one task per test name while one is open; the third in a week waits on a person (B34) |
 | concept builds (`done --artifact`) | one build per concept round; `revise` drops the waiting one before the next round files anew |
-| splits (`plan add P17 …`) | the family rule: a task never runs beside its own part, and two parts run side by side only when their `files:` do not meet and neither is `after:` the other; `similar()` ignores matches within the family by design |
+| splits (`plan add P17 …`) | `same_task()` has no family exemption, so a part equal to an open sibling part is refused; the family rule: a task never runs beside its own part, and two parts run side by side only when their `files:` do not meet and neither is `after:` the other; `similar()` ignores matches within the family by design |
 
 ## Brakes
 
