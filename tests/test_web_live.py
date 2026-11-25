@@ -1349,6 +1349,71 @@ console.log(JSON.stringify(out));
     eq((out.get('menu'), out.get('menuNew'), out.get('same')), ([False, False, False, False, 1], [False, False], True), 'a menu or a question is untouched')
 
 
+def test_frame_copy_b845(tmp: Path) -> None:
+    """B845: with a session that tracks the mouse, a drag in the frame selects, a click still goes to the session, a right
+    click does not, and Ctrl+C copies the selected words, with none it is the session's. Not in the login's terminal."""
+    if not shutil.which('node'):
+        print('  (no node here: the frame copy test is skipped)')
+        return
+    driver = r"""
+const at = {}, sent = [], out = {};
+let picked = '', clip = '', mode = 'drag', mac = MAC, real = true;
+globalThis.addEventListener = (t, f) => (at[t] = at[t] || []).push(f);
+globalThis.removeEventListener = (t, f) => { at[t] = at[t].filter(x => x !== f) };
+globalThis.HTMLElement = class { focus() {} };
+globalThis.location = {origin: 'o'}; globalThis.parent = {postMessage() {}}; globalThis.window = globalThis;
+globalThis.matchMedia = () => ({matches: false}); globalThis.WebSocket = class {};
+Object.defineProperty(globalThis, 'navigator', {value: {platform: mac ? 'MacIntel' : 'Linux x86_64'}});
+globalThis.MouseEvent = class { constructor(type, o) { Object.assign(this, o, {type}) } };
+globalThis.document = {fonts: {load: () => ({then() {}})}, execCommand() { fire('copy', {clipboardData: {setData: (k, v) => { clip = v }}}) }};
+const box = {dispatchEvent(e) { sent.push(e.type + (e.shiftKey ? '+shift' : '') + (e.altKey ? '+alt' : '')); if ((e.shiftKey || e.altKey) && e.type === 'mousedown') picked = 'words' }};
+globalThis.term = {element: {contains: () => true, querySelector: () => box}, get modes() { return {mouseTrackingMode: mode} }, focus() {}, textarea: {select() {}},
+  hasSelection: () => !!picked, getSelection: () => picked, clearSelection() { picked = '' }};
+function fire(type, o) { const e = Object.assign({type, isTrusted: real, target: {}, button: 0, buttons: 0, clientX: 0, clientY: 0, stopped: false,
+  preventDefault() {}, stopImmediatePropagation() { this.stopped = true }}, o); for (const f of [...at[type] || []]) { f(e); if (e.stopped) break } return e }
+HEADJS
+const take = () => sent.splice(0), press = (o, x, y) => { const r = [fire('mousedown', {buttons: 1, ...o}).stopped]; if (x) r.push(fire('mousemove', {buttons: 1, clientX: x}).stopped); r.push(fire('mouseup', {clientX: x || 0, ...o}).stopped); return [r, take()] };
+const c = o => { const e = fire('keydown', {keyCode: 67, key: 'c', ctrlKey: true, ...o}); return [e.stopped, clip, picked] };
+fire('pointerdown', {pointerType: 'touch'}); out.touch = press({});
+fire('pointerdown', {pointerType: 'mouse'});
+out.click = press({}); out.jitter = press({}, 3);
+out.drag = press({}, 30); out.move = fire('mousemove', {}).stopped;
+out.copy = c(); out.held = c({repeat: true}); out.none = c();
+picked = 'cmd'; out.cmd = c({ctrlKey: false, metaKey: true});
+picked = 'x'; out.shiftC = c({shiftKey: true}); picked = '';
+const r = fire('mousedown', {button: 2}); out.right = [r.stopped, !!r.shiftKey, !!r.altKey];
+out.own = press({[mac ? 'altKey' : 'shiftKey']: true}, 30);
+out.ctrlClick = press({ctrlKey: true}); picked = '';
+real = false; out.page = press({}, 30); real = true;
+mode = 'none'; out.off = press({}, 30);
+console.log(JSON.stringify(out));
+"""
+    plain = [[False, False], []]
+    for mac, name in ((False, 'c6'), (True, 'c6'), (False, 'login')):
+        head = W.session_frame.with_head(b'<head>', name, 'dark').decode().split('<script>', 1)[1].split('</script>', 1)[0]
+        f = tmp / 'b845.js'
+        f.write_text(driver.replace('MAC', json.dumps(mac), 1).replace('HEADJS', head), encoding='utf-8')
+        r = subprocess.run(['node', str(f)], capture_output=True, text=True, timeout=60)
+        check(r.returncode == 0, "node runs the frame's script", r.stderr[-800:])
+        out = json.loads(r.stdout or '{}')
+        if name == 'login':
+            eq((out.get('click'), out.get('drag'), out.get('right')), (plain, [[False] * 3, []], [False, False, False]), "the login's mouse is untouched")
+            eq(out.get('cmd'), [False, '', 'cmd'], "and so are its keys")
+            continue
+        key = '+alt' if mac else '+shift'
+        eq(out.get('touch'), plain, 'touch is untouched')
+        eq(out.get('click'), [[True, True], ['mousedown', 'mouseup']], 'a click is held, then sent')
+        eq(out.get('jitter'), [[True] * 3, ['mousedown', 'mouseup']], 'a hand that shakes still clicks')
+        eq((out.get('drag'), out.get('move')), ([[True, False, False], ['mousedown' + key]], True), 'a drag selects; a bare move keeps the words')
+        eq((out.get('copy'), out.get('held'), out.get('none')), ([True, 'words', ''], [True, 'words', ''], [False, 'words', '']),
+           "Ctrl+C copies and clears, a held key is no interrupt, the next one is the session's")
+        eq((out.get('cmd'), out.get('shiftC')), ([True, 'cmd', ''], [False, 'cmd', 'x']), 'Cmd+C too, not Ctrl+Shift+C')
+        eq(out.get('right'), [False, not mac, mac], 'a right click is read as one that selects, so none is sent')
+        eq(out.get('own'), [[False] * 3, []], 'a press that selects by itself is untouched')
+        eq(out.get('ctrlClick'), [[True, False], []] if mac else [[True, True], ['mousedown', 'mouseup']], "Ctrl+click is a Mac's right click")
+        eq((out.get('page'), out.get('off')), ([[False] * 3, []],) * 2, "the page's own clicks and a session that tracks no mouse are untouched")
+
+
 def test_session_run_side_f170(tmp: Path) -> None:
     """F170: /live, /commands?s=, and which colours a session's frame gets."""
     fake_repo(tmp)
@@ -1478,4 +1543,4 @@ def test_banner_f402c(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c)]))

@@ -417,7 +417,7 @@ The run's printed addresses (the run log and `agent-runner status`) end with a l
 loaded out of sight after that; only the open chat is connected, and its ttyd socket never closes, so ttyd's own Reconnect
 words never show. `/terminal/NAME` says
   whether there is a session to show, and if not, why. On a computer you click and type in the session directly; only a
-  mouse press in it gives it the keyboard, and ttyd's focus on connect never does. A file dropped on it is attached. On
+  mouse press in it gives it the keyboard, and ttyd's focus on connect never does. With the mouse, a drag selects words in it and copies them at once (as Shift+drag did, Option+drag on a Mac), Ctrl+C or Cmd+C copies a selection without interrupting, and a right click is not sent to it but opens the browser's menu. A file dropped on it is attached. On
   a phone a touch layer over it scrolls it on a drag (a wheel steps it, and it glides; a drag scrolls the history first,
   while it stands in), a tap clicks in it without
   opening the keyboard, a long press selects the word under the finger, at the live end too (no sheet; where no history can be drawn it does nothing), and the key row's Text opens a sheet with the screen's text to select and
