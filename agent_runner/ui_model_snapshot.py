@@ -445,6 +445,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
         progress = ''
     waiting = waiting_ok()
     needs, concepts = needs_rows(waiting, dt.datetime.fromtimestamp(now))
+    need_tools(needs)  # F428b
     shelved = shelved_rows(ls, waiting)  # F184
     slots = slot_count(up, st)
     sessions = session_rows(st, ls, titles, now, links, terminal_base, slots, windows)
@@ -491,6 +492,27 @@ def kept_responses() -> list[dict]:
         return R.recent()
     except Exception:  # noqa: BLE001 - costs the rows, not the snapshot
         return []
+
+
+def need_tools(needs: list[dict]) -> None:
+    """F428b: to a Needs you row's `devices`, the runner.toml tools with a web page that its task needs, each with its
+    `source` and `label`. A tool whose name a device also has is the tool, as `needs:` takes it."""
+    from agent_runner import device_page, devices, need_detail, shared_tools
+    try:
+        texts = need_detail.task_lines() if needs else {}
+        lines = [(r, l) for r in needs if ' | needs: ' in (l := texts.get(r['id'], '').partition('\n')[0])]
+        if not lines or not (pages := devices.tool_pages(S.C)):
+            return
+        specs = shared_tools.specs(S.C)
+        for r, l in lines:
+            rows = [{'name': n, 'label': specs[n]['label'], 'source': devices.TOML, 'page': dev['page'],
+                     'state': device_page.state(devices._page_dir(dev)) if dev.get('page_id') else ''}
+                    for n in shared_tools.needs_of(l, S.C)
+                    if not specs[n]['device'] and (dev := pages.get(n)) and dev.get('page')]
+            if rows:
+                r['devices'] = r.get('devices', []) + rows
+    except Exception:  # noqa: BLE001 - costs the links, not the snapshot
+        return
 
 
 def tools_line(tools: list[dict]) -> str:
