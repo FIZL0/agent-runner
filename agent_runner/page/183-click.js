@@ -48,7 +48,6 @@ document.addEventListener('click',async e=>{
   if(q('[data-pmore]')){H.more=!H.more;render(true);return}
   if(q('[data-pload]')){loadProjects();loadDevices();return}
   if(q('[data-addproject]')){H.said='';openSheet('addproject');const i=$('sheet').querySelector('input');if(i)kbFocus(i);return}
-  if(q('[data-plusslot]')){plusSlot();return}
   if(x=q('[data-projmore]')){openSheet('project',x.dataset.projmore);return}
   if(x=q('[data-pact]')){const k=x.dataset.pkey, p=projectOf(k), a=x.dataset.pact, arg=x.dataset.parg||'', m=p&&projectMore(p).find(b=>b.a===a);if(!p)return;
     if(m&&m.sure&&!x.hasAttribute('data-sure')){S.sure=`proj:${m.label}:${k}`;render(true);return}

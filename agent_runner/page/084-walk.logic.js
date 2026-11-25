@@ -25,7 +25,7 @@ const WALK_STEPS=
   "keys": "It is Needs you [4]; Enter there opens one, with a key for each answer."},
  {"id": "land", "title": "A merge landing",
   "text": "A finished task is merged and its tests run. It lands on main only when they pass.",
-  "page": "Then it is listed under Landed lately on Status.",
+  "page": "Then it is listed under Landed in History.",
   "none": "Nothing has landed yet.",
   "keys": "The log on Status [1] says so.",
   "noRun": "Start the run to see one."},

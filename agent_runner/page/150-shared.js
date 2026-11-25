@@ -20,13 +20,8 @@ function plusBtn(){
   if(HOME_PAGE?S.thread||!atAll():S.thread&&(isNew(S.thread)||S.thread[0]==='@'))return '';
   if(S.thread)return b('data-new','Chat','New chat',!!PLUS_HOLD);  // B762: a chat or a slot's session; not one still empty or starting
   return{projects:()=>b('data-addproject','Project','Add a project'),home:()=>b('data-about="new"','Task','Add a task',!!PLUS_HOLD),plan:()=>b('data-about="new"','Task','Add a task',!!PLUS_HOLD),
-    concepts:()=>b('data-about="newconcept"','Concept','New concept'),status:()=>S.snap.up!==false&&controlOf('slot_add')?b('data-plusslot','Slot','Add a slot'):'',
+    concepts:()=>b('data-about="newconcept"','Concept','New concept'),
     tools:()=>S.tools&&S.tools.secure?b('data-tool="add"','Device','Add a device'):'',talk:()=>b('data-newtalk','New talk','New Talk chat')}[S.view]?.()||'';
-}
-/* + Slot: shown at once (the toast, the Run card's stand-in), through the outbox */
-function plusSlot(){
-  const n=(S.snap.slots||0)+S.ob.filter(x=>x.ctl==='slot_add:'&&x.state==='sending').length+1;
-  outbox('run_control',{key:'slot_add'},{ctl:'slot_add:',say:`Add a slot: ${n} slots`});toast(`${n} slots`);
 }
 /* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, and the view's + (F150) */
 function topHTML(){

@@ -276,7 +276,7 @@ _In code_: docs/STYLE.md, test_style_f83, the tokens in web_page.html's :root
 _Avoid_: style guide (that is the voice file), design system, theme
 
 **Status view**:
-The run app's one page on the run itself: the run with its slots and controls, usage, what landed lately, the release, then the run log
+The run app's one page on the run itself, in four sections: Run (the run's state, notices and controls), Working (a row per slot), Merging (the tasks that merge now) and Usage
 _Said_: Status
 _On screen_: Status
 _In code_: statusHTML, NAV

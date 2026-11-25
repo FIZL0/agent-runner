@@ -9,9 +9,9 @@ function walkStep(id,x){
   const s={
     queue:{view:'plan',many:3,at:x.off?['[data-k="pq"]','sec:Queue']:['.card[data-k^="task:"]','sec:Queue'],say:[w.text]},
     start:{view:'status',at:x.off?[first,'.pcard']:x.up?['.card:has([data-k="runsaid"])']:['[data-ctl="start"]','.card:has([data-k="runsaid"])'],say:[x.up?w.up:w.off]},
-    session:{view:'status',at:x.off?[first,'.pcard']:['#body .srow:has([data-thread])','.card:has([data-k="runsaid"])'],say:[w.text,x.working?w.pageWorking:w.pageIdle,off]},
+    session:{view:'status',at:x.off?[first,'.pcard']:['#body .srow:has(.livedot)','.card:has([data-k="runsaid"])'],say:[w.text,x.working?w.pageWorking:w.pageIdle,off]},
     needs:{view:'home',at:x.off?['.card.need','sec:Needs you']:['#body .card:has([data-needopen])','sec:Needs you'],say:[w.text,x.needs?off||w.some:w.none]},
-    land:{view:'status',at:x.off?[first,'.pcard']:['[data-k="late"]','sec:Landed lately'],say:[w.text,w.page,x.landed||x.off?'':w.none,off]},
+    land:{view:'history',at:x.off?[first,'.pcard']:['[data-k="landed"]','sec:Landed'],say:[w.text,w.page,x.landed||x.off?'':w.none,off]},
     chat:{view:'home',at:x.off?[first,'.pcard']:['#body .box'],say:[w.text,w.page,off]},
     own:{view:'',at:['#top [data-addproject]','[data-up]','a.brand','.icon[data-menu]'],say:[w.text,x.home?w.pageHome:w.setup]},
   }[id];

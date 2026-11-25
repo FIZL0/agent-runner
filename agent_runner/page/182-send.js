@@ -41,7 +41,7 @@ function about(a){
   else if(a==='newconcept')S.ctx={kind:'newconcept',label:'New concept'};
   else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept,lead:c.lead}}
   else if(k==='setting'){const x=settingOf(v);if(!x)return;S.ctx={kind:'setting',id:`[${x.table}] ${x.key}`,title:x.name,label:x.name}}
-  else if(k==='plan'){const q=S.snap.queue.concat(S.snap.shelved||[]).find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
+  else if(k==='plan'){const q=S.snap.queue.concat(S.snap.shelved||[]).concat(mergeRows(S.snap),working_().map(s=>({id:s.task,title:s.title}))).find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
   else return;
   open(ctxKey(S.ctx));const ta=document.querySelector('[data-in]');if(ta)kbFocus(ta);  // in the tap itself, so a phone's keyboard comes
 }
