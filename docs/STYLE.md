@@ -68,15 +68,16 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
 - **Needs you item** (`.asktap`, `needTap()`): one button, not a card of buttons. What is wanted and where in everyday
   words (`.asklab`), with its task's kind chip on that line (Kind chip), what is asked (`needHead()`, `.q`: a DECIDE's
   question, any other item's summary), its task's title small under it (`needTitle()`, left out when it says the
-  same), a DECIDE's background (`.askdo`), then Press for details, the steps count and the age. Nothing of it is cut: no ellipsis and no line clamp, on the card or in
-  the sheet. Its answer buttons sit below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
+  same; an item with an explanation (`detail.text`) has its session and project there instead), a DECIDE's background
+  (`.askdo`), then an explanation's first sentence (`explainFirst()`, `.askdo`), then Press for details, the steps count and the age. Nothing of it is cut: no ellipsis and no line clamp, on the card or in
+  the sheet; an explanation shows only its first sentence here, the rest in the sheet. Its answer buttons sit below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
   sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way. A
   device's or tool's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: what is asked, its task's
-  title small under it as on the card, label (with its kind chip, as on the card), age; Why (a BLOCKED item's, left out when the heading says it); where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
+  title small under it as on the card, label (with its kind chip, as on the card), age; the explanation first in the body (`.explain`, `needExplain()`: text over EXPLAIN_LONG, 600 characters, is cut at a block, else at a sentence, the rest in a fold, "The rest of the explanation"); Why (a BLOCKED item's, left out when the heading says it); where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
   only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or
   Esc goes back); the
-  task text folded. An item with inputs draws its steps with Open (a step's link) and the command as code, with
+  task text folded, left out of an item with an explanation (Full task). An item with inputs draws its steps with Open (a step's link) and the command as code, with
   "Run on <machine>" and Copy; then What you should see; then What to enter, one field per input (its label above it;
   a secret is a password field, and over plain http words stand in its place and say why), a refusal in `--bad` under
   its field; then one Done (`.pri`), all in the body. A confirm question takes Done's place (Yes, send it / No). There
