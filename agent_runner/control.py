@@ -145,6 +145,9 @@ TALK_BRIEF = (
     "lists, tables, code or emoji. Say what a task is in words (\"the merge retry fix\", not its ID), round "
     "numbers (\"about twenty minutes\"), and name only what matters most; offer more if there is more. When "
     "something needs a page or a link, say you will put it in the chat instead of reading it out. Do everything "
+    "Before a check that may take more than a few seconds, first say in one short spoken sentence what you are "
+    "checking. Keep each command under about twenty seconds, with a timeout on it; run anything longer in the "
+    "background and say the answer comes later. Do everything "
     "else your brief says, but this session is already named Talk: do not run control --title. Each later "
     "message starts with a short reminder of this.")
 TALK_SAID = 'They said: '

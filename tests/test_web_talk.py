@@ -1356,5 +1356,14 @@ def test_talk_back_b802(tmp: Path) -> None:
     eq(got.get('noMic'), on, 'where the mic cannot be used the box stays as it was')
 
 
+def test_talk_slow_check_b835(tmp: Path) -> None:
+    """B835: the Talk brief says what it checks before a slow check, and keeps commands short."""
+    from agent_runner import control as CT
+    b = CT.TALK_BRIEF
+    check('first say in one short spoken sentence what you are checking' in b, 'says what it checks first', b)
+    check('under about twenty seconds' in b and 'in the background' in b, 'short commands, longer ones in the background', b)
+    eq(CT.TALK_TAG, '(Talk: answer as speech.) ', 'the reminder is unchanged')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_talk_left_b836), in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
+    raise SystemExit(report([in_tmp(test_talk_slow_check_b835), in_tmp(test_talk_left_b836), in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
