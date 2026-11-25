@@ -115,7 +115,7 @@ def serve_again(port: int) -> WebServer | None:
 
 def serve_open(was: int, port: int) -> WebServer:
     """B844: `[run] web_port` (`port`) is taken and Runner Home is not installed: the page for every interface, on the
-    port the page-only process had it on (`was`, 0: none), else the next free one, else any."""
+    port the page-only process had it open on (`was`, 0: none), else the next free one, else any."""
     for p in (*([was] if was else []), *page_https.next_ports(port)):
         try:
             return serve(web_token(), p)
@@ -161,7 +161,7 @@ def start_web(only: bool = False) -> WebServer | None:
             why = f'port {port} is taken ({e})'
     if srv is None:
         try:
-            srv = (serve_again(was) or serve(web_token(), 0, LOCAL)) if home else serve_open(was, port)
+            srv = (serve_again(was) or serve(web_token(), 0, LOCAL)) if home else serve_open(was if was == fell[1] else 0, port)
         except OSError as e2:
             S.log(f'run page: cannot serve it ({e2}); set [run] web_port, or web = false')
             page_https.left_over()

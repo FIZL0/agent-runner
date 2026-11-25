@@ -145,10 +145,18 @@ def test_ports(tmp: Path, port, tail, log, start) -> None:
     tail.status['TCP'][str(port + 2)] = {'HTTPS': True}
     T.keep_rule({'host': BOX, 'https': port + 4, 'port': port + 3, 'run': 'another'})
     eq(T.next_ports(port, 4), [port + 6, port + 8], "not Serve's ports nor a recorded rule's")
+    tail.status['TCP'][str(port + 7)] = {'HTTPS': True}
+    eq(T.next_ports(port, 4), [port + 8], "nor one whose https port is another's")
+    tail.status['Web'][f'{BOX}:{port + 7}'] = {'Handlers': {'/': {'Proxy': f'http://127.0.0.1:{port + 6}'}}}
+    eq(T.next_ports(port, 4), [port + 6, port + 8], 'but one with an https address already')
     eq(T.next_ports(65535), [], 'none past the last port')
     with mock.patch.object(T, 'next_ports', lambda p: []):
         srv = W.serve_open(0, port)
     check(srv.server_address[0] == '0.0.0.0' and srv.server_address[1] != port, 'none of them free: any')
+    srv.stop()
+    with mock.patch.object(P, 'take_over', lambda: port + 40):  # it was behind a Home that is gone
+        srv = start()
+    eq(srv.server_address, ('0.0.0.0', port + 6), 'a port that was only for Home is not opened')
     srv.stop()
 
 

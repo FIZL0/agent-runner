@@ -111,13 +111,16 @@ def tailnet_host() -> str:
 
 def next_ports(port: int, many: int = 20) -> list[int]:
     """B844: the ports to try for a page whose web_port (`port`) is taken: every second one, since the next port of
-    each is for its https address, without those Tailscale Serve has or a run recorded a rule on."""
-    rules = {r['https'] for f in rules_dir().glob('*.json') if (r := read_rule(f))}
+    each is for its https address, without a pair Tailscale Serve or a recorded rule has for something else."""
+    from agent_runner.web import serve_https_urls
+    rules = {r['https']: r['port'] for f in rules_dir().glob('*.json') if (r := read_rule(f))}
     serves = {}
     if not os.environ.get('AGENT_RUNNER_NO_SERVE') and shutil.which('tailscale'):
         ok, out = tailscale('serve', 'status', '--json')
         serves = as_json(out) if ok else {}
-    return [p for p in range(port + 2, min(port + 2 * many, 65535) + 1, 2) if p not in rules and not used(serves, p)]
+    return [p for p in range(port + 2, min(port + 2 * many, 65535) + 1, 2)
+            if p not in rules and not used(serves, p) and rules.get(p + 1, p) == p
+            and (serve_https_urls(serves, p, 'x') or not used(serves, p + 1))]
 
 
 def is_ours(status: dict, rule: dict) -> bool:
