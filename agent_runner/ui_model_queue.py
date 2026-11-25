@@ -88,7 +88,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     where = slot_of(st or {}, time.time() if now is None else now)
     tool_waits, tool_names = split_wait_words(ls, st, now) | tool_wait_words(ls, st, now), project_tools()
     untils = until_wait_words(ls)
-    busy = busy_ids(st or {})  # F429b
+    busy = under_way_rows(st or {})  # F429b
     done = done_lines() if any(P.SPLIT.search(ls[t[-1]]) for t in tasks) else []
     for section, box, tid, rest, i in tasks:
         if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
@@ -114,7 +114,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
         if tid in untils and tid not in where:  # F427b: neither the person nor a slot: it says what it waits for
             out[-1].update(state='tool', tool_wait=untils[tid])
         if tid in busy:
-            out[-1]['under_way'] = True
+            out[-1].update(under_way=True, way=busy[tid])
         if row_hold._not_queued(ls, i):  # F429b: `plan hold` refuses it
             out[-1]['no_hold'] = True
         if 'held' in f:  # F429
@@ -130,13 +130,30 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     return out
 
 
-def busy_ids(st: dict) -> set[str]:
-    """F429b: the tasks no slot of STATE `st` runs that are under way all the same: merging, taken by hand, or waiting to
-    resume (`row_hold.under_way`'s cheap part: it runs no git)."""
+def under_way_rows(st: dict) -> dict[str, dict]:
+    """F429b, B846: the tasks no slot of STATE `st` runs that are under way all the same, and how, as a queue row says
+    it: {task: {'words', 'chat': the live chat that took it ('c10')}}, 'chat' only when one did. No git is run."""
     if not S.C:
-        return set()
+        return {}
+    from agent_runner import taken_by
     from agent_runner.sched import taken
-    return {*(st.get('merging') or []), *taken(), *(q[0] for q in S.queued().values())}
+    out = {q[0]: {'words': 'Waits to resume'} for q in S.queued().values()}
+    by_hand = taken()
+    live = control_titles() if by_hand else {}
+    for tid, d in by_hand.items():
+        n = taken_by.chat(S.C, d, live)
+        out[tid] = {'words': 'Taken by hand' if n is None else 'Taken by a chat that has ended'}
+        if n:
+            out[tid] = {'words': f'Taken by the chat {chat_name(n, live[n])}', 'chat': f'c{n}'}
+    return {**out, **{tid: {'words': 'Merging'} for tid in st.get('merging') or []}}
+
+
+def chat_name(n: int, title: str) -> str:
+    """B846: control session `n`'s name as the run page's Chats list says it (its chatName); `title`: `control_titles`'."""
+    from agent_runner.control_settled import pid_sid
+    st = chat_row(n, pid_sid(S.C, n))
+    title = st.get('title') or title
+    return title if title and (st['renamed'] or title != 'control session') else f'Chat {n}'
 
 
 def releases_on() -> bool:

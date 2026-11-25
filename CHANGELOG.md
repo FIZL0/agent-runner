@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: on the run page, a Plan queue row of a task no slot runs but which is under way no longer says only 'Being worked on'; it says 'Taken by the chat <its name>' (pressing the words opens that chat), 'Taken by a chat that has ended', 'Taken by hand' (taken from a terminal or unknown), 'Merging' or 'Waits to resume'; `take` now records the control session that ran it, in the git folder of its take worktree (B846).
 - Fixed: a run whose `web_port` is taken without Runner Home serves its page on every interface on the next free port (every second one, 8772, 8774, …, skipping Tailscale Serve's and recorded rules' ports), its run log saying which port it is on, instead of 127.0.0.1 only; the page-only process and a run that takes that page over keep the port (`web.fell`) (B844).
 - Fixed: on the run page, a long question's card keeps its scroll place when the chat's chips change (it went back to the top), and the question marked by Chat about this stays small with the phone keyboard up; a Needs you row of All projects cuts a long question at 3 lines (B840a).
 - Fixed: tests/test_no_claude.py no longer fails under load: its commit that moves main in the main checkout is tried again while the run's own `git status` there holds the index lock, where it failed at once and left a.txt edited, which held the merge (T33).

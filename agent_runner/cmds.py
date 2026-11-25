@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, shared_tools, stack, stop_now
+from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, shared_tools, stack, stop_now, taken_by
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -146,8 +146,7 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
     if (a.merge or a.drop) and (a.kind or a.files or a.here):
         ap.error('--merge and --drop take only an ID')
     init()
-    tid, branch = a.id, default_branch()
-    d = SLOTS_DIR / f'take-{tid}'
+    tid, branch, d = a.id, default_branch(), SLOTS_DIR / f'take-{a.id}'
     if a.merge or a.drop:
         if not d.is_dir():
             print(f'{tid}: not taken (no {d})', file=sys.stderr)
@@ -219,6 +218,7 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
     worktree(f'take-{tid}', branch)
     if (co := git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)).returncode:
         return fail(f'{tid}: checkout failed: {co.stderr.strip()}')
+    taken_by.record(C, d)  # B846
     if stash:
         if git('stash', 'apply', '-q', '--index', stash, cwd=d).returncode and \
                 git('stash', 'apply', '-q', stash, cwd=d).returncode:
