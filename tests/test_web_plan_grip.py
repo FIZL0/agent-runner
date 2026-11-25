@@ -79,7 +79,7 @@ def test_under_way(tmp: Path) -> None:
         now = order()
         r = go('V6', 'before', 'D4')
         check(not r['ok'] and 'cannot be moved' in r['out'] and order() == now, 'a started release does not', r)
-        for a in (('move', 'B2', 'top'), ('hold', 'B2')):
+        for a in (('move', 'B2', 'top'), ('hold', 'B2'), ('move', 'B2', 'after', 'F8')):  # F8 is parked
             check(real(['plan', *a])[0] and order() == now and text() == was, f'{a[0]} {a[-1]}: refused as before')
     ran = P._parse_command(['move', 'F1', 'before', 'B2'])
     with mock.patch.object(P, 'run_on', lambda c, t: 's2'), mock.patch.object(P, 'cfg', lambda: S.C):
