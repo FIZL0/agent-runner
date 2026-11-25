@@ -428,7 +428,7 @@ def test_need_heading_b793a(tmp: Path) -> None:
     title = 'Check F170 on the iPhone 15: ' + 'the hidden lines stay hidden ' * 4 + 'in Safari'
     row = {'id': 'R17', 'label': 'BLOCKED', 'age': '20m', 'ask': ask, 'ask_short': 'Release…',
            'detail': {**none, 'said': 'Do this', 'where': '', 'title': title, 'summary': ask, 'question': '', 'steps': [ask, 'This reruns']}}
-    same = {**row, 'detail': {**row['detail'], 'title': ask}}
+    same = {**row, 'detail': {**row['detail'], 'title': ask.replace('`', '')}}  # a title comes without its quote marks
     untitled = {**row, 'detail': {**row['detail'], 'title': 'R17'}}
     got = logic_js([['needTap', r] for r in (row, same, untitled, {k: v for k, v in row.items() if k != 'detail'})])
     head = '<b class="q">' + ask.replace('`agent-runner upgrade`', '<code>agent-runner upgrade</code>') + '</b>'
@@ -438,7 +438,7 @@ def test_need_heading_b793a(tmp: Path) -> None:
         check(head + foot in g, f'{why}: the ask alone', g)
     css = W.PAGE.read_text(encoding='utf-8')
     rules = [m for m in re.findall(r'[^{}]*\{[^{}]*\}', css) if re.search(r'ellipsis|line-clamp', m)]
-    cut = [m for m in rules if re.search(r'\.asktap|\.asktop|\.q[{, ]|\.small[{, ]|(?<!\.card>)\.askdo', m.split('{')[0])]
+    cut = [m for m in rules if re.search(r'\.asktap|\.asktop|\.askbody|\bh2\b|\.q(?![\w-])|\.small(?![\w-])|(?<!\.card>)\.askdo', m.split('{')[0])]
     eq(cut, [], 'no rule cuts the heading, the title or what to do')
 
 

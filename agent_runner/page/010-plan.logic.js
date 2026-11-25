@@ -10,7 +10,8 @@ function needD(n){const ask=n.ask||n.title||n.what||'';
 const needLab=n=>{const d=needD(n);return d.said+(d.where?` · ${d.where}`:'')};
 /* B793a: the heading is what is asked (a DECIDE's question, the rest's summary), whole, with the task's title small under it ('' when it adds nothing) */
 const needAsk=n=>{const d=needD(n);return d.question||d.summary||d.title};
-const needTitle=n=>{const d=needD(n);return d.title!==n.id&&d.title!==needAsk(n)?d.title:''};
+const needSame=s=>String(s||'').replace(/[`.]+(?=\s|$)|`/g,'').trim().toLowerCase();  // a title has no quote marks or full stop
+const needTitle=n=>{const d=needD(n);return d.title!==n.id&&needSame(d.title)!==needSame(needAsk(n))?d.title:''};
 const needHead=n=>askWords(needAsk(n));
 /* the card's words, one button that opens the popup: what is wanted and where, what is asked, the title, a
    DECIDE's background; nothing of it is cut */
