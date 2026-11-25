@@ -64,7 +64,7 @@ def test_brief(root: Path) -> None:
                   'Never tell the person to run a script', 'put no secret in the file',
                   f'{root / ".runner" / "asks" / f"{tid}.env"}'):
             check(k in p, f'{tid}: BLOCKED steps: {k}', p)
-        for k in ('A `DECIDE:` is one question', '`DECIDE: Which look? [Full (recommended) / Small / No change]`, before any link',
+        for k in ('A `DECIDE:` is one question', 'instead of holding it up? [Yes (recommended) / No]`, before any link',
                   '"options": [{"name": "Full", "rec": true}, {"name": "Small"}] in the ask file', 'With `ask` use the ask file'):
             check(k in p, f'{tid}: DECIDE options: {k}', p)
         check('wizard' not in p, f'{tid}: no wizard', p)
@@ -258,6 +258,22 @@ def test_guides() -> None:
         has(text, r'(?s)decides something in a chat, re-read the tasks it is about.*Settle any that asks exactly that', 'the guide says it')
 
 
+def test_decide_reads_alone(root: Path) -> None:
+    print('B809a: the control brief and the task brief say a DECIDE reads alone')
+    from agent_runner import guide
+    for name, text in (('control', guide.CONTROL), ('task', R.prompt_for('F1', 1, 1, root, 'main'))):
+        flat = ' '.join(text.split())
+        for k in ('read days later by someone who has not seen the chat',
+                  'name the project, the thing and the problem in plain words',
+                  'never "this", "it", "like this" or "What should I do?"', 'what happens', 'clear without the chat',
+                  'never a bare task id (say what it is, the id in brackets at most)',
+                  'two choices crossed in one bracket are two', 'about a page, always its link',
+                  '`DECIDE: Should tasks added after an automatic release is queued go in the next release, '
+                  'instead of holding it up? [Yes (recommended) / No]`'):
+            check(k in flat, f'{name}: {k}', flat)
+        check('Which look?' not in flat, f'{name}: no example that breaks the rule')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         t = Path(t).resolve()
@@ -270,6 +286,7 @@ def main() -> int:
         test_tell(root, env)
         test_answer_parked(root, env)
         test_guides()
+        test_decide_reads_alone(root)
     return report([])
 
 

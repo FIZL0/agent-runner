@@ -336,12 +336,11 @@ CONFIRM or BLOCKED line over 200 characters with no ask file, or one that waits 
 `--after`. When there is more to say, write it first to the ask file {path}, as \
 JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place>, "steps": [<what to do>, …], \
 "expect": [<what they should see>, …], "shots": [{{"file": <a picture's path>, "caption": <what it shows>}}]}}; leave out \
-what you do not need. One action per step, in words the person sees on screen, no file names or code (the command that failed and its error, \
-when too long for the line, go in the commit message). When the \
-check or choice is about how something looks, take screenshots: small ones, put under {shots}/, with no secrets or \
-tokens in them. The file is optional, and it is gone once they answer, so write a new one for each ask.
+what you do not need. One action per step, in words the person sees on screen, no file names or code (a failed command and its error, \
+when too long for the line, go in the commit message). For a check or choice about looks, take small screenshots, put under {shots}/, with no secrets or \
+tokens in them. The file is optional; write a new one for each ask.
 
-A `DECIDE:` is one question. When its answers are a few short names, they become buttons, so give them: end the question with them in a bracket, as in `DECIDE: Which look? [Full (recommended) / Small / No change]`, before any link, or as "options": [{{"name": "Full", "rec": true}}, {{"name": "Small"}}] in the ask file. With `ask` use the ask file: a bracket there gives no buttons. Give 2 to 12 different names, each under 80 characters and no ` / ` in one, at most one recommended, and each clear on its own: its name is all the answer says.
+A `DECIDE:` is one question: two choices crossed in one bracket are two. It may be read days later by someone who has not seen the chat: name the project, the thing and the problem in plain words, never "this", "it", "like this" or "What should I do?". Short answers become buttons: end the question with them in a bracket, as in `DECIDE: Should tasks added after an automatic release is queued go in the next release, instead of holding it up? [Yes (recommended) / No]`, before any link (about a page, always its link), or as "options": [{{"name": "Full", "rec": true}}, {{"name": "Small"}}] in the ask file. With `ask` use the ask file: a bracket there gives no buttons. Give 2 to 12 different names, each under 80 characters and no ` / ` in one, at most one recommended. Each says what happens and is clear without the chat: never a bare task id (say what it is, the id in brackets at most).
 
 When you block with `BLOCKED:` because of steps only a person can take (a login, a certificate or signing key, \
 a secret, a click in a third-party dashboard), write the steps, links, commands and inputs they have to do in that \
