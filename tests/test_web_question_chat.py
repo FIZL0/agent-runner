@@ -25,7 +25,7 @@ tabStore.get = () => tab; tabStore.set = (k, v) => { tab = v };
 for (const x of questionMarks(tab)) QN.mark.set(...x);
 const chat = (id = 'u1') => tap({qchat: id}), unchat = () => tap({qunchat: 'c1'});
 const what = () => dock.includes('data-qunchat') ? 'mark' : kind();
-const type = (text, to = 'c1') => questionGo(to, text, (words, more) => outbox('chat_to', {text: words, to}, more));
+const type = (text, to = 'c1') => questionOn.send(to, text, (words, more) => outbox('chat_to', {text: words, to}, more));
 const gone = () => { const x = S.ob.at(-1); S.ob = []; S.sent.c1 = {at: now, pending: [{text: x.args.text, state: 'sent'}]}; render() };
 const clear = async () => { await pass(20000); if (S.sent.c1) S.sent.c1.pending = []; render() };
 """
@@ -91,10 +91,13 @@ def test_typed(tmp: Path) -> None:
 
 def test_command(tmp: Path) -> None:
     out = run(tmp, """
-      live(ASK); chat(); type('/compact'); say(sent[0].args.text, what());""")
+      live(ASK); chat(); type('/compact'); say(sent[0].args.text, what());
+      gone(); live(null); await clear(); say(what()); type('why?'); gone(); await clear(); say(what());
+      await pass(600); chat(); type('/etc/hosts is it?'); say(sent.at(-1).args.text); await pass(600); chat(); type('!important'); say(sent.at(-1).args.text);""")
     if out is None:
         return
-    eq(out, [['/compact', 'mark']], 'a command goes as it is, and the mark stays')
+    eq(out[:3], [['/compact', 'mark'], ['mark'], ['card']], 'a command goes as it is, the mark stays, and the card still comes back after the send')
+    eq(out[3:], [[ABOUT + '/etc/hosts is it?'], [ABOUT + '!important']], 'words that only look like one are about the question')
 
 
 def test_reload(tmp: Path) -> None:
@@ -108,7 +111,7 @@ def test_reload(tmp: Path) -> None:
 def test_called(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     send = page[page.index('async function send(by)'):]
-    check('questionGo(to,msg,' in send[:send.index('\n}\n')], 'the box sends through the mark')
+    check('questionOn.send(to,msg,' in send[:send.index('\n}\n')], 'the box sends through the mark')
     back = page[page.index('function obEditBack('):]
     check('questionMark(t,x.about)' in back[:back.index('\n}\n')], 'a message taken back into the box is still about its question')
 

@@ -78,17 +78,18 @@ function questionUnchat(n){
    answers a question that was talked about, as any typed message does. go(words, more) puts it in the outbox */
 function questionGo(n,text,go){
   const mark=QN.mark.get(n);
+  if(mark&&(FD.n!==n||questionStill(FD.live,QN.kept.get(n),mark)))QN.kept.set(n,mark);
   if(!mark||!questionWraps(text)){
     const kept=QN.kept.get(n), at=Date.now(), it=go(text,{});
     if(kept&&questionWraps(text)){QN.sent.set(n,{id:kept.id,name:'',cid:it.cid,at});questionDraw()}
     return;
   }
   const moved=questionMove(n,false);
-  if(FD.n!==n||questionStill(FD.live,QN.kept.get(n),mark))QN.kept.set(n,mark);
   questionMark(n,null);QN.back=Date.now();
   go(questionAbout(mark,text),{about:mark});
   moved();
 }
+questionOn.send=questionGo;
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-qchat],[data-qunchat]');if(!el)return;
   if(el.dataset.qchat)return questionChat(S.thread,el.dataset.qchat);

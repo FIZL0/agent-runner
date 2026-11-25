@@ -1,7 +1,9 @@
 /* --- F192a2: Chat about this on the question card: words about the open question that are not its answer ----------- */
 const QUESTION_ABOUT='About your question “', QUESTION_NOT='” (not my answer): ';
+/* how the box's words go to chat n (send()): as they are, until 095-question.js sets its questionGo() here */
+const questionOn={send:(n,text,go)=>go(text,{})};
 /* what is sent for a message with the question marked above the box. A command goes as it is, and the mark stays */
-const questionWraps=text=>!/^[/!]/.test(text);
+const questionWraps=text=>!/^\/[a-z][\w:-]*(\s|$)/i.test(text);
 const questionAbout=(ask,text)=>QUESTION_ABOUT+ask.question+QUESTION_NOT+text;
 const questionIsAbout=text=>String(text||'').startsWith(QUESTION_ABOUT)&&text.includes(QUESTION_NOT);
 /* the question to ask: /live's, else the one talked about (kept), which /live no longer says once the person has spoken */
