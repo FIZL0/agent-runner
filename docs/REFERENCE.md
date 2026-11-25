@@ -344,6 +344,18 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   lands while another is read waits for it. iOS can skip a sound's end event, so once a second while a reply is read the page
   checks that sound is really playing (run speech, the browser's voice, and again when the page is shown) and clears the
   speaking state when it is not: the browser's voice quiet for 2 checks (4 if it never began) or with no start in 10 s, or a clip paused or not moving for 10 s; the next waiting reply is then read. A reply is read in few clips: its first sentence alone, then about 200 letters, then 400 each. While a reply is read, a second element plays silence so a Bluetooth route stays open between clips; the audio session is play-and-record for the mic and playback once it ended (browsers with navigator.audioSession, iOS). A pause nobody asked for (a call, a route change) is undone once per reply, unless a mic listens; a second one ends the reply, and the lock screen's or the earbuds' pause stops it. A clip request with no answer is tried again twice (after 0.5 s and 2 s; once when none came in 25 s); what was fetched plays on, then the phone's voice reads the rest of that reply, so it is heard to its end, and a toast says "No connection to the run; reading with the phone's voice" (the next reply tries run speech again). An engine's own failure is not retried. With no engine installed, or when one fails, the browser's own speech reads.
+- **Recorded.** The run's side only: the page does not use it yet (F161b sets it). `POST /recorded?t=TOKEN` takes a
+  16 kHz mono 16-bit WAV clip (at most 120 s) and answers `{"ok": true, "words": ...}`, with `""` when nobody spoke.
+  `GET /recorded?t=TOKEN` says `{"ok", "engine", "why", "model", "seconds"}`, so the page can fall back to the browser's
+  own recognition when `engine` is false. A clip refused for its size or format answers 400 or 413; no engine, no model
+  or a busy engine answers 503 with `ok` false and the why in `out`. Like every request it needs the page's token. The
+  engine is whisper.cpp and optional: `agent-runner speech install whisper` builds whisper.cpp v1.9.6 (it needs git,
+  cmake and a C++ compiler; a `whisper-cli` already on PATH is used instead) into the speech folder's `whisper/`. It
+  takes `large-v3-turbo-q5_0` (574 MB) where whisper-cli really uses a GPU (the Vulkan build needs the Vulkan and SPIR-V
+  headers and glslc; rerun install after adding them), else `base.en` (148 MB), which is always fetched. Each clip is
+  read with a prompt of the open task ids, the project's name and its glossary's terms, one clip at a time and 45 s at
+  most. The clip is a private temporary file, deleted once read and also on failure; its words are never logged or kept,
+  and nothing leaves the machine.
 - **Sidebar.** All projects (through Runner Home), Talk, Home (with the Needs you count), Status, Plan, Concepts, Tools and Settings. On the example project only, a Walkthrough row brings back the walkthrough of seven cards that point at a run's parts. Chats are the
   control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
   and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (a pinned or a renamed one is left alone by the run; by hand any chat can go Quiet or be deleted). Opening a quiet chat does not move it; it comes up again only when something new is said in it, or it is pinned or renamed. The Chats list (the top and Quiet) runs newest to oldest by last activity, after the pins: pinned chats stay on top in their own order and are the only ones that drag to reorder (mouse at once, touch after a hold). A chat still starting shows first under the pins and keeps that place when it comes up. No row moves while one is pressed (15 s at most), dragged or renamed. Double-click a chat's name (on a phone: its ⋯ in the row, then Rename) to rename it; the name is yours, so the
@@ -1592,8 +1604,8 @@ run device link                        the Tools page's address (a run app must 
 agent-runner cost [--days N] [--files] where the workers' tokens went, by kind of tool call (--files: by
                                        file read, and exact-repeat commands)
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live
-agent-runner speech [install [kokoro|piper]]
-                                       run speech's voices (Talk reads with them), or installs one
+agent-runner speech [install [kokoro|piper|whisper]]
+                                       run speech's voices (Talk reads with them), or installs one; whisper is Recorded's engine
 agent-runner context [--check]         what every session loads, by file and section; --check fails over budget
 agent-runner help order                how to make one task wait for another
 agent-runner --version

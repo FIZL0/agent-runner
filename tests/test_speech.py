@@ -2,6 +2,7 @@
 that plays them in one audio element (a tap on the speaker unlocks it; the browser's own voice is the fallback)."""
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import os
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+import wave
 import zipfile
 from pathlib import Path
 
@@ -19,7 +21,7 @@ from _check import FAILED, check, eq
 HOME = Path(tempfile.mkdtemp(prefix='agent-runner-speech-'))
 os.environ['AGENT_RUNNER_SPEECH'] = str(HOME)  # never the person's own
 
-from agent_runner import speech as Sp, web as W  # noqa: E402
+from agent_runner import recorded as Rec, speech as Sp, web as W  # noqa: E402
 
 # --- what is installed -------------------------------------------------------------------------------------------
 eq(Sp.voices(), {'ok': True, 'voices': [], 'default': ''}, 'nothing installed: no voices')
@@ -128,6 +130,139 @@ try:
     eq([call(body=x)[0] for x in (b'nope', b'[]', {}, b'x' * (Sp.TEXT_MAX * 9))], [400] * 4, 'a bad request')
 finally:
     srv.stop()
+
+# --- F161a: a recorded clip into words ------------------------------------------------------------------------------
+def wav(seconds: float = 1.0, rate: int = 16000, channels: int = 1, loud: int = 9000) -> bytes:
+    out = io.BytesIO()
+    with wave.open(out, 'wb') as w:
+        w.setnchannels(channels)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes((loud.to_bytes(2, 'little') * channels) * int(seconds * rate))
+    return out.getvalue()
+
+
+CLIPS, SEEN = HOME / 'clips', HOME / 'seen'
+CLIPS.mkdir()
+STUB = HOME / 'stub.py'
+STUB.write_text("""import json, os, sys, time
+argv = sys.argv[1:]
+clip = argv[argv.index('-f') + 1]
+mode = os.environ.get('STUB', '')
+json.dump({'argv': argv, 'size': os.path.getsize(clip), 'clip': clip}, open(os.environ['STUB_SEEN'], 'w'))
+sys.stdout.reconfigure(encoding='utf-8')
+if mode == 'hang': time.sleep(60)
+print({'blank': ' [BLANK_AUDIO]', 'noise': ' (buzzing)', 'echo': ' Task ids like R16, B162.', 'two': ' One.\\n [BLANK_AUDIO] Two (buzzing)'}.get(mode, ' Open task R16 \\u2013 now.\\n'))
+sys.exit(3 if mode == 'fail' else 0)
+""", encoding='utf-8')
+os.environ['STUB_SEEN'] = str(SEEN)
+real_program, real_temp = Rec.program, tempfile.tempdir
+tempfile.tempdir = str(CLIPS)
+Rec.program = lambda: ''  # whatever this machine has on PATH
+
+
+def stub(**kw) -> Rec.Listener:
+    first = Rec.Listener()
+    return Rec.Listener(argv=lambda clip: [sys.executable, str(STUB), *first.argv(clip)[1:]], **kw)
+
+
+srv = W.serve('tok', 0, '127.0.0.1', snap=lambda: {})
+srv.listener = stub()
+base = f'http://127.0.0.1:{srv.server_address[1]}/recorded'
+
+
+def post(body: bytes = wav(), mode: str = '') -> tuple[int, dict]:
+    os.environ['STUB'] = mode
+    code, _, data = call(body=body)
+    return code, json.loads(data)
+
+
+try:
+    eq((call('')[0], call('', wav())[0], call('?t=no', wav())[0]), (403, 403, 403), 'it wants the token')
+    got = json.loads(call()[2])
+    eq((got['engine'], got['why']), (False, "no speech recognition is installed on the run's machine"), 'no engine, and why')
+    code, got = post()
+    eq((code, got['ok'], 'installed' in got['out'], SEEN.exists()), (503, False, True, False), 'a clip with no engine')
+    Rec.program = lambda: 'whisper-cli'
+    check('no model' in json.loads(call()[2])['why'], 'no model: why')
+    put(HOME / 'whisper' / Rec.CPU_MODEL)
+    eq(json.loads(call()[2]), {'ok': True, 'engine': True, 'why': '', 'model': Rec.CPU_MODEL, 'seconds': 120}, 'an engine')
+    eq(post(), (200, {'ok': True, 'words': 'Open task R16 – now.'}), 'the words')
+    seen = json.loads(SEEN.read_text())
+    a = seen['argv']
+    eq(seen['size'], len(wav()), 'the engine read the whole clip')
+    check(Path(a[a.index('-m') + 1]).name == Rec.CPU_MODEL and a[a.index('--prompt') + 1].startswith('Words: '),
+          'with base.en and a prompt', a)
+    put(HOME / 'whisper' / Rec.GPU_MODEL)
+    eq(json.loads(call()[2])['model'], Rec.GPU_MODEL, 'the large model when it is installed (a GPU)')
+    check(CLIPS in Path(seen['clip']).parents and not list(CLIPS.iterdir()), 'the clip is deleted')
+    for mode, want in (('blank', ''), ('echo', ''), ('noise', ''), ('two', 'One. Two')):
+        eq(post(mode=mode)[1].get('words'), want, f'what is not speech: {mode}')
+    SEEN.unlink()
+    eq((post(wav(loud=0)), SEEN.exists()), ((200, {'ok': True, 'words': ''}), False), 'silence: no words, the engine not asked')
+    left = CLIPS / 'agent-runner-clip-old'
+    put(left / 'clip.wav')
+    os.utime(left, (1, 1))
+    code, got = post(mode='fail')
+    eq((code, got['out']), (503, 'the speech recognition failed (exit 3)'), 'a failure says why, without the words')
+    check(not list(CLIPS.iterdir()), 'the clip is deleted on a failure, and one a killed run left')
+    kept, srv.listener = srv.listener, stub(timeout=3.0)
+    code, got = post(mode='hang')
+    eq((code, got['out'], list(CLIPS.iterdir())), (503, 'the speech recognition took too long', []), 'a stuck engine: ended, clip deleted')
+    os.environ['STUB'] = ''
+    srv.listener = Rec.Listener(argv=lambda clip: [str(HOME / 'not-there'), clip])
+    code, got = post()
+    eq((code, 'did not run' in got['out'], list(CLIPS.iterdir())), (503, True, []), 'an engine that cannot start: the same')
+    srv.listener = kept
+    SEEN.unlink(missing_ok=True)
+    half = wav()
+    eq([post(x)[0] for x in (b'', b'nope', wav(0.01), wav(rate=48000), wav(channels=2), wav(121), half[:40])], [400, 400, 400, 400, 400, 413, 400],
+       'missing, no WAV, too short, another rate, stereo, too long, cut')
+    check('120 seconds' in post(wav(120.1))[1]['out'], 'too long, in words')
+    conn = http.client.HTTPConnection('127.0.0.1', srv.server_address[1], timeout=20)
+    conn.putrequest('POST', '/recorded?t=tok')
+    conn.putheader('Content-Length', str(10 ** 12))
+    conn.endheaders()
+    eq(conn.getresponse().status, 413, 'far too big: refused unread')
+    conn.close()
+    check(not SEEN.exists() and not list(CLIPS.iterdir()), 'the engine never saw those')
+    kept.close()
+    eq(post()[1]['out'], 'the run is stopping', 'the run stops')
+finally:
+    srv.stop()
+    Rec.program, tempfile.tempdir = real_program, real_temp
+
+# the prompt: the project's own words
+proj = HOME / 'proj'
+put(proj / 'TODO.md', b'### Next\n\n- [ ] **Q7** a\n- [x] **Q8** b\n- [~] **Q9** c\n')
+put(proj / 'GLOSSARY.md', b'**Slot**:\nA place.\n\n**Held message**:\nOne kept.\n')
+from types import SimpleNamespace  # noqa: E402
+from agent_runner import glossary  # noqa: E402
+keep = (W.S.C, W.S.project, glossary.path)
+W.S.C, W.S.project, glossary.path = SimpleNamespace(todo=proj / 'TODO.md'), lambda: 'Clay', lambda c: proj / 'GLOSSARY.md'
+said = Rec.prompt()
+W.S.C, W.S.project, glossary.path = None, lambda: 1 / 0, keep[2]
+bare = Rec.prompt()
+W.S.C, W.S.project = keep[:2]
+check(said.startswith('Words: Slot, Held message, Clay, Talk,') and said.endswith('Task ids like Q7, Q9.'), "open ids, the glossary's terms, the name", said)
+check(bare.endswith('T19.') and 'agent-runner' in bare, 'no project: the fixed words', bare)
+
+# the install: the model follows the GPU
+asked = []
+real = (Rec.program, Rec.uses_gpu, Rec.speech.fetch, Rec.build)
+Rec.program, Rec.build = lambda: 'whisper-cli', lambda *a: asked.append('build')
+Rec.speech.fetch = lambda url, to, sha, out: asked.append((to.name, len(sha)))
+for gpu in (True, False):
+    for f in (HOME / 'whisper').iterdir():
+        f.unlink()
+    if not gpu:
+        put(HOME / 'whisper' / Rec.GPU_MODEL)
+    asked.clear()
+    Rec.uses_gpu = lambda: gpu
+    Rec.install(out=lambda s: None)
+    eq(asked, [(Rec.CPU_MODEL, 64)] + [(Rec.GPU_MODEL, 64)] * gpu, f'install, GPU {gpu}: its models, checked')
+    check(gpu or not (HOME / 'whisper' / Rec.GPU_MODEL).exists(), 'no GPU any more: the large model goes')
+Rec.program, Rec.uses_gpu, Rec.speech.fetch, Rec.build = real
 
 # --- the page ----------------------------------------------------------------------------------------------------
 DRIVER = r"""

@@ -3,6 +3,7 @@
     speech                          what is installed, and where
     speech install [kokoro|piper]   install an engine and its voices; kokoro (the default) is the natural one,
                                     about 354 MB of files; piper (en_US-lessac-medium, 63 MB) is the light one
+    speech install whisper          the engine that turns a recorded clip into words (recorded.py)
 
 Nothing leaves the machine: the engines run here, on the CPU. They live in a folder of their own, one per machine
 ($AGENT_RUNNER_SPEECH, else $XDG_DATA_HOME/agent-runner/speech, ~/.local/share/agent-runner/speech, on Windows
@@ -227,10 +228,15 @@ def install(engine: str, out=print) -> None:
 def main(argv: list[str]) -> int:
     if argv and argv[0] == 'install' and len(argv) < 3:
         engine = argv[1] if len(argv) > 1 else 'kokoro'
-        if engine not in ENGINES:
-            print(f'speech install: no such engine: {engine} (kokoro or piper)', file=sys.stderr)
+        if engine not in (*ENGINES, 'whisper'):
+            print(f'speech install: no such engine: {engine} (kokoro, piper or whisper)', file=sys.stderr)
             return 2
         try:
+            if engine == 'whisper':  # F161a
+                from agent_runner import recorded
+                recorded.install()
+                print(f'whisper is installed in {recorded.folder()}, with {recorded.model()}.')
+                return 0
             install(engine)
         except (SpeechError, OSError, sp.SubprocessError) as e:
             print(f'speech install: {e}', file=sys.stderr)
@@ -244,4 +250,7 @@ def main(argv: list[str]) -> int:
     print(f'{speech_dir()}: ' + (f'{len(got["voices"])} voices, {got["default"]} by default' if got['voices'] else
                                  'no voice installed, so Talk reads with the browser\'s own '
                                  '(`agent-runner speech install`)'))
+    from agent_runner import recorded
+    words = recorded.engine()
+    print('Recorded: ' + (words['model'] if words['engine'] else f"{words['why']} (`agent-runner speech install whisper`)"))
     return 0
