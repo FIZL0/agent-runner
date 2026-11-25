@@ -534,8 +534,8 @@ class RunPage:
         return TH.kind_of(tid, self.snap.get('kinds'))
 
     def kind_colour(self, tid: str) -> str:
-        """F195b: the colour of task `tid`'s kind."""
-        return TH.kind_token(self.kind_of(tid))
+        """F195b: the colour of task `tid`'s kind; a Needs you id that is no task's (a tool, a pitch) is yellow."""
+        return TH.kind_token(self.kind_of(tid)) if TH.TASK_ID.match(tid) else 'yellow'
 
     # --- rows and the main pane, as (text, colour) segments ------------------------------------------------
 
@@ -746,14 +746,14 @@ class RunPage:
         d = it.get('detail')
         if not d:
             if it.get('label') == 'DECIDE':  # B223b: what it asks is the heading here too
-                return text_lines(it.get('ask', ''), 'fg', width, f'{it["id"]} ', ' ' * (len(it['id']) + 1), 'yellow') + \
+                return text_lines(it.get('ask', ''), 'fg', width, f'{it["id"]} ', ' ' * (len(it['id']) + 1), self.kind_colour(it['id'])) + \
                     text_lines(it.get('title', ''), 'dim', width)
             return [L((f'{it["id"]} ', self.kind_colour(it['id'])), (it.get('title', ''), 'fg')), L()] + \
                 text_lines(it.get('ask', ''), 'fg', width)
         lab = d['said'] + (f' · {d["where"]}' if d.get('where') else '')
         if q := d.get('question'):  # B223b: a DECIDE's heading, its task's title under it
             tid = it['id'] + ' '
-            out = text_lines(q, 'fg', width, tid, ' ' * len(tid), 'yellow')
+            out = text_lines(q, 'fg', width, tid, ' ' * len(tid), self.kind_colour(it['id']))
             if d['title'] not in (it['id'], q):
                 out += text_lines(d['title'], 'dim', width)
         else:

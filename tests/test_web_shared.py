@@ -692,6 +692,7 @@ def test_icon_hints_f195b(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     for tag, inner in re.findall(r'<(?:button|a)( [^<>]*?)>((?:\$\{I\.\w+\}|[✕…/−+↑])(?:<span class="bdot"></span>)?)</(?:button|a)>', page):
         check('aria-label=' in tag, f'an icon-only control has its label: {inner}', tag)
+    check("""${/\\w/.test(l)?'':` aria-label="${k.charAt(0)""" in page, "so do the session keys' arrows")
     if not shutil.which('node'):
         return
     eq(logic_js([['iconWords', 'Close', '', '', True], ['iconWords', '', 'More', '…', False], ['iconWords', 'New chat', '', 'Chat', True],

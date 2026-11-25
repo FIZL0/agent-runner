@@ -7,4 +7,4 @@
 /* F195b: what an icon-only control does, while it is hovered or held (188-shared.js) */
 .hint{position:fixed;z-index:40;max-width:min(280px,90vw);background:var(--fg);color:var(--bg);border-radius:var(--r-s);padding:var(--s1) var(--s2);font-size:var(--fs-s);pointer-events:none;overflow-wrap:anywhere}
 .hint:not([hidden]){animation:fadein var(--dur-fast) var(--ease)}
-button[aria-label],a[aria-label]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+:is(button,a)[aria-label]:is(:has(>svg),.x,.btn,.tool){-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}

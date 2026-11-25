@@ -162,7 +162,7 @@ function feedHTML(n,bare){
 function feedTerm(){try{return FD.up&&FD.frame&&FD.frame.contentWindow.term||null}catch(e){return null}}
 function feedKey(k){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
   t.input(feedBytes(k,!!(t.modes&&t.modes.applicationCursorKeysMode)),true)}
-const keyButtons=()=>`<div class="keys" role="toolbar" aria-label="Keys for the session">${FEED_KEYS.map(([k,l])=>`${k==='left'?'<button type="button" class="tool" data-feedtext title="The screen as text, to copy">Text</button>':''}<button type="button" class="tool" data-feedkey="${k}">${l}</button>`).join('')}</div>`;
+const keyButtons=()=>`<div class="keys" role="toolbar" aria-label="Keys for the session">${FEED_KEYS.map(([k,l])=>`${k==='left'?'<button type="button" class="tool" data-feedtext title="The screen as text, to copy">Text</button>':''}<button type="button" class="tool" data-feedkey="${k}"${/\w/.test(l)?'':` aria-label="${k.charAt(0).toUpperCase()+k.slice(1)} arrow"`}>${l}</button>`).join('')}</div>`;
 const keysRow=()=>S.keys?keyButtons():'';
 /* the screen's text in a sheet, to select and copy with a finger */
 function feedText(){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
