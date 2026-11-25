@@ -66,7 +66,8 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1].update(state='tool', tool_wait=untils[tid])
         if 'held' in f:  # F429
             out[-1]['held'] = True
-            if box == ' ' and out[-1]['state'] != 'parked' and tid not in where:
+            from agent_runner import row_hold
+            if row_hold.shows_held(ls, i) and out[-1]['state'] != 'parked' and tid not in where:
                 out[-1]['state'] = 'held'
         if P.release(tid) and releases_on():  # F186: one that started cannot be dropped from its row
             out[-1]['started'] = release_started(tid, st or {})
@@ -231,7 +232,7 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
             state = 'releasing'
         elif box == '~' and not waits:
             state = 'blocked'
-        elif box == ' ' and 'held' in P.fields(ls[i]):  # F429
+        elif 'held' in P.fields(ls[i]) and (box == ' ' or waits):  # F429
             state = 'held'
         else:
             if P._waits_all(ls, i):

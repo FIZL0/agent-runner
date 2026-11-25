@@ -20,6 +20,18 @@ def cleared(line: str) -> str:
     return P.FIELD.sub(lambda m: '' if m.group(1) == KEY else m.group(0), line)
 
 
+def _not_queued(ls: list[str], i: int) -> bool:
+    """Is the task at ls[i] blocked on anything but another task (the person, a shelf, until checks)?"""
+    return P.ITEM.match(ls[i]).group(2) == '~' and not (
+        P.WAITS.findall(' '.join(P._item_block(ls, i))) and not P.until_of(ls, i) and not P._on_person(ls, i)
+        and not P._shelved(ls, i))
+
+
+def shows_held(ls: list[str], i: int) -> bool:
+    """Is the hold what keeps the task at ls[i]: held, and not blocked on the person or a check besides?"""
+    return is_held(ls[i]) and not _not_queued(ls, i)
+
+
 def held_ids(ls: list[str]) -> set[str]:
     """The held tasks of TODO.md's lines `ls` that are not done."""
     return {tid for _, box, tid, _, i in P.iter_tasks(ls) if box in ' ~' and is_held(ls[i])}
@@ -33,13 +45,15 @@ def under_way(c, tid: str) -> str:
     try:
         if state.C is None:
             state.init()
+        if tid in {q[0] for q in state.queued().values()}:
+            return 'it waits to resume'
         if tid in sched.taken():
             return 'it is taken by hand'
         if tid in sched.ahead(state.default_branch()):
             return 'it is finished and waits to merge'
         cl = plansync.claims(c).get(tid)
-    except (OSError, SystemExit, ValueError):
-        return ''
+    except (OSError, SystemExit, ValueError) as e:
+        return f'what works on it could not be read ({e})'
     return f'{cl.who} has claimed it' if cl and not plansync.stale(cl) else ''
 
 
@@ -57,6 +71,8 @@ def hold_task(tid: str, todo=None) -> bool:
     i = _open_line(ls, tid)
     if is_held(ls[i]):
         return False
+    if _not_queued(ls, i):
+        raise SystemExit(f'{P.PROG}: {tid} cannot be held: it is blocked, so no run starts it')
     P.edit(tid, keyed=f' | {KEY}: yes', todo=todo)
     return True
 

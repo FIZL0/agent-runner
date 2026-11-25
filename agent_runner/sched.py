@@ -385,12 +385,12 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'tried', None
     if tid in h.busy_ids:
         return 'busy', None
+    if tid in h.holding:  # F429: before what would put it under Needs you
+        return 'held', None
     if len(h.parked.get(tid, [])) >= PARK_LIMIT:  # B32: failed its merge that often; a person decides
         return 'parked', None
     if tid in h.no_commits:  # B774: its runs end with no commits; a person decides
         return 'no commits', None
-    if tid in h.holding:  # F429
-        return 'held', None
     if tid in h.splits:  # B196
         return 'split', None
     if P.release(tid) and MERGE.locked():  # F99: a merge under way lands first, so the release starts from it
@@ -535,6 +535,10 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = ('free', away_note(over, set(claimed)))
         else:
             why[tid] = ('free', '')
+    ls = plan_text(branch)
+    for _, box, tid, _, i in P.iter_tasks(ls):  # F429: held, and waiting for another task too
+        if box == ' ' and tid not in why and tid not in h.busy_ids and row_hold.is_held(ls[i]):
+            why[tid] = ('held', f'`plan unhold {tid}` ends it')
     return why
 
 
