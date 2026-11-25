@@ -67,7 +67,7 @@ def test_drawing(tmp: Path) -> None:
     none, card, bare, gone, slot, other = (x[0] for x in out)
     eq((none, bare, gone, slot, other), ('',) * 5, 'no card before /live, with no options, once `ask` goes, in a slot, in another chat')
     check('Which &lt;look>?' in card and 'role="group"' in card, 'the question, escaped', card)
-    eq([card.count('<button'), card.count('data-qpick'), card.count(' pri')], [3, 2, 1], 'one button per option, one main, and Chat about this')
+    eq([card.count('<button'), card.count('data-qpick'), card.count(' pri')], [4, 2, 1], 'one button per option, one main, Chat about this, and Dismiss')
     check('class="btn pri" data-qpick="0" data-q="u1">Full (recommended)<' in card, 'the recommended one is first and marked', card)
     check('class="btn" data-qpick="1" data-q="u1">Small &amp; flat<' in card, 'the other as it is', card)
 

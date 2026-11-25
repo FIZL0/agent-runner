@@ -4,9 +4,10 @@
    F192a2: mark: chat -> the question marked above its box (over a reload too, as its draft is); marked: when the
    mark came. F430: a question talked about stays /live's ask, so its card is back on its own, on every device
    F192a3: an ask with `need` is also that item under Needs you: its answer settles the item, and one given there takes the
-   card and the mark (/live's `answered`) */
+   card and the mark (/live's `answered`)
+   F192b: gone: the questions dismissed (096-dismiss.js) */
 const QMARK_KEY='ar-qmark:'+(HKEY||document.title);
-const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0};
+const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0,gone:new Set()};
 const questionAsk=n=>FD.n===n&&FD.live&&FD.live.ask||null;
 const questionSpoken=n=>questionSpoke(n,S.ob,(S.sent[n]&&S.sent[n].pending)||[],Date.now()-((S.sent[n]||{}).at||0));
 /* an answer to it, here or under Needs you, is on its way */
@@ -18,7 +19,7 @@ function questionCard(n){
   if(sent&&sent.need)questionNeedSent(n,sent);
   else if(sent=questionSent(sent,S.ob,(S.sent[n]||{}).at))QN.sent.set(n,sent);
   const mark=QN.mark.get(n);if(mark&&!QN.held.has(n))return questionMarkHTML(n,mark);
-  const ask=questionAsk(n);return questionHTML(n,questionSpoken(n)||questionSettling(ask)?null:ask,QN.held.get(n),sent);
+  const ask=questionAsk(n);return questionHTML(n,questionSpoken(n)||questionSettling(ask)||ask&&QN.gone.has(questionGoneKey(n,ask.id))?null:ask,QN.held.get(n),sent);
 }
 /* an answer that settles an item is out of the outbox: done or discarded, /live says whether the question is still asked */
 function questionNeedSent(n,sent){

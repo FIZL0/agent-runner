@@ -16,9 +16,11 @@ function questionSent(sent,ob,at){
 const questionSpoke=(n,ob,pending,ago)=>ob.some(x=>x.name==='chat_to'&&x.args.to===n&&x.state!=='failed'&&!questionIsAbout(x.args.text))||ago<QUESTION_LAND&&pending.some(p=>p.state!=='failed'&&!questionIsAbout(p.text));
 /* may the held answer still go? Not once /live says the question is gone or another; with no word of it, it may */
 const questionOpen=(live,id)=>!live||!live.ok||!!(live.ask&&live.ask.id===id);
+/* F192b: a dismissed question, as QN.gone has it */
+const questionGoneKey=(n,id)=>n+' '+id;
 const questionLabel=o=>o.name+(o.rec?' (recommended)':'');
 function questionHTML(n,ask,held,sent){
   const st=questionState(ask,held,sent);if(!st)return '';
   if(st==='held')return `<div class="card qcard qheld" role="status" data-k="question:${esc(n)}" data-v="held"><div class="row"><span class="grow">Sending “${esc(held.name)}”</span><button type="button" class="btn" data-qundo="${esc(n)}">Undo</button></div></div>`;
-  return `<div class="card qcard" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(ask.id)}"><div class="q">${esc(ask.question)}</div>${ask.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(ask.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(ask)}</div>`;
+  return `<div class="card qcard" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(ask.id)}"><div class="row qtop"><span class="grow q">${esc(ask.question)}</span><button type="button" class="icon" data-qdismiss="${esc(ask.id)}" aria-label="Dismiss question" title="Dismiss question">✕</button></div>${ask.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(ask.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(ask)}</div>`;
 }
