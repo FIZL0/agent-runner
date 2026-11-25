@@ -7,7 +7,12 @@ function slotRow(s){
   if(!s.task)return `<div class="srow" data-k="${esc(k)}">${head('<span class="grow small">Idle</span>')}${open?foldIn(k,idleBody(s)):''}</div>`;
   const w=lastWords(s.name), tc=taskControlsOn(s)?controlsOf('task'):[], id=s.task;
   const body=()=>`${w?`<div class="quote">${esc(w)}</div>`:'<div class="small">It has said nothing yet.</div>'}<div class="btns"><button class="btn" data-thread="${esc(s.name)}">Open session</button>${readBtn(list,id)}${tc.map(c=>`<button class="btn${ctlBusy(c.key,id)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(id)}">${esc(c.label)}</button>`).join('')}${chatBtn({id})}</div>${tc.filter(c=>S.sure===c.key+':'+id).map(c=>ctlSure(c,id)).join('')}${readText(list,id)}`;
-  return `<div class="srow" data-k="${esc(k)}">${head(`${taskChip(id)}<span class="grow"><b class="ell">${esc(s.title||id)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>Working${s.minutes!=null?` · ${s.minutes} min`:''}</span></span>`)}${open?foldIn(k,body()):''}</div>`;
+  return `<div class="srow" data-k="${esc(k)}">${head(`${taskChip(id)}<span class="grow"><b class="ell">${esc(s.title||id)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>${slotWord(s)}</span></span>`)}${open?foldIn(k,body()):''}</div>`;
+}
+/* B852: what a working slot does: its task's gate runs (Testing), waits its turn (Waiting to test), else Working */
+function slotWord(s){
+  const min=s.minutes!=null?` · ${s.minutes} min`:'';
+  return s.gate==='waiting'?'Waiting to test':s.gate==='testing'?'Testing'+min:'Working'+min;
 }
 /* an idle slot: why, and Remove a slot (the run takes the last one) */
 function idleBody(s){
