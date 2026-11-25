@@ -32,8 +32,9 @@ const micPast=()=>{const s=t=>Math.round((Date.now()-t)/1000)+' s';
    its indexes move: the last entry's own id, else (a transcript without ids) all its entries */
 /* F161b: Recorded: the page records a clip and the run's machine makes the words (172-talk.js). REC: engine, the run's /recorded
    answer (null until it came); asked, it was asked for; no, why the mic was refused; open, the kept stream; asking, its
-   Allow under way; now, the Recorder that takes sound; gen counts releases */
-const REC={engine:null,asked:false,no:'',open:null,asking:null,now:null,gen:0};
+   Allow under way; now, the Recorder that takes sound; gen counts releases. F161c: may, the browser allows the mic for good; shut, no
+   opening by itself until Talk shows anew; query, timer, sign: recLook()'s */
+const REC={engine:null,asked:false,no:'',open:null,asking:null,now:null,gen:0,may:false,shut:false,query:false,timer:0,sign:false};
 /* why Recorded cannot be used here, '' when it can */
 function recProblem(secure,can,engine,refused){
   if(!secure)return 'it needs https or localhost, and this address is plain http';

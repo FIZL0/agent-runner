@@ -13,6 +13,7 @@
 .spk.off{color:var(--muted)} .spk.on,.tool.spkbox{color:var(--accent)}
 .kbd{justify-self:start;width:var(--tap);height:var(--tap);border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer}
 .mic.on{background:var(--bad);color:var(--onbad);animation:pulse var(--pulse) infinite}
+.mic{position:relative} .mic.open::after{content:"";position:absolute;top:2px;right:2px;width:14px;height:14px;box-sizing:border-box;border-radius:50%;background:var(--bad);border:2px solid var(--bg)}  /* F161c: the mic is open */
 .mic:disabled{background:var(--line2);color:var(--muted);cursor:default}
 .talkline{font-size:var(--fs-m);line-height:1.45;color:var(--muted);text-align:center;min-height:1.45em;max-width:34em;overflow-wrap:anywhere}
 .speakb{justify-self:start;display:inline-grid;place-items:center;width:32px;height:32px;border:0;background:none;border-radius:var(--r-s);color:var(--muted);cursor:pointer;margin-left:-6px}
