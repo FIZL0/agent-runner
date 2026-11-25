@@ -5,6 +5,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - Fixed: a task on a claude model in a project whose roles and kinds all name another provider, on a machine with Claude Code, no longer starts past `[run] session_max` or `weekly_max`, or while the Claude API is unreachable; past a cap it alone waits (or starts on the first free `[models] fallback` provider), other tasks start as before, and when nothing else can start the alarm names the held task and says it cannot start until the reset. `force` lifts the cap (B791).
+- Changed: on the run page, a Talk Hold with the browser's recognition uses one continuous recognizer (rec.continuous) that stays through pauses until the release, instead of one restarted after each pause (on an iPhone the restarted one heard nothing); not yet proven on an iPhone. If it ends by itself while held it is started again as before: the talk line says "The mic is off, wait until it is on again" until the mic is on, and after 3 s with no speech begun "Nothing is heard. Let go and press again" (with ", these words are kept" when words came before). Text a recognizer repeats, drops or begins anew in one Hold is joined once. The mic report's try line says continuous or not continuous. Tap, auto listen and Recorded are unchanged; a hold the system took (touchcancel) stops after 5 s with no new words (B216a1).
 ## 0.67.0 (2026-11-24)
 
 - Changed: on the run page, the Status view has no Needs you section; Home keeps it (C50).

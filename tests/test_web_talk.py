@@ -639,6 +639,14 @@ press(); hears(['Is there a', false]); now += 3000; hears(['way', false]); hears
 press(); hears(['their is', false]); now += 500; hears(['There is a', true]); hc.better = lets();
 press(); hears(['so', true], ['what', false]); hears(['so what', true]); hc.merged = lets();
 press(); hears(['no', true], ['no', true]); hears(); hc.own = lets();
+press(); hears(['thank you', true], ['thank you', true]); hc.own.push(...lets());
+press(); hears(['so do', true], ['what now', true]); hears(['so do what now', true]); hc.more = lets();
+press(); hears(['Is there a', false]); now += 3000; hears(['a way to do it', true]); hc.more.push(...lets());
+press(); hears(['Is there a', false]); now += 3000; hears(['is it', false]); hc.more.push(...lets());
+press(); hears(['one two', true], ['three four', true], ['five six', true], ['three four five six seven', true]); hc.more.push(...lets());
+press(); hears(['a b', true], ['c d', false]); hears(['a b', true]); hc.more.push(...lets());
+// Recorded, held again before its end: no such line, as it says nothing of speech
+{ const S0 = SR; SR = class extends S0 { constructor() { super(); this.recorded = true } }; press(); hc.rec = [!!last().continuous]; fire('pointerup', when); fire('pointerdown', when); last().end(); last().onaudiostart(); tick(3000); hc.rec.push(says(), !!last().continuous); lets(); SR = S0 }
 // ends by itself while held: started again, continuous too, the line says the mic is off until it is on
 press(); hears(['Is there a', true]); last().end(); hc.off = [starts, last().continuous, says()]; last().onaudiostart(); hc.on = says(); hears(['way', true]); hc.back = [says(), lets()];
 // off in the wait between two as well, and with no words yet
@@ -783,7 +791,9 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(c.get('all'), [['Is there a way to do it please now'], 1, '', ''], 'finals and a long silence in one recognizer: all words, once')
     eq((c.get('repeat'), c.get('twice'), c.get('dropped')), ([K + ' way, to do it'], ['is there a'], [K + ' way to do it']), 'text that comes again, or goes, is there once')
     eq((c.get('anew'), c.get('whole')), ([K + ' way to do it'], [K + ' way']), 'a piece begun anew after a silence loses nothing')
-    eq((c.get('better'), c.get('merged'), c.get('own')), (['There is a'], ['so what'], ['no no']), 'a better version takes the place; one word said twice stays')
+    eq((c.get('better'), c.get('merged'), c.get('own')), (['There is a'], ['so what'], ['no no', 'thank you thank you']), 'a better version takes the place; a word or two said twice stay')
+    eq(c.get('more'), ['so do what now', 'Is there a a way to do it', 'Is there a is it', 'one two three four five six seven', 'a b c d'], 'finals made one, a new piece that shares a word, part repeated, a piece gone')
+    eq(c.get('rec'), [False, 'Listening…', False], 'Recorded stays as it is')
     eq((c.get('off'), c.get('on'), c.get('back')), ([2, True, f'{K} … {OFF}'], f'{K} … Listening…', [K + ' way', [K + ' way']]), 'its own end while held: again, and the line says the mic is off')
     eq((c.get('wait'), c.get('waited'), c.get('up')), (OFF, OFF, 'Listening…'), 'off between two as well')
     eq((c.get('first'), c.get('yet'), c.get('deaf')), ('Listening…', f'{K} … Listening…', [f'{K} … {DEAF}, these words are kept', True]), 'a restart that hears nothing: said while held')

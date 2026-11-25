@@ -393,7 +393,7 @@ function hear(t){
     const more=on&&t.more;
     if(said&&((go&&TK.hold)||more))t.gapAt=Date.now();  // B216a1: words to come are only heard by the next one
     if(more){t.more=t.stopped=false;t.tries=t.fails=0}
-    if(on&&TK.hold&&(again||retry||more||fall)){t.again=t.again||again||more||(retry&&t.was);t.on=t.deaf=false;talkDraw()}  // B216a1: the mic is off until the next one's audiostart
+    if(on&&TK.hold&&!rec.recorded&&(again||retry||more||fall)){t.again=t.again||again||more||(retry&&t.was);t.on=t.deaf=false;talkDraw()}  // B216a1: the mic is off until the next one's audiostart
     micFree(rec);
     if(again)log('still held: starts again');
     if(fall)micWhenFree(()=>hear(t));
