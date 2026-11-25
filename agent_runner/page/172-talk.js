@@ -1,7 +1,7 @@
 /* --- F161b: Recorded, the page: the mic's sound is kept here while the person talks, posted to the run as WAV, and the words
    come back. A Recorder does what a browser's recognizer does (start, stop, abort; onaudiostart, onresult, onerror, onend),
    so hear() and the one-recognizer rules (MIC) treat both the same ------------- */
-const REC_TAIL=200, REC_SILENT=8000, REC_FIRST=3000, REC_POST=50000, REC_AGAIN=500, REC_LOOK=500, REC_MIN=0.15, REC_PRE=1, REC_WAKE=1000, REC_ENDS=3;  // ms: sound still taken after a stop; a listen nobody speaks in; the mic's first sound; an answer; s: the shortest clip; what is kept from before a press; ms: the sound's start; times a stream the browser ended is opened again
+const REC_TAIL=200, REC_SILENT=8000, REC_FIRST=3000, REC_POST=50000, REC_AGAIN=500, REC_LOOK=500, REC_MIN=0.15, REC_PRE=1, REC_WAKE=1000, REC_ENDS=3, REC_COMES=1000;  // ms: sound still taken after a stop; a listen nobody speaks in; the mic's first sound; an answer; s: the shortest clip; what is kept from before a press; ms: the sound's start; times a stream the browser ended is opened again; ms: Talk may take to show after its press
 /* the mic's sound in pieces of 2048; its output stays silent, and is there so that every browser runs it */
 const REC_WORKLET=`registerProcessor('rec',class extends AudioWorkletProcessor{
   constructor(){super();this.b=new Float32Array(2048);this.n=0;this.port.onmessage=e=>{if(e.data==='flush'&&this.n)this.port.postMessage(this.b.slice(0,this.n));this.n=0}}
@@ -21,11 +21,12 @@ function recOpen(){
   const on=REC.asking;
   if(on){
     if(on.ctx)try{Promise.resolve(on.ctx.resume()).catch(()=>{})}catch(e){}  // in the press: iOS starts it only there
-    return on.then(recWake,e=>{if(on.own)return recOpen();throw e});  // the page's own opening failed: the press asks itself
+    return on.then(recWake,e=>{if(on.own&&!(on.own==='talk'&&recDenied(e)))return recOpen();throw e});  // the page's own opening failed: the press asks itself, but not again what was just refused
   }
   return recBegin(false);
 }
-/* own: opened by the page, not by a press */
+const recDenied=e=>!!e&&(e.name==='NotAllowedError'||e.name==='SecurityError');
+/* own: opened by the page, not by a press on the mic; 'talk': by the press that opens Talk */
 function recBegin(own){
   const box=REC.took={at:Date.now(),gum:null,no:'',up:null,ctx:null}, p=REC.asking=recAsk(REC.gen,own,box), done=()=>{if(REC.asking===p)REC.asking=null};
   p.own=own;p.ctx=box.ctx;p.then(done,done);
@@ -42,7 +43,7 @@ async function recAsk(gen,own,box){
     const url=URL.createObjectURL(new Blob([REC_WORKLET],{type:'text/javascript'}));
     try{await ctx.audioWorklet.addModule(url)}finally{URL.revokeObjectURL(url)}
     const on=Promise.resolve(ctx.resume()).then(ran).catch(()=>{});  // again: a page with the mic may start it with no press
-    if(!own)await Promise.race([up,on,new Promise(r=>setTimeout(r,REC_WAKE))]);  // with no press it may never settle
+    if(own!==true)await Promise.race([up,on,new Promise(r=>setTimeout(r,REC_WAKE))]);  // with no press it may never settle
     if(gen!==REC.gen)throw new Error('the mic was closed meanwhile');
     const node=new AudioWorkletNode(ctx,'rec'), track=stream.getAudioTracks()[0], o={ctx,stream,node,track,ring:[],kept:0,rest:false,box};
     ctx.createMediaStreamSource(stream).connect(node);node.connect(ctx.destination);
@@ -87,10 +88,12 @@ const recGone=()=>document.hidden?'page hidden':S.view!=='talk'||S.thread?'Talk 
    reply plays. Talk left or hidden, or the Mic test: a recording ends with its words, then the mic is released */
 function recLook(){
   clearTimeout(REC.timer);REC.timer=0;
+  const shown=recShown();if(shown)REC.coming=0;
   if(TS.way!=='recorded'&&!REC.open)REC.shut=false;
   else{
     REC.timer=setTimeout(recLook,REC_LOOK);
-    if(!recShown()){
+    if(!shown&&!document.hidden&&REC.coming>Date.now()){}  // Talk's press was just now: it is about to show
+    else if(!shown){
       REC.shut=false;REC.ends=0;
       if(REC.now){if(REC.open)REC.now.over('Talk left')}
       else if(REC.open){recFree(recGone());soundAs('playback')}
@@ -102,7 +105,7 @@ function recLook(){
   const sign=!!REC.open&&!REC.open.rest;
   if(REC.sign!==sign){REC.sign=sign;if(S.view==='talk'&&!S.thread)talkDraw()}
 }
-const recMayOpen=()=>TS.way==='recorded'&&talkRec()&&recShown()&&!REC.open&&!REC.asking&&!REC.now&&!REC.shut&&!talkReads()&&!MIC.rec&&!MIC.next&&!TK.ear&&!DK.rec;
+const recFits=()=>TS.way==='recorded'&&talkRec()&&!REC.open&&!REC.asking&&!REC.now&&!REC.shut&&!talkReads()&&!MIC.rec&&!MIC.next&&!TK.ear&&!DK.rec, recMayOpen=()=>recShown()&&recFits();
 async function recAhead(){
   if(REC.query||!recMayOpen())return;
   REC.query=true;
@@ -115,6 +118,21 @@ async function recAhead(){
   const gen=REC.gen;
   recBegin(true).catch(()=>{if(gen===REC.gen)REC.shut=true;soundAs('playback')});  // not tried again by itself until Talk shows anew
 }
+/* F161c1: the press that opens Talk (the nav row, Home's Talk button) starts the mic in the press itself, whatever the
+   Permissions API says: Talk may be drawn only after it (a View Transition). What was refused is asked again only by the mic */
+function recPress(){
+  if(document.hidden||S.view==='talk'&&!S.thread)return;
+  REC.shut=false;REC.ends=0;
+  if(REC.denied||!recFits())return;
+  REC.coming=Date.now()+REC_COMES;REC.may=false;
+  soundAs('play-and-record');
+  try{navigator.permissions.query({name:'microphone'}).then(p=>{REC.perm=p.state;REC.may=p.state==='granted'},()=>{REC.perm='the browser cannot say'})}  // as it was before the ask: a reply closes or rests the stream by it
+  catch(e){REC.perm='the browser cannot say'}
+  const gen=REC.gen;
+  recBegin('talk').catch(e=>{if(recDenied(e))REC.denied=true;if(gen===REC.gen)REC.shut=true;soundAs('playback')});
+  setTimeout(recLook,0);
+}
+document.addEventListener('click',e=>{if(e.target.closest('[data-view="talk"]'))recPress()});  // before the click that opens it
 /* B804a: the permission at a press, for the mic report */
 function recAsked(log){
   try{navigator.permissions.query({name:'microphone'}).then(p=>{REC.perm=p.state;log(`permission: ${p.state}`)},()=>log('permission: the browser cannot say'))}
@@ -138,7 +156,7 @@ class Recorder{
   }
   /* it listens, from the second before the press */
   begin(o,again){
-    REC.shut=false;REC.ends=0;this.rate=o.ctx.sampleRate;this.on=true;
+    REC.shut=REC.denied=false;REC.ends=0;this.rate=o.ctx.sampleRate;this.on=true;
     this.parts=o.ring;this.n=this.pre=o.kept;o.ring=[];o.kept=0;
     if(this.onstart)this.onstart();
     if(this.n){if(TK.ear)micLog(`kept ${Math.round(1000*this.n/this.rate)} ms from before`,false,TK.ear.trail);if(this.onaudiostart)this.onaudiostart()}
@@ -225,7 +243,7 @@ class Recorder{
   }
 }
 /* Talk settings: the way speech becomes words is picked (talkSet): Recorded is tried afresh, the browser's needs no stream */
-function recPick(){REC.no='';REC.shut=false;REC.ends=0;if(TS.way==='recorded')recLoad();else if(!REC.now)recFree('Recorded was not picked');recLook()}
+function recPick(){REC.no='';REC.shut=REC.denied=false;REC.ends=0;if(TS.way==='recorded')recLoad();else if(!REC.now)recFree('Recorded was not picked');recLook()}
 /* the setting's row in Talk settings */
 function recRow(){
   if(!REC.asked)recLoad();

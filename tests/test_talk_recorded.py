@@ -47,7 +47,7 @@ const shown = async () => { recLook(); await settle(); await settle() };
 const sound = (s, loud = true) => { for (let i = 0; i < s * 48000 / 2048; i++) if (REC.now) node.port.onmessage({data: new Float32Array(2048).fill(loud ? 0.2 : 0.0005)}) };
 const tail = async () => { await tick(200); await tick(20); await settle() };
 const down = () => fire('pointerdown', press('[data-mic]')), up = () => fire('pointerup', press('[data-mic]'));
-const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); hush(); TK.ear = TK.rec = TK.wait = null; MIC.rec = MIC.next = null; TK.state = TK.note = ''; TK.hold = false; sent.length = notes.length = posts.length = recs.length = types.length = 0; asks = 0; deny = ''; hold = null; answer = 'hello run'; REC.no = ''; REC.engine = engine; TS.mic = 'tap'; TS.way = 'recorded'; TS.auto = false; TS.read = true; S.view = 'talk'; AU.got = null; timers = []; may = 'prompt'; REC.may = REC.shut = REC.query = REC.sign = false; REC.ends = REC.timer = 0; document.hidden = false; kept.tm = '' };
+const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); hush(); TK.ear = TK.rec = TK.wait = null; MIC.rec = MIC.next = null; TK.state = TK.note = ''; TK.hold = false; sent.length = notes.length = posts.length = recs.length = types.length = 0; asks = 0; deny = ''; hold = null; answer = 'hello run'; REC.no = ''; REC.engine = engine; TS.mic = 'tap'; TS.way = 'recorded'; TS.auto = false; TS.read = true; S.view = 'talk'; AU.got = null; timers = []; may = 'prompt'; REC.may = REC.shut = REC.query = REC.sign = REC.denied = false; REC.ends = REC.timer = REC.coming = 0; document.hidden = false; kept.tm = '' };
 (async () => {
   const out = {}; await settle();
   out.start = TS.way; click('[data-mic]'); out.browser = [recs.length, asks]; mic().end(); await settle(); await tick(250); click('[data-mic]'); mic().end();
@@ -151,6 +151,26 @@ const fresh = () => { if (TK.rec && TK.rec.recorded) TK.rec.abort(); recFree(); 
   anew(); may = 'granted'; await shown(); before(1, 0.1); TS.mic = 'hold'; down(); out.holdOpen = shows()[4]; sound(0.2); now += 271; answer = ''; up(); await tail(); out.holdShort = TK.note;
   // a stream gone mute is opened afresh in the hold: not Listening meanwhile
   anew(); may = 'granted'; await shown(); before(1, 0.1); TS.mic = 'hold'; hold = new Promise(y => yes = y); down(); const l1 = shows()[4]; await tick(3000); const l2 = shows()[4]; await opens(); const l3 = shows()[4]; sound(0.2); out.afresh = [l1, l2, l3, shows()[4]]; answer = ''; now += 100; up(); await tail(); out.afreshNote = TK.note;
+  // F161c1: the press that opens Talk starts the mic inside it; draws: Talk is drawn in the press (else a View Transition does later)
+  const goTalk = (draws = true) => { fire('click', press('[data-view="talk"]')); if (draws) S.view = 'talk' };
+  const away = () => { anew(); may = 'prompt'; S.view = 'home'; };
+  away(); const c0 = ctxs.length; goTalk(); out.tpIn = [asks, ctxs.length - c0, types.slice(-1)[0]]; await settle(); await shown(); await settle(); out.tpOpen = [!!REC.open, TK.state, REC.now, posts.length, sent.length];
+  click('[data-mic]'); out.tpMic = [TK.rec.on, asks, ctxs.length - c0]; sound(1); click('[data-mic]'); await tail(); out.tpSent = [sent.slice(), asks];
+  TK.wait = null; TK.state = ''; S.view = 'home'; const tpo = REC.open; await tick(500); out.tpLeft = [REC.open, tpo.track.readyState]; goTalk(); await settle(); await shown(); out.tpBack = [asks, !!REC.open]; document.hidden = true; fire('visibilitychange', {}); out.tpHides = REC.open; document.hidden = false;
+  away(); navigator.permissions.query = async () => { throw new TypeError('x') }; goTalk(); await settle(); await shown(); out.tpCannotSay = [asks, !!REC.open]; navigator.permissions.query = async () => ({state: may});
+  // Talk drawn late; never drawn; hidden meanwhile
+  away(); goTalk(false); recLook(); await settle(); const tl = !!(REC.open || REC.asking); S.view = 'talk'; await shown(); out.tpLate = [tl, !!REC.open, asks];
+  away(); goTalk(false); await settle(); await settle(); const tn = !!REC.open; now += 1100; recLook(); out.tpNever = [tn, REC.open];
+  away(); goTalk(false); await settle(); await settle(); document.hidden = true; fire('visibilitychange', {}); out.tpHidden = REC.open; document.hidden = false;
+  // the mic pressed while Allow is under way joins it
+  away(); hold = new Promise(y => yes = y); goTalk(); click('[data-mic]'); yes(); await settle(); await settle(); out.tpJoin = [asks, TK.rec && TK.rec.on];
+  // refused: not asked again by itself, nor by the next Talk press; the mic asks, and once it listens Talk's press does
+  away(); deny = 'NotAllowedError'; goTalk(); await settle(); await tick(500); await shown(); const r1 = [asks, notes.length, REC.no]; S.view = 'home'; await tick(500); goTalk(); await settle(); await shown(); out.tpRefused = [...r1, asks]; deny = ''; click('[data-mic]'); await settle(); await settle(); out.tpRefusedMic = [asks, TK.rec.on]; TK.rec.abort(); TK.ear = null; TK.state = ''; S.view = 'home'; await tick(500); goTalk(); await settle(); await shown(); out.tpRefusedOver = [asks, !!REC.open];
+  away(); deny = 'NotAllowedError'; hold = new Promise(y => yes = y); goTalk(); click('[data-mic]'); yes(); await settle(); await settle(); out.tpRefusedJoin = [asks, recs.length, REC.no !== '']; mic().end(); await settle(); TK.ear = null; MIC.rec = null;
+  // Talk already shown, a reply read, dictation, the browser's way: the press opens nothing
+  anew(); goTalk(); out.tpShown = asks; away(); TK.state = 'speaking'; goTalk(); out.tpReads = asks; away(); DK.rec = {}; goTalk(); out.tpDict = asks; DK.rec = null; away(); TS.way = 'browser'; goTalk(); out.tpBrowser = asks;
+  // the permission as it was before the ask says what a reply does with the stream
+  away(); may = 'granted'; goTalk(); await settle(); await shown(); out.tpMay = REC.may; away(); goTalk(); await settle(); await shown(); out.tpPrompt = REC.may;
   console.log(JSON.stringify(out, (k, v) => v === undefined ? null : v));
 })();`);
 """)
@@ -259,6 +279,19 @@ def test_recorded_f161b(tmp: Path) -> None:
         check((g.get(k) or '').startswith('Heard nothing'), f'{k}: the mic was on long enough, or open at the press', str(g.get(k)))
     eq((g.get('holdOpen'), g.get('afresh')), ('Listening…', ['Listening…', 'Starting the mic…', 'Starting the mic…', 'Listening…']), 'a stream opened afresh in the hold')
     check((g.get('afreshNote') or '').startswith(early), 'let go just after that', str(g.get('afreshNote')))
+
+    eq(g.get('tpIn'), [1, 1, 'play-and-record'], "F161c1: the press that opens Talk asks and starts the context inside it, where the permission is prompt")
+    eq(g.get('tpOpen'), [True, '', None, 0, 0], 'open, and nothing listens or is sent')
+    eq((g.get('tpMic'), g.get('tpSent')), ([True, 1, 1], [['hello run'], 1]), 'the first mic press listens in the press: no getUserMedia, no context')
+    eq((g.get('tpLeft'), g.get('tpBack'), g.get('tpHides', 1)), ([None, 'ended'], [2, True], None), 'left: released, the next Talk press opens it again; hidden: released')
+    eq(g.get('tpCannotSay'), [1, True], 'a browser that cannot say: the same')
+    eq((g.get('tpLate'), g.get('tpNever'), g.get('tpHidden', 1)), ([True, True, 1], [True, None], None), 'Talk drawn after the press keeps it; never drawn or hidden: released')
+    eq(g.get('tpJoin'), [1, True], 'a mic press during the ask joins it')
+    eq(g.get('tpRefused'), [1, 0, '', 1], 'refused: quiet, and not asked again, nor by the next Talk press')
+    eq((g.get('tpRefusedMic'), g.get('tpRefusedOver')), ([2, True], [3, True]), 'the mic press asks, and once it listened the Talk press opens it again')
+    eq(g.get('tpRefusedJoin'), [1, 1, True], 'refused with a mic press waiting: not asked a second time, the browser hears')
+    eq([g.get(k) for k in ('tpShown', 'tpReads', 'tpDict', 'tpBrowser')], [0, 0, 0, 0], "Talk shown already, a reply read, dictation or the browser's way: nothing opens")
+    eq((g.get('tpMay'), g.get('tpPrompt')), (True, False), 'the permission from before the ask is kept')
 
 
 if __name__ == '__main__':
