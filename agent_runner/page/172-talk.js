@@ -1,7 +1,7 @@
 /* --- F161b: Recorded, the page: the mic's sound is kept here while the person talks, posted to the run as WAV, and the words
    come back. A Recorder does what a browser's recognizer does (start, stop, abort; onaudiostart, onresult, onerror, onend),
    so hear() and the one-recognizer rules (MIC) treat both the same ------------- */
-const REC_TAIL=200, REC_SILENT=8000, REC_FIRST=3000, REC_POST=50000, REC_AGAIN=500, REC_LOOK=500, REC_MIN=0.15, REC_PRE=1, REC_WAKE=1000;  // ms: sound still taken after a stop; a listen nobody speaks in; the mic's first sound; an answer; s: the shortest clip; what is kept from before a press; ms: the sound's start
+const REC_TAIL=200, REC_SILENT=8000, REC_FIRST=3000, REC_POST=50000, REC_AGAIN=500, REC_LOOK=500, REC_MIN=0.15, REC_PRE=1, REC_WAKE=1000, REC_ENDS=3;  // ms: sound still taken after a stop; a listen nobody speaks in; the mic's first sound; an answer; s: the shortest clip; what is kept from before a press; ms: the sound's start; times a stream the browser ended is opened again
 /* the mic's sound in pieces of 2048; its output stays silent, and is there so that every browser runs it */
 const REC_WORKLET=`registerProcessor('rec',class extends AudioWorkletProcessor{
   constructor(){super();this.b=new Float32Array(2048);this.n=0;this.port.onmessage=e=>{if(e.data==='flush'&&this.n)this.port.postMessage(this.b.slice(0,this.n));this.n=0}}
@@ -47,7 +47,7 @@ async function recAsk(gen,own,box){
     const node=new AudioWorkletNode(ctx,'rec'), track=stream.getAudioTracks()[0], o={ctx,stream,node,track,ring:[],kept:0,rest:false,box};
     ctx.createMediaStreamSource(stream).connect(node);node.connect(ctx.destination);
     node.port.onmessage=e=>{if(REC.now&&REC.now.on)REC.now.take(e.data);else recRing(o,e.data)};
-    track.onended=()=>{if(REC.open!==o)return;const r=REC.now;recFree('track ended by the browser');REC.shut=true;if(r)r.cut();recLook()};
+    track.onended=()=>{if(REC.open!==o)return;const r=REC.now;recFree('track ended by the browser');REC.shut=!recEnded(r);if(r)r.cut();recLook()};
     REC.why='';REC.open=o;recLook();
     return o;
   }catch(e){
@@ -56,6 +56,13 @@ async function recAsk(gen,own,box){
     if(ctx)try{const q=ctx.close();if(q)q.catch(()=>{})}catch(x){}
     throw e;
   }
+}
+/* B804c: the browser ended the kept stream: recLook opens it again, unless a listen was on (r), it is not on screen or a
+   reply is read; REC_ENDS times, until a press listens or Talk shows anew */
+function recEnded(r){
+  if(r||!recShown()||talkReads()||(REC.ends||0)>=REC_ENDS)return false;
+  REC.ends=(REC.ends||0)+1;
+  return true;
 }
 /* F161c: between listens the last second is kept for the next press and what is older is dropped. A mic held again while
    the last words are made keeps all since */
@@ -84,7 +91,7 @@ function recLook(){
   else{
     REC.timer=setTimeout(recLook,REC_LOOK);
     if(!recShown()){
-      REC.shut=false;
+      REC.shut=false;REC.ends=0;
       if(REC.now){if(REC.open)REC.now.over('Talk left')}
       else if(REC.open){recFree(recGone());soundAs('playback')}
       else if(REC.asking&&REC.asking.own){recFree(recGone());soundAs('playback')}
@@ -131,7 +138,7 @@ class Recorder{
   }
   /* it listens, from the second before the press */
   begin(o,again){
-    REC.shut=false;this.rate=o.ctx.sampleRate;this.on=true;
+    REC.shut=false;REC.ends=0;this.rate=o.ctx.sampleRate;this.on=true;
     this.parts=o.ring;this.n=this.pre=o.kept;o.ring=[];o.kept=0;
     if(this.onstart)this.onstart();
     if(this.n){if(TK.ear)micLog(`kept ${Math.round(1000*this.n/this.rate)} ms from before`,false,TK.ear.trail);if(this.onaudiostart)this.onaudiostart()}
@@ -218,7 +225,7 @@ class Recorder{
   }
 }
 /* Talk settings: the way speech becomes words is picked (talkSet): Recorded is tried afresh, the browser's needs no stream */
-function recPick(){REC.no='';REC.shut=false;if(TS.way==='recorded')recLoad();else if(!REC.now)recFree('Recorded was not picked');recLook()}
+function recPick(){REC.no='';REC.shut=false;REC.ends=0;if(TS.way==='recorded')recLoad();else if(!REC.now)recFree('Recorded was not picked');recLook()}
 /* the setting's row in Talk settings */
 function recRow(){
   if(!REC.asked)recLoad();
