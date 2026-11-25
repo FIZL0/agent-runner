@@ -169,10 +169,10 @@ def unhold_next() -> str:
     return f'{NEXT} is no longer held'
 
 
-def drop_next(todo) -> str:
-    """Skip the Next release row's cut; what to say."""
+def drop_next(todo, why: str = '') -> str:
+    """Skip the Next release row's cut, for `why`; what to say."""
     _next(todo)
-    _event(EV_CUT_REMOVED, NEXT, 'the next release removed: the count starts from zero')
+    _event(EV_CUT_REMOVED, NEXT, 'the next release removed: the count starts from zero', why=why)
     return f'removed {NEXT}: that cut is skipped, and the count starts from zero (`{P.PROG} restore {NEXT}` undoes it)'
 
 

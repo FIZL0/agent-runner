@@ -3309,7 +3309,7 @@ def _p_tick(a, x):
 def _p_drop(a, x):
     from agent_runner import release_moves
     if a.id == release_moves.NEXT:
-        print(release_moves.drop_next(x.todo))
+        print(release_moves.drop_next(x.todo, _text(a)))
         return 0
     whole = drop(a.id, _text(a))
     skipped = release(a.id) and release_moves.removed(a.id)

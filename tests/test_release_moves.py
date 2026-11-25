@@ -181,6 +181,7 @@ def test_next_row():
     eq(auto(idle=True), '', 'nor when the run goes idle')
     R.C.run['auto_release'] = {'every': 3}
     ok('drop', M.NEXT, 'skip it')
+    has(events().read_text(encoding='utf-8'), '"why": "skip it"', 'the why is recorded')
     eq((count(), auto(), M.cuts().held), (0, '', False), 'removed, its hold too')
     ok('restore', M.NEXT)
     eq((count(), auto(), M.cuts().held), (3, '', True), 'undone: the count and the hold are back')
