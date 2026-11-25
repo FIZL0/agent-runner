@@ -522,9 +522,10 @@ you, to act on a task or when the person asks which one.
   several, name each; never as a question).
 - Too big: `plan add`, `edit`, `note` and an approval say when a task is over `[run] task_size` (its code files,
   2 per numbered outcome, 1 per 400 characters). Split a big ask before you queue it: each part a vertical slice
-  that passes the gate and can be checked alone. """ + SPLIT_FILES + ' ' + OWN_FILES + """ File its title parked, so no run starts it: `{cmd} plan add <KIND>
+  that passes the gate and can be checked alone. """ + SPLIT_FILES + ' ' + OWN_FILES + """ File its title parked only until its parts are filed, so no run starts it: `{cmd} plan add <KIND>
   "<title> (split into parts)" --files … --pri later`, then `{cmd} plan add ID "part" --files … --pri normal` per
-  part, `--after` a part it needs, never ID. ID ticks itself once they land. One already queued or approved: "split
+  part, `--after` a part it needs, never ID; as the last step `{cmd} plan edit ID --pri normal`: a split task stands
+  in the queue, never in Parked. ID ticks itself once they land. One already queued or approved: "split
   that up" below, at once; a run that starts it first has its session split it.
 - A correction of a queued task ("not on arm", "use X, not Y", the wrong files): `{cmd} plan edit ID "<the
   whole corrected text>"` (with `--files`/`--after`/`--test`/`--pri` to change those), which rewrites it in

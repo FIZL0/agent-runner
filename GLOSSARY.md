@@ -367,7 +367,7 @@ _In code_: concept_chat, concept_chat_text
 _Avoid_: concept session
 
 **Parked task**:
-A queued task at level later, in the plan's Parked section: a run never starts it until a person unparks it, which moves it to Follow-ups. The Plan view's Parked group also lists shelved tasks (see Shelve), after the parked ones; they stay distinct from these.
+A queued task at level later, in the plan's Parked section: a run never starts it until a person unparks it, which moves it to Follow-ups. The Plan view's Parked group also lists shelved tasks (see Shelve), after the parked ones; they stay distinct from these. A split task with an open part neither parked nor shelved is not parked: it stands in the queue.
 _Said_: parked
 _On screen_: Parked: a run won't start it
 _In code_: state 'parked', unpark, parkedLast, queueGroups
