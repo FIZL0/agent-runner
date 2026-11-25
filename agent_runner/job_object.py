@@ -4,12 +4,13 @@
 
 `taskkill /T` follows parent pids, and an MSYS (Git Bash) child whose Windows parent is gone has none to follow. Every
 process of the command is in the job, which Windows ends with the job's last handle, that is when this process is
-killed. When the command ends by itself the job lets go first, so what it left in the background goes on.
+killed. When the call ends by itself the job lets go first, so what it left in the background goes on.
 
 The harness loop (harness.mjs) starts it by its path, for a bash tool call on Windows; nothing here imports the rest
 of the runner."""
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess as sp
 import sys
@@ -78,7 +79,12 @@ def main(argv: list[str]) -> int:
     job = Job()
     if not job.ok:
         return NO_JOB
-    code = sp.Popen(quoted([argv[0], *argv[1:]]), executable=exe, stdin=0, stdout=1, stderr=2).wait()
+    p = sp.Popen(quoted(argv), executable=exe, stdin=0, stdout=sp.PIPE, stderr=sp.STDOUT)
+    # read to its end, not the command's: a background child with the output holds the call, so a stop must reach it too
+    while data := os.read(p.stdout.fileno(), 65536):
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+    code = p.wait()
     if code == 1:  # maybe taskkill's, on its way up a tree this process is in (a chat closed from outside): its turn is next
         time.sleep(0.3)
     job.let_go()

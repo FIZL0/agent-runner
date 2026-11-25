@@ -26,7 +26,7 @@ from agent_runner.config import Config, runner_cmd
 
 os.environ.pop(K.CONTROL_N_ENV, None)  # a run a control session started hands its number on
 
-# The fake provider answers the last user message: "run: CMD" calls bash, "read: FILE" read, "slow" never answers, "fail" is an error.
+# The fake provider answers the last user message: "run: CMD" calls bash, "run 5 s: CMD" with a timeout, "read: FILE" read, "slow" never answers, "fail" is an error.
 FAKE = r"""
 import fs from 'node:fs';
 export default function ({ provider, model }) {
@@ -41,6 +41,8 @@ export default function ({ provider, model }) {
         cacheRead: 0, cacheWrite: 0, cost: { total: 0 } } };
       if (last.role === 'user' && text === 'slow') await new Promise((r) => setTimeout(r, 60000));
       if (last.role === 'user' && text === 'fail') return { ...base, content: [], stopReason: 'error', errorMessage: '400 invalid request' };
+      if (last.role === 'user' && text.startsWith('run 5 s: '))
+        return { ...base, stopReason: 'toolUse', content: [{ type: 'toolCall', id: `c${Date.now()}`, name: 'bash', arguments: { command: text.slice(9), timeout: 5 } }] };
       if (last.role === 'user' && text.startsWith('run: '))
         return { ...base, stopReason: 'toolUse', content: [{ type: 'toolCall', id: `c${Date.now()}`, name: 'bash', arguments: { command: text.slice(5) } }] };
       if (last.role === 'user' && text.startsWith('read: '))
@@ -162,16 +164,22 @@ def test_stopped_tool(env: Env, p, sid: str):
     print('Windows: a stopped tool call leaves no Git Bash child')
     if not plat.WINDOWS:
         return
-    for i, cmd in enumerate(('sleep 61; echo x', '(sleep 61; echo x) & wait', 'sleep 61 | cat')):
+    for i, cmd in enumerate(('sleep 61; echo x', '(sleep 61; echo x) & wait', 'sleep 61 | cat', '(sleep 61; echo x) &')):
         before = msys_pids()
         tell(p, f'run: {cmd}')
-        check(until(lambda: msys_pids() - before), f'it runs: {cmd}')
-        time.sleep(0.5)  # `cat` too
+        check(until(lambda: len(msys_pids() - before) == 1 + ('cat' in cmd)), f'it runs: {cmd}')
+        time.sleep(0.5)
         mine = msys_pids() - before
         escape(p)
         tell(p, f'stopped {i}')
         check(answered(sid, f'answer to stopped {i}'), 'Escape stops it', state(sid))
         check(until(lambda: not mine & msys_pids(), 10), 'and no child of it is left', mine & msys_pids())
+    before = msys_pids()
+    tell(p, 'run 5 s: sleep 61 | cat')
+    check(until(lambda: len(msys_pids() - before) == 2, 4), 'it runs, with a timeout')
+    mine = msys_pids() - before
+    check(answered(sid, 'timed out after 5 s'), 'the timeout stops it', state(sid))
+    check(until(lambda: not mine & msys_pids(), 10), 'and no child of it is left', mine & msys_pids())
     tell(p, 'run: echo "a*"\'\\"\'; exit 3')
     check(answered(sid, 'answer to tool (a*\\"'), 'a command reaches bash as it is', state(sid))
     has(state(sid)['text'], r'exit code 3', 'and its exit code comes back')
