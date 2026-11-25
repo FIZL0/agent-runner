@@ -478,7 +478,8 @@ def test_service_scope() -> None:
 def test_outlives_service(tmp: Path) -> None:
     print('B800: a page-only process started in a systemd service goes on when the service is stopped')
     if not (sys.platform.startswith('linux') and shutil.which('systemd-run') and subprocess.run(
-            ['systemd-run', '--user', '--scope', '--quiet', '--collect', '--', 'true'], capture_output=True).returncode == 0):
+            ['timeout', '10', 'systemd-run', '--user', '--scope', '--quiet', '--collect', '--', 'true'],
+            capture_output=True).returncode == 0):
         print('  skip - no systemd user manager here')
         return
     env: dict = {}
@@ -504,9 +505,8 @@ def test_outlives_service(tmp: Path) -> None:
             check(plat.alive(pid) and P.serving(root), 'the service is stopped, and the page goes on', pid)
         finally:
             subprocess.run(['systemctl', '--user', 'stop', unit], capture_output=True, timeout=120)
-            if pid:
-                plat.terminate(pid)
-                check(ended(root, pid), 'it ends when asked')
+            S.C.notes('page.stop').write_text(str(os.getpid()), encoding='utf-8')  # also one too slow to serve above
+            check(until(lambda: not P.held(root)) and (not pid or ended(root, pid)), 'it ends when asked')
 
 
 def in_tmp(f):
