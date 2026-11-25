@@ -90,7 +90,7 @@ def parents_first(ls: list[str], open_ids: set[str]) -> dict[str, set[str]]:
     for _, box, tid, _, i in P.iter_tasks(ls):
         if box != 'x':
             waits[tid] = set(P.waits_on(ls, i))
-            if box == '~':  # and a block's `(after X)`
+            if box == '~' and not P.until_of(ls, i):  # and a block's `(after X)`
                 waits[tid] |= {t for a in P.WAITS.findall('\n'.join(P._item_block(ls, i))) for t in P.TASK_ID.findall(a)}
     out = {}
     for tid, k in kids.items():
@@ -127,7 +127,7 @@ def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:
         if not section.startswith(P.SKIPPED):
             l = ls[n]
             waits[tid] = set(P.fields(l).get('after', [])) | {
-                i for a in P.WAITS.findall(l) for i in P.TASK_ID.findall(a)}  # and a block's `(after X)`
+                i for a in P.WAITS.findall('' if P.until_of(ls, n) else l) for i in P.TASK_ID.findall(a)}  # and a block's `(after X)`
     for _ in range(len(waits)):  # each pass moves a rank one link down a chain
         moved = False
         for w, deps in waits.items():

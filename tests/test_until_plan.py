@@ -202,7 +202,8 @@ def test_commands(repo: Path):
     has(line('T2'), r'BLOCKED: \(until version:999\.0\.0\) the release$', 'or after it')
     before = todo.read_text(encoding='utf-8')
     for words in (['--until', 'uptime', 'why'], ['--until', V], ['--until', V, '--after', 'T1', 'why'],
-                  ['--after', 'T1', '--until', V, 'why'], ['why', '--until']):
+                  ['--after', 'T1', '--until', V, 'why'], ['why', '--until'],
+                  ['--until', f'{V},', 'check:vm', 'why'], ['the', 'one', 'release', '--until', f'{V},', 'check:vm', 'x']):
         r = cmd(repo, 'plan', 'block', 'T3', *words)
         check(r.returncode and 'Nothing blocked' in r.stderr, f'refused: {words}', r.stdout + r.stderr)
     eq(todo.read_text(encoding='utf-8'), before, 'and nothing changed')

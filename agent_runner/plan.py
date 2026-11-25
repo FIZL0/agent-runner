@@ -535,10 +535,10 @@ def until_list(given: str, c=None) -> list[str]:
     """`--until`'s comma list as checks, each once. SystemExit says why one is refused. A check [run.checks] names only
     on this branch, or only in the main checkout, is taken."""
     from agent_runner import until  # here: until imports this module
-    out = list(dict.fromkeys(t for x in given.split(',') if (t := x.strip())))
-    if not out:
-        raise SystemExit(f'{PROG}: --until takes a check: version:X.Y.Z, login:PROVIDER, tool:NAME or check:NAME. '
-                         'Nothing blocked.')
+    out = list(dict.fromkeys(x.strip() for x in given.split(',')))
+    if '' in out:  # none, or a space after a comma made the next check a word of the why
+        raise SystemExit(f'{PROG}: --until takes checks, comma-separated with no space: version:X.Y.Z, login:PROVIDER, '
+                         'tool:NAME or check:NAME. Nothing blocked.')
     c = c or cfg()
     for t in out:
         if (why := until.problem(t, c)) and until.problem(t, cfg(main_checkout(c.root))):
@@ -3314,6 +3314,10 @@ def _p_block(a, x):
         del rest[at:at + 2]
     if rest[:1] == ['--after'] and len(rest) > 2:
         after, rest = [t for t in rest[1].split(',') if t], rest[2:]
+    if '--until' in rest:
+        print(f'{PROG}: block {a.id}: --until CHECK[,CHECK] goes once, before the why or after it, with no space after '
+              'a comma. Nothing blocked.', file=sys.stderr)
+        return 2
     if until is not None and not ' '.join(rest).strip():
         print(f'{PROG}: block {a.id} --until CHECK needs a why. Nothing blocked.', file=sys.stderr)
         return 2
