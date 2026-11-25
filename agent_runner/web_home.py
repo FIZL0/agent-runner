@@ -136,7 +136,9 @@ def start_web(only: bool = False) -> WebServer | None:
     # B146: the device site's /p/KEY/ address first when one routes this project
     site = site_urls()
     shown = shown_links(site, urls)
-    shown += [x for x in (shown_links([], urls) if site else []) if x not in shown]
+    # B815b: the localhost link is Home's then, still the last
+    own = [x for x in (shown_links([], urls) if site else []) if x not in shown and urlsplit(x).hostname != 'localhost']
+    shown = shown[:-1] + own + shown[-1:] if site else shown
     closed = '' if shown else closed_line()
     S.log(f'run page: {" or ".join(shown) or closed}' +
           ('' if U.find_ttyd() else ' (ttyd is not installed, so a chat cannot show its session)'))

@@ -1052,8 +1052,8 @@ def page_link(urls: list[str], https=None) -> str:
 def run_facts(root: Path, run: dict, https=None, site=None) -> dict:
     """What the run picker and the launcher say of the project at `root` beside `run` (`run_info`): tasks left,
     stopping (a stop was asked for), and the run page link ('' while no run serves one; its https address first,
-    B135; B146: the device site's /p/KEY/ address when one routes the project, `site(root)`, home.site_links)."""
-    out = {'left': None, 'stopping': False, 'link': '', 'no_settings': '', 'agent_problem': ''}
+    B135; B146: the device site's /p/KEY/ address when one routes the project, `site(root)`, home.site_links; B815b: 'local': its localhost link)."""
+    out = {'left': None, 'stopping': False, 'link': '', 'local': '', 'no_settings': '', 'agent_problem': ''}
     try:
         from agent_runner.config import Config
         from agent_runner.status import tasks_left
@@ -1068,7 +1068,7 @@ def run_facts(root: Path, run: dict, https=None, site=None) -> dict:
             if us:
                 from agent_runner import home, web  # F165: own_links: never a page only Home opens
                 us = (site or home.site_links)(root) or web.own_links(us)
-            out['link'] = page_link(us, https)
+            out['link'], out['local'] = page_link(us, https), web.local_link(us) if us else ''
     except (OSError, SystemExit, ValueError, KeyError, TypeError):
         pass
     return out
@@ -1387,8 +1387,8 @@ def open_ui(root: Path) -> str:
     """The launcher's t: the TUI, or F141 why this machine has none (the launcher would clear what `ui` prints)."""
     from agent_runner.tui import PICK_RC, PICKER_ENV, refusal
     if why := refusal():
-        link = run_facts(root, {'up': True})['link'] if plat.WINDOWS else ''
-        return f'{why} {link}'.rstrip()
+        f = run_facts(root, {'up': True}) if plat.WINDOWS else {}
+        return f'{why} {f.get("local") or f.get("link", "")}'.rstrip()
     rc = sp.call([*runner_cmd(), 'ui'], cwd=str(root), env=dict(os.environ, **{PICKER_ENV: '1'}))
     return PICK if rc == PICK_RC else ''
 
@@ -1472,7 +1472,7 @@ def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint 
                 show(launcher_text(row, 'opening the run page…', paint, no_tui))
                 said, row['link'] = (got := acts['page'](Path(row['root'])))[0], got[1] or row['link']
             elif k in ('w', 'c'):
-                said = acts[k](row['link']) if row['link'] else 'no run page link to use' if up else no_link_words(row)
+                said = (page_only.open_here(acts[k], row['link'], row.get('local', '')) if k == 'w' else acts[k](row['link'])) if row['link'] else 'no run page link to use' if up else no_link_words(row)
     finally:
         if title:
             from agent_runner.tui import TITLE_BACK

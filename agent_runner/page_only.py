@@ -123,16 +123,26 @@ def start(root: Path, wait: float = START_WAIT) -> str:
     return 'the run page did not start' + (f': {said}' if said else '')
 
 
+def open_here(opener, link: str, local: str = '') -> str:
+    """B815b: the page opened in this machine's browser, by its localhost link when it has one; what is said of it (no
+    browser here, over ssh) names `link`, which another device opens too."""
+    said = opener(local or link) or ''
+    return said.replace(local, link) if local else said
+
+
 def open_page(root: Path, opener) -> tuple[str, str]:
     """The launcher's w while no run is up: (what to say, the page's link or ''). A run that came up meanwhile has the
-    page, and its link is opened."""
+    page, and its link is opened. B815b: by localhost (`open_here`)."""
     if why := start(root):
         return why, ''
+    from agent_runner import web
     from agent_runner.cmds import run_facts, run_info
     got = links(root)
+    local = web.local_link(got)
     if not got and (run := run_info(root)).get('up'):
-        got = [x for x in [run_facts(root, run)['link']] if x]
-    return (opener(got[0]), got[0]) if got else ('no run page link to use', '')
+        facts = run_facts(root, run)
+        got, local = [x for x in [facts['link']] if x], facts.get('local', '')
+    return (open_here(opener, got[0], local), got[0]) if got else ('no run page link to use', '')
 
 
 # --- the run: take its page over ---------------------------------------------------------------------------------
