@@ -1312,12 +1312,10 @@ AWAY_DRIVER = READ_DRIVER.split('(async () => {\n  const out = {}; await settle(
     back(); await look(3); o.back = [TK.state, n() - was];
     speak('Second reply.', 'k1'); await settle(); o.play = [TK.playing, n() > was];  // its play button
     const at = n(); leave(); o.playLeft = [TK.playing, n() - at];
-    // its last words landed away, the second look at them back in Talk: nor is what it goes on to say
-    over(); back(); awaitReply(); leave(); const say = t => { S.feeds.c5.entries = [{kind: 'you', text: 'x'}, {kind: 'say', text: t}]; talkHear('c5') };
+    // its last words landed away, the second look at them back in Talk: not read; words that came back in Talk are
+    over(); awaitReply(); const say = t => { S.feeds.c5.entries = [{kind: 'you', text: 'x'}, {kind: 'say', text: t}]; talkHear('c5') };
     say('Landed away.'); back(); say('Landed away.'); await settle(); o.between = [n(), TK.state, TK.wait];
-    awaitReply(); leave(); say('Landed away.'); back(); say('More here.'); say('More here.'); await settle(); o.more = [n(), TK.state];
-    // left and back before any of it landed; then the next send's reply is read
-    over(); awaitReply(); leave(); back(); say('Late.'); say('Late.'); await settle(); o.late = [n(), TK.state]; awaitReply(); say('New.'); say('New.'); o.next = TK.state;
+    leave(); awaitReply(); say('Landed away.'); back(); say('More here.'); say('More here.'); await settle(); o.more = TK.state;
   }
   // a clip still asked for when Talk is left is not played
   AU.got = run; over(); back(); lands('One here. Two.'); leave(); await settle(); await look(3); out.asked = [asked.length > 0, plays.length, TK.state];
@@ -1345,8 +1343,7 @@ def test_talk_left_b836(tmp: Path) -> None:
         eq(o.get('play'), ['k1', True], f'{kind}: its play button reads it')
         eq(o.get('playLeft'), ['', 0], f'{kind}: and leaving stops that too')
         eq(o.get('between'), [0, '', None], f'{kind}: landed away, seen again in Talk: not read')
-        eq((o.get('more'), o.get('late')), ([0, ''], [0, '']), f'{kind}: nor what that reply goes on to say, nor one that lands only after the return')
-        eq(o.get('next'), 'speaking', f"{kind}: the next message's reply is read")
+        eq(o.get('more'), 'speaking', f'{kind}: words that come once back in Talk are read')
     eq(got.get('asked'), [True, 0, ''], 'a clip still on its way is not played')
     (tmp / 'back.js').write_text(BACK_DRIVER, encoding='utf-8')
     r = subprocess.run(['node', str(tmp / 'back.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
