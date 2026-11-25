@@ -464,8 +464,136 @@ def decide_words(ask: str, summary: str) -> tuple[str, list[str], list[str]]:
     return question, [p for x in paras if (p := _said([('do', x)]))], [n for n in notes if n]
 
 
+# B794: a BLOCKED's own words. A statement is why it stopped, an order is a step, and what a run does next is neither.
+BACK = re.compile(r'\s+— back for you: [^—]*?(?:landed|passed)(?=\s+—|\s+- |[;.]|\s*$)')
+ORDER = re.compile(r"(?:please\s+|just\s+|also\s+|you\s+(?:need to|should|can|must)\s+)?(?:add|allow|answer|approve|ask|attach|be|bring|"
+                   r'build|buy|change|charge|check|choose|clear|click|close|come|confirm|connect|copy|create|crop|delete|do|download|drop|'
+                   r'enable|disable|ensure|enter|fill|find|finish|fix|free|get|give|go|grant|hold|install|keep|let|link|log|login|look|'
+                   r'make|merge|move|open|paste|pay|pick|plan|plug|post|press|publish|pull|push|put|re-?run|read|rebuild|release|reload|'
+                   r'remove|rename|renew|repeat|reply|reset|restart|restore|retry|review|revoke|rotate|run|save|say|scan|see|select|'
+                   r'send|set|share|shut|sign|start|stop|swipe|switch|take|tap|tell|test|top|trust|try|turn|type|uninstall|unlock|'
+                   r'update|upgrade|upload|use|verify|visit|wait|wake|watch|wire|write)\b', re.I)
+STATES = (r"(?:is|are|was|were|has|had|does|did|isn't|aren't|wasn't|doesn't|didn't|cannot|can't|could not|couldn't|may not|"
+          r'failed|fails|needs|gets?|gives|got|holds|left|lacks|returned|returns|said|says|shows?|ran|found|ended|hangs|hung|refused|'
+          r'refuses|denied|expired|timed out|times out|offline|missing|not found|not \w+ed|full(?=\s*(?:[;:.,(]|$))|still|only \w+s)\b')
+STATE = re.compile(r'(?!(?:if|when|once|after|before)\b)(?:(?!\b(?:that|which|who|what|when|if|where|whether|once|until|while|so|because|'
+                   r'after|before|as|it|you|they)\b)[^,;:])*?[^\s,;:]\s+' + STATES, re.I)
+ABOUT = re.compile(r"(?:the|it|its|they|each|both|nothing|no|none|there|an?|your|this|that|these|those|every|some|we|I|needs?|"
+                   r"today's)\b(?!\s+(?:needs? (?:you|your)\s+to)\b)", re.I)
+THING = re.compile(r"(?:release|run|test|build|update|upgrade|install|sign|login|plan|push|merge)\s+(?:[A-Z0-9`][\w.`-]*\s+)?(?:is|are|was|"
+                   r'were|has|had|failed|fails|cannot|could not)\b', re.I)  # "upgrade failed", no order
+WENT_WRONG = re.compile(r"\b(?:fail(?:s|ed)?|not|no|none|nothing|cannot|can't|timed out|offline|missing|expired|refused|denied|errors?|still)\b", re.I)
+_GO = r're-?runs?|reopens?|resumes?|restarts?|retries|retry|continues?|goes on|go on|carries on|carry on|follows?|picks? (?:this|it) up'
+_DO = _GO + r'|can|will|does|do|runs?|checks?|opens?|finish(?:es)?|takes?|tests?|builds?|publish(?:es)?|merges?|starts?|installs?'
+_AGENT = r'(?:I|(?i:the agent|an agent)|[A-Z]{1,2}\d+[a-z0-9]*)'
+_IT = r'(?i:this|it|the (?:task|run|slot|check))(?: task| run)?'
+_AFTER = r'(?:(?i:and|so|then|after that|afterwards),?\s+)'
+NEXT = re.compile(rf"{_AFTER}*(?:(?i:after|once|when)\s[^,;:]*,\s+)?(?:{_IT}(?: then| will| can)* (?:{_GO})\b|"
+                  rf"{_AGENT}(?: then| also| will| can)* (?:{_DO})\b(?! not\b)|{_AGENT} then\s|"
+                  r'(?i:re-?(?:opens?|runs?))(?: (?:this|it|the task|[A-Z]{1,2}\d+[a-z0-9]*))? (?:when|after|once|as soon as)\b)')
+NEXT_WHO = re.compile(rf'(?:^|[,;.]\s+|\band\s+)(?:{_IT}|{_AGENT})(?: will| can)?\s+$')  # 'the run will', before its 'then'
+NEXT_THEN = re.compile(rf'(?:and\s+)?then,?\s+(?:this|the|{_AGENT})\s', re.I)
+NEXT_AT = re.compile(rf'(,?\s+)({_AFTER})?')
+ERROR = re.compile(r'\b(?:fail(?:s|ed)?|errors?|says|said|gets|got|ended)(?: \S+)?:\s*$', re.I)  # its colon is followed by the error
+
+
+def _outside(text: str, at: int) -> bool:
+    """Whether `at` in `text` is in no bracket and no `code`."""
+    head = text[:at]
+    return not head.count('`') % 2 and head.count('(') <= head.count(')') and head.count('[') <= head.count(']')
+
+
+def _blocked_kind(text: str, kind: str) -> str:
+    """What a BLOCKED's piece `text` is: 'next' (what the run does after), 'why' or 'do'; else `kind`, the plain one."""
+    s = re.sub(r'^(?:\(\d+\)|\d+[.)])\s+|^—\s+', '', ' '.join(text.split()))
+    if NEXT_THEN.match(s) or NEXT.match(s):
+        return 'next'
+    if kind in ('note', 'lead'):
+        return kind
+    s = re.sub(r'^(?:(?:and|or|then|so|but)\b,?\s+|stuck:\s+)+', '', s, flags=re.I)
+    if PREP.match(s) and ',' in s:  # "when you are there, reply"
+        s = re.sub(r'^[^,]*,\s+', '', s)
+    if ORDER.match(s) and not THING.match(s):
+        return 'do'
+    if kind == 'see' or ABOUT.match(s) or STATE.match(s):
+        return 'why'
+    return kind
+
+
+def blocked_pieces(ask: str) -> list[tuple[str, str]]:
+    """B794: a BLOCKED's `ask` in pieces (`split_ask`'s), with 'why' (the reason it stopped), 'next' (what the run or an
+    agent does afterwards) and 'back' (what it waited for has landed) too. A 'see' is only what follows a step and its
+    colon. The pieces joined are `ask`."""
+    if m := BACK.search(ask):
+        return blocked_pieces(ask[:m.start()]) + [('back', m[0])] + blocked_pieces(ask[m.end():])
+    parts: list[tuple[str, str]] = []
+    whole: list[tuple[str, str]] = []
+    for kind, text in split_ask(ask):
+        if whole and NEXT_WHO.search(whole[-1][1]) and THEN.match(text):  # 'the agent then checks' is one
+            whole[-1] = (whole[-1][0], whole[-1][1] + text)
+        else:
+            whole.append((kind, text))
+    for kind, text in whole:  # cut again before a reason after a dash or that starts in lower case, and before what the run does
+        at = [0]
+        if _blocked_kind(text, kind) not in ('note', 'next'):
+            for c in re.finditer(r'\s+(?=— )|(?<=[^\s.]\.)\s+(?=[a-z])', text):
+                if _outside(text, c.start()) and _blocked_kind(text[c.end():], '') in ('why', 'next'):
+                    at.append(c.end())
+            for c in NEXT_AT.finditer(text):
+                if c.start() and (c[1][0] == ',' or c[2]) and _outside(text, c.start()) and NEXT.match(text[c.end(1):]):
+                    at.append(c.end(1))
+        at = sorted(set(at))
+        parts += [(kind, text[a:b]) for a, b in zip(at, [*at[1:], len(text)])]
+    out: list[tuple[str, str]] = []
+    for kind, text in parts:
+        was, before = out[-1] if out else ('', '')
+        ended = not before or bool(re.search(r'[.?!;]["\'”’)]*\s*$', before))
+        colon = before.rstrip().endswith(':')
+        new = _blocked_kind(text, kind)
+        if was == 'why' and ERROR.search(before):
+            new = 'why'
+        elif colon and was in ('why', 'next') and new not in ('do', 'note'):
+            new = was
+        elif kind == 'see' and new == 'why' and (colon and was == 'do' or was == 'see' and not re.search(r'[.?!]\s*$', before)):
+            new = 'why' if WENT_WRONG.search(text) else 'see'
+        elif was == 'next' and not ended and new not in ('do', 'note'):
+            new = 'next'
+        elif not out and new == 'why' and PREP.match(text) and text.rstrip().endswith(':'):  # "on the phone, the app is open:"
+            new = 'lead'
+        if new == 'next' and was == 'next' and not ended or new == 'do' and was == 'do' and colon and PREP.match(before.strip()):
+            out[-1] = (new, before + text)  # "then the check runs: pair, install", "after the restart: run the test"
+        else:
+            out.append((new, text))
+    return out
+
+
+def blocked_words(ask: str) -> dict[str, list[str]]:
+    """B794: what a BLOCKED's `ask` says: {why, lead, steps, expect, notes}, each piece in one of them."""
+    out: dict[str, list[str]] = {k: [] for k in ('why', 'lead', 'steps', 'expect', 'notes')}
+    pieces: list[tuple[str, str]] = []
+    for kind, text in blocked_pieces(ask):
+        if kind == 'why' and pieces and pieces[-1][0] == 'why':  # one paragraph
+            text = pieces.pop()[1] + text
+        pieces.append((kind, text))
+    for kind, text in pieces:
+        s = re.sub(r'^—\s+', '', shown(text))
+        if not re.search(r'\w', s):
+            continue
+        if kind == 'back':
+            s = re.sub(r'^.*?back for you: ', '', s, flags=re.I)
+            s = re.sub(r'\s(landed|passed)$', lambda m: f' {"have" if ", " in s else "has"} {m[1]}', s)
+        elif kind == 'next':
+            s = re.sub(rf'^{_AFTER}+', '', s)
+            s = re.sub(r'^(re-?(?:open|run))s?\s', lambda m: f'it {m[1].lower()}s ', s, flags=re.I)  # no order to the person
+            s = 'After that: ' + (s if re.match(r'I\b', s) else P._lower_first(s))
+        s = s[:1].upper() + s[1:]
+        out[{'do': 'steps', 'see': 'expect', 'why': 'why', 'lead': 'lead'}.get(kind, 'notes')].append(s)
+    return out
+
+
 def detail(label: str, tid: str, ask: str, title: str, text: str) -> dict:
     """What the card and the popup of one item say: said, title, where, summary, lead, steps, expect, notes and shots;
+    B794: `why`, the reason a BLOCKED without its ask file's steps stopped ([] for the others);
     B223a: `question`, what a DECIDE asks ('' for the others), which is its summary too; it has steps only from its ask file.
     F175: `step_more` (each step's link, cmd and on) and `inputs` (what the person gives, `ui_model.need_give`). `text` is its task's text. B793b: the title and the summary are whole; a view with one line shortens them itself."""
     d = asks_file(tid)
@@ -481,10 +609,15 @@ def detail(label: str, tid: str, ask: str, title: str, text: str) -> dict:
         question, lead, notes = decide_words(ask, d.get('summary') or '')
         summary, steps = question, d.get('steps') or []
         lead = [] if steps else lead
+    why: list[str] = []
+    if label == 'BLOCKED' and not d.get('steps'):
+        w = blocked_words(ask)
+        why, lead, steps, expect, notes = w['why'], w['lead'], w['steps'], d.get('expect') or w['expect'], w['notes']
+        summary = d.get('summary') or (steps or why or expect or [ask])[0]
     shots = d.get('shots') or []
     shots = shots + [s for s in named_shots(text) if s['path'] not in {x['path'] for x in shots}]
     return {'said': SAID.get(label, label), 'title': P.short_title(title, sys.maxsize) if title else tid,
             'where': d.get('where') or place(ask), 'summary': summary, 'question': question,
-            'lead': lead, 'steps': steps, 'expect': expect, 'notes': notes,
+            'why': why, 'lead': lead, 'steps': steps, 'expect': expect, 'notes': notes,
             'shots': shots, 'step_more': d.get('step_more') or [],
             'inputs': (d.get('inputs') or []) if label in INPUT_LABELS else []}

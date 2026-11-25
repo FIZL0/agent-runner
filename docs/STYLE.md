@@ -60,7 +60,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way. A
   device's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: what is asked, its task's
-  title small under it as on the card, label, age, id; where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
+  title small under it as on the card, label, age, id; Why (a BLOCKED item's, left out when the heading says it); where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
   only when its ask file has steps); What you should see; notes; pictures (`.shot`, full size inside the sheet, Back or
   Esc goes back); the
   task text folded. An item with inputs draws its steps with Open (a step's link) and the command as code, with
