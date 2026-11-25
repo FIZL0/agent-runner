@@ -487,7 +487,7 @@ let kbNow = () => 0;
 const kbOn = () => kbNow() > 0, mainH = () => kbNow() || doc - 34;
 const anim = who => (kf, o) => { const a = {who, by: parseFloat((kf[0].translate || kf[0].transform.replace('0px,', '')).match(/(-?[\d.]+)px/)[1]), o: [o.duration, o.easing], cancel() {}}; glides.push(a); return a };
 const ta = {get offsetHeight() { return boxH }, matches: () => true};
-const main = {get clientHeight() { return mainH() }, get clientWidth() { return wide }, style: {setProperty() {}}};
+const main = {get clientHeight() { return mainH() }, get clientWidth() { return wide }, style: {setProperty() {}}, classList: cls()};
 const dockEl = {get offsetHeight() { return 142 + boxH + extra - (kbOn() ? 6 : 0) }, style: {}, animate: anim('dock'), getBoundingClientRect: () => ({top: main.clientHeight - dockEl.offsetHeight})};
 const ff = {style: {}, animate: anim('frame'), getBoundingClientRect: () => ({top: parseFloat((ff.style.transform || '(0').split('(')[1]) + parseFloat((ff.style.translate || '0 0').split(' ')[1])})};
 const els = {app: {style: {}, classList: cls()}, body: {style: {}, scrollTop: 0}, feedframe: ff, feed: {style: {}}, top: {offsetHeight: 52}};
@@ -1170,6 +1170,17 @@ def test_bars_over_text_b192(tmp: Path) -> None:
                        ('transition:' + slow('translate', 'opacity') + ',visibility var(--dur-bars)}', 'the slim box')):
         check(rule in page, f'B218: {what} goes and comes on the one motion', rule)
     check('.main.sess.slim .notices{transform:translateY(calc(-1*var(--slimtop' in page, 'B218: a notice goes with the top bar, as one')
+    up = '.main.sess:is(.pulled,:has(.feedpast.up)) .dockwrap'
+    check(up + ' .dock{background-color:transparent;transition-delay:0s}' in page and up + '{pointer-events:none}' in page,
+          'B789: scrolled up, nothing is drawn behind the chips and the box, and a press between them is the text\'s')
+    check(':is(.dock>:not(.schips,.keys,.gone0),:is(.schips,.keys)>*,.slimground){pointer-events:auto}' in page, 'B789: each chip and the box take theirs')
+    check('.schips .chip{flex:none;background:var(--surface)' in page and '.box{background:var(--surface)' in page, 'B789: each on its own fill')
+    ground = page.split('\n.slimground{', 1)[1].split('}', 1)[0]
+    check('height:calc(var(--slimgap,14px) + var(--r-xl));background:var(--bg);opacity:1;transition:opacity var(--dur-bars) var(--ease)' in ground
+          and '.main.sess.slim .slimground{opacity:0}' in page and 'slimgrow' not in page,
+          'B789: a ground under the foot line alone, and none behind the slim box', ground)
+    check('.main.sess.slim .slimbox>div{pointer-events:auto}' in page, 'B789: a press beside the slim box is the text\'s')
+    check("classList.toggle('pulled',at.off>0)" in page, 'B789: the frame pulled down counts as scrolled up')
     check('.main.sess.still :is(' in page and "toggle('still',calm())" in page, 'B218: at once under calm()')
     check('d.inert=FD.shown&&FD.slim;row.inert=!FD.slim' in page and 'slimSize();FD.slim=on' in page, 'B218: only the one that shows takes a tap; measured before it moves')
     row = page[page.index('function slimDraw('):]
