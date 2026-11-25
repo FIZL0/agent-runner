@@ -751,8 +751,8 @@ def test_hold_selects_b814(tmp: Path) -> None:
     check(lines[0].startswith('html{') and off in lines[0], 'off from the root, so no ancestor is left to select', lines[0])
     check(lines[1].startswith(':where(') and on in lines[1], 'the words opt in, weaker than a control\'s own rule', lines[1])
     words = lines[1][len(':where('):lines[1].index('){')]
-    for part in ('input', 'textarea', 'select', '[contenteditable]', 'pre', 'code', '.u', '.a .say', '.said', '.tasktext', '.quote', '.askdo', '.asktext',
-                 '.askbody :is(p,li)', '.tooltext', '.qcard .q', '[data-k^="concept:"]>:is(.q,.small)', '.ev .txt', '.ell2'):
+    for part in ('input', 'textarea', 'select', '[contenteditable]', 'pre', 'code', '.u', '.a .say', '.said', '.tasktext', '.quote', '.askdo', '.asktext>:not(.btns)', '.a .lead', '.a:not(:has(>.say))', '.asktop :is(h2,.small)', '.foldin>.small',
+                 '.askbody :is(p,li)', '.tooltext', '.qcard .q', '[data-k^="concept:"]>:is(.q,.small)', '.ev .txt'):
         check(f',{part},' in f',{words},', f'{part} can be selected')
     for part in ('.side', '.scrim', '.top', '.dock', '.body', '.msgs', '.card', '.btns', '.crow', '.ni', '.it', '.sheet', '.foldin', '.askbody', '.feedtouch', '.feedpast'):
         check(f',{part},' not in f',{words},', f'{part} cannot')
