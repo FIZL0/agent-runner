@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.72.0 (2026-11-25)
+
 - Fixed: a split task's row in the run page's Plan queue and the terminal UI's queue reads "Split: 2 of 4 parts landed" instead of Ready or what it waits for (blocked, held, parked and running rows keep their words; a dropped part is not counted); Drop on it, also when parked, first asks, naming the parts that stay open (the page with titles, the terminal UI by id); before, the question did not mention the parts. Status's reason why a slot is idle counts such tasks as waiting for their parts (B811b).
 - Added: `agent-runner setup` asks once at a terminal whether the run audits by itself (default no); Settings on the run page has a switch for Audit by itself (`[run] auto_audit`), Every 25/50/100 tasks while it is on, and the Audit model beside it (F422).
 - Fixed: a `plan edit` that changes only `--files`, only `--pri` or both no longer tells control sessions the item was changed (before, only a lone `--pri` was silent), and the same event again (same task, what, author and reason) is one Settled line per session: not told again within 120 s of the one told, and it replaces one still waiting to be typed; a different author, verb or reason, an edit whose text differs, or the same event after another event of that item came between is still told (B812).
@@ -19,6 +21,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Added: in PR mode, a review comment or change request by someone with write access, or red CI or a conflict with main, resumes the task's session on its pull request, with at most 3 tries each before Needs you; a pull request closed without a merge goes to Needs you instead of only being logged (F423).
 - Added: PR mode (`[git] pr = true`) for a repository on GitHub: each finished task opens one pull request for a person to merge, and the runner never merges or pushes main (F419).
 - Added: `done` runs a removal check before its gate (F416): when a task's diff deletes or renames a file, test, setting or command, it lists what still names it, and a dead path in code, config or CI refuses `done` until it is gone; the rest is answered once with `done --named "1 filed B12; 2-3 kept because …"`.
+
 ## 0.71.0 (2026-11-25)
 
 - Changed: in the terminal UI (`agent-runner ui`) with no run up, the Status panel says Not running and names T (start), with no slot, pause or stop keys; T starts the run without blocking the UI, and the panel says Starting the run… while it starts, or Not started: why after a failure (T again retries). When the run comes up, the panel, tab and each selection stay as they were. Adding a task and messaging a chat work with no run up (F402c2).
