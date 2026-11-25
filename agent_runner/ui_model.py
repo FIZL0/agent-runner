@@ -33,6 +33,7 @@ copy, and the actions they share.
     quick_asks  the Status chat's quick asks, each a new chat: key, label, text
     terminal_mode  how a session's terminal shows: 'ttyd', or 'install' (no ttyd yet)
     run       paused, stopping, forced, power, and `state`: the state pill's words (F124: `run_state`)
+    merging   F426e: the tasks that merge now, [{'id', 'title', 'step', 'link'}] (`merge_rows`); step: the run log's last words
     usage     F124: the account's usage, [{'name': 'session'|'week', 'pct'}]
     lately    F124: what landed lately, newest first, the words `status` lists under "lately": [{'at', 'text'}]; F426c: 'id'
               (its task, '' for none), 'kind' ('landed', 'part', else '') and, for those two, 'title'

@@ -1,7 +1,7 @@
 const isNew=n=>String(n||'')[0]==='+';
 /* the usage line of the status lines ('usage: session 40%, week 12%'), '' for none */
 const usageOf=status=>((status||[]).find(l=>/^usage: /.test(l))||'').replace(/^usage: /,'');
-/* a run log line's kind, for its icon on Status */
+/* a run log line's kind, for its icon in History */
 function logKind(line){
   const l=String(line||'').toLowerCase();
   if(/\b(landed|merged|released|done)\b/.test(l))return 'ok';
@@ -134,8 +134,6 @@ function kindChip(id,kinds){
   const k=(kinds||{})[m[1]]||{word:'',color:'gray'}, w=k.word?k.word.charAt(0).toUpperCase()+k.word.slice(1):'';
   return `<span class="kind k-${E_(k.color)}">${w?`<i>${E_(w)}</i> `:''}${E_(id)}</span>`;
 }
-/* a lately line without the [id] its chip says */
-const landedText=l=>l.id&&l.text.endsWith(` [${l.id}]`)?l.text.slice(0,-l.id.length-3):l.text;
 /* F195b: what an icon-only control does: its label, '' when it has words of its own. A picture is no icon */
 const iconWords=(label,title,text,drawn)=>(drawn||text.trim())&&!/[\p{L}\p{N}]/u.test(text)?String(label||title||'').trim():'';
 /* where the hint stands: over its control r, under it with no room, inside the window (w, h the hint's size) */

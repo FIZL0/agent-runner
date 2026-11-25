@@ -26,17 +26,12 @@ const ansWords=(n,ks)=>Object.fromEntries(ks.map((k,j)=>[k,((n.answers||[])[j]||
 const ansBtns=n=>{const ks=(n.acts||[]).filter(isAnswer);return actBtns(n.label==='PITCH'?ks.slice(0,1):ks,n.id,{...n.labels,...ansWords(n,ks)},ks[0])};
 const restBtns=n=>actBtns((n.acts||[]).filter(k=>!isAnswer(k)),n.id,n.labels);
 const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+':'+tid).map(c=>ctlSure(c,tid)).join('');
-function slotRow(s){
-  if(!s.task)return `<div class="srow" data-k="slot:${esc(s.name)}:"><div class="row"><div class="who">${esc(s.name)}</div><div class="grow small">Idle: nothing it can start right now</div></div></div>`;
-  const w=lastWords(s.name), tc=taskControlsOn(s)?controlsOf('task'):[];
-  return `<div class="srow" data-k="slot:${esc(s.name)}:${esc(s.task)}"><button class="fold" data-thread="${esc(s.name)}"><span class="who">${esc(s.name)}</span>${taskChip(s.task)}<span class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></span><span class="chev">${I.chev}</span></button>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn${ctlBusy(c.key,s.task)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}${tc.filter(c=>S.sure===c.key+':'+s.task).map(c=>ctlSure(c,s.task)).join('')}</div>`;
-}
 /* F168: the shared tools in words, the same as status says */
 const toolsWords=ts=>'Tools: '+ts.map(t=>`${t.label}: ${t.words}`).join(' · ');
-/* Run controls: the Run card; B763a: they stand above the slots, each with its icon (docs/STYLE.md, Run card) */
+/* Run controls: the Run card; B763a: each with its icon; F426e: the slots' rows are in Working (076-status.js) (docs/STYLE.md, Run card) */
 const CTL_ICON={start:'play',go_on:'play',pause:'pause',stop:'stop',stop_undo:'undo',slot_add:'plus',slot_remove:'minus'};
 function controlsCard(){
-  const run=S.snap.run||{}, up=S.snap.up!==false, ss=slots();
+  const run=S.snap.run||{}, up=S.snap.up!==false;
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
   const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${I[CTL_ICON[k]]||''}${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
   return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-roll data-v="${esc(said)}">${esc(said)}</div></div>${up?(w=>`<span class="small" data-k="slotsof" data-roll data-v="${w}">${w}</span>`)(`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`):''}</div>
@@ -44,8 +39,7 @@ function controlsCard(){
     ${S.snap.agent_problem?`<div class="small" data-k="agentproblem"><span class="v-warn">${esc(S.snap.agent_problem)}</span></div>`:''}
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
     ${(S.snap.tools||[]).length?`<div class="small" data-k="tools" data-v="${esc(toolsWords(S.snap.tools))}">${esc(toolsWords(S.snap.tools))}</div>`:''}
-    ${obCards(obRun)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">${I.dots}More…</button></div>`:''}
-    ${ss.map(slotRow).join('')}`,'','data-k="run"');
+    ${obCards(obRun)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">${I.dots}More…</button></div>`:''}`,'','data-k="run"');
 }
 /* F98: a pitch's Not this, folded open in place: all of it or one change, its task reopened or dropped */
 function pitchNo(n,i){
@@ -229,9 +223,11 @@ async function openTask(id,list='queue'){
   delete S.taskOpen['wait:'+(S.taskOpen[list]||'')];  // a release that shuts shuts its tasks
   for(const l of Object.keys(S.taskOpen))if(taskIsOpen(l,id))delete S.taskOpen[l];  // a task is open in one list: its question is asked once
   if(on)S.taskOpen[list]=id;else delete S.taskOpen[list];
+  if(String(S.readTask||'').startsWith(list+':'))S.readTask='';
   render(true);
   if(!on)return;
   taskInView(id,list);
+  if(/^s\d+$/.test(id))return;  // F426e: an idle slot's row, which is no task
   try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read'),old:oldRun(j)}}
   catch(e){if(!S.tasks[id])S.tasks[id]={err:'Could not reach the run page: fold it and open it again'}}
   if(taskIsOpen(list,id))MO.folded=Date.now();  // what the press opened goes on to its words

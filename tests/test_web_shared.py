@@ -647,9 +647,9 @@ def test_kinds_f195b(tmp: Path) -> None:
         return
     kinds = {**own, 'H': {'word': '<b>', 'color': 'gray'}}
     got = logic_js([['kindChip', 'B216', kinds], ['kindChip', 'Q4', kinds], ['kindChip', 'tool-x', kinds], ['kindChip', 'B1', None],
-                    ['kindChip', 'H1', kinds], ['landedText', {'id': 'B2', 'text': 'landed: One [B2]'}], ['landedText', {'id': '', 'text': 'idle'}]])
+                    ['kindChip', 'H1', kinds]])
     eq(got, ['<span class="kind k-red"><i>Bug</i> B216</span>', '<span class="kind k-gray">Q4</span>', 'tool-x',
-             '<span class="kind k-gray">B1</span>', '<span class="kind k-gray"><i>&lt;b&gt;</i> H1</span>', 'landed: One', 'idle'], 'the chips')
+             '<span class="kind k-gray">B1</span>', '<span class="kind k-gray"><i>&lt;b&gt;</i> H1</span>'], 'the chips')
 
 
 HINT_DRIVER = r"""

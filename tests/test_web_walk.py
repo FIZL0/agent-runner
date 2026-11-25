@@ -70,7 +70,7 @@ def test_steps(tmp: Path) -> None:
     got = logic_js([['walkStep', i, up] for i in STEPS] + [['walkStep', i, down] for i in STEPS])
     eq([s['id'] for s in got], STEPS * 2, 'every step, with the run up and not')
     check(all(s['at'] and s['title'] and s['text'] for s in got), 'each has words and something to point at')
-    eq([s['view'] for s in got[:7]], ['plan', 'status', 'status', 'home', 'status', 'home', ''], 'where each thing is')
+    eq([s['view'] for s in got[:7]], ['plan', 'status', 'status', 'home', 'history', 'home', ''], 'where each thing is')
     check('side by side' in got[0]['text'] and got[0]['many'] == 3, 'the queue: tasks side by side', got[0])
     off = got[8]
     check('your own Claude usage' in off['text'] and 'Nothing starts until you press it' in off['text'] and

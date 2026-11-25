@@ -356,12 +356,12 @@ const S = {ob: [], taskOpen: {}, sure: null, snap: {controls, queue: [v5, v6], r
 const working_ = () => [{}], cutsOff = () => '', taskRow = (q, t, more) => q.id + more, obCards = () => '', toast = () => {}, obChange = f => { S.ob = f(S.ob) }, obDrop = (b, c) => b.filter(x => x.cid !== c);
 globalThis.fetch = async () => { throw 0 };
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planQueue='].map(line).join('')
-  + slice('/* F429b: the menu on a Plan', 'function rowMenuOpen(') + slice('/* F429c: the grip of a Plan queue row (a', '/* the drag: the row goes') + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto') + slice('const queueGroups=', '/* F185') + line('const releasesOn=') + slice('const planReleases=', 'const planQueue=') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
+  + slice('/* F429b: the menu on a Plan', 'function rowMenuOpen(') + slice('/* F429c: the grip of a Plan queue row (a', '/* the drag: the row goes') + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto') + slice('const queueGroups=', '/* F185') + line('const releasesOn=') + slice('const planReleases=', 'const planQueue=') + slice('function newReleaseCard(', 'const agoWords=') + grab('function obDone(').replace('toast(j.confirm,true);', '')
   + grab('function controlReq(') + line('function controlClick(');
 new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + `
-  const out = {rel: relCard(), v5: releaseCard(env.v5), v6: releaseCard(env.v6)};
+  const out = {rel: newReleaseCard(), v5: releaseCard(env.v5), v6: releaseCard(env.v6)};
   S.sure = 'release_wait'; out.sure = newReleaseCard();
-  S.sure = 'queue_drop:V6'; out.drop = releaseCard(env.v6); out.relDrop = relCard();
+  S.sure = 'queue_drop:V6'; out.drop = releaseCard(env.v6);
   out.click = [controlClick(controlOf('release_wait'), {}), controlClick(controlOf('release_wait'), {sure: true})];
   for (const c of controlsOf('release')) { c.confirm = ''; c.seen = '' }
   S.sure = null; S.ob = [{cid: 'a'}];
@@ -386,11 +386,10 @@ def test_new_drop_release_f186(tmp: Path) -> None:
                        capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     o = json.loads(r.stdout)
-    check('New release' in o['rel'] and 'V6 is already queued.' in o['rel'] and '<kind V5>' in o['rel'] and '>releasing now' in o['rel'], 'says so and shows it', o['rel'])
-    eq((o['rel'].count('data-ctl="queue_drop"'), 'data-tid="V6"' in o['rel'], 'data-tid="V5"' in o['rel']), (1, True, False), 'Drop on V6 only')
-    check('queue_drop' not in o['v5'] and 'queue_drop' in o['v6'], "the Plan view's cards: the same", o['v5'])
+    check('New release' in o['rel'] and 'V6 is already queued.' in o['rel'], 'says so', o['rel'])
+    check('queue_drop' not in o['v5'] and 'queue_drop' in o['v6'], 'Drop on V6 only', o['v5'])
     check(ask in o['sure'] and 'data-sure' in o['sure'], 'New release asks in place', o['sure'])
-    check(all(drop in o[k] for k in ('drop', 'relDrop')), 'Drop asks in its own words', o['drop'])
+    check(drop in o['drop'], 'Drop asks in its own words', o['drop'])
     eq(o['click'], [{'ask': True}, {'name': 'run_control', 'args': {'key': 'release_wait', 'confirm': True, 'text': 'V6'}}],
        'a press asks; its Yes names the open release')
     eq(o['stale'][:2], [[], 'release_now'], 'one just queued elsewhere: the press asks, with nothing failed')
@@ -448,19 +447,19 @@ const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)
 const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
 const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
 const S = {ob: [], taskOpen: {}, sure: null, snap: null, f: {}};
-const no = () => '', env = {S, taskChip: no, landedText: no, planField: no, planWant: no, planAsk: no, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
+const no = () => '', env = {S, mergeRows: () => [], taskChip: no, planField: no, planWant: no, planAsk: no, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
   ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}, upNext: () => S.snap.queue, LOGO: no, greeting: no, box: no, keysLine: no, homeChips: no, runPill: () => ({text: ''}), esc: no};
 const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
   + slice('/* F429b: the menu on a Plan', 'function rowMenuOpen(') + slice('/* F429c: the grip of a Plan queue row (a', '/* the drag: the row goes') + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto')
-  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + slice('const planRows=', '/* F87') + ['relCard', 'newReleaseCard', 'statusHTML', 'planHTML', 'homeStatus', 'homePlan', 'homeHTML'].map(f => grab(`function ${f}(`)).join('') + line('const homeSums=');
-const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), statusHTML(), homeHTML()]}')(env);
+  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + slice('const planRows=', '/* F87') + ['newReleaseCard', 'planHTML', 'homeStatus', 'homePlan', 'homeHTML'].map(f => grab(`function ${f}(`)).join('') + line('const homeSums=');
+const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), homeHTML()]}')(env);
 const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw() });
 console.log(JSON.stringify(out));
 """
 
 
 def test_manage_releases_f193(tmp: Path) -> None:
-    """F193: [run] releases off: the Plan and Status views and the run page copy say nothing of releases, an open V
+    """F193: [run] releases off: the Plan and Home views and the run page copy say nothing of releases, an open V
     task is in the Queue; on, they are as before. A New release already sent is still seen to its end."""
     if not shutil.which('node'):
         print('  (no node here: the Manage releases script test is skipped)')
@@ -483,18 +482,16 @@ def test_manage_releases_f193(tmp: Path) -> None:
     r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), str(cases)],
                        capture_output=True, text=True, encoding='utf-8', timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
-    (plan_on, st_on, home_on), (plan_off, st_off, home_off), (plan_sent, st_sent, home_sent), back, older = json.loads(r.stdout)
+    (plan_on, home_on), (plan_off, home_off), (plan_sent, _), back, older = json.loads(r.stdout)
     check('>Releases<' not in plan_on and '<b>New release</b>' in plan_on and 'data-ctl="release_now"' in plan_on, 'on: Plan has them', plan_on)
-    check('>Release<' in st_on and 'data-ctl="release_now"' in st_on and 'V5' in st_on, 'on: Status too', st_on)
     check('data-ctl="release_now"' not in home_on and 'release_take' not in home_on, 'F426a: no release card on Home', home_on)
     queue = plan_on.split('>Queue<', 1)[1]
     eq((plan_on.count('task:V5'), queue.count('task:V5')), (1, 1), 'on: V5 is a row of the Queue')
-    for name, html in (('Plan', plan_off), ('Status', st_off), ('Home', home_off)):
+    for name, html in (('Plan', plan_off), ('Home', home_off)):
         check(not re.search(r'release', html, re.I), f'off: {name} says nothing of releases', html)
     check('V5 Ship 1.2.0' in plan_off.split('>Queue<', 1)[1], 'off: V5 is in the Queue', plan_off)
-    for html in (plan_sent, st_sent):
-        check('[ob release_now:]' in html and 'New release' not in html, 'off: one already sent shows until settled', html)
-    eq((back, older), ([plan_on, st_on, home_on], [plan_on, st_on, home_on]), 'back on, and from an older run: all of it')
+    check('[ob release_now:]' in plan_sent and 'New release' not in plan_sent, 'off: one already sent shows until settled', plan_sent)
+    eq((back, older), ([plan_on, home_on], [plan_on, home_on]), 'back on, and from an older run: all of it')
     c_on, c_off = page_copy.page_copy_html(on), page_copy.page_copy_html(off)
     check('waits for' in c_on, 'the copy, on: its release row', c_on)
     body = c_off.split('</style>', 1)[1]
@@ -510,7 +507,7 @@ const S = {ob: [], snap: null};
 const env = {S, taskChip: id => `<kind ${id}>`, lastWords: () => '', obCards: () => '[outbox]'};
 const src = ['const esc=', 'const ic=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const obRun=', 'const slots=',
   'const working_=', 'const taskControlsOn=', 'const CTL_ICON=', 'function cardControls(', 'const toolsWords=', 'const sureHTML=', 'const ctlSure='].map(line).join('')
-  + icons + grab('function cutsOff(') + grab('function slotRow(') + grab('function controlsCard(');
+  + icons + grab('function cutsOff(') + grab('function controlsCard(');
 const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return [controlsCard, I]}')(env);
 const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; S.sure = snap.sure; return draw[0]() });
 console.log(JSON.stringify([out, draw[1]]));
@@ -518,7 +515,7 @@ console.log(JSON.stringify([out, draw[1]]));
 
 
 def test_run_card_b763a(tmp: Path) -> None:
-    """B763a: the Run card's controls stand above the slot rows, under the notices, each with its icon; the
+    """B763a: the Run card's controls stand under the notices, each with its icon; the
     walkthrough's start step still finds its target."""
     if not shutil.which('node'):
         print('  (no node here: the Run card script test is skipped)')
@@ -531,9 +528,7 @@ def test_run_card_b763a(tmp: Path) -> None:
                              for i in range(1, n + 1)], **U.controls_shown(up, run, {})}
     busy = [{'ctl': 'pause:', 'state': 'sending'}]
     cases = [(snap(0), []), (snap(1), []), (snap(4), busy), (snap(4, paused=True), []),
-             (snap(4, stopping=True), []), (snap(0, up=False), []), (snap(2), [])]
-    cases[-1][0].update(sure='task_cancel:B1')
-    cases[-1][0]['sessions'][0]['minutes'] = 14
+             (snap(4, stopping=True), []), (snap(0, up=False), [])]
     (tmp / 'driver.js').write_text(RUN_CARD_DRIVER, encoding='utf-8')
     case_file = tmp / 'cases.json'  # a file: too long for a Windows command line
     case_file.write_text(json.dumps(cases), encoding='utf-8')
@@ -541,9 +536,6 @@ def test_run_card_b763a(tmp: Path) -> None:
                        capture_output=True, text=True, encoding='utf-8', timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     cards, icons = json.loads(r.stdout)
-    asked = cards.pop()  # F426d
-    check('B1 has worked 14 min in s1. Cancel stops its agent' in asked and 'Yes, cancel' in asked
-          and asked.count('data-sure') == 1, 'Cancel asks in its slot row, with the minutes worked', asked)
     icon = {'start': 'play', 'go_on': 'play', 'pause': 'pause', 'stop': 'stop', 'stop_undo': 'undo',
             'slot_add': 'plus', 'slot_remove': 'minus'}
     for (s, _), html in zip(cases, cards):
@@ -555,8 +547,7 @@ def test_run_card_b763a(tmp: Path) -> None:
         at = html.index('Run controls')
         check(html.index('data-k="runsaid"') < html.index('data-k="unpushed"') < html.index('[outbox]') < at,
               'under the state line, the notices and the outbox', html)
-        eq(html.count('class="srow"'), len(s['sessions']), 'a row for each slot')
-        check(all(at < m.start() for m in re.finditer('class="srow"', html)), 'above every slot row', html)
+        check('class="srow"' not in html, 'F426e: no slot row, they are in Working', html)
         walk = logic_js([['walkStep', 'start', {'up': s['up']}]])[0]['at']
         eq(walk[0], '.card:has([data-k="runsaid"])' if s['up'] else '[data-ctl="start"]', "the walk's start target")
         check(html.startswith('<div class="card ') and (s['up'] or 'data-ctl="start"' in html), 'and it is there', html)

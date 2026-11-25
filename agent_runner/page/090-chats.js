@@ -505,7 +505,7 @@ function homeChips(){
 const homeSums=()=>card([['status','Status',homeStatus(S.snap,working_())],['plan','Plan',homePlan(S.snap)]].map(([v,l,w])=>`<button class="fold sumrow" data-view="${v}" data-k="sum:${v}" data-v="${esc(w)}"><span class="grow ell">${esc(w)}</span><span class="small">${l}</span><span class="chev">${I.chev}</span></button>`).join(''),'sums','data-k="sums"');
 function homeStatus(snap,ws){
   if(snap.up===false)return 'No run is up';
-  const m=ws.filter(s=>s.state==='merging').length, n=ws.length-m, st=runPill(snap).text;
+  const m=mergeRows(snap).length, n=ws.filter(s=>s.state!=='merging').length, st=runPill(snap).text;
   return(st&&st!=='Running'?st+' · ':'')+([n?`${n} working`:'',m?`${m} merging`:''].filter(Boolean).join(', ')||'No agent is working');
 }
 function homePlan(snap){
@@ -516,14 +516,6 @@ function homePlan(snap){
 /* B120: without ttyd, one line says a chat needs it to show its session, with this machine's install command */
 const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>A chat shows the real session with ttyd, which this machine lacks: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
 const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`,'','data-k="noneed"')}`;
-/* F185, F186: each release on its own line, with Drop until it starts; then New release */
-function relCard(){
-  const rs=planReleases(S.snap), drops=x=>obActs(x,'queue')&&rs.some(q=>!q.placeholder&&x.ctl.endsWith(':'+q.id));
-  const line=q=>{const r=q.release||q;
-    return `<div class="row" data-k="rel:${esc(q.id||'next')}">${q.id?taskChip(q.id):''}<div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><div class="small">${esc((r.words||'')+(r.note||''))}</div></div>${q.placeholder?'':actBtns(relDrop(q),q.id)}</div>${q.placeholder?'':actSure(relDrop(q),q.id)}`};
-  if(!releasesOn(S.snap))return newReleaseCard();
-  return obCards(drops)+(rs.length?card(rs.map(line).join(''),'','data-k="releases"'):'')+newReleaseCard();
-}
 /* F193: with releases off, only a New release sent before that, until it is settled */
 /* F186: New release: says which release is open already, and then asks before it queues another */
 function newReleaseCard(){
@@ -532,19 +524,7 @@ function newReleaseCard(){
   const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait').map(controlOf).filter(Boolean);
   const sure=acts.filter(c=>c.confirm&&S.sure===c.key).map(c=>ctlSure(c)).join('');
   return obCards(x=>obActs(x,'release'))+card(`<div class="srow"><div class="row"><div class="grow"><b>New release</b>${sure?'':`<div class="small" data-k="relsaid" data-v="${esc(said)}">${esc(said?said+'.':ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.')}</div>`}</div></div>${sure||`<div class="btns">${acts.map((c,i)=>`<button class="btn ${i===0?'acc':''}${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`}</div>`,'','data-k="release"')}
-/* F124: the Status view: one scroll in the TUI's order: the run (its slots and controls), usage, landed lately, the
-   release, then the run log. C50: no Needs you here; Home has it */
 const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};
-function statusHTML(){
-  const log=(S.snap.log||[]).slice().reverse(), use=S.snap.usage||[], late=(S.snap.lately||[]).slice(0,6);
-  return `<div class="col">${ttydLine()}
-    <div class="sec">Run<span class="ln"></span></div>${controlsCard()}
-    <div class="sec">Usage<span class="ln"></span></div>${use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):emptyCard('No usage read yet.')}
-    <div class="sec">Landed lately<span class="ln"></span></div>${late.length?card(late.map(l=>`<div class="lrow" data-k="late:${esc(l.at+l.text)}"><span>${l.id?taskChip(l.id)+' ':''}${esc(landedText(l))}</span><span class="small">${esc(agoWords(l.at))}</span></div>`).join(''),'','data-k="late"'):emptyCard('Nothing has landed yet.')}
-    ${releasesOn(S.snap)?'<div class="sec">Release<span class="ln"></span></div>':''}${relCard()}
-    <div class="sec">Run log<span class="ln"></span></div><div class="chips" style="justify-content:flex-start"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="yesterday">${I.clock}Since yesterday</button></div>
-    ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev" data-k="log:${esc(l)}"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):emptyCard('Nothing in the run log yet.')}</div>`;
-}
 
 /* F206: the title's switcher: the chats in the sidebar's order, each with its last line */
 function chatsSheet(){
