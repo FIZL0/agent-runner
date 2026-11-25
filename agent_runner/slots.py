@@ -982,8 +982,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
             git('branch', '-M', src, free_branch(f'resumed/{tid}'))  # kept, but no longer read as an earlier attempt
     if fallback:  # F106g: a new session on the next provider, the old one's work in the worktree
         sid = str(uuid.uuid4())
-        prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + \
-            prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch) + told
+        prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch) + told
         logfile, since = slot_header(n, f'{tid} session {sid} (fallback: {why})')
         note_model(sid, model)
         if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
