@@ -30,22 +30,22 @@ function planFound(q){
   if(!g||PQ.err&&g.q!==q)return err||emptyCard('Loading…');
   const hits=[...g.open,...g.parked,...g.done].map(planHit).filter(Boolean), of=k=>hits.filter(h=>h[0]===k).map(h=>h[1]).join('');
   const sec=(name,h)=>h?`<div class="sec">${name}<span class="ln"></span></div>${h}`:'';
-  const open=of('open'), parked=of('parked'), done=of('done'), sent=obCards(x=>obActs(x,'queue')||x.shelved);  // what was pressed is no match
+  const open=of('open'), parked=of('parked'), done=of('done'), sent=obCards(x=>obActs(x,'queue')||x.grip&&x.state==='failed'||x.shelved);  // what was pressed is no match
   return err+sent+sec('Open',open)+sec('Parked',parked)+sec('Done',done)+(g.more?`<div class="small">${g.more} more done ${g.more===1?'task':'tasks'}. Add a word to find fewer.</div>`:'')
     +(open||parked||done?'':emptyCard(g.q===q?'No task matches.':'Loading…'));
 }
 /* the field in use stays the same element, as in Settings (F204a) */
 function planDraw(el,h){
   if(el._h!==h&&el._gone)for(const g of el._gone)g.remove();  // leaving() puts them back
-  return fieldHTML(el,h,'planq');
+  const keep=gripKeep(el), drew=fieldHTML(el,h,'planq');keep();return drew;  // F429c
 }
 /* F195c: New release, then the Queue with the releases as rows at their place; a landed one is past (History) */
 function planHTML(){
   planAsk();
-  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=menuRows(planRows(S.snap));
+  const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=gripRows(menuRows(planRows(S.snap)));
   if(planWant())return `${planField()}<div class="col">${planFound(planWant())}</div>`;
   return `${planField()}<div class="col">${newReleaseCard()}<div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(queueCard).join(''):emptyCard('The queue is empty.')}
-    ${obCards(x=>obActs(x,'queue'))}${pk.length||sh.length||shOb?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(q=>parkedCard(q)).join('')}${shOb}${sh.map(q=>shelvedCard(q)).join('')}`:''}</div>`;
+    ${obCards(x=>obActs(x,'queue')||x.grip&&x.state==='failed')}${pk.length||sh.length||shOb?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(q=>parkedCard(q)).join('')}${shOb}${sh.map(q=>shelvedCard(q)).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
 function conceptsHTML(){

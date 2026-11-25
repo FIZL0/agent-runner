@@ -912,3 +912,10 @@ _Said_: custom button
 _On screen_: the button's own label
 _In code_: tool_buttons.py, [[run.tools.<name>.buttons]], op press
 _Avoid_: action, macro, shortcut
+
+**Row grip**:
+The thin handle on a Plan queue row that moves it: dragged by a mouse, or with arrow up and down while it has the focus
+_Said_: the grip
+_On screen_: six dots at the left of a Plan queue row: Move ID: drag, or arrow up and down
+_In code_: rowGrip, gripRows, gripMove, gripDraw, data-grip
+_Avoid_: drag handle, gripper
