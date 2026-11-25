@@ -324,8 +324,9 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   own lines, and the history meets the screen where the same lines stand (`pastJoin()`). While reading, new words are
   added at the end and nothing on screen moves (`pastSee()`, `pastTail()`); older pages are loaded on demand and put in
   only while nothing scrolls (`pastPut()`). Only chunks near the view are in the DOM (`pastDraw()`), and text can be
-  selected in it. The jump button (`.pastjump`, see Jump button in GLOSSARY.md) stands on its own strip just above the box,
-  so it covers no line; it glides to the live session (`scrollGlide()`, at once under `calm()`). Sending a message also goes
+  selected in it. The jump button (`.pastjump`, see Jump button in GLOSSARY.md) floats over the lines just above the box,
+  with its own fill and border and no ground behind or beside it, so text shows on both sides and stays pressable,
+  selectable and scrollable; it glides to the live session (`scrollGlide()`, at once under `calm()`). Sending a message also goes
   to the live session, and a fling ends on a press on the slim message box or the button (`pastStop()`). Where the history
   cannot stand in (a menu, a question, unsent words in the prompt, a session with no transcript, a session someone else
   scrolled, not connected), a wheel step scrolls the session as before (`feedWheel()`). The keyboard moves the history with
