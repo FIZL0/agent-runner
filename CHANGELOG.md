@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page's Plan queue, a shut waiting release row says "Waits for everything above" or "Waits for 3 tasks" (or "next") instead of naming its tasks; opened, it still lists them (B825).
 - Added: a short AGENTS.md (under 3 KB: where things are, how to run one suite, style rules, the docs) that `[run] rules` in this repo's runner.toml points at, so slots read it instead of the README; a test checks its size and that every path in it exists (D8).
 - Fixed: on the run page, the messages shown while a chat's terminal loads are laid out at the terminal's own text size, font, columns and row height, so nothing rewraps or changes size when the terminal draws (they were 14px in a narrower column before), and a list right under a paragraph has no blank line before it, there and in the session history, as Claude Code 2.1.332 draws it (B819).
 - Fixed: a run restarts on changed agent_runner code as soon as main's tree differs from the one it started on, not after main has held still for 10 min (at most 1 h); while the restart is due no new merge starts, those under way finish and the restarted run takes the held ones up (B227).
