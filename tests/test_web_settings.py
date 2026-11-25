@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import random
 import re
 import shutil
 import socket
@@ -174,18 +175,20 @@ def test_tailnet_https_f96(tmp: Path) -> None:
     def hold_pair():
         """Two ports in a row, bound for the whole test so that no other process gets them. Bound but not listening:
         a connection is refused, as on a free port. The run's server can bind the first beside its holder (both have
-        SO_REUSEADDR; only Linux lets it, so elsewhere the first is let go)."""
+        SO_REUSEADDR; only Linux lets it, so elsewhere the first is let go). The second has not, so no other test
+        run gets the pair. Below the ports outgoing connections get (32768 up on Linux, 49152 up elsewhere): many of
+        those, just closed ones too, can leave no pair free there."""
         while True:
             a, b = socket.socket(), socket.socket()
             a.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            a.bind(('0.0.0.0', 0))
+            port = random.randrange(20000, 32000)
             try:
-                b.bind(('0.0.0.0', a.getsockname()[1] + 1))
-            except (OSError, OverflowError):
+                a.bind(('0.0.0.0', port))
+                b.bind(('0.0.0.0', port + 1))
+            except OSError:
                 a.close()
                 b.close()
                 continue
-            port = a.getsockname()[1]
             if sys.platform != 'linux':
                 a.close()
             return port, a, b
