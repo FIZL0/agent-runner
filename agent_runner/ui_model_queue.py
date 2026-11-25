@@ -280,9 +280,10 @@ def release_rows(ls: list[str], st: dict | None = None, landed: int | None = Non
 def release_tasks(ls: list[str], st: dict) -> list[dict]:
     """The open release tasks of `ls` as `release_rows`' rows, `state` 'releasing' (a slot of STATE `st` runs it,
     or it merges), 'blocked', 'waits' (`waits`: [{id, title}]; `words` names the first RELEASE_SHOWN, `all` every
-    one) or 'next' (nothing left before it)."""
+    one; `everything`: it waits for all above its place, not for tasks it names or lists) or 'next' (nothing left before it)."""
     tasks = [t for t in P.iter_tasks(ls) if t[1] in ' ~']
     live, titles, away, out = P.open_ids(ls), {}, None, []
+    from agent_runner import release_ahead
     for section, box, tid, rest, i in tasks:
         if not P.release(tid) or section.startswith(P.SKIPPED) or P._shelved(ls, i):
             continue
@@ -311,6 +312,8 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
                 held = [t for t in dict.fromkeys(ids) if t in live and t != tid]
                 note = '' if waits else P.not_waiting(P.not_waiting_on(ls, i))  # B207: `after: all above`
             state = 'waits' if held else 'next'
+        everything = bool(held) and not release_ahead.is_listed(ls[i]) and (
+            P._waits_all(ls, i) or not waits and P.LAST in P.fields(ls[i]).get('after', []))  # B825
         names = [f'{t} {titles.get(t, "")}'.rstrip() for t in held]
         more = len(names) - RELEASE_SHOWN
         words = full = {'releasing': 'releasing now', 'blocked': 'blocked', 'held': 'held', 'next': 'next'}.get(state, '')
@@ -320,7 +323,7 @@ def release_tasks(ls: list[str], st: dict) -> list[dict]:
             full = f'waits for {len(names)}: {", ".join(names)}'
             words = f'waits for {len(names)}: {", ".join(names[:RELEASE_SHOWN])}, and {more} more' if more > 0 else full
         out.append({'id': tid, 'title': titles[tid], 'state': state, 'words': words, 'all': full, 'placeholder': False,
-                    'waits': [{'id': t, 'title': titles.get(t, '')} for t in held],
+                    'waits': [{'id': t, 'title': titles.get(t, '')} for t in held], 'everything': everything,
                     'text': f'{tid} {titles[tid]} · {words}', 'note': note})
     return sorted(out, key=lambda r: r['state'] != 'releasing')
 

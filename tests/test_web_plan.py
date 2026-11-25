@@ -813,5 +813,93 @@ def test_plan_lists_f426b(tmp: Path) -> None:
     eq(o['acts'], ['queue F1'], "nor do the actions and Chat change what is open")
 
 
+RELWAIT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1), slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
+const S = {f: {}, ob: [], taskOpen: {}, tasks: {}, sure: null, planMenu: '', snap: JSON.parse(process.argv[3])}, I = {chev: '<svg viewBox="0 0 24 24" width="18" height="18"></svg>', dots: '<svg viewBox="0 0 24 24"></svg>', grip: '<svg viewBox="0 0 24 24"></svg>'}, MO = {};
+const document = {addEventListener() {}}, render = () => {}, oldRunHTML = x => x, outbox = () => ({cid: 'c'});
+eval(logic + ['const esc=', 'const taskChip=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const taskIsOpen=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const nextReleaseCard=', 'const queueCard=', 'const relDrop='].map(line).join('')
+  + slice('/* F429b: the menu on a Plan', 'function rowMenuOpen(') + slice('/* F429c: the grip of a Plan queue row (a', '/* the drag: the row goes') + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto') + grab('function taskRow(')
+  + `
+  const rows = () => gripRows(menuRows(planRows(S.snap))), cards = () => Object.fromEntries(rows().map(q => [menuId(q), queueCard(q)]));
+  const said = id => (/data-k="state:[^>]*>([^<]*)</.exec(cards()[id]) || /class="small">([^<]*)</.exec(cards()[id]))[1];
+  const out = {cards: cards(), shut: Object.fromEntries(rows().map(q => [menuId(q), said(menuId(q))])), drag: {}};
+  S.taskOpen.queue = 'V5'; out.open = cards().V5; S.taskOpen = {};
+  const drag = (id, g) => { rows(); const ok = gripMove(id, g); const r = [ok, said(id)]; S.taskOpen.queue = id; r.push(cards()[id]); S.taskOpen = {}; GR.did = []; return r };
+  out.drag = {V6: drag('V6', 2), V7: drag('V7', 1), top: drag('V5', 0), D4: drag('V6', 1), held: drag('V8', 2), blocked: drag('V9', 2), next: drag('next-release', 2)};
+  console.log(JSON.stringify(out))`);
+"""
+
+
+def waits_rows(tmp: Path) -> dict:
+    """The Plan queue's cards of releases that wait in each way, as the page draws them."""
+    menu = ['menu_hold', 'menu_top', 'menu_remove']
+    waits = [{'id': 'F1', 'title': 'The A-Z index must be able to scroll'}, {'id': 'B2', 'title': 'Retry'}, {'id': 'F3', 'title': 'Third'}]
+    names = 'F1 The A-Z index must be able to scroll a…, B2 Retry, F3 Third'
+    t = lambda i, title, **k: {'id': i, 'title': title, 'state': 'ready', 'section': 'Next', 'acts': [], 'menu': menu, **k}  # noqa: E731
+    def rel(i, stands, words, w=(), everything=False, **k):
+        return t(i, 'Release', release={'id': i, 'title': 'Release', 'state': stands, 'words': words, 'waits': list(w), 'everything': everything, 'note': ' (not waiting on D4)', 'placeholder': False}, **k)
+    q = [t('D4', 'Pick', state='blocked', blocked=True), t('F1', waits[0]['title']), t('B2', 'Retry'), t('F3', 'Third'),
+         rel('V5', 'waits', f'waits for 3: {names}', waits, True), rel('V6', 'waits', f'waits for 3: {names}', waits),
+         rel('V7', 'waits', 'waits for 1: F1 The A-Z index', waits[:1]), rel('V8', 'held', 'held', held=True, state='held'),
+         rel('V9', 'blocked', 'blocked', blocked=True, state='blocked'), rel('V10', 'next', 'next'), rel('V11', 'releasing', 'releasing now')]
+    ph = {'id': '', 'title': 'Next release', 'state': 'auto', 'words': 'auto at 3 landed: 1/3', 'before': '', 'placeholder': True, 'menu': menu}
+    snap = {'queue': q, 'shelved': [], 'releases': [x['release'] for x in q if 'release' in x] + [ph], 'release_acts': [], 'sessions': [], 'controls': U.controls()}
+    (tmp / 'relwait.js').write_text(RELWAIT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'relwait.js'), str(W.PAGE), json.dumps(snap)], capture_output=True, text=True, encoding='utf-8', timeout=60)
+    check(r.returncode == 0, 'node draws the rows', r.stderr[-1500:])
+    return json.loads(r.stdout) if r.returncode == 0 else {}
+
+
+def test_release_waits_b825(tmp: Path) -> None:
+    """B825: a waiting release's row says so in a few words, a dragged one's at once; opened, it lists the tasks."""
+    if not shutil.which('node'):
+        print('  (no node here: the waiting release test is skipped)')
+        return
+    o = waits_rows(tmp)
+    if not o:
+        return
+    every = 'Waits for everything above'
+    eq([o['shut'][v] for v in ('V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11', 'next-release')],
+       [every, 'Waits for 3 tasks', 'Waits for 1 task', 'held', 'blocked', 'next', 'releasing now', 'auto at 3 landed: 1/3'], 'each wording')
+    for t in ('F1', 'B2', 'F3'):
+        check(f'data-task="{t}" data-list="wait:V5"' in o['open'], f'opened, it lists {t}')
+    check('waits for 3 (not waiting on D4)' in o['open'], 'and its note', o['open'][:600])
+    d = o['drag']
+    eq([d[k][:2] for k in ('V6', 'V7', 'top', 'held', 'blocked', 'next')],
+       [[True, every], [True, 'next'], [True, 'next'], [True, 'held'], [True, 'blocked'], [True, every]],
+       'dragged: under a task; under one only the person can free; to the top; held, blocked, the Next release row')
+    check('data-task="F1" data-list="wait:V6"' in d['V6'][2]
+          and 'data-task="F3"' not in d['V6'][2] and 'data-task="D4"' not in d['V6'][2], 'opened, the tasks above its new place', d['V6'][2])
+
+
+def test_release_height_b825(tmp: Path) -> None:
+    """B825: at phone width a waiting release's row is one line of words high, as a task's. Measured in Chromium."""
+    chrome = next(filter(None, map(shutil.which, ('chromium', 'chromium-browser', 'google-chrome'))), None)
+    if not chrome or not shutil.which('node'):
+        print('  (no node or Chromium here: the row height test is skipped)')
+        return
+    o = waits_rows(tmp)
+    if not o:
+        return
+    css = ''.join(re.findall(r'<style[^>]*>(.*?)</style>', W.page_html().decode(), re.S))
+    cards = ''.join(f'<section id="c{v}">{o["cards"][v]}</section>' for v in ('V5', 'V6', 'V7', 'V10'))
+    f = tmp / 'rows.html'
+    f.write_text(f'<!doctype html><meta charset="utf-8"><style>{css}</style><div id="w" style="width:390px"><div class="col">{cards}</div></div>'
+                 '<script>document.title=JSON.stringify(Object.fromEntries([...document.querySelectorAll("section")].map(s=>'
+                 '[s.id,[s.querySelector(".card").offsetHeight,s.querySelector(".fold .small").getClientRects().length,s.querySelector(".fold .small").getBoundingClientRect().width]])))</script>', encoding='utf-8')
+    r = subprocess.run([chrome, '--headless', '--no-sandbox', '--disable-gpu', f'--user-data-dir={tmp / "chrome"}', '--dump-dom', f.as_uri()],
+                       capture_output=True, text=True, encoding='utf-8', timeout=90)
+    m = re.search(r'<title>(.*?)</title>', r.stdout)
+    check(m, 'Chromium measures the rows', r.stderr[-800:])
+    if not m:
+        return
+    got = json.loads(m.group(1).replace('&quot;', '"'))
+    check(all(h > 40 and w > 20 for h, _, w in got.values()), 'they are laid out', got)
+    eq({k: (v[0], v[1]) for k, v in got.items()}, {k: (got['cV10'][0], 1) for k in got}, "each as high as the row that says 'next'")
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_no_run_f402c1), in_tmp(test_split_b811b), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_no_run_f402c1), in_tmp(test_split_b811b), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b), in_tmp(test_release_waits_b825), in_tmp(test_release_height_b825)]))

@@ -218,6 +218,34 @@ def test_next_moved():
     check(r.returncode and not any(P.release(t) for t in order()), 'a wrong place files nothing', r.stderr)
 
 
+def test_waits_row():
+    print('B825: what the Plan queue row is told: it waits for everything above it, or for tasks its line names or lists')
+    row = lambda t='V8': next(r for r in U.release_tasks(P.lines(R.C.todo), {}) if r['id'] == t)  # noqa: E731
+    for after, n, everything in (('all', 3, True), ('all above', 3, True), ('T1, T3', 2, False), ('T3', 1, False)):
+        fresh()
+        R.C.todo.write_text(R.C.todo.read_text(encoding='utf-8').replace('\n### Parked', f'- [ ] **V8** My release | after: {after}\n\n### Parked'), encoding='utf-8')
+        r = row()
+        eq((r['state'], len(r['waits']), r['everything']), ('waits', n, everything), after)
+        check(r['words'].startswith(f'waits for {n}: T') and 'thing' in r['words'], 'status and the terminal UI name them', r['words'])
+    ok('move', 'V8', 'after', 'T2')
+    eq(([w['id'] for w in row()['waits']], row()['everything']), (['T1', 'T2'], True), 'moved')
+    ok('move', 'V8', 'top')
+    eq((row()['words'], row()['everything']), ('next', False), 'nothing above')
+    fresh()
+    R.C.todo.write_text(R.C.todo.read_text(encoding='utf-8').replace('\n### Parked', '- [ ] **V8** My release | ahead: T1, T2 | after: all\n\n### Parked'), encoding='utf-8')
+    eq(([w['id'] for w in row()['waits']], row()['everything']), (['T1', 'T2'], False), 'one that lists what was ahead (F435)')
+    fresh()
+    for block, n, everything in (('T1, T2', 2, False), ('all', 3, True)):
+        R.C.todo.write_text(TODO.replace('\n### Parked', f'- [~] **V8** My release\n  BLOCKED: (after {block}) its code\n\n### Parked'), encoding='utf-8')
+        eq((len(row()['waits']), row()['everything']), (n, everything), f'blocked after {block}')
+    ok('drop', 'V8', 'no')
+    fresh('- [ ] **V8** My release | held: yes | after: all')
+    eq((row()['words'], row()['everything']), ('held', False), 'held keeps its word')
+    R.C.todo.write_text(TODO.replace('\n### Parked', '- [ ] **V8** My release | after: all\n\n### Parked'), encoding='utf-8')
+    r = U.release_tasks(P.lines(R.C.todo), {'running': {'1': 'V8'}})[0]
+    eq((r['words'], r['everything']), ('releasing now', False), 'and one releasing')
+
+
 def main() -> int:
     tmp = Path(tempfile.mkdtemp())
     os.environ['AGENT_RUNNER_DEVICES'] = str(tmp / 'devices')
@@ -230,7 +258,7 @@ def main() -> int:
     git(repo, 'commit', '-qm', 'start')
     os.environ['AGENT_RUNNER_REPO'] = str(repo)
     R.init(repo)
-    return report([test_moved_cut, test_moved_other, test_running, test_removed, test_next_row, test_next_moved])
+    return report([test_moved_cut, test_moved_other, test_running, test_removed, test_next_row, test_next_moved, test_waits_row])
 
 
 if __name__ == '__main__':
