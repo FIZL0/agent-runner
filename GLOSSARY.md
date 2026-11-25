@@ -978,6 +978,6 @@ _Avoid_: retry, review cycle
 **Audit**:
 A task that looks at what changed since the last one for what is stale, dead or wasted and writes its findings to a file; queued by hand, or by an idle run once enough tasks have landed.
 _Said_: auto audit
-_On screen_: Audit by itself
+_On screen_: Audit by itself; Audit model
 _In code_: audit.py, (audit), auto_audit, audit_tokens
 _Avoid_: cleanup run, sweep, health check
