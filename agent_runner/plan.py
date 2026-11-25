@@ -12,6 +12,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan brief <ID>        everything a task starts from, in one shot (see `brief`)
     ./run plan tick <ID>         done: [x], and the line moves to plan/DONE.md
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended; --after all (below)
+    ./run plan block <ID> --until CHECK[,CHECK] WHY   the same, waiting on what this machine checks by itself (below)
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
     ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--needs TOOL] [--pri LEVEL] [--alone] [--last] [--force] [@ WHERE]
@@ -133,6 +134,13 @@ not hold it (B107), unless they are tagged `(alone)` too. The dry run says 'runs
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
 blocked on "P36 is not merged yet" stays blocked long after P36 lands, because nothing reads prose. `block` fills the list in by itself
 from the open task ids its WHY names, so a session that forgets `--after` still gets one.
+
+**A block that waits on something this machine can check** says which, as `block ID --until CHECK[,CHECK] WHY`
+(`done --blocked WHY --until CHECK`): `version:X.Y.Z`, `login:PROVIDER`, `tool:NAME` or `check:NAME`, and all must
+pass. It reads `BLOCKED: (until version:0.66.0) why`, needs no person, and no run starts it; `unblock` frees it at
+any time. A check that is none of these, or names what is not here, is refused and nothing is blocked. With a
+CONFIRM or DECIDE the question comes back under Needs you once they pass; any other block reopens for an agent.
+It does not hold an `after: all` or `all above` task: a release must not wait for a task that waits for its version.
 
 **Concept tasks (kind K) build nothing.** Their session researches the repo and publishes an Artifact page of
 2-3 options (what each looks like or does, the files it touches, the trade-off) and a recommendation, then
@@ -508,6 +516,65 @@ def _on_person(ls: list[str], i: int) -> bool:
     return bool(ASKING.match(t) or WAIT_ANY.match(t))
 
 
+# F427b: a block that waits on until checks (`until.py`): `BLOCKED: (until version:0.66.0, login:codex) why`.
+UNTIL = re.compile(r'BLOCKED: \(until ([^)]*)\)')
+
+
+def until_of(ls: list[str], i: int) -> list[str]:
+    """The until checks the last block of the task at ls[i] waits on; [] when it is not blocked on any."""
+    m = ITEM.match(ls[i])
+    if not m or m.group(2) != '~':
+        return []
+    tail = ls[i + len(_item_block(ls, i)) - 1]
+    at = _block_at(tail)
+    u = UNTIL.match(tail[at:].lstrip()) if at >= 0 else None
+    return [t.strip() for t in u.group(1).split(',') if t.strip()] if u else []
+
+
+def until_list(given: str, c=None) -> list[str]:
+    """`--until`'s comma list as checks, each once. SystemExit says why one is refused. A check [run.checks] names only
+    on this branch, or only in the main checkout, is taken."""
+    from agent_runner import until  # here: until imports this module
+    out = list(dict.fromkeys(x.strip() for x in given.split(',')))
+    if '' in out:  # none, or a space after a comma made the next check a word of the why
+        raise SystemExit(f'{PROG}: --until takes checks, comma-separated with no space: version:X.Y.Z, login:PROVIDER, '
+                         'tool:NAME or check:NAME. Nothing blocked.')
+    c = c or cfg()
+    for t in out:
+        if (why := until.problem(t, c)) and until.problem(t, cfg(main_checkout(c.root))):
+            raise SystemExit(f'{PROG}: --until: {why}. Nothing blocked.')
+    return out
+
+
+def until_label(checks: list[str], c=None) -> str:
+    """'version 0.66.0, codex login': the checks as the screens call them."""
+    from agent_runner import until
+    try:
+        c = c or cfg(main_checkout())
+        return ', '.join(until.label(t, c) for t in checks)
+    except (OSError, SystemExit, subprocess.SubprocessError):  # outside a repository: as written
+        return ', '.join(checks)
+
+
+def until_waits(ls: list[str], c=None) -> dict[str, str]:
+    """{task: 'waits for version 0.66.0'} for the tasks blocked on until checks."""
+    return {tid: f'waits for {until_label(got, c)}' for _, box, tid, _, i in iter_tasks(ls)
+            if box == '~' and (got := until_of(ls, i))}
+
+
+def until_passed(tid: str, todo=None) -> bool:
+    """Reopen `tid`, all whose until checks passed, with a note of them. False, and nothing done, for a task that waits
+    on none. A CONFIRM or DECIDE kept in the block goes back under Needs you instead (as B60's does)."""
+    todo, _ = ensure(todo)
+    ls = lines(todo)
+    if not (got := until_of(ls, _find(ls, tid))):
+        return False
+    said = f'{until_label(got)} passed'
+    if not _reask(tid, said, todo):
+        unblock(tid, f'reopened: {said}', todo=todo)
+    return True
+
+
 def above(ls: list[str], i: int) -> list[str]:
     """What `after: all above` on the task at ls[i] stands for, read afresh each time: the top-level tasks above
     it in its own section (back to the nearest heading) that are not done, open or blocked, in order. A task
@@ -538,6 +605,8 @@ def _split_skipped(ls: list[str], at: list[int]) -> tuple[list[str], dict[str, l
             continue
         if _on_person(ls, j):
             person[tid] = []
+        elif checks := until_of(ls, j):  # F427b: it may wait for the very release this is
+            stuck[tid] = [until_label(checks)]
         elif roots := _stuck_on(ls, j, where, never):
             stuck[tid] = roots
         else:
@@ -556,7 +625,7 @@ def _named_after(ls: list[str], i: int) -> list[str]:
     `all` and `all above` are left out: what they stand for already skips what is stuck."""
     ids = list(fields(ls[i]).get('after', []))
     if ITEM.match(ls[i]).group(2) == '~':
-        w = WAITS.findall(' '.join(_item_block(ls, i)))
+        w = [] if until_of(ls, i) else WAITS.findall(' '.join(_item_block(ls, i)))
         ids +=[t.strip() for t in w[-1].split(',')] if w else []
     return [t for t in ids if t and t not in (ALL, LAST)]
 
@@ -591,7 +660,7 @@ def _stuck_on(ls: list[str], i: int, where: dict[str, int], never: set[int]) -> 
         if j is None or j in seen:
             continue
         seen.add(j)
-        if j in never or _on_person(ls, j) or _shelved(ls, j):
+        if j in never or _on_person(ls, j) or _shelved(ls, j) or until_of(ls, j):
             out.append(ITEM.match(ls[j]).group(3).rstrip('.'))
         else:
             todo += _held_by(ls, j, where)
@@ -663,7 +732,7 @@ def _waits_all(ls: list[str], i: int) -> bool:
     if ALL in fields(ls[i]).get('after', []):
         return True
     w = WAITS.findall(ls[i + len(_item_block(ls, i)) - 1])
-    return bool(w) and ALL in [t.strip() for t in w[-1].split(',')]
+    return bool(w) and not until_of(ls, i) and ALL in [t.strip() for t in w[-1].split(',')]
 
 
 def last_waits(todo=None) -> list[tuple[str, list[str]]]:
@@ -717,7 +786,7 @@ def last_lines(todo=None) -> list[str]:
     return out
 
 
-def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> None:
+def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False, until=None) -> None:
     """[~] plus "BLOCKED: why". The why must say what would unblock it, or the next session just re-reads it.
 
     `after` is the tasks it waits on; `reopen` unblocks it once they are all done. Left as None it is read
@@ -725,13 +794,18 @@ def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> 
     Pass [] for a block that waits on no task (a human, a tool, a capture).
     `keep_ask`: the agent may have written this block's ask file (F156); any other block takes an old one away.
     Its pick sheet likewise (B204).
+    `until`: the until checks it waits on (F427b), as a list; not with `after`.
     """
+    if until is not None:
+        if after:
+            raise SystemExit(UNTIL_AFTER.format(prog=PROG))
+        until, after = until_list(','.join(until)), []
     todo, _ = ensure(todo)
     ls = list(lines(todo))
     i = _find(ls, tid)
     again = ITEM.match(ls[i]).group(2) == '~'
     why = one_line(why)
-    if after:  # B211: a wait on a task that says BLOCKED: asks the person nothing; it reopens for an agent
+    if after or until:  # B211: a wait on a task that says BLOCKED: asks the person nothing; it reopens for an agent
         why = re.sub(r'^\s*(?:BLOCKED:\s*)+(?=\S)', '', why)
     why = stamp_ask(why)
     if after is None and asking(why):
@@ -741,20 +815,28 @@ def block(tid: str, why: str, todo=None, after=None, keep_ask: bool = False) -> 
         after = [t for t in dict.fromkeys(TASK_ID.findall(why))
                  if t in live and t != tid and not t.startswith(tid)]
     same = False
-    if after and not asking(why) and (kept := _last_ask(ls, i)):  # B60: it waits on X, then on the person again
+    kept = _last_ask(ls, i) if (after or until) and not asking(why) else ''
+    if kept and not (until and kept.startswith('BLOCKED: ')):  # B60: it waits on X, then on the person again
         keep_ask = same = True  # the same ask comes back, its ask file with it
         why = f'{kept} — {why}'
-    if not after and not ASKED.search(why):  # B35: it waits on no task, so it lists under Needs you, with an age
+    if not after and not until and not ASKED.search(why):  # B35: it waits on no task, so it lists under Needs you, with an age
         why = f'{why} (asked {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")})'
     _mark(ls, i, '~')
     end = i + len(_item_block(ls, i)) - 1
-    ls[end] += ' BLOCKED: ' + (f'(after {", ".join(after)}) ' if after else '') + why
+    if until:  # the last block is the one that counts: an earlier one's `(after X)` is read no more
+        at = len(_unblocked(ls[end])) if end == i else len(ls[end].split(' BLOCKED: ')[0])
+        ls[end] = ls[end][:at] + WAITS.sub('BLOCKED:', ls[end][at:])
+    ls[end] += ' BLOCKED: ' + (f'(after {", ".join(after)}) ' if after else
+                               f'(until {", ".join(until)}) ' if until else '') + why
     _write(todo, ls)
     if not keep_ask:
         _clear_ask(tid, todo)
     elif not same:
         from agent_runner.asks import taken_ask
         taken_ask(tid, todo, again)
+
+
+UNTIL_AFTER = '{prog}: --until and --after do not go together: block on one, and on the other once it is done. Nothing blocked.'
 
 
 def _clear_ask(tid: str, todo) -> None:
@@ -776,13 +858,13 @@ def reopen(todo=None) -> list[tuple[str, list[str]]]:
         if not (m and not m.group(1) and m.group(2) == '~'):
             continue
         tail = ls[i + len(_item_block(ls, i)) - 1]
-        w = WAITS.findall(tail)
+        w = [] if until_of(ls, i) else WAITS.findall(tail)  # a merge can leave an earlier `(after X)` on the line
         ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else []
         held = set(resolve_after(ls, i, ids)) - {m.group(3).rstrip('.')}  # `(after all)`: read afresh (F35)
         if ids and not held & live:
             out.append((m.group(3).rstrip('.'), ['everything before it' if t == ALL else t for t in ids]))
     for tid, ids in out:
-        if not _reask(tid, ids, todo):
+        if not _reask(tid, f'{", ".join(ids)} landed', todo):
             unblock(tid, f'reopened: {", ".join(ids)} landed', todo=todo)
     return out
 
@@ -1854,7 +1936,7 @@ def _block_at(tail: str) -> int:
     `BLOCKED: BLOCKED: …` or `BLOCKED: shelved: BLOCKED: …`."""
     at = [m.start() for m in re.finditer(' BLOCKED: ', tail)
           if not tail[:m.start()].endswith((' BLOCKED:', ' shelved:'))
-          and not re.search(r' BLOCKED: \(after [^)]*\)$', tail[:m.start()])]  # B60's `(after X) BLOCKED: …`
+          and not re.search(r' BLOCKED: \((?:after|until) [^)]*\)$', tail[:m.start()])]  # B60's `(after X) BLOCKED: …`
     return at[-1] if at else -1
 
 
@@ -1870,7 +1952,7 @@ def asking(why: str) -> bool:
 CHANGED = re.compile(r'you said, on (' + '|'.join(ASK_LABELS) + r') (.*?): do this instead: ')
 ANSWERED = re.compile(r'(?:confirmed by you \(|your answer \((?:' + '|'.join(ASK_LABELS) + r') |'
                       r'you said, on stuck )')
-REASK = re.compile(r'BLOCKED: \(after [^)]*\) ((?:' + '|'.join(ASK_LABELS) + r'): .*)$')
+REASK = re.compile(r'BLOCKED: \((?:after|until) [^)]*\) ((?:' + '|'.join(ASK_LABELS) + r'): .*)$')
 
 
 def _last_ask(ls: list[str], i: int) -> str:
@@ -1889,16 +1971,17 @@ def _last_ask(ls: list[str], i: int) -> str:
     return f'{c[-1].group(1)}: {c[-1].group(2)}'
 
 
-def _reask(tid: str, ids: list[str], todo) -> bool:
-    """Put task `tid`, whose `(after ids)` block keeps a person's check (`_last_ask`), back under Needs you."""
+def _reask(tid: str, said: str, todo) -> bool:
+    """Put task `tid`, whose `(after …)` or `(until …)` block keeps a person's check (`_last_ask`), back under Needs you,
+    `said` what it waited for ('X7 landed')."""
     ls = list(lines(todo))
     i = _find(ls, tid)
     end = i + len(_item_block(ls, i)) - 1
     at = _block_at(ls[end])
     if at < 0 or not (m := REASK.match(ls[end][at:].lstrip())):
         return False
-    ask = re.sub(r' — back for you: [^—]*?landed(?= —|$)', '', ASKED.sub('', m.group(1)))  # one, not a pile
-    ls[end] = ls[end][:at] + ' BLOCKED: ' + stamp_ask(f'{ask} — back for you: {", ".join(ids)} landed')
+    ask = re.sub(r' — back for you: [^—]*?(?:landed|passed)(?= —|$)', '', ASKED.sub('', m.group(1)))  # one, not a pile
+    ls[end] = ls[end][:at] + ' BLOCKED: ' + stamp_ask(f'{ask} — back for you: {said}')
     _write(todo, ls)
     return True
 
@@ -1921,6 +2004,8 @@ def _stuck_why(tail: str) -> tuple[str, str, bool] | None:
     why = why[len(SHELVED):] if shelved else why
     if why.startswith(RESTYLE_HELD):
         return None  # F19: held on a restyle; its OK (listed as a concept) frees it
+    if UNTIL.match(t):
+        return None  # F427b: it waits on until checks
     if (w := re.match(r'\(after ([^)]*)\)\s*', why)):
         if any(x.strip() for x in w.group(1).split(',')):
             return None  # it waits on tasks: `reopen` frees it once they are done
@@ -1937,7 +2022,7 @@ def _waiters(ls: list[str]) -> dict[str, list[str]]:
     out = {}
     for i, l in enumerate(ls):
         if (m := ITEM.match(l)) and not m.group(1) and m.group(2) == '~':
-            if w := WAITS.findall(ls[i + len(_item_block(ls, i)) - 1]):
+            if not until_of(ls, i) and (w := WAITS.findall(ls[i + len(_item_block(ls, i)) - 1])):
                 out[m.group(3).rstrip('.')] = [t.strip() for t in w[-1].split(',') if t.strip()]
     return out
 
@@ -3176,6 +3261,7 @@ def _main(argv: list[str], c) -> int:
         out = [f'{l}  [{plansync.label(cl[t])}]' if (t := l.rsplit(' ', 1)[-1]) in cl else l for l in out]
         tw = _tool_waits(c, todo)
         tw.update(_split_waits(c, todo))
+        tw.update({t: w for t, w in until_waits(lines(todo)).items() if t not in tw})
         out = [f'{l}  [{tw[t]}]' if (t := l.rsplit(' ', 1)[-1]) in tw else l for l in out]
     else:
         # a heading named exactly that, in any file, before one that only contains it (`hst` before `hst-data`)
@@ -3188,7 +3274,7 @@ def _main(argv: list[str], c) -> int:
         for l in last_lines(todo):
             if l.startswith(f'{argv[0]} waits '):
                 print(l)
-        if said := (_split_waits(c, todo) | _tool_waits(c, todo)).get(argv[0]):
+        if said := (until_waits(lines(todo)) | _split_waits(c, todo) | _tool_waits(c, todo)).get(argv[0]):
             print(f'{argv[0]} {said}')
         if q := _parked_ask(argv[0], todo):  # B767
             print(f'{argv[0]} asks the person (the run has not listed it yet): {q}')
@@ -3221,10 +3307,21 @@ def _p_restore(a, x):
 
 
 def _p_block(a, x):
-    after, rest = None, a.rest
-    if rest[0] == '--after' and len(rest) > 2:
+    after, until, rest = None, None, list(a.rest)
+    if '--until' in rest[:3] or '--until' in rest[-2:]:  # before the why (--after too), or after it
+        at = rest.index('--until') if '--until' in rest[:3] else len(rest) - 1 - rest[::-1].index('--until')
+        until = rest[at + 1:at + 2]
+        del rest[at:at + 2]
+    if rest[:1] == ['--after'] and len(rest) > 2:
         after, rest = [t for t in rest[1].split(',') if t], rest[2:]
-    block(a.id, ' '.join(rest), after=after)
+    if '--until' in rest:
+        print(f'{PROG}: block {a.id}: --until CHECK[,CHECK] goes once, before the why or after it, with no space after '
+              'a comma. Nothing blocked.', file=sys.stderr)
+        return 2
+    if until is not None and not ' '.join(rest).strip():
+        print(f'{PROG}: block {a.id} --until CHECK needs a why. Nothing blocked.', file=sys.stderr)
+        return 2
+    block(a.id, ' '.join(rest), after=after, until=until)
     if ' '.join(rest).lstrip().startswith('DECIDE: '):
         _filed_here(x.c, a.id)
     return x.say(f'blocked {a.id}')
