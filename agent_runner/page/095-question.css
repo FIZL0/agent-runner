@@ -5,7 +5,7 @@
 .qheld .grow{min-width:0;overflow-wrap:anywhere} .qheld .row{flex-wrap:nowrap} .qheld .btn{flex:none}
 /* F192a2: Chat about this, and the question marked above the box */
 .qcard .qchat{background:none;border-color:transparent;color:var(--muted)}
-.qcard.qabout{flex:none;max-height:min(140px,25dvh)} .qabout .row{flex-wrap:nowrap;align-items:flex-start} .qabout .grow{min-width:0} .qabout .small,.qabout .q{display:block}
+.qcard.qabout{flex:none;max-height:min(140px,25dvh)} .app.kb .qcard.qabout{max-height:min(140px,25cqh)} .qabout .row{flex-wrap:nowrap;align-items:flex-start} .qabout .grow{min-width:0} .qabout .small,.qabout .q{display:block}
 .qabout .q{overflow-wrap:anywhere} .qabout .icon{flex:none;min-width:var(--tap);min-height:var(--tap)}
 /* F437a: Minimize, at the card's top right; minimized: one line */
 .qtop{flex-wrap:nowrap;align-items:flex-start} .qtop .grow{min-width:0} .qtop .icon{flex:none;width:var(--tap);height:var(--tap);margin:calc(-1*var(--s2)) calc(-1*var(--s2)) 0 0}

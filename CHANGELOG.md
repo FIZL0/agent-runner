@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page, a long question's card keeps its scroll place when the chat's chips change (it went back to the top), and the question marked by Chat about this stays small with the phone keyboard up; a Needs you row of All projects cuts a long question at 3 lines (B840a).
 - Changed: the run app's Talk code, agent_runner/page/170-talk.js, is split by area into 170-talk.js and 171-talk-clips/kept/mic/send/speak/words.js, with no change in behaviour (C54).
 - Fixed: the test of a task that goes on with the next provider at a usage cap (its fallback chain, in tests/test_runner.py) no longer fails when it runs across 15:00 local time: its fake cap said "resets 3pm", so the cap had already reset by the check; it now names a fixed far-off epoch (B837).
 - Changed: a Yes with words on a Needs you CONFIRM that closes its task now also starts a new control session with the words, which lists at the top of Chats and keeps no sent response; a chat that cannot start keeps the sent response and the toast and run log say so (F452).
