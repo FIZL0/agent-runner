@@ -212,7 +212,7 @@ function pastLive(){
   if((HX.touch||HX.finger&&pastPicked())&&pastMay())  // a mouse's pick does not keep it: its clicks and keys go to the session
     HX.st='armed';
   else HX.st='';
-  HX.news=false;FD.run=0;feedSlim(false);pastClass();
+  HX.news=false;FD.run=0;feedSlim(false);pastClass();questionOn.scroll();
   if(!HX.st){if(pastMay())pastWarm();pastNewSoon()}
 }
 function pastScrolled(){
@@ -222,12 +222,13 @@ function pastScrolled(){
   if(y>=pastEnd()-1){if(pastUp())pastLive();return}
   if(!pastUp()){HX.st='up';pastClass()}
   if(px){const b=feedBars(px,FD);FD.run=b.run;if(b.slim!==FD.slim)feedSlim(b.slim)}
-  pastJumpDraw();
+  pastJumpDraw();questionOn.scroll();
   if(y<el.clientHeight*3)pastOlder();
 }
 /* each draw of the session: while the history is drawn its end is the screen as it is now; what stands on screen stays */
 function pastSee(){
-  if(HX.n!==FD.n||HX.none){pastLoad();if(HX.n!==FD.n||HX.none)return}  // a new chat's transcript comes a little later
+  if(HX.n!==FD.n||HX.none){pastLoad();if(HX.n!==FD.n||HX.none){questionOn.scroll();return}}  // a new chat's transcript comes a little later
+  questionOn.scroll();
   if(!HX.st){pastClass();if(!$('feedpast').hidden){pastWarm();pastNewSoon()}return}
   if(pastLook())pastInked();
   if(HX.st==='armed'&&!HX.touch&&!pastMay()){pastDown();return}  // a menu shows over words picked at its end
@@ -269,7 +270,7 @@ function pastNewSoon(){if(!HX.newT)HX.newT=setTimeout(async()=>{HX.newT=0;if(HX.
 /* each time the frame is placed: the keyboard moves the text with the box, anything else moves nothing */
 function pastPlace(){
   const el=$('feedpast');if(!el||!FD.shown)return;
-  pastClass();if(el.hidden||!HX.L.length&&!HX.st)return;
+  questionOn.scroll();pastClass();if(el.hidden||!HX.L.length&&!HX.st)return;
   const d=FD.above-HX.above;HX.above=FD.above;
   if(!HX.st){pastSize();pastToEnd()}
   else if(!FD.whole){pastSize();if(!pastUp())pastToEnd();else if(d){el.scrollTop-=d;HX.y=el.scrollTop}}
@@ -281,7 +282,7 @@ function pastGlide(d){if(HX.st)moAnim($('pastterm'),[{translate:`0 ${d}px`},{tra
 function pastJumpDraw(){
   const j=$('pastjump');if(!j)return;
   const on=pastUp()&&pastEnd()-$('feedpast').scrollTop>PAST_BAND, dock=document.querySelector('.dockwrap'), say=HX.news?'Jump to bottom: there is something new':'Jump to bottom';
-  if(on&&dock){const row=slimRow();j.style.bottom=row+'px';j.style.setProperty('--up',Math.max(0,dock.offsetHeight-row)+'px')}
+  if(on&&dock){const row=slimRow();j.style.bottom=row+'px';j.style.setProperty('--up',Math.max(0,dock.offsetHeight-questionOn.room()-row)+'px')}
   j.classList.toggle('on',on);j.classList.toggle('fresh',HX.news);j.inert=!on;
   const b=j.firstElementChild;if(b.getAttribute('aria-label')!==say){b.setAttribute('aria-label',say);b.title=say}
 }
