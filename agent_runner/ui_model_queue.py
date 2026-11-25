@@ -304,10 +304,11 @@ def _no_tag(rest: str) -> str:
 
 def _counts_on(ls: list[str], rows: list[dict]) -> bool:
     """F195c: do all the open releases (`release_tasks`' `rows`) only wait for open tasks, so that a count goes on beside
-    them (as `autorelease.waiting_releases` says)? A shelved, Parked, blocked or taken one stops it."""
+    them (as `autorelease.waiting_releases` says)? A shelved, Parked, blocked, taken or moved (F429a) one stops it."""
+    from agent_runner import release_moves
     from agent_runner.sched import taken
     boxes = {tid: box for _, box, tid, _, _ in P.iter_tasks(ls)}
-    waits = {r['id'] for r in rows if r['state'] == 'waits' and boxes[r['id']] == ' '}
+    waits = {r['id'] for r in rows if r['state'] == 'waits' and boxes[r['id']] == ' '} - release_moves.moved_ids(ls)
     return not {t for t in P.open_ids(ls) if P.release(t)} - waits and not (waits and waits & set(taken()))
 
 
