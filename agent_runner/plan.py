@@ -1020,6 +1020,23 @@ def _pathish(arg: str) -> bool:
     return ' ' not in arg and ('/' in arg or bool(re.search(r'\.[A-Za-z0-9]{1,8}$', arg)) or Path(arg).exists())
 
 
+EXPANDED = 6  # B773: this many existing paths in a row in a task's text are a glob the shell expanded, not prose
+
+
+def expanded_paths(text: str) -> list[str]:
+    """B773: the first run of EXPANDED or more words of `text` that each are a path that exists here, else []. A
+    path with a comma or a full stop after it, as prose and lists have, is no such word."""
+    run: list[str] = []
+    for w in [*text.split(), '']:
+        if w and os.path.exists(w):
+            run.append(w)
+            continue
+        if len(run) >= EXPANDED:
+            return run
+        run = []
+    return []
+
+
 def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
     """`plan add`'s arguments after PREFIX → (text, where, keyed fields, given --pri value or '', force), or
     SystemExit(2) with what is wrong (B43): an unquoted `--files dir/*` is expanded by the shell, so its first path
@@ -1066,6 +1083,9 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         else:
             text.append(a)
         k += 1
+    if got := next((g for part in (text, where) if (g := expanded_paths(' '.join(part)))), []):  # B773
+        no(f'{len(got)} existing paths in a row ({got[0]} … {got[-1]}): a glob the shell expanded? Quote the glob, '
+           f"as in --files 'dir/**'")
     if in_where and not where:
         no('@ needs a place (top, bottom, before ID, after ID, in SECTION)')
     if (m := vals.get('--model')) is not None and (not m.strip() or len(m.split()) > 1 or ',' in m):
