@@ -334,7 +334,7 @@ const ta = el('[data-in]');
 const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
                   querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
 const fetch = () => Promise.resolve({json: () => Promise.resolve([{name: 'clear', desc: ''}])});
-eval(logic + 'const modelOf = () => "", talkName = () => "";' + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
+eval(logic + 'const modelOf = () => "", talkName = () => "", keysShown = () => false;' + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
      + slice('let boxWas=', '\n}\n') + 'function growGlide(){}\nfunction sendDraw(){}\n'
      + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n')
      + slice("document.addEventListener('beforeinput',", '\n});\n')
