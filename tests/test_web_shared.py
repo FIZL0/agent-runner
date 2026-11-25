@@ -221,9 +221,9 @@ def test_under_way_b824a(tmp: Path) -> None:
                     ['planWords', none, []], ['planWords', {**q['F4'], 'state': 'blocked'}, []]]
                    + [['planWords', {**q['F4'], 'state': x}, []] for x in states])
     eq(got[:3], ['s2 is on it · 5 min', 's2 is on it · 4 min', 's1 is on it'], "the session's minutes, else the state's")
-    eq(got[3:7], ['Being worked on'] * 3 + ['Ready to start when a slot is free'], 'merging, waiting to resume, taken by hand; a free one')
+    eq(got[3:7], ['Merging', 'Waits to resume', 'Taken by hand', 'Ready to start when a slot is free'], 'merging, waiting to resume, taken by hand; a free one')
     eq(got[7:9], ['Waits for the run to start', 'Waits for you'], 'no run up, and one that needs the person, keep their words')
-    eq(got[9:], ['Being worked on'] * len(states), 'whatever else its state is')
+    eq(got[9:], ['Waits to resume'] * len(states), 'whatever else its state is')
 
 
 def test_extras(tmp: Path) -> None:

@@ -23,3 +23,7 @@
   .top{padding:12px 18px 6px}
   .top .title{text-align:left}
 }
+/* B846: 'Taken by the chat …' under a row's head: it opens that chat */
+.waychat{display:flex;align-items:center;gap:var(--s1);justify-self:start;max-width:100%;min-width:0;min-height:var(--tap);margin:calc(-1*var(--s3)) 0;padding:0;border:0;background:none;color:var(--muted);text-align:left;cursor:pointer;touch-action:manipulation}
+.waychat .ell{min-width:0;text-decoration:underline;text-decoration-color:var(--line2);text-underline-offset:3px} .waychat svg{width:14px;height:14px;flex:none}
+.waychat:hover{color:var(--fg)}
