@@ -212,8 +212,8 @@ def test_way():
     eq(way('T2'), named, 'the chat by its name')
     chat(10, pid, 'sid-b', 'D32 · site')
     eq(way('T2'), named, 'after /clear it is the same chat')
-    chat(10, pid + 1, 'sid-a', 'control session')
-    eq(way('T2'), {'words': 'Taken by the chat Chat 10', 'chat': 'c10'}, 'reopened, with no name of its own')
+    chat(10, pid + 1, 'sid-b', 'control session')
+    eq(way('T2'), {'words': 'Taken by the chat Chat 10', 'chat': 'c10'}, 'cleared, then reopened, with no name of its own')
     with mock.patch.object(U, 'chat_row', lambda n, sid: {'renamed': True, 'title': 'Mine'}):
         eq(way('T2')['words'], 'Taken by the chat Mine', "the person's name for it")
     ended = {'words': 'Taken by a chat that has ended'}
@@ -228,7 +228,7 @@ def test_way():
     resume.write_text('{"slot": 1, "sid": "x", "why": "cut off"}', encoding='utf-8')
     eq(way('T1'), {'words': 'Waits to resume'}, 'waits to resume')
     eq([way('T1', {'merging': ['T1']}), way('T2', {'merging': ['T2']})], [{'words': 'Merging'}] * 2, 'merging')
-    chat(10, pid, 'sid-a', 'D32 · site')
+    chat(10, pid + 1, 'sid-b', 'D32 · site')
     q = rows({'merging': ['T3']})
     if shutil.which('node'):
         eq(logic_js([['planWords', q[t], []] for t in ('T2', 'T3', 'T4', 'T1')]),

@@ -6,6 +6,7 @@ and is never an edit in it. A take from a terminal, or by a slot's agent, record
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 FILE = 'taken-by.json'
@@ -52,5 +53,13 @@ def chat(c, d: Path, live) -> int | None:
         return None
     for n in live:
         if n == who.get('n') and _pid(c, n) == who['pid'] or who.get('sid') and pid_sid(c, n) == who['sid']:
+            now = {'n': n, 'sid': pid_sid(c, n), 'pid': _pid(c, n)}
+            if now != who and now['pid']:  # follow it, so that a cleared chat is known once it is reopened too
+                try:
+                    tmp = f.with_suffix(f'.{os.getpid()}.tmp')
+                    tmp.write_text(json.dumps(now), encoding='utf-8')
+                    tmp.replace(f)
+                except OSError:
+                    pass
             return n
     return 0
