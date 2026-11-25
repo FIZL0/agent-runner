@@ -11,7 +11,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import NamedTuple
 
-from agent_runner import no_commits, plan as P, plansync, pr, row_hold, shared_tools, stack
+from agent_runner import no_commits, plan as P, plansync, pr, pr_rows, row_hold, shared_tools, stack
 from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log, MERGE, note, plan_rel, plan_text,
     queued, ROOT, SLOTS_DIR)
 from agent_runner.state import EV_LEFT
@@ -283,6 +283,8 @@ class Held(NamedTuple):
     no_commits: frozenset = frozenset()  # B774: open tasks whose runs end with no commits
     splits: dict = {}  # B196: {task held for its author to split it: seconds left}
     holding: frozenset = frozenset()  # F429: the held tasks (`plan hold`)
+    prs: int = 0  # F420: the open pull requests, when no new task may start for them
+    on: frozenset = frozenset()  # F420: with `prs`, the tasks that are not new
     waits: dict = {}  # F168: {task that gave up its slot: (its tool, since when)}, longest first
 
 
@@ -318,6 +320,7 @@ def held(running: dict, branch: str) -> Held:
                 P.alone_ids(plan_text(branch)) if todo else frozenset(),
                 no_commits=frozenset(no_commits.stuck(branch)) if todo else frozenset(),
                 holding=frozenset(row_hold.held_ids(plan_text(branch))) if todo else frozenset(),
+                **({'prs': n, 'on': pr_rows.started()} if todo and (n := pr_rows.full()) else {}),
                 splits=split_holds(branch) if todo else {}, **tool_fields(todo, live, branch))
 
 
@@ -377,6 +380,7 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
     ('busy', None), ('parked', None), ('no commits', None), ('held', None) (`plan hold`: F429), ('split', None) (its author is splitting it: B196), ('merging', None) (a release, while a merge holds the turn: F99),
     ('unpushed', None) (a release, while landed changes wait for a person's approval: F98),
+    ('prs', None) (a new task, while too many pull requests are open: F420),
     ('clash', the busy task it clashes with), or ('tool', (the shared tool it waits for, why)) (F168); None when it is free. A critical task never holds a slot
     for itself (B140): `choose` only tries it first; but see `turn_of` (F208) for an `(alone)` one."""
     tid = t[0]
@@ -398,6 +402,8 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'merging', None
     if P.release(tid) and unpushed():  # F98: a release waits until everything before it is approved and pushed
         return 'unpushed', None
+    if h.prs and tid not in h.on and tid not in h.waits:  # F420
+        return 'prs', None
     if b := clash_or_stack(t, h)[0]:
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
     if w := tool_hold(t, tried, h):
@@ -528,6 +534,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = ('waiting for a merge to land', 'a release starts from what has landed')
         elif kind == 'unpushed':
             why[tid] = ('waiting for your approval', f'{unpushed()} of what landed is not pushed yet')
+        elif kind == 'prs':
+            why[tid] = ('waiting for a pull request to be merged', f'{h.prs} are open, [git] pr_max is {C.pr_max}')
         elif kind == 'clash':
             why[tid] = clash_why(t, b, h.shared, h.alone)
         elif kind == 'tool':

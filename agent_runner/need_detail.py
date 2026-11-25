@@ -19,7 +19,7 @@ from agent_runner import plan as P
 from agent_runner import state as S
 
 SAID = {'CONFIRM': 'Check this', 'DECIDE': 'Choose', 'CONCEPT': 'Choose', 'PITCH': 'Choose', 'BLOCKED': 'Do this',
-        'TOOL': 'Do this', P.STUCK: 'Stuck'}  # what is wanted, in everyday words
+        'TOOL': 'Do this', 'PR': 'Review this', P.STUCK: 'Stuck'}  # what is wanted, in everyday words
 FILE_MAX = 64 * 1024        # an asks file larger than this is not read
 LINK_MAX, CMD_MAX, MATCH_MAX, INPUTS_MAX = 1000, 2000, 200, 12  # F175
 KINDS = {'text': 500, 'link': LINK_MAX, 'secret': 4096}  # an input's kinds, and the most characters of each

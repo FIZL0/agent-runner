@@ -1878,7 +1878,7 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
 ASKED = re.compile(r' ?\(asked (\d{4}-\d\d-\d\d \d\d:\d\d)\)')
 REPLY_HINT = {'CONCEPT': 'reply A/B/C', 'CONFIRM': 'reply yes/no', 'DECIDE': 'reply with your answer',
               'BLOCKED': 'reply done once it is', 'PITCH': 'reply approve or not this',
-              'TOOL': 'this clears once it is back', 'STUCK': 'reply with what to do'}
+              'TOOL': 'this clears once it is back', 'PR': 'this clears once it is merged or closed', 'STUCK': 'reply with what to do'}
 
 
 def needs_cfg() -> dict:
@@ -3091,8 +3091,8 @@ def _p_revise(a, x):
 
 def _p_waiting(a, x):
     every = bool(a.all)
-    from agent_runner import pitch
-    w = asks(all=every) + [r[:7] for r in pitch.rows(cfg())]  # F98
+    from agent_runner import pitch, pr_rows
+    w = asks(all=every) + [r[:7] for r in pitch.rows(cfg()) + pr_rows.asks(cfg())]  # F98, F420
     print('\n'.join('  '.join(s for s in (label, t, title, '' if label == 'CONCEPT' else what, u,
                                           f'(concept {k})' if k else '', '(shelved)' if sh else '') if s)
                     for label, t, k, what, u, title, sh in w)

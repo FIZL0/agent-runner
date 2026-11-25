@@ -259,6 +259,7 @@ DEFAULTS: dict = {
         'pr': False,            # PR mode: each finished task is a pull request on GitHub that a person merges; the runner
                                 # never merges and never pushes the shared branch. Needs [plan] repo and branch
                                 # protection there that its token cannot bypass; refused with [run] approve. Next run
+        'pr_max': 5,            # PR mode: no new task starts while this many pull requests are open; 0: no limit
         'land_edited': 'wait',  # a tested merge blocked by uncommitted edits in the main checkout: "wait" for them,
                                 # or "wip": after LAND_WAIT_WIP move them to a wip/main-checkout-<time> branch and land
     },
@@ -725,7 +726,8 @@ class Config:
         self.run['remote_slots'] = slots_in_apps(self.run['remote_slots'], old_sessions(sessions))
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
-        if problem := setting_problem('git', 'pr', self.raw['git']['pr']) or both_problem(self.raw):  # F419
+        if problem := setting_problem('git', 'pr', self.raw['git']['pr']) or both_problem(self.raw) or \
+                setting_problem('git', 'pr_max', self.raw['git']['pr_max']):  # F419, F420
             raise SystemExit(f'agent-runner: {problem}')
         for k in ('approve', 'approve_wait', 'approve_batch', 'releases', 'split_files', 'auto_audit', 'audit_tokens'):  # F98, F193, F200b, F417
             if problem := setting_problem('run', k, self.run[k]):
@@ -906,6 +908,11 @@ class Config:
     def pr(self) -> bool:
         """F419: PR mode, `[git] pr`: a finished task is a pull request, and nothing merges or pushes the shared branch."""
         return bool(self.raw['git']['pr'])
+
+    @property
+    def pr_max(self) -> int:
+        """F420: how many open pull requests keep a new task from starting; 0: no limit."""
+        return self.raw['git']['pr_max']
 
     @property
     def land_edited(self) -> str:

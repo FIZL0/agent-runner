@@ -80,6 +80,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.command_timeout': ('merge', 'Longest command', 'Seconds a test or command may take before it counts as failed. Too low fails slow tests.'),
     'git.no_push': ('merge', 'Never push', 'Nothing is pushed, and sessions are refused git push everywhere. Applies from the next run.'),
     'git.pr': ('merge', 'Pull requests', 'Each finished task is a pull request you merge on GitHub; the run merges nothing. Applies from the next run.'),
+    'git.pr_max': ('merge', 'Open pull requests', 'No new task starts while this many pull requests are open. 0: no limit.'),
     'git.push_merge': ('merge', 'Push each merge', 'The shared branch is pushed after each merge that passed. Off: you push.'),
     'run.review_min_lines': ('work', 'Smallest change to review', 'A change with fewer lines than this skips the review. Lower reviews more.'),
     'run.split_files': ('work', 'Split busy files', 'When slots stand free because 3 tasks wait for one file, a task to split that file is queued. Off: they wait.'),
@@ -154,6 +155,7 @@ _HOMES: dict[str, str] = {'git.land_edited': DEVICE, 'run.questionnaires': EVERY
 # shown only while its parent is on
 _PARENTS: dict[str, str] = {
     'run.approve_wait': 'run.approve', 'run.approve_batch': 'run.approve', 'run.issues_trust': 'run.issues_watch',
+    'git.pr_max': 'git.pr',
     'run.review_min_lines': 'run.review', 'run.web_port': 'run.web', 'run.web_https': 'run.web',
     'run.fix_ahead_max': 'run.fix_merges', 'models.review': 'run.review', 'run.auto_release': 'run.releases',
 }

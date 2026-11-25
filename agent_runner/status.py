@@ -8,7 +8,7 @@ import os
 import re
 import time
 
-from agent_runner import pitch, plan as P, shared_tools, theme
+from agent_runner import pitch, plan as P, pr_rows, shared_tools, theme
 from agent_runner.config import shown_cmd
 from agent_runner.state import C, default_branch, git, project
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LANDED, EV_LEFT, EV_NO_COMMITS,
@@ -588,7 +588,8 @@ def waiting_ok() -> list[tuple]:
         if not C.todo.exists():
             return []
         stamps = P.asked_at(C.todo)
-        return [(*a, stamps.get(a[1], '')) for a in P.asks(C.todo, all=True)] + pitch.rows(C) + shared_tools.asks(C)
+        return [(*a, stamps.get(a[1], '')) for a in P.asks(C.todo, all=True)] + pitch.rows(C) + \
+            pr_rows.asks(C) + shared_tools.asks(C)
     except (OSError, SystemExit):
         return []
 
@@ -740,6 +741,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     out += held_lines()
     if unpushed := pitch.waiting_line():  # F98
         out.append(unpushed)
+    out += pr_rows.text(titles)  # F420
     out += progress.splitlines()
     kinds = kind_table()
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):

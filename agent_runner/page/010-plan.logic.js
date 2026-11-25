@@ -140,7 +140,7 @@ function needBody(n,url,give='',on=false,chev=''){const d=needD(n), more=d.step_
 /* a task's text as paragraphs: its fields, notes, block and numbered parts each on their own */
 function taskParas(text){return String(text||'').split(/\n+|(?= \| )|(?= — )|(?= BLOCKED: )|(?=\s\(?\d\)\s)/).map(x=>x.trim()).filter(Boolean)}
 /* whose reply box has a button of its own: nothing else answers it, or the answers take no words with them */
-function needReplies(n){return n.label!=='TOOL'&&!needInputs(n).length&&(!answerOpts(n).length||['DECIDE','STUCK','PITCH'].includes(n.label))}
+function needReplies(n){return !['TOOL','PR'].includes(n.label)&&!needInputs(n).length&&(!answerOpts(n).length||['DECIDE','STUCK','PITCH'].includes(n.label))}
 /* B138: an answered item stays off Needs you for a while (GONE_MS), so a snapshot taken before the answer landed
    does not bring a stale card back; gone maps an id to when it was answered */
 const GONE_MS=30000;

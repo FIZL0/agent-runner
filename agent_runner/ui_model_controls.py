@@ -27,7 +27,7 @@ WIP_DROP_ASK = 'These edits are deleted here and on the remote, and cannot be br
 def answer_of(row: dict, key: str) -> str:
     """F180: the fixed answer the answer action `key` stands for on a Needs you row ('' none): need_yes and need_no
     when its answers are Yes and No, else need_answerN its Nth."""
-    if row.get('label') == 'TOOL':
+    if row.get('label') in ('TOOL', 'PR'):
         return ''
     xs = [a['value'] for a in (row['answers'] if 'answers' in row else need_answers(row))]
     keys = ['need_yes', 'need_no'] if xs == ['Yes', 'No'] else [f'need_answer{j}' for j in range(1, len(xs) + 1)]
@@ -125,13 +125,13 @@ RUN_CONTROLS = (
     *(_answer_action(f'need_answer{j}', f'Answer {j}', ANSWER_KEYS[j - 1:j], help="a pick's options" if j == 1 else '',
                      help_keys='a b c' if j == 1 else '') for j in range(1, ANSWER_MAX + 1)),
     {'key': 'need_later', 'label': 'Later', 'argv': ('plan', 'shelve', '{id}'), 'tui': 'L', 'where': 'need',
-     'said': '{id} is set aside until you bring it back', 'fits': lambda r: r.get('label') not in ('PITCH', 'TOOL')},
+     'said': '{id} is set aside until you bring it back', 'fits': lambda r: r.get('label') not in ('PITCH', 'TOOL', 'PR')},
     {'key': 'need_chat', 'label': 'Chat', 'fn': 'need_chat', 'chat': True, 'tui': 'N', 'where': 'need',
-     'fits': lambda r: r.get('label') != 'TOOL'},
+     'fits': lambda r: r.get('label') not in ('TOOL', 'PR')},
     {'key': 'need_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'need', 'why': 'dropped from Needs you', 'said': '{id} dropped',
      'confirm': 'Drop {id}? It leaves the plan, and its work is not done.',
-     'fits': lambda r: r.get('label') not in ('PITCH', 'TOOL')},
+     'fits': lambda r: r.get('label') not in ('PITCH', 'TOOL', 'PR')},
     {'key': 'concept_chat', 'label': 'New chat', 'fn': 'concept_chat', 'chat': True, 'tui': 'N', 'where': 'concept',
      'help': 'chat about it'},
     {'key': 'concept_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'd',

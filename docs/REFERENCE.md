@@ -404,7 +404,7 @@ The browser gives the microphone (Talk) only to https or localhost, so a run on 
   answer buttons, and a DECIDE, STUCK or PITCH, has a Reply button. A DECIDE's words are its answer and run at once with no session (`plan confirm ID "<words>"`; on an item with a pick sheet, `go` or `recommended` is `sheet ID --go` and a pasted `ID picks: ...` line is `sheet ID --picks`), and Chat stays for asking about a DECIDE. A STUCK's or PITCH's words go to a new chat, as does a typed reply to any other label. The popup is a sheet on
   a phone and a centred dialog from 760px wide, and closes when the item is answered or leaves Needs you. It takes keyboard focus when it opens, and Esc gives focus back to the card, also when the card was redrawn meanwhile. Each item's answers come from `ui_model.need_answers` (in each snapshot needs row as `answers`): Yes and No on a
   CONFIRM or a yes/no ask, a concept's options (A/B/C when its copy has none), a pitch's options, a DECIDE's options, a pick sheet's recommended picks (and its answers, when it has exactly one question), and Done on a BLOCKED item,
-  on both pages; `agent-runner ui` draws the same, adding only the key letters, and `need_chat_text` uses them too. Each answer is a `need_yes`, `need_no` or `need_answerN` entry of RUN_CONTROLS (at most `ANSWER_MAX`, 12, drawn per item); which one a row's button is comes from `ui_model.answer_of` over its answers. A TOOL row has no answers.
+  on both pages; `agent-runner ui` draws the same, adding only the key letters, and `need_chat_text` uses them too. Each answer is a `need_yes`, `need_no` or `need_answerN` entry of RUN_CONTROLS (at most `ANSWER_MAX`, 12, drawn per item); which one a row's button is comes from `ui_model.answer_of` over its answers. A TOOL or PR row has no answers.
   An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
   answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go` and its answer buttons run `sheet ID --picks "ID picks: q=b"`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply open a new control session with them (`control --new --ask`, named for the ask), except a DECIDE's, which are its answer as above. `agent-runner ui`'s answer tab does the same. Then one card of two one-line rows (44px high, with an ellipsis) that open Status and Plan: the run's state and work, e.g. "2 working, 1 merging" (the state comes first when not Running: "Paused · 1 working", "No run is up", "No agent is working"), and the queue, e.g. "2 left, next release waits for 6" (parked tasks and releases are not counted; "The queue is empty"; nothing about releases with Manage releases off). Agent cards, queue rows, the release card, What needs me and New concept are gone from Home.
 - **The session.** A chat or slot shows the real Claude Code session, not a thread the page draws: its own terminal
@@ -736,6 +736,26 @@ Review comments that get neither a reply nor a change are tried again. Each kind
 were red passed, or when GitHub can merge the pull request. A round whose gate fails leaves the pull request as it was;
 its commits are kept on `wip/<ID>`, and the try counts. A round running when a person merges ticks its tasks once its
 session has ended.
+
+Limits and display:
+
+- `[git] pr_max` (default 5; 0: no limit; applies live; Settings > Merging > Open pull requests, shown while Pull
+  requests is on): while that many pull requests are open on GitHub, no new task starts. Closed, merged and
+  not-yet-opened (collecting) ones do not count. Tasks already running finish and open theirs, so there can be more
+  than `pr_max`.
+- Sessions that go on are not new tasks: feedback on an open pull request, an answered ask, a wait for a shared tool
+  that ended.
+- A task `after` one with an open pull request waits until that is merged; it never starts on its branch (parts of one
+  split task sharing a not-yet-opened pull request are as before).
+- Each open pull request shows with its link and state: `agent-runner status` (a "pull requests:" list), the run page's
+  Status section Pull requests (a row opens it on GitHub), the terminal UI's Status panel (the selected line wraps to
+  show the link) and its Needs you (label `PR`, id `pr-<number>`, nothing to answer, clears once merged or closed), and
+  `plan waiting`.
+- A state (`pr_rows.state_of`) is "CI red", "changes asked", "conflicts with the main branch" (joined by commas when several), else
+  "approved, waits to be merged" (GitHub's review decision is approved), else "waits for review". It is from the run's
+  last look, every 60 s.
+- Status and the Run card say "5 pull requests are open: no new task starts until you merge or close one". A Plan queue
+  row a pull request keeps says which, or that it waits for an open pull request to be merged; the dry run says why.
 
 Nothing on main is pushed or committed by the runner. Settings for everyone are refused (this device's still save),
 and the rules pointer is not added. A task never starts on an unmerged task's merge. The state is in
@@ -1860,6 +1880,7 @@ push_merge = true         # push the shared branch after each tested merge
 land_edited = "wait"      # a tested merge held by uncommitted edits in the main checkout: "wait" for them, or
                           # "wip": move them to a wip/main-checkout-<time> branch and land (see Stopping a run)
 pr = false                # true: a finished task is a pull request on GitHub that a person merges (### PR mode)
+pr_max = 5                # PR mode: no new task starts while this many pull requests are open; 0: no limit
 no_push = false           # true: the runner pushes nothing and git refuses a push in every session (### No-push policy)
 
 [ui]

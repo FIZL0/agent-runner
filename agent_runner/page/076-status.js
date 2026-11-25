@@ -19,6 +19,8 @@ function mergeRow(m){
   const go=m.slot?`<button class="btn" data-thread="${esc(m.slot)}">Open session</button>`:m.link?`<a class="btn" href="${esc(m.link)}" target="_blank" rel="noopener">Open session ${I.ext}</a>`:'';
   return `<div class="srow" data-k="${esc(k)}"><button class="fold" data-task="${esc(m.id)}" data-list="${list}" aria-expanded="${open}">${taskChip(m.id)}<span class="grow"><b class="ell">${esc(m.title||m.id)}</b><span class="status"><span class="livedot"></span>Merging</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(k,`<div class="quote" data-k="${esc(k)}:step" data-v="${esc(m.step||'')}">${esc(m.step||'Its merge is built and tested, or waits its turn.')}</div><div class="btns">${go}${readBtn(list,m.id)}${chatBtn(m)}</div>${readText(list,m.id)}`):''}</div>`;
 }
+/* F420: PR mode's open pull requests: each row a link to GitHub */
+const prRow=r=>`<a class="srow prlink" data-k="pr:${r.number}" href="${esc(r.url)}" target="_blank" rel="noopener"><span class="row">${taskChip(r.ids[0])}<span class="grow"><b class="ell">${esc(r.title)}</b><span class="status" data-k="prs:${r.number}" data-v="${esc(r.state)}">#${r.number} · ${esc(r.state)}</span></span>${I.ext}</span></a>`;
 /* Read task: the task's text (openTask() has asked for it), under the row's options */
 const readBtn=(list,id)=>`<button class="btn" data-readtask="${esc(list+':'+id)}" aria-expanded="${S.readTask===list+':'+id}">Read task</button>`;
 function readText(list,id){
@@ -31,6 +33,7 @@ function statusHTML(){
     ${sec('Run',controlsCard())}
     ${sec('Working',ws.length?card(ws.map(slotRow).join(''),'','data-k="working"'):emptyCard('No agent is working.'))}
     ${sec('Merging',ms.length?card(ms.map(mergeRow).join(''),'','data-k="merging"'):emptyCard('Nothing is merging.'))}
+    ${(S.snap.prs||[]).length?sec('Pull requests',card(S.snap.prs.map(prRow).join(''),'','data-k="prs"')):''}
     ${sec('Usage',use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):emptyCard('No usage read yet.'))}</div>`;
 }
 document.addEventListener('click',e=>{
