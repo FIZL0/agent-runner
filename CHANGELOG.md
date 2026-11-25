@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page, a new chat's or slot's first message is no longer cut off behind the top bar while the agent works; a session that is not full now rests with its first line just under the top bar, idle or working (before, a short idle one stood on the message box), until its words no longer fit (B786).
 - Added: a control session on the harness loop (a chat on another provider's `[models] control`) works in the run app as a Claude Code one does: its frame shows its terminal, its chips are Working and the model, Stop and Force send send Escape, `/live/cN` reports its status, since, queued and `harness: true`, and its terminal is drawn again from the last 32,000 characters printed. The read tool shows an image to its model. An ended chat of the other kind has no Resume and is not restarted (F406g).
 - Added: the launcher's `w` on a project whose run is not up opens its full run page and starts no run: a detached page-only process (one at most per project; Linux and Windows) serves it, with Runner Home or without. New chats, messages, Resume and plan actions work there; no slot, task, merge or push starts, run_up stays false and `status` says no run is up. A run that starts takes the page over (same key, same port; an open page reconnects by itself). It ends after 10 minutes with no page open; no chat ends with it (F402b1).
 ## 0.65.0 (2026-11-24)
