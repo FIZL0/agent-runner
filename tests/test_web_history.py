@@ -194,6 +194,7 @@ out.cancel = hold('touchcancel', true); change(false); run();
 // new words: what is picked at the end stays where it is, then it is as scrolled up
 hold(); const p0 = where('● message 203'); show(208); pastSee(); out.pickNew = [HX.st, where('● message 203') - p0, HX.news, picked]; scroll(pastEnd()); out.pickEnd = [HX.st, HX.news]; change(false); run(); out.pickDone = HX.st;
 hold(); show(208, ['', '● part']); pastSee(); out.pickPart = HX.st; pastDown(true); run(); out.pickDown = [picked, unpicked]; pastDown(); out.pickLive = HX.st; show(208); pastSee();
+pastWheel(-60); change(true); pastWheel(600); out.mouse = HX.st; change(false);
 // a menu shows over words picked at the end
 hold(); FD.whole = true; FD.foot = null; pastSee(); out.pickMenu = [HX.st, picked]; FD.whole = false; FD.foot = {top: 36, text: '', bash: false};
 // where it cannot stand in, the session scrolls as it did
@@ -263,6 +264,7 @@ def test_swap(tmp: Path) -> None:
     eq(o['cancel'], [0, 0, 'armed', False, True], 'a touch the system took, its word selected a little later')
     eq((o['pickNew'], o['pickEnd'], o['pickDone']), (['up', 0, True, True], ['armed', False], ''), 'new words move nothing that is selected')
     eq((o['pickPart'], o['pickDown'][0], o['pickLive']), ('up', False, ''), 'the jump button lets go of it')
+    eq(o['mouse'], '', 'a mouse\'s selection does not keep the history over the live session')
     eq(o['pickMenu'], ['', False], 'a menu shows over it')
     eq((o['first'], o['under']), ([0, 0, 'armed', False, True], [0, True, 0]), 'a chat just opened: the first long press selects, and the transcript leaves it alone')
     eq(o['underPut'], [True, ''], 'and goes in after')

@@ -196,7 +196,7 @@ function pastReady(){
 function pastWarm(){if(!HX.warmT)HX.warmT=setTimeout(()=>{HX.warmT=0;if(!HX.st&&!$('feedpast').hidden&&pastMay())pastReady()},PAST_WARM)}
 /* drawn over the session, in the state it is in */
 function pastArm(touch){
-  HX.touch=!!touch;
+  HX.touch=!!touch;if(touch||!HX.st)HX.finger=!!touch;
   if(HX.st)return true;
   if(!pastMay()||HX.n!==FD.n)return false;
   const el=$('feedpast'), off=HX.high?pastEnd()-el.scrollTop:0;  // a scroll that came first
@@ -209,7 +209,9 @@ function pastArm(touch){
 /* the live session again, in this very frame */
 function pastLive(){
   if(!HX.st)return;
-  if((HX.touch||pastPicked())&&pastMay())HX.st='armed';else HX.st='';
+  if((HX.touch||HX.finger&&pastPicked())&&pastMay())  // a mouse's pick does not keep it: its clicks and keys go to the session
+    HX.st='armed';
+  else HX.st='';
   HX.news=false;FD.run=0;feedSlim(false);pastClass();
   if(!HX.st){if(pastMay())pastWarm();pastNewSoon()}
 }
