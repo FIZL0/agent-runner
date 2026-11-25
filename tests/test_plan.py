@@ -545,6 +545,88 @@ def test_add_refuses_a_duplicate():
         has(r.stdout, 'added V1a', "a split of a task is not refused for looking like it")
 
 
+def test_add_refuses_the_same_text():
+    print('plan: B817 add never files an open task\'s very text and fields again, --force or not')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'repo'
+        root.mkdir()
+        git(root, 'init', '-q', '-b', 'main')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
+        env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', plan.WORKTREE_ENV)}
+        todo = root / 'plan' / 'TODO.md'
+        add = lambda *a, cwd=root: run(cwd, 'plan', 'add', *a, env={**env, 'AGENT_RUNNER_REPO': str(cwd)})
+
+        def refused(tid, why, *a, cwd=root):
+            f = cwd / 'plan' / 'TODO.md'
+            before = f.read_text(encoding='utf-8')
+            r = add(*a, cwd=cwd)
+            eq(r.returncode, 3, why)
+            has(r.stderr, rf'not added: {tid} is this task', f'naming {tid}')
+            eq(f.read_text(encoding='utf-8'), before, 'with nothing written')
+
+        add('T', 'an unrelated chore', '--files', 'z.py')  # similar() weighs a word by how few tasks use it
+        text, flags = 'Setup offers the audit. Check: tests of both', ('--files', 'a.py,b.py', '--after', 'F9')
+        eq(add('F', text, *flags).returncode, 0, 'the first adds')
+        refused('F1', 'an exact duplicate is refused', 'F', text, *flags)
+        refused('F1', 'with --force too', 'F', text, *flags, '--force')
+        refused('F1', 'whatever its kind, level, whitespace and order of files', 'B', text.replace(' ', '  '),
+                '--files', 'b.py, a.py', '--after', 'F9', '--pri', 'low', '--alone', '--force')
+        eq(add('F', text, '--files', 'a.py', '--after', 'F9').returncode, 3, 'other files: only similar, refused')
+        has(add('F', text, '--files', 'a.py', '--after', 'F9', '--force').stdout, 'added F2', 'and added with --force')
+        has(add('F', text + ' and more', *flags, '--force').stdout, 'added F3', 'as is a task with other words')
+        refused('F1', 'a split part with its parent\'s text is refused', 'F1', text, *flags)
+        has(add('F1', 'the first half', '--files', 'a.py').stdout, 'added F1a', 'a part of its own adds')
+        refused('F1a', 'the same part again is refused', 'F1', 'the first half', '--files', 'a.py')
+        refused('F1a', 'and with --force', 'F1', 'the first half', '--files', 'a.py', '--force')
+        plan.note('F1', 'a note', todo=todo)
+        plan.block('F1', 'DECIDE: which?', todo=todo, after=[])
+        refused('F1', 'a noted, blocked task counts', 'F', text, *flags, '--force')
+        eq(add('F', 'no fields', '--force').returncode, 0, 'a task with no fields adds')
+        refused('F4', 'and not twice', 'F', 'no fields', '--force')
+        plan.block('F4', 'DECIDE: which?', todo=todo, after=[])
+        refused('F4', 'nor while it is blocked', 'F', 'no fields', '--force')
+        for k in ('V1', 'V2'):
+            has(add('V').stdout, f'added {k}', 'a release repeats its text')
+        has(add('F', plan.RELEASE_BRIEF, '--after', 'all', '--force').stdout, 'added F5', 'and is no task\'s double')
+        # another slot's add, on a branch not merged yet
+        git(root, 'add', '-A')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'plan')
+        wt = Path(tmp) / 's1'
+        git(root, 'worktree', 'add', '-q', '-b', 'task/F3', str(wt))
+        eq(add('B', 'found in a slot', '--files', 'c.py', cwd=wt).returncode, 0, 'a slot files a follow-up')
+        refused('B1', 'which another checkout does not file again', 'B', 'found in a slot', '--files', 'c.py', '--force')
+        plan.edit('F2', 'another text', todo=todo)
+        has(add('F', text, '--files', 'a.py', '--after', 'F9', '--force').stdout, 'added F6',
+            "a stale checkout's text of a task edited here is no obstacle")
+        eq(run(root, 'plan', 'tick', 'F3', env={**env, 'AGENT_RUNNER_REPO': str(root)}).returncode, 0, 'F3 is done')
+        has(add('F', text + ' and more', *flags, '--force').stdout, 'added F7',
+            'a done task is no obstacle, though a checkout still has it open')
+
+
+def test_concurrent_same_add():
+    print('plan: B817 two `plan add` of one text at once file one task')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'repo'
+        root.mkdir()
+        git(root, 'init', '-q', '-b', 'main')
+        (root / 'plan').mkdir()
+        (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n', encoding='utf-8')
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'start')
+        wt = Path(tmp) / 's1'
+        git(root, 'worktree', 'add', '-q', '-b', 'task/F1', str(wt))
+        env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER_REPO', plan.WORKTREE_ENV)}
+        for i, dirs in enumerate([(root, root)] * 5 + [(root, wt)] * 5):
+            ps = [subprocess.Popen([sys.executable, str(ROOT / 'run'), 'plan', 'add', 'F', f'round {i}', '--files',
+                                    f'r{i}.py', '--force'], cwd=d, env=env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True) for d in dirs]
+            for p in ps:
+                p.communicate(timeout=120)
+            eq(sorted(p.returncode for p in ps), [0, 3], f'round {i}: one is filed, the other refused')
+        text = ''.join((d / 'plan' / 'TODO.md').read_text(encoding='utf-8') for d in (root, wt))
+        eq([text.count(f'r{i}.py') for i in range(10)], [1] * 10, 'each text is there once')
+
+
 def test_carry_notes():
     print('plan: a note added to a task the other side ticked goes onto it in DONE.md')
     base = ['### A', '- [ ] **A1** a — old', '- [ ] **A2** b']
@@ -1311,6 +1393,9 @@ def test_refusals():
         (['drop', 'Z99', 'x'], (1, "./run plan: no task 'Z99' (./run plan for the index)\n")),
         (['approve', 'R1'], (1, "./run plan: nothing waits for an OK on 'R1': `./run plan waiting` lists what does\n")),
         (['add', 'R', 'the parser', '--files', 'p.py'],
+         (3, './run plan: not added: R1 is this task, word for word, and not done; --force does not add it again. '
+             '`./run plan note R1 TEXT` it there, or say what is different\n')),
+        (['add', 'R', 'that parser', '--files', 'p.py'],
          (3, './run plan: not added: already open, and may be the same work:\n  R1: the parser\n'
              '`./run plan note <ID> TEXT` it there; if it is different work, add it again with --force\n')),
     ]
@@ -1488,6 +1573,6 @@ def test_multi_line_text():
 
 if __name__ == '__main__':
     sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_plan_last, test_after_all, test_after_all_skips_stuck, test_after_all_skips_never_started, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, 
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_add_refuses_the_same_text, test_concurrent_same_add, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_needs_you,
                      test_needs_own_project, test_needs_config, test_slot_writes_own_plan]))
