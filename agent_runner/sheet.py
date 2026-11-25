@@ -175,7 +175,7 @@ def render(spec: dict, tid: str, pick: str = '', local: bool = False) -> str:
         groups.append({'h': _rich(g.get('heading') or ''), 'qs': qs})
     data = json.dumps({'tid': tid, 'groups': groups, 'pick': pick if pick.startswith('https://') else ''}).replace('</', '<\\/')
     title = html.escape(str(spec.get('title') or f'{tid} pick sheet'))
-    page = PAGE.replace(' target="_blank" rel="noreferrer"', ' rel="noreferrer"') if local else PAGE
+    page = LOCAL_HEAD + PAGE.replace(' target="_blank" rel="noreferrer"', ' rel="noreferrer"') if local else PAGE
     return (page.replace('{{title}}', title)
             .replace('{{intro}}', _rich(spec.get('intro') or spec['summary']))
             .replace('{{tid}}', html.escape(tid))
@@ -234,6 +234,9 @@ def cmd_publish(spec: dict, tid: str, pick: str, prog: str) -> int:
     return 0
 
 
+# what claude.ai puts around a page, for the run page's own copy
+LOCAL_HEAD = ('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+              '<style>body{margin:0}[hidden]{display:none!important}</style>\n')
 PAGE = """<title>{{title}}</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>

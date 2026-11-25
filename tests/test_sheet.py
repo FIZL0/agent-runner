@@ -360,6 +360,8 @@ def test_publish_f411():
         f.write_text(json.dumps(SPEC), encoding='utf-8')
         r = run(root, 'sheet', 'F1', '--publish', env=env)
         check(r.returncode == 0 and '/concept/F1_sheet' in r.stdout, 'no claude.ai: the run page shows it', r.stdout + r.stderr)
+        check('[hidden]{display:none!important}' in copy.read_text(encoding='utf-8') and 'name="viewport"' in copy.read_text(encoding='utf-8'),
+              'the copy has the head claude.ai would add')
         check('target="_blank"' not in copy.read_text(encoding='utf-8'), "its link opens in place (the copy's sandbox opens no tab)")
         run(root, 'done', 'F1', 'F1: audit', '--no-test', '--blocked', 'DECIDE: cleanups ready', env=env)
         R.init(root)
