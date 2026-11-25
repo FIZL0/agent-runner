@@ -82,7 +82,7 @@ def test_card_chat_b139(tmp: Path) -> None:
     ran = []
     with mock.patch.object(U, 'SEND', [no_send]), \
             mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 9 is starting'))[1]]):
-        q, t = U.act('quick_ask', key='since', wait=False), U.run_control('task_take', tid='F1', wait=False)
+        q, t = U.act('quick_ask', key='since', wait=False), U.run_control('queue_take', tid='F1', wait=False)
     eq(ran, [['control', '--new', '--no-wait', '--ask', 'what happened since my last look?', '--no-feed'],
              ['control', '--new', '--no-wait', '--ask', 'do F1 here', '--no-feed']], 'quick_ask and take use new_control')
     eq((q['name'], t['name']), ('c9', 'c9'), 'each names its new chat for the page to open')
@@ -91,7 +91,7 @@ def test_card_chat_b139(tmp: Path) -> None:
     check('sendReq(ctx,to,msg)' in send and "newChat(rq.name,rq.args," in send,
           'send() starts a new chat when a card set the context', send)
     check("newChat('quick_ask'" in page and "outbox('quick_ask'" not in page, 'a quick ask starts a new chat', '')
-    check("if(c.chat){" in page and "newChat(rq.name,rq.args,`${c.label} ${tid}`" in page, "Take back opens the new chat it started", '')
+    check("if(c.chat){" in page and "newChat(rq.name,rq.args,`${c.label} ${tid}`" in page, "Do it here opens the new chat it started", '')
     if not shutil.which('node'):
         print('  (no node here: the send script test is skipped)')
         return

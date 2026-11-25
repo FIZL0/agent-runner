@@ -60,7 +60,7 @@ def test_run_controls(tmp: Path) -> None:
     want = {'slot_add': ['slots', '+1'], 'slot_remove': ['slots', '-1'], 'slots_set': ['slots', '4'],
             'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
             'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
-            'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY],
+            'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY], 'task_cancel': ['plan', 'cancel', 'F1', '--yes'],
             'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x'],  # C26
             'restart': ['key', 'restart'], 'start': [], 'resume': ['resume', 'F1'],  # F124
             'unclaim': ['plan', 'unclaim', 'F1'], 'wip_show': ['wip', 'show', 'main-checkout-1'],
@@ -89,7 +89,7 @@ def test_run_controls(tmp: Path) -> None:
                      {'name': 'run_control', 'args': {'key': 'stop_now', 'confirm': True}},
                      {'name': 'run_control', 'args': {'key': 'stop'}}],
            "Stop now's button asks in the page first; only its Yes sends it, confirmed; Stop goes at once")
-        eq(got[4:], [True, False, False], "a slot's Take back and Drop show while it works, not while it lands")
+        eq(got[4:], [True, False, False], "a slot's Cancel and Drop show while it works, not while it lands")
     ran, sent = [], []
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
@@ -101,12 +101,8 @@ def test_run_controls(tmp: Path) -> None:
             for c, rq in zip(cs, reqs):
                 ran.clear()
                 code, out = post(url, rq)
-                if c['key'] == 'task_take':
-                    eq((out.get('ok'), sent, ran), (True, [], [['control', '--new', '--ask', 'do F1 here', '--no-feed']]),
-                       'B139: Take back asks a new control session "do F1 here", not c1')
-                else:
-                    eq((code, out.get('ok'), ran), (200, True, [want[c['key']]]),
-                       f'{c["label"]} runs {" ".join(want[c["key"]])}')
+                eq((code, out.get('ok'), ran), (200, True, [want[c['key']]]),
+                   f'{c["label"]} runs {" ".join(want[c["key"]])}')
             ran.clear()
             code, out = post(url, reqs[-1])
             eq((out.get('ok'), ran, out.get('confirm')), (False, [], U.STOP_NOW_ASK),
@@ -513,10 +509,10 @@ const icons = page.slice(page.indexOf('const I={'), page.indexOf('const LOGLINE_
 const S = {ob: [], snap: null};
 const env = {S, taskChip: id => `<kind ${id}>`, lastWords: () => '', obCards: () => '[outbox]'};
 const src = ['const esc=', 'const ic=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const obRun=', 'const slots=',
-  'const working_=', 'const taskControlsOn=', 'const CTL_ICON=', 'function cardControls(', 'const toolsWords='].map(line).join('')
-  + icons + grab('function slotRow(') + grab('function controlsCard(');
+  'const working_=', 'const taskControlsOn=', 'const CTL_ICON=', 'function cardControls(', 'const toolsWords=', 'const sureHTML=', 'const ctlSure='].map(line).join('')
+  + icons + grab('function cutsOff(') + grab('function slotRow(') + grab('function controlsCard(');
 const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return [controlsCard, I]}')(env);
-const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw[0]() });
+const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; S.sure = snap.sure; return draw[0]() });
 console.log(JSON.stringify([out, draw[1]]));
 """
 
@@ -535,7 +531,9 @@ def test_run_card_b763a(tmp: Path) -> None:
                              for i in range(1, n + 1)], **U.controls_shown(up, run, {})}
     busy = [{'ctl': 'pause:', 'state': 'sending'}]
     cases = [(snap(0), []), (snap(1), []), (snap(4), busy), (snap(4, paused=True), []),
-             (snap(4, stopping=True), []), (snap(0, up=False), [])]
+             (snap(4, stopping=True), []), (snap(0, up=False), []), (snap(2), [])]
+    cases[-1][0].update(sure='task_cancel:B1')
+    cases[-1][0]['sessions'][0]['minutes'] = 14
     (tmp / 'driver.js').write_text(RUN_CARD_DRIVER, encoding='utf-8')
     case_file = tmp / 'cases.json'  # a file: too long for a Windows command line
     case_file.write_text(json.dumps(cases), encoding='utf-8')
@@ -543,6 +541,9 @@ def test_run_card_b763a(tmp: Path) -> None:
                        capture_output=True, text=True, encoding='utf-8', timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     cards, icons = json.loads(r.stdout)
+    asked = cards.pop()  # F426d
+    check('B1 has worked 14 min in s1. Cancel stops its agent' in asked and 'Yes, cancel' in asked
+          and asked.count('data-sure') == 1, 'Cancel asks in its slot row, with the minutes worked', asked)
     icon = {'start': 'play', 'go_on': 'play', 'pause': 'pause', 'stop': 'stop', 'stop_undo': 'undo',
             'slot_add': 'plus', 'slot_remove': 'minus'}
     for (s, _), html in zip(cases, cards):

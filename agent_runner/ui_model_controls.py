@@ -3,12 +3,14 @@
 Part of `ui_model`: `ui_model` runs this file in its own namespace (see its end), so these names are `ui_model`'s, and a
 test that sets `ui_model.X` reaches the code here. Not imported on its own."""
 
+from agent_runner import cancel
+
 # --- F82: the run controls ---------------------------------------------------------------------------------
 #
 # One list for the web page and agent-runner ui alike, so the two cannot drift apart: each control's key, its
 # label, the runner command it runs ('{n}' the slot count typed, '{id}' the task), its key in agent-runner ui,
 # where it shows ('run': the run's own; 'task': a slot's task), and what it asks before it runs ('' nothing).
-# Take back is the one that is no runner command of its own: a new chat is asked "do ID here".
+# Do it here is the one that is no runner command of its own: a new chat is asked "do ID here".
 
 # F124: `group` is the More… sheet's group ('' on the Run card itself), 'fix' where a Fix up control's choices come
 # from (the snapshot's `fixups`; it shows only while there are some, and '{id}' is the one picked). A control with
@@ -73,7 +75,10 @@ RUN_CONTROLS = (
      'where': 'run', 'group': 'Fix up', 'fix': 'wip'},
     {'key': 'wip_drop', 'label': 'Drop moved-aside edits', 'argv': ('wip', 'drop', '{id}'), 'tui': 'O',
      'where': 'run', 'group': 'Fix up', 'fix': 'wip', 'confirm': WIP_DROP_ASK},
-    {'key': 'task_take', 'label': 'Take back', 'ask': 'do {id} here', 'tui': 'H', 'where': 'task'},
+    # F426d: what it asks names the minutes worked (`confirm_of`; the page adds them itself, `cutsOff`)
+    {'key': 'task_cancel', 'label': 'Cancel', 'argv': ('plan', 'cancel', '{id}', '--yes'), 'tui': 'C', 'where': 'task',
+     'help': 'cancel: stop it, keep its work and park it', 'confirm': cancel.ASK + ' Cancel {id}?',
+     'confirm_of': lambda r: cancel.question(r['task'], r.get('name', ''), r.get('minutes'))},
     {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'task'},
     # C34: a Queue row's actions ('where' 'queue', '{id}' the row's task; `fits` says which rows it is allowed on, and
@@ -152,7 +157,7 @@ CONTROL_ROWS = (('start',), ('slot_add', 'slot_remove', 'slots_set'), ('pause', 
 
 
 def task_controls_on(row) -> bool:
-    """C33: a slot's task controls (Take back, Drop) work while it works on a task, not while the task lands
+    """C33: a slot's task controls (Cancel, Drop) work while it works on a task, not while the task lands
     (merging); a control session has none."""
     return isinstance(row, dict) and bool(row.get('task')) and not re.fullmatch(r'c\d+', str(row.get('name', ''))) \
         and row.get('state') != 'merging'
@@ -275,6 +280,12 @@ def row_of(where: str, tid: str) -> dict | None:
                  if tid == r['id'] or (where == 'concept' and tid == r['concept'])), None)
 
 
+def task_row(tid: str) -> dict | None:
+    """F426d: the slot's row that works on task `tid`, as the run's STATE has it now."""
+    st = _state(S.run_up())
+    return next((r for r in session_rows(st, [], {}, time.time(), {}, windows={}) if tid and r['task'] == tid), None)
+
+
 def run_control_of(key: str) -> dict | None:
     return next((c for c in RUN_CONTROLS if c['key'] == key), None)
 
@@ -363,6 +374,10 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
             if text != said:
                 return {'ok': False, 'code': 1, 'out': f"{tid}'s answers changed: look again", 'argv': []}
             return answer(tid, (row.get('picks') or {}).get(said, said), button=True, note=note)  # F181b: a pick sheet's
+    if key == 'task_cancel':  # F426d
+        row = task_row(tid) or {}
+        if row and not task_controls_on(row):
+            return {'ok': False, 'code': 1, 'out': f'{tid} is landing, so it cannot be cancelled', 'argv': []}
     if c and c.get('fn'):
         return ROW_FNS[c['fn']](tid, wait)
     if c and c['where'] == 'release' and not releases_on():  # F193: a page from before it was turned off
@@ -372,7 +387,7 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
     except ValueError as e:
         return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
     if c.get('confirm') and confirm is not True:
-        ask = row_asks(c['where'], row).get(key) or c['confirm'].replace('{id}', tid)
+        ask = (row_asks(c['where'], row).get(key) if row else '') or c['confirm'].replace('{id}', tid)
         return {'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'argv': argv}
     if c.get('ask'):
         return new_control(c['ask'].replace('{id}', tid), wait)

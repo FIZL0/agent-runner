@@ -53,7 +53,7 @@ entries); and the actions `chat_to` (any control session), `interrupt`, `new_con
 
 Each action calls what the CLI already does, as a subprocess of the runner (`runner_cmd()`), so a page and a
 terminal change the run exactly as a person typing the command would (B138: a Needs you button's `answer` runs
-`plan confirm|change` or `sheet` itself); `chat`, a typed `answer` and a Chat or Take back control open a new control session with the
+`plan confirm|change` or `sheet` itself); `chat`, a typed `answer` and a Chat or Do it here control open a new control session with the
 message as its first (F176). Standard library only.
 """
 

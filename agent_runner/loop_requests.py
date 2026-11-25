@@ -1,4 +1,4 @@
-"""Requests the run answers each tick: halts (drop, change, take back), tells and restyles."""
+"""Requests the run answers each tick: halts (drop, change, take back), cancels, tells and restyles."""
 
 import datetime as dt
 import json
@@ -92,6 +92,7 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
     take back ('take') stops, discards and frees the same way but is no drop: the task stays in the plan, taken,
     so its wip branches stay and no EV_DROPPED event is recorded. B801: `[run] on_exit` runs as at any session's
     end; a short wait lets it end first, and a slower one holds the slot: a changed task then starts later."""
+    cancels(procs, running, free_at, tried, branch)  # F426d
     for tid, how in halt_requests().items():
         verb = {'drop': 'dropped', 'take': 'took'}.get(how, 'changed')
         n = next((m for m, t in running.items() if t[0] == tid), None)
@@ -140,6 +141,97 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
                 plansync.release(C, tid)
                 msg += '; it starts again with the new text when a slot is free'
         halt_answer(tid, msg, EV_DROPPED if how == 'drop' else None)
+
+
+CANCELLED: set[str] = set()  # F426d: cancelled and not seen parked yet: no slot starts one meanwhile
+
+
+def keep_work(tid: str, n: int | None, branch: str) -> tuple[str, str]:
+    """F426d: everything cancelled task `tid` has (slot n's uncommitted edits too) on a wip/<tid> branch, never left as
+    task/<tid>, which a run would merge: (that branch, '' with nothing to keep; what went wrong, '' when nothing)."""
+    ref, bad = f'refs/heads/task/{tid}', ''
+    if n is not None and (d := SLOTS_DIR / f's{n}').is_dir() and \
+            git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip() == f'task/{tid}':
+        if git('status', '--porcelain', cwd=d).stdout.strip():
+            git('add', '-A', cwd=d)
+            c = git('commit', '-q', '--no-verify', '-m', f'{tid} wip: uncommitted when it was cancelled', cwd=d)
+            if c.returncode and git('status', '--porcelain', '--ignore-submodules=all', cwd=d).stdout.strip():
+                bad = f'its uncommitted edits could not be committed: they are still in s{n}'
+        if not bad:
+            clean(d)
+            git('checkout', '-q', '--detach', cwd=d)
+    if git('rev-parse', '--verify', '-q', ref).returncode:
+        return '', bad
+    own = git('rev-list', '--count', f'{stack.fork(tid, branch)}..task/{tid}').stdout.strip() != '0'
+    if not own and not bad:
+        git('branch', '-D', f'task/{tid}')
+        wip = ''
+    elif git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
+        return '', f'task/{tid} could not be renamed to {wip}: rename it by hand, or a run merges it'
+    else:
+        forgive_park(tid, wip)
+        out = push(ROOT, wip)
+        if out.startswith('pushed '):  # else task/<tid> there is the one copy of that work off this disk
+            out += f'; {gone}' if (gone := gitops.drop_remote(ROOT, f'task/{tid}')) else ''
+        if out:
+            log(f'{tid}: {out}')
+    git('update-ref', '-d', TESTED + tid)
+    return wip, bad
+
+
+def cancels(procs: dict, running: dict, free_at: dict, tried: set, branch: str) -> None:
+    """F426d: act on `plan cancel`: the task's session is ended, its work kept (`keep_work`) and its slot freed; the
+    command then parks the task. One that is finished or merging is refused, and nothing of it changes."""
+    parked = {tid for section, _, tid, _, _ in P.iter_tasks(plan_text(branch)) if section.startswith(P.PARKED)} \
+        if CANCELLED else set()
+    for tid in CANCELLED & parked:
+        CANCELLED.discard(tid)
+        tried.discard(tid)  # parked: once the person unparks it, that is a new attempt in this run
+    for tid, req in P.requests(C, 'cancel').items():
+        n = next((m for m, t in running.items() if t[0] == tid), None)
+        q = next((m for m, x in queued().items() if x[0] == tid), None)
+        merging = any(t.name == f'merge:{tid}' and t.is_alive() for t in threading.enumerate())
+        passed = not git('rev-parse', '--verify', '-q', TESTED + tid).returncode or (plansync.ticks(C) / tid).exists()
+        done = n is not None and (m := finished_mark(n, C)) and m.exists()
+        wip = msg = ''
+        if merging or passed or done:
+            msg = f'{tid} is finished and lands, so it cannot be cancelled'
+        elif n is None and q is None:
+            msg = f'no slot runs {tid} now, so there is nothing to cancel'
+        elif n is not None and P.ending_ask(C, tid, f's{n}'):
+            msg = f'{tid} has just asked you a question and waits for your answer: it is not running any more'
+        if msg:
+            P.respond(C, 'cancel', tid, json.dumps({'cancelled': False, 'msg': msg}))
+            log(msg, None, tid)
+            continue
+        sid = ''
+        if n is not None:
+            pid, sid, _ = procs.pop(n)
+            running.pop(n)
+            exit_hook.end_session(pid)
+            stopped = f'stopped s{n}'
+        else:
+            n, sid = q, queued()[q][1]
+            C.notes(f'{tid}.resume').unlink(missing_ok=True)
+            stopped = f'took back its resume in s{n}'
+        end_orphans()
+        if n not in procs:
+            if n not in exit_hook.busy():
+                exit_hook.start(n)
+            exit_hook.wait(n)
+            free_at[n] = dt.datetime.now()
+        wip, bad = keep_work(tid, n, branch)
+        C.notes(f'{tid}.restyle').unlink(missing_ok=True)
+        if sid:
+            drop_session_tmp(sid)
+        tried.add(tid)
+        CANCELLED.add(tid)
+        plansync.release(C, tid)
+        msg = f'cancelled {tid}; {stopped}; ' + (f'its work is on {wip}' if wip else 'nothing to keep') + (
+            f'; {bad}' if bad else '')
+        P.respond(C, 'cancel', tid, json.dumps({'cancelled': True, 'msg': msg, 'wip': wip}))
+        log(msg, None, tid)
+        note(msg)
 
 
 def tell_requests() -> dict[str, dict]:
