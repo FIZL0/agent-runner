@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: writing `control-settings.json` in the Notes dir could fail when two processes (a control session starting, or the control server) wrote it at the same moment: both used one temp file name, so the second move could find it gone and a control start could fail with FileNotFoundError. Each writer now has a temp file of its own, removed when the move fails (B806).
 ## 0.68.0 (2026-11-25)
 
 - Added: a shared tool in runner.toml may have a `page` (an http/https address, or `:PORT` of this machine) and a `start` command, served and started as a device's web page is, by `run device start|stop|show NAME` and POST/GET /tools (F428a).
