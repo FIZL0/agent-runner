@@ -1,3 +1,4 @@
-/* B818a: a device's page: a sparkline's height, and room for the meters' longer names */
+/* B818a: a device's page: a sparkline's height, and room for the meters' longer names; B818b: Clean's tick list */
+.devtick{display:flex;gap:var(--s3);align-items:center;min-height:var(--tap);cursor:pointer} .devtick input{flex:none;width:20px;height:20px;margin:0;accent-color:var(--accent)} .devtick span{min-width:0;overflow-wrap:anywhere} .devsaid{white-space:pre-line}
 .spark{display:block;width:100%;height:28px;color:var(--muted)} .spark polyline{fill:none;stroke:currentColor;stroke-width:1.5;vector-effect:non-scaling-stroke}
 .devcard .meter{grid-template-columns:68px minmax(0,1fr) auto} .devcard .small{overflow-wrap:anywhere}

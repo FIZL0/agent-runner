@@ -37,7 +37,7 @@ Home's /p/KEY/ (B146, site_links), so one device address switches between runner
                                  (provider_login), Home's own (the built-in providers); under /p/KEY the run's, or with
                                  no run up Home's, in that project; never without the key
     GET  /devices?t=TOKEN        F95: Device Vitals, this machine and each peer Home's (vitals.py), and their
-                                 alerts (Needs you); /device?id=ID the vitals page; /vitals/device this
+                                 alerts (Needs you); /device?id=ID sends to the app there; /vitals/device this
                                  machine's; /vitals/clean Clean; /dev/ID/... the same on device ID
 
 The registry (<config>/home.json, <config> being ~/.config/agent-runner, %APPDATA%\\agent-runner on Windows, or
@@ -523,7 +523,16 @@ class HomeHandler(BaseHTTPRequestHandler):
             return self.send(200, png, 'image/png')
         if method == 'GET' and path in ('/', '/index.html'):
             return send_app(self, home_page())  # B769a
-        if path in ('/device', '/devices') or path.startswith(('/dev/', '/vitals/')):  # F95: Device Vitals
+        if method == 'GET' and path == '/device':  # B818b: an old link
+            from agent_runner.vitals import device_link
+            self.send_response(302)
+            self.send_header('Location', device_link(parse_qs(urlsplit(self.path).query)))
+            self.send_header('Content-Length', '0')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Referrer-Policy', 'no-referrer')
+            self.end_headers()
+            return
+        if path == '/devices' or path.startswith(('/dev/', '/vitals/')):  # F95: Device Vitals
             code, out, ctype = self.server.vitals.handle(method, path, parse_qs(urlsplit(self.path).query),
                                                          self.body() if method == 'POST' else b'')
             return self.send(code, out, ctype)
