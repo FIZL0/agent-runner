@@ -487,7 +487,7 @@ const src = ['const esc=', 'const ic=', 'const card=', 'const controlsOf=', 'con
   'const working_=', 'const taskControlsOn=', 'const CTL_ICON=', 'function cardControls(', 'const toolsWords='].map(line).join('')
   + icons + grab('function slotRow(') + grab('function controlsCard(');
 const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return [controlsCard, I]}')(env);
-const out = JSON.parse(process.argv[3]).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw[0]() });
+const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw[0]() });
 console.log(JSON.stringify([out, draw[1]]));
 """
 
@@ -508,8 +508,10 @@ def test_run_card_b763a(tmp: Path) -> None:
     cases = [(snap(0), []), (snap(1), []), (snap(4), busy), (snap(4, paused=True), []),
              (snap(4, stopping=True), []), (snap(0, up=False), [])]
     (tmp / 'driver.js').write_text(RUN_CARD_DRIVER, encoding='utf-8')
-    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps(cases)],
-                       capture_output=True, text=True, timeout=60)
+    case_file = tmp / 'cases.json'  # a file: too long for a Windows command line
+    case_file.write_text(json.dumps(cases), encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), str(case_file)],
+                       capture_output=True, text=True, encoding='utf-8', timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     cards, icons = json.loads(r.stdout)
     icon = {'start': 'play', 'go_on': 'play', 'pause': 'pause', 'stop': 'stop', 'stop_undo': 'undo',
