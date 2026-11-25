@@ -121,7 +121,7 @@ def test_row_actions(tmp: Path) -> None:
     Unpark and Release tests)."""
     fake_repo(tmp)
     page = W.PAGE.read_text(encoding='utf-8')
-    for part in ('actBtns(q.acts,q.id)', 'actSure(q.acts,q.id)', 'S.snap.release_acts', 'if(c.chat){',
+    for part in ('actBtns(acts,q.id)', 'actSure(acts,q.id)', 'S.snap.release_acts', 'if(c.chat){',
                  'ansBtns(n)', 'restBtns(n)', 'actSure(n.acts,n.id)', 'actBtns(acts,c.id)', 'actSure(acts,c.id)'):
         check(part in page, f'the page has {part}')
     for gone in ('data-unpark', "outbox('unpark'", 'data-rel=', "outbox('release'", 'data-later=', 'data-needdrop=',
@@ -241,7 +241,7 @@ def test_parked(tmp: Path) -> None:
     eq(q['F83']['state'], 'parked', 'the model gives a task under Parked state parked')
     app = W.page_html().decode()
     for part in ('<div class="sec">Parked<span class="ln"></span></div>', "Parked: a run won't start it",
-                 '${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button>'):
+                 '${actBtns(acts,q.id)}${chatBtn(q)}</div>'):
         check(part in app, f'the run app has {part}')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
@@ -273,9 +273,8 @@ def test_shelved_f184(tmp: Path) -> None:
     shelved ones; a press keeps its card off and shows the stand-in there."""
     fake_repo(tmp)
     app = W.page_html().decode()
-    for part in ('pk.length||sh.length||shOb', "${pk.map(parkedCard).join('')}${shOb}${sh.map(shelvedCard).join('')}",
-                 '${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>'
-                 '${actSure(q.acts,q.id)}', 'S.snap.queue.concat(S.snap.shelved||[])', "obHidden(S.ob,'shelved')",
+    for part in ('pk.length||sh.length||shOb', "${pk.map(q=>parkedCard(q)).join('')}${shOb}${sh.map(q=>shelvedCard(q)).join('')}",
+                 '${actBtns(acts,q.id)}${chatBtn(q)}</div>${actSure(acts,q.id)}', 'S.snap.queue.concat(S.snap.shelved||[])', "obHidden(S.ob,'shelved')",
                  'if(S.gone)delete S.gone[it.shelved]', "c.confirm.split('{id}').join(tid||'')"):
         check(part in app, f'the run app has {part}')
     if not shutil.which('node'):
@@ -326,8 +325,8 @@ def test_release_row_f131(tmp: Path) -> None:
     """F131, F185: the Plan view's Releases group, above the Queue: each open release once, in its row's words, then the
     dimmed rows that are no task."""
     page = W.PAGE.read_text(encoding='utf-8')
-    check('rs=planReleases(S.snap)' in page and 'rs.map(q=>q.placeholder?nextReleaseCard(q):releaseCard(q))' in page
-          and '.card.relph{opacity' in page, 'the Plan view draws planReleases, a placeholder dimmed')
+    check('planReleases(S.snap).filter(' in page and 'q.placeholder?nextReleaseRow(q):releaseRow(q)' in page
+          and '.srow.relph{opacity' in page, 'the Plan view draws planReleases, a placeholder dimmed')
     if not shutil.which('node'):
         print('  (no node here: the release row script test is skipped)')
         return
@@ -353,10 +352,10 @@ const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf
 const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
 const [controls, v5, v6] = JSON.parse(process.argv[3]);
 const S = {ob: [], taskOpen: {}, sure: null, snap: {controls, queue: [v5, v6], releases: [v5.release, v6.release], release_acts: ['release_wait', 'release_now'], release_said: 'V6 is already queued'}};
-const working_ = () => [{}], cutsOff = () => '', taskRow = q => q.id, obCards = () => '', toast = () => {}, obChange = f => { S.ob = f(S.ob) }, obDrop = (b, c) => b.filter(x => x.cid !== c);
+const working_ = () => [{}], cutsOff = () => '', taskRow = (q, t, more) => q.id + more, obCards = () => '', toast = () => {}, obChange = f => { S.ob = f(S.ob) }, obDrop = (b, c) => b.filter(x => x.cid !== c);
 globalThis.fetch = async () => { throw 0 };
-const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue='].map(line).join('')
-  + slice('const queueGroups=', '/* F185') + line('const releasesOn=') + slice('const planReleases=', 'const planQueue=') + grab('function planCard(') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
+const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planQueue='].map(line).join('')
+  + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto') + slice('const queueGroups=', '/* F185') + line('const releasesOn=') + slice('const planReleases=', 'const planQueue=') + grab('function relCard(') + slice('function newReleaseCard(', '/* F124: the Status') + grab('function obDone(').replace('toast(j.confirm,true);', '')
   + grab('function controlReq(') + line('function controlClick(');
 new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + `
   const out = {rel: relCard(), v5: releaseCard(env.v5), v6: releaseCard(env.v6)};
@@ -402,7 +401,7 @@ def test_task_text_f85(tmp: Path) -> None:
     """F85: a queue row folds open to the task's whole text (plan ID)."""
     fake_repo(tmp)
     page = W.page_html().decode()
-    for part in ('data-task="${esc(q.id)}" aria-expanded="${open}"', "fetch(tq('task/'", '<pre class="tasktext"', "planCard(q,rel)"):
+    for part in ('data-task="${esc(q.id)}" data-list="${esc(list)}" aria-expanded="${open}"', "fetch(tq('task/'", '<pre class="tasktext"', "const planCard=(q,"):
         check(part in page, f'the page has {part}')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
@@ -450,8 +449,9 @@ const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf
 const S = {ob: [], taskOpen: {}, sure: null, snap: null, f: {}};
 const no = () => '', env = {S, planField: no, planWant: no, planAsk: no, obCards: key => S.ob.filter(key).map(x => `[ob ${x.ctl}]`).join(''), taskRow: (q, t) => `${q.id} ${t}`, working_: () => [{}], cutsOff: no,
   ttydLine: no, needsSec: no, controlsCard: no, meterHTML: no, emptyCard: t => t, NO_CONCEPT: '', I: {}, upNext: () => S.snap.queue, LOGO: no, greeting: no, box: no, keysLine: no, homeChips: no, runPill: () => ({text: ''}), esc: no};
-const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const releaseCard=', 'const planQueue=', 'const releasesOn='].map(line).join('')
-  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + ['planCard', 'nextReleaseCard', 'relCard', 'newReleaseCard', 'statusHTML', 'planHTML', 'homeStatus', 'homePlan', 'homeHTML'].map(f => grab(`function ${f}(`)).join('') + line('const homeSums=');
+const src = ['const esc=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const relDrop=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow=', 'const planQueue=', 'const releasesOn='].map(line).join('')
+  + slice('const taskBtns=', '/* F186: a release') + slice('/* F426b: an open release', '/* F131: the auto')
+  + slice('const queueGroups=', '/* F193') + slice('const planReleases=', 'const planQueue=') + ['relCard', 'newReleaseCard', 'statusHTML', 'releasesCard', 'planHTML', 'homeStatus', 'homePlan', 'homeHTML'].map(f => grab(`function ${f}(`)).join('') + line('const homeSums=');
 const draw = new Function('env', 'with(env){' + src.replace(/const /g, 'var ') + '; return () => [planHTML(), statusHTML(), homeHTML()]}')(env);
 const out = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')).map(([snap, ob]) => { S.snap = snap; S.ob = ob; return draw() });
 console.log(JSON.stringify(out));
@@ -565,7 +565,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace
 const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1), slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
 const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
 const S = {f: {}, ob: [], taskOpen: {}, tasks: {}, sure: null, view: 'plan', snap: JSON.parse(process.argv[3])}, I = {chev: '', x: 'x'}, SHEETS = {};
-const card = (h, cls = '', attr = '') => `<div class="card" ${attr}>${h}</div>`, emptyCard = t => card(t), obCards = f => S.ob.filter(f).map(x => card('sent ' + x.say)).join(''), oldRunHTML = esc0 => esc0, releaseCard = () => '', nextReleaseCard = () => '', newReleaseCard = () => '';
+const card = (h, cls = '', attr = '') => `<div class="card" ${attr}>${h}</div>`, emptyCard = t => card(t), obCards = f => S.ob.filter(f).map(x => card('sent ' + x.say)).join(''), oldRunHTML = esc0 => esc0, releaseCard = () => '', newReleaseCard = () => '', taskInView = () => {};
 const controlOf = k => S.snap.controls.find(c => c.key === k), ctlBusy = () => false, ctlSure = () => '', actSure = () => '', MO = {}, HKEY = 'k', T = 't';
 const field = () => root.querySelectorAll('[data-f]').find(x => x.dataset.f === 'planq'), x = () => root.querySelectorAll('[data-planqclear]')[0];
 const ears = {}, n = null, body = root, document = {get activeElement() { return doc.activeElement }, querySelector: field, createElement: () => ({content: new Node(11, '#fragment'), set innerHTML(h) { this.content.innerHTML = h }}),
@@ -574,7 +574,7 @@ const kbFocus = e => e.focus(), $ = () => root, grow = () => {}, calls = []; let
 const setTimeout_ = setTimeout, fetch = url => new Promise((ok, no) => calls.push({url, say: j => ok({json: async () => j}), fail: () => no(Error('down'))}));
 { const setTimeout = f => timers.push(f), clearTimeout = i => { timers[i - 1] = null };
 eval(logic + line('const esc=') + line('const tq=') + slice('const actBtns=', '\n') + '\n' + slice('function setHTML(', '/* F83') + slice('function keepFields(', '/* a press under way')
-  + slice('function fieldHTML(', '/* F189b: a press in the sheet') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + grab('function planCard(') + grab('function parkedCard(') + grab('function shelvedCard(')
+  + slice('function fieldHTML(', '/* F189b: a press in the sheet') + line('const taskIsOpen=') + grab('function taskRow(').trim() + '\n' + grab('async function openTask(') + line('const chatBtn=') + slice('const taskBtns=', '/* F186: a release') + line('const planCard=') + grab('function parkedCard(') + grab('function shelvedCard(')
   + line('const obActs=') + slice('/* F212: the search', '/* F87: the Concepts view') + grab('function setqClear(') + line("document.addEventListener('input',") + slice("/* F114, F204a", "document.addEventListener('visibilitychange'")
   + "function render() { const keep = keepFields(body), h = planHTML(); " + slice('const drew=', '\n').replace("!n&&S.view==='settings'?settingsDraw(body,h):", '') + " if (drew) keep() }"
   + "press = q => { " + slice("if(q('[data-planqclear]'))", "if(q('[data-setqclear]'))") + " };"
@@ -594,7 +594,7 @@ const none = {ok: true, open: [], parked: [], done: [], more: 0};
   S.snap.at = 'later'; render(); out.same = due();
   S.snap.queue = S.snap.queue.filter(q => q.id !== 'F1'); render(); out.moved = [due(), cards().length]; calls[2].fail(); await tick(); out.kept = [root.text.includes('Could not reach the run page.'), cards().length];
   press(s => s === '[data-planqload]'); calls[3].say({...none, q: 'merge', done: [hit('F0', 'Old', 'done')], more: 1}); await tick(); out.again = [secs(), root.text.includes('1 more done task.'), root.text.includes('Could not')];
-  const p = openTask('F0'); out.url = calls[4].url; calls[4].say({ok: true, text: 'whole <text>'}); await p; out.fold = root.text.includes('whole <text>');
+  const p = openTask('F0', 'found:done'); out.url = calls[4].url; calls[4].say({ok: true, text: 'whole <text>'}); await p; out.fold = root.text.includes('whole <text>');
   type('zzz'); due(); calls[5].say({...none, q: 'zzz'}); await tick(); out.none = [secs(), root.text];
   S.ob = [{ctl: '', shelved: 'D3', say: 'Drop D3'}]; render(); out.sent = [secs(), root.text]; S.ob = [];
   type('zzzz'); out.next = root.text; type('zzz'); due(); calls[6].say({...none, q: 'zzz'}); await tick();
@@ -651,5 +651,78 @@ def test_search_f212(tmp: Path) -> None:
     eq(o['lateGone'], [['Queue', 'Parked'], None], 'an answer after the field is emptied changes nothing')
 
 
+PLAN_DRIVER = DOM + r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const line = a => page.slice(page.indexOf(a), page.indexOf('\n', page.indexOf(a)) + 1), slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const grab = a => page.slice(page.indexOf(a), page.indexOf('\n}\n', page.indexOf(a)) + 3);
+const S = {f: {}, ob: [], taskOpen: {}, tasks: {}, sure: null, snap: JSON.parse(process.argv[3])}, I = {chev: '', x: 'x'}, MO = {}, T = 't', HKEY = '';
+const obCards = () => '', oldRunHTML = x => x, emptyCard = t => t, taskInView = () => {}, working_ = () => [], render = () => { root.innerHTML = planHTML() };
+const fetch = async () => ({json: async () => ({ok: true, text: 'whole text'})});
+eval(logic + ['const esc=', 'const tq=', 'const card=', 'const controlsOf=', 'const controlOf=', 'const ctlBusy=', 'const sureHTML=', 'const ctlSure=', 'const obActs=', 'const actBtns=', 'const actSure=', 'const taskIsOpen=', 'const chatBtn=', 'const planCard=', 'const nextReleaseRow='].map(line).join('')
+  + slice('const taskBtns=', '/* F186: a release') + line('const relDrop=') + slice('/* F426b: an open release', '/* F131: the auto') + ['function taskRow(', 'async function openTask(', 'function parkedCard(', 'function shelvedCard(', 'function newReleaseCard('].map(grab).join('')
+  + slice('/* F212: the search', '/* F87: the Concepts view') + "const cutsOff=()=>'';Object.assign(globalThis, {render, openTask});");
+const opened = () => root.querySelectorAll('[data-task]').filter(e => e.getAttribute('aria-expanded') === 'true').map(e => e.dataset.list + ' ' + e.dataset.task);
+const btns = () => root.querySelectorAll('[data-k]').filter(e => e.dataset.k.startsWith('acts:')).map(e => [e.dataset.k, e.all.filter(b => b.nodeName === 'button').map(b => b.text)]);
+(async () => {
+  const out = {}; render(); out.shut = [opened(), planHTML()];
+  await openTask('F1', 'queue'); await openTask('B2', 'queue'); await openTask('D3', 'parked'); await openTask('F83', 'parked'); out.lists = [opened(), btns()];
+  await openTask('V5', 'release'); out.rel = [opened(), btns(), planHTML()];
+  await openTask('F1', 'wait:V5'); await openTask('B2', 'wait:V5'); out.waits = [opened(), root.querySelectorAll('[data-k]').map(e => e.dataset.k)];
+  await openTask('V6', 'release'); out.other = [opened(), root.text];
+  await openTask('V6', 'release'); out.closed = opened();
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_plan_lists_f426b(tmp: Path) -> None:
+    """F426b: the Plan view's one card of releases; an open release opens to the tasks it waits for, each opening too; one
+    row of a list is open; Chat is the last button; the search sticks."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    plan = page.split('const planField=', 1)[1].split('\n', 1)[0]
+    check('<div class="planq">' in plan and re.search(r'\.planq\{position:sticky;top:0;[^}]*background:var\(--bg\)', page), 'the search sticks', plan)
+    check('`${planField()}<div class="col">' in page, 'outside the grid, where a sticky row would go with its own cell')
+    check('openTask(x.dataset.task,x.dataset.list)' in page, 'a press names its list')
+    if not shutil.which('node'):
+        print('  (no node here: the Plan lists script test is skipped)')
+        return
+    row = lambda t, waits, w: {'id': t, 'title': 'Release', 'words': w, 'waits': waits, 'note': ' (not B9)', 'placeholder': False}  # noqa: E731
+    waits = [{'id': 'F1', 'title': 'Board'}, {'id': 'B2', 'title': 'Retry'}, {'id': 'F7', 'title': 'Unseen'}]
+    r5, r6 = row('V5', waits, 'waits for 3: F1 Board, B2 Retry, F7 Unseen'), row('V6', [], 'next')
+    acts = ['queue_priority', 'queue_take', 'queue_drop']
+    q = [{'id': 'F1', 'title': 'Board', 'state': 'ready', 'acts': acts}, {'id': 'B2', 'title': 'Retry', 'state': 'ready', 'acts': acts},
+         {'id': 'F83', 'title': 'Later', 'state': 'parked', 'acts': ['queue_unpark', 'queue_drop']},
+         {'id': 'V5', 'title': 'Release', 'state': 'after', 'acts': acts, 'release': r5},
+         {'id': 'V6', 'title': 'Release', 'state': 'running', 'acts': ['queue_take'], 'release': r6}]
+    old = {'id': 'V4', 'title': 'Release 1.2.0', 'state': 'released', 'words': 'released 10:00', 'placeholder': True}
+    snap = {'queue': q, 'shelved': [{'id': 'D3', 'title': 'Shelf', 'state': 'shelved', 'acts': ['shelved_back']}], 'releases': [r5, r6, old],
+            'release_acts': ['release_now'], 'sessions': [], 'controls': U.controls()}
+    (tmp / 'plan.js').write_text(PLAN_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'plan.js'), str(W.PAGE), json.dumps(snap)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node opens the rows', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    html = o['shut'][1]
+    releases = html.split('>Releases<', 1)[1].split('>Queue<', 1)[0]
+    eq((o['shut'][0], releases.count('class="card'), 'V4' in html), ([], 1, False), 'one card of releases, none landed, all shut')
+    check(releases.index('V5') < releases.index('V6') < releases.index('New release') and 'queue_drop' not in releases, 'V5, V6, then New release', releases)
+    eq(o['lists'][0], ['queue B2', 'parked F83'], 'one row open in each list')
+    for k, labels in o['lists'][1] + o['rel'][1]:
+        eq((labels[-1], labels.count('Chat')), ('Chat', 1), f'{k}: Chat is last')
+    drop = {c['key']: c['label'] for c in U.controls()}['queue_drop']
+    eq(o['rel'][0], ['release V5', 'queue B2', 'parked F83'], 'the release opens with them')
+    eq(dict(map(tuple, ((k, tuple(v)) for k, v in o['rel'][1])))['acts:V5'], (drop, 'Chat'), 'a release has Drop, then Chat')
+    for t in ('F1', 'B2', 'F7'):
+        check(f'data-task="{t}" data-list="wait:V5"' in o['rel'][2], f'it lists {t}')
+    check('waits for 3 (not B9)' in o['rel'][2], 'its line is the count, as the list names them')
+    eq(o['waits'][0], ['release V5', 'wait:V5 B2', 'queue B2', 'parked F83'], 'and its tasks open, one at a time')
+    eq(len(o['waits'][1]), len(set(o['waits'][1])), 'a task open in two lists has keys of its own in each')
+    eq(o['other'][0], ['release V6', 'queue B2', 'parked F83'], 'another release shuts the first')
+    check('whole text' in o['other'][1], 'one that waits for nothing opens to its text', o['other'][1])
+    eq(o['closed'], ['queue B2', 'parked F83'], 'a second press shuts it')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b)]))

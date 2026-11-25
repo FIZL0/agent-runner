@@ -215,36 +215,55 @@ function needReply(id){
   if(!text)return toast('Write your reply first',true);
   outbox('answer',{tid:id,text},{need:id,say:`${id} · replied “${text}”`});
 }
-/* F85: a task's row: one line; a tap folds its whole text (plan ID) open in place */
-function taskRow(q,title,more=''){
-  const open=!!S.taskOpen[q.id], t=S.tasks[q.id];
-  return `<button class="fold" data-task="${esc(q.id)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(q.id)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(open&&q.release?(q.release.all||q.release.words)+(q.release.note||''):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(q.id,(t&&t.text?`<pre class="tasktext" data-k="text:${esc(q.id)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>')+more):''}`;
+/* F85: a task's row: one line; a tap folds its whole text (plan ID) open in place, or `lead` in the text's place. F426b: one
+   row of a `list` is open (S.taskOpen[list], its id); a row inside another ('wait:V1') has keys of its own */
+const taskIsOpen=(list,id)=>S.taskOpen[list]===id;
+function taskRow(q,title,more='',list='queue',lead=''){
+  const open=taskIsOpen(list,q.id), t=S.tasks[q.id], k=list.startsWith('wait:')?list+':'+q.id:q.id;
+  const text=()=>t&&t.text?`<pre class="tasktext" data-k="text:${esc(k)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>';
+  return `<button class="fold" data-task="${esc(q.id)}" data-list="${esc(list)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(k)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(open&&q.release?relWaits(q.release):planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(k,(lead||text())+more):''}`;
 }
-async function openTask(id){
-  S.taskOpen[id]=!S.taskOpen[id];render(true);
-  if(!S.taskOpen[id])return;
+async function openTask(id,list='queue'){
+  const on=!taskIsOpen(list,id);
+  if(on)S.taskOpen[list]=id;else delete S.taskOpen[list];
+  render(true);
+  if(!on)return;
+  taskInView(id,list);
   try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read'),old:oldRun(j)}}
   catch(e){if(!S.tasks[id])S.tasks[id]={err:'Could not reach the run page: fold it and open it again'}}
-  if(S.taskOpen[id])MO.folded=Date.now();  // what the press opened goes on to its words
+  if(taskIsOpen(list,id))MO.folded=Date.now();  // what the press opened goes on to its words
   render(true);
 }
+/* F426b: the row that closed above may have taken the opened one up out of view, or under the search */
+function taskInView(id,list){
+  const b=$('body'), el=[...b.querySelectorAll('[data-task]')].find(x=>x.dataset.task===id&&x.dataset.list===list), bar=b.querySelector('.planq');
+  if(!el)return;
+  const d=el.getBoundingClientRect().top-flying(el)-b.getBoundingClientRect().top-(bar?bar.offsetHeight:0)-22;  // its card's top too
+  if(d<0)scrollGlide(b,b.scrollTop+d);
+}
+/* a task's options: Chat is the last (F426b) */
+const chatBtn=q=>`<button class="btn" data-about="plan:${esc(q.id)}">Chat</button>`;
+const taskBtns=(q,acts=q.acts)=>`<div class="btns" data-k="acts:${esc(q.id)}">${actBtns(acts,q.id)}${chatBtn(q)}</div>${actSure(acts,q.id)}`;
 /* F186: a release's Drop, there until it starts (ui_model's `acts`) */
 const relDrop=q=>(q.acts||[]).filter(k=>k==='queue_drop');
-const releaseCard=q=>planCard(q,true);
-function planCard(q,rel){
-  const drop=rel===true?relDrop(q):[];
-  return card(`${taskRow(q,(q.release&&q.release.title)||q.title||q.id,`<div class="btns"><button class="btn" data-about="plan:${esc(q.id)}">Chat</button>${actBtns(q.acts,q.id)}</div>${actSure(q.acts,q.id)}`)}${!S.taskOpen[q.id]&&drop.length?`<div class="btns" data-k="acts:${esc(q.id)}">${actBtns(drop,q.id)}</div>${actSure(drop,q.id)}`:''}`,'',`data-k="task:${esc(q.id)}"`);
+const planCard=(q,list='queue')=>card(taskRow(q,q.title||q.id,taskBtns(q),list),'',`data-k="task:${esc(q.id)}"`);
+/* F426b: an open release: it opens to the tasks it waits for, each a row that opens too; one that waits for none, to its text */
+const relWaits=r=>((r.waits||[]).length?`waits for ${r.waits.length}`:r.words)+(r.note||'');
+function releaseRow(q,list='release'){
+  const r=q.release, in_='wait:'+q.id;
+  const one=w=>{const t=(S.snap.queue||[]).find(x=>x.id===w.id);
+    return `<div class="srow" data-k="${esc(in_)}:${esc(w.id)}">${taskRow(t||{...w,state:'open'},(t||w).title||w.id,t?taskBtns(t).replace('data-k="acts:',`data-k="acts:${esc(in_)}:`):'',in_)}</div>`};
+  return taskRow(q,r.title||q.title||q.id,taskBtns(q,relDrop(q)),list,(r.waits||[]).length?`<div class="waits">${r.waits.map(one).join('')}</div>`:'');
 }
-function nextReleaseCard(r){  // F131, F185: a release that is no open task (the auto release's count, the last one released), dimmed
-  return card(`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc((r.id?r.id+' · ':'')+(r.words||''))}</span></div></div>`,'relph');
+const releaseCard=(q,list)=>card(releaseRow(q,list),'',`data-k="task:${esc(q.id)}"`);
+/* F131: the auto release's count, which is no open task, dimmed */
+const nextReleaseRow=r=>`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc((r.id?r.id+' · ':'')+(r.words||''))}</span></div></div>`;
+function parkedCard(q,list='parked'){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
+  return card(taskRow(q,q.title||q.id,'',list)+taskBtns(q),'',`data-k="task:${esc(q.id)}"`);
 }
-function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
-  return card(`${taskRow(q,q.title||q.id)}
-    <div class="btns" data-k="acts:${esc(q.id)}">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
-}
-function shelvedCard(q){  // F184: a shelved task: what it waits on the person for, Bring back (plan unshelve), Drop and the usual chat
-  return card(`${taskRow(q,q.title||q.id)}${q.ask?`<span class="askdo" data-k="askdo:${esc(q.id)}">${esc(q.ask)}</span>`:''}
-    <div class="btns" data-k="acts:${esc(q.id)}">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
+function shelvedCard(q,list='parked'){  // F184: a shelved task: what it waits on the person for, Bring back (plan unshelve), Drop and the usual chat
+  return card(`${taskRow(q,q.title||q.id,'',list)}${q.ask?`<span class="askdo" data-k="askdo:${esc(q.id)}">${esc(q.ask)}</span>`:''}
+    ${taskBtns(q)}`,'',`data-k="task:${esc(q.id)}"`);
 }
 function conceptCard(c,i){  // B219a: its one Chat is the new chat view; concept_chat, which starts a session at once, is the TUI's
   const os=c.options||[], acts=(c.acts||[]).filter(k=>k!=='concept_chat'), view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
