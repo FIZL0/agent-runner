@@ -19,7 +19,7 @@ function keptCheck(){
 /* a link to this page, followed in the tab that has it open */
 addEventListener('hashchange',()=>{
   if(HOME_PAGE||!placeOf('',location.hash,!!HB).link)return;
-  takePlace();renameLeave(S.thread);S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();if(S.needGo)needGo();
+  takePlace();if(S.ren)renameLeave(S.thread);S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();if(S.needGo)needGo();
 });
 /* F150: a link to an item of Needs you: its sheet, once the run's word is there */
 function needGo(){const id=S.needGo;if(!id||!S.snap.at)return;S.needGo='';if(needOf(id))needOpen(id)}
