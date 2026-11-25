@@ -371,9 +371,18 @@ def test_closed(tmp: Path):
     unblock('your answer (DECIDE: What now for F1? ann closed its pull request): once more')
     look(hub)
     session(repo, hub, 'smaller')
-    look(hub)
-    look(hub)
+    with pr.edit() as d:
+        d[0]['at'] = 1
+    with mock.patch.object(S, 'log') as log:
+        look(hub)
+    lines = [c.args[0] for c in log.call_args_list]
+    check('F1: its round on pull request #1 is over' in lines, 'the log names the closed one', str(lines))
+    rec = look(hub)
     eq([(x['state'], x['head']) for x in hub.prs], [('CLOSED', 'task/F1'), ('OPEN', 'task/F1')], 'a new pull request')
+    check(rec['number'] == 2 and rec['at'] > 1, 'with a time of its own', str(rec))
+    with pr.edit() as d:  # the run died between opening it and writing that down
+        d[0].update(number=0, url='', pushed='', at=1)
+    check(look(hub)['at'] > 1, 'one found again too')
 
     repo, origin, hub = opened(tmp, 'back')
     hub.prs[0]['state'] = 'CLOSED'
@@ -381,6 +390,19 @@ def test_closed(tmp: Path):
     hub.prs[0]['state'] = 'OPEN'
     rec = look(hub)
     eq((boxes()['F1'], rec['need'], queue()), (' ', None, {}), 'opened again on GitHub: no longer asked')
+
+
+def test_outage(tmp: Path):
+    print('GitHub away: the same trouble is said once, whatever its request id')
+    repo, origin, hub = opened(tmp, 'out')
+    ask = "Something went wrong while executing your query. Please include `{}` when reporting this issue."
+
+    def down(err: str) -> int:
+        with mock.patch.object(S, 'log') as log:
+            pr.look('main', lambda *a: answer(a, code=1, err=err))
+        return len(log.call_args_list)
+    eq([down(ask.format(i)) for i in ('E0C2:3A5F1:1B2C3D:4E5F6A:6560A1B2', '9F01:22B7C:AA01:BB02:6560A1EE')], [1, 0], 'one line')
+    eq([down('HTTP 502'), down('HTTP 502'), down('HTTP 401')], [1, 0, 1], 'another trouble is said')
 
 
 def test_merged(tmp: Path):
@@ -454,7 +476,7 @@ def test_loop(tmp: Path):
     eq(tick.call_args.args, ('main', {'F7', 'F8', 'F9'}), 'running, queued and merging ones')
 
 
-TESTS = [test_review, test_unknown, test_no_reply, test_red, test_conflict, test_fails, test_false_reply, test_closed_unread, test_blocked, test_closed, test_merged,
+TESTS = [test_review, test_unknown, test_no_reply, test_red, test_conflict, test_fails, test_false_reply, test_closed_unread, test_blocked, test_closed, test_outage, test_merged,
          test_pushed_by_hand, test_resume, test_loop]
 
 if __name__ == '__main__':

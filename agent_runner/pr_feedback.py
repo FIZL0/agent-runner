@@ -218,8 +218,9 @@ def look(branch_name: str, got: dict, branch: str, gh: ci.Gh, busy: set[str]) ->
     if rec['pushed'] != rec['head'] or not pr.holds(tid):
         return
     if rec.get('round'):
+        number = rec['number']  # `_end` clears a closed one's
         if _end(rec, got, gh, repo):
-            pr._say(rec['key'], f'{tid}: its round on pull request #{rec["number"]} is over')
+            pr._say(rec['key'], f'{tid}: its round on pull request #{number} is over')
         return
     if got['state'] == 'CLOSED':
         return closed(rec, tid, gh, repo)
