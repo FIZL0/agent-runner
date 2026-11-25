@@ -16,12 +16,11 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import control_harness, control_settled, no_push, pitch, plan as P, plansync, plat, session_theme
+from agent_runner import control_harness, control_settled, no_push, plan as P, plansync, plat, session_theme
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.control_settled import LEAD  # F160: how the runner's own typed line starts
 from agent_runner.config import RUNNER, runner_cmd
 from agent_runner.state import C, commit_plan, git, init, log, MERGE, note, plan_rel, ROOT
-from agent_runner.brief import has_sheet
 from agent_runner.slots import (backend, entries, marker_pid, PRESENCE_ENV, quiet_file, remote_on,
     REMOTE_URL, silent, transcript)
 from agent_runner.merge import gate_alive
@@ -336,63 +335,7 @@ def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
     lines = [ask] if ask else []
     lines += [f'The person attached {attached_name(p)}, saved at "{p}": Read or open it before you answer.'
               for p in images]
-    if ask and (waiting := waiting_for_ask(ask, ask_waiting())):
-        lines.append(ask_waiting_block(waiting))
     return '\n\n'.join(lines)
-
-
-# B54: a handed-on ask carries only the waiting items it plausibly answers: one it names by id, one it shares two
-# words with, or all of them for a bare reply ("yes", "B", "later") whose item it does not name.
-ASK_STOP = frozenset('''about after again also been before being both does done each from have here into just
-like make more much need needs only other over please should some still such than that their them then there
-these they this those very want what when where which while will with would could your runner task item'''.split())
-ASK_REPLY = frozenset('yes no ok okay go later done sure fine approve approved confirm confirmed shelve skip'.split())
-
-
-def ask_words(text: str) -> set[str]:
-    """The words of `text` that can tie an ask to an item: 4+ letters, not ASK_STOP, a plural's s dropped."""
-    out = set()
-    for w in re.findall(r'[a-z0-9]+', text.lower()):
-        w = w[:-1] if len(w) > 4 and w.endswith('s') and not w.endswith('ss') else w
-        if len(w) >= 4 and w not in ASK_STOP:
-            out.add(w)
-    return out
-
-
-def waiting_for_ask(ask: str, waiting: str) -> str:
-    """B54: the lines of `waiting` ('- ID: ask' each) that the handed-on `ask` plausibly answers; '' for none, so a
-    hand-off about something else carries no item and no order to settle one."""
-    words = re.findall(r'[a-z0-9]+', ask.lower())
-    if words and len(words) <= 3 and all(w in ASK_REPLY or len(w) == 1 for w in words):
-        return waiting  # a bare reply: it can only be to an item
-    mine = ask_words(ask)
-    keep = []
-    for line in waiting.splitlines():
-        m = re.match(r'-\s*(\S+?):\s*(.*)', line)
-        if not m:
-            continue
-        named = re.search(rf'(?<![A-Za-z0-9]){re.escape(m[1])}(?![A-Za-z0-9])', ask, re.I)
-        if named or len(mine & ask_words(m[2])) >= 2:
-            keep.append(line)
-    return '\n'.join(keep)
-
-
-def ask_waiting_block(waiting: str) -> str:
-    """B84: the Needs you items a handed-on ask carries (B47), fenced off as runner-added and placed after the
-    person's words, so the session answers the person and not the list; the control brief names the tag."""
-    return ('<runner-waiting>\nAdded by the runner, not the person\'s ask. Waiting under Needs you:\n' + waiting +
-            f'\nSettle one by its id (`{control_cmd()} plan confirm|change|shelve ID`, not only a new task) only if the '
-            'words above answer it; else say nothing of these.\n</runner-waiting>')
-
-
-def ask_waiting() -> str:
-    """The items under Needs you, one '- ID: ask' line each, for a handed-on request (B47); '' when none or the
-    plan cannot be read (opening the session matters more)."""
-    try:
-        return '\n'.join(f'- {a[1]}: {P.plain_ask(a[0], a[3], a[5], a[0] == "DECIDE" and has_sheet(a[1]))}'
-                         + (f' {a[4]}' if a[4] and a[0] == 'DECIDE' and has_sheet(a[1]) else '') for a in P.asks() + pitch.rows(C))
-    except (OSError, SystemExit, ValueError):
-        return ''
 
 
 UPLOAD_ID_RE = re.compile(r'^[0-9a-f]{8}-(.+)$')
