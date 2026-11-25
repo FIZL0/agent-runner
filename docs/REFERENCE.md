@@ -1952,7 +1952,8 @@ startedAt, queued); it is removed at exit, and `/live/cN` reads it as `status`, 
 `<notes>/SID.model` holds the model it runs on, written at start and after a fallback switch. In the snapshot the chat's row
 has `model` (the provider's name and model, only for a harness loop chat), and the snapshot's `chat_model` is what a new chat
 runs on (`''` on Claude Code). The new chat card says "The chat starts with your first message, on Codex · …". The read tool
-shows an image (PNG, JPEG, GIF, WebP, up to 5 MB) to the model for every harness loop session; the transcript keeps only its
+shows an image (PNG, JPEG, GIF, WebP, up to 5 MB) to the model for every harness loop session, when the model
+takes images (one on ollama or in `[models.providers]` is told the image was left out); the transcript keeps only its
 path, and an image since deleted is said to be gone. The terminal is drawn again from the last 32,000 characters printed when
 a viewer comes or the size changes, and a resumed chat's terminal starts with the words of its last messages. `/commands` is
 `[]` for it. An ended chat of the other kind than `[models] control` names has no Resume, says why, and is not restarted.

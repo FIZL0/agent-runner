@@ -414,7 +414,7 @@ setInterval(()=>{if(!FD.shown||document.hidden)return;workDraw();if(feedMute()!=
 addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]')){FD.typed=Date.now();if(FD.slim)feedSlim(false)}});
 addEventListener('keydown',e=>{if(FD.slim&&e.target.matches&&e.target.matches('[data-in]')&&e.key!=='Escape')feedSlim(false)});
 /* F406g: the provider's name and model of a chat on the harness loop ('' for another), or of a new one */
-const modelOf=n=>/^c\d+$/.test(n||'')?(sessionOf(n)||{}).model||'':isAgent(n)&&n?'':S.snap.chat_model||'';
+const modelOf=n=>/^c\d+$/.test(n||'')?(sessionOf(n)||{}).model||(FD.n===n&&FD.live&&FD.live.harness?S.snap.chat_model||'Model':''):isAgent(n)&&n?'':S.snap.chat_model||'';
 /* the row above the box: what there is to say, each a sheet; a menu or a question has the key row in its place */
 function sessRow(n){
   const st=feedNow(n);if(st!=='session'&&!(st==='loading'&&sessionOf(n)))return '';  // F206a: there from the first frame, so what stands over it does not move

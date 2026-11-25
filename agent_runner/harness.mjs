@@ -590,7 +590,7 @@ const TOOLS = [
     parameters: { type: 'object', properties: { command: { type: 'string' }, timeout: { type: 'number' } },
       required: ['command'] } },
   { name: 'read', description: `Read a text file: its lines numbered, ${READ_LINES} from offset (1-based) unless limit says otherwise. ` +
-      'An image (PNG, JPEG, GIF, WebP) is shown to you.',
+      'An image (PNG, JPEG, GIF, WebP) is shown to you, when your model takes images.',
     parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number' },
       limit: { type: 'number' } }, required: ['path'] } },
   { name: 'edit', description: 'Replace old_string with new_string in a file. old_string must occur exactly once ' +

@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -142,8 +143,9 @@ def test_screen(page: Page) -> None:
 
 def test_images(page: Page) -> None:
     print('images')
-    shot = K.C.notes('uploads-test.png')
-    shot.write_bytes(PNG)
+    req = urllib.request.Request(f'{page.base}/upload?name=shot.png&t={page.token}', data=PNG, headers={'Content-Type': 'image/png'})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        shot = Path(json.loads(r.read())['path'])
     chat = started(page, 'here is a picture')
     page.act('chat_to', text=f'read: {shot}', to=chat)
     check(answered(sid_of(chat), f'answer to tool ({shot} (image/png)'), 'read names the image', last(chat))
@@ -239,12 +241,13 @@ def test_page(env: Env) -> None:
     page = W.page_html().decode()
     check('sessmodel(){' in page, 'the model chip has its sheet')
     check('i.why' in page, 'an ended chat says why it cannot come back')
+    check('real&&!modelOf(S.thread)?' in page and 'ta&&!modelOf(' in page, 'no / button and no slash menu')
     js = page[page.index('const modelOf='):].split('\n', 1)[0]
     r = subprocess.run(['node', '-e', f"""
-const S={{snap:{{chat_model:'new'}}}}, sessionOf=n=>({{c2:{{model:'m'}},c3:{{}}}})[n], isAgent=n=>!/^(c\\d+|[@+].+)$/.test(n||'');
+const S={{snap:{{chat_model:'new'}}}}, FD={{n:'c8',live:{{harness:true}}}}, sessionOf=n=>({{c2:{{model:'m'}},c3:{{}}}})[n], isAgent=n=>!/^(c\\d+|[@+].+)$/.test(n||'');
 {js}
-console.log(JSON.stringify(['c2','c3','c9','s1','@x','+plan:F1',''].map(modelOf)))"""], capture_output=True, text=True, timeout=60)
-    eq(r.stdout.strip(), '["m","","","","new","new","new"]', 'each chat has its own, a new one what new chats run on', )
+console.log(JSON.stringify(['c2','c3','c8','c9','s1','@x','+plan:F1',''].map(modelOf)))"""], capture_output=True, text=True, timeout=60)
+    eq(r.stdout.strip(), '["m","","new","","","new","new","new"]', 'each chat has its own, a new one what new chats run on', )
 
 
 def main() -> int:
