@@ -12,7 +12,7 @@ from pathlib import Path
 from _check import check, eq, report
 from agent_runner import web as W  # noqa: E402
 from _web import in_tmp  # noqa: E402
-from test_web_talk import READ_DRIVER  # noqa: E402
+from test_web_talk_sound import READ_DRIVER  # noqa: E402
 
 # Safari as read: an element plays only once a tap called its play() or load(); pointerdown of a touch is no tap
 UNLOCK_DRIVER = (READ_DRIVER.split('(async () => {')[0] + r"""
