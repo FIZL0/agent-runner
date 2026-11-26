@@ -22,12 +22,12 @@ class Snapshots:
         try:
             st = S.C.notes('STATE').stat()
             stamp = (st.st_mtime_ns, st.st_size)
-        except Exception:  # noqa: BLE001 - no project or no STATE yet
+        except (OSError, AttributeError):  # no project or no STATE yet
             stamp = None
-        if stamp != self.state_at:
-            self.state_at = stamp
-            self.fresh()
-        return self.gen
+        with self.lock:  # one stream drops the cache once per change, however many streams look
+            if stamp != self.state_at:
+                self.state_at, self.at, self.gen = stamp, 0.0, self.gen + 1
+            return self.gen
 
     def get(self) -> str:
         with self.lock:
