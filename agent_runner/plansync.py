@@ -449,7 +449,7 @@ def share_hint(c) -> str:
     share the plan itself too, not only the claims. '' otherwise (and every time after the first)."""
     if c.plan_repo or not store(c):
         return ''
-    hosts = {cl.who.rsplit('@', 1)[-1] for cl in claims(c).values()} - {socket.gethostname()}
+    hosts = {cl.who.rsplit('@', 1)[-1] for cl in claims(c).values() if '@' in cl.who} - {socket.gethostname()}
     if not hosts or (mark := c.notes('plan-repo-hint')).exists():
         return ''
     mark.write_text(' '.join(sorted(hosts)) + '\n', encoding='utf-8')

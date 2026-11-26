@@ -25,7 +25,8 @@ def default_target(c) -> Path:
 
 
 def join_line(repo: str) -> str:
-    return f'On the other machine, in its checkout: git pull, then agent-runner plan repo-setup {repo}'
+    far = '' if is_url(repo) else ' (a path on this machine: give a URL both machines reach, for two)'
+    return f'On the other machine, in its checkout: git pull, then agent-runner plan repo-setup {repo}{far}'
 
 
 def _heads(target: str, cwd: Path) -> list[str]:
@@ -95,10 +96,13 @@ def setup(c, target: str | None = None) -> list[str]:
     joined = bool(out[0].startswith('joined'))
     _set_toml(root, repo if is_url(repo) else Path(repo).as_posix())
     git('rm', '-r', '-q', '--cached', '--', rel, cwd=root)
-    shutil.rmtree(work)
     git('add', 'runner.toml', cwd=root)
     if (r := git('commit', '-qm', f'plan: the plan moves to its own repo, {repo}', cwd=root)).returncode:
-        raise SystemExit(f'agent-runner: cannot commit runner.toml: {r.stderr.strip() or r.stdout.strip()}')
+        git('reset', '-q', '--', rel, 'runner.toml', cwd=root)
+        git('checkout', '-q', 'HEAD', '--', 'runner.toml', cwd=root)
+        raise SystemExit(f'agent-runner: cannot commit runner.toml (the plan stays in {rel}/): '
+                         f'{r.stderr.strip() or r.stdout.strip()}')
+    shutil.rmtree(work)  # only once the commit is made; the working copy is in `keep` until it is published
     out.append('runner.toml: [plan] repo set and committed on this branch')
     n = CF.Config(root)
     plansync.ensure_clone(n)
