@@ -266,7 +266,7 @@ const releaseCard=(q,list)=>card(releaseRow(q,list)+rowMenu(q,list)+rowGrip(q,li
 /* F131: the auto release's count, which is no open task, dimmed; F195c: in the Queue */
 const nextReleaseRow=r=>`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc((r.id?r.id+' · ':'')+(r.words||''))}</span></div></div>`;
 const nextReleaseCard=r=>card(nextReleaseRow(r)+rowMenu(r)+rowGrip(r),'relph','data-k="rel:next"');
-const queueCard=q=>q.removed?removedCard(q):q.placeholder?nextReleaseCard(q):q.release?releaseCard(q):planCard(q);
+const queueCard=q=>q.removed?removedCard(q):typeof partCard==='function'&&(q.partOf||partsOf(q).length)?partCard(q):q.placeholder?nextReleaseCard(q):q.release?releaseCard(q):planCard(q);
 function parkedCard(q,list='parked'){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
   return card(taskRow(q,q.title||q.id,'',list)+taskBtns(q),'',`data-k="task:${esc(q.id)}"`);
 }
