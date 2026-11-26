@@ -442,3 +442,16 @@ def ticks(c) -> Path:
     d = c.notes('ticks', '.')
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def share_hint(c) -> str:
+    """F460: once, when claims come from another host and the plan is still in the code repo: plan repo mode would
+    share the plan itself too, not only the claims. '' otherwise (and every time after the first)."""
+    if c.plan_repo or not store(c):
+        return ''
+    hosts = {cl.who.rsplit('@', 1)[-1] for cl in claims(c).values()} - {socket.gethostname()}
+    if not hosts or (mark := c.notes('plan-repo-hint')).exists():
+        return ''
+    mark.write_text(' '.join(sorted(hosts)) + '\n', encoding='utf-8')
+    return (f'plan: {", ".join(sorted(hosts))} also runs this project; each machine has its own TODO.md until a code '
+            'merge. `agent-runner plan repo-setup [URL]` puts the plan in its own repo, shared at once.')
