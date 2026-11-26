@@ -813,7 +813,7 @@ class Run:
         if not self.merging:  # blocks freed by merges made while no run was up (a merge started above reopens by itself)
             with MERGE:
                 reopen_landed(branch, 'a merge before this run')
-        threading.Thread(target=push_left, args=(branch, 'run start'), name='push-left', daemon=True).start()  # B841
+        threading.Thread(target=push_left, args=(branch, 'run start'), name='push-left').start()  # B841
         prune_wips(branch, force=True)  # F23: wip/<ID> of tasks ticked or dropped while no run was up
         block_asks(branch)  # F102: an ask an earlier run parked but could not block yet
         self.tried |= unblocked_asks()  # still not blocked: no slot starts it before its block lands
@@ -1064,6 +1064,7 @@ class Run:
             clear_stop()
             log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}', EV_STOPPED)
             if POWER:
+                push_left(self.branch, 'run end')  # B841: before the power goes
                 power_now()
             return 0
         quiet = not procs and not waiting and not merging and not exit_hook.busy() and all(dt.datetime.now() >= t for t in self.free_at.values())
@@ -1084,6 +1085,8 @@ class Run:
                 self.idle_said, self.idle_at = True, time.time()
                 if not stopping() and auto_release(self.branch, idle=True):  # F63: once per idle spell
                     return None  # the release it queued starts on the next tick
+            if power_due(self.idle_at) and not stopping():
+                push_left(self.branch, 'run end')  # B841: before an idle shutdown
             if shut_down(self.idle_at):
                 return 0
         return None

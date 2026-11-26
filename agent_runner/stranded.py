@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from agent_runner.config import cfg
-from agent_runner.gitops import _git, _net
+from agent_runner.gitops import _git, _net, _renumber
 
 TRIES = 5
 
@@ -26,8 +26,8 @@ def ahead(cwd: Path, branch: str = 'main') -> int:
 
 def unpushed_line(cwd: Path, branch: str = 'main') -> str:
     """The status warning for landed work not on the remote, or ''."""
-    c = cfg(cwd)
-    if not c.push_merge or c.approve or getattr(c, 'pr', False):
+    c = cfg(cwd)  # as `land.pushes_main`: with no gate, only a push_merge the config sets itself pushes
+    if not c.push_merge or c.approve or c.pr or not (c.run['test'] or 'push_merge' in c.given.get('git', ())):
         return ''
     if not (n := ahead(cwd, branch)):
         return ''
@@ -59,6 +59,7 @@ def push_stranded(cwd: Path, branch: str = 'main', tries: int = TRIES) -> str:
                     return f'! {branch} is not pushed: could not make a worktree to merge {remote}/{branch} in'
                 try:
                     w = _git(wt)
+                    _renumber(wt, up, branch)  # B822a: this side's new ids the remote uses too get new ones
                     if w('merge', '-q', '--no-edit', '-m', f'Merge {remote}/{branch} into {branch}', up).returncode:
                         w('merge', '--abort')
                         return (f'! {branch} is not pushed: merging {remote}/{branch} conflicts; '

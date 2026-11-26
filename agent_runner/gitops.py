@@ -132,7 +132,8 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
     if shared:
         net('fetch', '-q', remote)
         return (f'! {branch} did not push: {remote}/{branch} has moved (or refused it). Not merged here, since '
-                f'that merge would go out untested: the next merge takes it in before its gate, then pushes.')
+                f'that merge would go out untested: the next merge takes it in before its gate, then pushes '
+                f'(or the run\'s end or next start: `stranded.push_stranded`).')
     if g('branch', '--show-current').stdout.strip() != branch:
         return f'! {branch} did not push (it is committed locally; push it by hand)'
     if net('fetch', '-q', remote).returncode:  # the remote cannot be reached: it has not "moved"
