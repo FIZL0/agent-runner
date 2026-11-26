@@ -286,7 +286,7 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
     keys = {'slots': lambda: [f'slots {a.count}'], 'key': lambda: a.keys}.get(
         cmd, lambda: [f'{cmd[0]} {"off" if a.off else "on"}'])()
     send_key(*keys)
-    print(f'sent to the run: {", ".join(keys)} (it acts within 10 s; `{C.command} status` shows it)')
+    print(f'sent to the run: {", ".join(keys)} (it acts within a second; `{C.command} status` shows it)')
     return 0
 
 
