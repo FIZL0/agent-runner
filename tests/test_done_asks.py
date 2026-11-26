@@ -29,7 +29,7 @@ def make(t: Path) -> tuple[Path, dict]:
     (root / '.runner').mkdir()
     (root / 'plan').mkdir()
     (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Queue\n\n' + ''.join(
-        f'- [ ] **{t}** job {t} | files: {t}.py\n' for t in ('F1', 'F2', 'F3', 'F4', 'V5', 'R17')), encoding='utf-8')
+        f'- [ ] **{t}** job {t} | files: {t}.py\n' for t in ('F1', 'F2', 'F3', 'F4', 'V5', 'R17', 'K9')), encoding='utf-8')
     git(root, 'add', '-A')
     git(root, 'commit', '-qm', 'start')
     R.init(root)
@@ -108,6 +108,15 @@ def test_done(root: Path, env: dict) -> None:
     blocked('R17', 'BLOCKED: waits for V5', '--until', 'version:9.9.9')
     blocked('R17', 'release V5 lands')  # no label: the wait is read off the words
     has(todo.read_text(encoding='utf-8'), r'R17.*BLOCKED: \(after V5\) .*release V5 lands', 'and waits on it')
+
+    print('a CONFIRM that names /concept/<ID> of a task with no concept filed (B839)')
+    refused('F3', 'CONFIRM: Watch both videos; the page address ends in /concept/F3', 'no concept is filed for F3',
+            '"shots"', '.mp4', 'a link')
+    g = root / '.runner' / 'asks' / 'F3.json'
+    g.write_text('{"steps": ["Open the page at /concepts/F2"]}', encoding='utf-8')
+    refused('F3', 'CONFIRM: Watch both videos and say which reads better', 'no concept is filed for F2')
+    g.unlink()
+    blocked('F3', 'CONFIRM: Pick an option on the page /concept/K9')  # a filed concept is fine
 
     print('a good line')
     blocked('F4', 'BLOCKED: Log in to Codex on the Mac; `codex login` says: not signed in')
