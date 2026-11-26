@@ -127,7 +127,7 @@ def ask(rows) -> dict | None:
 
 
 def asks(rows) -> list[dict]:
-    """F192b1: the questions (`asks_of`) transcript entries `rows` leave open. The question transcript entries `rows` leave open; None when the person has spoken since, or Claude's turn goes on
+    """F192b1: the questions (`asks_of`) transcript entries `rows` leave open; [] when the person has spoken since, or Claude's turn goes on
     after it (a tool call). F430: messages about it (`is_about`) and Claude's replies to them leave it open, until a reply
     ends on another DECIDE line."""
     from agent_runner.control import message_text, person_turn

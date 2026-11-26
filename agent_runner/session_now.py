@@ -179,11 +179,11 @@ _TASKS: dict[str, tuple[int, list[dict]]] = {}  # transcript -> (its size, its t
 def live(name: str) -> dict:
     """The page's word on session `name`: {'ok', 'status', 'since' (when it began, epoch s), 'mode' (its permission mode
     as the transcript has it), 'queued' (F190b: how many sent messages are queued in it), 'ask' (F192a: the question a chat's last answer ends on,
-    `chat_question.ask`; None for none; F192a3: with 'need' and 'answered', `chat_question.joined`), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
+    `chat_question.ask`; None for none; F192a3: with 'need' and 'answered', `chat_question.joined`; F192b1: 'asks', all its open questions), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
     'tail'), 'harness' (F406g: on the harness loop)}."""
     rec = record(name)
     if not rec:
-        return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'queued': 0, 'ask': None, 'tasks': []}
+        return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'queued': 0, 'ask': None, 'asks': [], 'tasks': []}
     path = transcript(name, rec)
     rows: list[dict] = []
     if path:
