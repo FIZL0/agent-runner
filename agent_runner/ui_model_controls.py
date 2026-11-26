@@ -40,6 +40,11 @@ def _answer_action(key: str, label: str, tui: str, **more) -> dict:
             'fits': lambda r: bool(answer_of(r, key)), 'label_of': lambda r: answer_of(r, key), **more}
 
 
+def taken_row(row: dict) -> bool:
+    """F455b: is queue row `row` a task taken by hand (`under_way_rows`' words), not one that merges or waits to resume."""
+    return bool(row.get('under_way')) and str((row.get('way') or {}).get('words', '')).startswith('Taken')
+
+
 ANSWER_MAX, ANSWER_KEYS = 12, 'abcdefg'  # F180: the most fixed answers a row draws, and the TUI keys of the first ones
 RUN_CONTROLS = (
     {'key': 'slot_add', 'label': 'Slot +1', 'argv': ('slots', '+1'), 'tui': '+', 'where': 'run'},
@@ -86,10 +91,15 @@ RUN_CONTROLS = (
     # tab's ('where' 'release'). 'tui_sure' False: the terminal UI runs it without asking (the page asks).
     # 'confirm_of' (F186): a row's own confirm ('' the entry's), asked by both; the snapshot row's `asks` carries it.
     {'key': 'queue_priority', 'label': 'Priority', 'argv': ('plan', 'edit', '{id}', '--pri', '{pri}'), 'tui': 'p',
-     'where': 'queue', 'fits': lambda r: r.get('state') != 'parked'},
+     'where': 'queue', 'fits': lambda r: r.get('state') != 'parked' and not taken_row(r)},
     {'key': 'queue_unpark', 'label': 'Unpark', 'argv': ('plan', 'edit', '{id}', '--pri', 'normal'), 'tui': 'U',
      'where': 'queue', 'help': 'unpark (a parked task: no J/K or p)', 'fits': lambda r: r.get('state') == 'parked'},
-    {'key': 'queue_take', 'label': 'Do it here', 'ask': 'do {id} here', 'tui': 'H', 'where': 'queue'},
+    {'key': 'queue_take', 'label': 'Do it here', 'ask': 'do {id} here', 'tui': 'H', 'where': 'queue',
+     'fits': lambda r: not taken_row(r)},
+    # F455b: a task taken by hand is cancelled from its queue row (cancel keeps its work and parks it); not one merging
+    {'key': 'queue_cancel', 'label': 'Cancel', 'argv': ('plan', 'cancel', '{id}', '--yes'), 'tui': 'C', 'where': 'queue',
+     'help': 'cancel (a task taken by hand): keep its work and park it', 'confirm': cancel.ASK + ' Cancel {id}?',
+     'fits': taken_row, 'confirm_of': lambda r: cancel.question(r['id'])},
     {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
      'fits': lambda r: not r.get('started'),

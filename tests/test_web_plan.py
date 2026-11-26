@@ -202,7 +202,7 @@ def test_row_actions(tmp: Path) -> None:
     cs = [c for c in U.controls() if c['where'] in ('queue', 'shelved', 'release', 'need', 'concept')]
     opts = [f'Option {j}' for j in range(1, U.ANSWER_MAX + 1)]
     text = lambda c: c['label'].replace('Answer', 'Option') if c['answer'] else ''  # noqa: E731
-    eq(len(cs), 15 + U.ANSWER_MAX, 'the row actions the page draws (C35: Needs you and Concepts too)')
+    eq(len(cs), 16 + U.ANSWER_MAX, 'the row actions the page draws (C35: Needs you and Concepts too)')
     if shutil.which('node'):
         reqs = logic_js([['controlReq', c, {'tid': 'F83', 'sure': True, 'text': text(c), 'note': ' '}] for c in cs])
     else:
@@ -224,7 +224,7 @@ def test_row_actions(tmp: Path) -> None:
                 ran.clear()
                 code, out = post(url, rq)
                 # the stand-in row is parked: priority does not fit; its answers are options: not Yes and No
-                fits = c['key'] not in ('queue_priority', 'need_yes', 'need_no')
+                fits = c['key'] not in ('queue_priority', 'need_yes', 'need_no', 'queue_cancel')  # F455b: not taken by hand
                 eq((code, out.get('ok')), (200, fits), f'{c["label"]} sent from the page: {"runs" if fits else "refused"}')
                 eq(bool(ran), fits, f'{c["label"]}: its command ran or not, as the row allows')
     finally:
