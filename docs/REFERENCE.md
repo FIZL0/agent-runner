@@ -1937,6 +1937,10 @@ web = true                # the run app (see The run app), served by the run on 
                           # log; false: off
 web_port = 8770           # where the run app is served; a port set here stays open on every interface (unless it is
                           # Home's own port)
+web_open = 'everywhere'   # who opens a run app Runner Home does not: everywhere = every interface (LAN, Tailscale); here =
+                          # this machine only (127.0.0.1): its localhost link with its key, and no Tailscale Serve rule.
+                          # Per machine (runner.local.toml); another value stops the load. With Home, Home's address rules
+                          # (F454a)
 web_https = true          # the run app's https address on Tailscale (see The run app), on web_port+1 through `tailscale serve`; false: none
 silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
 control = true            # the run opens no control session of its own; true: it reopens the ones a shutdown cut off and, with remote, keeps the control server up; false: neither (`agent-runner control` still works)

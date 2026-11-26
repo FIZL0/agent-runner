@@ -138,6 +138,16 @@ def site_urls(root: Path | None = None, https=None) -> list[str]:
 LOCAL = '127.0.0.1'
 
 
+def only_here() -> bool:
+    """F454a: `[run] web_open = 'here'`: a page Runner Home does not open is for this machine alone (127.0.0.1)."""
+    return bool(S.C) and S.C.run.get('web_open', 'everywhere') == 'here'
+
+
+def open_bind() -> str:
+    """F454a: the interface a page Runner Home does not open listens on: every one, or 127.0.0.1 with `here`."""
+    return LOCAL if only_here() else '0.0.0.0'
+
+
 def own_links(urls: list[str]) -> list[str]:
     """F165: of a run's own addresses (<notes>/web.url), those another device may open: not the 127.0.0.1 one,
     which is there for Runner Home only and is never shown."""
