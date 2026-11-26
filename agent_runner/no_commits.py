@@ -163,7 +163,7 @@ def _block(tid: str, r: dict, branch: str) -> bool:
 
 # B858: a session the model API turned away (an HTTP 400, invalid_request_error) did no work on its task: the setup
 # (provider, agent version) is wrong, not the task. It does not count, and the run pauses for a person.
-_API_ERR = re.compile(r'API Error:\s*\d{3}|invalid_request_error|"type"\s*:\s*"error"', re.I)
+_API_ERR = re.compile(r'API Error:\s*4(?!29)\d\d|invalid_request_error', re.I)
 SETUP_SAID: list[str] = []  # the setup problems already put under Needs you by this run
 
 

@@ -174,6 +174,8 @@ def test_api_error(repo: Path) -> None:
     eq(ev.read_text(encoding='utf-8').count(f'"kind": "{state.EV_HELD}"') - before, 1, 'one setup item')
     has(ev.read_text(encoding='utf-8'), 'between_tools', "it names the API's message")
     check(N.api_error(err) and not N.api_error('I could not find the brief.'), 'spotted')
+    check(not N.api_error('API Error: 429 rate_limit') and not N.api_error('API Error: 529 overloaded'),
+          'a passing limit or outage is no setup problem')
     state.PAUSED[0] = False
     check(starts(), 'the task stays ready')
     fresh(repo)
