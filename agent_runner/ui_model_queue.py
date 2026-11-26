@@ -46,24 +46,28 @@ def split_queued(ls: list[str], tid: str, i: int, tasks: list[tuple]) -> bool:
 
 def split_parts(ls: list[str], tid: str, i: int, tasks: list[tuple], done: list[str]) -> dict | None:
     """B811b: of the split task at ls[i], `parts` (how many), `landed` (how many of them), `open` ([{id, title}] of the
-    rest) and `words`; None for a task that was not split, or has no part yet. A dropped part is none, and one that was
+    rest), `list` (F453: every part {id, title, landed}: the landed first, then the open in plan order) and `words`; None for a task that was not split, or has no part yet. A dropped part is none, and one that was
     split itself counts once, not its parts too. `done`: DONE.md's lines."""
     if not P.SPLIT.search(ls[i]):
         return None
     known: dict[str, str | None] = {}  # its title while open, None once landed
+    names: dict[str, str] = {}  # F453: every part's title, a landed one's too
     for x, rows in ((done, P.iter_tasks(done)), (ls, tasks)):
         for _, box, t, rest, j in rows:
             if box in ' ~':
-                known[t] = after_name(P.SPLIT.sub('', rest))
+                known[t] = names[t] = after_name(P.SPLIT.sub('', rest))
             elif not P._dropped(x, j):
-                known[t] = None
+                known[t], names[t] = None, after_name(P.SPLIT.sub('', rest))
     kids = P.subtasks(tid, ls[i], known)
     own = [t for t in known if t in kids and not any(
         P.child(p, t) and (known[p] is not None or known[t] is None) for p in kids)]
     if not own:
         return None
     landed = sum(known[t] is None for t in own)
+    order = {t: n for n, (_, _, t, _, _) in enumerate(tasks)}  # F453: plan order, from the plan itself
+    every = [t for t in own if known[t] is None] + sorted((t for t in own if known[t] is not None), key=lambda t: order.get(t, len(order)))
     return {'parts': len(own), 'landed': landed, 'open': [{'id': t, 'title': known[t]} for t in own if known[t] is not None],
+            'list': [{'id': t, 'title': names[t], 'landed': known[t] is None} for t in every],
             'words': f'Split: {landed} of {len(own)} part{"s" * (len(own) != 1)} landed'}
 
 

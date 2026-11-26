@@ -1,0 +1,6 @@
+/* F453: a split task's parts, indented under its card in the Plan queue */
+.card.part{margin-left:calc(var(--s3) * var(--depth,1));border-left:2px solid var(--line2)}
+.partsbar{display:flex;align-items:center;gap:var(--s1);min-height:var(--tap);margin:-6px 0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;touch-action:manipulation;width:100%}
+.partsbar .chev svg{transition:transform var(--dur-fast) var(--ease)} .partsbar[aria-expanded="true"] .chev svg{transform:rotate(90deg)}
+.partsdone{display:grid;gap:var(--s2);border-left:2px solid var(--line2);padding-left:var(--s3);min-width:0}
+.partdone{display:flex;align-items:center;gap:var(--s1);min-width:0;opacity:.55} .partdone .tick{display:grid;color:var(--ok)} .partdone .tick svg{width:16px;height:16px}
