@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: landed work whose push lost the race to another device is no longer stranded when a run ends: on its start and before it exits (once, stop, idle power-off) the run takes the remote in, runs the gate, and pushes, again while the remote keeps moving; `status` and a STOPPED alarm say when it is still unpushed (B841).
 - Added: Settings > Plan has "Share the plan between machines" (a plan repo URL field, empty for one made for you): it runs `plan repo-setup` and shows what it said, with the line the other machine runs (F460a).
 - Added: `[run] web_open` ('everywhere', the default, or 'here'): with 'here' a run page Runner Home does not open listens on 127.0.0.1 only, shows its localhost link with its key, and makes no Tailscale Serve rule; set it per machine in runner.local.toml (F454a).
 - Fixed: on the run page a pressed run control (Pause, Go on, Force, Caps back on, Stop, Take the stop back, the slot ones) shows its result at once: the button, the Run card's words, the state pill and Home's chip follow with a quiet 'Pausing…' mark, held over older snapshots until one agrees or 15 s pass; before, the button read Pause again until a snapshot came, so people pressed twice (B851a).
