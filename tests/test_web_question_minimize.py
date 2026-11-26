@@ -78,5 +78,16 @@ def test_presses(tmp: Path) -> None:
     eq(out[4], ['held'], 'shown again, an option is picked as before')
 
 
+def test_motion() -> None:
+    """B854c: hiding and coming back slide and fade, off under reduced motion."""
+    page = Path(__file__).resolve().parent.parent / 'agent_runner' / 'page'
+    js = (page / '095-question.js').read_text()
+    check("transform:'translateY(12px)'" in js and "ease:'--ease',dur:'--dur'" in js, 'the card slides and fades on one token, about 180ms', js)
+    check('const a=c&&moAnim(c,QUESTION_MOVE,o);if(!a)return set();' in js, 'it keeps its room until it has faded, so nothing jumps')
+    check('if(!el.animate||calm())return null' in (page / '010-shared.js').read_text(), 'moAnim does nothing when calm')
+    check('prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}' in (page / '150-shared.css').read_text(), 'no motion under reduced motion')
+
+
 if __name__ == '__main__':
+    test_motion()
     raise SystemExit(report([in_tmp(f) for f in (test_minimize, test_kept, test_held, test_presses)]))
