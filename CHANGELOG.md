@@ -4,10 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+<<<<<<< HEAD
 - Fixed: on the run page a pressed run control (Pause, Go on, Force, Caps back on, Stop, Take the stop back, the slot ones) shows its result at once: the button, the Run card's words, the state pill and Home's chip follow with a quiet 'Pausing…' mark, held over older snapshots until one agrees or 15 s pass; before, the button read Pause again until a snapshot came, so people pressed twice (B851a).
 - Added: `plan repo-setup [URL|path]` turns plan repo mode on in one step: it makes (or takes) the plan repo, moves the plan and its long forms there with their history, sets `[plan] repo` in runner.toml in a commit, and prints the line the other machine runs; `status` says once when claims come from another host while the plan is still in the code repo (F460).
 
 - Fixed: a key sent to the run (`pause`, `force`, `slots`, `key z|x`) is taken within about half a second, also during a long pass, and STATE shows it right after; before, it waited up to 10 s for the loop's next pass (B850a).
+=======
+>>>>>>> origin/task/F453
 - Added: on the run page, a split task's Plan queue card lists all its parts under it in the order they run (the landed ones ticked and dim, then the rest with their own state); an open part is no longer a row of its own elsewhere in the queue, and the list can be shut with its chevron (F453).
 - Fixed: on a computer the words of a chat's live screen can be copied: a drag selects them and copies them at once, as Shift+drag did, Ctrl+C or Cmd+C copies a selection without interrupting, and a right click opens the browser's menu with Copy; before, Claude Code's full screen took the mouse, so a drag selected nothing and Ctrl+C interrupted (B845).
 - Changed: on the run page, a Plan queue row of a task no slot runs but which is under way no longer says only 'Being worked on'; it says 'Taken by the chat <its name>' (pressing the words opens that chat), 'Taken by a chat that has ended', 'Taken by hand' (taken from a terminal or unknown), 'Merging' or 'Waits to resume'; `take` now records the control session that ran it, in the git folder of its take worktree (B846).
