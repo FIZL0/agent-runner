@@ -1655,7 +1655,7 @@ def test_idle_close_stays_quiet_b859():
         w.live.clear()
         with mock.patch.object(U, 'chat_quiet', lambda: 21600.0), \
                 mock.patch.object(K.time, 'time', lambda: now):
-            rows = U.closed_rows()
+            rows = [r for r in U.session_rows({}, [], {}, now) if r['name'].startswith('c')]
             eq([(r['name'], r['state'], r['closed'], r['title']) for r in rows],
                [('c5', 'closed', True, 'Pairing broken'), ('c6', 'closed', True, 'Pairing broken')],
                'listed, closed, with their titles')
