@@ -112,6 +112,9 @@ def need_label(tid: str) -> str:
     if (tid or '').startswith('pr-'):  # F420
         from agent_runner import pr_rows
         return pr_rows.LABEL if any(r[1] == tid for r in pr_rows.asks()) else ''
+    from agent_runner import ready
+    if ready.task_of(tid):  # F445b
+        return ready.LABEL if any(r[1] == tid for r in ready.asks(all=True)) else ''
     try:
         return P._ask(tid, S.C.todo)[0]
     except (SystemExit, OSError, AttributeError):
@@ -137,6 +140,14 @@ def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tu
             one, how = m[1], m[2].lower()
             argv = ([] if how == 'reopen' else ['--drop', 'all']) if one.lower() == 'this' else [f'--{how}', one]
             return ['pitch', 'no', tid, *argv, *why], f'{tid}: the run undoes it'
+        return [], ''
+    if label == 'READY' and button:  # F445b
+        if said.lower() == 'looks good':
+            return ['plan', 'confirm', tid], f'{tid} closed: it looks good'
+        if said.lower() == 'not now':
+            return ['plan', 'shelve', tid], f'{tid} shelved'
+        if said.lower() == 'change it' and note:
+            return ['plan', 'change', tid, note], f'{tid}: a follow-up is filed with your words'
         return [], ''
     if label == 'DECIDE':
         from agent_runner.brief import has_sheet

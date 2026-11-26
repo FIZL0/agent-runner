@@ -29,7 +29,8 @@ def make(t: Path) -> tuple[Path, dict]:
     (root / '.runner').mkdir()
     (root / 'plan').mkdir()
     (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Queue\n\n' + ''.join(
-        f'- [ ] **{t}** job {t} | files: {t}.py\n' for t in ('F1', 'F2', 'F3', 'F4', 'V5', 'R17', 'K9')), encoding='utf-8')
+        f'- [ ] **{t}** job {t} | files: {t}.py\n' for t in ('F1', 'F2', 'F3', 'F4', 'V5', 'R17', 'K9', 'F6', 'F7',
+                                                             'F8')), encoding='utf-8')
     git(root, 'add', '-A')
     git(root, 'commit', '-qm', 'start')
     R.init(root)
@@ -146,9 +147,58 @@ def test_done(root: Path, env: dict) -> None:
     blocked('F4', 'CONFIRM: Press Save on the F3 page and see that it stays saved')
 
 
+def test_ready(root: Path, env: dict) -> None:
+    """F445b: a task whose deliverable is for a person's eyes ticks, and lists under Needs you until answered."""
+    from agent_runner import status, ui_model
+    UA = ui_model
+    print('done --ready ticks and lists a ready item; an ordinary task lists nothing')
+    todo = root / 'plan' / 'TODO.md'
+    r = run(root, 'done', 'F6', 'F6: video', '--ready', 'Showcase video is ready: watch it', '--ready-link',
+            'https://x.test/v.mp4', env=env)
+    check(r.returncode == 0 and 'ticked F6' in r.stdout, 'F6 ticks', r.stdout + r.stderr)
+    for tid in ('F7', 'F8'):
+        r = run(root, 'done', tid, f'{tid}: x', *(('--ready', 'The post is ready: read it') if tid == 'F8' else ()),
+                env=env)
+        check(r.returncode == 0 and f'ticked {tid}' in r.stdout, f'{tid} ticks', r.stdout + r.stderr)
+    has((root / 'plan' / 'DONE.md').read_text(encoding='utf-8'), r'- \[x\] \*\*F6\*\*', 'F6 is ticked')
+    w = run(root, 'plan', 'waiting', env=env).stdout
+    has(w, r'READY\s+ready-F6.*Showcase video is ready: watch it\s+https://x\.test/v\.mp4', 'plan waiting lists it')
+    check('F7' not in w, 'the ordinary task lists nothing', w)
+    n = run(root, 'needs', env=env).stdout
+    has(n, r'ready-F6', 'needs lists it')
+    has(run(root, 'status', env=env).stdout, r'Showcase video is ready: watch it', 'status lists it')
+    needs, _ = ui_model.needs_rows(status.waiting_ok(), __import__('datetime').datetime.now())
+    row = next((x for x in needs if x['id'] == 'ready-F6'), {})
+    eq(row.get('label'), 'READY', 'the run page has the item')
+    eq([a['label'] for a in ui_model.need_answers(row)], ['Looks good', 'Change it', 'Not now'], 'its answers')
+    check(not any(x['id'] in ('F7', 'ready-F7') for x in needs), 'and not the ordinary task')
+    eq(UA.answer_argv('ready-F6', 'Looks good', True)[0], ['plan', 'confirm', 'ready-F6'], 'Looks good confirms')
+    eq(UA.answer_argv('ready-F6', 'Not now', True)[0], ['plan', 'shelve', 'ready-F6'], 'Not now shelves')
+    eq(UA.answer_argv('ready-F6', 'Change it', True, 'shorter')[0], ['plan', 'change', 'ready-F6', 'shorter'],
+       'Change it with words changes')
+
+    print('each answer does what it says')
+    run(root, 'plan', 'shelve', 'ready-F6', env=env)
+    check('ready-F6' not in run(root, 'plan', 'waiting', env=env).stdout, 'Not now: off Needs you')
+    has(run(root, 'plan', 'waiting', '--all', env=env).stdout, r'ready-F6.*\(shelved\)', 'waiting --all has it')
+    run(root, 'plan', 'unshelve', 'ready-F6', env=env)
+    has(run(root, 'plan', 'waiting', env=env).stdout, 'ready-F6', 'unshelve brings it back')
+    r = run(root, 'plan', 'change', 'ready-F6', 'make it shorter', env=env)
+    check(r.returncode == 0 and 'stays done' in r.stdout, 'Change it files a follow-up', r.stdout + r.stderr)
+    t = todo.read_text(encoding='utf-8')
+    has(t, r'- \[ \] \*\*F\d+\*\* \(follow-up, normal\) Change what F6 made \(job F6\): make it shorter \| files: F6\.py',
+        'with their words and its files')
+    has((root / 'plan' / 'DONE.md').read_text(encoding='utf-8'), r'- \[x\] \*\*F6\*\*', 'F6 stays done')
+    r = run(root, 'plan', 'confirm', 'ready-F8', env=env)
+    check(r.returncode == 0, 'Looks good closes', r.stdout + r.stderr)
+    w = run(root, 'plan', 'waiting', '--all', env=env).stdout
+    check('ready-F6' not in w and 'ready-F8' not in w, 'nothing is left', w)
+
+
 def test_prompt(root: Path) -> None:
     print('the brief says it')
     p = R.prompt_for('F3', 1, 1, root, 'main')
+    check('`--ready "<what is ready: what to do>"`' in p, 'the brief says when to use --ready', p)
     for k in ('It starts with what the person does, in words a person who never saw the task understands, and the reason '
               'comes second; it names no task id without that task\'s title.',
               'A wait on a task or a release is `--after <ID>`, and a wait a check can read is `--until <CHECK>` '
@@ -163,6 +213,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         root, env = make(Path(t).resolve())
         test_done(root, env)
+        test_ready(root, env)
         test_prompt(root)
     return report([])
 

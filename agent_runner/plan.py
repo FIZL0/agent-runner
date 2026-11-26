@@ -1970,7 +1970,7 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
 ASKED = re.compile(r' ?\(asked (\d{4}-\d\d-\d\d \d\d:\d\d)\)')
 REPLY_HINT = {'CONCEPT': 'reply A/B/C', 'CONFIRM': 'reply yes/no', 'DECIDE': 'reply with your answer',
               'BLOCKED': 'reply done once it is', 'PITCH': 'reply approve or not this',
-              'TOOL': 'this clears once it is back', 'PR': 'this clears once it is merged or closed', 'STUCK': 'reply with what to do'}
+              'TOOL': 'this clears once it is back', 'READY': 'reply looks good, change it or not now', 'PR': 'this clears once it is merged or closed', 'STUCK': 'reply with what to do'}
 
 
 def needs_cfg() -> dict:
@@ -3248,8 +3248,9 @@ def _p_revise(a, x):
 
 def _p_waiting(a, x):
     every = bool(a.all)
-    from agent_runner import pitch, pr_rows
-    w = asks(all=every) + [r[:7] for r in pitch.rows(cfg()) + pr_rows.asks(cfg())]  # F98, F420
+    from agent_runner import pitch, pr_rows, ready
+    w = asks(all=every) + [r[:7] for r in pitch.rows(cfg()) + pr_rows.asks(cfg())
+                           + ready.asks(cfg(), all=every)]  # F98, F420, F445b
     print('\n'.join('  '.join(s for s in (label, t, title, '' if label == 'CONCEPT' else what, u,
                                           f'(concept {k})' if k else '', '(shelved)' if sh else '') if s)
                     for label, t, k, what, u, title, sh in w)
@@ -3260,11 +3261,17 @@ def _p_waiting(a, x):
 
 
 def _p_confirm(a, x):
+    from agent_runner import ready
+    if ready.task_of(a.id):  # F445b: Looks good
+        return x.say(ready.good(a.id, x.c))
     t = _ask_or_parked(a.id, x.todo)[1]  # a concept's build: approving it says when it is too big (F177)
     return x.say(confirm(a.id, _text(a)) + big_note(t, x))
 
 
 def _p_change(a, x):
+    from agent_runner import ready
+    if ready.task_of(a.id):  # F445b: Change it
+        return x.say(ready.change(a.id, _text(a), x.c, x.todo, x.done))
     return x.say(change(a.id, _text(a)) + big_note(a.id, x))
 
 
@@ -3297,10 +3304,16 @@ def _p_concept_opened(a, x):
 
 
 def _p_shelve(a, x):
+    from agent_runner import ready
+    if ready.task_of(a.id):  # F445b: Not now
+        return x.say(f'shelved {ready.shelve(a.id, True, x.c)}: off {needs_cfg()["heading"]} (`{PROG} unshelve` brings it back)')
     return x.say(f'shelved {shelve(a.id)}: still blocked, off {needs_cfg()["heading"]} (`{PROG} unshelve` brings it back)')
 
 
 def _p_unshelve(a, x):
+    from agent_runner import ready
+    if ready.task_of(a.id):
+        return x.say(f'{ready.shelve(a.id, False, x.c)} is back on {needs_cfg()["heading"]}')
     return x.say(f'{unshelve(a.id)} is back on {needs_cfg()["heading"]}')
 
 
