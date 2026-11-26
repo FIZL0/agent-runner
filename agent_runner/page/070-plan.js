@@ -61,7 +61,7 @@ function needBtns(n,i,more=''){
 }
 /* F411: an item's page: its link, or the run page's own copy of a pick sheet with no claude.ai page */
 const needPage=n=>n.url||(n.page?tq(n.page):'');
-const needCard=(n,i)=>card(needTap(n,S.snap.kinds)+needBtns(n,i),'need',`data-k="need:${esc(n.id)}"`);
+const needCard=(n,i)=>card(needTap(n,S.snap.kinds)+conceptFrame(n)+needBtns(n,i),'need',`data-k="need:${esc(n.id)}"`);
 /* F162: the popup of one Needs you item: everything about it, its answers always on screen at the foot */
 const needOf=id=>((S.snap&&S.snap.needs)||[]).find(n=>n.id===id);
 const shotUrl=s=>tq('shot/'+s.src.split('/').map(encodeURIComponent).join('/'));

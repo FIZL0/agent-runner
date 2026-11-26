@@ -55,3 +55,11 @@ function conceptsHTML(){
     ${obCards(x=>x.concept)}${cs.length?cs.map(conceptCard).join(''):emptyCard(`${NO_CONCEPT}`)}</div>`;
 }
 /* F83: where each view was scrolled to (S.at), whether Talk follows its newest words (S.pin) */
+/* F463: a concept item's options page, framed in its Needs you card (the run page's own copy, sandboxed, lazy):
+   about 60vh, Expand to its full height; Open in claude.ai beside it when it has a page there */
+function conceptFrame(n){
+  if(!n.frame)return '';
+  const full=!!(S.frameFull||{})[n.id], id=esc(n.id);
+  const cl=n.url&&/^https?:/.test(n.url)?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open in claude.ai ${I.ext}</a>`:'';
+  return `<div class="cframe${full?' full':''}" data-k="cframe:${id}"><iframe src="${esc(tq(n.frame))}" sandbox="allow-scripts" loading="lazy" referrerpolicy="no-referrer" title="${esc(n.title||n.id)}: its options"></iframe>
+    <div class="btns tight"><button class="btn" data-framefull="${id}" aria-expanded="${full}">${full?'Shrink':'Expand'}</button>${cl}</div></div>`}

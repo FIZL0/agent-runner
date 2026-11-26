@@ -123,6 +123,15 @@ def concept_options(path: str) -> list[dict]:
     return opts
 
 
+def concept_frame(row: dict) -> str:
+    """F463: the run page's own copy of a concept item's options page ('concept/<K id>', served by web.py), for
+    its Needs you card to show framed; '' for no concept, or a concept with no local copy."""
+    if row.get('label') != 'CONCEPT':
+        return ''
+    k = row.get('concept') or row.get('id') or ''
+    return f'concept/{k}' if k and (row.get('copy') or concept_copy(k)) else ''
+
+
 def need_answers(row: dict) -> list[dict]:
     """C33: the answers that fit a Needs you row, the one rule for the run page, the terminal UI and the chat
     text: [{'label', 'value'}], the first one the main button. Yes / No for a CONFIRM or a yes-or-no ask, a
