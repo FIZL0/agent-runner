@@ -308,6 +308,109 @@ def offer_audit(root: Path) -> str | None:
         f'no audit by itself ([run] auto_audit = false in {f.name}: commit it; once committed, Settings on the run page can turn it on)'
 
 
+def offer_web_open(root: Path) -> str | None:
+    """F454b: ask at a terminal, once for this machine, who can reach the run page ([run] web_open: everywhere, the
+    default, or here). The answer goes to runner.local.toml, so it is not asked again; Enter takes the default;
+    Ctrl-C or Ctrl-D leaves it open. The line to say about it; None when nothing was asked. Never fails setup."""
+    from agent_runner import config as CF
+    if not at_terminal():
+        return None
+    try:
+        snap = CF.settings_snapshot(root)
+        row = next(k for t in snap['tables'] if t['table'] == 'run' for k in t['keys'] if k['key'] == 'web_open')
+    except (Exception, SystemExit):  # a config that does not load is the session's to mend
+        return None
+    if not snap['ok'] or row['has_project'] or row['has_device']:
+        return None
+    try:
+        while True:
+            a = input('Who can reach the run page: other devices too (default) or only this machine? '
+                      '[Everywhere/here] ').strip().lower()
+            if a in ('', 'e', 'everywhere', 'h', 'here'):
+                break
+            print('Answer everywhere or here (Enter: everywhere).')
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+    value = 'here' if a in ('h', 'here') else 'everywhere'
+    try:
+        f = CF.local_file(root) or CF.ensure_local(root)
+        out = CF.setting_edit(f.read_bytes(), 'run', 'web_open', value, name=f.name)
+        CF.write_whole(f, out, f.stat().st_mode & 0o777)
+    except (OSError, ValueError) as e:
+        return f'[run] web_open is not written to {CF.LOCAL}: {e}'
+    CF._cfg.cache_clear()
+    return ('the run page opens on this machine only' if value == 'here' else 'the run page opens on your other devices too') + \
+        f' ([run] web_open = "{value}" in {f.name}; Settings can change it)'
+
+
+def offer_home(root: Path, home=None) -> list[str]:
+    """F456: offer Runner Home, one address for every project on this device, when it is not installed: at a terminal
+    ask [Y/n], and a yes runs `home install` (which prints its links) and lists this project in Home if no scanned
+    folder holds it. With Home installed, only offer to add the project. A no or Ctrl-C changes nothing (asked again
+    next setup); a failed install is said, never fails setup. The lines to say about it."""
+    if home is None:
+        from agent_runner import home
+    try:
+        on = home.home_on()
+    except Exception:
+        return []
+    def listed() -> bool:
+        try:
+            return root.resolve() in [p.resolve() for p in home.projects()]
+        except Exception:
+            return True  # a registry that does not load: leave it alone
+    def add() -> str:
+        try:
+            ok, said = home.add_project(str(root))
+        except Exception as e:
+            ok, said = False, str(e)
+        return said if ok else f'{root.name} is not added to Runner Home: {said} (`{RUNNER} home add {root}`)'
+    if not at_terminal():
+        if on:
+            return [] if listed() else [f'Runner Home does not list {root.name}: add it with `{RUNNER} home add {root}`']
+        return [f'Runner Home is not installed: `{RUNNER} home install` gives one address for every project on this device']
+    try:
+        if on:
+            if listed():
+                return []
+            a = input(f'Runner Home does not list {root.name}: add it? [Y/n] ').strip().lower()
+            return [add()] if a in ('', 'y', 'yes') else [f'{root.name} is not in Runner Home (`{RUNNER} home add {root}`)']
+        a = input('Install Runner Home, one address for every project on this device? [Y/n] ').strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return [] if on else [f'Runner Home is not installed (`{RUNNER} home install`)']
+    if a not in ('', 'y', 'yes'):
+        return [f'Runner Home is not installed (`{RUNNER} home install`; setup asks again next time)']
+    try:
+        code = home.install()
+    except KeyboardInterrupt:
+        code = 'interrupted'
+    except Exception as e:
+        code = str(e)
+    except SystemExit as e:
+        code = f'exit {e.code}'
+    if code != 0:
+        try:
+            home.mark_installed(False)  # install turns Home on first: a failed one leaves it off, asked again
+        except Exception:
+            pass
+        return [f'Runner Home was not installed ({code if isinstance(code, str) else f"exit {code}"}): '
+                f'try `{RUNNER} home install` again']
+    out = ['Runner Home is installed']
+    if not listed():
+        out.append(add())
+    return out
+
+
+def home_installed() -> bool:
+    try:
+        from agent_runner import home
+        return home.home_on()
+    except Exception:
+        return False
+
+
 def no_claude(root: Path) -> str:
     """F406d: what cannot run while this machine has no Claude Code, in one line; '' when it has one."""
     from agent_runner import setup_models as M
@@ -371,6 +474,12 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     for line in offer_models(root):
         said.append(line)
         print(f'agent-runner setup: {line}')
+    for line in offer_home(root):  # F456
+        said.append(line)
+        print(f'agent-runner setup: {line}')
+    if not home_installed() and (opens := offer_web_open(root)):  # F454b's question counts only with no Home
+        said.append(opens)
+        print(f'agent-runner setup: {opens}')
     if audits := offer_audit(root):
         said.append(audits)
         print(f'agent-runner setup: {audits}')

@@ -158,6 +158,29 @@ def test_not_in_a_row(repo: Path) -> None:
     fresh(repo)
 
 
+def test_api_error(repo: Path) -> None:
+    print('B858: a 400 from the model API: not counted, the run pauses, one setup item')
+    err = ('API Error: 400 {"type":"error","error":{"type":"invalid_request_error",'
+           '"message":"thinking must be between_tools"}}')
+    state.PAUSED[0] = False
+    N.SETUP_SAID.clear()
+    ev = repo / '.runner/events.jsonl'
+    before = ev.read_text(encoding='utf-8').count(f'"kind": "{state.EV_HELD}"') if ev.exists() else 0
+    with mock.patch.object(state, 'NOTIFY', False):
+        empty_run(repo, err)
+        empty_run(repo, err)
+    check(not blocked() and 'R1' not in N._read(), 'not counted, not blocked')
+    check(state.PAUSED[0], 'the run is paused')
+    eq(ev.read_text(encoding='utf-8').count(f'"kind": "{state.EV_HELD}"') - before, 1, 'one setup item')
+    has(ev.read_text(encoding='utf-8'), 'between_tools', "it names the API's message")
+    check(N.api_error(err) and not N.api_error('I could not find the brief.'), 'spotted')
+    check(not N.api_error('API Error: 429 rate_limit') and not N.api_error('API Error: 529 overloaded'),
+          'a passing limit or outage is no setup problem')
+    state.PAUSED[0] = False
+    check(starts(), 'the task stays ready')
+    fresh(repo)
+
+
 def test_plain() -> None:
     eq(N.plain('a  b\nc'), 'a b c', 'one line')
     eq(len(N.plain('x' * 999)), N.SAID_MAX + 1, 'cut')
@@ -169,7 +192,7 @@ def main() -> int:
         R.init(repo)
         return report([test_plain, *(lambda t=t: t(repo) for t in (
             test_blocks, test_reopened, test_reopened_between, test_changed, test_edited_before_block,
-            test_not_in_a_row))])
+            test_not_in_a_row, test_api_error))])
 
 
 if __name__ == '__main__':

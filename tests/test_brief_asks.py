@@ -68,6 +68,9 @@ def test_brief(root: Path) -> None:
                   '"options": [{"name": "Full", "rec": true}, {"name": "Small"}] in the ask file', 'With `ask` use the ask file'):
             check(k in p, f'{tid}: DECIDE options: {k}', p)
         check('wizard' not in p, f'{tid}: no wizard', p)
+        for k in ('shots takes pictures and .mp4 or .webm videos', '50 MB each', 'attached there or given as a link',
+                  'never as an address to type or a hand-written /concept/ page'):  # B839
+            check(k in p, f'{tid}: videos in shots: {k}', p)
     check('that takes more than one question' in R.SHEET_PROMPT, 'a pick sheet is for more than one question')
     eq(p.count('{path}') + p.count('{{'), 0, 'nothing left unfilled')
 

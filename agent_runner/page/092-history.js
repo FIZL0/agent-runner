@@ -281,11 +281,13 @@ function pastGlide(d){if(HX.st)moAnim($('pastterm'),[{translate:`0 ${d}px`},{tra
 /* the button back to the live session: it floats over the lines just above the box */
 function pastJumpDraw(){
   const j=$('pastjump');if(!j)return;
-  const on=pastUp()&&pastEnd()-$('feedpast').scrollTop>PAST_BAND, dock=document.querySelector('.dockwrap'), say=HX.news?'Jump to bottom: there is something new':'Jump to bottom';
+  const on=pastUp()&&pastEnd()-$('feedpast').scrollTop>PAST_BAND||!HX.st&&FD.shown&&!!FD.own, dock=document.querySelector('.dockwrap'), say=HX.news?'Jump to bottom: there is something new':'Jump to bottom';
   if(on&&dock){const row=slimRow();j.style.bottom=row+'px';j.style.setProperty('--up',Math.max(0,dock.offsetHeight-questionOn.room()-row)+'px')}
   j.classList.toggle('on',on);j.classList.toggle('fresh',HX.news);j.inert=!on;
   const b=j.firstElementChild;if(b.getAttribute('aria-label')!==say){b.setAttribute('aria-label',say);b.title=say}
 }
+/* a press on it: back from the history, or (B863) the terminal scrolled up with no jump pill of its own to its end */
+function pastJumpGo(){if(!HX.st&&FD.own)feedOwnEnd();else pastDown(true)}
 /* a fling under way ends */
 function pastStop(){const el=$('feedpast');if(!el||!HX.st)return;scrollStop(el);el.style.overflowY='hidden';void el.offsetHeight;el.style.overflowY=''}
 /* to the live session: it glides when a press asked for it */
@@ -339,7 +341,7 @@ el.addEventListener('wheel',e=>{if(!HX.st&&e.deltaY<0)pastArm()},{passive:true})
 el.addEventListener('scroll',()=>{pastScrolled();if(pastUp())drop()},{passive:true});
 /* a browser gives no click for a tap that ends a fling: the touch's end makes it, as on the slim message box (B218b1) */
 const jump=$('pastjump').firstElementChild;let J=null;
-jump.addEventListener('click',()=>pastDown(true));
+jump.addEventListener('click',()=>pastJumpGo());
 jump.addEventListener('touchstart',e=>{const t=e.touches[0];pastStop();J=e.touches.length===1?{x:t.clientX,y:t.clientY}:null},{passive:true});
-jump.addEventListener('touchend',e=>{const j=J, t=e.changedTouches[0];J=null;if(!j||!e.cancelable||Math.abs(t.clientX-j.x)>9||Math.abs(t.clientY-j.y)>9)return;e.preventDefault();pastDown(true)},{passive:false});
+jump.addEventListener('touchend',e=>{const j=J, t=e.changedTouches[0];J=null;if(!j||!e.cancelable||Math.abs(t.clientX-j.x)>9||Math.abs(t.clientY-j.y)>9)return;e.preventDefault();pastJumpGo()},{passive:false});
 jump.addEventListener('touchcancel',()=>{J=null},{passive:true})}

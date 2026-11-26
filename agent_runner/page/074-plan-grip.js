@@ -8,7 +8,7 @@ const gripOn=q=>!!q.grip&&!q.removed&&!PM.did.some(d=>d.back&&d.id===menuId(q)&&
 const gripReal=q=>!q.placeholder&&!q.removed;  // a row the plan can name
 /* as plan.child(): a task's subtasks move with it */
 const gripChild=(id,t)=>t.length>id.length&&t.startsWith(id)&&/\d/.test(t[id.length])!==/\d/.test(id[id.length-1]);
-const gripBlock=(rows,id)=>{const own=rows.filter(q=>menuId(q)===id);return own.length&&!own[0].placeholder?own.concat(rows.filter(q=>gripReal(q)&&gripChild(id,q.id))):own};
+const gripBlock=(rows,id)=>{const own=rows.filter(q=>menuId(q)===id);return own.length&&!own[0].placeholder?own.concat(rows.filter(q=>gripReal(q)&&(gripChild(id,q.id)||typeof partIn==='function'&&partIn(q,id,rows)))):own};  // F453: its parts too (a test's slice of the page may have no 079)
 /* the rows with row `id` (its subtasks after it) at place `g` among the others */
 function gripPut(rows,id,g){
   const block=gripBlock(rows,id), rest=rows.filter(q=>!block.includes(q));
@@ -36,7 +36,7 @@ function gripWaits(q,above){
 }
 function gripRows(rows){
   GR.did=GR.did.filter(menuLive);
-  let out=rows;const moved=[];
+  let out=typeof partRows==='function'?partRows(rows):rows;const moved=[];  // F453: a split task's parts under it
   for(const d of GR.did){
     if(PM.did.some(x=>x.id===d.id&&x.k==='menu_top'&&!d.seen.includes(x)))continue;  // pressed since
     const block=gripBlock(out,d.id), rest=out.filter(q=>!block.includes(q));if(!block.length)continue;

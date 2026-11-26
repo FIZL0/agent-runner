@@ -4,6 +4,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: `home install` on a machine whose run page had a Tailscale Serve https address keeps it: the page leaving its port hands its Serve rule over to Runner Home instead of turning it off, so the printed https link works and `home status` lists it; a rule a person made is never touched (B847).
+- Changed: on the run page, a chat that a Needs you answer started goes straight to Quiet in Chats with a 'new' label until opened once; it moves to the top only when it asks you something (F465).
+
+## 0.75.0 (2026-11-26)
+
+
+## 0.74.0 (2026-11-26)
+
+
 - Fixed: on a computer the words of a chat's live screen can be copied: a drag selects them and copies them at once, as Shift+drag did, Ctrl+C or Cmd+C copies a selection without interrupting, and a right click opens the browser's menu with Copy; before, Claude Code's full screen took the mouse, so a drag selected nothing and Ctrl+C interrupted (B845).
 - Changed: on the run page, a Plan queue row of a task no slot runs but which is under way no longer says only 'Being worked on'; it says 'Taken by the chat <its name>' (pressing the words opens that chat), 'Taken by a chat that has ended', 'Taken by hand' (taken from a terminal or unknown), 'Merging' or 'Waits to resume'; `take` now records the control session that ran it, in the git folder of its take worktree (B846).
 - Fixed: a run whose `web_port` is taken without Runner Home serves its page on every interface on the next free port (every second one, 8772, 8774, …, skipping Tailscale Serve's and recorded rules' ports), its run log saying which port it is on, instead of 127.0.0.1 only; the page-only process and a run that takes that page over keep the port (`web.fell`) (B844).

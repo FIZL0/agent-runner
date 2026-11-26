@@ -2,7 +2,7 @@
 /* B212: on touch a script's focus brings no keyboard, so open() gives none (about() does, in the tap) and drops one left from
    the box before; not when a starting chat gets its name (named): its box may be in use */
 function open(n,named){if(S.ren&&!named)renameLeave(n);const resp=/^\+response:/.test(n);if(resp)responseOpen(n);if(TOUCH()&&(!isNew(n)||resp)&&!named&&typingIn(document.activeElement))document.activeElement.blur();const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;if(!isNew(n))S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet&&!TOUCH())setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
-function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);if(S.view==='settings')loadSettings();if(S.view==='tools')loadTools()}
+function goView(v){if(S.view==='home'&&!S.thread&&viewOf(v)==='talk'&&S.atts&&S.atts.home)S.atts=attsMove(S.atts,'home','talk');S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);if(S.view==='settings')loadSettings();if(S.view==='tools')loadTools()}  // B856: Home's attachments go along to Talk
 /* by: the button that was pressed; none for a key, so an empty Enter never forces (F190c) */
 async function send(by){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();

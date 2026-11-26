@@ -132,6 +132,9 @@ def main(argv: list[str] | None = None) -> int:
     if why := asks.line_refusal(a.id, a.blocked, a.after, a.until, c, PROG):  # B795
         print(why, file=sys.stderr)
         return 2
+    if why := concept_link_refusal(a.id, a.blocked, c):  # B839
+        print(why, file=sys.stderr)
+        return 2
     if not a.blocked and tested_tick(a.id, c) and not git('status', '--porcelain', cwd=cwd).stdout.strip():
         print(f'{a.id} is already ticked and committed, and its gate passed on this commit: nothing to do again')
         push_task(c)  # a `done` cut off before its push
@@ -170,14 +173,20 @@ def main(argv: list[str] | None = None) -> int:
     if docs and not own:  # no tested ref either: the merge decides by its own diff
         print(DOCS_SKIP + (f' (docs check: {c.run["docs_check"]})' if c.run['docs_check'] else ''))
     if not a.no_test:
+        from agent_runner import merge_rows  # B852: the run page says Waiting to test, then Testing
         if own or not docs:
+            merge_rows.mark_slot_gate(c, a.id, cwd, 'waiting')
             shared_tools.gate_wait(c)  # B184
-        content = '' if a.blocked else content_hash(cwd)  # before the gate: what it ran on, not what it wrote
-        key = 'done_test' if own else 'docs_check' if docs else 'test'
-        rc, tail = gate(cwd, key)
-        if own and docs and not rc and c.run['docs_check']:
-            key = 'docs_check'
+        merge_rows.mark_slot_gate(c, a.id, cwd, 'testing')
+        try:
+            content = '' if a.blocked else content_hash(cwd)  # before the gate: what it ran on, not what it wrote
+            key = 'done_test' if own else 'docs_check' if docs else 'test'
             rc, tail = gate(cwd, key)
+            if own and docs and not rc and c.run['docs_check']:
+                key = 'docs_check'
+                rc, tail = gate(cwd, key)
+        finally:
+            merge_rows.clear_slot_gate(c, a.id)
         if rc:
             print(tail)
             if a.blocked:
@@ -513,3 +522,24 @@ def finished(c=None, a=None) -> int:
     if m := finished_mark():
         m.touch()
     return 0
+
+
+def concept_link_refusal(tid: str, why: str | None, c) -> str | None:
+    """B839: why `done --blocked` refuses a CONFIRM whose line or ask file names /concept/<ID> of a task that is no
+    concept: no concept is filed for it, so that page is in no Concepts list and the person cannot open it."""
+    if not re.match(r'\s*CONFIRM:', why or ''):
+        return None
+    text = why or ''
+    try:
+        f = asks.ask_file(tid, c)
+        if f.is_file():
+            text += '\n' + f.read_text(encoding='utf-8')
+    except OSError:
+        pass
+    bad = sorted({i for i in re.findall(r'/concepts?/([A-Za-z]+\d+[a-z]*)', text) if not plan.concept(i)})
+    if not bad:
+        return None
+    return (f'{PROG}: the CONFIRM names /concept/{bad[0]}, but no concept is filed for {", ".join(bad)}: the person '
+            f'has no such page to open. Put what they watch or look at in the ask file\'s "shots" (pictures, or .mp4 '
+            f'and .webm videos under {asks.ask_file(tid, c).with_suffix("")}/, 50 MB each), or give a link they can '
+            f'open. Nothing blocked.')

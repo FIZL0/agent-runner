@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, shared_tools, stack, stop_now, taken_by
+from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, push_left, shared_tools, stack, stop_now, taken_by
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -286,7 +286,7 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
     keys = {'slots': lambda: [f'slots {a.count}'], 'key': lambda: a.keys}.get(
         cmd, lambda: [f'{cmd[0]} {"off" if a.off else "on"}'])()
     send_key(*keys)
-    print(f'sent to the run: {", ".join(keys)} (it acts within 10 s; `{C.command} status` shows it)')
+    print(f'sent to the run: {", ".join(keys)} (it acts within a second; `{C.command} status` shows it)')
     return 0
 
 
@@ -334,7 +334,7 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
                       login=claude_login_line(), agent=agent_problem(st=st),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     from agent_runner.web import page_line
-    if said := page_line():  # F66: the run page's address, with its token
+    for said in filter(None, (page_line(), plansync.share_hint(C), push_left.unpushed_line(ROOT, default_branch()))):  # F66, F460, B841
         print(said)
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))

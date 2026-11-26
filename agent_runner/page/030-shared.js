@@ -29,6 +29,7 @@ const SEEN_KEY='ar-seen'+(HKEY?':'+HKEY:'');
 S.seen=(()=>{try{const o=JSON.parse(store.get(SEEN_KEY)||'null');return o&&typeof o==='object'?o:null}catch(e){return null}})();
 function markSeen(){
   holdUp();  // B193
+  if(!document.hidden)answerChatOpened(S.thread);  // F465
   const rows=(S.snap.sessions||[]).filter(x=>/^c\d+$/.test(x.name)), first=!S.seen;
   if(!rows.length||document.hidden)return;
   const open=S.thread||(S.view==='talk'?talkName():'');let moved=first;
@@ -36,9 +37,21 @@ function markSeen(){
   for(const x of rows)if((first||x.name===open)&&x.at&&S.seen[x.name]!==x.at){S.seen[x.name]=x.at;moved=true}
   if(moved)store.set(SEEN_KEY,JSON.stringify(S.seen));
 }
+/* F465: the chats a Needs you answer started, per browser and project: {name: 1 once opened, else 0} (answerQuiet) */
+const ANSWER_CHATS_KEY='ar-answer-chats'+(HKEY?':'+HKEY:'');
+const answerChatsGet=()=>{try{const o=JSON.parse(store.get(ANSWER_CHATS_KEY)||'{}');return o&&typeof o==='object'&&!Array.isArray(o)?o:{}}catch(e){return{}}};
+S.answerChats=answerChatsGet();
+function answerChatsPut(n,v){
+  const o={...answerChatsGet(),...S.answerChats};if(o[n]===v)return;
+  delete o[n];o[n]=v;const ks=Object.keys(o);for(const k of ks.slice(0,Math.max(0,ks.length-100)))delete o[k];
+  store.set(ANSWER_CHATS_KEY,JSON.stringify(S.answerChats=o));
+}
+const answerChatCame=j=>{if(j&&j.ok&&/^c\d+$/.test(j.chat||''))answerChatsPut(j.chat,0)};
+const answerChatOpened=n=>{if(n&&S.answerChats[n]===0)answerChatsPut(n,1)};
+addEventListener('storage',e=>{if(e.key===ANSWER_CHATS_KEY){S.answerChats=answerChatsGet();render()}});
 const replyDue=s=>needsReply(s,(S.seen||{})[s.name])&&!(S.thread===s.name&&!s.needs_reply);
 const groupChats=rows=>chatGroups(rows,{pins:chatPins(),quiet:+S.snap.chat_quiet||0,now:Date.now()/1000,seen:S.seen||{},up:S.thread&&S.up});
-const shownChats=()=>{const g=groupChats(chats());return{top:g.top,quiet:quietRows(g.quiet,responseRows(S.snap.responses,S.ob,S.responseGone))}};  // F425b: the sent responses rest in Quiet
+const shownChats=()=>{const g=answerQuiet(groupChats(chats()),S.answerChats,s=>!!s.needs_reply,chatPins());return{top:g.top,quiet:quietRows(g.quiet,responseRows(S.snap.responses,S.ob,S.responseGone))}};  // F425b: the sent responses rest in Quiet
 /* F425b: the sent responses with no chat yet; S.responseGone: those whose chat started, which an older snapshot may still list.
    S.responseSeen: those opened once (per browser and project, the latest) */
 const responses=()=>responseRows(S.snap.responses,S.ob,S.responseGone);

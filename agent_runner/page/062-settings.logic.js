@@ -42,3 +42,10 @@ const draftCount=(draft,all)=>Object.values(draft).reduce((n,d)=>{const k=all.fi
 const undoChanges=undo=>undo.map(x=>({table:x.table,key:x.key,side:x.side,...(x.was.has?{value:x.was.value}:{unset:true}),expect:x.now}));
 const undoCount=undo=>undo.reduce((n,x)=>n+(x.key==='kinds'&&x.table==='models'?Math.max(1,KINDS_ROWS.filter(g=>kindsModel(g.kinds,x.was.value)!==kindsModel(g.kinds,x.now.value)).length):1),0);
 const changeWords=n=>n===1?'1 change':`${n} changes`;
+/* F460a: Settings > Plan's "Share the plan between machines": what `plan_share` answered as {lines, cmd, err}: the lines it says
+   and, when it worked, its last one apart: what the other machine runs */
+function planShareView(j){
+  const lines=(j&&Array.isArray(j.lines)?j.lines:[]).map(String).filter(x=>x.trim());
+  if(!j||!j.ok)return{lines:lines.length?lines:[String((j&&j.out)||'It did not work')],cmd:'',err:true};
+  return{lines:lines.slice(0,-1),cmd:lines.length?lines[lines.length-1]:'',err:false};
+}

@@ -42,6 +42,8 @@ function sentBubbles(n,shown){
 /* take an action: drawn at once by the caller, kept in the outbox, sent behind */
 function outbox(name,args,more){
   const it={cid:newCid(),name,args:args||{},by:OB.tab,state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
+  const ck=String(it.ctl||''), w=ck.endsWith(':')&&ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n);  // B851a: a run control shows its result now
+  if(w){const ks=Object.keys(w);S.held=(S.held||[]).filter(p=>!Object.keys(p.want).some(k=>ks.includes(k))).concat([{key:ck.slice(0,-1),cid:it.cid,n:(it.args||{}).n,at:it.at,want:w,say:it.say}]);S.heldErr='';setTimeout(()=>render(true),CTL_HOLD+50)}  // a later press on the same thing takes the place of the earlier
   obChange(b=>obAdd(b,it,OB.at));render(true);drain();return it;
 }
 async function drain(){
@@ -75,18 +77,18 @@ function obDone(it,j){
   if(j&&j.seen&&j.confirm&&it.ctl){  // F186: a release the last snapshot did not show is open: asked where New release stands
     obChange(b=>obDrop(b,it.cid));for(const c of controlsOf('release'))Object.assign(c,{confirm:j.confirm,seen:j.seen});
     S.sure=it.ctl.split(':')[0];toast(j.confirm,true);snapNow();return}
-  if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
+  if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:it.ctl?ctlSaid(it.say,j,false):`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
   if(it.name==='response_chat')S.responseGone=[...(S.responseGone||[]),it.args.rid];  // F425b
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){S.came=(S.came||[]).filter(x=>x.name!==j.name&&now-x.at<60000).concat([{name:j.name,was:'@'+it.cid,start:it.at,say:it.say,state:'sending',at:now}]);carrySent(j.name,j,it.ask);boxMove('@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name,true)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
-  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&(j.gone||it.args.text)))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&(j.gone||it.args.text)))){toast(answerSaid(j,it.need,it.args.text));answerChatCame(j);if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.shelved){if(S.gone)delete S.gone[it.shelved];toast(j.said||`${it.say}: done`);snapNow()}  // F184: Needs you may show it at once
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
   else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
-    else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
+    else{const ck=String(it.ctl), said=ctlSaid(it.say,j,ck.endsWith(':')&&!!ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n));if(said)toast(said)}}  // F124, B851c: plain words, none when the button shows it
   if(it.res&&FD.n===it.res)feedLoad();  // F114
   if(it.done)toast(it.done);
 }
@@ -96,6 +98,7 @@ function obHide(){
   S.snap.needs=(S.snap.needs||[]).filter(n=>!ns.includes(n.id));
   S.snap.shelved=(S.snap.shelved||[]).filter(x=>!sh.includes(x.id));  // F184
   S.snap.concepts=needsShown(S.snap.concepts,S.gone,now).filter(c=>!cs.includes(c.id));
+  const h=ctlSettle(S.snap,S.held,S.ob,now);S.held=h.held;if(h.err){S.heldErr=h.err;setTimeout(()=>{if(S.heldErr===h.err){S.heldErr='';render(true)}},CTL_HOLD)}ctlHold(S.snap,S.held);  // B851a
 }
 /* B164: the run is older than the page: what to do, with the restart control when the run has one */
 function oldRunHTML(msg){const rc=controlOf('restart');

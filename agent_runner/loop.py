@@ -202,6 +202,9 @@ def run_version() -> str:
     return __version__
 
 
+STATE_LOCK = threading.Lock()  # B850a: the loop and stop_now.watch's key taking both write STATE
+
+
 def write_state(running: dict, held=()) -> None:
     """`<notes>/STATE`, for `agent-runner status`: what the keys have set, what each slot is on and since when,
     what is merging, and the account's usage (as the cap reads it, at most every 5 minutes)."""
@@ -219,6 +222,7 @@ def write_state(running: dict, held=()) -> None:
     tmp = C.notes('STATE.tmp')
     from agent_runner.ui_model import agent_problem, no_settings
     try:
+      with STATE_LOCK:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
                                    'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
@@ -390,7 +394,11 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         note(f'{tid}: no commits — nothing to merge')
         log(f'{tid}: no commits — nothing to merge', EV_NO_COMMITS, tid)
         if n:  # B774: a slot's session, not a `take`
-            no_commits.ended(tid, last_words(sid) if sid and sid != '(unknown)' else '', branch)
+            said = last_words(sid) if sid and sid != '(unknown)' else ''
+            if no_commits.api_error(said):  # B858: the setup is wrong, not the task
+                no_commits.setup_problem(tid, said, sid)
+            else:
+                no_commits.ended(tid, said, branch)
         return True
     no_commits.forget(tid)
     if sid and sid != '(unknown)':
@@ -475,6 +483,19 @@ def cap_stop_detail() -> str:
             f'({C.command} attach).')
 SHUTDOWN_GRACE = 120  # s the run must stay idle first; new work or a stop in that time cancels it
 SLEPT_AT = [-1.0]  # the idle stretch (its idle_at) the machine was suspended in: once per stretch, not on every wake
+
+
+def push_left_now(branch: str) -> None:
+    """B841: push landed work a refused push left on this disk; a person is told when it stays unpushed."""
+    from agent_runner.push_left import push_left
+    try:
+        out = push_left(ROOT, branch)
+    except Exception as e:  # never stops a run from starting or ending
+        out = f'! {branch} is not pushed: {e!r}'
+    if out:
+        log(out)
+    if out.startswith('!'):
+        alarm(f'landed work on {branch} is not pushed', out[2:])
 
 
 def power_due(idle_at: float) -> bool:
@@ -724,8 +745,14 @@ def run(argv: list[str], prog: str) -> int:
         print(keys_help(), flush=True)
     try:
         it = Run(a, slots, once, branch, model, idle, stall, pause)
+        stop_now.ON_KEYS[:] = [lambda: (take_keys(), write_state(dict(it.running), [m[0] for m in it.held_merges]),
+                                        WAKE.set())]  # B850a
         threading.Thread(target=stop_now.watch, args=(it,), name='stop-now', daemon=True).start()  # B827
-        return it.go()
+        push_left_now(branch)  # B841: what an earlier run left unpushed
+        rc = it.go()
+        if not (POWER and rc == 0 and not stopping()):  # an idle power-off pushed it before the power went
+            push_left_now(branch)  # B841: no next merge comes once the run ends
+        return rc
     finally:
         while RUN_LOCK:  # the run is over (its stop has ended its own processes): the next one may start
             RUN_LOCK.pop().close()
@@ -1082,6 +1109,8 @@ class Run:
                 self.idle_said, self.idle_at = True, time.time()
                 if not stopping() and auto_release(self.branch, idle=True):  # F63: once per idle spell
                     return None  # the release it queued starts on the next tick
+            if power_due(self.idle_at) and not stopping():
+                push_left_now(self.branch)  # B841: before the power goes
             if shut_down(self.idle_at):
                 return 0
         return None

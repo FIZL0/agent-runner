@@ -46,24 +46,28 @@ def split_queued(ls: list[str], tid: str, i: int, tasks: list[tuple]) -> bool:
 
 def split_parts(ls: list[str], tid: str, i: int, tasks: list[tuple], done: list[str]) -> dict | None:
     """B811b: of the split task at ls[i], `parts` (how many), `landed` (how many of them), `open` ([{id, title}] of the
-    rest) and `words`; None for a task that was not split, or has no part yet. A dropped part is none, and one that was
+    rest), `list` (F453: every part {id, title, landed}: the landed first, then the open in plan order) and `words`; None for a task that was not split, or has no part yet. A dropped part is none, and one that was
     split itself counts once, not its parts too. `done`: DONE.md's lines."""
     if not P.SPLIT.search(ls[i]):
         return None
     known: dict[str, str | None] = {}  # its title while open, None once landed
+    names: dict[str, str] = {}  # F453: every part's title, a landed one's too
     for x, rows in ((done, P.iter_tasks(done)), (ls, tasks)):
         for _, box, t, rest, j in rows:
             if box in ' ~':
-                known[t] = after_name(P.SPLIT.sub('', rest))
+                known[t] = names[t] = after_name(P.SPLIT.sub('', rest))
             elif not P._dropped(x, j):
-                known[t] = None
+                known[t], names[t] = None, after_name(P.SPLIT.sub('', rest))
     kids = P.subtasks(tid, ls[i], known)
     own = [t for t in known if t in kids and not any(
         P.child(p, t) and (known[p] is not None or known[t] is None) for p in kids)]
     if not own:
         return None
     landed = sum(known[t] is None for t in own)
+    order = {t: n for n, (_, _, t, _, _) in enumerate(tasks)}  # F453: plan order, from the plan itself
+    every = [t for t in own if known[t] is None] + sorted((t for t in own if known[t] is not None), key=lambda t: order.get(t, len(order)))
     return {'parts': len(own), 'landed': landed, 'open': [{'id': t, 'title': known[t]} for t in own if known[t] is not None],
+            'list': [{'id': t, 'title': names[t], 'landed': known[t] is None} for t in every],
             'words': f'Split: {landed} of {len(own)} part{"s" * (len(own) != 1)} landed'}
 
 
@@ -557,7 +561,32 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
                 f'Not {w}: {how}' for w in ['this'] + ([x['id'] for x in xs] if len(xs) > 1 else [])
                 for how in ('reopen', 'drop')])
         needs[-1]['answers'] = need_answers(needs[-1])  # C33: both pages draw these
+        if frame := concept_frame(needs[-1]):
+            needs[-1]['frame'] = frame  # F463: its card shows the options page framed
+    concepts += page_rows({c['concept'] or c['id'] for c in concepts} | {c['id'] for c in concepts},
+                          {n['id'] for n in needs})
     return needs, concepts
+
+
+def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
+    """F457: a Concepts row for each page served at /concept/<ID> (<notes>/concepts/<ID>.html) whose task is still in
+    the plan and not done or dropped, beside the concepts `shown` already: a report or videos a task put up with
+    publish-page. `page`: it is no concept (no Pick/OK); `waits`: its task also has a Needs you item."""
+    try:
+        files = sorted(S.C.notes('concepts').glob('*.html'))
+        ls = P.lines(S.C.todo)
+        tasks = {tid: (box, rest) for _, box, tid, rest, i in P.iter_tasks(ls)
+                 if not P._shelved(ls, i)}  # F184: shelved tasks stay out of Concepts
+    except Exception:  # noqa: BLE001 - no notes dir or plan: no pages
+        return []
+    out = []
+    for f in files:
+        tid = f.stem
+        if tid in shown or tid not in tasks or tasks[tid][0] in 'x-':
+            continue
+        out.append({'id': tid, 'concept': tid, 'title': P.short_title(tasks[tid][1], 200), 'url': '',
+                    'copy': str(f), 'page': True, 'waits': tid in waits})
+    return out
 
 
 def shelved_rows(ls: list[str], waiting) -> list[dict]:

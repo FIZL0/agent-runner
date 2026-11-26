@@ -118,7 +118,7 @@ function questionGo(n,text,go){
 }
 questionOn.send=questionGo;
 /* F437c: the card and its minimized line hide while the reader is scrolled up, in the history or where the terminal scrolls
-   itself. Their room stays (.qaway), so no text moves; a held answer and the mark stay */
+   itself (.qaway); B854b: they keep no room, so the text shows down to the box; a held answer and the mark stay */
 const questionAway=n=>!!n&&QN.away===n&&FD.n===n&&FD.shown&&!QN.held.has(n)&&!QN.mark.has(n);
 function questionFarNow(){
   if(!FD.shown||!FD.n)return false;
@@ -146,7 +146,17 @@ function questionAwaySet(n){
 function questionAwayClass(){
   const on=questionAway(FD.n), k=on?questionUp(FD.n):'', keys=!!k&&QN.keys!==k, is=`${on} ${keys}`;if(QN.cls===is)return;
   QN.cls=is;const m=document.querySelector('.main').classList;
-  m.toggle('qaway',on);m.toggle('qkeys',keys);
+  questionAwayMove(on,()=>{m.toggle('qaway',on);m.toggle('qkeys',keys)});
+}
+/* B854c: hiding and coming back slide and fade (~180ms); the room goes only once it has faded, so nothing jumps
+   while it shows; calm() (reduced motion) skips it; a new turn stops the old motion where it is */
+const QUESTION_MOVE=[{opacity:1,transform:'none'},{opacity:0,transform:'translateY(12px)'}];
+function questionAwayMove(on,set){
+  if(QN.mv){QN.mv.cancel();QN.mv=null}
+  const c=document.querySelector('#dock .qcard:not(.qheld,.qabout)'), o={ease:'--ease',dur:'--dur',fill:'both'};
+  if(!on){set();const a=c&&moAnim(c,[...QUESTION_MOVE].reverse(),o);if(a){QN.mv=a;a.onfinish=()=>{a.cancel();if(QN.mv===a)QN.mv=null}}return}
+  const a=c&&moAnim(c,QUESTION_MOVE,o);if(!a)return set();
+  QN.mv=a;a.onfinish=()=>{if(QN.mv!==a)return;QN.mv=null;set();a.cancel()};
 }
 /* the room of a hidden card, over what stands under it: the jump button floats there */
 function questionRoom(){

@@ -93,5 +93,18 @@ def test_guide() -> None:
         eq([x[0] for x in sched.tasks('main')], ['F1a'], 'a run starts the part, not the title')
 
 
+def test_list() -> None:
+    print('F453: every part in the order it runs, the landed first')
+    parent = PARENT.replace('(follow-up, later) ', '')
+    got = rows(lines([part('d'), parent, part('a').replace('[ ]', '[x]'), part('c'), part('b', blocked=' BLOCKED: DECIDE: x')], []))
+    eq([(p['id'], p['landed']) for p in got['F427']['split']['list']],
+       [('F427a', True), ('F427d', False), ('F427c', False), ('F427b', False)], 'landed, then plan order')
+    eq(got['F427']['split']['list'][0]['title'], 'part a', "a landed part's title")
+    eq([p['id'] for p in got['F427']['split']['open']], ['F427d', 'F427c', 'F427b'], 'open is as it was')
+    named = parent.replace('F427d)', 'F427d, Z5)')
+    got = rows(lines([part('c'), named, '- [ ] **Z5** (follow-up, normal) named part | files: z.py'], []))
+    eq([p['id'] for p in got['F427']['split']['list']], ['F427c', 'Z5'], "a part named in '(split into …)' with an id of its own")
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_queued, test_parked, test_guide]))
+    sys.exit(report([test_queued, test_parked, test_list, test_guide]))

@@ -29,11 +29,11 @@ async function homeSend(key){
 }
 function homeDone(it,j){
   const key=it.args.project;
-  if(!j||!j.ok){toast(`Not done: ${it.say}`,true);return}
+  if(!j||!j.ok){toast(homeSaid(it.name,it.args.arg,it.say,j),true);return}
   if(it.name==='start')H.begun[key]=Date.now();else if(it.name==='stop')delete H.begun[key];
   H.turn++;  // a list asked for before this is older than it
   H.projects=H.projects&&H.projects.map(p=>p.key===key?projectDid(p,it.name,it.args.arg):p);
-  toast(String(j.out||'').split('\n')[0]||`${it.say}: done`);
+  const p0=(H.projects||[]).find(p=>p.key===key), said=homeSaid(it.name,it.args.arg,it.say,j,p0&&p0.slots);if(said)toast(said);  // B851c: no raw output; none when the card shows it
   loadProjects();
 }
 const homeHas=cid=>S.hob.some(x=>x.cid===cid);

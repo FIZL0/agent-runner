@@ -159,3 +159,54 @@ def _block(tid: str, r: dict, branch: str) -> bool:
         note(f'{tid}: LEFT FOR A HUMAN — {why}; blocked on a person')
         log(f'{tid}: LEFT FOR A HUMAN — {why}; blocked on a person instead of starting it again', EV_LEFT, tid, why=why)
         return True
+
+
+# B858: a session the model API turned away (an HTTP 400, invalid_request_error) did no work on its task: the setup
+# (provider, agent version) is wrong, not the task. It does not count, and the run pauses for a person.
+_API_ERR = re.compile(r'API Error:\s*4(?!29)\d\d|invalid_request_error', re.I)
+SETUP_SAID: list[str] = []  # the setup problems already put under Needs you by this run
+
+
+def api_error(said: str) -> bool:
+    """`said`, a session's last words, is the model API refusing its request, not the agent's own words."""
+    return bool(said and _API_ERR.search(said))
+
+
+def session_setup(sid: str) -> tuple[str, str]:
+    """(agent version, model) session `sid`'s transcript names; '' for what it does not."""
+    version = model = ''
+    if not sid or sid == '(unknown)':
+        return version, model
+    try:
+        from agent_runner.slots import entries
+        for d in entries(sid, skip_bad=True):
+            version = str(d.get('version') or version)
+            m = d.get('message')
+            model = str(m.get('model') or model) if isinstance(m, dict) else model
+    except Exception:  # noqa: BLE001 - a transcript we cannot read still pauses the run
+        pass
+    return version, model
+
+
+def setup_problem(tid: str, said: str, sid: str = '') -> None:
+    """`tid`'s session ended on an API error: forget any count, pause the run (no new tasks) and say once under
+    Needs you what the setup problem is, in plain words."""
+    from agent_runner import fallback as FB
+    forget(tid)
+    S.PAUSED[0] = True
+    version, model = session_setup(sid)
+    try:
+        provider = FB.provider(model) if model else ''
+    except Exception:  # noqa: BLE001
+        provider = ''
+    msg = plain(said)
+    title = 'the model API turned the agent away: fix the setup, then press p'
+    detail = '; '.join(x for x in (
+        f'provider {provider}' if provider else '', f'model {model}' if model else '',
+        f'agent version {version}' if version else '', f'the API said: "{msg}"') if x)
+    detail += f'. {tid} is not counted against and stays ready; the run is paused, no new tasks start until p.'
+    log(f'{tid}: the model API refused the session: a setup problem, not the task\'s ({detail})')
+    if msg in SETUP_SAID:
+        return
+    SETUP_SAID.append(msg)
+    S.alarm(title, detail)

@@ -13,7 +13,7 @@ from _check import check, eq, report
 from agent_runner import recorded as R  # noqa: E402
 from agent_runner import web as W  # noqa: E402
 from _web import in_tmp  # noqa: E402
-from test_web_talk import READ_DRIVER  # noqa: E402
+from test_web_talk_sound import READ_DRIVER  # noqa: E402
 
 # the recorder stubbed: a stream of given pieces of sound, and the run's /recorded route
 REC_DRIVER = (READ_DRIVER.split('(async () => {')[0].replace('const window = {', 'const window = {isSecureContext: true, AudioWorkletNode: 1, ', 1)

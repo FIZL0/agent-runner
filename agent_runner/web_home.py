@@ -34,11 +34,18 @@ def home_only() -> bool:
 def write_urls(srv: WebServer) -> list[str]:
     """Keep the page's own addresses in <notes>/web.url (Home reads the port and token there): returns them."""
     port = srv.server_address[1]
-    urls = [page_url(port, srv.token, LOCAL)] if srv.private() else page_urls(port, srv.token)
+    urls = ([page_url(port, srv.token, 'localhost')] if own_here(srv) else [page_url(port, srv.token, LOCAL)]) \
+        if srv.private() else page_urls(port, srv.token)
     if not srv.private() and fell_back() == port and (host := page_https.tailnet_host()):
         urls.insert(1, page_url(port, srv.token, host))
     url_file().write_text('\n'.join(urls) + '\n', encoding='utf-8')
     return urls
+
+
+def own_here(srv: WebServer) -> bool:
+    """F454a: is `srv` on 127.0.0.1 because `[run] web_open = 'here'`, not for Runner Home (none is installed)? Then its
+    localhost link, with its key, is the page's address."""
+    return srv.private() and only_here() and not home_installed()
 
 
 def fell_file() -> Path:
@@ -76,6 +83,8 @@ class HomeWatch:
             write_urls(self.srv)
             S.log('run page: Runner Home is installed, so only Home opens it now')
             self.missed = 0
+            return
+        if own_here(self.srv):  # F454a: the page is this machine's own, not Home's
             return
         self.looks += 1
         if self.looks % HOME_CHECK:
@@ -118,10 +127,10 @@ def serve_open(was: int, port: int) -> WebServer:
     port the page-only process had it open on (`was`, 0: none), else the next free one, else any."""
     for p in (*([was] if was else []), *page_https.next_ports(port)):
         try:
-            return serve(web_token(), p)
+            return serve(web_token(), p, open_bind())
         except OSError:
             continue
-    return serve(web_token(), 0)
+    return serve(web_token(), 0, open_bind())
 
 
 def start_web(only: bool = False) -> WebServer | None:
@@ -152,11 +161,11 @@ def start_web(only: bool = False) -> WebServer | None:
             why = 'Runner Home is installed, so its port is kept for it'
     else:
         try:  # B844: the port a page open now is on, when it is there only because this web_port was taken
-            srv = serve(web_token(), was) if was and fell == (port, was) and not home else None
+            srv = serve(web_token(), was, open_bind()) if was and fell == (port, was) and not home else None
         except OSError:
             pass
         try:
-            srv = srv or serve(web_token(), port)
+            srv = srv or serve(web_token(), port, open_bind())
         except OSError as e:
             why = f'port {port} is taken ({e})'
     if srv is None:
@@ -169,7 +178,7 @@ def start_web(only: bool = False) -> WebServer | None:
         if why:
             S.log(f'run page: {why}, so ' + ('only Runner Home opens it' if srv.private() else
                                            f'it is on port {srv.server_address[1]}'))
-    if not srv.private() and srv.server_address[1] != port and port:
+    if (not srv.private() or own_here(srv)) and srv.server_address[1] != port and port:
         fell_file().write_text(f'{port} {srv.server_address[1]}\n', encoding='utf-8')
     urls = own_links(write_urls(srv))
     if r.get('web_https', True) and not srv.private():  # F96

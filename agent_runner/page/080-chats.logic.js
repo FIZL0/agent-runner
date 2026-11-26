@@ -96,3 +96,11 @@ function histStep(n,i,key){
    the page), and what it stands in for: newchat, need (a Needs you id), concept (a concept's id), text and key (a
    message's words and box)}. A message to a chat still starting has args.to '@' + that new chat's cid. */
 const OB_STATES=['sending','failed'];
+/* F465: the chats a Needs you answer started (marks: {name: 1 once opened, else 0}) rest in Quiet, as they need no
+   reply from the person, until they ask the person something (needs: its needs_reply; a reply not read yet shows as 'new' instead), or are pinned */
+function answerQuiet(g,marks,needs,pins){
+  const m=marks||{}, lift=s=>!(s.name in m)||needs(s)||(pins||[]).includes(s.name);
+  return{top:g.top.filter(lift),quiet:g.top.filter(s=>!lift(s)).concat(g.quiet)};
+}
+/* F465: a chat's row with its 'new' label, until it is opened once */
+const answerNewRow=(h,x,marks)=>x&&(marks||{})[x.name]===0?h.replace('</button>','<span class="newlabel">new</span></button>'):h;

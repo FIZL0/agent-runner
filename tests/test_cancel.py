@@ -268,6 +268,64 @@ def test_unanswered(p: Proj):
     eq(P.requests(R.C, cancel.KIND), {}, 'and the request is gone')
 
 
+def taken(p: Proj) -> Path:
+    """H1 taken by hand: a commit, an edit to a tracked file and an untracked file."""
+    d = R.worktree('take-H1', 'main')
+    git(d, 'checkout', '-q', '-B', 'task/H1', 'main')
+    (d / 'a.py').write_text('done\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'H1 part')
+    (d / 'a.py').write_text('edited\n')
+    (d / 'new.py').write_text('new\n')
+    return d
+
+
+def test_taken(p: Proj):
+    """F455a: a task taken by hand, no run up: all its work on wip/H1, the take worktree gone, the task parked"""
+    p.lock.close()
+    d = taken(p)
+    eq(p.cmd('cancel', 'H1')[0], 3, 'without --yes it asks')
+    check(d.is_dir(), 'and changes nothing')
+    rc, out, err = p.cmd('cancel', 'H1', '--yes')
+    eq(rc, 0, f'it goes through ({err})')
+    has(out, r'its work is on wip/H1', 'said')
+    check(not d.exists(), 'the worktree is gone')
+    eq(p.branches(), ['wip/H1'], 'no task/H1 is left')
+    eq(git(p.repo, 'show', 'wip/H1:a.py').strip(), 'edited', 'the edit is kept')
+    eq(git(p.repo, 'show', 'wip/H1:new.py').strip(), 'new', 'the untracked file is kept')
+    has(git(p.repo, 'log', '--format=%s', 'wip/H1'), 'H1 part', 'the commit is kept')
+    has(p.todo(), r'### Parked\n+- \[ \] \*\*H1\*\*.*taken by hand: its work is on wip/H1', 'parked, with a note')
+    p.lock = R.plat.lock(R.C.notes('run.lock'))
+
+
+def test_taken_fails(p: Proj):
+    """F455a: work that cannot be kept: nothing changes, and it says why; one landing is refused"""
+    d = taken(p)
+    real = state.git
+    fails = lambda *a, **k: subprocess.CompletedProcess(a, 1, '', 'no') if a[0] == 'commit' else real(*a, **k)  # noqa: E731
+    with mock.patch.object(state, 'git', fails):
+        rc, said, note = cancel.stop(R.C, 'H1', ['--yes'])
+    eq(rc, 1, 'refused')
+    has(said, 'could not be committed', 'said why')
+    check(d.is_dir() and (d / 'new.py').exists(), 'the worktree and its files are there')
+    eq(git(d, 'status', '--porcelain').split(), ['M', 'a.py', '??', 'new.py'], 'as they were')
+    git(p.repo, 'update-ref', loop_requests.TESTED + 'H1', 'task/H1')
+    rc, said, note = cancel.stop(R.C, 'H1', ['--yes'])
+    eq(rc, 1, 'finished: refused')
+    has(said, 'about to land', 'said')
+    check(d.is_dir(), 'still there')
+    git(p.repo, 'update-ref', '-d', loop_requests.TESTED + 'H1')
+    typed = []
+    from agent_runner import control
+    with mock.patch.object(cancel, 'chat_of', lambda c, d: 2), \
+            mock.patch.object(control, 'control_type', lambda n, t: typed.append((n, t)) or True):
+        rc, said, note = cancel.stop(R.C, 'H1', ['--yes'])  # a run is up: this test holds run.lock
+    eq((rc, d.exists(), p.branches()), (0, False, ['wip/H1']), f'with a run up, it goes through ({said})')
+    has(said, 'told chat 2 to stop', 'said')
+    eq([n for n, _ in typed], [2], 'the chat that took it is told to stop')
+
+
 if __name__ == '__main__':
     sys.exit(report([in_proj(t) for t in (test_asks, test_kept_parked_unparked, test_again, test_nothing_done,
-                                          test_uncommittable, test_not_parked, test_no_rename, test_queued_resume, test_refused, test_unanswered)]))
+                                          test_uncommittable, test_not_parked, test_no_rename, test_queued_resume, test_refused, test_unanswered,
+                                          test_taken, test_taken_fails)]))

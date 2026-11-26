@@ -73,6 +73,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from agent_runner import devices, home_screen, login_hold, need_detail, page_https, plan_search, plat, provider_login, recorded, session_frame, session_history, session_now, session_theme, speech, trust, watch
 from agent_runner import state as S
 from agent_runner import ui_model as U
+from agent_runner import web_actions  # noqa: F401  F460a: its actions join U.ACTIONS
 
 # C45: the code is in files by area, each run in this module's own namespace in this order (the names are one
 # module's, as before the split: a test's `W.X = v` reaches all of it). Put new code in the file of its area, not in this
@@ -92,6 +93,9 @@ def _load_parts(parts) -> None:
 
 _load_parts(PARTS)
 
+# B838: the keep-alive is a named event, so the page can tell a quiet stream from a dead one; its data is no snapshot
+# and an older page's onmessage never hears it (only unnamed events reach onmessage)
+STREAM_PING = b'event: ping\ndata: 1\n\n'
 
 def byte_range(asked: str, size: int) -> tuple[int, int] | None:
     """F445a: the [start, end) of a file of `size` bytes a Range header asks for, (0, 0) when the file has none of
@@ -253,7 +257,7 @@ class Handler(BaseHTTPRequestHandler):
         r = self.server.once.run(cid, run)
         if r is None:  # F137: a copy of an action still running: the outbox sends it again later
             return self.send(503, json.dumps({'ok': False, 'out': 'that action is still running'}))
-        self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
+        self.server.snaps.fresh()  # B850b: the next snapshot shows what the action changed, sent at once
         self.send(200, json.dumps(r, ensure_ascii=False))
 
     def session(self, path: str) -> None:
@@ -441,18 +445,22 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Connection', 'close')
         self.end_headers()
         self.close_connection = True
-        last, quiet = '', time.monotonic()
+        last, quiet, gen, looked = '', time.monotonic(), -1, 0.0
         try:
             while not self.server.stopped.is_set():
+                now_gen = self.server.snaps.changed()
+                if now_gen == gen and time.monotonic() - looked < TICK / 2:
+                    self.server.stopped.wait(NOW)  # B850b: a done action or a new STATE is seen within NOW
+                    continue
+                gen, looked = now_gen, time.monotonic()
                 snap = self.server.snaps.get()
                 if snap != last:
                     self.wfile.write(f'data: {snap}\n\n'.encode('utf-8'))
                     last, quiet = snap, time.monotonic()
                 elif time.monotonic() - quiet >= PING:
-                    self.wfile.write(b': ping\n\n')
+                    self.wfile.write(STREAM_PING)  # B838: an event the page hears, not a comment
                     quiet = time.monotonic()
                 self.wfile.flush()
-                self.server.stopped.wait(TICK / 2)
         except OSError:  # the page went away
             pass
 
@@ -482,7 +490,9 @@ class WebServer(ThreadingHTTPServer):
                 return False
             # the new one first: with no port to be had, the page stays where it is
             new = socket.create_server((LOCAL, 0))
-            self.https_off()  # F96: before Home can take the port, and the same https port with it
+            if self.https:  # B847: its Serve rule proxies the port Home takes: Home keeps the https address
+                self.https = False
+                page_https.hand_over()
             self.shutdown()
             self.server_close()
             self.terms.close()

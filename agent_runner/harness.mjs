@@ -368,6 +368,18 @@ class Now {
 // A viewer that comes to a chat's terminal sees what was said: at its new size (attach.Viewers gives one to each viewer
 // that comes) the screen is drawn again from the last SCREEN characters printed.
 const SCREEN = 32000;
+// B861: the person's message as Claude Code draws it: '❯ ' and every line, wrapped, on the
+// colour-237 band the run page shows as the highlighted (.hy) band
+export function saidLines(text, cols = (process.stdout.columns || 100)) {
+  const w = Math.max(20, cols - 2), rows = [];
+  for (const line of String(text).replace(/\r/g, '').split('\n')) {
+    const cps = [...line];
+    if (!cps.length) rows.push('');
+    for (let i = 0; i < cps.length; i += w) rows.push(cps.slice(i, i + w).join(''));
+  }
+  return '\n' + rows.map((r, i) => `\x1b[48;5;237m${i ? '  ' : '❯ '}${r}${' '.repeat(Math.max(0, w - [...r].length))}\x1b[0m`).join('\n');
+}
+
 function redrawn(out) {
   let kept = '', due = null;
   const write = out.write.bind(out);
@@ -389,7 +401,7 @@ function recap(messages) {
   for (const m of messages.slice(-60)) {
     const said = m.role === 'toolResult' ? '' : textOf(m.content).trim();
     if (said.startsWith('[Request interrupted')) console.log('harness: interrupted');
-    else if (said) console.log(m.role === 'user' ? `\n> ${said}` : said);
+    else if (said) console.log(m.role === 'user' ? saidLines(said) : said);
   }
 }
 
@@ -485,6 +497,15 @@ function piCredentials() {
   };
 }
 
+// B862: Pi sends thinking {type:'disabled'} when its model data does not say "off" is unsupported (off: null), and
+// Claude models with adaptive thinking only (Copilot's claude-sonnet-5.5 in Pi 1.6.0's data) refuse that with a 400.
+// Such a model sends no thinking field then, as Pi already does for claude-opus-5.5, so the API's default applies.
+export function thinkingOff(model) {
+  if (model?.api !== 'anthropic-messages' || !model.reasoning || model.compat?.forceAdaptiveThinking !== true) return model;
+  if (model.thinkingLevelMap?.off === null) return model;
+  return { ...model, thinkingLevelMap: { ...(model.thinkingLevelMap || {}), off: null } };
+}
+
 function plainModel(id, provider, api, baseUrl) {
   return { id, name: id, api, provider, baseUrl, reasoning: false, input: ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 };
@@ -572,6 +593,7 @@ async function realProvider(name, modelId, custom) {
       throw new Error(`harness: ${name} (${id}) has no model ${modelId}; it has: ${known.join(', ') || 'none'}`);
     }
   }
+  model = thinkingOff(model);
   return { call: (context, signal) => models.completeSimple(model, context, { signal }) };
 }
 
@@ -837,6 +859,31 @@ const CHAT = `You are in a conversation with a person, in the main checkout of a
   `message comes when they send it. Paths are relative to the checkout. A message that names a file the person attached ` +
   `means that file: read it before you answer, an image too.`;
 
+// F464: a run of tool calls on screen is one collapsed line, as Claude Code draws it: 'Ran 3 shell commands, read 2 files'
+const TALLY = { bash: ['Ran', 'shell command'], read: ['Read', 'file'], edit: ['Edited', 'file'], write: ['Wrote', 'file'],
+  publish_page: ['Published', 'page'] };
+export function tallyLine(counts) {
+  const parts = Object.entries(counts).map(([name, n]) => {
+    const [verb, noun] = TALLY[name] || ['Called', name];
+    return TALLY[name] ? `${verb} ${n} ${noun}${n === 1 ? '' : 's'}` : `${verb} ${noun}${n === 1 ? '' : ` ${n} times`}`;
+  });
+  return parts.map((p, i) => (i ? p[0].toLowerCase() + p.slice(1) : p)).join(', ');
+}
+
+// the tally of the run of tool calls going on now: counted up live on a terminal, said once off one
+export class Tally {
+  constructor(out, tty) { this.out = out; this.tty = tty; this.counts = {}; }
+  add(name) {
+    this.counts[name] = (this.counts[name] || 0) + 1;
+    if (this.tty) this.out.write(`\r\x1b[2K\x1b[2m${tallyLine(this.counts)}\x1b[0m`);
+  }
+  end() {
+    if (!Object.keys(this.counts).length) return;
+    this.out.write(this.tty ? '\n' : `${tallyLine(this.counts)}\n`);
+    this.counts = {};
+  }
+}
+
 function overBudget(a, tokens, usd) {
   const tok = tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1)}M` : `${Math.round(tokens / 1e3)}k`;
   const spent = `${tok} tok $${usd.toFixed(2)}`;
@@ -856,6 +903,10 @@ function stoppable(signal, p) {
 
 async function main() {
   const a = parseArgs(process.argv.slice(2));
+  const tally = new Tally(process.stdout, process.stdout.isTTY);
+  const log = console.log; // any other line ends the run of tool calls first
+  console.log = (...x) => { tally.end(); log(...x); };
+  process.on('exit', () => tally.end());
   const cwd = process.cwd();
   const file = path.join(a.notes, 'harness-sessions', `${a.sid}.jsonl`);
   if (a.resume && !fs.existsSync(file)) throw new Error(`harness: session ${a.sid} has no transcript at ${file}`);
@@ -899,9 +950,13 @@ async function main() {
     if (a.chat && (over || !s.ctl)) s.ctl = new AbortController();
     over = false;
     is('busy');
-    for (const text of [...pending.splice(0), ...tells.take()]) {
+    for (const text of pending.splice(0)) {
       messages.push(t.user(text));
-      console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
+      console.log(saidLines(text));
+    }
+    for (const text of tells.take()) { // B855: a chat's terminal already showed a typed tell as it came
+      messages.push(t.user(text));
+      if (!tells.echo) console.log(saidLines(text));
     }
     const why = overBudget(a, tokens, usd);
     if (why) {
@@ -971,10 +1026,10 @@ async function main() {
     }
     messages.push(m);
     const said = textOf(m.content.filter((b) => b.type === 'text'));
-    if (said) console.log(said);
+    if (said) console.log(a.chat ? `● ${said}` : said);
     const calls = m.content.filter((b) => b.type === 'toolCall');
     for (const c of calls) {
-      console.log(`· ${c.name} ${JSON.stringify(c.arguments || {}).slice(0, 200)}`);
+      tally.add(c.name);
       const [text, isError, image] = s.ctl?.signal.aborted ? ['The person interrupted before this tool call ran; it did not run.', true] : c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
       messages.push(t.toolResult(c, text, isError, image));
       if (!s.ended) s.ended = s.endedNow();

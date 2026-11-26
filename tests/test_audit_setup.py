@@ -72,6 +72,7 @@ def test_setup_main(tmp: Path):
     git(tmp, 'init', '-q', '-b', 'main')
     out, at = io.StringIO(), []
     with mock.patch.object(S, 'offer_ttyd', lambda: None), mock.patch.object(S, 'offer_models', lambda r: []), \
+            mock.patch.object(S, 'offer_web_open', lambda root: None), mock.patch.object(S, 'offer_home', lambda root: []), \
             mock.patch.object(S, 'at_terminal', lambda: True), mock.patch.object(S, 'no_claude', lambda r: ''), \
             mock.patch.object(builtins, 'input', lambda q='': at.append('asked') or 'y'), \
             mock.patch.object(S, 'launch', lambda r, t: at.append('session') or 0), contextlib.redirect_stdout(out):

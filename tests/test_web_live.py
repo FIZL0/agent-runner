@@ -1542,5 +1542,32 @@ def test_banner_f402c(tmp: Path) -> None:
     eq(got, [False, False, True, True, True, True, False], 'where the banner shows')
 
 
+def test_copilot_jump_b863(tmp: Path) -> None:
+    """B863: a session scrolled up whose screen draws no jump pill (Copilot's) shows the page's own Jump to bottom, which
+    takes it to its newest output; Claude's pill stays its own."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('||!HX.st&&FD.shown&&!!FD.own' in page, 'the page\'s jump button shows for it')
+    if not shutil.which('node'):
+        return
+    claude = [*F170_IDLE[:2], '● done       Jump to bottom (ctrl+End) ↓', '', *F170_IDLE[4:]]
+    foots = logic_js([['feedFoot', claude, None], ['feedFoot', ['● an answer', 'more words', '', '> Ask Copilot'], None]])
+    got = logic_js([['feedOwnJump', True, foots[1]], ['feedOwnJump', True, None], ['feedOwnJump', False, foots[1]],
+                    ['feedOwnJump', True, foots[0]], ['feedOwnJump', False, foots[0]]])
+    eq(got, [True, True, False, False, False], 'scrolled up with no pill of its own: the page\'s button; Claude keeps its pill')
+    src = ''.join(page[page.index(f'function {f}('):].split('\n', 1)[0] + '\n' for f in ('pastJumpGo', 'feedOwnEnd'))
+    (tmp / 'driver.js').write_text(src + r"""
+let ends=0, downs=0, draws=0;
+const FD={own:true}, HX={st:''}, feedTerm=()=>({scrollToBottom:()=>ends++}), pastDown=()=>downs++, pastJumpDraw=()=>draws++;
+pastJumpGo();
+const one=[ends,downs,FD.own,draws];
+HX.st='up';pastJumpGo();
+console.log(JSON.stringify([one,[ends,downs]]));
+""", encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the jump', r.stderr[-900:])
+    if r.returncode == 0:
+        eq(json.loads(r.stdout), [[1, 0, False, 1], [1, 1]], 'a press takes the terminal to its end; the history still goes back its own way')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c), in_tmp(test_copilot_jump_b863)]))

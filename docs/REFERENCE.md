@@ -291,6 +291,12 @@ ETag and `private, no-cache`, so a switch back to a project gets a 304 with no b
 This is the same on the run page, through Runner Home's `/p/KEY/`, on Home's own page and on the page Home shows for a
 project with no run up. The run page's other answers stay `no-store`, and `/events` is never compressed.
 
+`/events` sends a snapshot (`data:` only) when it changes and, after 15 s with no change, a ping (`event: ping`, data
+`1`), which Runner Home passes as it comes. The page counts both as heard: with nothing heard for 33 s (about two pings,
+a socket that died quietly) it closes that stream and dials again, showing the lost-connection bar if no answer comes in
+8 s; shown again, back from the browser's page cache or online, it dials at once unless something came in the last 5 s.
+One stream is open at a time. An error drawing a snapshot is logged in the browser console (B838).
+
 On a phone's Home Screen: add the app from Home's link. Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
 from, or on the Overview if it was added from Home. An icon added before this change: remove it and add it again once,
 since iOS may keep the old scope. The manifest and icon hold the token the link has, so whoever has the manifest has it
@@ -1024,8 +1030,16 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
 - `tasks/<ID>.md` long forms, `REFERENCE.md` and `HUMAN.md` live in the plan repo; `[plan] journal` stays in the
   code repo, since journals describe code and travel with it.
 - `dir` outside the repo without `repo` (a synced folder) shares one copy the same way, without git.
-- Moving an existing plan over, keeping its history: `git subtree split -P plan -b plan-only`, push that
-  branch to the new repo as `main`, set `[plan] repo`, then `git rm -r plan` in the code repo.
+- Moving an existing plan over, keeping its history: `plan repo-setup [URL|path]` (F460). With no argument it
+  makes a bare repo at `[run] home`/plan.git; a path that is not there yet is made the same way. An empty
+  repo gets the plan folder's history (`git subtree split`) plus any edits not yet committed; one that
+  already holds a plan is joined (open tasks only this checkout had are named, to add again). Either way
+  `[plan] repo` is set in runner.toml (an in-repo `[plan] dir` taken out), the plan folder leaves the code
+  repo in one commit on the current branch, and it prints the line for the other machine: `git pull`, then
+  the same command (on a checkout already in plan repo mode it only clones and pulls). A local path suits
+  one machine; for two, give a URL both can reach.
+- `status` says once (marked in the notes as `plan-repo-hint`) when claims come from another host while the
+  plan is still in the code repo: plan repo mode would share the plan itself, not only the claims.
 
 **Claims with the plan in the code repo.** Runs claim tasks the same way without `[plan] repo`, whenever the code
 has a remote (`[git] push`): each claim is a ref, `refs/agent-runner/claims/<ID>`, on that remote. The first push
@@ -1522,7 +1536,7 @@ the key list. Each key is acted on as it is typed; ending sessions and adding a 
 `agent-runner pause` (`--off` goes on), `force` (`--off`), `slots 4` (or `+1`, `-1`), `stop --undo` (takes a
 gentle stop back), and `key <k>` for any other (`key z`, `key u`). Unlike a typed key, `pause`, `force` and
 `stop` say which way they go, so asking twice does not undo them. They append to `.runner/KEYS`, which the
-loop reads on every pass, so the run acts within 10 s; with no run up they say so and exit 1.
+run reads every quarter second, also in a long pass, so it acts and rewrites `.runner/STATE` within a second; with no run up they say so and exit 1.
 `agent-runner status` is short enough for a phone: whether a run is up and what the keys have set, each
 slot's task id, title and minutes running (from `.runner/STATE`, rewritten every pass), what is merging, the
 last five merged, blocked or parked tasks from `run.log`, and the account's usage as the caps last read it.
@@ -1937,6 +1951,10 @@ web = true                # the run app (see The run app), served by the run on 
                           # log; false: off
 web_port = 8770           # where the run app is served; a port set here stays open on every interface (unless it is
                           # Home's own port)
+web_open = 'everywhere'   # who opens a run app Runner Home does not: everywhere = every interface (LAN, Tailscale); here =
+                          # this machine only (127.0.0.1): its localhost link with its key, and no Tailscale Serve rule.
+                          # Per machine (runner.local.toml); another value stops the load. With Home, Home's address rules
+                          # (F454a)
 web_https = true          # the run app's https address on Tailscale (see The run app), on web_port+1 through `tailscale serve`; false: none
 silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
 control = true            # the run opens no control session of its own; true: it reopens the ones a shutdown cut off and, with remote, keeps the control server up; false: neither (`agent-runner control` still works)

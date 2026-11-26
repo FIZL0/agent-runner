@@ -1016,3 +1016,10 @@ _Said_: wait for, what it waits for
 _On screen_: Wait for…; ⋯ on a Plan queue row: Wait for…; What should B456 wait for?; Done, Cancel
 _In code_: plan edit --wait-for, plan_wait.py, set_waits, waitHTML, waitRows, data-waitset
 _Avoid_: block on, depend on
+
+**Parts list**:
+Under a split task's card in the Plan queue, every part of it in the order it runs: the landed ones ticked, then the rest, each with its own state
+_Said_: subtasks in a dropdown
+_On screen_: Parts, in the order they run
+_In code_: split.list, partRows, partsBar, partCard, 079-plan-parts
+_Avoid_: subtasks dropdown

@@ -327,3 +327,15 @@ def _save_project(batch: list[dict]) -> None:
 ACTIONS.update({'pitch_no': pitch_no, 'need_chat': need_chat, 'rename_chat': rename_chat,
                 'setting_device': setting_device, 'setting_reset': setting_reset, 'setting_project': setting_project,
                 'settings_save': settings_save})
+
+
+def plan_repo_setup(target: str = '') -> dict:
+    """F460: Settings > Plan's "Share the plan between machines": `plan repo-setup [target]` for this project.
+    {'ok', 'lines'}: the lines it says (the last one is what the other machine runs), or the reason it cannot."""
+    from agent_runner import config as CF
+    from agent_runner import plan_repo_setup as PRS
+    try:
+        with _SETTING_LOCK:
+            return {'ok': True, 'lines': PRS.setup(CF.Config(S.ROOT), target.strip() or None)}
+    except SystemExit as e:
+        return {'ok': False, 'lines': [str(e.code or 'repo-setup failed')]}

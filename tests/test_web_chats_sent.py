@@ -553,5 +553,55 @@ def test_responses_f425b(tmp: Path) -> None:
     eq(o['gone'], [0, 'late', True, True], 'a response that is gone sends nothing and keeps the words')
 
 
+ANSWER_CHAT_DRIVER = r"""
+const fs = require('fs'), page = fs.readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n'), shared = fs.readFileSync(process.argv[3] + '/030-shared.js', 'utf8');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const kept = {}, now = Date.now() / 1000;
+const p = new Function('kept', 'now', `
+const on = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }}, tabStore = {get: () => '', set() {}}, HKEY = 'p';
+const document = {title: 'p', hidden: false}, addEventListener = (t, f) => { on[t] = f }, setTimeout = () => {};
+const S = {snap: {at: 'now', sessions: [], needs: [], concepts: [], chat_quiet: 21600, responses: []}, ob: [], sent: {}, feeds: {}, sel: [], thread: null, view: 'home', f: {}, ren: null};
+const esc = t => String(t), I = {}, H = {alerts: []}, HOME_PAGE = false, HOLD_MS = 1, PD = {}, atAll = () => false, allRow = () => '', walkRow = () => '', chatBar = () => '', homeNeeds = () => 0;
+const chatRow = (s, q) => '<button>[' + s.name + (q ? ' q' : '') + ']</button>', sideRow = (x, q) => chatRow(x, q), standRows = () => [], render = () => {};
+let shown = '';
+const sideShow = h => { shown = h };
+` + logic + shared.split('/* --- a little markdown')[0] + slice('let DR=null;', '/* the sidebar drawn again') + `
+return {S, side() { side(); return shown }, markSeen, came: answerChatCame};`)(kept, now);
+const {S} = p, quiet = () => { const h = p.side().split('<div class="qline">Quiet</div>'); return [h[0].match(/\[c\d[^\]]*\]|newlabel/g), (h[1] || '').match(/\[c\d[^\]]*\]|newlabel/g)] };
+S.snap.sessions = [{name: 'c1', at: now - 5, last: 'you', state: 'live'}]; S.seen = {};
+const out = {};
+p.came({ok: true, chat: 'c5', said: 'B2 ticked'});
+S.snap.sessions.push({name: 'c5', at: now - 1, last: 'claude', state: 'live'});
+out.came = quiet();
+S.thread = 'c5'; p.markSeen(); S.thread = null; out.opened = quiet();
+S.snap.sessions[1] = {name: 'c5', at: now, last: 'claude', needs_reply: true, state: 'live'}; out.asks = quiet();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_answer_chats_f465(tmp: Path) -> None:
+    """F465: a chat a Needs you answer started rests in Quiet with 'new' until opened once, and goes to the top only
+    as any chat does: when it asks the person something."""
+    sent = {'ok': True, 'code': 0, 'out': 'control 7 is starting in a hidden console', 'argv': []}
+    with mock.patch.object(U, 'SEND', [lambda t: sent]), mock.patch.object(U, 'answer_argv', lambda *a: ([], '')):
+        r = U.answer('F9', 'why so?')
+    eq(r.get('chat'), 'c7', 'the answer names the chat it started')
+    eq(U.answer_chat({'ok': False, 'out': 'control 7'}), '', 'none when it did not start')
+    check('answerChatCame(j)' in (W.PAGE_DIR / '020-live.js').read_text(encoding='utf-8'), 'the page takes it from the answer')
+    if not shutil.which('node'):
+        print('  (no node here: the answer chat script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(ANSWER_CHAT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), str(W.PAGE_DIR)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the answer chats', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['came'], [['[c1]'], ['[c5 q]', 'newlabel']], 'a chat an answer started: under Quiet, new')
+    eq(o['opened'], [['[c1]'], ['[c5 q]']], 'opened once: no longer new, still quiet')
+    eq(o['asks'], [['[c5]', '[c1]'], None], 'it asks the person something: at the top')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_install_command_b761), in_tmp(test_responses_f425b)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_install_command_b761), in_tmp(test_responses_f425b), in_tmp(test_answer_chats_f465)]))
