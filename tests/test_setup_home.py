@@ -117,4 +117,13 @@ out, asked, _ = run(h, [], tty=False)
 eq('no terminal: nothing asked', (asked, h.calls), ([], []))
 has('no terminal: names the command', out[0], 'home install')
 
+h = FakeHome(on=True)
+out, asked, _ = run(h, [], tty=False)
+eq('no terminal, installed, not listed: nothing asked or added', (asked, h.added), ([], []))
+has('no terminal, installed, not listed: names home add', out[0], 'home add')
+
+h = FakeHome(code=SystemExit(2))
+out, asked, _ = run(h, ['y'])
+has('install that exits: said, setup goes on', out[0], 'not installed')
+
 raise SystemExit(report([]))

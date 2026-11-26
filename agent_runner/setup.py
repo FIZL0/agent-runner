@@ -388,6 +388,8 @@ def offer_home(root: Path, home=None) -> list[str]:
         code = 'interrupted'
     except Exception as e:
         code = str(e)
+    except SystemExit as e:
+        code = f'exit {e.code}'
     if code != 0:
         try:
             home.mark_installed(False)  # install turns Home on first: a failed one leaves it off, asked again
