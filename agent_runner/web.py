@@ -93,6 +93,9 @@ def _load_parts(parts) -> None:
 
 _load_parts(PARTS)
 
+# B838: the keep-alive is a named event, so the page can tell a quiet stream from a dead one; its data is no snapshot
+# and an older page's onmessage never hears it (only unnamed events reach onmessage)
+STREAM_PING = b'event: ping\ndata: 1\n\n'
 
 def byte_range(asked: str, size: int) -> tuple[int, int] | None:
     """F445a: the [start, end) of a file of `size` bytes a Range header asks for, (0, 0) when the file has none of
@@ -455,7 +458,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(f'data: {snap}\n\n'.encode('utf-8'))
                     last, quiet = snap, time.monotonic()
                 elif time.monotonic() - quiet >= PING:
-                    self.wfile.write(b': ping\n\n')
+                    self.wfile.write(STREAM_PING)  # B838: an event the page hears, not a comment
                     quiet = time.monotonic()
                 self.wfile.flush()
         except OSError:  # the page went away
