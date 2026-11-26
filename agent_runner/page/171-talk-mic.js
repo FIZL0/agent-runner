@@ -34,11 +34,11 @@ function dictate(){
   DK.rec=rec;DK.put=false;DK.key=boxKey();DK.base=ta.value;
   rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
   let final='', heard='';
-  rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)final+=x[0].transcript;else interim+=x[0].transcript}
+  rec.onresult=e=>{let interim='';final='';for(let i=0;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)final+=x[0].transcript;else interim+=x[0].transcript}  // B217: all of e.results, as hear()
     heard=final+interim;dictShow(heard)};
   rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type instead.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
-  rec.onend=()=>{DK.rec=null;dictShow(final||heard);render(true);
+  rec.onend=()=>{DK.rec=null;dictShow(heard);render(true);
     const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key&&!DK.put){t.focus({preventScroll:true});t.setSelectionRange(t.value.length,t.value.length)}micFree(rec);soundAs('playback')};
   render(true);
   micWhenFree(()=>{MIC.rec=rec;recFree();soundAs('play-and-record');try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}},()=>{DK.rec=null});
