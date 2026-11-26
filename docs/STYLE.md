@@ -375,7 +375,9 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   selected in it. At the live end a long press selects the word under the finger, the browser's own selection, as it does scrolled up; it stays when the finger lifts and while the history holds the place (`pastPicked()`): with words selected, new words move nothing on screen and the history stays up; with nothing selected the live session shows again (`pastRest()`). A menu or question at the live end, the jump button or a sent message lets go of the selection; a tap still clicks, and while words are selected a tap is the browser's. The jump button (`.pastjump`, see Jump button in GLOSSARY.md) floats over the lines just above the box,
   with its own fill and border and no ground behind or beside it, so text shows on both sides and stays pressable,
   selectable and scrollable; it glides to the live session (`scrollGlide()`, at once under `calm()`). Sending a message also goes
-  to the live session, and a fling ends on a press on the slim message box or the button (`pastStop()`). Where the history
+  to the live session, and a fling ends on a press on the slim message box or the button (`pastStop()`). The same button
+  shows when the terminal itself is scrolled up and its screen draws no jump pill of its own (Copilot's never does;
+  Claude's pill stays its own): a press takes the terminal to its newest output (`feedOwnJump()`, `pastJumpGo()`). Where the history
   cannot stand in (a menu, a question, unsent words in the prompt, a session with no transcript, a session someone else
   scrolled, not connected), a wheel step scrolls the session as before (`feedWheel()`). The keyboard moves the history with
   the box (`pastPlace()`). Page Up, Page Down, Ctrl+Home and Ctrl+End pressed in the session scroll it too (`pastPress()`); another width (a rotation) breaks its lines anew and keeps the place as near as can be (`pastWidth()`).

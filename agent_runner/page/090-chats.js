@@ -182,6 +182,8 @@ function feedHTML(n,bare){
   return bare?c:`<div class="col feeds">${c}</div>`;
 }
 /* ttyd's terminal (xterm.js), once its page has made it; null before */
+/* B863: the page's own Jump to bottom pressed: the terminal goes to its newest output */
+function feedOwnEnd(){const t=feedTerm();if(t)t.scrollToBottom();FD.own=false;if(typeof pastJumpDraw==='function')pastJumpDraw()}
 function feedTerm(){try{return FD.up&&FD.frame&&FD.frame.contentWindow.term||null}catch(e){return null}}
 function feedKey(k){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
   t.input(feedBytes(k,!!(t.modes&&t.modes.applicationCursorKeysMode)),true)}
@@ -258,7 +260,7 @@ matchMedia('(prefers-color-scheme:dark)').addEventListener('change',lookAgain);
 if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 /* does the session of a chat or slot work? The agent CLI's own status; until it is read, or with none, the feed's */
 const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
-function feedGone(){pastReset();clearTimeout(FD.wait);feedStill();Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,top:false,still:'',live:null,liveAt:0});feedClass()}
+function feedGone(){FD.own=false;pastReset();clearTimeout(FD.wait);feedStill();Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,t:0,held:'',last:0,run:0,rest:0,slim:false,jump:false,top:false,still:'',live:null,liveAt:0});feedClass()}
 function feedClass(){const m=document.querySelector('.main'), row=$('slimbox');if(!m||!row)return;
   m.classList.toggle('still',calm());m.classList.toggle('sess',FD.shown);m.classList.toggle('slim',FD.shown&&FD.slim);m.classList.toggle('pulled',FD.shown&&FD.off>0);row.hidden=!FD.shown;
   const d=$('dock');if(d)d.inert=FD.shown&&FD.slim;row.inert=!FD.slim;
@@ -292,6 +294,7 @@ function feedSee(){
   const jump=b.viewportY<b.baseY||!!(foot&&foot.jump);
   const ended=FD.jump&&!jump, left=!FD.jump&&jump;
   FD.jump=jump;
+  const own=feedOwnJump(b.viewportY<b.baseY,foot);if(own!==!!FD.own){FD.own=own;if(typeof pastJumpDraw==='function')pastJumpDraw()}
   if(ended)FD.off=0;  // at its end the last lines stand on the box
   FD.top=FD.off>0&&FD.top||feedOldest(t)&&(!jump&&!!foot&&(!!FD.short||feedGap(lines,foot.top))||!FD.slim&&!!FD.still&&feedRows(lines)===FD.still);  // once pulled, it stays till it is back
   if(ended&&FD.slim)feedSlim(false);
