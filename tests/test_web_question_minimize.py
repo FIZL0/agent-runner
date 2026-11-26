@@ -78,5 +78,16 @@ def test_presses(tmp: Path) -> None:
     eq(out[4], ['held'], 'shown again, an option is picked as before')
 
 
+def test_motion() -> None:
+    """B854c: hiding and coming back slide and fade, off under reduced motion."""
+    page = Path(__file__).resolve().parent.parent / 'agent_runner' / 'page'
+    css = (page / '095-question.css').read_text()
+    check('transform var(--qdur)' in css and 'opacity var(--qdur)' in css and 'allow-discrete' in css, 'the card slides and fades out, display last', css)
+    check('@starting-style{.main.sess:not(.qaway) .qcard' in css, 'and in, coming back')
+    check('--qdur:calc(var(--dur)*.9)' in css, 'in about 180ms')
+    check('prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}' in (page / '150-shared.css').read_text(), 'no motion under reduced motion')
+
+
 if __name__ == '__main__':
+    test_motion()
     raise SystemExit(report([in_tmp(f) for f in (test_minimize, test_kept, test_held, test_presses)]))
