@@ -485,6 +485,15 @@ function piCredentials() {
   };
 }
 
+// B862: Pi sends thinking {type:'disabled'} when its model data does not say "off" is unsupported (off: null), and
+// Claude models with adaptive thinking only (Copilot's claude-sonnet-5.5 in Pi 1.6.0's data) refuse that with a 400.
+// Such a model sends no thinking field then, as Pi already does for claude-opus-5.5, so the API's default applies.
+export function thinkingOff(model) {
+  if (model?.api !== 'anthropic-messages' || !model.reasoning || model.compat?.forceAdaptiveThinking !== true) return model;
+  if (model.thinkingLevelMap?.off === null) return model;
+  return { ...model, thinkingLevelMap: { ...(model.thinkingLevelMap || {}), off: null } };
+}
+
 function plainModel(id, provider, api, baseUrl) {
   return { id, name: id, api, provider, baseUrl, reasoning: false, input: ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 };
@@ -572,6 +581,7 @@ async function realProvider(name, modelId, custom) {
       throw new Error(`harness: ${name} (${id}) has no model ${modelId}; it has: ${known.join(', ') || 'none'}`);
     }
   }
+  model = thinkingOff(model);
   return { call: (context, signal) => models.completeSimple(model, context, { signal }) };
 }
 
