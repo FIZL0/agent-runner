@@ -145,5 +145,38 @@ for agent in ('pi', 'nosuchagent'):
 check('p.agent_problem' in W.PAGE.read_text(encoding='utf-8') and 'S.snap.agent_problem' in W.PAGE.read_text(encoding='utf-8'),
       'in All projects and on the Run card')
 
+print('F461: home install sets up https without a prompt, and asks once whether to trust the tailnet')
+from agent_runner import page_https as PH  # noqa: E402
+os.environ['AGENT_RUNNER_HOME_CONFIG'] = str(tmp / 'homecfg')
+plain = ['http://box:8770/?t=x']
+yes = lambda t: '/usr/bin/' + t  # noqa: E731
+with mock.patch.object(PH, 'not_connected', lambda: False), \
+        mock.patch.object(H, 'home_urls', lambda port, https=None: ['https://box.ts.net:8771/?t=x'] + plain):
+    ran, said = [], []
+    got = H.offer_https(8770, plain, call=lambda c: ran.append(c) or (0, ''), out=said.append,
+                        ask=lambda q: 1 / 0, which=yes, status=lambda: {})
+    eq(ran, [['tailscale', 'serve', '--bg', '--https=8771', 'http://127.0.0.1:8770']], 'serve made, no prompt')
+    eq(got[0], 'https://box.ts.net:8771/?t=x', 'https link first')
+    ran, said = [], []
+    got = H.offer_https(8770, plain, call=lambda c: ran.append(c) or (0, ''), out=said.append, which=yes,
+                        status=lambda: {'TCP': {'8771': {}}})
+    eq((ran, got), ([], plain), 'port 8771 taken: nothing run')
+    has(said[-1], r'http only \(Tailscale Serve already uses port 8771', 'and says why')
+with mock.patch.object(PH, 'not_connected', lambda: True):
+    said = []
+    H.offer_https(8770, plain, call=lambda c: 1 / 0, out=said.append, which=yes)
+    has(said[-1], r'http only \(Tailscale is not connected', 'not connected: says why')
+eq(H.ask_tailnet(out=print, tty=False), False, 'not a tty: no question')
+eq(H.ask_tailnet(out=print, ask=lambda q: False), False, 'a no: tailnet not added')
+eq(H.load_registry()['trusted_networks'], [], 'nothing trusted')
+eq(H.ask_tailnet(out=print, ask=lambda q: 1 / 0), False, 'a no is not asked again')
+(tmp / 'homecfg' / 'tailnet-asked').unlink()
+asked = []
+eq(H.ask_tailnet(out=print, ask=lambda q: asked.append(q) or True), True, 'a yes adds tailnet')
+eq(H.load_registry()['trusted_networks'], ['tailnet'], 'tailnet is trusted')
+has(asked[0], 'Anyone on the tailnet can then do everything', 'the question warns')
+eq(H.ask_tailnet(out=print, ask=lambda q: 1 / 0), False, 'trusted already: not asked again')
+os.environ.pop('AGENT_RUNNER_HOME_CONFIG')
+
 os.environ['AGENT_RUNNER_HOME'] = env
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
