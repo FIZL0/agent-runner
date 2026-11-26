@@ -194,6 +194,7 @@ DEFAULTS: dict = {
                                 # and wait in pitches (pages under Needs you: Approve / Not this)
         'approve_wait': 30,     # minutes without a new merge into a group of related changes before its pitch opens
         'approve_batch': 5,     # a group this big opens its pitch at once
+        'approve_diff_lines': 400,  # lines of each change's diff its Review page shows (0: none)
         'ci_watch': 'auto',     # GitHub Actions workflow files (pages.yml) whose newest finished run on the
                                 # shared branch is read while a run is up: a red one files one critical B task.
                                 # "auto": every workflow that runs on a push to it (push runs only); false: off
@@ -781,7 +782,7 @@ class Config:
         if problem := setting_problem('git', 'pr', self.raw['git']['pr']) or both_problem(self.raw) or \
                 setting_problem('git', 'pr_max', self.raw['git']['pr_max']):  # F419, F420
             raise SystemExit(f'agent-runner: {problem}')
-        for k in ('approve', 'approve_wait', 'approve_batch', 'releases', 'split_files', 'auto_audit', 'audit_tokens'):  # F98, F193, F200b, F417
+        for k in ('approve', 'approve_wait', 'approve_batch', 'approve_diff_lines', 'releases', 'split_files', 'auto_audit', 'audit_tokens'):  # F98, F193, F200b, F417
             if problem := setting_problem('run', k, self.run[k]):
                 raise SystemExit(f'agent-runner: {problem}')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):

@@ -1016,3 +1016,10 @@ _Said_: wait for, what it waits for
 _On screen_: Wait for…; ⋯ on a Plan queue row: Wait for…; What should B456 wait for?; Done, Cancel
 _In code_: plan edit --wait-for, plan_wait.py, set_waits, waitHTML, waitRows, data-waitset
 _Avoid_: block on, depend on
+
+**Review page**:
+A pitch's page, where a person reads each waiting change's diff and why, asks about it, asks for a better way, and approves it
+_Said_: review page
+_On screen_: The diff / You asked / Answer it
+_In code_: pitch.page_html, review.diff_html, pitch ask, pitch better
+_Avoid_: code review, PR page

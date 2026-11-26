@@ -326,7 +326,8 @@ def also_going(pid: str, d: dict) -> list[str]:
 
 def page_html(pid: str, d: dict, project: str = '') -> str:
     """A pitch's page: per change what it changes, why, how to try it and what it might break, as its agent wrote
-    it; the files at the bottom."""
+    it; the files at the bottom. F444: it is the Review page too: each change's diff and the questions asked."""
+    from agent_runner import review as R  # review imports brief, which imports this
     cards, files = [], []
     xs = changes_of(pid, d)
     for x in xs:
@@ -337,7 +338,9 @@ def page_html(pid: str, d: dict, project: str = '') -> str:
             ('Try it now', say.get('try')), ('What it might break', say.get('risk'))) if v)
         pair = _shown(say.get('before'), 'Before') + _shown(say.get('after'), 'After')
         cards.append(f'<article><h2>{_rich(x["title"])}</h2><p class="m">{html.escape(x["id"])}</p>{body}'
-                     + (f'<div class="pair">{pair}</div>' if pair else '') + '</article>')
+                     + (f'<div class="pair">{pair}</div>' if pair else '')
+                     + R.diff_html(x) + R.asked_html(x['id'])  # F444: the Review page
+                     + (R.answers_html(pid, x['id']) if x['state'] == 'waiting' else '') + '</article>')
         files.append(f'<p>{html.escape(x["id"])}</p><ul>'
                      + ''.join(f'<li><code>{html.escape(f)}</code></li>' for f in x['files']) + '</ul>')
     if also := also_going(pid, d):
@@ -345,9 +348,9 @@ def page_html(pid: str, d: dict, project: str = '') -> str:
                      + '</ul>')
     n = len(xs)
     return (f'<title>{html.escape(project)} {pid}</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n'
-            f'{STYLE}<div class="wrap"><div><h1>{n} change{"s" * (n != 1)} ready to push</h1>'
+            f'{STYLE}{R.REVIEW_STYLE}<div class="wrap"><div><h1>{n} change{"s" * (n != 1)} ready to push</h1>'
             f'<p class="m">They are merged and tested here, and not pushed. Approve them, or say Not this to all or '
-            f'one of them, under Needs you.</p></div>' + ''.join(cards)
+            f'one of them, under Needs you. Read each one\'s diff, ask about it, or ask for a better way.</p></div>' + ''.join(cards)
             + '<article><h3>Files changed</h3>' + ''.join(files) + '</article></div>\n')
 
 
@@ -556,13 +559,40 @@ def not_undone(keys: list[str], why: str) -> None:
         S.log(f'{said} [{pid}]', EV_PITCH, pitch=pid)
 
 
+def review_answer(pid: str, ids: list[str]) -> int:
+    """F444 `pitch ask PITCH ID "question"`: a one-shot answers it from the change's diff and why; the answer is kept
+    and shown on the Review page, which is written again here (its run page copy)."""
+    if len(ids) < 2:
+        print('agent-runner pitch: ask needs the change and your question: pitch ask pitch1 F1 "why this way?"',
+              file=sys.stderr)
+        return 2
+    tid, q = ids[0], ' '.join(ids[1:]).strip()
+    d = read()
+    x = next((x for x in changes_of(pid, d)[::-1] if x['id'] == tid), None)
+    if not x:
+        print(f'agent-runner pitch: {pid} has no change {tid}', file=sys.stderr)
+        return 1
+    from agent_runner import review as R
+    said, why = R.ask_change(x, q, S.ROOT)
+    if why:
+        print(f'agent-runner pitch: no answer: {why}', file=sys.stderr)
+        return 1
+    try:
+        S.C.notes('concepts', f'{pid}.html').write_text(page_html(pid, read(), S.project()), encoding='utf-8')
+    except OSError:
+        pass
+    print(said)
+    return 0
+
+
 def cmd_pitch(argv: list[str]) -> int:
     """`agent-runner pitch [approve|no PITCH]`: the pitches that wait, and the person's answer to one."""
     ap = argparse.ArgumentParser(prog='agent-runner pitch', description='[run] approve: the landed changes that wait '
                                  'for your approval before they are pushed.')
-    ap.add_argument('what', nargs='?', choices=('list', 'approve', 'no'), default='list')
+    ap.add_argument('what', nargs='?', choices=('list', 'approve', 'no', 'ask', 'better'), default='list')
     ap.add_argument('pitch', nargs='?', help='the pitch (pitch1)')
-    ap.add_argument('ids', nargs='*', metavar='ID', help='no: only these changes of it (default: all), reopened')
+    ap.add_argument('ids', nargs='*', metavar='ID', help='no: only these changes of it (default: all), reopened; '
+                    'ask: the change, then your question; better: the change')
     ap.add_argument('--reopen', default='', metavar='ID,ID', help='no: undo these and put their tasks back')
     ap.add_argument('--drop', default='', metavar='ID,ID', help='no: undo these and drop their tasks (all: every one)')
     ap.add_argument('--why', default='', help='no: what is wrong with it, noted on the tasks')
@@ -584,7 +614,13 @@ def cmd_pitch(argv: list[str]) -> int:
         ap.error(f'{a.what} needs a pitch, as `pitch` lists them (pitch1)')
     if a.what == 'approve':
         rc, said = approve(a.pitch)
+    elif a.what == 'ask':
+        return review_answer(a.pitch, a.ids)
     else:
+        if a.what == 'better':  # F444: undone and reopened, with what the person wants instead
+            if len(a.ids) != 1 or not a.why.strip():
+                ap.error('better needs one change and --why "what you want instead"')
+            a.why = f'asked for a better way: {a.why.strip()}'
         split = lambda s: [x for x in re.split(r'[,\s]+', s) if x]
         every = [x['id'] for x in changes_of(a.pitch) if x['state'] in ('waiting', 'approved')]
         drop = every if a.drop == 'all' else split(a.drop)
