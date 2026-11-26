@@ -39,6 +39,7 @@ PAGE_TEXT = PAGE.read_text(encoding='utf-8')
 PAGE_PRINT = hashlib.sha256(PAGE_TEXT.encode('utf-8')).hexdigest()[:12]  # F149: which page this process serves
 BOOT = secrets.token_hex(4)  # B164: this process, so the page knows when the run restarted
 TICK = 2.0  # s between snapshots the events stream compares
+NOW = 0.1  # B850b: s between the events stream's looks for a done action or a changed STATE (no snapshot made)
 PING = 15.0  # s of no change before the stream sends a keep-alive comment
 # B761: said only where ttyd_install_cmd finds no package manager
 TTYD_INSTALL = ('Arch: pacman -S ttyd; Debian/Ubuntu: apt install ttyd; macOS: brew install ttyd; Windows: winget '
