@@ -440,7 +440,7 @@ def line_refusal(tid: str, why: str, after: str | None, until: str | None, c, pr
 
 
 # B810: a BLOCKED whose wait a machine can read: a rerun on a command's exit, or a held tool
-_PERSON_ACTS = re.compile(r'\s*(?i:plug|unplug|unlock|sign|log|connect|turn|press|open|install|charge|insert|reboot|restart|'
+_PERSON_ACTS = re.compile(r'(?:^|[;:]\s|\.\s)\s*(?i:plug|unplug|unlock|sign|log|connect|turn|press|open|install|charge|insert|reboot|restart|'
                           r'approve|accept|grant|add|set|enter|give|pair|tap|click|renew|pay|create)\b')
 _MACHINE_WAIT = re.compile(
     r'(?i:\b(?:re-?runs?|reopens?|retr(?:y|ies)|try again|resumes?|goes on)\b[^.;]{0,80}?\b(?:when|once|after|until|if)\b'
@@ -451,7 +451,7 @@ _MACHINE_WAIT = re.compile(
 def machine_wait(why: str) -> bool:
     """B810: whether a BLOCKED line waits for what a check can read (a command exiting 0, a held tool), not a person."""
     body = re.sub(r'^\s*BLOCKED:', '', P.URL.sub('', why or ''))
-    return not _PERSON_ACTS.match(body) and bool(_MACHINE_WAIT.search(body))
+    return not _PERSON_ACTS.search(body) and bool(_MACHINE_WAIT.search(body))
 
 
 def wait_refusal(tid: str, why: str, after: str | None, until: str | None, c, prog: str) -> str | None:

@@ -117,9 +117,12 @@ def test_done(root: Path, env: dict) -> None:
         check(A.machine_wait(why), f'a machine wait: {why[:60]}')
     refused('R17', r17, 'no person is needed', r'file a task that adds one', 'block --after it')
     blocked('R17', r17, '--until', 'version:9.9.9')
+    blocked('R17', r17, '--after', 'F4')
+    refused('R17', 'BLOCKED: reopen once `make probe` passes', 'no person is needed')
     for why in ('BLOCKED: Plug the iPhone 15 in; the device is busy until then',
                 'BLOCKED: Unlock the phone; the lock is held by the screen saver',
                 'BLOCKED: Sign in to Codex; rerun when `codex login status` exits 0',
+                'BLOCKED: The phone is locked; unlock it and press Trust',
                 'BLOCKED: Log in to Codex on the Mac; `codex login` says: not signed in'):
         check(not A.machine_wait(why), f'asks a person: {why[:60]}')
     toml = root / 'runner.toml'
