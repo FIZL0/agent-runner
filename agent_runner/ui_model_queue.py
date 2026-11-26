@@ -572,7 +572,9 @@ def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
     publish-page. `page`: it is no concept (no Pick/OK); `waits`: its task also has a Needs you item."""
     try:
         files = sorted(S.C.notes('concepts').glob('*.html'))
-        tasks = {tid: (box, rest) for _, box, tid, rest, _ in P.iter_tasks(P.lines(S.C.todo))}
+        ls = P.lines(S.C.todo)
+        tasks = {tid: (box, rest) for _, box, tid, rest, i in P.iter_tasks(ls)
+                 if not P._shelved(ls, i)}  # F184: shelved tasks stay out of Concepts
     except Exception:  # noqa: BLE001 - no notes dir or plan: no pages
         return []
     out = []
