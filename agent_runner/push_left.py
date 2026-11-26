@@ -56,9 +56,13 @@ def _merged(root: Path, branch: str, up: str) -> tuple[str, str]:
     if git('worktree', 'add', '-q', '--detach', str(d), f'refs/heads/{branch}', cwd=root).returncode:
         return '', 'could not make a worktree to test the merge in'
     try:
-        if git('merge', '-q', '--no-edit', '-m', f'Merge {up.removeprefix("refs/remotes/")} into {branch}', up,
-               cwd=d).returncode:
+        if (m := git('merge', '-q', '--no-edit', '-m', f'Merge {up.removeprefix("refs/remotes/")} into {branch}', up,
+                     cwd=d)).returncode:
+            clash = git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.strip()
             git('merge', '--abort', cwd=d)
+            if not clash:  # no identity to commit as, say: git's own words
+                return '', f'git could not merge {up.removeprefix("refs/remotes/")}: ' + \
+                    (m.stderr.strip().splitlines() or ['no message'])[-1][:200]
             return '', f'{up.removeprefix("refs/remotes/")} conflicts with it; the next merge takes it in'
         rc, out = gate(d)
         if rc:
@@ -88,6 +92,10 @@ def push_left(root: Path, branch: str, tries: int = TRIES) -> str:
                 return f'! {branch} is not pushed: the main checkout has another branch out'
             if git('merge', '-q', '--ff-only', sha, cwd=root).returncode:
                 return f'! {branch} is not pushed: it could not move to the tested merge (uncommitted edits?)'
-        if not net('push', '-q', remote, branch).returncode:
+        if not (p := net('push', '-q', remote, branch)).returncode:
             return f'pushed {branch} -> {remote}: landed work a refused push had left on this disk'
+        net('fetch', '-q', remote)
+        if not git('merge-base', '--is-ancestor', up, f'refs/heads/{branch}', cwd=root).returncode:
+            return f'! {branch} is not pushed: {remote} refused it: ' + \
+                (p.stderr.strip().splitlines() or ['no message'])[-1][:200]  # refused, not moved: no retry helps
     return f'! {branch} is not pushed: {remote}/{branch} kept moving ({tries} tries); the next run or merge pushes it'
