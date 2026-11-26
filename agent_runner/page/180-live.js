@@ -74,13 +74,30 @@ async function askClosed(){
   try{const r=await fetch(tq('snapshot'));closed=r.status===502&&(await r.json()).closed===true}catch(e){}
   if(lost)lostDraw(closed);
 }
+/* B838: one stream at a time (ES); heard: when it last said anything, a snapshot or a ping */
+let ES=null, heard=Date.now(), dialT=0;
 function connect(n=0){
+  clearTimeout(dialT);dialT=0;
+  if(ES){ES.onmessage=ES.onerror=null;ES.close();ES=null}
   let es;try{es=new EventSource(tq('events'))}catch(e){return poll()}
-  const fine=()=>{n=0;clearTimeout(lost);lost=0;$('offline').hidden=true;lostDraw(false)};
-  es.onmessage=e=>{fine();try{takeSnap(JSON.parse(e.data))}catch(x){}};
+  ES=es;heard=Date.now();
+  const fine=()=>{heard=Date.now();n=0;clearTimeout(lost);lost=0;$('offline').hidden=true;lostDraw(false)};
+  es.onmessage=e=>{fine();let s;try{s=JSON.parse(e.data)}catch(x){console.error('events: not a snapshot',x);return}
+    try{takeSnap(s)}catch(x){console.error('events: the snapshot did not draw',x)}};
+  es.addEventListener('ping',()=>{if(ES===es)fine()});
   es.onerror=()=>{if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000);
-    if(es.readyState===2){es.onerror=null;askClosed();setTimeout(()=>connect(n+1),dialWait(n))}};  // F402b3b
+    if(es.readyState===2){es.onerror=null;if(ES===es)ES=null;askClosed();dialT=setTimeout(()=>connect(n+1),dialWait(n))}};  // F402b3b
 }
+/* B838: a stream that went quiet past two pings, or a page shown again, dials again; the bar shows if no answer in 8 s */
+function redial(why){
+  if(!ES||!streamRedial(heard,Date.now(),why))return;
+  if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000);
+  connect();
+}
+setInterval(()=>redial('quiet'),5000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)redial('shown')});
+addEventListener('pageshow',e=>{if(e.persisted)redial('shown')});
+addEventListener('online',()=>redial('shown'));
 async function poll(){try{takeSnap(await (await fetch(tq('snapshot'))).json())}catch(e){}setTimeout(poll,4000)}
 async function loadFeed(n){
   if(String(n||'')[0]==='@'||isNew(n))return;  // F137: a chat still starting has no feed yet; F172: nor one not started
