@@ -126,7 +126,7 @@ def chat_of(c, d) -> int:
     from agent_runner.control import control_live_numbers
     try:
         return taken_by.chat(c, d, control_live_numbers()) or 0
-    except OSError:
+    except Exception:  # noqa: BLE001 - not knowing the chat never stops a cancel
         return 0
 
 

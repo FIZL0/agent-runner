@@ -314,6 +314,15 @@ def test_taken_fails(p: Proj):
     eq(rc, 1, 'finished: refused')
     has(said, 'about to land', 'said')
     check(d.is_dir(), 'still there')
+    git(p.repo, 'update-ref', '-d', loop_requests.TESTED + 'H1')
+    typed = []
+    from agent_runner import control
+    with mock.patch.object(cancel, 'chat_of', lambda c, d: 2), \
+            mock.patch.object(control, 'control_type', lambda n, t: typed.append((n, t)) or True):
+        rc, said, note = cancel.stop(R.C, 'H1', ['--yes'])  # a run is up: this test holds run.lock
+    eq((rc, d.exists(), p.branches()), (0, False, ['wip/H1']), f'with a run up, it goes through ({said})')
+    has(said, 'told chat 2 to stop', 'said')
+    eq([n for n, _ in typed], [2], 'the chat that took it is told to stop')
 
 
 if __name__ == '__main__':
