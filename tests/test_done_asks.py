@@ -109,6 +109,24 @@ def test_done(root: Path, env: dict) -> None:
     blocked('R17', 'release V5 lands')  # no label: the wait is read off the words
     has(todo.read_text(encoding='utf-8'), r'R17.*BLOCKED: \(after V5\) .*release V5 lands', 'and waits on it')
 
+    print('a BLOCKED that waits for a command or a held tool (B810)')
+    r17 = ('BLOCKED: The iPhone 15 UI lock is held by iFizBox task B440 (busy 25+ min); rerun when tools/ui-15.sh '
+           'state exits 0')
+    for why in (r17, 'BLOCKED: the phone is busy with another task', 'BLOCKED: reopen once `make probe` passes',
+                'BLOCKED: retry when the simulator is not in use', 'BLOCKED: check state returns 0 then go on'):
+        check(A.machine_wait(why), f'a machine wait: {why[:60]}')
+    refused('R17', r17, 'no person is needed', r'file a task that adds one', 'block --after it')
+    blocked('R17', r17, '--until', 'version:9.9.9')
+    for why in ('BLOCKED: Plug the iPhone 15 in; the device is busy until then',
+                'BLOCKED: Unlock the phone; the lock is held by the screen saver',
+                'BLOCKED: Sign in to Codex; rerun when `codex login status` exits 0',
+                'BLOCKED: Log in to Codex on the Mac; `codex login` says: not signed in'):
+        check(not A.machine_wait(why), f'asks a person: {why[:60]}')
+    toml = root / 'runner.toml'
+    toml.write_text(toml.read_text(encoding='utf-8') + '[run.checks.probe]\ncmd = "true"\n', encoding='utf-8')
+    refused('R17', r17, r'run wait-for NAME', r'--until tool:NAME or check:NAME', r'check:probe')
+    toml.write_text(toml.read_text(encoding='utf-8').replace('[run.checks.probe]\ncmd = "true"\n', ''), encoding='utf-8')
+
     print('a good line')
     blocked('F4', 'BLOCKED: Log in to Codex on the Mac; `codex login` says: not signed in')
     blocked('F4', 'CONFIRM: Press Save on the F3 page and see that it stays saved')
