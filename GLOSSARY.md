@@ -1016,3 +1016,10 @@ _Said_: wait for, what it waits for
 _On screen_: Wait for…; ⋯ on a Plan queue row: Wait for…; What should B456 wait for?; Done, Cancel
 _In code_: plan edit --wait-for, plan_wait.py, set_waits, waitHTML, waitRows, data-waitset
 _Avoid_: block on, depend on
+
+**Ready item**:
+A Needs you item for something a landed task made for a person to look at or use outside the code
+_Said_: a new review category
+_On screen_: Showcase video is ready: watch it
+_In code_: ready.py, done --ready, ready-ID
+_Avoid_: deliverable review
