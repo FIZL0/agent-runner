@@ -12,7 +12,7 @@ function partRows(rows){
   for(const q of all)for(const p of partsOf(q))if(!p.landed&&p.id!==q.id)owner[p.id]=owner[p.id]||q.id;
   const top=id=>{const seen=[];while(owner[id]&&!seen.includes(id)&&all.some(q=>q.id===owner[id])){seen.push(id);id=owner[id]}return id};
   const hits=planWant()&&PQ.got?[...(PQ.got.open||[]),...(PQ.got.parked||[])].map(h=>h.id):[];
-  for(const h of hits)for(let id=owner[h];id;id=owner[id]===id?'':owner[id])delete PT.shut[id];  // Find a task opens the group holding a match
+  for(const h of hits)for(let id=h,n=0;id&&n<9;id=owner[id],n++)delete PT.shut[id];  // Find a task opens the group holding a match, and its own
   const live=id=>rows.find(q=>q.id===id);
   const running=q=>/^running/.test(q.state||'')||q.under_way;
   /* the group of row q: q, then (open) each of its parts not landed, depth one deeper, their own parts after them */
