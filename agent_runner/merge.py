@@ -783,6 +783,17 @@ def merge_rank(tid: str, crit: bool) -> int:
     return 2 if any(tid in a['tids'] for a in AHEADS) else 3
 
 
+def auto_release_landed(branch: str) -> str:
+    """B849a: a landing that reaches `[run] auto_release` every queues the release while its merge still holds MERGE,
+    before the next merge starts its gate. Never fails the landing."""
+    from agent_runner import autorelease
+    try:
+        return autorelease.auto_release(branch, merging=True)
+    except Exception as e:  # noqa: BLE001
+        log(f'auto release at a landing failed: {e}')
+        return ''
+
+
 def merge_tries(tid: str, branch: str) -> str | None:
     """`merge`'s three tries."""
     yields, tries = True, -1
@@ -818,6 +829,7 @@ def merge_tries(tid: str, branch: str) -> str | None:
             with freeze.held():  # B827: a stop now lets it be recorded
                 base, merged = LANDED.pop(tid)
                 record_landed(tid, branch, base, merged, sys.modules[__name__])
+            auto_release_landed(branch)
             published(tid, branch)
             announce_release(base, merged)
             return None
