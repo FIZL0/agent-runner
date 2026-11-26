@@ -84,7 +84,7 @@ function setBarHTML(){
   const n=draftCount(S.draft,settingsAll(S.set)), its=S.ob.filter(x=>x.setbar), it=its.filter(x=>x.state!=='failed').pop(), bad=its.filter(x=>x.state==='failed');
   const row=(words,btns,live)=>`<div class="row">${live?'<span class="livedot"></span>':''}<span class="grow" role="status">${words}</span><div class="btns">${btns}</div></div>`;
   const going=it=>row(`${it.setbar==='undo'?'Undoing':'Saving'} ${changeWords(it.n)}: ${esc(obState(it))}`,it.state==='failed'?obBtns(it):'',it.state!=='failed'), lost=bad.map(going).join('');
-  if(n)return lost+row(`${changeWords(n)} not saved`,'<button class="btn" data-setdrop>Undo</button><button class="btn acc" data-setall>Save</button>');
+  if(n)return lost+row(`${changeWords(n)} not saved${draftSides(S.draft)?`: ${draftSides(S.draft)}`:''}`,'<button class="btn" data-setdrop>Undo</button><button class="btn acc" data-setall>Save</button>');
   if(it||lost)return lost+(it?going(it):'');
   const u=undoCount(S.setUndo), waits=u?loginWaits(S.setUndo,loginsNow(S.set,S.logins),baseProvider()):'';
   return u?row(`${changeWords(u)} saved${waits?`. ${esc(waits)}`:''}`,`<button class="btn" data-setundo>Undo</button><button class="icon" data-setundox aria-label="Close" title="Close">${I.x}</button>`):'';

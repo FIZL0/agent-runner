@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: Settings has two tabs, Project (runner.toml) and This device (runner.local.toml); every row edits the file of the tab in view, a row this device overrides shows its value on Project, Changed counts per tab, and the Settings bar names both files (F462)
 - Changed: ui_model_need.py split: concept and sheet code now in ui_model_concept.py and ui_model_sheet.py, with their tests (C56)
 - Changed: the Talk page tests are split by area into test_web_talk.py, test_web_talk_sound.py and test_web_talk_home.py, so tasks on one area no longer wait for the others (C58).
 
