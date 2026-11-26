@@ -869,10 +869,10 @@ def test_plan_share_f460a(tmp: Path) -> None:
              ['planShareView', None]]
     p = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'logic.js')], input=json.dumps(cases), capture_output=True, text=True, timeout=60)
     check(p.returncode == 0, 'node runs', p.stderr[-800:])
-    got = json.loads(p.stdout or '[]') or [None] * 3
+    got = json.loads(p.stdout or '[]') or [{}] * 3
     eq(got[0], {'lines': ['a', 'b'], 'cmd': 'run this', 'err': False}, 'the last line is the command')
     eq(got[1], {'lines': ['no'], 'cmd': '', 'err': True}, 'a refusal says why')
-    eq(got[2]['err'], True, 'no answer')
+    eq(got[2].get('err'), True, 'no answer')
 
 
 if __name__ == '__main__':
