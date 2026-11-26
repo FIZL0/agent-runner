@@ -500,6 +500,19 @@ def test_enterprise(tmp: Path):
     seen()
 
 
+def test_tool_line(env: Env):
+    """B853: a tool call shows as one short, dim line: the name and its main argument, no JSON."""
+    src = (Path(R.__file__).parent / 'harness.mjs').read_text(encoding='utf-8')
+    start = src.index('export function toolLine')
+    body = src[start:src.index('\n}\n', start) + 3].replace('export ', '')
+    js = body + ("console.log(JSON.stringify([toolLine('bash', {command: './run status -n 20\\nmore'}, true),"
+                 "toolLine('edit', {path: 'a.py', old: 'x'}, false), toolLine('bash', {command: 'x'.repeat(300)}, false)]));")
+    out = json.loads(subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30).stdout)
+    eq(out[0], '\x1b[2m· bash: ./run status -n 20\x1b[0m', 'a bash call on a terminal is one dim line with its command')
+    eq(out[1], '· edit: a.py', 'another tool shows by name and main argument, plain off a terminal')
+    check(len(out[2]) < 120 and '{' not in ''.join(out), 'a long command is cut, and no JSON braces show', out)
+
+
 def main() -> int:
     node = shutil.which('node')
     if not node:
@@ -512,7 +525,7 @@ def main() -> int:
             return report([lambda: test_routing(env), lambda: test_finish(env),
                            lambda: test_finish_refused(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_context_warn(env), lambda: test_resume(env),
-                           lambda: test_tell(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
+                           lambda: test_tell(env), lambda: test_tool_line(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 
