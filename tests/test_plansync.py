@@ -117,6 +117,32 @@ def test_all(tmp: Path):
           (cb.plan_dir / 'claims' / 'T3').read_text().startswith(plansync.owner(ca)),
           "and its own claim commit is gone")
 
+    print('claims: a gone run\'s claim is taken over after TAKEOVER (B857)')
+
+    def age(tid, secs):  # A's claim on tid, as if last refreshed `secs` ago
+        plansync.pull(ca, force=True)
+        f = ca.plan_dir / 'claims' / tid
+        ls = f.read_text().splitlines()
+        ls[1] = time.strftime(plansync._STAMP, time.localtime(time.time() - secs))
+        f.write_text('\n'.join(ls) + '\n')
+        eq(plansync.publish(ca, f'age {tid}'), '', 'the aged claim pushes')
+    check(plansync.claim(ca, 'T4'), 'A claims T4')
+    age('T4', 3600)
+    plansync.pull(cb, force=True)
+    eq(plansync.taken(cb) & {'T4'}, {'T4'}, 'a 1h-old claim still holds T4, seen from B')
+    check(not plansync.claim(cb, 'T4'), 'and B cannot take it over')
+    age('T4', 2 * 3600 + 120)
+    plansync.pull(cb, force=True)
+    eq(plansync.taken(cb) & {'T4'}, set(), 'a 2h-old claim no longer holds T4')
+    check(plansync.claim(cb, 'T4'), 'B takes T4 over')
+    has(plansync.TOOK.pop('T4', ''), r'took over T4 from .* \(claim not refreshed since ', 'and says so')
+    eq(plansync.claims(cb)['T4'].owner, plansync.owner(cb), 'the claim is now B\'s')
+    plansync.pull(ca, force=True)
+    eq(set(plansync.lost(ca, {'T4'})), {'T4'}, 'A, back, sees T4 is no longer its own')
+    plansync.refresh(ca, {'T4'})
+    plansync.pull(cb, force=True)
+    eq(plansync.claims(cb)['T4'].owner, plansync.owner(cb), "and A's refresh leaves B's claim alone")
+
     print('done')
     (a / 'a.py').write_text('# a2\n')
     r = run(a, 'done', 'T3', 'T3: the work', '--no-test')
