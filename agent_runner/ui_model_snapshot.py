@@ -166,10 +166,11 @@ def control_rows(windows: dict[int, str], links=None) -> list[dict]:
 
 
 def closed_rows(listed: set[str] = frozenset()) -> list[dict]:
-    """B859: each control session closed for being idle (`control.idle_closed_chats`) as a cN row with state
+    """B859: each control session closed for being idle (`control_closed.idle_closed_chats`) as a cN row with state
     'closed' and 'closed': True, so the page lists it in Quiet until chat_quiet passes; not those in `listed`."""
     try:
-        from agent_runner.control import control_given, idle_closed_chats
+        from agent_runner.control import control_given
+        from agent_runner.control_closed import idle_closed_chats
         gone = idle_closed_chats(chat_quiet())
     except Exception:  # noqa: BLE001 - no notes dir yet
         return []

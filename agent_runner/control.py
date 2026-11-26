@@ -983,7 +983,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
 
 def close_controls(branch: str = '', force: bool = False, now: float | None = None) -> list[tuple[int, str, str]]:
     """B26: close the idle ones (see above) every CONTROL_CLOSE_EVERY s: [(n, 'closed' | 'asked', why or task id)]."""
-    from agent_runner import control_ask, control_held
+    from agent_runner import control_closed, control_ask, control_held
     control_ask.fill()  # B809b
     cf = control_cfg()
     if not (cf['idle'] or cf['ask_idle']) or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
@@ -1013,7 +1013,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
             why = tid
         plat.terminate(pid)
         pidf.unlink(missing_ok=True)
-        idle_closed(n, sid, st['at'] or now)  # B859: it stays listed, in Quiet, until chat_quiet passes
+        control_closed.idle_closed(n, sid, st['at'] or now)  # B859: listed in Quiet until chat_quiet passes
         log(f'control {n}: closed, ' + (f'its question filed as {why}' if verdict == 'ask' else why) + f' (transcript kept: {control_harness.resume_hint(sid)})')
         out.append((n, 'asked' if verdict == 'ask' else 'closed', why))
     return out
@@ -1133,38 +1133,6 @@ def claim_control_number() -> int:
                 return n
             control_unclaim(n)
         n += 1
-
-
-def idle_closed(n: int, sid: str, at: float) -> None:
-    """B859: mark control session `n` (conversation `sid`, last active at `at`) as closed for being idle
-    (`<notes>/controlN.closed`: "at sid"): its title stays, so the chat list keeps it, grayed, until chat_quiet."""
-    try:
-        C.notes(f'control{n}.closed').write_text(f'{int(at)} {sid}\n', encoding='utf-8')
-    except OSError:
-        pass
-
-
-def idle_closed_chats(quiet: float, now: float | None = None) -> dict[int, tuple[float, str]]:
-    """B859: {N: (last active, sid)} of the control sessions closed for being idle (`idle_closed`) that are not
-    live again and whose last activity is under `quiet` s ago; an older mark goes."""
-    now = time.time() if now is None else now
-    out = {}
-    for f in C.notes().glob('control*.closed'):
-        if not (m := re.fullmatch(r'control(\d+)\.closed', f.name)):
-            continue
-        n = int(m[1])
-        try:
-            at_s, _, sid = f.read_text(encoding='utf-8').strip().partition(' ')
-            at = float(at_s)
-        except (OSError, ValueError):
-            continue
-        if control_live(n):
-            f.unlink(missing_ok=True)
-        elif quiet > 0 and now - at < quiet and sid:
-            out[n] = (at, sid.strip())
-        else:
-            f.unlink(missing_ok=True)
-    return out
 
 
 def end_control(n: int, why: str) -> bool:

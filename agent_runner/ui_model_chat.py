@@ -326,7 +326,7 @@ def _starting(name: str, wait: bool) -> dict | None:
 
 
 def _wake_closed(name: str, wait: bool) -> dict | None:
-    """B859: a message to chat `name` that was closed for being idle (`control.idle_closed_chats`) reopens it
+    """B859: a message to chat `name` that was closed for being idle (`control_closed.idle_closed_chats`) reopens it
     first (`control_reopen.reopen_control`), waiting up to START_WAIT s for it to come up. None to go on; else
     the answer (not sent). `wait` is not looked at: it always waits."""
     m = re.fullmatch(r'c(\d+)', name or '')
@@ -334,8 +334,9 @@ def _wake_closed(name: str, wait: bool) -> dict | None:
         return None
     from agent_runner import control as K
     from agent_runner.control_reopen import reopen_control
+    from agent_runner.control_closed import idle_closed_chats
     n = int(m[1])
-    if not (gone := K.idle_closed_chats(chat_quiet()).get(n)):
+    if not (gone := idle_closed_chats(chat_quiet()).get(n)):
         return None
     if not reopen_control(n, gone[1]):
         return {'ok': False, 'code': 1, 'out': f'{name} could not be reopened', 'argv': []}
