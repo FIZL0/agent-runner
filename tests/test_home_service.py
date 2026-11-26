@@ -1379,6 +1379,33 @@ def test_rule_handed_over(tmp: Path) -> None:
         with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
             check(not P.hand_over(), 'a page on another port than Home: not handed over')
         check(('serve', '--https=8771', 'off') in calls, 'its rule is turned off', calls)
+    print('Serve refused: the rule is left and stays recorded, for the next start to hand over')
+    with mock.patch.object(P, 'owner', lambda: rule['run']), mock.patch.object(W, 'home_port', lambda: 8770):
+        P.keep_rule(rule)
+        with mock.patch.object(P, 'tailscale', lambda *a, limit=0: (False, 'refused')):
+            check(not P.hand_over(), 'not handed over')
+        eq(P.made_rule(), rule, 'still recorded')
+        with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+            P.left_over()
+        eq(P.made_rule(), None, 'the next start gives it to Home')
+        print("go_private hands the rule over; a person's own rule on Home's port is left")
+        root = project(tmp / 'proj')
+        old = Path.cwd()
+        os.chdir(root)
+        S.init(root)
+        srv = W.serve('T', 0, '127.0.0.1')
+        try:
+            for made in (True, False):
+                if made:
+                    P.keep_rule(rule)
+                srv.https, calls[:] = made, []
+                with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+                    check(srv.go_private(), 'the page moves')
+                eq([c for c in calls if 'off' in c], [], 'no rule turned off' + (' (the run made it)' if made else ''))
+                eq(P.made_rule(), None, 'none recorded after')
+        finally:
+            srv.stop()
+            os.chdir(old)
 
 
 if __name__ == '__main__':
