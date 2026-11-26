@@ -23,6 +23,8 @@ def idle_closed_chats(quiet: float, now: float | None = None) -> dict[int, tuple
     from agent_runner.control import control_live
     now = time.time() if now is None else now
     out = {}
+    if state.C is None:  # no repository yet
+        return out
     for f in state.C.notes().glob('control*.closed'):
         if not (m := re.fullmatch(r'control(\d+)\.closed', f.name)):
             continue
