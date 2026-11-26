@@ -25,6 +25,9 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
                                  a slot running it is stopped, its branch deleted unmerged (B19). The last open
                                  part of a split task: that ticks if a part landed, else is one whole task again
+                                 B772: tasks blocked (after ID) on it ask you "still wanted? [Keep / Drop]";
+                                 --duplicate-of X / --overtaken-by X (or a WHY that says so): they wait on X
+                                 instead while X is open, else go on. (after all) and releases go on either way
     ./run plan cancel <ID> [--yes]   stop the slot running it, keep its work on wip/<ID> and park it (as --pri later), so
                                  no run starts it until `edit <ID> --pri normal`; says the minutes worked and stops
                                  nothing without --yes; refused while it lands
@@ -2996,7 +2999,13 @@ def _p_drop(a, x):
     if a.id == release_moves.NEXT:
         print(release_moves.drop_next(x.todo, _text(a)))
         return 0
-    whole = drop(a.id, _text(a))
+    by = None
+    if a.rest and a.rest[0] in ('--duplicate-of', '--overtaken-by'):  # B772
+        if len(a.rest) < 3:
+            print(f'{PROG}: drop {a.id} {a.rest[0]} <ID> WHY: name the other task, then why', file=sys.stderr)
+            return 2
+        by, a.rest = a.rest[1], [a.rest[0][2:].replace('-', ' ') + ' ' + a.rest[1] + ':', *a.rest[2:]]
+    whole = drop(a.id, _text(a), by=by)
     skipped = release(a.id) and release_moves.removed(a.id)
     return x.say(f'dropped {a.id}' + (f': that cut is skipped, and the count starts from zero (`{PROG} restore {a.id}` '
                                       'undoes it)' if skipped else '') + ''.join(

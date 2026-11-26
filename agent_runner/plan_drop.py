@@ -23,14 +23,18 @@ def _split_ids(todo) -> set[str]:
     return {tid for _, box, tid, _, i in iter_tasks(ls) if box != 'x' and SPLIT.search(ls[i])}
 
 
-def drop(tid: str, why: str, todo=None, done=None) -> list[str]:
-    """Close a task nobody will do (a duplicate, work another task overtook): noted, then archived as ticked,
-    so its id stays used and what waits on it reopens. Returns the split parents it made one whole task again:
-    this was their last open part and none landed (B197). What `restore` needs to undo it is kept (`_keep`)."""
+def drop(tid: str, why: str, todo=None, done=None, by: str | None = None) -> list[str]:
+    """Close a task nobody will do: noted, then archived as ticked, so its id stays used. Returns the split parents
+    it made one whole task again: this was their last open part and none landed (B197). What `restore` needs to undo
+    it is kept (`_keep`). B772: dropped as unwanted (`by` None, unless `why` names the other task, `dropped_by`),
+    the tasks blocked `(after …)` on it ask the person whether they are still wanted (`_hold_waiters`); dropped as a
+    duplicate of, or overtaken by, task `by`, they wait on `by` instead while it is open, else go on."""
     todo, done = ensure(todo, done)
     was = _split_ids(todo)
     ls = lines(todo)
     i = _find(ls, tid)
+    by = dropped_by(why) if by is None else by
+    title = _title(ls[i])
     rec = {'blocked': ITEM.match(ls[i]).group(2) == '~', 'waits': _waiters(ls, tid), 'text': _text(_item_block(ls, i))}
     note(tid, f'dropped: {why}', todo=todo)
     kept = _keep(tid, rec, todo)
@@ -42,7 +46,70 @@ def drop(tid: str, why: str, todo=None, done=None) -> list[str]:
         raise
     from agent_runner.asks import clear_env  # here: asks imports this module
     clear_env(tid, todo)  # F175
+    if _hold_waiters(tid, title, rec['waits'], by, todo):
+        for c in kept:
+            if (at := c.notes('dropped', tid)).is_dir():
+                (at / KEPT).write_text(json.dumps(rec), encoding='utf-8')
     return sorted(was & open_ids(lines(todo)) - _split_ids(todo))
+
+
+# B772: a WHY that names the task that does the work instead (the run page's and the TUI's Drop give only a WHY)
+DROPPED_BY = re.compile(r'\b(?:duplicate of|overtaken by)\s+\**([A-Z]+\d+[a-z0-9]*)\b', re.I)
+STILL_WANTED = 'Still wanted'  # the start of the question a task held by an unwanted drop asks
+
+
+def dropped_by(why: str) -> str:
+    """The task `why` says the dropped one was a duplicate of or overtaken by ('duplicate of B12'), '' for none."""
+    m = DROPPED_BY.search(why or '')
+    return m.group(1) if m else ''
+
+
+def _title(line: str) -> str:
+    from agent_runner.plan_concepts import short_title
+    m = ITEM.match(line)
+    return short_title(line[m.end():] if m else line, 50)
+
+
+def _hold_waiters(tid: str, title: str, waits: dict, by: str, todo) -> bool:
+    """B772: what dropping `tid` does to the tasks that waited on it (`waits`, as `_waiters` read them before):
+    with `by` they wait on `by` in its place while it is open; else each is held under Needs you with one question,
+    still wanted? (Keep / Drop), and waits on the rest of its list once answered. One that waits `(after all)` and a
+    release are left as before: the drop frees them. Notes in `waits[t]['held']` the line it wrote. Whether any."""
+    from agent_runner.plan import ALL, block, release
+    any_ = False
+    for t, was in waits.items():
+        ids = [x.strip() for x in WAITS.findall(was['line'])[-1].split(',') if x.strip()] \
+            if WAITS.findall(was['line']) else []
+        if ALL in ids or release(t) or tid not in ids:
+            continue
+        ls = list(lines(todo))
+        try:
+            i = _find(ls, t)
+        except SystemExit:
+            continue
+        end = i + len(_item_block(ls, i)) - 1
+        if ls[end] != was['line'] or ITEM.match(ls[i]).group(2) != '~':
+            continue
+        live = open_ids(ls)
+        if by:
+            if by not in live or by == t:
+                continue  # it goes on: `reopen` frees it once the rest landed
+            new = list(dict.fromkeys(by if x == tid else x for x in ids))
+            m = list(WAITS.finditer(ls[end]))[-1]
+            ls[end] = ls[end][:m.start(1)] + ', '.join(new) + ls[end][m.end(1):]
+            _write(todo, ls)
+        else:
+            rest = [x for x in ids if x != tid and x in live]
+            ls[end] = WAITS.sub('BLOCKED:', ls[end])
+            _write(todo, ls)  # `reopen` reads the last `(after …)` on the line, whichever block it is in
+            block(t, f'DECIDE: {STILL_WANTED}, now that {tid} ({title}) it waited on was dropped as not wanted? '
+                     f'[Keep / Drop]', todo=todo, after=[])
+            if rest:  # asked again once the rest landed (B60's `_reask`)
+                block(t, f'it also waits on {", ".join(rest)}', todo=todo, after=rest)
+            ls = list(lines(todo))
+        was['held'] = ls[_find(ls, t) + len(_item_block(ls, _find(ls, t))) - 1]
+        any_ = True
+    return any_
 
 
 DROPPED = ' — dropped: '
@@ -152,7 +219,9 @@ def _wait_again(c, waits: dict, todo) -> None:
         body = _unblocked(line) if end == i else line.split(' BLOCKED: ')[0]  # as `unblock` cuts it
         freed = f' — reopened: {was["said"]}'
         back = re.compile(rf' — back for you: {re.escape(was["said"])}(?: \(asked [^)]*\))?$')  # `plan._reask`
-        if box == ' ' and cur.endswith(freed):
+        if box == '~' and was.get('held') == cur:  # B772: held or moved onto another task by the drop
+            new = line
+        elif box == ' ' and cur.endswith(freed):
             cur = cur[:-len(freed)]
             new = cur + line[len(body):]
         elif box == '~' and (n := _block_at(cur)) >= 0 and cur[:n].rstrip()[6:] == line[:at].rstrip()[6:] \
