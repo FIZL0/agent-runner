@@ -147,8 +147,10 @@ def test_picking(repo: Path):
     try:
         eq(R.pick({}, set(), 'main')[0], 'T5',
            "another runner's live claim on T1 holds its files, section and dependants here too")
-        R.plansync.claims = lambda c: {'T1': Claim('elsewhere:/x', time.time() - 4 * 3600, 'ian@desk')}
+        R.plansync.claims = lambda c: {'T1': Claim('elsewhere:/x', time.time() - 100 * 60, 'ian@desk')}
         eq(R.pick({}, set(), 'main')[0], 'T2', "a stale claim (a crashed run's) holds only its own task")
+        R.plansync.claims = lambda c: {'T1': Claim('elsewhere:/x', time.time() - 4 * 3600, 'ian@desk')}
+        eq(R.pick({}, set(), 'main')[0], 'T1', 'a claim past TAKEOVER holds nothing: its task is picked (B857)')
         R.plansync.claims = lambda c: {'S9': Claim('elsewhere:/x', time.time(), 'ian@desk', '0.14.0', 1.0,
                                                    frozenset({'a.py'}))}
         check(R.pick({}, set(), 'main')[0] not in ('T1', 'T3'),
