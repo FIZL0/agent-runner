@@ -199,7 +199,7 @@ def live(name: str) -> dict:
                 elif d.get('type') == 'queue-operation':
                     ops.append(d)
                 kept.append(d)
-            _TASKS[path] = (size, [{'mode': mode, 'ops': ops, 'ask': chat_question.ask(kept) if name[0] == 'c' else None}, *tasks(kept)])
+            _TASKS[path] = (size, [{'mode': mode, 'ops': ops, 'ask': chat_question.asks(kept) if name[0] == 'c' else None}, *tasks(kept)])
             while len(_TASKS) > 20:
                 _TASKS.pop(next(iter(_TASKS)))
         rows = _TASKS[path][1]
