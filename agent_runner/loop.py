@@ -18,7 +18,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, freeze, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, stop_now, undo, working_branch
+from agent_runner import agent_hold, brief_arrives, cap_hold, claude_use, exit_hook, fallback as FB, freeze, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, stop_now, undo, working_branch
 from agent_runner.config import RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -28,7 +28,7 @@ from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_pl
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED, EV_CONTEXT)
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
 from agent_runner.brief import no_remote_line
-from agent_runner.sched import agent_held, blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
+from agent_runner.sched import agent_held, blocked_by_edits, forgive_park, keep_claims, note_committed, open_tasks, PARK_LIMIT, parked_attempts, pick, splitting, tasks
 from agent_runner.tools import take_end
 from agent_runner.login import retry_held, unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, no_slot, park_asked, unblocked_asks
@@ -147,6 +147,8 @@ def take_keys() -> None:
                 PAUSED[0] = not PAUSED[0]
                 log('paused: no new tasks; the run stays up (p again: go on)' if PAUSED[0] else
                     'pause taken back: starting tasks again')
+            elif k == 'f' and (said := cap_hold.force_key(want)):  # F468: `force ID`, just that task
+                log(said)
             elif k == 'f':
                 FORCED[0] = not FORCED[0]
                 log('forced: starting tasks past the usage caps (f again: undo)' if FORCED[0] else
@@ -219,12 +221,14 @@ def write_state(running: dict, held=()) -> None:
     # what the cap last read (`capped`, the start line); never a fetch of its own from here
     got = _account[1] if isinstance(_account[1], dict) and claude_use.account(C) else {}
     use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
+    resets = {k: got[k].get('resets_at') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict) and got[k].get('resets_at')}
     tmp = C.notes('STATE.tmp')
     from agent_runner.ui_model import agent_problem, no_settings
     try:
       with STATE_LOCK:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
+                                   'resets': resets, 'force_ids': sorted(cap_hold.FORCE_IDS),  # F468
                                    'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
                                    'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping(),
                                    'forced': FORCED[0], 'power': POWER, 'version': run_version(),
@@ -1020,10 +1024,13 @@ class Run:
         self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
         own = claude_use.own_waiting(self)  # B791: these alone are held
         w, held = capped(self.a.force or FORCED[0], bool(own)), frozenset()
+        skip = set()  # F468: while the caps hold, every task but those `force ID` lets through
         if w is None:
             self.cap_said = self.cap_fell = False
         elif C.fallback or own:
             held = FB.USAGE_HELD  # F142: new tasks start down the chain instead
+        elif cap_hold.FORCE_IDS:
+            skip = cap_hold.only_forced(open_tasks(self.branch), cap_hold.FORCE_IDS)
         else:
             self.say_cap(w)
             return
@@ -1047,7 +1054,10 @@ class Run:
             return
         self.stall_said.discard('before_start')
         passed, no_api = claude_use.passed_over(self, own, held)
-        task = pick(running, self.tried | passed | no_api, self.branch, claim=True) or file_split.no_task(self, held and not own)  # F200b
+        task = pick(running, self.tried | passed | no_api | skip, self.branch, claim=True) or (None if skip else file_split.no_task(self, held and not own))  # F200b
+        if skip and not task:  # F468: no forced task may start now: the caps hold the rest
+            self.say_cap(w)
+            return
         if not task and passed and not self.cap_said and \
                 (t := pick(running, self.tried, self.branch)) and t[0] in passed:
             self.say_cap(w, t[0] if own else '')  # F142: only the cap holds it: no provider in the chain is free for it
@@ -1061,6 +1071,7 @@ class Run:
                 self.cap_fell = True
             if p := start(n, task, self.branch, self.model, self.idle, slots, held=held):
                 procs[n], running[n] = p, task
+                cap_hold.FORCE_IDS.discard(task[0])  # F468: forced once, for this start
                 if self.once:  # one task: nothing new starts, and the run exits once it has merged
                     ask_stop('once')
                 if self.idle_said:

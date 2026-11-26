@@ -276,6 +276,9 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
         ap.add_argument('count', help='N, +N or -N')
     elif cmd == 'key':
         ap.add_argument('keys', nargs='+')
+    elif cmd == 'force':  # F468: `force ID` lets just that task start past the caps
+        ap.add_argument('task', nargs='?', default='', help='just this task (its id) starts past the caps')
+        ap.add_argument('--off', action='store_true')
     else:
         ap.add_argument('--off', action='store_true')
     a = ap.parse_args(argv)
@@ -284,7 +287,7 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
         print(f'no run is up in this repository: `{C.command} run` starts one', file=sys.stderr)
         return 1
     keys = {'slots': lambda: [f'slots {a.count}'], 'key': lambda: a.keys}.get(
-        cmd, lambda: [f'{cmd[0]} {"off" if a.off else "on"}'])()
+        cmd, lambda: [f'{cmd[0]} {a.task if getattr(a, "task", "") and not a.off else "off" if a.off else "on"}'])()
     send_key(*keys)
     print(f'sent to the run: {", ".join(keys)} (it acts within a second; `{C.command} status` shows it)')
     return 0
