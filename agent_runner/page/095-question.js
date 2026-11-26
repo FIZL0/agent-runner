@@ -118,7 +118,7 @@ function questionGo(n,text,go){
 }
 questionOn.send=questionGo;
 /* F437c: the card and its minimized line hide while the reader is scrolled up, in the history or where the terminal scrolls
-   itself. Their room stays (.qaway), so no text moves; a held answer and the mark stay */
+   itself (.qaway); B854b: they keep no room, so the text shows down to the box; a held answer and the mark stay */
 const questionAway=n=>!!n&&QN.away===n&&FD.n===n&&FD.shown&&!QN.held.has(n)&&!QN.mark.has(n);
 function questionFarNow(){
   if(!FD.shown||!FD.n)return false;

@@ -93,7 +93,7 @@ def test_keys(tmp: Path) -> None:
 def test_page(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     rule = re.search(r'\.main\.sess\.qaway \.qcard:not\(\.qheld,\.qabout\)\{([^}]*)\}', page)
-    eq(rule and rule.group(1), 'opacity:0;visibility:hidden', 'hidden where it stands: its room stays, so nothing moves')
+    eq(rule and rule.group(1), 'display:none', 'B854b: hidden with no room left, so the text shows down to the message box')
     check('margin-bottom:calc(var(--s2) - 2*var(--tap) - 14px)' in page and 'gap:6px;max-width:720px;margin:0 auto 8px} .keys' in page, 'the key row takes of the card\'s room what it is high')
     check('const slimMay=()=>!QN.held.has(FD.n)&&' in page, 'the bars, and a held answer with them, stay')
     for f in ('pastScrolled', 'pastSee', 'pastLive', 'pastPlace'):
