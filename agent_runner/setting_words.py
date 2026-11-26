@@ -38,6 +38,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.approve': ('landing', 'Ask me before publishing', 'Finished work waits in Needs you until you approve it. Off: it is pushed once its tests pass.'),
     'run.approve_wait': ('landing', 'Wait before asking', 'Minutes with no new related change before you are asked. Longer groups more work into one question.'),
     'run.approve_batch': ('landing', 'Ask at once at', 'This many related changes are put to you at once, without the wait. Lower asks sooner.'),
+    'run.approve_diff_lines': ('landing', 'Diff lines shown', 'How many lines of each change\'s diff its Review page shows before it is cut. 0: no diff.'),
     'run.review': ('landing', 'Review each task', 'A second agent checks the work against what you asked. Off: faster, but nothing catches what was missed.'),
     'run.releases': ('landing', 'Manage releases', 'Releases are shown, and you can queue one. Off: nothing about releases shows, and none is queued by itself.'),
     'run.auto_release': ('landing', 'Release by itself', 'A release is queued every so many tasks, when the run goes idle, or both. Both off: you ask for each one.'),
@@ -157,7 +158,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
 _HOMES: dict[str, str] = {'git.land_edited': DEVICE, 'run.questionnaires': EVERYONE, 'run.grill': EVERYONE, 'run.web_open': DEVICE}
 # shown only while its parent is on
 _PARENTS: dict[str, str] = {
-    'run.approve_wait': 'run.approve', 'run.approve_batch': 'run.approve', 'run.issues_trust': 'run.issues_watch',
+    'run.approve_wait': 'run.approve', 'run.approve_batch': 'run.approve', 'run.approve_diff_lines': 'run.approve', 'run.issues_trust': 'run.issues_watch',
     'git.pr_max': 'git.pr',
     'run.review_min_lines': 'run.review', 'run.web_port': 'run.web', 'run.web_https': 'run.web', 'run.web_open': 'run.web',
     'run.fix_ahead_max': 'run.fix_merges', 'models.review': 'run.review', 'run.auto_release': 'run.releases',

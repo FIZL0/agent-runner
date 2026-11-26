@@ -1017,6 +1017,7 @@ _On screen_: Wait for…; ⋯ on a Plan queue row: Wait for…; What should B456
 _In code_: plan edit --wait-for, plan_wait.py, set_waits, waitHTML, waitRows, data-waitset
 _Avoid_: block on, depend on
 
+<<<<<<< HEAD
 **Parts list**:
 Under a split task's card in the Plan queue, every part of it in the order it runs: the landed ones ticked, then the rest, each with its own state
 _Said_: subtasks in a dropdown
@@ -1037,3 +1038,10 @@ _Said_: working branch
 _On screen_: Working branch
 _In code_: [git] master_branch, isBranch, branchSays, branchHTML
 _Avoid_: main branch, master branch
+
+**Review page**:
+A pitch's page, where a person reads each waiting change's diff and why, asks about it, asks for a better way, and approves it
+_Said_: review page
+_On screen_: The diff / You asked / Answer it
+_In code_: pitch.page_html, review.diff_html, pitch ask, pitch better
+_Avoid_: code review, PR page
