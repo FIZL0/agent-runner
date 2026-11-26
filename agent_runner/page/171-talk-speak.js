@@ -8,12 +8,11 @@ function talkLastReply(){const ms=talkMsgs(feedOf(talkName()||talkWas())).filter
 /* B166a: the speaker's tap: stops a reading, reads a held reply, or turns read aloud on or off; on reads the last reply at once */
 function speakerTap(){
   if(talkReads())return hush();
-  if(TK.held&&!TK.ear&&TK.state!=='thinking'){unlockSpeech();return speak(TK.held)}
+  if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);  // the reading itself is the tap's utterance
   const on=!TS.read;unlockAudio();talkSet('read',on);
   if(!on){toast('Replies are not read aloud');return render(true)}
-  unlockSpeech();
   const last=!TK.ear&&TK.state!=='thinking'&&!TK.wait?talkLastReply():'';
-  if(last)speak(last);else{toast('Replies are read aloud');render(true)}
+  if(last)speak(last);else{unlockSpeech();toast('Replies are read aloud');render(true)}  // no blank utterance ahead of a reply
 }
 /* F124: read text aloud; key, the reply a play button reads (a Talk reply read by itself has none). Auto listen:
    once a Talk reply was read to its end, the mic listens again */
@@ -32,7 +31,7 @@ function speak(text,key){
   const w={turn,own:!rv,clip:null,at:Date.now(),len:0,quiet:0,spot:-1,begun:false,hid:false,us:[],end:ended};  // B174; us: an utterance nobody holds can lose its end
   const own=ps=>{w.own=true;w.clip=null;w.quiet=0;w.begun=false;w.at=Date.now();w.len=ps[0].length;ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;w.us.push(u);
     const log=x=>{if(rv&&TK.turn===turn&&TK.trail)micLog("sound: the browser's own voice "+x)};  // B178
-    u.onstart=()=>{if(!w.begun)pastSound('voice');w.begun=true;w.quiet=0;w.at=Date.now();w.len=p.length;if(!i)log('started')};
+    u.onstart=()=>{TK.unlocked=true;if(!w.begun)pastSound('voice');w.begun=true;w.quiet=0;w.at=Date.now();w.len=p.length;if(!i)log('started')};
     u.onend=u.onerror=e=>{w.at=Date.now();w.len=(ps[i+1]||'').length;if(i===ps.length-1){log(e&&e.type==='error'?'error '+e.error:'ended');ended(e)}};
     ss.speak(u)})};
   if(REC.open)recQuiet();soundAs('playback');soundWatch(w);  // F161c
