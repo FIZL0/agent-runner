@@ -253,7 +253,7 @@ class Handler(BaseHTTPRequestHandler):
         r = self.server.once.run(cid, run)
         if r is None:  # F137: a copy of an action still running: the outbox sends it again later
             return self.send(503, json.dumps({'ok': False, 'out': 'that action is still running'}))
-        self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
+        self.server.snaps.fresh()  # B850b: the next snapshot shows what the action changed, sent at once
         self.send(200, json.dumps(r, ensure_ascii=False))
 
     def session(self, path: str) -> None:
@@ -441,9 +441,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Connection', 'close')
         self.end_headers()
         self.close_connection = True
-        last, quiet = '', time.monotonic()
+        last, quiet, gen, looked = '', time.monotonic(), -1, 0.0
         try:
             while not self.server.stopped.is_set():
+                now_gen = self.server.snaps.changed()
+                if now_gen == gen and time.monotonic() - looked < TICK / 2:
+                    self.server.stopped.wait(NOW)  # B850b: a done action or a new STATE is seen within NOW
+                    continue
+                gen, looked = now_gen, time.monotonic()
                 snap = self.server.snaps.get()
                 if snap != last:
                     self.wfile.write(f'data: {snap}\n\n'.encode('utf-8'))
@@ -452,7 +457,6 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(b': ping\n\n')
                     quiet = time.monotonic()
                 self.wfile.flush()
-                self.server.stopped.wait(TICK / 2)
         except OSError:  # the page went away
             pass
 

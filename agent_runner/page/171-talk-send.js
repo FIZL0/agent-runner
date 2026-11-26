@@ -12,7 +12,8 @@ function talkHTML(){
 }
 /* F124, B174: the dock's mic, always the mic: the speaker (the stop while a reply is read) and the mic (64px), the keyboard beside them. Its markup never changes while it
    listens or speaks (talkDraw sets that), so a finger holding the mic keeps it */
-const talkMic=()=>`<div class="talkline" id="talkline" role="status"></div><button type="button" class="btn" id="micrep" data-micreport hidden>Copy mic report</button><button type="button" class="btn" id="keptsend" data-keptsend hidden>Send as it is</button><div class="talkrow"><button type="button" class="spk" id="spk" data-spk></button><button type="button" class="mic" id="mic" data-mic></button><button type="button" class="kbd" data-talkmode="type" aria-label="Type instead" title="Type instead">${I.keys}</button></div>`;
+/* B856: the attachments that go with the next words show over the mic too, which still sends them */
+const talkMic=(a=S.atts&&S.atts.talk||[])=>`${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}<div class="talkline" id="talkline" role="status"></div><button type="button" class="btn" id="micrep" data-micreport hidden>Copy mic report</button><button type="button" class="btn" id="keptsend" data-keptsend hidden>Send as it is</button><div class="talkrow"><button type="button" class="spk" id="spk" data-spk></button><button type="button" class="mic" id="mic" data-mic></button><button type="button" class="kbd" data-talkmode="type" aria-label="Type instead" title="Type instead">${I.keys}</button></div>`;
 const talkFoot=()=>{const why=micWhy();return why?esc(why):keysLine(!!modelOf(talkName()))};
 function talkDraw(){
   const why=micWhy(), st=TK.state, hold=TS.mic==='hold', mic=$('mic'), spk=$('spk'), line=$('talkline');
@@ -33,6 +34,8 @@ function talkDraw(){
 }
 /* the person's words to the Talk session; true once sent */
 async function talkSend(msg){
+  /* B856: spoken words take Talk's attachments along (the box's send has taken its own already); back in the box if it fails */
+  const atts=(S.atts&&S.atts.talk||[]).filter(a=>a.path);if(atts.length){msg=compose(null,msg,atts.map(a=>a.path));S.atts.talk=S.atts.talk.filter(a=>!a.path);if(!S.atts.talk.length)delete S.atts.talk}
   const to=talkName(), len=to?feedOf(to).length:0, mark=to&&S.feeds[to]?feedMark(feedOf(to)):null;  // B134
   if(TK.state!=='speaking')TK.state='thinking';TK.said=msg;TK.note=TK.held='';S.pin=true;if(chatShown())toEnd(true);unlockSpeech();loadVoices();render(true);
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
@@ -44,7 +47,7 @@ async function talkSend(msg){
   const r=await act('talk',{text:msg,to});w.out=false;
   const left=w.gen!==TK.gen;  // F157: New Talk chat was pressed meanwhile: these words belong to the chat it left
   if(!r.ok||r.session)talkStarts(TK.starting.filter(x=>x!==w));
-  if(!r.ok){if(TK.wait===w)TK.wait=null;if(!left){if(TK.state==='thinking')TK.state='';if(asked&&!talkKept())talkKeep('new')}render(true);return false}
+  if(!r.ok){if(atts.length)S.atts.talk=[...atts,...(S.atts.talk||[])];if(TK.wait===w)TK.wait=null;if(!left){if(TK.state==='thinking')TK.state='';if(asked&&!talkKept())talkKeep('new')}render(true);return false}
   const n=r.session||to, fresh=n!==to;
   if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
   if(n){if(left)talkLeave([n]);else{talkKeep(n);store.set(TALK_OLD,JSON.stringify(talkOld().filter(x=>x!==n)))}addSent(n,msg,r.at,{talk:true,...(fresh?{first:true}:{})},fresh?0:len);loadFeed(n)}
