@@ -612,6 +612,8 @@ def claim_task(t: tuple, h: Held, branch: str):
         return t
     if not plansync.claim(C, t[0], t[2]):
         return None
+    if over := plansync.TOOK.pop(t[0], ''):
+        log(over)  # B857: a gone run's claim, not refreshed for plansync.TAKEOVER
     FETCHED[0] = 0.0  # in-repo: the merge that closed it may have landed since the last fetch
     if t[0] not in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
         plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
@@ -661,6 +663,11 @@ def keep_claims(running: dict, branch: str) -> None:
     lines = {t[0]: t[2] for t in tasks(branch)}
     files = {t: set(slots.get(t, (None, lines.get(t, set())))[1]) | touched(t, branch, slots.get(t, (None,))[0])
              for t in keep}
+    for t, cl in plansync.lost(C, keep).items():  # B857: taken over while this run was away: given up
+        if t not in STALE_SAID:
+            STALE_SAID.add(t)
+            log(f'{t}: claim taken over by {cl.who}; given up here (its pushed task/{t} branch is kept)')
+        keep.discard(t)
     plansync.refresh(C, keep, files)
     me = plansync.owner(C)
     for t, cl in plansync.claims(C).items():

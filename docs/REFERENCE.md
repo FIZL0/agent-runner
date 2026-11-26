@@ -1021,7 +1021,11 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
 - **Who has what.** `plan` marks each claimed task, `[ ] B12  [alex@laptop 14:02 v0.14.0]`; `plan claims`
   lists them all. A live run re-stamps its claims every 15 min, so a claim not refreshed in 90 min shows
   `STALE` and holds only its own task, not its files, and every other run logs it once: a crashed run's
-  claims would otherwise hold those tasks for good. A claim from a runner older than 0.14 shows `pre-0.14`,
+  claims would otherwise hold those tasks for good. A claim not refreshed in 2 h (`plansync.TAKEOVER`) is a gone
+  run's: it holds nothing, and the next run to pick its task takes it over, re-claiming it as its own (a push
+  race as with any claim) and logging `took over <ID> from <who> (claim not refreshed since <time>)`. The old run,
+  when it comes back, sees the claim is no longer its own, logs it and gives the task up; a `task/<ID>` branch it
+  pushed is kept, not deleted. A claim from a runner older than 0.14 shows `pre-0.14`,
   and every other run warns once: that runner does not keep off their files, so upgrade every machine. The same
   checkout takes its own back on its next run; for anyone else's, `plan unclaim <ID>`.
 - **Tick on landing.** `done` in a slot leaves the task open and the run ticks it once the merge lands,

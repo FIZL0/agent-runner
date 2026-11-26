@@ -214,7 +214,9 @@ def owner(c) -> str:
 
 REFRESH = 15 * 60  # s between a live run's refreshes of its claims (one commit for all of them)
 STALE = 90 * 60  # s without a refresh after which a claim is a dead run's: it holds its task, not its files
+TAKEOVER = 2 * 3600  # s (B857): a claim not refreshed this long is a gone run's, and the next run to pick its task takes it over
 _STAMP = '%Y-%m-%d %H:%M'
+TOOK: dict[str, str] = {}  # B857: id -> 'took over <ID> from <who> (…)', the last claim() that took one over
 # The claim file, one field a line:
 #   owner (host:checkout) / refreshed (_STAMP) / user@host / version / claimed at (epoch) / files, tab-separated
 
@@ -348,6 +350,18 @@ def stale(cl: Claim) -> bool:
     return time.time() - cl[1] > STALE
 
 
+def abandoned(cl: Claim) -> bool:
+    """B857: not refreshed for TAKEOVER: another run picking its task takes it over."""
+    return time.time() - cl[1] > TAKEOVER
+
+
+def lost(c, tids) -> dict[str, Claim]:
+    """B857: of `tids` (this run's tasks), those whose claim is now another runner's (taken over while this run
+    was away): this run gives them up. A task/<ID> branch it pushed stays, for the new owner to continue."""
+    me = owner(c)
+    return {t: cl for t, cl in claims(c).items() if t in tids and cl.owner != me}
+
+
 def label(cl: Claim) -> str:
     """`alex@laptop 14:02`, the date too when it is not today, the runner's version, and STALE past STALE."""
     at = time.localtime(cl[1])
@@ -358,7 +372,7 @@ def label(cl: Claim) -> str:
 def taken(c) -> set[str]:
     """Tasks another runner (another machine, or another checkout here) has claimed."""
     me = owner(c)
-    return {t for t, cl in claims(c).items() if cl.owner != me}
+    return {t for t, cl in claims(c).items() if cl.owner != me and not abandoned(cl)}
 
 
 def _stamp(c, old: str | None, files=None) -> str:
@@ -385,11 +399,24 @@ def claim(c, tid: str, files=()) -> bool:
         if not st.sync():
             return False
         have = st.texts().get(tid)
+        over = None
         if have is not None:
-            return _mine(c, have)  # ours already (a restarted run), or another runner's
-        if not (st.put(tid, _stamp(c, None, files), new=True) and st.flush(f'claim {tid}')):
+            if _mine(c, have):
+                return True  # ours already (a restarted run)
+            ls = have.splitlines() + [''] * 3
+            try:
+                at = time.mktime(time.strptime(ls[1], _STAMP))
+            except ValueError:
+                at = 0.0
+            if time.time() - at <= TAKEOVER:
+                return False  # another runner's, live
+            over = f"took over {tid} from {ls[2] or ls[0]} (claim not refreshed since {ls[1] or '?'})"
+        if not (st.put(tid, _stamp(c, None, files), new=have is None) and
+                st.flush(over or f'claim {tid}')):
             st.undo()
             return False
+        if over:
+            TOOK[tid] = over
         return True
 
 
