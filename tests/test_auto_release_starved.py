@@ -73,6 +73,17 @@ def test_guards():
             eq(A.auto_release('main', merging=True), '', 'stopping')
         with mock.patch.object(A, 'releases_on', lambda: False):
             eq(A.auto_release('main', merging=True), '', 'releases off')
+        from agent_runner import release_moves
+        with mock.patch.object(release_moves, 'cuts', lambda: mock.Mock(held=True)):
+            eq(A.auto_release('main', merging=True), '', 'the next release held')
+
+
+def test_idle_queues():
+    print('idle release unchanged: queued when the run goes idle with landed work')
+    with mock.patch.object(A, 'landed_since_release', lambda b: ['T1']):
+        check(A.auto_release('main', idle=True), 'queued at idle')
+    R.C.todo.write_text(TODO, encoding='utf-8')
+    git(R.ROOT, 'commit', '-qam', 'fresh')
 
 
 def test_idle():
@@ -93,7 +104,7 @@ def main() -> int:
     git(repo, 'commit', '-qm', 'start')
     os.environ['AGENT_RUNNER_REPO'] = str(repo)
     R.init(repo)
-    return report([test_starved, test_guards, test_idle])
+    return report([test_idle_queues, test_starved, test_guards, test_idle])
 
 
 if __name__ == '__main__':
