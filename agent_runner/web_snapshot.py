@@ -10,6 +10,24 @@ class Snapshots:
 
     def __init__(self, make):
         self.make, self.lock, self.at, self.last = make, threading.Lock(), 0.0, ''
+        self.gen, self.state_at = 0, None  # B850b: bumped when the cache is dropped; STATE's last stamp
+
+    def fresh(self) -> None:
+        """B850b: drop the cached snapshot (an action answered, STATE changed): every stream sends anew at once."""
+        with self.lock:
+            self.at, self.gen = 0.0, self.gen + 1
+
+    def changed(self) -> int:
+        """B850b: the cache's generation, after dropping it when the run's STATE file changed since the last look."""
+        try:
+            st = S.C.notes('STATE').stat()
+            stamp = (st.st_mtime_ns, st.st_size)
+        except (OSError, AttributeError):  # no project or no STATE yet
+            stamp = None
+        with self.lock:  # one stream drops the cache once per change, however many streams look
+            if stamp != self.state_at:
+                self.state_at, self.at, self.gen = stamp, 0.0, self.gen + 1
+            return self.gen
 
     def get(self) -> str:
         with self.lock:
