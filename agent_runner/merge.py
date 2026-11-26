@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from contextlib import ExitStack
 
-from agent_runner import audit_fix, freeze, pitch, plan as P, plat, plansync, pr, stack
+from agent_runner import audit_fix, autorelease, freeze, pitch, plan as P, plat, plansync, pr, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -818,6 +818,7 @@ def merge_tries(tid: str, branch: str) -> str | None:
             with freeze.held():  # B827: a stop now lets it be recorded
                 base, merged = LANDED.pop(tid)
                 record_landed(tid, branch, base, merged, sys.modules[__name__])
+            autorelease.auto_release_landed(branch)  # B849a
             published(tid, branch)
             announce_release(base, merged)
             return None

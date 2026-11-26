@@ -75,17 +75,22 @@ def waiting_releases(branch: str, ls: list[str]) -> set[str]:
             and not section.startswith(P.SKIPPED)} - ready - busy - row_hold.held_ids(ls) - release_moves.moved_ids(ls)
 
 
-def auto_release(branch: str, idle: bool = False) -> str:
+def auto_release(branch: str, idle: bool = False, merging: bool = False) -> str:
     """Queue a release that starts at once when `every` tasks have landed since the last release (F195a): an open one
     queued the old way (`P.waiting_default`) is made that release. Or, with `idle` (the run just went idle), one as
     `plan add V` with no text does when anything landed, never while a release task is open. By count, one
     that only waits in the queue (`waiting_releases`) is no hindrance; any other open one is. Never with `[run] releases` off (F193).
-    Committed in the main checkout as `loop.watch_issues` commits its tasks. The id queued, or ''."""
+    Committed in the main checkout as `loop.watch_issues` commits its tasks. The id queued, or ''.
+    B849a: `merging` is a landing's call, made while its merge holds MERGE: the count is looked at there, so back-to-back
+    merges that never leave MERGE free at a tick do not starve it."""
     C, git, rel = S.C, S.git, S.plan_rel('TODO.md')
     every, on_idle = auto_release_of(C.run.get('auto_release', False))
     if not releases_on() or not every and not (idle and on_idle):
         return ''
-    if not idle:  # the every-tick look: only after a landing, or a change to TODO.md (a release dropped), or LOOK_AGAIN later
+    if merging:
+        if not every or S.stopping():
+            return ''
+    elif not idle:  # the every-tick look: only after a landing, or a change to TODO.md (a release dropped), or LOOK_AGAIN later
         mark = [int(time.time() // LOOK_AGAIN)]
         for f in (C.notes('events.jsonl'), S.ROOT / rel):
             try:
@@ -96,7 +101,7 @@ def auto_release(branch: str, idle: bool = False) -> str:
         if mark == AUTO_RELEASE_SEEN[0]:
             return ''
         AUTO_RELEASE_SEEN[0] = mark
-    if not MERGE.acquire(blocking=False):
+    if not merging and not MERGE.acquire(blocking=False):
         AUTO_RELEASE_SEEN[0] = None  # look again next tick
         return ''
     hold = ExitStack()
@@ -137,4 +142,15 @@ def auto_release(branch: str, idle: bool = False) -> str:
         return tid
     finally:
         hold.close()
-        MERGE.release()
+        if not merging:
+            MERGE.release()
+
+
+def auto_release_landed(branch: str) -> str:
+    """B849a: a landing that reaches `[run] auto_release` every queues the release while its merge still holds MERGE,
+    before the next merge starts its gate. Never fails the landing."""
+    try:
+        return auto_release(branch, merging=True)
+    except Exception as e:  # noqa: BLE001
+        S.log(f'auto release at a landing failed: {e}')
+        return ''

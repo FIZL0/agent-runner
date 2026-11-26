@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: auto release by count (`[run] auto_release` every) is queued at the landing that reaches the count, so merges back to back no longer hold it off (B849a).
 ## 0.76.0 (2026-11-26)
 
 - Fixed: a concept card's framed options page no longer reloads, or loses its scroll place, when the Home view redraws (B860).
