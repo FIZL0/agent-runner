@@ -278,6 +278,19 @@ def question_answer(chat: str, id: str, text: str) -> dict:
 ACTIONS['question_answer'] = question_answer
 
 
+def concept_opened(concept: str = '', version: str = '') -> dict:
+    """F197a: concept `concept`'s details popup was opened showing `version` (its row's): New and Updated clear for
+    every device, up to that version (`concept_news.opened`)."""
+    if not S.C or not CONCEPT_ID.fullmatch(concept or '') or not isinstance(version, str) or len(version) > 80:
+        return {'ok': False, 'code': 2, 'out': f'concept_opened: a concept and its version; not {concept!r}', 'argv': []}
+    from agent_runner import concept_news
+    concept_news.opened(S.C, concept, version)
+    return {'ok': True, 'code': 0, 'out': '', 'argv': []}
+
+
+ACTIONS['concept_opened'] = concept_opened
+
+
 def item_state(tid: str) -> str:
     """F425a: where item `tid` stands now, in words, for the chat about a sent response."""
     try:

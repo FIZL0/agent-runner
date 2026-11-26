@@ -358,5 +358,25 @@ def test_part_of_part_b199(tmp: Path) -> None:
     check('- [ ] **F162a2**' in todo.read_text(encoding='utf-8'), 'and it reopens', todo.read_text(encoding='utf-8'))
 
 
+def test_concept_opened_f197a(tmp: Path) -> None:
+    """F197a: a concept row is New until its details popup is opened (the `concept_opened` action, the row's version),
+    Updated after `plan concept-updated`, and cleared again by the next opening, on any device."""
+    from agent_runner import concept_news
+    fake_run(tmp)
+    row = lambda: U.snapshot(up=True, now=NOW, links={})['concepts'][0]  # noqa: E731
+    first = row()
+    eq((first['concept'], first['news']), ('K5', 'new'), 'never opened: New')
+    eq(U.act('concept_opened', concept='K5', version=first['version'])['ok'], True, 'the popup opened on one device')
+    eq(row()['news'], '', 'opened: neither New nor Updated')
+    concept_news.updated(S.C, 'K5', 'a fourth option')
+    now = row()
+    eq((now['news'], now['news_words']), ('updated', 'a fourth option'), 'updated after: Updated, with its words')
+    eq(U.act('concept_opened', concept='K5', version=first['version'])['ok'], True, 'a stale popup on another device')
+    eq(row()['news'], 'updated', 'an older version opened clears nothing newer')
+    U.act('concept_opened', concept='K5', version=now['version'])
+    eq(row()['news'], '', 'opened again: cleared for every device')
+    eq(U.act('concept_opened', concept='../x', version='1')['ok'], False, 'a bad id is refused')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
+    raise SystemExit(report([in_tmp(test_concept_opened_f197a), in_tmp(test_sheet_buttons_f181b), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
