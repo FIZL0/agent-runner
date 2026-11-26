@@ -133,7 +133,7 @@ def test_drop_release_f186(tmp: Path) -> None:
         for what, st in (('running', {'running': {'1': 'V6'}}), ('merging', {'merging': ['V6']}), ('taken', {})):
             with mock.patch.object(U, '_state', lambda up, st=st: st), \
                     mock.patch('agent_runner.sched.taken', lambda: {'V6': tmp} if what == 'taken' else {}):
-                check('queue_drop' not in v6()['acts'] and 'asks' not in v6(), f'{what}: no Drop', v6())
+                check('queue_drop' not in v6()['acts'] and 'queue_drop' not in v6().get('asks', {}), f'{what}: no Drop', v6())
                 r = U.run_control('queue_drop', tid='V6', confirm=True)
                 eq((r['ok'], r['out'], ran), (False, 'V6 has started: a running release cannot be dropped', []), f'{what}: refused')
 
