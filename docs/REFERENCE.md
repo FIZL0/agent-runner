@@ -291,6 +291,12 @@ ETag and `private, no-cache`, so a switch back to a project gets a 304 with no b
 This is the same on the run page, through Runner Home's `/p/KEY/`, on Home's own page and on the page Home shows for a
 project with no run up. The run page's other answers stay `no-store`, and `/events` is never compressed.
 
+`/events` sends a snapshot (`data:` only) when it changes and, after 15 s with no change, a ping (`event: ping`, data
+`1`), which Runner Home passes as it comes. The page counts both as heard: with nothing heard for 33 s (about two pings,
+a socket that died quietly) it closes that stream and dials again, showing the lost-connection bar if no answer comes in
+8 s; shown again, back from the browser's page cache or online, it dials at once unless something came in the last 5 s.
+One stream is open at a time. An error drawing a snapshot is logged in the browser console (B838).
+
 On a phone's Home Screen: add the app from Home's link. Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
 from, or on the Overview if it was added from Home. An icon added before this change: remove it and add it again once,
 since iOS may keep the old scope. The manifest and icon hold the token the link has, so whoever has the manifest has it
