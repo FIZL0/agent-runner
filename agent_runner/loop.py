@@ -724,6 +724,8 @@ def run(argv: list[str], prog: str) -> int:
         print(keys_help(), flush=True)
     try:
         it = Run(a, slots, once, branch, model, idle, stall, pause)
+        stop_now.ON_KEYS[:] = [lambda: (take_keys(), write_state(dict(it.running), [m[0] for m in it.held_merges]),
+                                        WAKE.set())]  # B850a
         threading.Thread(target=stop_now.watch, args=(it,), name='stop-now', daemon=True).start()  # B827
         return it.go()
     finally:
