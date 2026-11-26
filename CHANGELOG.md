@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.76.0 (2026-11-26)
+
 - Fixed: a concept card's framed options page no longer reloads, or loses its scroll place, when the Home view redraws (B860).
 - Changed: Settings has two tabs, Project (runner.toml) and This device (runner.local.toml); every row edits the file of the tab in view, a row this device overrides shows its value on Project, Changed counts per tab, and the Settings bar names both files (F462)
 - Changed: `home install` sets up Runner Home's Tailscale Serve https address without asking (or says why it stays http only), then asks once in a terminal whether devices on the tailnet may open Home without the key, default No (F461).
