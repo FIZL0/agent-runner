@@ -33,7 +33,7 @@ const FEED_JUMP=/(Jump to bottom|\d+ new messages?|Waiting for your answer)( \(.
 // and its own ground (lit(x): has that cell one?), which words in an answer do not have
 const feedJump=(l,cols,lit)=>FEED_JUMP.test(l)||[...l.matchAll(FEED_PILL)].some(m=>Math.abs(feedCells(l.slice(0,m.index))-(cols-feedCells(m[0].trim())-2)/2)<1&&(!lit||lit(feedCells(l.slice(0,m.index))+2)));
 /* B863: the page's own Jump to bottom: the terminal is scrolled up from its newest output (scrolled) and its screen draws
-   no jump pill of its own (Copilot's never does; Claude's does, and keeps its own) */
+   no jump pill of its own (Copilot's never does; an agent CLI's own pill stays its own) */
 const feedOwnJump=(scrolled,foot)=>!!scrolled&&!(foot&&foot.jump);
 function feedFoot(lines,dim,lit){
   let end=-1,at=-1;
