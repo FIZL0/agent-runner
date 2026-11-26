@@ -9,10 +9,10 @@ function talkLastReply(){const ms=talkMsgs(feedOf(talkName()||talkWas())).filter
 function speakerTap(){
   if(talkReads())return hush();
   if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);  // the reading itself is the tap's utterance
-  const on=!TS.read;unlockAudio();talkSet('read',on);
-  if(!on){toast('Replies are not read aloud');return render(true)}
+  const on=!TS.read;talkSet('read',on);
+  if(!on){unlockAudio();toast('Replies are not read aloud');return render(true)}
   const last=!TK.ear&&TK.state!=='thinking'&&!TK.wait?talkLastReply():'';
-  if(last)speak(last);else{unlockSpeech();toast('Replies are read aloud');render(true)}  // no blank utterance ahead of a reply
+  if(last){unlockAudio();speak(last)}else{unlockSpeech();toast('Replies are read aloud');render(true)}  // no blank utterance ahead of a reply
 }
 /* F124: read text aloud; key, the reply a play button reads (a Talk reply read by itself has none). Auto listen:
    once a Talk reply was read to its end, the mic listens again */

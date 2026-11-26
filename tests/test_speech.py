@@ -289,7 +289,7 @@ let TS;
 const listen = () => { listens++ }, talkSet = (k, v) => { TS[k] = v }, micWhy = () => '', store = {get: () => ''}, tabStore = store, TM_KEY = 'tm';
 const tick = () => new Promise(r => setTimeout(r, 5));
 eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run speech:'), page.indexOf('const talkTyping='))
- + line('const talkTyping=') + grab('function unlockSpeech(') + grab('function speak(') + line('function hush(')
+ + line('const talkTyping=') + grab('function unlockSpeech(') + grab('function speakerTap(') + 'const talkLastReply=()=>"";' + grab('function speak(') + line('function hush(')
  + 'const spk=()=>{const q=s=>s==="[data-spk]";' + line("  if(q('[data-spk]'))") + '};' + `
 (async () => {
   const out = {};
