@@ -859,14 +859,29 @@ const CHAT = `You are in a conversation with a person, in the main checkout of a
   `message comes when they send it. Paths are relative to the checkout. A message that names a file the person attached ` +
   `means that file: read it before you answer, an image too.`;
 
-// one short line for a tool call (B853): the name and its main argument, dim on a terminal
-export function toolLine(name, args, tty) {
-  const a = args || {};
-  const main = a.command ?? a.path ?? a.summary ?? a.question ?? Object.values(a).find((v) => typeof v === 'string') ?? '';
-  let arg = String(main).split('\n')[0].trim();
-  if (arg.length > 100) arg = `${arg.slice(0, 99)}…`;
-  const line = arg ? `· ${name}: ${arg}` : `· ${name}`;
-  return tty ? `\x1b[2m${line}\x1b[0m` : line;
+// F464: a run of tool calls on screen is one collapsed line, as Claude Code draws it: 'Ran 3 shell commands, read 2 files'
+const TALLY = { bash: ['Ran', 'shell command'], read: ['Read', 'file'], edit: ['Edited', 'file'], write: ['Wrote', 'file'],
+  publish_page: ['Published', 'page'] };
+export function tallyLine(counts) {
+  const parts = Object.entries(counts).map(([name, n]) => {
+    const [verb, noun] = TALLY[name] || ['Called', name];
+    return TALLY[name] ? `${verb} ${n} ${noun}${n === 1 ? '' : 's'}` : `${verb} ${noun}${n === 1 ? '' : ` ${n} times`}`;
+  });
+  return parts.map((p, i) => (i ? p[0].toLowerCase() + p.slice(1) : p)).join(', ');
+}
+
+// the tally of the run of tool calls going on now: counted up live on a terminal, said once off one
+export class Tally {
+  constructor(out, tty) { this.out = out; this.tty = tty; this.counts = {}; }
+  add(name) {
+    this.counts[name] = (this.counts[name] || 0) + 1;
+    if (this.tty) this.out.write(`\r\x1b[2K\x1b[2m${tallyLine(this.counts)}\x1b[0m`);
+  }
+  end() {
+    if (!Object.keys(this.counts).length) return;
+    this.out.write(this.tty ? '\n' : `${tallyLine(this.counts)}\n`);
+    this.counts = {};
+  }
 }
 
 function overBudget(a, tokens, usd) {
@@ -888,6 +903,10 @@ function stoppable(signal, p) {
 
 async function main() {
   const a = parseArgs(process.argv.slice(2));
+  const tally = new Tally(process.stdout, process.stdout.isTTY);
+  const log = console.log; // any other line ends the run of tool calls first
+  console.log = (...x) => { tally.end(); log(...x); };
+  process.on('exit', () => tally.end());
   const cwd = process.cwd();
   const file = path.join(a.notes, 'harness-sessions', `${a.sid}.jsonl`);
   if (a.resume && !fs.existsSync(file)) throw new Error(`harness: session ${a.sid} has no transcript at ${file}`);
@@ -1007,10 +1026,10 @@ async function main() {
     }
     messages.push(m);
     const said = textOf(m.content.filter((b) => b.type === 'text'));
-    if (said) console.log(said);
+    if (said) console.log(a.chat ? `● ${said}` : said);
     const calls = m.content.filter((b) => b.type === 'toolCall');
     for (const c of calls) {
-      console.log(toolLine(c.name, c.arguments, process.stdout.isTTY));
+      tally.add(c.name);
       const [text, isError, image] = s.ctl?.signal.aborted ? ['The person interrupted before this tool call ran; it did not run.', true] : c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
       messages.push(t.toolResult(c, text, isError, image));
       if (!s.ended) s.ended = s.endedNow();
