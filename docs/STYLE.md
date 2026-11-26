@@ -170,6 +170,11 @@ Home's own actions (start, pause, slots, stop) go through `homeAct()`, an outbox
 that Home, so one started before a switch to another project is still followed there. Home runs each one once, and a
 failure brings Retry there too. A press on a device (`devPost()`) does not go through `outbox()` or `homeAct()`, as a resend could run it twice; its button is `.busy` and a failure leaves it there to press again.
 
+A pressed run control (Pause, Go on, Force, Caps back on, Stop, Take the stop back, the slot ones) shows its result in
+the same frame: its button turns into the other one, and the Run card's words, the state pill and Home's chip follow,
+with a quiet mark (`Pausing…`). `ctlHold()` lays it over every older snapshot until one agrees or 15 s pass, then
+the page shows what the run says with a plain error; a failure puts it back at once, with Retry on its card.
+
 A secret never goes through `outbox()`, which the browser keeps: a device's change goes straight to the run
 (`toolPost()`; its secret's field is emptied when sent), a tool button's press does too (`toolPress()`, never through `outbox()`, as a resend could run its command twice), and an input goes straight to the run too (`giveSend()`), a text or link as well. A refusal or a
 question keeps what was typed, the secret too, while the sheet is open; a secret is forgotten when the sheet closes
