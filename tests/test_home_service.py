@@ -1345,34 +1345,67 @@ def test_trusted_networks(tmp: Path) -> None:
            "B815b: the http one by localhost after them; status names a run by Home's trusted networks when Home routes it")
 
 
-def test_https_handed_over(tmp: Path) -> None:
-    print("B847: a run's page that leaves Home's port leaves Home its Tailscale Serve https address")
+def test_rule_handed_over(tmp: Path) -> None:
+    print("B847: a run's page leaving its port for Home hands its Serve rule over; a person's own rule is left")
     from agent_runner import page_https as P
-    ours = {'Web': {'box.ts.net:8771': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770'}}}}}
-    serves, ran = {}, []
+    calls = []
 
-    def ts(*args, limit=0):
-        ran.append(list(args))
-        if args[:2] == ('serve', 'status'):
-            return True, json.dumps(serves)
-        return False, 'refused'
-    rule = {'host': 'box.ts.net', 'https': 8771, 'port': 8770, 'run': 'me'}
-    with mock.patch.object(P, 'tailscale', ts), mock.patch.object(P, 'owner', lambda: 'me'):
-        H.mark_installed(True)
-        serves = ours
+    def ts(status):
+        def run(*args, limit=0):
+            calls.append(args)
+            return (True, json.dumps(status)) if args[:2] == ('serve', 'status') else (True, '')
+        return run
+    rule = {'host': 'box.tail1.ts.net', 'https': 8771, 'port': 8770, 'run': '/x/proj/.runner/notes'}
+    with mock.patch.object(P, 'owner', lambda: rule['run']), mock.patch.object(W, 'home_port', lambda: 8770):
         P.keep_rule(rule)
-        check(P.hand_over(8770), 'the rule the run made is handed over')
-        eq(([a for a in ran if 'off' in a], P.made_rule()), ([], None), 'still on in Serve, no longer the run\'s')
-        ran.clear()
-        check(not P.hand_over(8770) and not ran, 'no rule before: nothing turned off')
-        serves = {'Web': {'box.ts.net:8771': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770/mine'}}}}}
-        check(not P.hand_over(8770) and not [a for a in ran if 'off' in a], "a person's own rule is left alone")
-        P.keep_rule({**rule, 'port': 9000, 'https': 9001})
-        serves = {'Web': {'box.ts.net:9001': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:9000'}}}}}
-        check(not P.hand_over(9000), 'a port that is not Home\'s: no hand over')
-        check(['serve', '--https=9001', 'off'] in ran, 'and the run turns its rule off', ran)
-        eq(P.made_rule() is not None, True, 'Serve refused: the rule stays recorded for the next start')
-        H.mark_installed(False)
+        with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+            check(P.hand_over(), 'the rule handed over')
+        check(not any('off' in c for c in calls), 'and not turned off', calls)
+        eq(P.made_rule(), None, 'no longer recorded as the run\'s, so its stop leaves it')
+        calls.clear()
+        with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+            check(not P.hand_over(), 'no rule before: nothing handed over')
+            P.https_off()
+        eq([c for c in calls if 'off' in c], [], "a person's own rule (never recorded) is never touched")
+        P.keep_rule(rule)
+        mine = {'Web': {'box.tail1.ts.net:8771': {'Handlers': {'/': {'Path': '/srv'}}}}}
+        calls.clear()
+        with mock.patch.object(P, 'tailscale', ts(mine)):
+            check(not P.hand_over(), 'a rule changed by a person is not handed over')
+        eq([c for c in calls if 'off' in c], [], 'nor turned off')
+    with mock.patch.object(P, 'owner', lambda: rule['run']), mock.patch.object(W, 'home_port', lambda: 8790):
+        P.keep_rule(rule)
+        calls.clear()
+        with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+            check(not P.hand_over(), 'a page on another port than Home: not handed over')
+        check(('serve', '--https=8771', 'off') in calls, 'its rule is turned off', calls)
+    print('Serve refused: the rule is left and stays recorded, for the next start to hand over')
+    with mock.patch.object(P, 'owner', lambda: rule['run']), mock.patch.object(W, 'home_port', lambda: 8770):
+        P.keep_rule(rule)
+        with mock.patch.object(P, 'tailscale', lambda *a, limit=0: (False, 'refused')):
+            check(not P.hand_over(), 'not handed over')
+        eq(P.made_rule(), rule, 'still recorded')
+        with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+            P.left_over()
+        eq(P.made_rule(), None, 'the next start gives it to Home')
+        print("go_private hands the rule over; a person's own rule on Home's port is left")
+        root = project(tmp / 'proj')
+        old = Path.cwd()
+        os.chdir(root)
+        S.init(root)
+        srv = W.serve('T', 0, '127.0.0.1')
+        try:
+            for made in (True, False):
+                if made:
+                    P.keep_rule(rule)
+                srv.https, calls[:] = made, []
+                with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+                    check(srv.go_private(), 'the page moves')
+                eq([c for c in calls if 'off' in c], [], 'no rule turned off' + (' (the run made it)' if made else ''))
+                eq(P.made_rule(), None, 'none recorded after')
+        finally:
+            srv.stop()
+            os.chdir(old)
 
 
 if __name__ == '__main__':
@@ -1382,4 +1415,4 @@ if __name__ == '__main__':
                            in_tmp(test_restart_on_windows),
                            in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
                            in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link),
-                           in_tmp(test_one_address), in_tmp(test_trusted_networks), in_tmp(test_https_handed_over)]))
+                           in_tmp(test_one_address), in_tmp(test_trusted_networks), in_tmp(test_rule_handed_over)]))

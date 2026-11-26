@@ -149,15 +149,21 @@ def https_off(say=True) -> None:
         S.log(f'run page: could not turn off Tailscale Serve on port {rule["https"]}: {out}')
 
 
-def hand_over(port: int) -> bool:
-    """B847: the run's page leaves `port` for Runner Home: a Tailscale Serve rule the run made to that port is
-    Home's now, so it stays on and only its record goes (True). Otherwise the run's rule is turned off (False)."""
-    rule = made_rule()
+def hand_over() -> bool:
+    """B847: the page leaves its port for Runner Home there: the Serve rule this run made proxies that port, so it
+    is Home's https address from now on. Forget the record and leave the rule on (a person's own rule was never
+    recorded, so it is never touched). True when a rule was handed over."""
+    if not (rule := made_rule()):
+        return False
     from agent_runner.web import home_port
-    if rule and rule['port'] == port and home_port() == port:
+    if home_port() != rule['port']:  # B844: a page on the next free port: Home is not taking that port
+        https_off(say=False)
+        return False
+    ok, out = tailscale('serve', 'status', '--json')
+    if ok and is_ours(as_json(out), rule):
         drop_rule(rule)
         return True
-    https_off()
+    https_off(say=False)  # changed or unreadable: not ours to hand over
     return False
 
 
