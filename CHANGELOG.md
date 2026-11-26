@@ -4,28 +4,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: `home install` on a machine whose run page had a Tailscale Serve https address keeps it: the page leaving its port hands its Serve rule over to Runner Home instead of turning it off, so the printed https link works and `home status` lists it; a rule a person made is never touched (B847).
 - Changed: on the run page, a chat that a Needs you answer started goes straight to Quiet in Chats with a 'new' label until opened once; it moves to the top only when it asks you something (F465).
-- Changed: ui_model_need.py split: concept and sheet code now in ui_model_concept.py and ui_model_sheet.py, with their tests (C56)
-- Changed: the Talk page tests are split by area into test_web_talk.py, test_web_talk_sound.py and test_web_talk_home.py, so tasks on one area no longer wait for the others (C58).
 
-- Added: `agent-runner setup` offers to install Runner Home when it is not installed on this device, and to list the project in it; who can reach the run page is then asked only with no Home (F456).
-- Added: a concept's Needs you card shows its options page framed under the summary, with Expand and Open in claude.ai beside it, so the options read without leaving the run page (F463).
 ## 0.75.0 (2026-11-26)
 
-- Added: `agent-runner setup` at a terminal asks once who can reach the run page (other devices too, the default, or only this machine) and writes `[run] web_open` to runner.local.toml; Settings' "Run page opens on" says it applies from the next run (F454b).
-- Changed: Talk's brief tells the session to say in one short sentence what it is checking before a slow check, and to keep each command under about twenty seconds, running longer ones in the background; a reply went silent for minutes behind one long command (B835).
 
 ## 0.74.0 (2026-11-26)
 
-- Fixed: landed work whose push lost the race to another device is no longer stranded when a run ends: on its start and before it exits (once, stop, idle power-off) the run takes the remote in, runs the gate, and pushes, again while the remote keeps moving; `status` and a STOPPED alarm say when it is still unpushed (B841).
-- Added: Settings > Plan has "Share the plan between machines" (a plan repo URL field, empty for one made for you): it runs `plan repo-setup` and shows what it said, with the line the other machine runs (F460a).
-- Added: `[run] web_open` ('everywhere', the default, or 'here'): with 'here' a run page Runner Home does not open listens on 127.0.0.1 only, shows its localhost link with its key, and makes no Tailscale Serve rule; set it per machine in runner.local.toml (F454a).
-- Fixed: on the run page a pressed run control (Pause, Go on, Force, Caps back on, Stop, Take the stop back, the slot ones) shows its result at once: the button, the Run card's words, the state pill and Home's chip follow with a quiet 'Pausing…' mark, held over older snapshots until one agrees or 15 s pass; before, the button read Pause again until a snapshot came, so people pressed twice (B851a).
-- Added: `plan repo-setup [URL|path]` turns plan repo mode on in one step: it makes (or takes) the plan repo, moves the plan and its long forms there with their history, sets `[plan] repo` in runner.toml in a commit, and prints the line the other machine runs; `status` says once when claims come from another host while the plan is still in the code repo (F460).
 
-- Fixed: a key sent to the run (`pause`, `force`, `slots`, `key z|x`) is taken within about half a second, also during a long pass, and STATE shows it right after; before, it waited up to 10 s for the loop's next pass (B850a).
-- Added: on the run page, a split task's Plan queue card lists all its parts under it in the order they run (the landed ones ticked and dim, then the rest with their own state); an open part is no longer a row of its own elsewhere in the queue, and the list can be shut with its chevron (F453).
-- Fixed: an open run page keeps its Status and the rest up to date with no reload: the events stream's keep-alive is now a ping the page hears, and a stream silent for about two pings (a phone that slept, a changed network) is closed and dialed again, as is one on the page being shown again, back from the page cache or online; an error drawing a snapshot is logged, not swallowed (B838).
 - Fixed: on a computer the words of a chat's live screen can be copied: a drag selects them and copies them at once, as Shift+drag did, Ctrl+C or Cmd+C copies a selection without interrupting, and a right click opens the browser's menu with Copy; before, Claude Code's full screen took the mouse, so a drag selected nothing and Ctrl+C interrupted (B845).
 - Changed: on the run page, a Plan queue row of a task no slot runs but which is under way no longer says only 'Being worked on'; it says 'Taken by the chat <its name>' (pressing the words opens that chat), 'Taken by a chat that has ended', 'Taken by hand' (taken from a terminal or unknown), 'Merging' or 'Waits to resume'; `take` now records the control session that ran it, in the git folder of its take worktree (B846).
 - Fixed: a run whose `web_port` is taken without Runner Home serves its page on every interface on the next free port (every second one, 8772, 8774, …, skipping Tailscale Serve's and recorded rules' ports), its run log saying which port it is on, instead of 127.0.0.1 only; the page-only process and a run that takes that page over keep the port (`web.fell`) (B844).
