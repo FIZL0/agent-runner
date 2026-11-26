@@ -123,6 +123,9 @@ DEFAULTS: dict = {
         'web': True,            # the run page on the web, served by the run from this machine on web_port for the
                                 # LAN/Tailscale (its address, with the token it needs, in `status` and the run log)
         'web_port': 8770,       # where the run page is served (its ttyds take the next ports); with Home, only if set (F165)
+        'web_open': 'everywhere',  # F454a: who opens a page Runner Home does not: everywhere = every interface
+                                # (LAN, Tailscale), here = this machine only (127.0.0.1, its localhost link; no
+                                # Tailscale Serve rule). Per machine: set it in runner.local.toml
         'web_https': True,      # an https address for it on the tailnet, by Tailscale Serve on web_port + 1 (F96)
         'silent': False,        # phone pushes from the run's Remote Control sessions: true = none after each
                                 # one's start push (that one cannot be stopped), false = Claude Code's usual
@@ -798,6 +801,8 @@ class Config:
             raise SystemExit(f"agent-runner: [run] silent must be true or false, not {self.run['silent']!r}")
         if not isinstance(self.run['web'], bool):
             raise SystemExit(f"agent-runner: [run] web must be true or false, not {self.run['web']!r}")
+        if self.run['web_open'] not in ('everywhere', 'here'):  # F454a
+            raise SystemExit(f"agent-runner: [run] web_open must be 'everywhere' or 'here', not {self.run['web_open']!r}")
         if not isinstance(self.run['web_https'], bool):
             raise SystemExit(f"agent-runner: [run] web_https must be true or false, not {self.run['web_https']!r}")
         if not isinstance(self.run['web_port'], int) or isinstance(self.run['web_port'], bool) \
@@ -1034,6 +1039,7 @@ SETTING_CHOICES: dict[tuple[str, str], tuple] = {
     ('run', 'remote'): ('auto', True, False),
     ('run', 'remote_slots'): ('open', 'always'),
     ('run', 'grill'): ('ask', 'big', 'off'),
+    ('run', 'web_open'): ('everywhere', 'here'),  # F454a
     ('run', 'voice_learn'): ('ask', 'off'),
     ('run', 'issues_trust'): ('skeptical', 'trust'),
     ('run', 'needs_order'): ('oldest', 'newest', 'plan'),
@@ -1052,7 +1058,7 @@ SETTING_DURATIONS = {('run', 'control_idle'), ('run', 'control_ask'), ('ui', 'ch
 # F202a: what a run that is up cannot change: the run page's server, and where its files, plan and worktrees are and
 # which branch it merges into (its lock, state and sessions are there already), the no-push policy: the sessions that
 # are up would not be under it, and PR mode, which the start checks. Every other key applies live.
-SETTING_NEXT = {('run', 'web'), ('run', 'web_port'), ('run', 'web_https'), ('run', 'home'), ('run', 'notes'),
+SETTING_NEXT = {('run', 'web'), ('run', 'web_port'), ('run', 'web_https'), ('run', 'web_open'), ('run', 'home'), ('run', 'notes'),
                 ('plan', 'dir'), ('plan', 'repo'), ('git', 'master_branch'), ('git', 'no_push'), ('git', 'pr')}
 
 
