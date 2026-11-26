@@ -1345,6 +1345,42 @@ def test_trusted_networks(tmp: Path) -> None:
            "B815b: the http one by localhost after them; status names a run by Home's trusted networks when Home routes it")
 
 
+def test_rule_handed_over(tmp: Path) -> None:
+    print("B847: a run's page leaving its port for Home hands its Serve rule over; a person's own rule is left")
+    from agent_runner import page_https as P
+    calls = []
+
+    def ts(status):
+        def run(*args, limit=0):
+            calls.append(args)
+            return (True, json.dumps(status)) if args[:2] == ('serve', 'status') else (True, '')
+        return run
+    rule = {'host': 'box.tail1.ts.net', 'https': 8771, 'port': 8770, 'run': '/x/proj/.runner/notes'}
+    with mock.patch.object(P, 'owner', lambda: rule['run']), mock.patch.object(W, 'home_port', lambda: 8770):
+        P.keep_rule(rule)
+        with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+            check(P.hand_over(), 'the rule handed over')
+        check(not any('off' in c for c in calls), 'and not turned off', calls)
+        eq(P.made_rule(), None, 'no longer recorded as the run\'s, so its stop leaves it')
+        calls.clear()
+        with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+            check(not P.hand_over(), 'no rule before: nothing handed over')
+            P.https_off()
+        eq([c for c in calls if 'off' in c], [], "a person's own rule (never recorded) is never touched")
+        P.keep_rule(rule)
+        mine = {'Web': {'box.tail1.ts.net:8771': {'Handlers': {'/': {'Path': '/srv'}}}}}
+        calls.clear()
+        with mock.patch.object(P, 'tailscale', ts(mine)):
+            check(not P.hand_over(), 'a rule changed by a person is not handed over')
+        eq([c for c in calls if 'off' in c], [], 'nor turned off')
+    with mock.patch.object(P, 'owner', lambda: rule['run']), mock.patch.object(W, 'home_port', lambda: 8790):
+        P.keep_rule(rule)
+        calls.clear()
+        with mock.patch.object(P, 'tailscale', ts(SERVE_STATUS)):
+            check(not P.hand_over(), 'a page on another port than Home: not handed over')
+        check(('serve', '--https=8771', 'off') in calls, 'its rule is turned off', calls)
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
                            in_tmp(test_opens_off), in_tmp(test_off_page_for_real),
@@ -1352,4 +1388,4 @@ if __name__ == '__main__':
                            in_tmp(test_restart_on_windows),
                            in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
                            in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link),
-                           in_tmp(test_one_address), in_tmp(test_trusted_networks)]))
+                           in_tmp(test_one_address), in_tmp(test_trusted_networks), in_tmp(test_rule_handed_over)]))

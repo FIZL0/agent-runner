@@ -482,7 +482,9 @@ class WebServer(ThreadingHTTPServer):
                 return False
             # the new one first: with no port to be had, the page stays where it is
             new = socket.create_server((LOCAL, 0))
-            self.https_off()  # F96: before Home can take the port, and the same https port with it
+            if self.https:  # B847: its Serve rule proxies the port Home takes: Home keeps the https address
+                self.https = False
+                page_https.hand_over()
             self.shutdown()
             self.server_close()
             self.terms.close()
