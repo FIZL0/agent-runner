@@ -63,7 +63,7 @@ def test_drop_parts():
         out, real = io.StringIO(), plan_drop.drop
         x = SimpleNamespace(say=lambda s: print(s) or 0)
         try:
-            plan_drop.drop = lambda *a: real(*a, **kw)
+            plan_drop.drop = lambda *a, **k: real(*a, **k, **kw)
             with redirect_stdout(out):
                 plan._p_drop(SimpleNamespace(id='U1a', rest=['no']), x)
         finally:
@@ -146,9 +146,9 @@ def test_restore_blocked():
         eq(({t: plan.section(todo, t) for t in start}, here()), (start, files), 'at once: all as it was')
         eq((n / 'asks/D1.json').stat().st_mtime_ns, mtime, 'the ask is still the one its block took')
 
-        plan.drop('D1', 'no', **kw)
+        plan.drop('D1', 'no', by='Z9', **kw)  # B772: overtaken by a task already gone, so what waited goes on
         eq(here(), {}, 'dropped: no ask and no secret where they were')
-        plan.drop('F5', 'no', **kw)
+        plan.drop('F5', 'no', by='Z9', **kw)
         eq(sorted(t for t, _ in plan.reopen(todo)), ['F2', 'F3', 'F4', 'F6', 'F7'], 'the drop frees what waited')
         plan.note('F6', 'now do this', todo=todo)
         with mock.patch('agent_runner.row_hold.under_way', lambda c, t: 's1 is on it' if t == 'F7' else ''):
@@ -188,5 +188,53 @@ def test_restore_blocked():
         check(not (n / 'asks/F5.json').exists(), "an older drop's record is not used")
 
 
+def test_drop_holds_waiters():
+    print('plan: a task dropped as not wanted holds what waited on it with one question; as a duplicate, they go on (B772)')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        Path(todo).write_text('\n'.join([
+            '# TODO', '', '### Next', '',
+            '- [ ] **A1** The importer',
+            '- [~] **W1** Uses it BLOCKED: (after A1) needs the importer',
+            '- [~] **W2** Uses both BLOCKED: (after A1, B1) needs them',
+            '- [~] **W3** All of it BLOCKED: (after all) last',
+            '- [~] **V1** release BLOCKED: (after A1) waits',
+            '- [ ] **B1** The other',
+            '- [ ] **C1** The same again',
+            '- [~] **W4** Uses C1 BLOCKED: (after C1) x',
+            '- [~] **W5** Uses C1 too BLOCKED: (after C1) y',
+            '- [ ] **E1** gone soon',
+            '- [~] **W6** Uses E1 BLOCKED: (after E1) z', '']), encoding='utf-8')
+        plan.drop('A1', 'not wanted', **kw)
+        eq(sorted(t for t, _ in plan.reopen(todo)), ['V1', 'W3'],
+           'a release and (after all) go on (the held ones ask a person, so they do not hold it); the rest are held')
+        w1, w2 = plan.section(todo, 'W1')[0], plan.section(todo, 'W2')[0]
+        has(w1, r'^- \[~\] .*BLOCKED: DECIDE: Still wanted, now that A1 \(The importer\) .*\[Keep / Drop\]',
+            'W1 asks the person: still wanted?')
+        check('(after A1' not in w1, 'and waits on A1 no more', w1)
+        has(w2, r'BLOCKED: DECIDE: Still wanted.*on Keep it still waits on B1', 'W2 asks now, and says it waits on B1')
+        check('W2' in {a[1] for a in plan.asks(todo)}, 'W2 is under Needs you too')
+        check('W1' in {a[1] for a in plan.asks(todo)}, 'W1 is under Needs you', plan.asks(todo))
+
+
+        from types import SimpleNamespace
+        from agent_runner import plan_drop as pd
+        real = pd.drop
+        try:
+            pd.drop = lambda *a, **k: real(*a, **k, **kw)
+            plan._p_drop(SimpleNamespace(id='C1', rest=['--duplicate-of', 'B1', 'same', 'work']),
+                         SimpleNamespace(say=lambda s: 0))
+        finally:
+            pd.drop = real
+        for t in ('W4', 'W5'):
+            has(plan.section(todo, t)[0], r'BLOCKED: \(after B1\) .$', f'--duplicate-of: {t} waits on B1 in its place')
+        has(Path(done).read_text(), r'\*\*C1\*\* .*dropped: duplicate of B1: same work', 'the WHY names it')
+        plan.drop('E1', 'gone', by='Z1', **kw)
+        eq([t for t, _ in plan.reopen(todo)], ['W6'], 'overtaken by a task not open: W6 goes on')
+        eq(plan_drop.dropped_by('Overtaken by **F12** last week'), 'F12', 'a WHY can name the other task')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_drop_parts, test_restore, test_restore_blocked]))
+    sys.exit(report([test_drop_parts, test_restore, test_restore_blocked, test_drop_holds_waiters]))

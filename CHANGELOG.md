@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: dropping a task as not wanted no longer starts the tasks that waited on it as if it had landed: each is held under Needs you with one question, still wanted? (Keep / Drop); `plan drop ID --duplicate-of X` or `--overtaken-by X` (or a reason that says so) has them wait on X instead while it is open, else go on. Tasks waiting on all before them and releases go on as before (B772).
 - Added: Settings asks `[run] auto_audit` as a question (On / Off) while neither the project nor the device sets it; either answer is saved by the usual Save and the question goes (C55b).
 - Fixed: auto release by count (`[run] auto_release` every) is queued at the landing that reaches the count, so merges back to back no longer hold it off (B849a).
 ## 0.76.0 (2026-11-26)
