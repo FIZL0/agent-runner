@@ -1171,6 +1171,7 @@ push from outside the run has put that ahead (fetched at most once a minute).
 | a task in a section whose heading says *in this order* or *one at a time*, while another task from that section runs | an ordered section runs one task at a time |
 | `### Stretch`, `### Parked` | never unattended |
 | tried this run | one attempt per run: if it failed, a human looks next |
+| a bug (B) task whose `files:` meet those of a task under Needs you with CONFIRM (not shelved); critical and high tasks pass | a fix waits for the person's check of the earlier one on the same files, so fixes do not pile up on unchecked ones; `run --dry-run` says which check it waits for (F415) |
 | `task/<ID>` has commits not yet merged | it's finished and waiting for the merge |
 | a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files`; a whole-directory entry (`tests/**`) is a guess, not a lock: it meets only another whole-directory entry, so a named file under it meets only what that task has touched | keeps merges clean. Exception: a task that clashes only with finished tasks all in one merge under way starts on top of that merge (F198, Behaviour) |
 
