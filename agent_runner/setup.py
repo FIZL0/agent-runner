@@ -275,39 +275,6 @@ def offer_models(root: Path) -> list[str]:
     return offer(root, at_terminal())
 
 
-def offer_audit(root: Path) -> str | None:
-    """F422: ask at a terminal, once for a project, whether the run audits by itself ([run] auto_audit, default no). The
-    answer, a no too, goes to the project's settings file, so it is not asked again; Ctrl-C or Ctrl-D leaves it open.
-    The line to say about it; None when nothing was asked. Never fails setup."""
-    from agent_runner import audit
-    from agent_runner import config as CF
-    if not at_terminal():
-        return None
-    try:
-        snap = CF.settings_snapshot(root)
-        row = next(k for t in snap['tables'] if t['table'] == 'run' for k in t['keys'] if k['key'] == 'auto_audit')
-        f = CF.config_file(root)
-    except (Exception, SystemExit):  # a config that does not load is the session's to mend
-        return None
-    if not snap['ok'] or not f or row['has_project'] or row['has_device']:
-        return None
-    try:
-        yes = input(f'Audit by itself: when the run is idle and {audit.EVERY} tasks have landed, one looks for what is stale, '
-                    'unused or wasted? [y/N] ').strip().lower() in ('y', 'yes')
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return None
-    try:
-        f = f.resolve()
-        out = CF.setting_edit(f.read_bytes(), 'run', 'auto_audit', {'every': audit.EVERY} if yes else False, name=f.name)
-        CF.write_whole(f, out, f.stat().st_mode & 0o777)
-    except (OSError, ValueError) as e:
-        return f'[run] auto_audit is not written to {f.name}: {e}'
-    CF._cfg.cache_clear()
-    return f'the run audits by itself every {audit.EVERY} tasks ([run] auto_audit in {f.name}: commit it)' if yes else \
-        f'no audit by itself ([run] auto_audit = false in {f.name}: commit it; once committed, Settings on the run page can turn it on)'
-
-
 def offer_web_open(root: Path) -> str | None:
     """F454b: ask at a terminal, once for this machine, who can reach the run page ([run] web_open: everywhere, the
     default, or here). The answer goes to runner.local.toml, so it is not asked again; Enter takes the default;
@@ -480,9 +447,6 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     if not home_installed() and (opens := offer_web_open(root)):  # F454b's question counts only with no Home
         said.append(opens)
         print(f'agent-runner setup: {opens}')
-    if audits := offer_audit(root):
-        said.append(audits)
-        print(f'agent-runner setup: {audits}')
     todo = todo_path(root)
     existing = todo.is_file()
     text = prompt(root, gate, existing)
@@ -494,5 +458,5 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
         if todo.is_file():
             said.append(f'{todo.relative_to(root) if todo.is_relative_to(root) else todo}: '
                         f'{count_tasks(todo)} open tasks')
-    print('\nagent-runner setup:\n' + ''.join(f'  - {s}\n' for s in said) + '\nStart the run: agent-runner')
+    print('\nagent-runner setup:\n' + ''.join(f'  - {s}\n' for s in said) + '\nThe rest (audits, models, limits) is in Settings on the run page.\nStart the run: agent-runner')
     return 0

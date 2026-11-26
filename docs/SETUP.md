@@ -181,7 +181,7 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    Claude session. The run page needs ttyd to show sessions. Yes runs the command in
    this terminal. On no, with no terminal or no package manager, or when the install fails, it says the command
    or what failed and goes on. It asks also on a repo already set up, and `--yes` does not answer it.
-4. At a terminal it asks which providers to use. It lists Claude Code, GitHub Copilot, Codex, Gemini and
+4. At a terminal, when the provider `[models] code` names is not ready (found and logged in), it asks which providers to use. It lists Claude Code, GitHub Copilot, Codex, Gemini and
    Ollama, each with whether it is found (Claude Code, Ollama) and whether it is logged in. Pick by number or name, several at
    once if you like; Enter changes nothing. Each pick that is not logged in is logged in there:
    `claude auth login` for Claude Code, `agent-runner login PROVIDER` for the others. Copilot first asks for
@@ -203,10 +203,9 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    The answer goes to `[run] web_open` in runner.local.toml (this machine only), so it is not asked again, nor
    when `web_open` is set already. Ctrl-C or Ctrl-D writes nothing and goes on; with no terminal it is not asked.
    Settings > Run page opens on changes it later, from the next run.
-6. At a terminal it asks once whether the run audits by itself, `Audit by itself … [y/N]`, default no. Yes writes
-   `auto_audit = { every = 50 }` to the project's settings file (runner.toml), no writes `auto_audit = false`, so it
-   is not asked again. It is not asked when `auto_audit` is already set in runner.toml or runner.local.toml. Ctrl-C
-   or Ctrl-D writes nothing and goes on. With no terminal it is not asked, and `--yes` does not answer it.
+6. Setup asks no more than that: audits, models and limits are in Settings on the run page, and its last lines say so.
+   The provider question (see Other providers) is asked only when no provider is ready; with the provider [models]
+   `code` names logged in, it says one line, which is used and that Settings changes it.
 7. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
    lean brief) that reads the repo, checks the gate, writes the goal and a first task list with
    `agent-runner plan goal` and `plan add`, adds a short `## Agent notes` section to CLAUDE.md or AGENTS.md,

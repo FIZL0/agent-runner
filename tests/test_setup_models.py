@@ -54,7 +54,7 @@ def setup(root: Path, answers=(), claude: str = '', terminal: bool = True, creds
 
     out = io.StringIO()
     CF._cfg.cache_clear()
-    with mock.patch.object(S, 'offer_ttyd', lambda: None), mock.patch.object(S, 'offer_audit', lambda root: None), mock.patch.object(S, 'at_terminal', lambda: terminal), \
+    with mock.patch.object(S, 'offer_ttyd', lambda: None), mock.patch.object(S, 'at_terminal', lambda: terminal), \
             mock.patch.object(S, 'offer_web_open', lambda root: None), mock.patch.object(S, 'offer_home', lambda root: []), \
             mock.patch.object(M, 'claude_program', lambda r: claude), mock.patch.object(builtins, 'input', answer), \
             mock.patch.object(login, 'stored', lambda: creds or {}), mock.patch.object(subprocess, 'run', run), \
@@ -91,19 +91,24 @@ def test_claude_only():
         check(CF.LOCAL not in git(root, 'diff', '--cached', '--name-only'), 'git ignores it')
     with tempfile.TemporaryDirectory() as t:
         root = repo(t, local='[models]\ncode = "copilot:m"\nfix = "sonnet"\nkinds = { F = "copilot:m", D = "haiku" }\n')
-        out, _, runs = setup(root, ['claude'], claude=CLAUDE, logged=True)
-        has(out, 'Claude Code: already logged in', 'no second login')
-        eq(len(runs), 1, 'only the session')
+        out, _, runs = setup(root, ['claude'], claude=CLAUDE)  # code is on Copilot, not logged in: asked
+        eq(len(runs), 2, 'its login and the session')
         c = CF.Config(root)
         eq((c.models['code'], c.models['fix']), ('opus', 'sonnet'), 'back on Claude; its own model is kept')
         eq((c.models['kinds']['F'], c.models['kinds']['D']), ('opus', 'haiku'), 'the kinds too')
     with tempfile.TemporaryDirectory() as t:
+        root = repo(t)
+        out, asked, runs = setup(root, [], claude=CLAUDE, logged=True)
+        has(out, 'Claude Code is used and ready: Settings on the run page changes the provider', 'one line, no question')
+        eq((asked, len(runs), (root / CF.LOCAL).exists()), ([], 1, False), 'nothing asked, only the session')
+        has(out, 'in Settings on the run page', 'the last lines point to Settings')
+    with tempfile.TemporaryDirectory() as t:
         root = repo(t, local='[models.kinds]\nF = "copilot:m"\n')
-        setup(root, ['claude'], claude=CLAUDE, logged=True)
+        setup(root, ['claude'], claude=CLAUDE)
         eq(CF.Config(root).models['kinds']['F'], 'opus', 'F448a: kinds in a section of their own too')
     with tempfile.TemporaryDirectory() as t:
         root = repo(t, local='[models]\nkinds.F = "copilot:m"\n')
-        out, _, _ = setup(root, ['claude'], claude=CLAUDE, logged=True)
+        out, _, _ = setup(root, ['claude'], claude=CLAUDE)
         has(out, 'not written.*kinds.*by hand', 'kinds as dotted keys are left to the person, and said')
         check('code' not in (root / CF.LOCAL).read_text(encoding='utf-8'), 'and nothing is half done')
 
@@ -126,12 +131,14 @@ def test_ghe_no_claude():
         c = CF.Config(root)
         eq((c.models['code'], c.models['fix']), ('copilot:gpt-x',) * 2, 'models')
         eq({c.task_model(k + '1') for k in 'FBTVKDCR'}, {'copilot:gpt-x'}, 'every kind of task runs on it')
+        (root / CF.LOCAL).unlink()
         (root / 'plan').mkdir()
         (root / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
-        out, asked, runs = setup(root, ['2', '', '', ''], creds={'github-copilot': {'type': 'oauth', 'enterpriseUrl': 'corp.ghe.com'}})
+        out, asked, runs = setup(root, ['2', '', 'gpt-x', ''], creds={'github-copilot': {'type': 'oauth', 'enterpriseUrl': 'corp.ghe.com'}})
         eq(runs, [], 'logged in already: no login')
         has(out, r'logged in: .*GitHub Enterprise corp.ghe.com', 'the list names the domain')
-        eq(CF.Config(root).models['code'], 'copilot:gpt-x', 'Enter keeps the model')
+        eq(CF.Config(root).models['code'], 'copilot:gpt-x', 'the model is asked')
+        (root / CF.LOCAL).unlink()
         _, _, again = setup(root, ['2', 'y', '', 'gpt-y'], creds={'github-copilot': {'type': 'oauth'}}, code=1)
         eq(words(again), [['login', 'copilot', '--enterprise=']], 'a login on another domain, when asked for')
         eq(CF.Config(root).models['code'], 'copilot:gpt-y', 'a failed login keeps the pick: its tasks wait for the login')
