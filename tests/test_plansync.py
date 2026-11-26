@@ -139,7 +139,7 @@ def test_all(tmp: Path):
     eq(plansync.claims(cb)['T4'].owner, plansync.owner(cb), 'the claim is now B\'s')
     plansync.pull(ca, force=True)
     eq(set(plansync.lost(ca, {'T4'})), {'T4'}, 'A, back, sees T4 is no longer its own')
-    plansync.refresh(ca, set())
+    plansync.refresh(ca, {'T4'})
     plansync.pull(cb, force=True)
     eq(plansync.claims(cb)['T4'].owner, plansync.owner(cb), "and A's refresh leaves B's claim alone")
 

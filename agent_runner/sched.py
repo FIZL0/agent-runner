@@ -637,6 +637,7 @@ PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
 
 CLAIMS_AT = [0.0]
 STALE_SAID: set[str] = set()
+LOST_SAID: set[str] = set()  # B857: this run's tasks whose claim another run took over, said once each
 
 
 def touched(tid: str, branch: str, slot: Path | None) -> set[str]:
@@ -664,8 +665,8 @@ def keep_claims(running: dict, branch: str) -> None:
     files = {t: set(slots.get(t, (None, lines.get(t, set())))[1]) | touched(t, branch, slots.get(t, (None,))[0])
              for t in keep}
     for t, cl in plansync.lost(C, keep).items():  # B857: taken over while this run was away: given up
-        if t not in STALE_SAID:
-            STALE_SAID.add(t)
+        if t not in LOST_SAID:
+            LOST_SAID.add(t)
             log(f'{t}: claim taken over by {cl.who}; given up here (its pushed task/{t} branch is kept)')
         keep.discard(t)
     plansync.refresh(C, keep, files)

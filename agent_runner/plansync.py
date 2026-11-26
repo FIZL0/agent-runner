@@ -407,7 +407,7 @@ def claim(c, tid: str, files=()) -> bool:
             try:
                 at = time.mktime(time.strptime(ls[1], _STAMP))
             except ValueError:
-                at = 0.0
+                return False  # a stamp this run cannot read: not known to be old, so not taken over
             if time.time() - at <= TAKEOVER:
                 return False  # another runner's, live
             over = f"took over {tid} from {ls[2] or ls[0]} (claim not refreshed since {ls[1] or '?'})"
