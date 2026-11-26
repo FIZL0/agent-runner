@@ -74,8 +74,10 @@ def round_(branch: str, now: float | None = None, run=None, reopen=None) -> list
         for c in checks:
             state, said = got[c]
             o = old.get(c, {})
+            asked = o.get('cannot') and now - o['cannot'] >= CANNOT_ASK  # a shown item stays until the check passes
             d[c] = {'waiting': o.get('waiting') or now, 'state': state, 'said': ' '.join(str(said).split())[:240],
-                    'cannot': (o.get('cannot') or now) if state == until.CANNOT else 0,
+                    'cannot': 0 if state == until.PASSED else (o.get('cannot') or now) if state == until.CANNOT
+                    else o['cannot'] if asked else 0,
                     'tasks': sorted(t for t, cs in waits.items() if c in cs)}
             if state == until.PASSED:
                 d[c]['waiting'] = now  # passed: the 3 days count afresh
@@ -102,12 +104,12 @@ def tick(branch: str, now: float | None = None) -> bool:
     return True
 
 
-def ask_text(check: str, r: dict, c=None) -> str:
+def ask_text(check: str, r: dict, c=None, cannot: bool = False) -> str:
     name = until.label(check, c)
     ts = ', '.join(r.get('tasks', []))
     how = f'free {ts} with Unblock (plan unblock), or fix it'
-    if r.get('state') == until.CANNOT:
-        return f'{name} cannot be checked: {r.get("said") or "no words"}; {how}'
+    if cannot:
+        return f'{name} could not be checked for 30 min: {r.get("said") or "no words"}; {how}'
     return f'{name} has not passed in 3 days: {r.get("said") or "no words"}; {how}'
 
 
@@ -124,7 +126,7 @@ def asks(c=None, now: float | None = None) -> list[tuple]:
             since = cannot if cannot and now - cannot >= CANNOT_ASK else \
                 r.get('waiting') if r.get('waiting') and now - r['waiting'] >= STALE_ASK else 0
             if since:
-                out.append((LABEL, PREFIX + check, '', ask_text(check, r, c), '', until.label(check, c), False,
+                out.append((LABEL, PREFIX + check, '', ask_text(check, r, c, since == cannot), '', until.label(check, c), False,
                             dt.datetime.fromtimestamp(since).strftime('%Y-%m-%d %H:%M')))
     except (OSError, ValueError, TypeError, AttributeError, SystemExit):
         return []

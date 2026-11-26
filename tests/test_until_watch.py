@@ -75,6 +75,12 @@ def test_reopen(repo: Path):
     git(repo, 'checkout', '-q', '--', 'plan/TODO.md')
     f = Fake()
     f.said['check:vm'] = (U.PASSED, 'up')
+    S.MERGE.acquire()
+    try:
+        eq(W.round_('main', now=1150.0, run=f), [], 'a merge holds the turn: not now')
+    finally:
+        S.MERGE.release()
+    eq(boxes(repo)['T1'], '~', 'still blocked, tried again next round')
     eq(W.round_('main', now=1200.0, run=f), ['T1'], 'reopened')
     eq(boxes(repo)['T1'], ' ', 'open in the plan')
     has(git(repo, 'log', '-1', '--format=%s').strip(), 'reopen T1', 'committed')
@@ -100,7 +106,14 @@ def test_asks(repo: Path):
     has(a[0][3], 'nblock', 'how to free it')
     f.said['check:vm'] = (U.NOT_YET, 'booting')
     W.round_('main', now=20_000.0, run=f, reopen=lambda b, ids: [])
-    eq(W.asks(now=20_000.0), [], 'gone once it runs again')
+    a = [x for x in W.asks(now=20_000.0) if x[1] == 'until-check:vm']
+    check(a and 'booting' in a[0][3], 'it stays, with the latest words, until the check passes')
+    f.said['check:vm'] = (U.PASSED, 'up')
+    W.round_('main', now=20_001.0, run=f, reopen=lambda b, ids: [])
+    eq(W.asks(now=20_002.0), [], 'gone once it passes')
+    f.said['check:vm'] = (U.NOT_YET, 'booting')
+    W._write({})
+    W.round_('main', now=10_000.0, run=f, reopen=lambda b, ids: [])
     eq(sorted(x[1] for x in W.asks(now=10_000.0 + 3 * 86400 + 1)), ['until-check:far', 'until-check:vm', 'until-version:0.1.0'],
        'not passed in 3 days')
     f.said['check:vm'] = (U.PASSED, 'up')
