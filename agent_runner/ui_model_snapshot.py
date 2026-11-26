@@ -258,6 +258,10 @@ def status_rows(up: bool, st: dict, progress: str, login: str | None = None) -> 
     try:
         if line := no_settings(st=st if up else None) or no_gate_line():
             out.append(line)
+        from agent_runner.state import C, default_branch
+        from agent_runner.stranded import unpushed_line
+        if line := unpushed_line(C.root, default_branch()):  # B841
+            out.append(line)
     except Exception:  # noqa: BLE001
         pass
     if line := agent_problem(st=st if up else None):  # B764b

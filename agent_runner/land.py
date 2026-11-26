@@ -359,6 +359,25 @@ def push_landed(tid: str, branch: str) -> None:
     UNPUSHED.clear()
 
 
+def push_left(branch: str, when: str) -> None:
+    """B841: at a run's start or end, push landed work an earlier push left behind (`stranded.push_stranded`),
+    under the merge lock; a failure is said as a stoppage, so Needs you shows it."""
+    if C.approve or C.pr or not pushes_main():
+        return
+    from agent_runner import stranded
+    from agent_runner.state import MERGE
+    try:
+        with MERGE:
+            out = stranded.push_stranded(ROOT, branch)
+    except Exception as e:  # noqa: BLE001  never ends a run
+        out = f'! {branch} is not pushed: {e!r}'
+    if not out:
+        return
+    log(f'{when}: {out}')
+    if out.startswith('!'):
+        alarm(f'landed work on {branch} is not pushed', f'{out[2:]}. It is merged here only, not on {C.push_remote}.')
+
+
 UNPUSHED: list[str] = []  # tasks landed whose push `published` left to the last of their batch
 
 

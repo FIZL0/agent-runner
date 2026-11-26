@@ -733,6 +733,12 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     if nogate := no_gate_line():  # up or not: the next run merges untested too
         out.append(nogate)
+    try:  # B841: landed work a lost push race left on this disk only
+        from agent_runner.stranded import unpushed_line
+        if left := unpushed_line(C.root, default_branch()):
+            out.append(left)
+    except Exception:  # noqa: BLE001
+        pass
     if agent:  # B764b: `ui_model.agent_problem`
         out.append(agent)
     if login:  # F126: `watch.claude_login_line`

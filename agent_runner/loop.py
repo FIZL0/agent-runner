@@ -40,7 +40,7 @@ from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, co
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
     START_TRIES, state_line, stats, stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, watch_code, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
-from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main, no_gate_line
+from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main, no_gate_line, push_left
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, merge)
 from agent_runner.control import hand_hook, rc_sweep_start, start_control, start_control_server
@@ -763,6 +763,7 @@ class Run:
         self.open()
         while (code := self.tick()) is None:
             nap(10)
+        push_left(self.branch, 'run end')  # B841: no next merge will push what an earlier push left
         return code
 
     def merge_in(self, tid: str, n: int, sid: str) -> None:
@@ -812,6 +813,7 @@ class Run:
         if not self.merging:  # blocks freed by merges made while no run was up (a merge started above reopens by itself)
             with MERGE:
                 reopen_landed(branch, 'a merge before this run')
+        threading.Thread(target=push_left, args=(branch, 'run start'), name='push-left', daemon=True).start()  # B841
         prune_wips(branch, force=True)  # F23: wip/<ID> of tasks ticked or dropped while no run was up
         block_asks(branch)  # F102: an ask an earlier run parked but could not block yet
         self.tried |= unblocked_asks()  # still not blocked: no slot starts it before its block lands
