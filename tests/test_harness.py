@@ -513,6 +513,43 @@ def test_tool_line(env: Env):
     check(len(out[2]) < 120 and '{' not in ''.join(out), 'a long command is cut, and no JSON braces show', out)
 
 
+def test_chat_echo(env: Env):
+    """B855: a message typed into a chat's terminal shows once, not again as '> message'."""
+    if os.name == 'nt':
+        return
+    import pty, select
+    env.script.write_text(json.dumps([{'text': 'the answer'}]), encoding='utf-8')
+    argv = R.agent_argv('', f'sid-{time.time_ns()}', MODEL, 1, 'slot1', False, cwd=env.wt) + ['--chat']
+    e = {k: v for k, v in os.environ.items() if k != 'AGENT_RUNNER_CONFIG'}
+    e.update(R.env_vars(R.slot_env(1)), AGENT_RUNNER_HARNESS_PROVIDER=str(env.fake),
+             FAKE_SCRIPT=str(env.script), FAKE_LOG=str(env.log))
+    master, slave = pty.openpty()
+    p = subprocess.Popen(argv, cwd=str(env.wt), env=e, stdin=slave, stdout=slave, stderr=slave)
+    os.close(slave)
+    out, deadline, sent = b'', time.time() + 60, 0
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.5)
+        if r:
+            try:
+                out += os.read(master, 4096)
+            except OSError:
+                break
+        if sent == 0 and b'(waiting for you)' in out:
+            os.write(master, b'hello there\r')
+            sent = 1
+        elif sent == 1 and b'the answer' in out:
+            os.write(master, b'\x04')
+            sent = 2
+        if p.poll() is not None and not r:
+            break
+    p.kill()
+    p.wait()
+    os.close(master)
+    text = out.decode('utf-8', 'replace')
+    check('the answer' in text, 'the chat answered', text)
+    eq(text.count('hello there'), 1, 'the sent message shows once')
+
+
 def main() -> int:
     node = shutil.which('node')
     if not node:
@@ -525,7 +562,7 @@ def main() -> int:
             return report([lambda: test_routing(env), lambda: test_finish(env),
                            lambda: test_finish_refused(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_context_warn(env), lambda: test_resume(env),
-                           lambda: test_tell(env), lambda: test_tool_line(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
+                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_line(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 

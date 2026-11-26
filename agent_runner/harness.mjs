@@ -909,9 +909,13 @@ async function main() {
     if (a.chat && (over || !s.ctl)) s.ctl = new AbortController();
     over = false;
     is('busy');
-    for (const text of [...pending.splice(0), ...tells.take()]) {
+    for (const text of pending.splice(0)) {
       messages.push(t.user(text));
       console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
+    }
+    for (const text of tells.take()) { // B855: a chat's terminal already showed a typed tell as it came
+      messages.push(t.user(text));
+      if (!tells.echo) console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
     }
     const why = overBudget(a, tokens, usd);
     if (why) {
