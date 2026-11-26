@@ -119,6 +119,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-task]')){openTask(x.dataset.task,x.dataset.list);return}  // F85
   if(x=q('[data-setopen]')){const id=x.dataset.setopen;S.setOpen[id]=!S.setOpen[id];render(true);return}  // F97
   if(q('[data-setload]')){loadSettings();return}
+  if(x=q('[data-setask]')){answerAsk(x.dataset.id,x.dataset.setask);return}  // C55b
   if(x=q('[data-setsave]')){saveSetting(x.dataset.id,x.dataset.setsave);return}
   if(x=q('[data-setreset]')){resetSetting(x.dataset.id,x.dataset.setreset);return}
   if(x=q('[data-setstep]')){stepSetting(x.dataset.id,+x.dataset.setstep);return}

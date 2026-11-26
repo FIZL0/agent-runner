@@ -63,6 +63,7 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   release (V) is the one filled chip. The colour says the kind only, never the state: running, landed and stuck keep
   their own dot and words. A tool or pitch item has no task, so its plain id stays. In the terminal UI a queue row's
   id and word are in the kind's colour instead (a release filled); a panel under 36 columns wide has no word.
+- **Setting question** (`.card.setask`, `askHTML()`; C55b): an unset setting listed in `SETTING_ASKS` shows above Settings' rows as its name, its words and one button per answer (On, Off). A press saves through the usual Save and the card goes. It is not a Needs you item and holds nothing.
 - **Card** (`.card`, `card()`): one thing. `.tap` opens something; `.need` waits on the person. Title, one line of
   second text, then `.btns`.
 - **Needs you item** (`.asktap`, `needTap()`): one button, not a card of buttons. What is wanted and where in everyday

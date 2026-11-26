@@ -198,6 +198,16 @@ function setFold(id,name,about,body){
   const open=!!S.setOpen['#'+id];
   return `${card(`<button class="fold setname" data-setopen="#${id}" aria-expanded="${open}"><span class="grow"><b>${name}</b><span class="small">${about}</span></span><span class="chev">${I.chev}</span></button>`,'',`data-k="setfold:${id}"`)}${open?foldIn('#'+id,body()):''}`;
 }
+/* C55b: the unset settings that are asked: a question card, On or Off; either answer is saved at once and the question goes */
+function askHTML(all){
+  const ks=settingAsks(all,k=>['device','project'].some(s=>(S.draft||{})[setField(settingId(k),s)]||setGoing(settingId(k),s)));
+  return ks.map(k=>`<div class="card setask" data-k="setask:${esc(settingId(k))}"><div class="grow"><b>${esc(k.name)}</b><div class="small">${esc(k.desc)}</div></div>
+    <div class="btns">${askAnswers(k).map(([a,l])=>`<button class="btn" data-setask="${a}" data-id="${esc(settingId(k))}" aria-label="${esc(k.name)}: ${l}">${l}</button>`).join('')}</div></div>`).join('');
+}
+function answerAsk(id,a){
+  const k=settingOf(id), r=k&&askAnswers(k).find(x=>x[0]===a);if(!r)return;
+  draftSet(id,settingSide(k),{text:r[2]});settingsSave();render(true);
+}
 function settingsHTML(){
   const d=S.set&&S.set.tables?S.set:null, q=String(S.f.setq||'').trim().toLowerCase();
   if(!d)return `<div class="col">${setErrHTML()||emptyCard('Loading…')}${obCards(x=>x.ctl==='restart:')}</div>`;
@@ -216,7 +226,7 @@ function settingsHTML(){
     +(typeof planShareHTML==='function'?planShareHTML():'')+`<div class="sec">More<span class="ln"></span></div>${setFold('advanced','Advanced','disk, memory, merge tuning',()=>groups(shown,{},'advanced'))}${tab==='project'?setFold('file','Project file','test command, paths, rules: read only here',()=>groups(shown,{},'file')):''}`;
   const n=overCount(all), tabs=`<div class="row settabs" role="group" aria-label="Which file to change">${SET_TABS.map(([t,l])=>`<button class="btn${t===tab?' pri':''}" data-settab="${t}" aria-pressed="${t===tab}"${t==='device'&&n?` aria-label="This device, ${n} of its own"`:''}>${l}${t==='device'&&n?` · ${n}`:''}</button>`).join('')}</div>`;
   return `<div class="col">${tabs}<div class="row"><span class="setq grow"><input class="fld" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting"><button type="button" class="x" data-setqclear aria-label="Clear search"${S.f.setq?'':' hidden'}>${I.x}</button></span>${changed.length+unknown.length||S.setChanged?`<button class="btn${S.setChanged?' pri':''}" data-setchanged aria-pressed="${!!S.setChanged}">Changed ${changed.length}</button>`:''}</div>
-    ${setErrHTML()}${obCards(x=>x.ctl==='restart:')}${body}
+    ${setErrHTML()}${obCards(x=>x.ctl==='restart:')}${q||S.setChanged?'':askHTML(all)}${body}
     ${waits&&S.snap.up!==false&&rc?card(`<div class="row"><span class="grow">${waits===1?'1 change waits':`${waits} changes wait`} for a restart</span>${S.sure==='restart'?'':'<button class="btn acc" data-ctl="restart">Restart the run</button>'}</div>${S.sure==='restart'?ctlSure(rc):''}`,'','data-k="setwait"'):''}</div>`;
 }
 /* F204a: the search field in use stays the same element while what is under it changes (as B222a); F202b: so does a field typed in */

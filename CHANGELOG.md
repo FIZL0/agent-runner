@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: Settings asks `[run] auto_audit` as a question (On / Off) while neither the project nor the device sets it; either answer is saved by the usual Save and the question goes (C55b).
 - Fixed: auto release by count (`[run] auto_release` every) is queued at the landing that reaches the count, so merges back to back no longer hold it off (B849a).
 ## 0.76.0 (2026-11-26)
 

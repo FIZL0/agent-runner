@@ -149,3 +149,9 @@ function talkSession(sessions,remembered,old){
   const r=live.find(s=>s.name===remembered);if(r)return r.name;
   const t=live.find(s=>s.title==='Talk'&&!(old||[]).includes(s.name));return t?t.name:'';
 }
+/* C55b: settings asked about as a question while neither the project nor this device sets them (listed by key); the answer is
+   saved by the usual Save. `drafted(k)`: an answer on its way (drafted or saved but not read back yet) */
+const SETTING_ASKS=['run.auto_audit'];
+const settingAsks=(all,drafted)=>all.filter(k=>SETTING_ASKS.includes(`${k.table}.${k.key}`)&&!k.has_project&&!k.has_device&&!(drafted&&drafted(k)));
+/* its two answers as the text a Save writes: On is the count `on` gives, Off is false */
+const askAnswers=k=>[['on','On',settingText(k.parts&&k.parts.on?{every:k.parts.on.every}:true)],['off','Off',settingText(false)]];
