@@ -298,7 +298,7 @@ const map = (m = {}) => ({m, get: k => m[k] || '', set: (k, v) => { m[k] = v }})
 /* one load of the page: its Chats code over the tab's and the browser's storage; look() is a draw's part of it */
 function load(tab, store, thread = null, hkey = 'a') {
   return new Function('tabStore', 'store', 'now', 'thread', 'HKEY', `
-const document = {hidden: false, title: ''}, talkName = () => '';
+const document = {hidden: false, title: ''}, talkName = () => '', addEventListener = () => {}, render = () => {};
 const S = {snap: {sessions: [], chat_quiet: 21600}, thread, view: 'home'};
 ` + logic + slice('const chatPins=', 'const chatNames=') + slice('/* B193: S.up', 'const replyDue=') + line('const groupChats=') + line('const shownChats=') + `
 const names = g => [g.top.map(x => x.name).join(' '), g.quiet.map(x => x.name).join(' ')];
