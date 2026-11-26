@@ -144,7 +144,7 @@ def test_view(tmp: Path) -> None:
     slot = lambda n, tid='', **m: {'name': n, 'task': tid, 'title': f'Title {tid}', 'state': 'running', 'minutes': 5, 'task_controls': bool(tid), **m}  # noqa: E731
     snap = {'up': True, 'run': {}, 'slots': 4, 'controls': U.controls(), 'queue': [{'id': 'B5', 'state': 'blocked', 'files': []}],
             'usage': [{'name': 'session', 'pct': 40}],
-            'sessions': [slot('s1', 'F1'), slot('s2', 'F8', state='merging', task_controls=False), slot('s3'), slot('s4', 'F2'),
+            'sessions': [slot('s1', 'F1', gate='testing'), slot('s2', 'F8', state='merging', task_controls=False), slot('s3'), slot('s4', 'F2', gate='waiting'),
                          {'name': 'c1', 'task': '', 'title': 'a chat', 'state': 'live'}],
             'merging': [{'id': 'F9', 'title': 'Nine', 'step': 'Conflicts in a.py', 'link': 'https://x/9'}]}
     logic = (W.PAGE_DIR / '032-status.logic.js').read_text(encoding='utf-8')
@@ -162,6 +162,8 @@ def test_view(tmp: Path) -> None:
     order(shut, '>Run<', '[run card]', '>Working<', 'data-task="F1"', '>Idle<', 'data-task="F2"', '>Merging<', 'data-task="F9"', 'data-task="F8"', '>Usage<', '[session 40%]')
     for gone in ('Landed', 'Release', 'Run log', 'data-quick', 'Needs you', '<fold>', 'data-task="c1"', 'class="btns"', 'aria-expanded="true"'):
         check(gone not in shut, f'shut: no {gone}', shut)
+    order(shut, 'data-task="F1"', 'Testing · 5 min', 'data-task="F2"', 'Waiting to test')  # B852
+    check('Working ·' not in shut, 'a slot in its gate says so, not Working', shut)
     eq(shut.count('data-task="F8"'), 1, 'a slot that merges is in Merging alone')
     check(shut.count('data-list="working"') == 3 and shut.count('data-list="merging"') == 2, 'two lists', shut)
     run = o['run']
