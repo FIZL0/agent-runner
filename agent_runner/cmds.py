@@ -334,7 +334,7 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
                       login=claude_login_line(), agent=agent_problem(st=st),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     from agent_runner.web import page_line
-    if said := page_line():  # F66: the run page's address, with its token
+    for said in filter(None, (page_line(), plansync.share_hint(C))):  # F66: the page's address; F460: the hint
         print(said)
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))
