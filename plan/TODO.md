@@ -92,3 +92,4 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 - [ ] **D10** (follow-up, low) PR mode needs: GitHub protects main of a private repo only on a paid plan; free accounts get HTTP 403 (Upgrade to GitHub Pro or make the repo public). So PR mode cannot be on for a private repo on a free account. | files: docs/REFERENCE.md
 
 ### Parked
+- [ ] **F466** (follow-up, later) Tools page: SSH machines, Logins kept secret, custom tools from a prompt, and a web terminal (split into parts) | files: agent_runner/devices.py
