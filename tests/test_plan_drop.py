@@ -208,18 +208,29 @@ def test_drop_holds_waiters():
             '- [ ] **E1** gone soon',
             '- [~] **W6** Uses E1 BLOCKED: (after E1) z', '']), encoding='utf-8')
         plan.drop('A1', 'not wanted', **kw)
-        eq([t for t, _ in plan.reopen(todo)], ['V1'], 'a release goes on; the rest are held')
-        has(plan.section(todo, 'W3')[0], r'BLOCKED: \(after all\) last$', '(after all) waits as before, not held')
+        eq(sorted(t for t, _ in plan.reopen(todo)), ['V1', 'W3'],
+           'a release and (after all) go on (the held ones ask a person, so they do not hold it); the rest are held')
         w1, w2 = plan.section(todo, 'W1')[0], plan.section(todo, 'W2')[0]
         has(w1, r'^- \[~\] .*BLOCKED: DECIDE: Still wanted, now that A1 \(The importer\) .*\[Keep / Drop\]',
             'W1 asks the person: still wanted?')
         check('(after A1' not in w1, 'and waits on A1 no more', w1)
-        has(w2, r'BLOCKED: \(after B1\) DECIDE: Still wanted', 'W2 asks once B1, still open, has landed')
+        has(w2, r'BLOCKED: DECIDE: Still wanted.*on Keep it still waits on B1', 'W2 asks now, and says it waits on B1')
+        check('W2' in {a[1] for a in plan.asks(todo)}, 'W2 is under Needs you too')
         check('W1' in {a[1] for a in plan.asks(todo)}, 'W1 is under Needs you', plan.asks(todo))
 
 
-        plan.drop('C1', 'duplicate of B1', **kw)
-        has(plan.section(todo, 'W4')[0], r'BLOCKED: \(after B1\) x$', 'a duplicate: W4 waits on B1 in its place')
+        from types import SimpleNamespace
+        from agent_runner import plan_drop as pd
+        real = pd.drop
+        try:
+            pd.drop = lambda *a, **k: real(*a, **k, **kw)
+            plan._p_drop(SimpleNamespace(id='C1', rest=['--duplicate-of', 'B1', 'same', 'work']),
+                         SimpleNamespace(say=lambda s: 0))
+        finally:
+            pd.drop = real
+        for t in ('W4', 'W5'):
+            has(plan.section(todo, t)[0], r'BLOCKED: \(after B1\) .$', f'--duplicate-of: {t} waits on B1 in its place')
+        has(Path(done).read_text(), r'\*\*C1\*\* .*dropped: duplicate of B1: same work', 'the WHY names it')
         plan.drop('E1', 'gone', by='Z1', **kw)
         eq([t for t, _ in plan.reopen(todo)], ['W6'], 'overtaken by a task not open: W6 goes on')
         eq(plan_drop.dropped_by('Overtaken by **F12** last week'), 'F12', 'a WHY can name the other task')

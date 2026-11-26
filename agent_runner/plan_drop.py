@@ -103,9 +103,8 @@ def _hold_waiters(tid: str, title: str, waits: dict, by: str, todo) -> bool:
             ls[end] = WAITS.sub('BLOCKED:', ls[end])
             _write(todo, ls)  # `reopen` reads the last `(after …)` on the line, whichever block it is in
             block(t, f'DECIDE: {STILL_WANTED}, now that {tid} ({title}) it waited on was dropped as not wanted? '
-                     f'[Keep / Drop]', todo=todo, after=[])
-            if rest:  # asked again once the rest landed (B60's `_reask`)
-                block(t, f'it also waits on {", ".join(rest)}', todo=todo, after=rest)
+                     f'[Keep / Drop]' + (f' — on Keep it still waits on {", ".join(rest)}: block it --after '
+                                         f'{",".join(rest)}' if rest else ''), todo=todo, after=[])
             ls = list(lines(todo))
         was['held'] = ls[_find(ls, t) + len(_item_block(ls, _find(ls, t))) - 1]
         any_ = True
