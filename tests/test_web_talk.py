@@ -1356,5 +1356,41 @@ def test_talk_back_b802(tmp: Path) -> None:
     eq(got.get('noMic'), on, 'where the mic cannot be used the box stays as it was')
 
 
+ATTS_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const sent = [];
+const env = {S: {view: 'home', thread: null, atts: {home: [{name: 'a.png', path: '/up/a.png'}]}}, I: {file: ''}, ok: true,
+  viewOf: v => v, render: () => {}, esc: s => String(s), TK: {starting: [], gen: 0}, act: async (n, a) => { sent.push(a.text); return {ok: env.ok} }};
+env.env = env; env.sent = sent;
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+new Function('known', 'env', 'sent', 'with (known) {' + line('function goView(') + line('function attsMove(') + grab('function compose(')
+  + grab('async function talkSend(') + line('const talkMic=') + 'env.goView=goView;env.talkSend=talkSend;env.talkAtts=talkMic;}')(known, env, sent);
+(async () => {
+  env.goView('talk');
+  const moved = [Object.keys(env.S.atts), env.S.view, env.talkAtts().includes('a.png')];
+  env.ok = false; const failed = [await env.talkSend('look'), (env.S.atts.talk || []).length];
+  env.ok = true; const went = [await env.talkSend('look'), env.S.atts.talk === undefined];
+  console.log(JSON.stringify({moved, failed, went, sent}));
+})();
+"""
+
+
+def test_talk_atts_b856(tmp: Path) -> None:
+    """B856: Home's attachments go along to Talk, show over the mic, and spoken words send them."""
+    if not shutil.which('node'):
+        print('  (no node here: the Talk attachments test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(ATTS_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs Talk with attachments', r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('moved'), [['talk'], 'talk', True], "Talk from Home takes Home's attachments, shown over the mic")
+    eq(got.get('failed'), [False, 1], 'a send that fails keeps them')
+    eq(got.get('went'), [True, True], 'a send that goes takes them')
+    check(all('/up/a.png' in m and 'look' in m for m in got.get('sent', [])) and len(got.get('sent', [])) == 2, 'the words carry the path', got)
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_talk_left_b836), in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
+    raise SystemExit(report([in_tmp(test_talk_atts_b856), in_tmp(test_talk_left_b836), in_tmp(test_talk_back_b802), in_tmp(test_mic_test_b162b1),in_tmp(test_talk_f93), in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_new_chat_f157), in_tmp(test_talk_reply_heard_b133), in_tmp(test_chat_box_f115), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_stop_speaking_b174), in_tmp(test_talk_settings_f124), in_tmp(test_home_talk_f164)]))
