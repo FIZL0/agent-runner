@@ -165,6 +165,28 @@ def control_rows(windows: dict[int, str], links=None) -> list[dict]:
     return out
 
 
+def closed_rows(listed: set[str] = frozenset()) -> list[dict]:
+    """B859: each control session closed for being idle (`control_closed.idle_closed_chats`) as a cN row with state
+    'closed' and 'closed': True, so the page lists it in Quiet until chat_quiet passes; not those in `listed`."""
+    try:
+        from agent_runner.control import control_given
+        from agent_runner.control_closed import idle_closed_chats
+        gone = idle_closed_chats(chat_quiet())
+    except Exception:  # noqa: BLE001 - no notes dir yet
+        return []
+    out = []
+    for n in sorted(gone):
+        if f'c{n}' in listed:
+            continue
+        at, sid = gone[n]
+        row = {'name': f'c{n}', 'task': '', 'title': given_title(control_given(n), n), 'minutes': None,
+               'state': 'closed', 'files': [], 'terminal': '', **chat_row(n, sid), 'closed': True}
+        row['at'] = row.get('at') or int(at)
+        row['needs_reply'] = False
+        out.append(row)
+    return out
+
+
 def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, links=None,
                  terminal_base: str = '', slots: int = 0, windows: dict[int, str] | None = None) -> list[dict]:
     """The control sessions (B113: `control_rows`; `windows` as `control_titles`, None: read from
@@ -173,6 +195,8 @@ def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, li
     `terminal_base` is where the run page serves terminals ('' none yet: each row's `terminal` stays '')."""
     files = {tid: P.fields(ls[i]).get('files', []) for _, _, tid, _, i in P.iter_tasks(ls)}
     out = control_rows(control_titles() if windows is None else windows, links)
+    if windows is None:
+        out += closed_rows({r['name'] for r in out})
     merging = set(st.get('merging') or [])
     running = dict(st.get('running') or {})
     for n in range(1, slots + 1):

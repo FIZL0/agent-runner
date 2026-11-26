@@ -109,8 +109,8 @@ const needsReply=(s,seen)=>!!s.needs_reply||(s.last==='claude'&&(s.at||0)>(seen|
 function chatGroups(rows,o){
   const top=[],quiet=[];
   for(const s of rows||[]){
-    const q=o.quiet>0&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.up&&s.at>0
-      &&o.now-s.at>o.quiet&&!needsReply(s,(o.seen||{})[s.name]);
+    const q=s.closed||o.quiet>0&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.up&&s.at>0
+      &&o.now-s.at>o.quiet&&!needsReply(s,(o.seen||{})[s.name]);  // B859: one closed for being idle rests in Quiet
     (q?quiet:top).push(s);
   }
   return{top,quiet};
