@@ -8,7 +8,7 @@ import os
 import re
 import time
 
-from agent_runner import pitch, plan as P, pr_rows, shared_tools, theme
+from agent_runner import pitch, plan as P, pr_rows, shared_tools, theme, until_watch
 from agent_runner.config import shown_cmd
 from agent_runner.state import C, default_branch, git, project
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LANDED, EV_LEFT, EV_NO_COMMITS,
@@ -589,7 +589,7 @@ def waiting_ok() -> list[tuple]:
             return []
         stamps = P.asked_at(C.todo)
         return [(*a, stamps.get(a[1], '')) for a in P.asks(C.todo, all=True)] + pitch.rows(C) + \
-            pr_rows.asks(C) + shared_tools.asks(C)
+            pr_rows.asks(C) + shared_tools.asks(C) + until_watch.asks(C)  # F427c
     except (OSError, SystemExit):
         return []
 
