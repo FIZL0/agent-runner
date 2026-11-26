@@ -611,6 +611,8 @@ def account_usage() -> dict | None:
         except (OSError, ValueError):
             st = {}
         now = time.time()
+        if st.get('login') != usage_login():  # another login: its own fetch, not the old one's backoff
+            st = {'login': usage_login()}
         if now < float(st.get('next') or 0):
             _account[1], _account_login[0] = known_usage_disk(), usage_login()
         else:
