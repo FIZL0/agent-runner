@@ -488,9 +488,73 @@ START_TRIES = 3  # a task whose session will not start is tried this many times 
 _account = [-1e9, None]
 
 
+def usage_login() -> str:
+    """B848a: which Claude login the kept usage reading belongs to: the account's uuid from Claude Code's config
+    (a hash of it, never a token), '' when it cannot be told."""
+    import hashlib
+    cfg = Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home()) / '.claude.json'
+    try:
+        uid = json.loads(cfg.read_text(encoding='utf-8'))['oauthAccount']['accountUuid']
+    except (OSError, ValueError, KeyError, TypeError):
+        return ''
+    return hashlib.sha256(str(uid).encode()).hexdigest()[:16] if uid else ''
+
+
+def usage_file(login: str) -> Path:
+    """B848a: where this machine keeps the last good usage reading of one login, outside any project."""
+    base = Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local' / 'state')
+    return base / 'agent-runner' / f'usage-{login}.json'
+
+
+def _resets_passed(w, now: float) -> bool:
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(w['resets_at']).replace('Z', '+00:00')).timestamp() <= now
+    except (TypeError, KeyError, ValueError):
+        return False
+
+
+def kept_usage(now: float | None = None) -> dict | None:
+    """B848a: the last good usage reading kept for the current login, its windows whose resets_at has passed
+    dropped; None when there is none (or the login cannot be told)."""
+    login = usage_login()
+    if not login:
+        return None
+    try:
+        got = json.loads(usage_file(login).read_text(encoding='utf-8'))['usage']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(got, dict):
+        return None
+    now = time.time() if now is None else now
+    got = {k: v for k, v in got.items() if not (isinstance(v, dict) and _resets_passed(v, now))}
+    return got or None
+
+
+def keep_usage(got: dict) -> None:
+    """B848a: store a good reading for the current login, written atomically."""
+    login = usage_login()
+    if not login:
+        return
+    f = usage_file(login)
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f'{f.name}.{os.getpid()}.tmp')
+        tmp.write_text(json.dumps({'at': time.time(), 'usage': got}), encoding='utf-8')
+        os.replace(tmp, f)
+    except OSError:
+        pass
+
+
+def known_usage() -> dict | None:
+    """B848a: the usage the cap reads with no fetch: this process's last reading, else the kept one."""
+    return _account[1] if isinstance(_account[1], dict) else kept_usage()
+
+
 def account_usage() -> dict | None:
     """The account's usage from the endpoint Claude Code's `/usage` reads (the local login's OAuth token; costs
-    no tokens), checked at most every 5 minutes. None when it cannot be read: "don't cap"."""
+    no tokens), checked at most every 5 minutes. A failed fetch keeps the last good reading (B848a, kept on disk
+    per login); None when there never was one: "don't cap"."""
     if time.time() - _account[0] < 300:
         return _account[1]
     import urllib.request
@@ -499,9 +563,13 @@ def account_usage() -> dict | None:
         req = urllib.request.Request('https://api.anthropic.com/api/oauth/usage',
                                      headers={'Authorization': f'Bearer {tok}',
                                               'anthropic-beta': 'oauth-2025-04-20'})
-        _account[1] = json.load(urllib.request.urlopen(req, timeout=10))
+        got = json.load(urllib.request.urlopen(req, timeout=10))
+        if not isinstance(got, dict):
+            raise ValueError
+        _account[1] = got
+        keep_usage(got)
     except Exception:
-        _account[1] = None
+        _account[1] = kept_usage()
     _account[0] = time.time()
     return _account[1]
 
