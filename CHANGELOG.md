@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: the Talk page tests are split by area into test_web_talk.py, test_web_talk_sound.py and test_web_talk_home.py, so tasks on one area no longer wait for the others (C58).
+
 - Added: `agent-runner setup` offers to install Runner Home when it is not installed on this device, and to list the project in it; who can reach the run page is then asked only with no Home (F456).
 - Added: a concept's Needs you card shows its options page framed under the summary, with Expand and Open in claude.ai beside it, so the options read without leaving the run page (F463).
 ## 0.75.0 (2026-11-26)
