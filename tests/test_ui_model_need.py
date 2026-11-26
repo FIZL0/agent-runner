@@ -297,7 +297,15 @@ def test_part_of_part_b199(tmp: Path) -> None:
     eq((r['ok'], r.get('gone')), (True, 'F162a2'), 'its inputs are sent')
     check('- [ ] **F162a2**' in todo.read_text(encoding='utf-8'), 'and it reopens', todo.read_text(encoding='utf-8'))
 
+def test_frame_kept_b860(tmp: Path) -> None:
+    """B860: a concept card's framed options page is kept over a redraw: the box is changed in place, not written over"""
+    page = Path(__file__).resolve().parent.parent / 'agent_runner' / 'page'
+    plan = (page / '140-plan.js').read_text(encoding='utf-8')
+    shared = (page / '010-shared.js').read_text(encoding='utf-8')
+    check('data-keep="cframe:${id}"' in plan, 'the frame is marked to keep')
+    check("querySelector('iframe[data-keep]')" in shared and 'morphKids(el,t.content)' in shared, 'setHTML morphs a box holding one')
+    check("o.dataset.keep===n.dataset.keep&&o.getAttribute('src')===n.getAttribute('src')" in shared, 'the same frame is left alone')
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
+    raise SystemExit(report([in_tmp(test_frame_kept_b860), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
