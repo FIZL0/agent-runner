@@ -68,6 +68,10 @@ def test_keys() -> None:
     check(until(lambda: state().get('forced') is True) is not None, 'f on: forced in STATE')
     loop.send_key('slots 3')
     check(until(lambda: state().get('slots') == 3) is not None, 'slots 3: in STATE')
+    loop.send_key('z')
+    check(until(lambda: state().get('power') == 'suspend') is not None, 'z: suspend in STATE')
+    loop.send_key('z')
+    check(until(lambda: state().get('power') == '') is not None, 'z again: taken back in STATE')
     check(stop_now.waiting() is False, 'nothing left waiting')
 
 sys.exit(report([test_keys]))

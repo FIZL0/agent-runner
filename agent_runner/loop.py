@@ -202,6 +202,9 @@ def run_version() -> str:
     return __version__
 
 
+STATE_LOCK = threading.Lock()  # B850a: the loop and stop_now.watch's key taking both write STATE
+
+
 def write_state(running: dict, held=()) -> None:
     """`<notes>/STATE`, for `agent-runner status`: what the keys have set, what each slot is on and since when,
     what is merging, and the account's usage (as the cap reads it, at most every 5 minutes)."""
@@ -219,6 +222,7 @@ def write_state(running: dict, held=()) -> None:
     tmp = C.notes('STATE.tmp')
     from agent_runner.ui_model import agent_problem, no_settings
     try:
+      with STATE_LOCK:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
                                    'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
