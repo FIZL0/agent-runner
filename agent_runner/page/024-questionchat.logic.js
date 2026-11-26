@@ -13,5 +13,5 @@ function questionMarks(text){
   return Array.isArray(l)?l.filter(x=>Array.isArray(x)&&/^c\d+$/.test(x[0])&&x[1]&&typeof x[1].id==='string'&&typeof x[1].question==='string'&&Array.isArray(x[1].options)):[];
 }
 const questionChatHTML=ask=>`<button type="button" class="btn qchat" data-qchat="${esc(ask.id)}">Chat about this</button>`;
-/* the question, marked above the box: B854a: as the minimized line, so the chat above it shows */
-const questionMarkHTML=(n,ask)=>`<div class="card qcard qmin qabout" role="group" aria-label="Chat about this question, not your answer" data-k="question:${esc(n)}" data-v="about:${esc(ask.id)}"><div class="row"><span class="grow ell" title="Chat about this, not your answer">${esc(ask.question)}</span><button type="button" class="icon" data-qunchat="${esc(n)}" aria-label="Back to the question" title="Back to the question">✕</button></div></div>`;
+/* the question, marked above the box */
+const questionMarkHTML=(n,ask)=>`<div class="card qcard qabout" role="group" aria-label="Chat about this question" data-k="question:${esc(n)}" data-v="about:${esc(ask.id)}"><div class="row"><span class="grow"><span class="small">Chat about this, not your answer</span><span class="q">${esc(ask.question)}</span></span><button type="button" class="icon" data-qunchat="${esc(n)}" aria-label="Back to the question" title="Back to the question">✕</button></div></div>`;

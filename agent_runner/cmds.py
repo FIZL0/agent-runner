@@ -286,7 +286,7 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
     keys = {'slots': lambda: [f'slots {a.count}'], 'key': lambda: a.keys}.get(
         cmd, lambda: [f'{cmd[0]} {"off" if a.off else "on"}'])()
     send_key(*keys)
-    print(f'sent to the run: {", ".join(keys)} (it acts within a second; `{C.command} status` shows it)')
+    print(f'sent to the run: {", ".join(keys)} (it acts within 10 s; `{C.command} status` shows it)')
     return 0
 
 
@@ -334,7 +334,7 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
                       login=claude_login_line(), agent=agent_problem(st=st),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     from agent_runner.web import page_line
-    for said in filter(None, (page_line(), plansync.share_hint(C))):  # F66: the page's address; F460: the hint
+    if said := page_line():  # F66: the run page's address, with its token
         print(said)
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))

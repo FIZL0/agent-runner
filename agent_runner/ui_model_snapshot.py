@@ -177,6 +177,8 @@ def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, li
     running = dict(st.get('running') or {})
     for n in range(1, slots + 1):
         running.setdefault(str(n), '')
+    from agent_runner.merge_rows import gate_phase, live_gates
+    gates = live_gates() if any(running.values()) else []
     for n, tid in sorted(running.items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
         name = f's{n}' if n.isdigit() else n
         if not tid:
@@ -185,7 +187,8 @@ def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, li
         since = (st.get('since') or {}).get(n)
         out.append({'name': name, 'task': tid, 'title': titles.get(tid, ''),
                     'minutes': int((now - since) // 60) if since else None,
-                    'state': 'merging' if tid in merging else 'running', 'files': files.get(tid, []),
+                    'state': 'merging' if tid in merging else 'running',
+                    'gate': gate_phase(tid, n, gates), 'files': files.get(tid, []),
                     'link': links.get(name, '') if links is not None else slot_link(name),
                     'terminal': f'{terminal_base.rstrip("/")}/terminal/{name}' if terminal_base else ''})
     return out

@@ -61,20 +61,6 @@ def typed() -> bool:
         return False
 
 
-ON_KEYS: list = []  # B850a: the loop's take-keys-and-write-STATE, called here as soon as a key waits
-
-
-def waiting() -> bool:
-    """B850a: a key a command left in KEYS (or a power choice in POWER), not taken yet."""
-    for name in ('KEYS', 'POWER'):
-        try:
-            if S.C.notes(name).read_text(encoding='utf-8').strip():
-                return True
-        except OSError:
-            pass
-    return False
-
-
 def watch(run) -> None:
     """A daemon thread's loop: wake the loop for a stop now (asked for, or an `s!` typed in the run view); stop without it when it
     does not begin, and exit as it is when the stop itself hangs."""
@@ -82,11 +68,6 @@ def watch(run) -> None:
         time.sleep(0.25)
         if typed():
             S.WAKE.set()
-        elif ON_KEYS and waiting():  # B850a: any other key is taken now, not on the loop's next pass
-            try:
-                ON_KEYS[0]()
-            except Exception:  # the loop's next pass takes it
-                S.WAKE.set()
         if not S.forced():
             continue
         S.WAKE.set()

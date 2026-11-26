@@ -255,72 +255,9 @@ def test_in_repo(tmp: Path):
     check(not plansync.enabled(config.Config(a)), 'no remote: no claims (a local-only run is the only one)')
 
 
-def test_repo_setup(tmp: Path):
-    """F460: `plan repo-setup` moves an in-repo plan to its own repo, and a second checkout joins it."""
-    seed = tmp / 'seed'
-    (seed / 'plan' / 'tasks').mkdir(parents=True)
-    git(seed, 'init', '-q', '-b', 'main')
-    (seed / 'plan' / 'TODO.md').write_text(TODO, encoding='utf-8')
-    (seed / 'plan' / 'tasks' / 'T1.md').write_text('# T1\nlong form\n', encoding='utf-8')
-    (seed / 'a.py').write_text('# a\n')
-    git(seed, 'add', '-A')
-    git(seed, 'commit', '-qm', 'start')
-    (seed / 'plan' / 'TODO.md').write_text(TODO + '- [ ] **T4** fourth | files: d.py\n', encoding='utf-8')
-    git(seed, 'commit', '-qam', 'plan: add T4')
-    git(tmp, 'clone', '-q', '--bare', str(seed), 'code.git')
-    a, b = tmp / 'A', tmp / 'B'
-    for d in (a, b):
-        git(tmp, 'clone', '-q', str(tmp / 'code.git'), d.name)
-        (d / '.git' / 'info' / 'exclude').write_text('.runner/\n')
-    print('repo-setup: from a plain repo')
-    (a / 'plan' / 'TODO.md').write_text(TODO + '- [ ] **T4** fourth | files: d.py\n- [ ] **T5** uncommitted\n',
-                                       encoding='utf-8')
-    pr = (tmp / 'plan.git').as_posix()
-    r = run(a, 'plan', 'repo-setup', pr)
-    check(r.returncode == 0, 'repo-setup succeeds', r.stdout + r.stderr)
-    has(r.stdout, r'On the other machine.*plan repo-setup ' + re.escape(pr), 'and prints the line for the other machine')
-    has(git(tmp / 'plan.git', 'show', 'main:TODO.md'), r'T5\*\* uncommitted', 'the plan, edits too, is in the plan repo')
-    has(git(tmp / 'plan.git', 'show', 'main:tasks/T1.md'), 'long form', 'with its long forms')
-    has(git(tmp / 'plan.git', 'log', '--format=%s', 'main'), r'plan: add T4', 'and its history')
-    has((a / 'runner.toml').read_text(), r'repo = "' + re.escape(pr), 'runner.toml names the plan repo')
-    eq(git(a, 'ls-files', 'plan'), '', 'the plan is gone from the code repo')
-    eq(git(a, 'status', '--porcelain', '--untracked-files=no'), '', 'all of it in a commit')
-    has(run(a, 'plan').stdout, r'T5', '`plan` reads the plan repo')
-    print('repo-setup: a second checkout joins')
-    git(a, 'push', '-q', 'origin', 'HEAD:main')
-    git(b, 'pull', '-q')
-    r = run(b, 'plan', 'repo-setup', pr)
-    check(r.returncode == 0, 'repo-setup on the second checkout', r.stdout + r.stderr)
-    has(r.stdout, r'plan repo mode is on', 'says it is on')
-    has(run(b, 'plan').stdout, r'T5', 'and B reads the shared plan')
-    print('repo-setup: joining before the code merge')
-    c2 = tmp / 'C'
-    git(tmp, 'clone', '-q', '-b', 'main', str(seed), c2.name)  # still has its own plan
-    (c2 / '.git' / 'info' / 'exclude').write_text('.runner/\n')
-    r = run(c2, 'plan', 'repo-setup', pr)
-    check(r.returncode == 0, 'joins a plan repo that holds a plan', r.stdout + r.stderr)
-    has(r.stdout, r'joined', 'says it joined')
-    has(config.Config(c2).todo.read_text(), r'T5', 'and reads the shared plan')
-
-    print('hint: claims from another host')
-    from agent_runner import plansync as PS
-    ca = config.Config(a)
-    eq(PS.share_hint(ca), '', 'no hint in plan repo mode')
-    cs = config.Config(seed)
-    real_store, real_claims = PS.store, PS.claims
-    PS.store = lambda c: object()
-    PS.claims = lambda c: {'T1': PS.Claim('x', 0.0, 'pat@other-box')}
-    try:
-        has(PS.share_hint(cs), r'other-box.*plan repo-setup', 'claims from another host give the hint')
-        eq(PS.share_hint(cs), '', 'once')
-    finally:
-        PS.store, PS.claims = real_store, real_claims
-
-
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
-        return report([lambda: test_all(Path(t)), lambda: test_in_repo(Path(t) / 'in-repo'),
-                       lambda: test_repo_setup(Path(t) / 'setup')])
+        return report([lambda: test_all(Path(t)), lambda: test_in_repo(Path(t) / 'in-repo')])
 
 
 if __name__ == '__main__':

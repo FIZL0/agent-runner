@@ -170,14 +170,20 @@ def main(argv: list[str] | None = None) -> int:
     if docs and not own:  # no tested ref either: the merge decides by its own diff
         print(DOCS_SKIP + (f' (docs check: {c.run["docs_check"]})' if c.run['docs_check'] else ''))
     if not a.no_test:
+        from agent_runner import merge_rows  # B852: the run page says Waiting to test, then Testing
         if own or not docs:
+            merge_rows.mark_slot_gate(c, a.id, cwd, 'waiting')
             shared_tools.gate_wait(c)  # B184
-        content = '' if a.blocked else content_hash(cwd)  # before the gate: what it ran on, not what it wrote
-        key = 'done_test' if own else 'docs_check' if docs else 'test'
-        rc, tail = gate(cwd, key)
-        if own and docs and not rc and c.run['docs_check']:
-            key = 'docs_check'
+        merge_rows.mark_slot_gate(c, a.id, cwd, 'testing')
+        try:
+            content = '' if a.blocked else content_hash(cwd)  # before the gate: what it ran on, not what it wrote
+            key = 'done_test' if own else 'docs_check' if docs else 'test'
             rc, tail = gate(cwd, key)
+            if own and docs and not rc and c.run['docs_check']:
+                key = 'docs_check'
+                rc, tail = gate(cwd, key)
+        finally:
+            merge_rows.clear_slot_gate(c, a.id)
         if rc:
             print(tail)
             if a.blocked:

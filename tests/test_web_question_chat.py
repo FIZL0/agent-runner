@@ -47,7 +47,6 @@ def test_mark(tmp: Path) -> None:
     eq(out[1], ['card'], 'a tap meant for another question does nothing')
     eq(out[2][:3], ['mark', 1, 0], 'a tap marks the question and focuses the box; nothing is sent')
     check('Which &lt;look>?' in out[2][3] and 'data-qpick' not in out[2][3], 'the mark says the question, and has no options', out[2][3])
-    check('qmin' in out[2][3] and 'grow ell' in out[2][3] and 'class="q"' not in out[2][3], 'B854a: the card minimizes to its one line, so the chat shows', out[2][3])
     eq(out[3], ['mark'], 'a double tap does not take the mark away')
     eq(out[4], ['card', ''], 'its ✕ brings the card back')
     eq(out[5], ['card'], 'nor does a double tap on it mark again')

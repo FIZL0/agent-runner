@@ -76,7 +76,6 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan claims            which run has which task (with a remote to claim through), and since when (STALE: no refresh in 3 h),
                                  and any wip/main-checkout-* branches of edits moved aside to land a merge
     ./run plan unclaim <ID>      drop a claim, whoever's: for a run that crashed or was switched off
-    ./run plan repo-setup [URL|path]  move the plan to its own repo (plan repo mode), for two machines
 
 **Where `add` files a task.** A person's task goes to the top of the leading section, as before. A task
 given a `--pri` (and every follow-up a running agent files, which is `normal` unless it says) is tagged
@@ -3443,11 +3442,6 @@ def _p_unclaim(a, x):
     return x.say(f'unclaimed {a.id}')
 
 
-def _p_repo_setup(a, x):  # F460
-    from agent_runner import plan_repo_setup
-    return x.say('\n'.join(plan_repo_setup.setup(x.c, a.target)))
-
-
 # name: (its words in order, the least count of free words after them (None: none taken), handler). A word is a
 # name, or (name, add_argument options) for an optional one.
 SUBCOMMANDS = {
@@ -3480,7 +3474,6 @@ SUBCOMMANDS = {
     'archive': ((), None, _p_archive),
     'claims': ((), None, _p_claims),
     'unclaim': (('id',), None, _p_unclaim),
-    'repo-setup': ((('target', {'nargs': '?'}),), None, _p_repo_setup),
 }
 
 

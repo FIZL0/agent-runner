@@ -128,7 +128,7 @@ def test_page(tmp: Path) -> None:
         eq(v['kept'], [True, 40], f'{k}: a redraw keeps its scroll place')
         m, a = v['min'], v['mark']
         eq((m['n'], m['reach'], m['side'], m['inView'], m['high'] < 60), (['Show question'], [True], [True] * 3, True, True), f'{k}: minimized, one line')
-        eq((a['n'], a['reach'], a['side'], a['inView'], a['high'] < 60), (['Back to the question'], [True], [True] * 3, True, True), f'{k}: marked, one line (B854a)')
+        eq((a['n'], a['reach'], a['side'], a['whole'], a['inView']), (['Back to the question'], [True], [True] * 3, True, True), f'{k}: marked')
         check(a['high'] <= min(140, a['app'] * .25) + 1, f'{k}: the mark is bounded', (a['high'], a['app']))
         check(v['back'], f'{k}: and back to the card')
     eq((o['shelved'], o['home']), ([2, True, True], [3, True, True]), "Plan's shelved ask is 2 lines, All projects' row 3")

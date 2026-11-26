@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import audit, inbox_lock, join, no_push, plan as P, plat, pr, pr_feedback, session_theme, shared_tools, stack
+from agent_runner import audit, inbox_lock, no_push, plan as P, plat, pr, pr_feedback, session_theme, shared_tools, stack
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -42,7 +42,7 @@ def worktree(n, branch: str) -> Path:
     """Slot n's worktree (or the merge worktree), created once and kept: a warm build is worth more than a
     clean one. `[run] links` — git-ignored data the work needs — are symlinked in, never copied."""
     d = SLOTS_DIR / (f's{n}' if isinstance(n, int) else str(n))
-    if not join.own_worktree(d):  # BUG2: a folder from another copy of the repo is added again from this one
+    if not d.is_dir():
         SLOTS_DIR.mkdir(parents=True, exist_ok=True)
         git('worktree', 'prune')
         git('worktree', 'add', '-q', '--detach', str(d), branch)

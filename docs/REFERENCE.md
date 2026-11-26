@@ -1024,16 +1024,8 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
 - `tasks/<ID>.md` long forms, `REFERENCE.md` and `HUMAN.md` live in the plan repo; `[plan] journal` stays in the
   code repo, since journals describe code and travel with it.
 - `dir` outside the repo without `repo` (a synced folder) shares one copy the same way, without git.
-- Moving an existing plan over, keeping its history: `plan repo-setup [URL|path]` (F460). With no argument it
-  makes a bare repo at `[run] home`/plan.git; a path that is not there yet is made the same way. An empty
-  repo gets the plan folder's history (`git subtree split`) plus any edits not yet committed; one that
-  already holds a plan is joined (open tasks only this checkout had are named, to add again). Either way
-  `[plan] repo` is set in runner.toml (an in-repo `[plan] dir` taken out), the plan folder leaves the code
-  repo in one commit on the current branch, and it prints the line for the other machine: `git pull`, then
-  the same command (on a checkout already in plan repo mode it only clones and pulls). A local path suits
-  one machine; for two, give a URL both can reach.
-- `status` says once (marked in the notes as `plan-repo-hint`) when claims come from another host while the
-  plan is still in the code repo: plan repo mode would share the plan itself, not only the claims.
+- Moving an existing plan over, keeping its history: `git subtree split -P plan -b plan-only`, push that
+  branch to the new repo as `main`, set `[plan] repo`, then `git rm -r plan` in the code repo.
 
 **Claims with the plan in the code repo.** Runs claim tasks the same way without `[plan] repo`, whenever the code
 has a remote (`[git] push`): each claim is a ref, `refs/agent-runner/claims/<ID>`, on that remote. The first push
@@ -1530,7 +1522,7 @@ the key list. Each key is acted on as it is typed; ending sessions and adding a 
 `agent-runner pause` (`--off` goes on), `force` (`--off`), `slots 4` (or `+1`, `-1`), `stop --undo` (takes a
 gentle stop back), and `key <k>` for any other (`key z`, `key u`). Unlike a typed key, `pause`, `force` and
 `stop` say which way they go, so asking twice does not undo them. They append to `.runner/KEYS`, which the
-run reads every quarter second, also in a long pass, so it acts and rewrites `.runner/STATE` within a second; with no run up they say so and exit 1.
+loop reads on every pass, so the run acts within 10 s; with no run up they say so and exit 1.
 `agent-runner status` is short enough for a phone: whether a run is up and what the keys have set, each
 slot's task id, title and minutes running (from `.runner/STATE`, rewritten every pass), what is merging, the
 last five merged, blocked or parked tasks from `run.log`, and the account's usage as the caps last read it.

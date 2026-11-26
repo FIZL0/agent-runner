@@ -54,12 +54,13 @@ def live_gates() -> list[dict]:
                 out.append(s)
         except (OSError, ValueError, TypeError, AttributeError):
             pass
-    return out
+    return out + slot_gates()  # B852: the slots' own gates too, marked `slot_gate`
 
 
 def stage(tid: str, gates: list[dict]) -> str:
     """Where the merge of `tid` is when the run log has no step of it: a running gate holds it, or what runs in the merge
     worktree (one merge at a time) is another task's, so it waits. With neither the run cannot tell."""
+    gates = [s for s in gates if not s.get('slot_gate')]
     mine = [s for s in gates if tid in (s.get('tids') or [s.get('tid')])]
     if mine:
         return UNKNOWN if all(s.get('kind') for s in mine) else TESTING
@@ -89,3 +90,50 @@ def rows(st: dict, titles: dict[str, str], bridge, links=None) -> list[dict]:
     gates = live_gates() if ids else []
     return [{'id': t, 'title': titles.get(t, ''), 'step': step(t, lines) or stage(t, gates),
              'link': '' if links is not None else link_of(t, bridge)} for t in ids]
+
+
+SLOT_GATES = 'slot-gates'  # B852: <notes>/slot-gates/<task>.json while a slot's `done` waits for or runs its gate
+
+
+def mark_slot_gate(c, tid: str, cwd, phase: str) -> None:
+    """Record that `done` of `tid` (this process) is at `phase` of its gate: 'waiting' (`shared_tools.gate_wait`) or
+    'testing'. Never fails `done`."""
+    from agent_runner import plat
+    try:
+        pid = os.getpid()
+        c.notes(SLOT_GATES, f'{tid}.json').write_text(json.dumps(
+            {'tid': tid, 'cwd': str(cwd), 'slot': os.environ.get('AGENT_RUNNER_SLOT', ''), 'phase': phase,
+             'pid': pid, 'start': plat.started(pid)}), encoding='utf-8')
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def clear_slot_gate(c, tid: str) -> None:
+    try:
+        c.notes(SLOT_GATES, f'{tid}.json').unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def slot_gates() -> list[dict]:
+    """The slots' `done` gates alive now (a dead or killed one is left out), each with `slot_gate`: True."""
+    from agent_runner.merge import gate_alive
+    out = []
+    d = S.C.notes(SLOT_GATES)
+    for f in d.glob('*.json') if d.is_dir() else []:
+        try:
+            s = json.loads(f.read_text(encoding='utf-8'))
+            if gate_alive(s):
+                out.append({**s, 'slot_gate': True})
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+    return out
+
+
+def gate_phase(tid: str, slot: str, gates: list[dict]) -> str:
+    """B852: 'testing', 'waiting' or '' for slot `slot` ('2') on task `tid`, from `gates` (`live_gates`): the slot
+    gate of its task, or of that slot's worktree (a `done` run there for another id)."""
+    for s in gates:
+        if s.get('slot_gate') and (s.get('tid') == tid or (slot and str(s.get('slot')) == slot)):
+            return 'waiting' if s.get('phase') == 'waiting' else 'testing'
+    return ''
