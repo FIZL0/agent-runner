@@ -741,7 +741,7 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq((got.get('holdRetry'), got.get('holdNote')), (2, words + 'hold, after 0.1 s, 2 tries)'), 'an abort while held is retried')
     eq(got.get('letGo'), [1, ''], 'let go before the retry: none')
     eq((got.get('starting'), got.get('begun'), got.get('live')), ('Starting the mic…', 'Starting the mic…', 'Listening…'), 'Listening only once the mic takes sound')
-    eq(got.get('reason'), 'The mic was on, but no words reached it before it was stopped. Stop any other app that uses sound or the mic, then try again. '
+    eq(got.get('reason'), 'The mic was on, but no sound reached it. Type your message instead, or open Talk settings, run Mic test… and copy its report. '
        '(aborted: No speech detected, hold, after 1.6 s)', "the note has the error's own message")
     eq(got.get('trail'), ['0 ms pointerdown touch id 7', '0 ms listen hold', '0 ms try 1, continuous', '0 ms start', '700 ms audiostart', '1600 ms pointerup touch id 7',
                           '1600 ms stop by pointerup', '1600 ms touchend touch id 7', '1600 ms error aborted: No speech detected', '1600 ms end',

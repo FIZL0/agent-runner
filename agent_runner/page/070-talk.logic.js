@@ -27,10 +27,13 @@ function heardNothing(err,mode,ms,tries,stopped,on,msg,early){
   const d=(msg?': '+msg:'')+[mode||'',ms==null?'':`after ${(ms/1000).toFixed(1)} s`,tries>1?`${tries} tries`:''].filter(Boolean).map(x=>', '+x).join('');
   if(!err){const x=d?` (${d.slice(2)})`:'';return early?`${MIC_STARTING}.${x}`:stopped&&on===false?`${MIC_EARLY}.${x}`:`Heard nothing${x}`}
   if(err==='aborted'&&!stopped)return `The mic was cut off before it heard anything. Stop any other app that uses sound or the mic, then try again. (${err}${d})`;
-  if(err==='aborted')return `${on===false?MIC_EARLY:'The mic was on, but no words reached it before it was stopped. Stop any other app that uses sound or the mic, then try again'}. (${err}${d})`;
+  if(err==='aborted')return `${on===false?MIC_EARLY:MIC_NO_SOUND}. (${err}${d})`;
   return `Heard nothing (error: ${err}${d})`;
 }
 const MIC_EARLY='The mic was stopped before it was on. Allow it if the browser asks, wait until this line says Listening…, then speak';
+/* B162b1a: the person's mic reports (iPhone, earbuds on and off) show the mic on and no sound reaching the recognizer at
+   all, so the line says what to do now: type, and run the Mic test, whose report shows which condition hears */
+const MIC_NO_SOUND='The mic was on, but no sound reached it. Type your message instead, or open Talk settings, run Mic test… and copy its report';
 const MIC_STARTING='The mic was still starting. Allow it if the browser asks, hold until this line says Listening…, then speak';
 /* B804b: Recorded's mic is opened afresh in the listen, as no sound came; before the first opening the listen is not on yet */
 const micOpening=rec=>!!rec&&!!rec.recorded&&rec.on===false;
