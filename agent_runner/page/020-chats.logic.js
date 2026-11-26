@@ -154,6 +154,8 @@ function planWords(q,sessions){
   if(q.pri==='high')return 'High priority: goes ahead of normal tasks, as soon as a slot is free';  // F438
   return 'Ready to start when a slot is free';
 }
+/* F449: Settings' Ask about my settings: the first message, put in the box to edit (the settings kind sends the words as they are) */
+const SETTINGS_ASK='What settings fit how I use this project?\n\nRead `agent-runner guide settings` and `agent-runner settings`, look at the project (its tests, size, recent run log, usage, this machine), and ask me about my use case what you cannot see. Then recommend each change in one line: `[table] key = value`, why, and who it is saved for (this machine or everyone). Make only the changes I say yes to.';
 /* what the message box sends: the About line, your words, then the attachments' paths on this machine */
 function compose(ctx,text,paths){
   text=String(text||'').trim();
@@ -173,6 +175,6 @@ function compose(ctx,text,paths){
    session that gets it as its first message; F176: with no chat open (Home) too; else chat_to the open chat */
 function sendReq(ctx,to,msg){if(ctx&&ctx.kind==='response')return{name:'response_chat',args:{rid:ctx.id,text:msg}};return ctx||!to?{name:'new_control',args:{ask:msg}}:{name:'chat_to',args:{text:msg,to}}}
 /* F172: the new chat view of a card's Chat, before its first message: its name in S.thread ('+plan:F1'; no session has it) */
-const ctxKey=ctx=>'+'+(ctx.kind==='new'||ctx.kind==='newconcept'?ctx.kind:ctx.kind+':'+ctx.id);
+const ctxKey=ctx=>'+'+(ctx.kind==='new'||ctx.kind==='newconcept'||ctx.kind==='settings'?ctx.kind:ctx.kind+':'+ctx.id);
 /* its message box's placeholder */
 const newPh=ctx=>({new:'Describe the task in your own words',newconcept:'What should the concept show?',report:'What is the problem?'})[ctx&&ctx.kind]||'Write your first message';
