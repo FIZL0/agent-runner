@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: `agent-runner setup` at a terminal asks once who can reach the run page (other devices too, the default, or only this machine) and writes `[run] web_open` to runner.local.toml; Settings' "Run page opens on" says it applies from the next run (F454b).
 - Changed: Talk's brief tells the session to say in one short sentence what it is checking before a slow check, and to keep each command under about twenty seconds, running longer ones in the background; a reply went silent for minutes behind one long command (B835).
 ## 0.74.0 (2026-11-26)
 
