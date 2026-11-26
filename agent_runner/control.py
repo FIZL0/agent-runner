@@ -1013,6 +1013,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
             why = tid
         plat.terminate(pid)
         pidf.unlink(missing_ok=True)
+        idle_closed(n, sid, st['at'] or now)  # B859: it stays listed, in Quiet, until chat_quiet passes
         log(f'control {n}: closed, ' + (f'its question filed as {why}' if verdict == 'ask' else why) + f' (transcript kept: {control_harness.resume_hint(sid)})')
         out.append((n, 'asked' if verdict == 'ask' else 'closed', why))
     return out
@@ -1134,6 +1135,38 @@ def claim_control_number() -> int:
         n += 1
 
 
+def idle_closed(n: int, sid: str, at: float) -> None:
+    """B859: mark control session `n` (conversation `sid`, last active at `at`) as closed for being idle
+    (`<notes>/controlN.closed`: "at sid"): its title stays, so the chat list keeps it, grayed, until chat_quiet."""
+    try:
+        C.notes(f'control{n}.closed').write_text(f'{int(at)} {sid}\n', encoding='utf-8')
+    except OSError:
+        pass
+
+
+def idle_closed_chats(quiet: float, now: float | None = None) -> dict[int, tuple[float, str]]:
+    """B859: {N: (last active, sid)} of the control sessions closed for being idle (`idle_closed`) that are not
+    live again and whose last activity is under `quiet` s ago; an older mark goes."""
+    now = time.time() if now is None else now
+    out = {}
+    for f in C.notes().glob('control*.closed'):
+        if not (m := re.fullmatch(r'control(\d+)\.closed', f.name)):
+            continue
+        n = int(m[1])
+        try:
+            at_s, _, sid = f.read_text(encoding='utf-8').strip().partition(' ')
+            at = float(at_s)
+        except (OSError, ValueError):
+            continue
+        if control_live(n):
+            f.unlink(missing_ok=True)
+        elif quiet > 0 and now - at < quiet and sid:
+            out[n] = (at, sid.strip())
+        else:
+            f.unlink(missing_ok=True)
+    return out
+
+
 def end_control(n: int, why: str) -> bool:
     """F118: end control session `n` on purpose, as closing it does (B26, B53): its process, controlN.pid and
     controlN.title go, so it leaves the chat list and no run start reopens it (B121); the transcript stays,
@@ -1142,7 +1175,14 @@ def end_control(n: int, why: str) -> bool:
     try:
         pid_s, _, sid = pidf.read_text(encoding='utf-8').strip().partition(' ')
     except OSError:
-        return False
+        closed = C.notes(f'control{n}.closed')  # B859: one closed for being idle goes from the list at once
+        if not closed.exists():
+            return False
+        closed.unlink(missing_ok=True)
+        C.notes(f'control{n}.title').unlink(missing_ok=True)
+        C.notes(f'control{n}.name').unlink(missing_ok=True)
+        log(f'control {n}: removed from the chat list, {why}')
+        return True
     if control_live(n):
         try:
             plat.terminate(int(pid_s))  # its hidden shim ends with it
@@ -1153,6 +1193,7 @@ def end_control(n: int, why: str) -> bool:
     pidf.unlink(missing_ok=True)
     C.notes(f'control{n}.title').unlink(missing_ok=True)
     C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129
+    C.notes(f'control{n}.closed').unlink(missing_ok=True)  # B859
     log(f'control {n}: ended, {why}' + (f' (transcript kept: {control_harness.resume_hint(sid)})' if sid else ''))
     return True
 

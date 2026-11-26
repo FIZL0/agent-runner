@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a chat closed for being idle stays in Chats, grayed under Quiet, until chat_quiet passes, and a message to it reopens it; before, it vanished from the list. A chat closed from the TUI or the run page still goes at once (B859).
 - Changed: on the run page, a chat that a Needs you answer started goes straight to Quiet in Chats with a 'new' label until opened once; it moves to the top only when it asks you something (F465).
 - Changed: ui_model_need.py split: concept and sheet code now in ui_model_concept.py and ui_model_sheet.py, with their tests (C56)
 - Changed: the Talk page tests are split by area into test_web_talk.py, test_web_talk_sound.py and test_web_talk_home.py, so tasks on one area no longer wait for the others (C58).

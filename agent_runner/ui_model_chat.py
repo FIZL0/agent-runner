@@ -325,6 +325,30 @@ def _starting(name: str, wait: bool) -> dict | None:
     return None
 
 
+def _wake_closed(name: str, wait: bool) -> dict | None:
+    """B859: a message to chat `name` that was closed for being idle (`control.idle_closed_chats`) reopens it
+    first (`control_reopen.reopen_control`), waiting up to START_WAIT s for it to come up. None to go on; else
+    the answer (not sent). `wait` is not looked at: it always waits."""
+    m = re.fullmatch(r'c(\d+)', name or '')
+    if not m or hidden_inbox(name):
+        return None
+    from agent_runner import control as K
+    from agent_runner.control_reopen import reopen_control
+    n = int(m[1])
+    if not (gone := K.idle_closed_chats(chat_quiet()).get(n)):
+        return None
+    if not reopen_control(n, gone[1]):
+        return {'ok': False, 'code': 1, 'out': f'{name} could not be reopened', 'argv': []}
+    K.log(f'control {n}: reopened, the person wrote to it after it was closed for being idle')
+    end = time.monotonic() + START_WAIT  # waits even for the page: a second try would reopen it twice
+    while not hidden_inbox(name):
+        if time.monotonic() >= end:
+            return {'ok': False, 'code': 1, 'out': f'{name} is still starting, so it could not take the message',
+                    'argv': []}
+        time.sleep(0.2)
+    return None
+
+
 def chat_to(text: str, to: str = '', force: bool = False, unsent: bool = False, wait: bool = True) -> dict:
     """F74: the chat box of any control session: `to` (c6) gets `text`, with no `to` a new one (F176). B154: 'at' is when it was typed, and
     'name' the new control session. F170: `force` interrupts it first while it works
@@ -337,6 +361,8 @@ def chat_to(text: str, to: str = '', force: bool = False, unsent: bool = False, 
             return {'ok': False, 'code': 2, 'out': 'chat_to: force with no text needs a session', 'argv': []}
         from agent_runner.session_now import force_queued
         return {**force_queued(to, unsent), 'at': time.time()}
+    if held := _wake_closed(to, wait):
+        return held
     if held := _starting(to, wait):
         return held
     at = time.time()
