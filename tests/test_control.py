@@ -1523,6 +1523,13 @@ def test_settled_closes_f209b():
         eq(world_drop(w, ('approve', 'K1', 'option B')), [46], 'approve closes the chat that filed it')
     with settled_world() as w:  # a pick link runs `plan confirm ID "go with A"` with the same mark
         eq(sorted(world_drop(w, ('confirm', 'R81', 'go with A: the laptop'))), [44, 45], 'a pick link closes them')
+    from agent_runner import ui_model as U
+    for argv in (['plan', 'confirm', 'R81', 'go with A'], ['sheet', 'R81', '--go'], ['plan', 'approve', 'K1', 'B']):
+        got = {}
+        with mock.patch.object(U.sp, 'run', lambda *a, **k: got.update(k['env']) or types.SimpleNamespace(
+                returncode=0, stdout='', stderr='')), mock.patch.dict(os.environ, {'AGENT_RUNNER_CONTROL': '4'}):
+            U._run(argv)  # what the run page, the TUI and a pick link (U.call) run
+        eq((got.get('AGENT_RUNNER_BY'), got.get('AGENT_RUNNER_CONTROL')), (app, None), f'{argv[0]} runs as the person')
     for argv in (('shelve', 'R81'), ('change', 'R81', 'No: the check failed')):
         with settled_world() as w:
             eq(world_drop(w, argv), [], f'{argv[0]} closes nothing')
