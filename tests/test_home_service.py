@@ -1345,6 +1345,36 @@ def test_trusted_networks(tmp: Path) -> None:
            "B815b: the http one by localhost after them; status names a run by Home's trusted networks when Home routes it")
 
 
+def test_https_handed_over(tmp: Path) -> None:
+    print("B847: a run's page that leaves Home's port leaves Home its Tailscale Serve https address")
+    from agent_runner import page_https as P
+    ours = {'Web': {'box.ts.net:8771': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770'}}}}}
+    serves, ran = {}, []
+
+    def ts(*args, limit=0):
+        ran.append(list(args))
+        if args[:2] == ('serve', 'status'):
+            return True, json.dumps(serves)
+        return False, 'refused'
+    rule = {'host': 'box.ts.net', 'https': 8771, 'port': 8770, 'run': 'me'}
+    with mock.patch.object(P, 'tailscale', ts), mock.patch.object(P, 'owner', lambda: 'me'):
+        H.mark_installed(True)
+        serves = ours
+        P.keep_rule(rule)
+        check(P.hand_over(8770), 'the rule the run made is handed over')
+        eq(([a for a in ran if 'off' in a], P.made_rule()), ([], None), 'still on in Serve, no longer the run\'s')
+        ran.clear()
+        check(not P.hand_over(8770) and not ran, 'no rule before: nothing turned off')
+        serves = {'Web': {'box.ts.net:8771': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770/mine'}}}}}
+        check(not P.hand_over(8770) and not [a for a in ran if 'off' in a], "a person's own rule is left alone")
+        P.keep_rule({**rule, 'port': 9000, 'https': 9001})
+        serves = {'Web': {'box.ts.net:9001': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:9000'}}}}}
+        check(not P.hand_over(9000), 'a port that is not Home\'s: no hand over')
+        check(['serve', '--https=9001', 'off'] in ran, 'and the run turns its rule off', ran)
+        eq(P.made_rule() is not None, True, 'Serve refused: the rule stays recorded for the next start')
+        H.mark_installed(False)
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
                            in_tmp(test_opens_off), in_tmp(test_off_page_for_real),
@@ -1352,4 +1382,4 @@ if __name__ == '__main__':
                            in_tmp(test_restart_on_windows),
                            in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
                            in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link),
-                           in_tmp(test_one_address), in_tmp(test_trusted_networks)]))
+                           in_tmp(test_one_address), in_tmp(test_trusted_networks), in_tmp(test_https_handed_over)]))

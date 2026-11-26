@@ -149,6 +149,18 @@ def https_off(say=True) -> None:
         S.log(f'run page: could not turn off Tailscale Serve on port {rule["https"]}: {out}')
 
 
+def hand_over(port: int) -> bool:
+    """B847: the run's page leaves `port` for Runner Home: a Tailscale Serve rule the run made to that port is
+    Home's now, so it stays on and only its record goes (True). Otherwise the run's rule is turned off (False)."""
+    rule = made_rule()
+    from agent_runner.web import home_port
+    if rule and rule['port'] == port and home_port() == port:
+        drop_rule(rule)
+        return True
+    https_off()
+    return False
+
+
 def left_over() -> None:
     """A start whose page is not on a port for every interface, or wants no https: turn off what a run that did not
     stop left. Runner Home on that port by now has the address as its own, so it stays."""
