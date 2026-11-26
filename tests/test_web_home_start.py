@@ -69,7 +69,7 @@ def test_off_page_f402c(tmp: Path) -> None:
        ['if(HOME_PAGE&&!atAll())return offHTML();'], 'the one use of the off page')
 
 
-def opened(where: str, home: int = 0):
+def opened(where: str, home: int = 0, port: int = 0):
     """F454a: (the server, what the run log said, the Tailscale Serve ports asked for) of a start with web_open = `where`."""
     import os
     from unittest import mock
@@ -78,7 +78,7 @@ def opened(where: str, home: int = 0):
     log: list[str] = []
     served: list[int] = []
     with mock.patch.dict(os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: '10.0.0.5'), \
-            mock.patch.dict(S.C.run, {'web': True, 'web_port': 0, 'web_https': True, 'web_open': where}), \
+            mock.patch.dict(S.C.run, {'web': True, 'web_port': port, 'web_https': True, 'web_open': where}), \
             mock.patch.object(W, 'home_port', lambda: home), mock.patch.object(W, 'home_installed', lambda: bool(home)), \
             mock.patch.object(W, 'site_urls', lambda *a, **k: []), mock.patch.object(W, 'tailscale_https_urls', lambda p, t: []), \
             mock.patch.object(page_https, 'https_on', lambda port: served.append(port) or None), \
@@ -111,6 +111,25 @@ def test_web_open_f454a(tmp: Path) -> None:
         eq(srv.server_address[1], port, 'it stays where it is with no Home')
     finally:
         srv.stop()
+    import socket
+    from unittest import mock
+    from agent_runner import page_only as P
+    taken = socket.create_server(('0.0.0.0', 0))
+    try:
+        asked = taken.getsockname()[1]
+        srv, log, served = opened('here', port=asked)
+        try:
+            eq((srv.server_address[0], srv.server_address[1] != asked), ('127.0.0.1', True), "B844's fallback port: on 127.0.0.1 too")
+            eq(W.url_file().read_text(encoding='utf-8').split(), [f'http://localhost:{srv.server_address[1]}/?t={W.web_token()}'],
+               'with its localhost link')
+            with mock.patch.object(P, 'serving', lambda root=None: True), mock.patch.object(W, 'site_urls', lambda *a, **k: []), \
+                    mock.patch.object(W, 'tailscale_https_urls', lambda p, t: []):
+                eq(P.links(S_C().root), [f'http://localhost:{srv.server_address[1]}/?t={W.web_token()}'],
+                   'the page-only process lists the same link')
+        finally:
+            srv.stop()
+    finally:
+        taken.close()
     srv, log, served = opened('here', home=1)
     try:
         eq((srv.server_address[0], W.url_file().read_text(encoding='utf-8').count('localhost')), ('127.0.0.1', 0),
