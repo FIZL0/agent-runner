@@ -3,12 +3,13 @@ const SHEETS={
   text(){return `<h2>The session's text</h2><div class="btns"><button class="btn pri" data-feedcopy>Copy all</button></div><pre class="out" id="feedtext" style="-webkit-user-select:text;user-select:text">${esc(S.feedText||'')}</pre>`},
   run(){  // More…: Stop, Run, Fix up, each with its key in agent-runner ui
     const gs=controlGroups(S.snap);
-    return `<h2>Run</h2>${obCards(obRun)}${gs.map(g=>`<div class="sec">${g.group}<span class="ln"></span></div>${g.items.map(({c,label,choices})=>{
+    return `<h2>Run</h2>${obCards(obRun)}${gs.map(g=>`<div class="sec">${g.group}<span class="ln"></span></div>${g.items.map(({c,icon,label,choices})=>{
+      const ico=`<span class="ico">${I[icon]||''}</span>`;
       const bad=c.key==='stop_now'||c.key==='wip_drop', busy=ctlBusy(c.key)?' busy':'';
-      if(c.needs==='n')return `<div class="it setrow"><span class="slotsn"><input type="number" min="1" max="99" inputmode="numeric" data-slots-n data-f="slotsn" aria-label="Slots" placeholder="N"><button class="btn${busy}" data-ctl="${esc(c.key)}">${esc(label)}</button></span><span class="k">${esc(c.tui)}</span></div>`;
+      if(c.needs==='n')return `<div class="it setrow"><span class="lab">${ico}<span class="slotsn"><input type="number" min="1" max="99" inputmode="numeric" data-slots-n data-f="slotsn" aria-label="Slots" placeholder="N"><button class="btn${busy}" data-ctl="${esc(c.key)}">${esc(label)}</button></span></span><span class="k">${esc(c.tui)}</span></div>`;
       if(c.fix&&!c.each){const on=S.fixOpen===c.key;
-        return `<button class="it${bad?' bad':''}" data-k="fix:${esc(c.key)}" data-fix="${esc(c.key)}" aria-expanded="${on}"><span>${esc(label)}${on?'':'…'}</span><span class="k">${esc(c.tui)}</span></button>${on?foldIn('fix:'+c.key,choices.map(x=>S.sure===c.key+':'+x.id?ctlSure(c,x.id):`<div class="it setrow"><span class="grow"><span class="ell">${esc(x.label)}</span><span class="small">${esc(x.id)}</span></span><button class="btn${ctlBusy(c.key,x.id)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(x.id)}">${esc({resume:'Resume',wip_show:'Show',wip_restore:'Restore',wip_drop:'Drop'}[c.key]||c.label)}</button></div>`).join('')):''}`}
-      return S.sure===c.key?ctlSure(c):`<button class="it${bad?' bad':''}${busy}" data-ctl="${esc(c.key)}"><span>${esc(label)}</span><span class="k">${esc(c.tui)}</span></button>`;
+        return `<button class="it${bad?' bad':''}" data-k="fix:${esc(c.key)}" data-fix="${esc(c.key)}" aria-expanded="${on}"><span class="lab">${ico}<span>${esc(label)}${on?'':'…'}</span></span><span class="k">${esc(c.tui)}</span></button>${on?foldIn('fix:'+c.key,choices.map(x=>S.sure===c.key+':'+x.id?ctlSure(c,x.id):`<div class="it setrow"><span class="grow"><span class="ell">${esc(x.label)}</span><span class="small">${esc(x.id)}</span></span><button class="btn${ctlBusy(c.key,x.id)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(x.id)}">${esc({resume:'Resume',wip_show:'Show',wip_restore:'Restore',wip_drop:'Drop'}[c.key]||c.label)}</button></div>`).join('')):''}`}
+      return S.sure===c.key?ctlSure(c):`<button class="it${bad?' bad':''}${busy}" data-ctl="${esc(c.key)}"><span class="lab">${ico}<span>${esc(label)}</span></span><span class="k">${esc(c.tui)}</span></button>`;
     }).join('')}`).join('')||'<div class="small">Nothing to do here right now.</div>'}`;
   },
   out(){return `<h2>${esc((S.out||{}).title||'')}</h2><pre class="out">${esc((S.out||{}).text||'')}</pre><div class="btns"><button class="btn" data-closesheet>Close</button></div>`},
