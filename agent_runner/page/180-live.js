@@ -39,9 +39,9 @@ function takeTyped(){
   S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?{[boxKey()]:k.atts}:k.atts||{};S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};S.setAway=Number(k.setAway)||0;
 }
 const refreshSaid=()=>refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
-function newsRefresh(quiet){
-  const said=refreshSaid();
-  if(said){if(!quiet)toast(said,true);return false}  // F401: what asked is told that it is held
+function newsRefresh(){
+  const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
+  if(said){toast(said,true);return false}  // F401: what asked is told that it is held
   location.reload();return true;
 }
 function takeSnap(s){
@@ -123,7 +123,7 @@ function liveCheck(){
   if(what!=='go')return;
   tabStore.set(LIVE_KEY,x.key);  // once per page print: a page that comes back old shows the popup
   tabStore.set(LIVE_PLACE,JSON.stringify({t:S.thread||'',v:S.view,top:$('body').scrollTop,pin:!!S.pin}));
-  if(!newsRefresh(true))tabStore.set(LIVE_PLACE,'');
+  if(!newsRefresh()){tabStore.set(LIVE_PLACE,'');tabStore.set(LIVE_KEY,'')}  // it did not go: it tries again once clear
 }
 setInterval(liveCheck,1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)liveCheck()});
@@ -137,4 +137,4 @@ function livePlaceBack(n){
   livePlace=null;if(p.pin)return;
   const b=$('body');b.scrollTop=p.top;if(p.t)S.pin=false;
 }
-setTimeout(()=>{livePlace=null},20000);
+setTimeout(()=>{livePlace=null},60000);  // a place not drawn again by then is let go: the person has moved on
