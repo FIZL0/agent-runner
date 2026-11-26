@@ -12,10 +12,8 @@
 .qcard.qmin{flex:none;padding:0 var(--s1) 0 var(--s3)} .qmin .row{flex-wrap:nowrap} .qmin .ell{min-width:0;font-size:var(--fs-m);color:var(--muted)} .qmin .icon{width:var(--tap);height:var(--tap)}
 /* F437c: scrolled up, the card hides; a held answer and the mark stay.
    B854b: it keeps no room, so the chat's text shows down to the message box */
-/* B854c: hiding and coming back slide and fade (display goes last, so no room is left while it runs); reduced motion: none (150-shared) */
-.main.sess .qcard{--qdur:calc(var(--dur)*.9);transition:opacity var(--qdur) var(--ease),transform var(--qdur) var(--ease),visibility var(--qdur),display var(--qdur) allow-discrete;transition-behavior:allow-discrete} .main.sess.still .qcard{transition:none}
-.main.sess.qaway .qcard:not(.qheld,.qabout){display:none;opacity:0;transform:translateY(12px);visibility:hidden}
-@starting-style{.main.sess:not(.qaway) .qcard:not(.qheld,.qabout){opacity:0;transform:translateY(12px)}}
+.main.sess .qcard{transition:opacity var(--dur) var(--ease),visibility var(--dur)} .main.sess.still .qcard{transition:none}
+.main.sess.qaway .qcard:not(.qheld,.qabout){display:none}
 .main.sess.qaway .dockwrap{pointer-events:none} .main.sess.qaway .dockwrap .dock{background-color:transparent;transition-delay:0s}
 .main.sess.qaway:not(.slim) :is(.dock>:not(.schips,.keys,.gone0),:is(.schips,.keys)>*,.slimground){pointer-events:auto}
 @media (pointer:coarse){.main.sess.qkeys .dock:has(>.keys) .qcard:not(.qheld,.qabout){margin-bottom:calc(var(--s2) - 2*var(--tap) - 14px)}}  /* the key row: two rows, 6px, 8px */

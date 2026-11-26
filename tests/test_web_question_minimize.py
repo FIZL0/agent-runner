@@ -81,10 +81,10 @@ def test_presses(tmp: Path) -> None:
 def test_motion() -> None:
     """B854c: hiding and coming back slide and fade, off under reduced motion."""
     page = Path(__file__).resolve().parent.parent / 'agent_runner' / 'page'
-    css = (page / '095-question.css').read_text()
-    check('transform var(--qdur)' in css and 'opacity var(--qdur)' in css and 'allow-discrete' in css, 'the card slides and fades out, display last', css)
-    check('@starting-style{.main.sess:not(.qaway) .qcard' in css, 'and in, coming back')
-    check('--qdur:calc(var(--dur)*.9)' in css, 'in about 180ms')
+    js = (page / '095-question.js').read_text()
+    check("transform:'translateY(12px)'" in js and "ease:'--ease',dur:'--dur'" in js, 'the card slides and fades on one token, about 180ms', js)
+    check('const a=c&&moAnim(c,QUESTION_MOVE,o);if(!a)return set();' in js, 'it keeps its room until it has faded, so nothing jumps')
+    check('if(!el.animate||calm())return null' in (page / '010-shared.js').read_text(), 'moAnim does nothing when calm')
     check('prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}' in (page / '150-shared.css').read_text(), 'no motion under reduced motion')
 
 
