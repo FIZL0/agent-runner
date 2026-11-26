@@ -380,7 +380,7 @@ def critical_tasks(branch: str) -> frozenset:
                                         (m := P.PRI_TAG.search(rest)) and m.group(1) == 'critical'))
 
 
-CONFIRM_ASK = re.compile(r' BLOCKED: CONFIRM: ')  # F415: not `BLOCKED: shelved: CONFIRM:`
+CONFIRM_ASK = re.compile(r'(?:^|\s)BLOCKED: CONFIRM: ')  # F415: not `BLOCKED: shelved: CONFIRM:`
 
 
 def unchecked_holds(ls: list[str], todo: list) -> dict[str, str]:
