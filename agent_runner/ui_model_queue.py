@@ -557,7 +557,28 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
                 f'Not {w}: {how}' for w in ['this'] + ([x['id'] for x in xs] if len(xs) > 1 else [])
                 for how in ('reopen', 'drop')])
         needs[-1]['answers'] = need_answers(needs[-1])  # C33: both pages draw these
+    concepts += page_rows({c['concept'] or c['id'] for c in concepts} | {c['id'] for c in concepts},
+                          {n['id'] for n in needs})
     return needs, concepts
+
+
+def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
+    """F457: a Concepts row for each page served at /concept/<ID> (<notes>/concepts/<ID>.html) whose task is still in
+    the plan and not done or dropped, beside the concepts `shown` already: a report or videos a task put up with
+    publish-page. `page`: it is no concept (no Pick/OK); `waits`: its task also has a Needs you item."""
+    try:
+        files = sorted(S.C.notes('concepts').glob('*.html'))
+        tasks = {tid: (box, rest) for _, box, tid, rest, _ in P.iter_tasks(P.lines(S.C.todo))}
+    except Exception:  # noqa: BLE001 - no notes dir or plan: no pages
+        return []
+    out = []
+    for f in files:
+        tid = f.stem
+        if tid in shown or tid not in tasks or tasks[tid][0] in 'x-':
+            continue
+        out.append({'id': tid, 'concept': tid, 'title': P.short_title(tasks[tid][1], 200), 'url': '',
+                    'copy': str(f), 'page': True, 'waits': tid in waits})
+    return out
 
 
 def shelved_rows(ls: list[str], waiting) -> list[dict]:

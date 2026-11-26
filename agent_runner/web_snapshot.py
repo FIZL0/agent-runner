@@ -61,7 +61,7 @@ def with_extras(snap: dict) -> dict:
     if snap.get('terminal_mode') == 'install':
         snap['ttyd_install'] = ttyd_install_cmd()  # B120: the page's one line on how to get it
     for c in snap.get('concepts') or []:
-        c['options'] = concept_options(c.get('copy', ''))
+        c['options'] = [] if c.get('page') else concept_options(c.get('copy', ''))  # F457: a page is no concept
     snap['example'] = example_project()  # F194b: its page shows the walkthrough
     snap['home'] = home_address()  # B153: the project name top-left links to Runner Home
     return snap
