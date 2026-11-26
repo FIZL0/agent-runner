@@ -1530,7 +1530,7 @@ the key list. Each key is acted on as it is typed; ending sessions and adding a 
 `agent-runner pause` (`--off` goes on), `force` (`--off`), `slots 4` (or `+1`, `-1`), `stop --undo` (takes a
 gentle stop back), and `key <k>` for any other (`key z`, `key u`). Unlike a typed key, `pause`, `force` and
 `stop` say which way they go, so asking twice does not undo them. They append to `.runner/KEYS`, which the
-loop reads on every pass, so the run acts within 10 s; with no run up they say so and exit 1.
+run reads every quarter second, also in a long pass, so it acts and rewrites `.runner/STATE` within a second; with no run up they say so and exit 1.
 `agent-runner status` is short enough for a phone: whether a run is up and what the keys have set, each
 slot's task id, title and minutes running (from `.runner/STATE`, rewritten every pass), what is merging, the
 last five merged, blocked or parked tasks from `run.log`, and the account's usage as the caps last read it.
