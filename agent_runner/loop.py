@@ -394,7 +394,11 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         note(f'{tid}: no commits — nothing to merge')
         log(f'{tid}: no commits — nothing to merge', EV_NO_COMMITS, tid)
         if n:  # B774: a slot's session, not a `take`
-            no_commits.ended(tid, last_words(sid) if sid and sid != '(unknown)' else '', branch)
+            said = last_words(sid) if sid and sid != '(unknown)' else ''
+            if no_commits.api_error(said):  # B858: the setup is wrong, not the task
+                no_commits.setup_problem(tid, said, sid)
+            else:
+                no_commits.ended(tid, said, branch)
         return True
     no_commits.forget(tid)
     if sid and sid != '(unknown)':
