@@ -69,5 +69,87 @@ def test_off_page_f402c(tmp: Path) -> None:
        ['if(HOME_PAGE&&!atAll())return offHTML();'], 'the one use of the off page')
 
 
+def opened(where: str, home: int = 0, port: int = 0):
+    """F454a: (the server, what the run log said, the Tailscale Serve ports asked for) of a start with web_open = `where`."""
+    import os
+    from unittest import mock
+    from agent_runner import page_https
+    from agent_runner import state as S
+    log: list[str] = []
+    served: list[int] = []
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: '10.0.0.5'), \
+            mock.patch.dict(S.C.run, {'web': True, 'web_port': port, 'web_https': True, 'web_open': where}), \
+            mock.patch.object(W, 'home_port', lambda: home), mock.patch.object(W, 'home_installed', lambda: bool(home)), \
+            mock.patch.object(W, 'site_urls', lambda *a, **k: []), mock.patch.object(W, 'tailscale_https_urls', lambda p, t: []), \
+            mock.patch.object(page_https, 'https_on', lambda port: served.append(port) or None), \
+            mock.patch.object(page_https, 'left_over', lambda: None), mock.patch.object(S, 'log', log.append):
+        return W.start_web(), log, served
+
+
+def test_web_open_f454a(tmp: Path) -> None:
+    """F454a: [run] web_open: everywhere serves every interface; here only 127.0.0.1, its localhost link, no Serve rule."""
+    from agent_runner import config as CF
+    fake_repo(tmp)
+    eq(S_C().run['web_open'], 'everywhere', 'the default: everywhere')
+    srv, log, served = opened('everywhere')
+    try:
+        port = srv.server_address[1]
+        eq(srv.server_address[0], '0.0.0.0', 'everywhere: every interface')
+        check(f'10.0.0.5:{port}' in W.url_file().read_text(encoding='utf-8'), 'and its LAN link', log)
+        eq(served, [port], 'and a Tailscale Serve rule')
+    finally:
+        srv.stop()
+    srv, log, served = opened('here')
+    try:
+        port = srv.server_address[1]
+        here = f'http://localhost:{port}/?t={W.web_token()}'
+        eq(srv.server_address[0], '127.0.0.1', 'here: 127.0.0.1 only')
+        eq(W.url_file().read_text(encoding='utf-8').split(), [here], 'its localhost link, with its key')
+        check(any(here in x for x in log) and not any('nothing opens' in x.lower() for x in log), 'the run log names it', log)
+        eq(served, [], 'and no Tailscale Serve rule')
+        W.HomeWatch(srv).look()
+        eq(srv.server_address[1], port, 'it stays where it is with no Home')
+    finally:
+        srv.stop()
+    import socket
+    from unittest import mock
+    from agent_runner import page_only as P
+    taken = socket.create_server(('0.0.0.0', 0))
+    try:
+        asked = taken.getsockname()[1]
+        srv, log, served = opened('here', port=asked)
+        try:
+            eq((srv.server_address[0], srv.server_address[1] != asked), ('127.0.0.1', True), "B844's fallback port: on 127.0.0.1 too")
+            eq(W.url_file().read_text(encoding='utf-8').split(), [f'http://localhost:{srv.server_address[1]}/?t={W.web_token()}'],
+               'with its localhost link')
+            with mock.patch.object(P, 'serving', lambda root=None: True), mock.patch.object(W, 'site_urls', lambda *a, **k: []), \
+                    mock.patch.object(W, 'tailscale_https_urls', lambda p, t: []):
+                eq(P.links(S_C().root), [f'http://localhost:{srv.server_address[1]}/?t={W.web_token()}'],
+                   'the page-only process lists the same link')
+        finally:
+            srv.stop()
+    finally:
+        taken.close()
+    srv, log, served = opened('here', home=1)
+    try:
+        eq((srv.server_address[0], W.url_file().read_text(encoding='utf-8').count('localhost')), ('127.0.0.1', 0),
+           "with Runner Home: Home's page, as before")
+    finally:
+        srv.stop()
+    check('web_open' in CF.setting_problem('run', 'web_open', 'lan'), 'a bad value is refused')
+    eq(CF.setting_problem('run', 'web_open', 'here'), '', 'here is a value')
+    (tmp / 'proj' / 'runner.local.toml').write_text("[run]\nweb_open = 'lan'\n", encoding='utf-8')
+    try:
+        CF.Config(tmp / 'proj')
+        check(False, 'a bad value in runner.local.toml stops the load')
+    except SystemExit as e:
+        check('web_open' in str(e), 'a bad value in runner.local.toml stops the load', str(e))
+
+
+def S_C():
+    from agent_runner import state as S
+    return S.C
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_home_start_f402c), in_tmp(test_off_page_f402c)]))
+    raise SystemExit(report([in_tmp(test_home_start_f402c), in_tmp(test_off_page_f402c), in_tmp(test_web_open_f454a)]))
