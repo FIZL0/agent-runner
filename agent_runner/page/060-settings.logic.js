@@ -23,6 +23,7 @@ function pickValue(k,t){
 }
 /* its options as [value, words], the one it has now among them; null when it is typed */
 function pickOptions(k,now){
+  if(isBranch(k)){const o=k.picks.map(p=>[p.value,branchWords(p)]);if(now!=null&&!o.some(x=>x[0]===now))o.push([now,String(now)]);return o}
   const w=k.words||{}, o=(k.choices&&k.choices.length?k.choices.map(c=>[String(c),w[String(c)]||String(c)]):Object.keys(w).map(x=>[x,w[x]]));
   if(!o.length)return null;
   if(now!==''&&now!=null&&!o.some(x=>x[0]===now))o.push([now,settingSays(k,now)]);
@@ -51,7 +52,18 @@ function partSet(t,part,x,k){
 }
 /* F405: [run] agent is picked from the programs found on this machine (`picks`, agents_here.py): its options as [value, words], the kept
    one among them, then Other path; and what the one picked is */
-const AGENT_OTHER='other path', hasPicks=k=>Array.isArray(k.picks);
+/* F447a: [git] master_branch, the working branch, is picked from the branches the snapshot gives (`picks`,
+   working_branch.py): a plain pick of the row, not the agent's picker */
+const isBranch=k=>!!k&&k.table==='git'&&k.key==='master_branch'&&Array.isArray(k.picks);
+const branchWords=p=>`${p.auto?`Found by itself (${p.branch})`:p.branch}${p.bad?` (${p.bad})`:''}`;
+/* what Save of `v` does, said before Save; '' when `v` is the branch it has */
+function branchSays(k,v,saved){
+  if(v===saved)return '';
+  const p=k.picks.find(x=>x.value===v), b=p?p.branch:v;
+  if(p&&p.bad)return `It cannot be saved: ${p.bad}.`;
+  return `Save: finished work is applied to ${b}, and tasks start from it, once the run restarts.`;
+}
+const AGENT_OTHER='other path', hasPicks=k=>Array.isArray(k.picks)&&!isBranch(k);
 const agentSaved=(k,v)=>['value','device','project'].some(x=>k[x]!==undefined&&settingText(k[x])===v);
 const agentWords=p=>`${p.value}${p.version?` ${p.version}`:''}${p.found?p.path&&p.path!==p.value?` · ${p.path}`:'':' (not found)'}`;
 const agentPick=(k,v)=>k.picks.find(p=>p.value===v)||{value:v,path:'',version:'',found:!agentSaved(k,v),bad:agentSaved(k,v)?'It is not the name of a program.':''};

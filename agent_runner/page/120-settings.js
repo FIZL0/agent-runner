@@ -127,7 +127,7 @@ function settingRow(k,o={}){
   const where=k.source==='default'?'the default':k.source==='device'?'this device':'everyone';
   return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side,o.readonly)}</div>
     ${hasParts(k)&&!o.readonly?partsField(k,side,true):hasPicks(k)&&!o.readonly?agentField(k,side,true):''}
-    ${busy}${notSaved(k,side)}${o.readonly?'':settingLogins(k,side)}
+    ${busy}${notSaved(k,side)}${isBranch(k)&&!o.readonly?branchHTML(k,side):''}${o.readonly?'':settingLogins(k,side)}
     ${overSays(k)?`<div class="small">${esc(overSays(k))}</div>`:off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
     ${open?foldIn('set:'+id,`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
       ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side,true)}
@@ -137,6 +137,12 @@ function settingRow(k,o={}){
 }
 const settingBusy=id=>S.ob.filter(x=>x.setbar&&x.args.changes.some(c=>`${c.table}.${c.key}`===id)).map(x=>`<div class="small">${x.setbar==='undo'?'Undo':'Save'}: ${esc(obState(x))}</div>`).join('');
 /* F202b: the row's changes that are not saved yet, with where they go when that is not where the row saves */
+/* F447a: under the working branch: what Save will do, or the switch that waits for a restart */
+function branchHTML(k,side){
+  const s=branchSays(k,settingNow(k,side,true),settingText(k.value));
+  const w=k.next?`Waits for a restart to switch from ${k.now} to ${k.next}${k.held&&k.held.length?`: ${[].concat(k.held).join(', ')}`:''}.`:'';
+  return [s,w].filter(Boolean).map(t=>`<div class="small setnew${/^It cannot/.test(t)?' v-bad':''}">${esc(t)}</div>`).join('');
+}
 function notSaved(k,side){
   return ['device','project'].map(s=>{
     const d=(S.draft||{})[setField(settingId(k),s)], where=s==='device'?'on this device':'for everyone';if(!d)return '';

@@ -1016,3 +1016,10 @@ _Said_: wait for, what it waits for
 _On screen_: Wait for…; ⋯ on a Plan queue row: Wait for…; What should B456 wait for?; Done, Cancel
 _In code_: plan edit --wait-for, plan_wait.py, set_waits, waitHTML, waitRows, data-waitset
 _Avoid_: block on, depend on
+
+**Working branch**:
+The branch finished work is applied to and tasks start from; found by itself when not set.
+_Said_: working branch
+_On screen_: Working branch
+_In code_: [git] master_branch, working_branch.py
+_Avoid_: main branch, master branch
