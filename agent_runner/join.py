@@ -363,11 +363,12 @@ def merge_into(d: Path, ref: str, msg: str, tid: str = '') -> list[str] | None:
     A failed merge with nothing in conflict is either git rerere having replayed an earlier resolution of
     every file (the merge is still open: committed here) or git refusing to start (e.g. an untracked file
     in the way), which must not pass for a merge."""
-    if not git('merge', '--no-edit', '-m', msg, ref, cwd=d, **task_env(tid)).returncode:
+    if not (r := git('merge', '--no-edit', '-m', msg, ref, cwd=d, **task_env(tid))).returncode:
         return []
     if files := git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split():
         return files
     if git('rev-parse', '-q', '--verify', 'MERGE_HEAD', cwd=d).returncode:
+        log(f'git refused to merge {ref} in {d}: {(r.stderr or r.stdout or "").strip()[-500:]}', tid=tid)
         return None
     git('commit', '-q', '--no-edit', cwd=d)
     return []
@@ -379,3 +380,26 @@ def joined(files: list[str], tid: str, d: Path) -> bool:
         return False
     git('commit', '-q', '--no-edit', cwd=d)
     return True
+
+
+def common_dir(d: Path) -> Path | None:
+    """The real path of `d`'s git common dir (the repo it belongs to), or None when it is no git folder."""
+    r = git('rev-parse', '--path-format=absolute', '--git-common-dir', cwd=d)
+    return Path(r.stdout.strip()).resolve() if not r.returncode and r.stdout.strip() else None
+
+
+def own_worktree(d: Path) -> bool:
+    """`d` is a worktree of this repo (BUG2). A folder from another copy of the repo (its .git points
+    elsewhere) has none of this repo's task branches: it is logged, dropped from that repo's worktree list
+    and removed, so the caller adds it again from this one."""
+    from agent_runner import state as S
+    if not d.is_dir():
+        return False
+    theirs, ours = common_dir(d), common_dir(S.ROOT)
+    if theirs is None or ours is None or theirs == ours:
+        return True
+    log(f'{d} belongs to another copy of the repo ({theirs}), not {ours}: dropped and added again from this one')
+    if git('worktree', 'remove', '--force', str(d), cwd=theirs.parent if theirs.name == '.git' else theirs).returncode:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+    return False

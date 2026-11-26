@@ -201,12 +201,33 @@ def test_release_holds(repo: Path):
 UNTESTABLE, BLAME = M.untestable, M.blame
 
 
+def test_foreign_folder(repo: Path, tmp: Path):
+    print('BUG2: a merge folder made from a second clone is added again from this repo, and its merge lands')
+    from agent_runner import join as J, state as S
+    R.init(repo)
+    clone = tmp / 'clone'
+    git(tmp, 'clone', '-q', str(repo), str(clone))
+    d = S.SLOTS_DIR / 'merge3'
+    if d.exists():
+        git(repo, 'worktree', 'remove', '--force', str(d))
+    git(clone, 'worktree', 'add', '-q', '--detach', str(d), 'origin/main')
+    check(J.common_dir(d) != J.common_dir(repo), 'the folder belongs to the clone first')
+    restore = patched(log=lambda *a, **k: None)
+    try:
+        d = R.worktree('merge3', 'main')
+        eq(J.common_dir(d), J.common_dir(repo), 'now it belongs to this repo')
+        check(str(d) not in git(clone, 'worktree', 'list'), 'dropped from the clone\'s worktree list')
+        eq(J.merge_into(d, 'task/B1', 'merge B1', 'B1'), [], 'task/B1 merges there')
+    finally:
+        restore()
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
         repo = make_repo(Path(tmp))
         return report([lambda: test_build(repo), lambda: test_test(repo), lambda: test_land(repo),
-                       lambda: test_release_holds(repo)])
+                       lambda: test_release_holds(repo), lambda: test_foreign_folder(repo, Path(tmp))])
 
 
 if __name__ == '__main__':
