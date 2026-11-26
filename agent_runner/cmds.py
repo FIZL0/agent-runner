@@ -286,6 +286,12 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
     if not run_up():
         print(f'no run is up in this repository: `{C.command} run` starts one', file=sys.stderr)
         return 1
+    if cmd == 'force' and a.task and not a.off:  # F468: only an open task
+        from agent_runner.sched import open_tasks
+        from agent_runner.state import default_branch
+        if a.task not in open_tasks(default_branch()):
+            print(f'{a.task} is no open task: `{C.command} plan` lists them', file=sys.stderr)
+            return 1
     keys = {'slots': lambda: [f'slots {a.count}'], 'key': lambda: a.keys}.get(
         cmd, lambda: [f'{cmd[0]} {a.task if getattr(a, "task", "") and not a.off else "off" if a.off else "on"}'])()
     send_key(*keys)
