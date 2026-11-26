@@ -169,6 +169,8 @@ with mock.patch.object(PH, 'not_connected', lambda: True):
 eq(H.ask_tailnet(out=print, tty=False), False, 'not a tty: no question')
 eq(H.ask_tailnet(out=print, ask=lambda q: False), False, 'a no: tailnet not added')
 eq(H.load_registry()['trusted_networks'], [], 'nothing trusted')
+eq(H.ask_tailnet(out=print, ask=lambda q: 1 / 0), False, 'a no is not asked again')
+(tmp / 'homecfg' / 'tailnet-asked').unlink()
 asked = []
 eq(H.ask_tailnet(out=print, ask=lambda q: asked.append(q) or True), True, 'a yes adds tailnet')
 eq(H.load_registry()['trusted_networks'], ['tailnet'], 'tailnet is trusted')

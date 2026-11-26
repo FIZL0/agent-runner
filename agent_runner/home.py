@@ -1039,7 +1039,7 @@ TAILNET_QUESTION = ('Let devices on your tailnet open Runner Home and run pages 
 def ask_tailnet(out=print, ask=None, tty=None) -> bool:
     """F461: ask once, in a terminal only, whether to trust the tailnet (`home trust add tailnet`); default No.
     Skipped when it is trusted already or stdin is no terminal. True when it was added."""
-    if trust.TAILNET in load_registry()['trusted_networks']:
+    if trust.TAILNET in load_registry()['trusted_networks'] or (asked := config_dir() / 'tailnet-asked').exists():
         return False
     if ask is None:
         if not (sys.stdin.isatty() if tty is None else tty):
@@ -1050,6 +1050,8 @@ def ask_tailnet(out=print, ask=None, tty=None) -> bool:
                 return input(q + ' [y/N] ').strip().lower() in ('y', 'yes')
             except EOFError:
                 return False
+    asked.parent.mkdir(parents=True, exist_ok=True)
+    asked.write_text('asked\n', encoding='utf-8')  # once: a No is not asked again on the next install
     if not ask(TAILNET_QUESTION):
         return False
     ok, said = trust_change('add', trust.TAILNET)
