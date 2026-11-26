@@ -40,7 +40,7 @@ with mock.patch.dict(os.environ, env), mock.patch('os.path.expanduser', lambda p
     W._account[:] = [-1e9, None]
     with mock.patch.object(urllib.request, 'urlopen', lambda *a, **k: Resp(good)):
         eq(W.account_usage()['seven_day']['utilization'], 93, 'a good read')
-    kept = list((tmp / 'state' / 'agent-runner').iterdir())
+    kept = [f for f in (tmp / 'state' / 'agent-runner').iterdir() if not f.name.startswith('usage-fetch')]
     eq(len(kept), 1, 'one file kept')
     check('SECRET' not in kept[0].read_text(), 'the token is never kept')
     W._account[:] = [-1e9, None]  # a fresh process
@@ -55,5 +55,33 @@ with mock.patch.dict(os.environ, env), mock.patch('os.path.expanduser', lambda p
     W._account[:] = [-1e9, None]
     with mock.patch.object(urllib.request, 'urlopen', fail):
         eq(W.account_usage(), None, 'another login reads none of the old account')
+    W._account[:] = [-1e9, None]
+
+# B848b: one fetch per machine across processes; 429s space out
+calls = []
+def counting(*a, **k):
+    calls.append(1)
+    return Resp(good)
+with mock.patch.dict(os.environ, env), mock.patch('os.path.expanduser', lambda p: p.replace('~', str(home))):
+    os.environ.pop('CLAUDE_CONFIG_DIR')
+    W.usage_fetch_file().unlink(missing_ok=True)
+    with mock.patch.object(urllib.request, 'urlopen', counting):
+        W._account[:] = [-1e9, None]
+        W.account_usage()
+        W._account[:] = [-1e9, None]  # a second process
+        eq(W.account_usage()['seven_day']['utilization'], 93, 'the second process reads the kept reading')
+    eq(len(calls), 1, 'two processes make one fetch')
+    W.usage_fetch_file().unlink()
+    nexts = []
+    for i in range(3):
+        W._account[:] = [-1e9, None]
+        with mock.patch.object(urllib.request, 'urlopen', fail):
+            W.account_usage()
+        st = json.loads(W.usage_fetch_file().read_text())
+        nexts.append(st['next'] - st['at'])
+        st['next'] = 0
+        W.usage_fetch_file().write_text(json.dumps(st))
+    check(nexts[0] >= 300 and nexts[1] > nexts[0] and nexts[2] > nexts[1], f'repeated 429s space out: {nexts}')
+    eq(W.usage_backoff(1, 900), 900, 'a Retry-After longer than the backoff is kept')
     W._account[:] = [-1e9, None]
 raise SystemExit(report([]))
