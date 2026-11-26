@@ -9,7 +9,7 @@ from __future__ import annotations
 DEVICE, EVERYONE = 'device', 'everyone'  # a home: saved in runner.local.toml at once, or in runner.toml, committed at once
 
 # (group, heading, where it is drawn, what the heading says of its home): 'page' on the page itself, 'advanced' behind
-# Advanced, 'file' behind Project file (read only)
+# Advanced, 'file' behind Project file (F448b: edited there too)
 GROUPS: tuple[tuple[str, str, str, str], ...] = (
     ('speed', 'Speed and limits', 'page', DEVICE),
     ('landing', 'Landing work', 'page', EVERYONE),

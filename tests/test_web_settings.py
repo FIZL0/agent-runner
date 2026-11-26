@@ -335,7 +335,7 @@ move('every', 10, 'project', true); move('idle', true, 'project', true); move('e
 out.saved = saved; saved = [];
 row('{"idle":true}'); move('idle', false, 'project', false); const before = saved.length; saveSetting('run.auto_release', 'project');
 out.sheet = before ? ['saved early'] : saved;
-out.readonly = settingRow(k, {readonly: true});
+out.readonly = settingRow({...k, locked: 'a run is up'}, {});
 console.log(JSON.stringify(out));`);
 """
 
@@ -598,7 +598,7 @@ def test_settings_f97(tmp: Path) -> None:
         eq(o['saved'], [['project', '{"every":10}'], ['project', both], ['project', '{"idle":true}'], ['project', 'false']],
            'F202b: each change of one is the whole value, in the draft')
         eq(o['sheet'], [['project', 'false']], "More…'s own two controls change it only on its button")
-        check('setpart' not in o['readonly'], 'a read-only row has no control')
+        check('setpart' not in o['readonly'], 'F448b: a row that cannot change now has no control')
     # F166: a row's control, and which rows show
     rem = k(type='choice', choices=['auto', True, False], words={'auto': 'Auto', 'true': 'On', 'false': 'Off'})
     pct = k(type='number', default=90, unit='%', words={'90': '90%'})
@@ -912,5 +912,50 @@ def test_plan_share_f460a(tmp: Path) -> None:
     eq(got[2].get('err'), True, 'no answer')
 
 
+FILE_DRIVER = AGENT_DRIVER.split('eval(')[0] + r"""
+eval(logic + slice('const settingId=', '/* the stepper:') + `
+S.setTab = 'project'; S.setOpen = {'#advanced': true, '#file': true};
+const all = settingsAll(set), out = {page: settingsHTML(), rows: {}};
+for (const k of all) { S.setOpen[settingId(k)] = true; out.rows[settingId(k)] = settingRow(k, {}); }
+const t = all.find(k => settingId(k) === 'run.test'); t.locked = 'a task is running'; out.locked = settingRow(t, {});
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_project_file_f448b(tmp: Path) -> None:
+    """F448b: every group opens and every key shows a control or the reason it cannot change, with More… and Ask a chat;
+    the Project file group is no longer read only; a saved [run] test lands in runner.toml."""
+    repo = fake_repo(tmp)
+    toml = repo / 'runner.toml'
+    toml.write_text('[run]\nslots = 2\n', encoding='utf-8')
+    git(repo, 'add', 'runner.toml')
+    git(repo, 'commit', '-qm', 'settings')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    U.settings_start()
+    try:
+        r = post(f'{base}/act?t={token}', {'name': 'setting_project', 'args': {'table': 'run', 'key': 'test', 'value': 'python3 -V'}})[1]
+        check(r['ok'] is True, 'a [run] test save', r)
+        eq(CF.tomllib.loads(toml.read_text(encoding='utf-8'))['run'].get('test'), 'python3 -V', 'lands in runner.toml')
+    finally:
+        srv.shutdown()
+    if not shutil.which('node'):
+        return
+    (tmp / 'set.json').write_text(json.dumps(CF.settings_snapshot(repo)), encoding='utf-8')
+    (tmp / 'file.js').write_text(FILE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'file.js'), str(W.PAGE), str(tmp / 'set.json')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the page', r.stderr[-1500:])
+    if r.returncode:
+        return
+    d = json.loads(r.stdout)
+    check('read only' not in d['page'] and 'Commands' in d['page'], 'Project file opens, not read only')
+    bare = [id_ for id_, h in d['rows'].items() if not re.search(r'data-f="set|data-setstep|data-setagent|data-setpart|setlock', h)]
+    eq(bare, [], 'every key has a control or a stated reason')
+    asks = [id_ for id_, h in d['rows'].items() if 'data-about="setting:' not in h or 'data-setmore=' not in h]
+    eq(asks, [], 'every open row has More… and Ask a chat to change it')
+    check('Cannot change here now: a task is running' in d['locked'] and 'data-f="set' not in d['locked'], 'a locked key says why, no control', d['locked'])
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a), in_tmp(test_working_branch_f447a)]))
+    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a), in_tmp(test_working_branch_f447a), in_tmp(test_project_file_f448b)]))

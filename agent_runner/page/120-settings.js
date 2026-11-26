@@ -112,13 +112,13 @@ function settingField(k,side,onRow){
   if(k.type==='switch')return `<input type="checkbox" role="switch" class="sw" ${d} data-sw ${now==='true'?'checked':''}>`;
   const opts=pickOptions(k,now);
   if(opts)return `<select class="fld setpick" ${d}>${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===now?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
-  if(k.type==='list'||k.type==='table'||now.length>40)return `<textarea class="fld" rows="3" ${d} placeholder="${k.type==='list'?'one per line':k.type==='table'?'{ key = value }':'not set'}">${esc(now)}</textarea>`;
+  if(k.type==='list'||k.type==='table'||now.length>40)return `<textarea class="fld setlong" rows="${Math.min(10,Math.max(3,now.split('\n').length+1))}" ${d} placeholder="${k.type==='list'?'one per line':k.type==='table'?'{ key = value }':'not set'}">${esc(now)}</textarea>`;
   return `<input class="fld" ${k.type==='number'?'inputmode="decimal"':''} ${d} value="${esc(now)}" placeholder="not set" autocomplete="off" autocapitalize="off" spellcheck="false">`;
 }
 const onRow=k=>k.type==='switch'||hasParts(k)||hasPicks(k)||!!pickOptions(k,'');
 /* what stands at the right of a folded row: its control, or its value when it is typed in the open row */
-function settingControl(k,side,readonly){
-  if(readonly)return `<span class="setval">${esc(settingSays(k,settingText(k.value)))}</span>`;
+function settingControl(k,side){
+  if(k.locked)return `<span class="setval">${esc(settingSays(k,settingText(k.value)))}</span>`;
   if(settingId(k)==='run.slots'){const n=settingNow(k,side,true), id=esc(settingId(k));
     return `<span class="step" role="group" aria-label="${esc(k.name)}"><button class="btn" data-setstep="-1" data-id="${id}" aria-label="Fewer" ${Number(n)<2?'disabled':''}>−</button><b>${esc(n)}</b><button class="btn" data-setstep="1" data-id="${id}" aria-label="More">+</button></span>`}
   if(hasParts(k)||hasPicks(k))return '';  // its controls stand under its words
@@ -129,21 +129,26 @@ function settingControl(k,side,readonly){
 const overSays=k=>k.has_device?`This device: ${settingSays(k,settingText(k.device))}`:'';
 function overNote(k,side,o){
   const e=esc(settingId(k));
-  if(o.readonly)return '';
   if(side==='project')return overSays(k)?`<button class="setover" data-settab="device" data-id="${e}" aria-label="${esc(k.name)}: ${esc(overSays(k))}. Show it on This device">${esc(overSays(k))}</button>`:k.home==='device'?'<div class="small">Most set this on This device</div>':'';
   if(k.has_device)return `<div class="row setown"><span class="grow small">Only on this device; the project has ${esc(settingSays(k,settingText(resetValue(k,'device'))))}</span>${o.reset?'':`<button class="btn" data-setreset="device" data-id="${e}">Reset</button>`}</div>`;
   return (S.draft||{})[setField(settingId(k),'device')]?'':'<div class="small setsame">Same as the project\'s. A change here is for this device only.</div>';
 }
+/* F448b: why the row cannot change here now (F448a's locked), or what a change of it risks, once it is changed or open */
+function settingWarn(k,side,open){
+  if(k.locked)return `<div class="small setlock">Cannot change here now: ${esc(k.locked)}</div>`;
+  const d=(S.draft||{})[setField(settingId(k),side)];
+  return k.warn&&(open||d&&!d.unset)?`<div class="small setwarn">${esc(k.warn)}</div>`:'';
+}
 function settingRow(k,o={}){
   const id=settingId(k), open=!!S.setOpen[id], side=setTab(), busy=settingBusy(id), e=esc(id);
   const where=k.source==='default'?'the default':k.source==='device'?'this device':'everyone';
-  return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side,o.readonly)}</div>
-    ${hasParts(k)&&!o.readonly?partsField(k,side,true):hasPicks(k)&&!o.readonly?agentField(k,side,true):''}
-    ${busy}${notSaved(k,side)}${isBranch(k)&&!o.readonly?branchHTML(k,side):''}${o.readonly?'':settingLogins(k,side)}
+  return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side)}</div>
+    ${k.locked?'':hasParts(k)?partsField(k,side,true):hasPicks(k)?agentField(k,side,true):''}
+    ${busy}${notSaved(k,side)}${settingWarn(k,side,open)}${isBranch(k)&&!k.locked?branchHTML(k,side):''}${settingLogins(k,side)}
     ${overNote(k,side,o)}
     ${open?foldIn('set:'+id,`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
-      ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side,true)}
-      <div class="btns"><button class="btn" data-setmore="${e}">More…</button></div>`}`):''}
+      ${onRow(k)||id==='run.slots'||k.locked?'':settingField(k,side,true)}
+      <div class="btns"><button class="btn" data-setmore="${e}">More…</button><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`):''}
     ${hasPicks(k)?providersHTML(S.set):''}
     ${o.reset?`<div class="btns" data-k="reset:${e}">${resetBtn(k)}</div>`:''}</div>`;
 }
@@ -176,7 +181,7 @@ function kindsRow(g,k){
     <select class="fld setpick" data-kinds="${g.id}" aria-label="${g.name}">${now?'':'<option value="" selected>Mixed</option>'}${ms.map(m=>`<option ${m===now?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
     ${settingBusy('models.kinds')}${kindsNote(g,k)}${loginNote('kinds:'+g.id,'kinds',g.kinds.flatMap(x=>modelProviders('kinds',[{...k.default,...kindsValue(k)}[x]],(S.set.providers||[]).map(p=>p.name),baseProvider())))}
     ${overNote(k,setTab(),{})}
-    ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies now.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button></div>`):''}</div>`;
+    ${open?foldIn('kinds:'+g.id,`<div class="small"><span class="setkey">[models] kinds</span> · ${g.kinds.join(', ')}. A change applies now.</div><div class="btns"><button class="btn" data-setmore="models.kinds">More…</button><button class="btn" data-about="setting:models.kinds">Ask a chat to change it</button></div>`):''}</div>`;
 }
 function kindsNote(g,k){
   const ds=['device','project'].map(s=>(S.draft||{})[setField('models.kinds',s)]).filter(Boolean);
@@ -192,7 +197,7 @@ const setErrHTML=()=>S.setErr?`${S.setOld?oldRunHTML(S.setErr):`<div class="smal
 function setGroup(d,g,ks,o){
   const [id,head,where,home]=g, kinds=id==='models'&&(o||{}).kinds;
   if(!ks.length&&!kinds)return '';
-  return `<div class="sec">${esc(head)}<span class="ln"></span></div>${card((kinds||'')+ks.map(k=>settingRow(k,{...o,home:where==='file'?'':home,readonly:where==='file'})).join(''),'',`data-k="sett:${esc(id)}"`)}`;
+  return `<div class="sec">${esc(head)}<span class="ln"></span></div>${card((kinds||'')+ks.map(k=>settingRow(k,{...o,home})).join(''),'',`data-k="sett:${esc(id)}"`)}`;
 }
 function setFold(id,name,about,body){
   const open=!!S.setOpen['#'+id];
@@ -223,7 +228,7 @@ function settingsHTML(){
     body=(groups(ks,{reset:S.setChanged,kinds:kh})||emptyCard(q?'No setting matches.':tab==='device'?'This device has no values of its own.':'Nothing is changed from its default.'))
       +(un.length?`<div class="sec">Ignored or moved<span class="ln"></span></div>${card(un.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">${u.table?`[${esc(u.table)}] `:''}${u.key?`${esc(u.key)} = `:''}${esc(u.value)}</span><span class="tag warn">ignored or moved</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:'');
   }else body=d.groups.filter(g=>g[2]==='page').map(g=>setGroup(d,g,shown.filter(k=>k.group===g[0]),{kinds:g[0]==='models'?kr:''})).join('')
-    +(typeof planShareHTML==='function'?planShareHTML():'')+`<div class="sec">More<span class="ln"></span></div>${setFold('advanced','Advanced','disk, memory, merge tuning',()=>groups(shown,{},'advanced'))}${tab==='project'?setFold('file','Project file','test command, paths, rules: read only here',()=>groups(shown,{},'file')):''}`;
+    +(typeof planShareHTML==='function'?planShareHTML():'')+`<div class="sec">More<span class="ln"></span></div>${setFold('advanced','Advanced','disk, memory, merge tuning',()=>groups(shown,{},'advanced'))}${tab==='project'?setFold('file','Project file','test command, paths, rules',()=>groups(shown,{},'file')):''}`;
   const n=overCount(all), tabs=`<div class="row settabs" role="group" aria-label="Which file to change">${SET_TABS.map(([t,l])=>`<button class="btn${t===tab?' pri':''}" data-settab="${t}" aria-pressed="${t===tab}"${t==='device'&&n?` aria-label="This device, ${n} of its own"`:''}>${l}${t==='device'&&n?` · ${n}`:''}</button>`).join('')}</div>`;
   return `<div class="col">${tabs}<div class="row"><span class="setq grow"><input class="fld" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting"><button type="button" class="x" data-setqclear aria-label="Clear search"${S.f.setq?'':' hidden'}>${I.x}</button></span>${changed.length+unknown.length||S.setChanged?`<button class="btn${S.setChanged?' pri':''}" data-setchanged aria-pressed="${!!S.setChanged}">Changed ${changed.length}</button>`:''}</div>
     ${setErrHTML()}${obCards(x=>x.ctl==='restart:')}${q||S.setChanged?'':askHTML(all)}${body}
