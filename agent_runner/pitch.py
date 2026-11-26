@@ -339,7 +339,7 @@ def page_html(pid: str, d: dict, project: str = '') -> str:
         pair = _shown(say.get('before'), 'Before') + _shown(say.get('after'), 'After')
         cards.append(f'<article><h2>{_rich(x["title"])}</h2><p class="m">{html.escape(x["id"])}</p>{body}'
                      + (f'<div class="pair">{pair}</div>' if pair else '')
-                     + R.diff_html(x) + R.asked_html(x['id'])  # F444: the Review page
+                     + R.diff_html(x) + R.asked_html(x['key'])  # F444: the Review page
                      + (R.answers_html(pid, x['id']) if x['state'] == 'waiting' else '') + '</article>')
         files.append(f'<p>{html.escape(x["id"])}</p><ul>'
                      + ''.join(f'<li><code>{html.escape(f)}</code></li>' for f in x['files']) + '</ul>')

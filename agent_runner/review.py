@@ -131,14 +131,15 @@ def change_diff(x: dict, limit: int | None = None) -> tuple[str, int]:
     return '\n'.join(lines[:limit]), len(lines)
 
 
-def asked_file(tid: str) -> Path:
-    return state.C.notes('pitches', f'{tid}.asked.json')
+def asked_file(key: str) -> Path:
+    """Where the questions about one change (its `key`, ID@merge) are kept: a reopened task's next change starts empty."""
+    return state.C.notes('pitches', f'{key}.asked.json')
 
 
-def asked(tid: str) -> list[dict]:
-    """The questions the person asked about change `tid`, each {q, a, at}, oldest first."""
+def asked(key: str) -> list[dict]:
+    """The questions the person asked about change `key`, each {q, a, at}, oldest first."""
     try:
-        v = json.loads(asked_file(tid).read_text(encoding='utf-8'))
+        v = json.loads(asked_file(key).read_text(encoding='utf-8'))
         return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
     except (OSError, ValueError):
         return []
@@ -164,9 +165,9 @@ def ask_change(x: dict, q: str, cwd: Path, once=None) -> tuple[str, str]:
     said, why = once(text)
     if said:
         import time
-        f = asked_file(x['id'])
+        f = asked_file(x['key'])
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(asked(x['id']) + [{'q': q, 'a': said, 'at': time.time()}], indent=1) + '\n',
+        f.write_text(json.dumps(asked(x['key']) + [{'q': q, 'a': said, 'at': time.time()}], indent=1) + '\n',
                      encoding='utf-8')
     return said, why
 
@@ -192,8 +193,8 @@ def diff_html(x: dict) -> str:
             + f'</pre>{cut}</details>')
 
 
-def asked_html(tid: str) -> str:
-    qs = asked(tid)
+def asked_html(key: str) -> str:
+    qs = asked(key)
     if not qs:
         return ''
     return '<section><h3>You asked</h3>' + ''.join(

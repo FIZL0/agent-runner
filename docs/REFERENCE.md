@@ -679,7 +679,7 @@ The pitch's page is its Review page (F444). Each change also shows its diff, fol
 lines (400 by default; 0 shows none). Plan files are not in it. While the change waits, the page also says how to answer it:
 
 - `agent-runner pitch ask pitch1 F1 "why this way?"`: a fresh one-shot on `[models] review` answers from the change's
-  diff and what its agent wrote. The question and answer are kept (`<notes>/pitches/F1.asked.json`), and the page
+  diff (at least 400 lines of it, whatever `approve_diff_lines` says) and what its agent wrote. The question and answer are kept (`<notes>/pitches/<ID>@<merge>.asked.json`, so a reopened task's next change starts with none), and the page
   shows them under You asked.
 - `agent-runner pitch better pitch1 F1 --why "what you want instead"`: Not this for that change. Its task is reopened
   with "asked for a better way: …" as the reason.
