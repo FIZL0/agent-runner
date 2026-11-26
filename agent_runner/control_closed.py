@@ -6,13 +6,13 @@ from __future__ import annotations
 import re
 import time
 
-from agent_runner.state import C
+from agent_runner import state  # state.C at call time: init points it at another repository
 
 
 def idle_closed(n: int, sid: str, at: float) -> None:
     """Mark control session `n` (conversation `sid`, last active at `at`) as closed for being idle."""
     try:
-        C.notes(f'control{n}.closed').write_text(f'{int(at)} {sid}\n', encoding='utf-8')
+        state.C.notes(f'control{n}.closed').write_text(f'{int(at)} {sid}\n', encoding='utf-8')
     except OSError:
         pass
 
@@ -23,7 +23,7 @@ def idle_closed_chats(quiet: float, now: float | None = None) -> dict[int, tuple
     from agent_runner.control import control_live
     now = time.time() if now is None else now
     out = {}
-    for f in C.notes().glob('control*.closed'):
+    for f in state.C.notes().glob('control*.closed'):
         if not (m := re.fullmatch(r'control(\d+)\.closed', f.name)):
             continue
         n = int(m[1])
