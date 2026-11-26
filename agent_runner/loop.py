@@ -36,7 +36,7 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, free_bra
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged, budget_mark, budgets, SPENT)
 from agent_runner.teardown import close_page, end_own, PAGE, RUN_LOCK, wait_last_run
-from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
+from agent_runner.watch import (_account, known_usage, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
     START_TRIES, state_line, stats, stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, watch_code, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
@@ -217,7 +217,7 @@ def write_state(running: dict, held=()) -> None:
     merging = sorted({t.name[6:] for t in threading.enumerate()
                       if t.name.startswith('merge:') and t.name != 'merge:ahead' and t.is_alive()} | set(held))
     # what the cap last read (`capped`, the start line); never a fetch of its own from here
-    got = _account[1] if isinstance(_account[1], dict) and claude_use.account(C) else {}
+    got = (known_usage() or {}) if claude_use.account(C) else {}
     use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
     tmp = C.notes('STATE.tmp')
     from agent_runner.ui_model import agent_problem, no_settings
@@ -806,7 +806,8 @@ class Run:
         procs, running, free_at = self.procs, self.running, self.free_at
         reserve_branch_ids()
         log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
-            (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and claude_use.account(C) else ''),
+            (''.join(f', {what} usage {p}%' for what, p in (('session', usage_pct('five_hour')), ('weekly', weekly()))
+                     if p is not None) if not a.force and claude_use.account(C) else ''),
             EV_RUN_UP, slots=slots)
         if nogate := no_gate_line():
             log(nogate)

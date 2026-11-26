@@ -1,4 +1,4 @@
-"""F422: setup asks once whether the run audits by itself; Settings has the switch, every N and the model.
+"""F422: Settings has the switch, every N and the model.
 
     python3 tests/test_audit_setup.py        (no network; node draws the rows)
 """
@@ -18,67 +18,6 @@ from _check import check, eq, git, has, report
 from _web import fake_repo, in_tmp, logic_js
 
 from agent_runner import audit, config as CF, setting_words as SW, settings_live, setup as S, state, ui_model as U, web as W
-
-
-def ask(root: Path, answer, terminal: bool = True) -> tuple:
-    """`offer_audit`'s line, and the questions it asked."""
-    asked = []
-
-    def say(q=''):
-        asked.append(q)
-        if isinstance(answer, BaseException):
-            raise answer
-        return answer
-    CF._cfg.cache_clear()
-    with mock.patch.object(S, 'at_terminal', lambda: terminal), mock.patch.object(builtins, 'input', say), \
-            contextlib.redirect_stdout(io.StringIO()):
-        return S.offer_audit(root), asked
-
-
-def test_setup(tmp: Path):
-    print('setup asks once, default no')
-    TOML = '[run]\nslots = 2  # two\n\n[git]\npush = false\n'
-    for i, (answer, want) in enumerate((('', False), ('n', False), ('yep', False), ('y', {'every': 50}), ('YES', {'every': 50}))):
-        root = tmp / str(i)
-        root.mkdir()
-        git(root, 'init', '-q', '-b', 'main')
-        f = root / 'runner.toml'
-        f.write_text(TOML, encoding='utf-8')
-        eq(ask(root, answer, terminal=False), (None, []), 'no terminal: not asked')
-        for end in (EOFError(), KeyboardInterrupt()):
-            got, asked = ask(root, end)
-            eq((got, len(asked), f.read_text()), (None, 1, TOML), 'ended with no answer: nothing written')
-        got, asked = ask(root, answer)
-        eq(len(asked), 1, f'{answer!r}: asked')
-        has(asked[0], r'50 tasks.*\[y/N\]', 'default no')
-        eq(CF.Config(root).run['auto_audit'], want, f'{answer!r}: {want}')
-        check('slots = 2  # two' in f.read_text() and 'push = false' in f.read_text(), 'the rest is kept', f.read_text())
-        has(got, r'runner\.toml: commit it', 'says where, and that it is not committed yet')
-        eq(ask(root, 'y'), (None, []), 'and not asked again')
-    f.write_text(TOML, encoding='utf-8')
-    (root / CF.LOCAL).write_text('[run]\nauto_audit = true\n', encoding='utf-8')
-    eq(ask(root, 'y'), (None, []), 'set on this machine: not asked')
-    (root / CF.LOCAL).unlink()
-    f.write_text('run = { slots = 2 }\n', encoding='utf-8')
-    got, _ = ask(root, 'y')
-    has(got, 'not written', 'one it cannot edit is said')
-    eq(f.read_text(), 'run = { slots = 2 }\n', 'and left alone')
-    f.write_text('[run\n', encoding='utf-8')
-    eq(ask(root, 'y'), (None, []), 'one that does not read: not asked')
-
-
-def test_setup_main(tmp: Path):
-    print('setup itself asks it before the session, and says the answer')
-    git(tmp, 'init', '-q', '-b', 'main')
-    out, at = io.StringIO(), []
-    with mock.patch.object(S, 'offer_ttyd', lambda: None), mock.patch.object(S, 'offer_models', lambda r: []), \
-            mock.patch.object(S, 'offer_web_open', lambda root: None), mock.patch.object(S, 'offer_home', lambda root: []), \
-            mock.patch.object(S, 'at_terminal', lambda: True), mock.patch.object(S, 'no_claude', lambda r: ''), \
-            mock.patch.object(builtins, 'input', lambda q='': at.append('asked') or 'y'), \
-            mock.patch.object(S, 'launch', lambda r, t: at.append('session') or 0), contextlib.redirect_stdout(out):
-        eq((S.main(['--yes'], cwd=tmp), S.main(['--yes'], cwd=tmp)), (0, 0), 'setup ends well')
-    eq(at, ['asked', 'session', 'session'], 'once in two setups')
-    eq(out.getvalue().count('the run audits by itself'), 2, 'said at once and in the summary')
 
 
 ROW_DRIVER = r"""
@@ -183,4 +122,4 @@ def test_live(tmp: Path):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(f) for f in (test_setup, test_setup_main, test_settings, test_save, test_live)]))
+    raise SystemExit(report([in_tmp(f) for f in (test_settings, test_save, test_live)]))
