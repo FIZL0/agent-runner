@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: landed work whose push lost the race to another device is no longer stranded when a run ends: on its start and before it exits (once, stop, idle power-off) the run takes the remote in, runs the gate, and pushes, again while the remote keeps moving; `status` and a STOPPED alarm say when it is still unpushed (B841).
+
 - Added: `plan repo-setup [URL|path]` turns plan repo mode on in one step: it makes (or takes) the plan repo, moves the plan and its long forms there with their history, sets `[plan] repo` in runner.toml in a commit, and prints the line the other machine runs; `status` says once when claims come from another host while the plan is still in the code repo (F460).
 
 - Fixed: a key sent to the run (`pause`, `force`, `slots`, `key z|x`) is taken within about half a second, also during a long pass, and STATE shows it right after; before, it waited up to 10 s for the loop's next pass (B850a).

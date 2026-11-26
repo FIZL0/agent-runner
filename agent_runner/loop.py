@@ -481,6 +481,19 @@ SHUTDOWN_GRACE = 120  # s the run must stay idle first; new work or a stop in th
 SLEPT_AT = [-1.0]  # the idle stretch (its idle_at) the machine was suspended in: once per stretch, not on every wake
 
 
+def push_left_now(branch: str) -> None:
+    """B841: push landed work a refused push left on this disk; a person is told when it stays unpushed."""
+    from agent_runner.push_left import push_left
+    try:
+        out = push_left(ROOT, branch)
+    except Exception as e:  # never stops a run from starting or ending
+        out = f'! {branch} is not pushed: {e!r}'
+    if out:
+        log(out)
+    if out.startswith('!'):
+        alarm(f'landed work on {branch} is not pushed', out[2:])
+
+
 def power_due(idle_at: float) -> bool:
     """--shutdown or --suspend, and the run has been idle SHUTDOWN_GRACE s, in a stretch not slept through yet."""
     return bool(POWER) and time.time() - idle_at >= SHUTDOWN_GRACE and SLEPT_AT[0] != idle_at
@@ -731,7 +744,11 @@ def run(argv: list[str], prog: str) -> int:
         stop_now.ON_KEYS[:] = [lambda: (take_keys(), write_state(dict(it.running), [m[0] for m in it.held_merges]),
                                         WAKE.set())]  # B850a
         threading.Thread(target=stop_now.watch, args=(it,), name='stop-now', daemon=True).start()  # B827
-        return it.go()
+        push_left_now(branch)  # B841: what an earlier run left unpushed
+        rc = it.go()
+        if not (POWER and rc == 0 and not stopping()):  # an idle power-off pushed it before the power went
+            push_left_now(branch)  # B841: no next merge comes once the run ends
+        return rc
     finally:
         while RUN_LOCK:  # the run is over (its stop has ended its own processes): the next one may start
             RUN_LOCK.pop().close()
@@ -1088,6 +1105,8 @@ class Run:
                 self.idle_said, self.idle_at = True, time.time()
                 if not stopping() and auto_release(self.branch, idle=True):  # F63: once per idle spell
                     return None  # the release it queued starts on the next tick
+            if power_due(self.idle_at) and not stopping():
+                push_left_now(self.branch)  # B841: before the power goes
             if shut_down(self.idle_at):
                 return 0
         return None
