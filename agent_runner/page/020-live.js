@@ -28,6 +28,9 @@ function addSent(n,text,at,more,len){
 /* a new chat's ask, from the action that started it: pending in its thread */
 function carrySent(n,j,ask){const text=(j&&j.ask)||ask;if(n&&text)addSent(n,text,j&&j.at,{first:true},0)}
 /* a new chat whose ask went, until its reply starts: the starting line */
+/* F196: a chat this page started (its name came back from the new-chat send) less than BORN_MS ago, with no reply yet */
+const BORN_MS=120000;
+const bornNow=n=>!!(S.born&&S.born[n])&&Date.now()-S.born[n]<BORN_MS&&!feedOf(n).some(e=>e.kind==='say'||e.kind==='tool');
 const starting=n=>!!(S.sent[n]&&S.sent[n].start)&&!S.sent[n].pending.some(p=>p.state==='failed')&&!feedOf(n).some(e=>e.kind==='say'||e.kind==='tool');
 const startLine=n=>starting(n)?`<div class="think">${LOGO()}${WAVE}Starting the chat…</div>`:'';
 function sentDrop(n,id){const s=S.sent[n], p=s&&s.pending.find(x=>x.id===id);if(p){s.pending=s.pending.filter(x=>x!==p);if(p.first)s.start=false;keepSent()}return p}
@@ -78,7 +81,7 @@ function obDone(it,j){
   if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
   if(it.name==='response_chat')S.responseGone=[...(S.responseGone||[]),it.args.rid];  // F425b
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
-  if(it.newchat&&j.name){S.came=(S.came||[]).filter(x=>x.name!==j.name&&now-x.at<60000).concat([{name:j.name,was:'@'+it.cid,start:it.at,say:it.say,state:'sending',at:now}]);carrySent(j.name,j,it.ask);boxMove('@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name,true)}
+  if(it.newchat&&j.name){S.born=S.born||{};S.born[j.name]=now;S.came=(S.came||[]).filter(x=>x.name!==j.name&&now-x.at<60000).concat([{name:j.name,was:'@'+it.cid,start:it.at,say:it.say,state:'sending',at:now}]);carrySent(j.name,j,it.ask);boxMove('@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name,true)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
   else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&(j.gone||it.args.text)))){toast(answerSaid(j,it.need,it.args.text));if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.shelved){if(S.gone)delete S.gone[it.shelved];toast(j.said||`${it.say}: done`);snapNow()}  // F184: Needs you may show it at once

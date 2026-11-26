@@ -3,7 +3,7 @@ function feedState(o){
   const i=o.info;
   if(i&&i.ok)return'session';
   if(i&&i.mode==='install')return'install';
-  if(o.starting)return'starting';
+  if(o.starting||o.born)return'starting';  // F196: born, a chat this page started, no reply yet: never Loading or ended
   if(!i)return'loading';
   return i.live?'none':o.chat?'ended':'idle';
 }
