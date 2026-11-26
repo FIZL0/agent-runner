@@ -10,6 +10,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Added: a task taken by hand has Cancel on its queue row in the run page and the terminal UI (it keeps the work and parks the task), and no Priority or Do it here while taken (F455b).
 - Fixed: `home install` on a machine whose run page had a Tailscale Serve https address keeps it: the page leaving its port hands its Serve rule over to Runner Home instead of turning it off, so the printed https link works and `home status` lists it; a rule a person made is never touched (B847).
 - Changed: on the run page, a chat that a Needs you answer started goes straight to Quiet in Chats with a 'new' label until opened once; it moves to the top only when it asks you something (F465).
+- Changed: in Settings, Main branch is now Working branch, in Landing work instead of the read-only Project file: a pick of the local branches that says, before Save, what Save does and that it applies once the run restarts, and why a pick cannot be saved (F447a).
 
 ## 0.75.0 (2026-11-26)
 

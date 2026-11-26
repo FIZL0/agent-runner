@@ -801,6 +801,43 @@ const out = {};
 """
 
 
+BRANCH_DRIVER = AGENT_DRIVER.split('eval(')[0] + r"""
+eval(logic + slice('const settingId=', '/* the stepper:') + `
+const id = 'git.master_branch', row = () => settingRow(settingOf(id), {}), out = {row: row()};
+S.f[setField(id, setTab())] = 'dev'; out.dev = row();
+S.f[setField(id, setTab())] = 'gone'; out.gone = row();
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_working_branch_f447a(tmp: Path) -> None:
+    """F447a: the working branch is in Landing work under its own name, picked from the snapshot's branches, and the row
+    says what Save does, that it waits for a restart, and why a pick cannot be saved."""
+    from agent_runner import setting_words as SW
+    eq((SW.group('git', 'master_branch'), SW.name('git', 'master_branch')), ('landing', 'Working branch'), 'its group and name')
+    if not shutil.which('node'):
+        return
+    repo = fake_repo(tmp)
+    snap = CF.settings_snapshot(repo)
+    k = next(k for t in snap['tables'] if t['table'] == 'git' for k in t['keys'] if k['key'] == 'master_branch')
+    k.update(picks=[{'value': '', 'branch': 'main', 'auto': True, 'bad': ''}, {'value': 'main', 'branch': 'main', 'auto': False, 'bad': ''},
+                    {'value': 'dev', 'branch': 'dev', 'auto': False, 'bad': ''},
+                    {'value': 'gone', 'branch': 'gone', 'auto': False, 'bad': 'not a branch to pick'}], now='main')
+    (tmp / 'set.json').write_text(json.dumps(snap), encoding='utf-8')
+    (tmp / 'branch.js').write_text(BRANCH_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'branch.js'), str(W.PAGE), str(tmp / 'set.json')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the row', r.stderr[-1500:])
+    if r.returncode:
+        return
+    d = json.loads(r.stdout)
+    check('<select class="fld setpick"' in d['row'] and 'Found by itself (main)' in d['row'] and 'data-setagent' not in d['row'], 'a pick of the branches', d['row'])
+    check('Save:' not in d['row'] and 'v-bad' not in d['row'], 'nothing to say before a change', d['row'])
+    check('v-bad' in d['gone'], 'and in the refusal colour')
+    check('Save: finished work is applied to dev' in d['dev'], 'what Save does', d['dev'])
+    check('once the run restarts' in d['dev'], 'and that it waits for a restart')
+    check('It cannot be saved: not a branch to pick' in d['gone'], 'a bad pick says why', d['gone'])
+
+
 def test_provider_login_f406c(tmp: Path) -> None:
     """F406c: beside a [models] setting that names a provider with no login: Log in, in the login sheet; the provider
     list has it too; how it ended is said."""
@@ -876,4 +913,4 @@ def test_plan_share_f460a(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a)]))
+    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a), in_tmp(test_working_branch_f447a)]))
