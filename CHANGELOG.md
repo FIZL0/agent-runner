@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: Settings > Plan has "Share the plan between machines" (a plan repo URL field, empty for one made for you): it runs `plan repo-setup` and shows what it said, with the line the other machine runs (F460a).
 - Added: `[run] web_open` ('everywhere', the default, or 'here'): with 'here' a run page Runner Home does not open listens on 127.0.0.1 only, shows its localhost link with its key, and makes no Tailscale Serve rule; set it per machine in runner.local.toml (F454a).
 - Fixed: on the run page a pressed run control (Pause, Go on, Force, Caps back on, Stop, Take the stop back, the slot ones) shows its result at once: the button, the Run card's words, the state pill and Home's chip follow with a quiet 'Pausing…' mark, held over older snapshots until one agrees or 15 s pass; before, the button read Pause again until a snapshot came, so people pressed twice (B851a).
 - Added: `plan repo-setup [URL|path]` turns plan repo mode on in one step: it makes (or takes) the plan repo, moves the plan and its long forms there with their history, sets `[plan] repo` in runner.toml in a commit, and prints the line the other machine runs; `status` says once when claims come from another host while the plan is still in the code repo (F460).
