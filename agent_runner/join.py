@@ -396,10 +396,12 @@ def own_worktree(d: Path) -> bool:
     if not d.is_dir():
         return False
     theirs, ours = common_dir(d), common_dir(S.ROOT)
-    if theirs is None or ours is None or theirs == ours:
-        return True
+    if ours is None or theirs == ours or (theirs is None and not (d / '.git').exists()):
+        return True  # this repo's own, or a plain folder (used as it is, as before)
     log(f'{d} belongs to another copy of the repo ({theirs}), not {ours}: dropped and added again from this one')
-    if git('worktree', 'remove', '--force', str(d), cwd=theirs.parent if theirs.name == '.git' else theirs).returncode:
-        import shutil
+    if theirs is None or git('worktree', 'remove', '--force', str(d), cwd=theirs).returncode:
+        import shutil  # a .git pointing nowhere, or a remove git refused: the folder goes, the other list is pruned
         shutil.rmtree(d, ignore_errors=True)
+        if theirs is not None:
+            git('worktree', 'prune', cwd=theirs)
     return False

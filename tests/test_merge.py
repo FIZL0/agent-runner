@@ -218,6 +218,7 @@ def test_foreign_folder(repo: Path, tmp: Path):
         eq(J.common_dir(d), J.common_dir(repo), 'now it belongs to this repo')
         check(str(d) not in git(clone, 'worktree', 'list'), 'dropped from the clone\'s worktree list')
         eq(J.merge_into(d, 'task/B1', 'merge B1', 'B1'), [], 'task/B1 merges there')
+        check('b1.py' in git(d, 'ls-tree', '--name-only', 'HEAD').split(), 'its merge commit holds b1.py')
     finally:
         restore()
 
