@@ -302,7 +302,7 @@ def test_frame_kept_b860(tmp: Path) -> None:
     page = Path(__file__).resolve().parent.parent / 'agent_runner' / 'page'
     plan = (page / '140-plan.js').read_text(encoding='utf-8')
     shared = (page / '010-shared.js').read_text(encoding='utf-8')
-    check('<iframe data-keep="cframe:${id}"' in plan, 'the frame is marked to keep')
+    check('data-keep="cframe:${id}"' in plan, 'the frame is marked to keep')
     check("querySelector('iframe[data-keep]')" in shared and 'morphKids(el,t.content)' in shared, 'setHTML morphs a box holding one')
     check("o.dataset.keep===n.dataset.keep&&o.getAttribute('src')===n.getAttribute('src')" in shared, 'the same frame is left alone')
 

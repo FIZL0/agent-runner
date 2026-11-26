@@ -100,11 +100,9 @@ function histKey(e,ta){
 }
 
 /* F83: a refresh draws a part again only when its markup changed */
-function setHTML(el,h){if(!el||el._h===h)return false;el._h=h;
-  /* B860: an iframe[data-keep] with the same key and src stays the same node over a redraw: it does not reload */
-  /* (an iframe that leaves the document unloads, so the box is changed in place, not written over, while one is there) */
-  if(!el.querySelector('iframe[data-keep]')){el.innerHTML=h;return true}
-  const t=document.createElement('template');t.innerHTML=h;morphKids(el,t.content);return true}
+/* B860: an iframe[data-keep] with the same key and src stays the same node over a redraw: it does not reload
+   (an iframe that leaves the document unloads, so the box is changed in place, not written over, while one is there) */
+function setHTML(el,h){if(!el||el._h===h)return false;el._h=h;if(!el.querySelector||!el.querySelector('iframe[data-keep]'))el.innerHTML=h;else{const t=document.createElement('template');t.innerHTML=h;morphKids(el,t.content)}return true}
 /* B860: make old's children match neu's, reusing nodes of the same kind where they stand */
 function morphKids(old,neu){
   const a=[...old.childNodes], b=[...neu.childNodes];
