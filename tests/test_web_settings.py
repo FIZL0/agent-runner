@@ -954,6 +954,7 @@ def test_project_file_f448b(tmp: Path) -> None:
     eq(bare, [], 'every key has a control or a stated reason')
     asks = [id_ for id_, h in d['rows'].items() if 'data-about="setting:' not in h or 'data-setmore=' not in h]
     eq(asks, [], 'every open row has More… and Ask a chat to change it')
+    check('class="small setwarn">Every task and merge' in d['rows']['run.test'], "an open risky row says what a change does (F448a's warn)")
     check('Cannot change here now: a task is running' in d['locked'] and 'data-f="set' not in d['locked'], 'a locked key says why, no control', d['locked'])
 
 
