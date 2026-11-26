@@ -235,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'fence':  # F102: the git fence, a PreToolUse hook on every tool call of a slot: nothing else first
         from agent_runner.tools import fence_hook
         return fence_hook(rest)
-    if cmd != 'merge-plan' and not os.environ.get('AGENT_RUNNER_SLOT'):  # not git's driver, not a slot's agent
+    if cmd not in ('merge-plan', 'merge-lessons') and not os.environ.get('AGENT_RUNNER_SLOT'):  # not git's driver, not a slot's agent
         skill()
         user_hook()
     if cmd in ('--version', '-V', 'version'):
@@ -250,6 +250,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'merge-plan' and len(rest) == 3:  # git's merge driver for the task list (plan.install_driver)
         from agent_runner import plan
         return plan.merge_file(*rest)
+    if cmd == 'merge-lessons' and len(rest) == 3:  # F413: git's merge driver for plan/LESSONS.md
+        from agent_runner import lessons
+        return lessons.merge_file(*rest)
     if cmd == 'done' and os.environ.get('AGENT_RUNNER_WORKTREE'):  # B103: a slot ticks only its own project's plan
         from agent_runner import plan
         from agent_runner.config import cfg

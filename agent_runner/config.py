@@ -93,6 +93,7 @@ DEFAULTS: dict = {
         'outline': '',          # a command printing one file's outline (its symbols, sections); {file} is
                                 # the path. The brief shows it under each file over 300 lines the task line names
         'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
+        'lessons': False,       # F413: plan/LESSONS.md, `plan lesson`; a brief shows those for the task's files
         'need_files': False,    # `plan add` refuses a line with no files: or test: field
         'lookup': [],           # more markdown files `plan <name>` searches for a heading (after TODO, REFERENCE,
                                 # HUMAN, DONE and [run] rules), e.g. ["PLAN.md", "plan/*.md"]; globs allowed

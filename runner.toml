@@ -2,6 +2,7 @@
 
 [plan]
 outline = "python3 tools/outline.py {file}"  # the brief's map of each big file a task names
+lessons = true  # plan/LESSONS.md: what agents learned, shown in the brief of a task on those files
 
 [run]
 rules = "AGENTS.md"  # the short rules file every slot is pointed at

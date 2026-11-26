@@ -1016,3 +1016,10 @@ _Said_: wait for, what it waits for
 _On screen_: Wait for…; ⋯ on a Plan queue row: Wait for…; What should B456 wait for?; Done, Cancel
 _In code_: plan edit --wait-for, plan_wait.py, set_waits, waitHTML, waitRows, data-waitset
 _Avoid_: block on, depend on
+
+**Lesson**:
+One short thing a project's agents learned about some files, shown to a task on those files
+_Said_: lesson
+_On screen_: Lessons
+_In code_: lessons, plan lesson, LESSONS.md
+_Avoid_: tip, note, learning

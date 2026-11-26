@@ -3424,6 +3424,11 @@ def _p_brief(a, x):
     return x.say('\n'.join(brief(a.id)))
 
 
+def _p_lesson(a, x):
+    from agent_runner import lessons  # F413
+    return lessons.command(x.c, a.rest, PROG)
+
+
 def _p_archive(a, x):
     return x.say(f'archived {archive(x.todo, x.done)}')
 
@@ -3474,6 +3479,7 @@ SUBCOMMANDS = {
     'archive': ((), None, _p_archive),
     'claims': ((), None, _p_claims),
     'unclaim': (('id',), None, _p_unclaim),
+    'lesson': ((), 1, _p_lesson),
 }
 
 

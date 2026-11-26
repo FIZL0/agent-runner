@@ -96,6 +96,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.include_task_id_in_commit': ('work', 'Task id in commits', "Each commit's title starts with its task's id. Off: it does not."),
     'run.rules_pointer': ('work', 'Guide line in the rules file', 'A run adds one line to the rules file that points at its guide. Off: the file is left alone.'),
     'plan.need_files': ('work', 'Tasks must name files', 'A new task without files or a test is refused. Off: it is taken, but may clash with others.'),
+    'plan.lessons': ('work', 'Lessons in briefs', 'Agents keep short lessons about files, and a task on those files is shown them. Off: none are kept or shown.'),
     'plan.context_kb': ('work', 'Warn about long rules', 'Kilobytes of rules every session loads before the run warns you. 0: never.'),
     'models.kinds': ('roles', 'Model for each kind', 'The model a task runs on, by the letter of its id. It wins over Other tasks.'),
     'models.code': ('roles', 'Other tasks', 'The model for a task whose kind has none. Every kind has one, so this rarely changes anything.'),

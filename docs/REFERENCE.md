@@ -1107,6 +1107,16 @@ Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task 
 A plain new number (`plan add A "…"`) is an independent task and may run beside anything. `agent-runner help order`
 prints this summary; `agent-runner run --dry-run N` shows what N free slots would start now, and why the rest wait.
 
+### Lessons
+
+With `[plan] lessons = true` (off by default), `plan/LESSONS.md` holds what a project's agents learned, one line per
+lesson: `- L<id> <text> | files: a, dir/**`. The id is a hash of the text, so two branches' additions never clash,
+and the file merges by line (git's driver `merge-lessons`: both sides' additions kept, a drop on either side kept).
+`plan lesson add "TEXT" --files a,b` (at most 200 characters), `plan lesson list`, `plan lesson drop ID "why"`: any
+agent shown a wrong lesson may drop it, with its reason. A brief shows the lessons whose files meet the task's
+`files:`, most specific first (the longest path before a wildcard), at most 8. A lesson none of whose files is left
+in the tree drops itself; every drop is logged with its date and reason under `## Dropped`.
+
 A task over `[run] task_size` is split the same way: `plan add A12 "…"` per part (A12a, A12b, …), then `plan edit A12 "<title> (split into A12a, A12b)"`. `plan add`, `edit`, `note` and an approval say when a task is too big and how to split it, and a run that starts an unsplit one has its session split it before it does the first part (F177). A12 ticks itself once its parts land. Once its last open part closes it ticks only if at least one part landed; if every part was dropped (each one's `dropped: WHY` note), it stays open as one whole task: its `(split into …)` is taken off, a BLOCKED on it stays, and `plan drop` says so and to edit the task if its text lacks the work the parts held.
 
 When `plan add` says a task is too big, it also writes `| split-by: <UTC time, 5 minutes ahead>` on the task line, and no run starts it before that time (B196), so its author can file the parts first. The hold ends at once when the first part is filed (`plan add A12 …`), when `(split into …)` is written or the task is brought under the size, or on `plan move ID top`; `take` starts it any time. An edit that leaves it too big keeps the same end time. A task a run's own agent files behaves the same. Only `add` sets `split-by`; a note, edit or approval that makes a task too big does not hold it. While one is held, `status`, `plan` and the queue say `waits to be split, starts in 4 min if it is not`, the dry run says `waiting to be split`, and the run does not show idle.
@@ -1875,6 +1885,7 @@ outline = ""              # a command printing one file's outline; {file} is the
                           # "python3 tools/outline.py {file}": the brief shows it under each file the line names over 300 lines
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
+lessons = false           # plan/LESSONS.md and `plan lesson` (see "Lessons"); a brief shows those for its files
 lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]
 context_kb = 12           # budget for what every session loads (`context`); `run` warns past it, 0 = never
 glossary = "GLOSSARY.md"  # the project's glossary (`agent-runner glossary`): seeded by the first control session,
