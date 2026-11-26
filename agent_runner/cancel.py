@@ -56,6 +56,8 @@ def stop(c, tid: str, words: list[str], wait: float | None = None) -> tuple[int,
     """Ask the run to stop `tid`: (exit code, what to say, the note for its plan line). Code 0: the plan edit parks it."""
     if [w for w in words if w != YES]:
         return 2, f'{P.PROG} cancel <ID> [{YES}]', ''
+    if (d := taken_dir(c, tid)) is not None:  # F455a
+        return stop_taken(c, tid, d, words)
     if not (where := P.run_on(c, tid)):
         return 1, (f'{P.PROG}: {tid} is not running, so there is nothing to cancel (`{P.PROG} edit {tid} --pri later` '
                    'parks a queued task)'), ''
@@ -98,3 +100,99 @@ def main(c, argv: list[str]) -> tuple[int, list[str]]:
     if said:
         print(said, file=sys.stderr if rc else sys.stdout)
     return rc, [] if rc else ['cancel', tid, note]
+
+
+# --- F455a: a task taken by hand (`take`), run up or not -------------------------------------------------------------
+
+def taken_dir(c, tid: str):
+    """The take worktree of `tid` (as `sched.taken`), or None when it is not taken by hand."""
+    d = c.slots_dir / f'take-{tid}'
+    return d if (d / '.git').exists() else None
+
+
+def _taken_landing(c, tid: str) -> str:
+    from agent_runner import plansync
+    from agent_runner.done import TESTED
+    from agent_runner.state import git
+    if tid in (_state(c).get('merging') or []) or not git('rev-parse', '--verify', '-q', TESTED + tid).returncode \
+            or (plansync.ticks(c) / tid).exists():
+        return f'{tid} is finished and about to land, so it cannot be cancelled'
+    return ''
+
+
+def chat_of(c, d) -> int:
+    """The live chat that took worktree `d` (B846's record), 0 when none is."""
+    from agent_runner import taken_by
+    from agent_runner.control import control_live_numbers
+    try:
+        return taken_by.chat(c, d, control_live_numbers()) or 0
+    except OSError:
+        return 0
+
+
+def tell_chat(n: int, d) -> str:
+    """Tell chat `n` to stop: what was done, '' when no chat was told."""
+    from agent_runner.control import control_type
+    try:
+        if n and control_type(n, f'STOP: the person cancelled this task; its worktree {d} is gone and its work '
+                                 'kept on a wip branch. Do no more work on it.'):
+            return f'told chat {n} to stop'
+    except OSError:
+        pass
+    return ''
+
+
+def keep_taken(c, tid: str, d) -> tuple[str, str]:
+    """Everything in take worktree `d` (commits, edits, untracked files) on a wip/<tid> branch, then the worktree and
+    task/<tid> removed: (the wip branch, '' with nothing to keep; why nothing changed, '' when it went)."""
+    from agent_runner import gitops, sched
+    from agent_runner.slots import free_branch
+    from agent_runner.state import default_branch, git, ROOT
+    committed = False
+    if git('status', '--porcelain', cwd=d).stdout.strip():
+        git('add', '-A', cwd=d)
+        if git('commit', '-q', '--no-verify', '-m', f'{tid} wip: uncommitted when it was cancelled', cwd=d).returncode:
+            git('reset', '-q', cwd=d)
+            return '', f'its uncommitted edits in {d} could not be committed, so nothing was changed'
+        committed = True
+
+    def undo(why: str) -> tuple[str, str]:
+        if committed:
+            git('reset', '-q', '--soft', 'HEAD~1', cwd=d)
+            git('reset', '-q', cwd=d)
+        return '', f'{why}, so nothing was changed'
+
+    head = git('rev-parse', '-q', '--verify', 'HEAD', cwd=d).stdout.strip()
+    branch = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
+    own = bool(head) and git('rev-list', '--count', f'{default_branch()}..{head}').stdout.strip() not in ('', '0')
+    wip = ''
+    if own and git('branch', wip := free_branch(f'wip/{tid}'), head).returncode:
+        return undo(f'{wip} could not be made')
+    if (r := git('worktree', 'remove', '--force', str(d))).returncode:
+        if wip:
+            git('branch', '-D', wip)
+        return undo(f'its worktree {d} could not be removed ({r.stderr.strip()})')
+    if branch == f'task/{tid}':
+        git('branch', '-D', branch)
+    if wip:
+        sched.forgive_park(tid, wip)
+        gitops.push(ROOT, wip)
+    return wip, ''
+
+
+def stop_taken(c, tid: str, d, words: list[str]) -> tuple[int, str, str]:
+    """`stop` for a task taken by hand: no run is needed, this command does it all."""
+    from agent_runner import state
+    state.init(c.root)
+    if why := _taken_landing(c, tid):
+        return 1, f'{P.PROG}: {why}', ''
+    if YES not in words:
+        return 3, f'{tid} is taken by hand in {d}. {ASK} Cancel {tid}? To go on: {P.PROG} cancel {tid} {YES}', ''
+    n = chat_of(c, d)  # before the worktree goes: the record is in its git folder
+    wip, bad = keep_taken(c, tid, d)
+    if bad:
+        return 1, f'{P.PROG}: {bad}', ''
+    told = tell_chat(n, d)
+    said = f'cancelled {tid}; removed its take worktree; ' + (f'its work is on {wip}' if wip else 'nothing had been done')
+    return 0, said + (f'; {told}' if told else ''), \
+        'cancelled while taken by hand: ' + (f'its work is on {wip}, go on from there' if wip else 'nothing had been done yet')

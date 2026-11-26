@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: `plan cancel ID` works on a task taken by hand, with or without a run up: its commits, edits and untracked files go on a wip/ID branch, its take worktree is removed, the task is parked and the live chat that took it is told to stop; when the work cannot be kept nothing changes (F455a).
+
 - Fixed: on a computer the words of a chat's live screen can be copied: a drag selects them and copies them at once, as Shift+drag did, Ctrl+C or Cmd+C copies a selection without interrupting, and a right click opens the browser's menu with Copy; before, Claude Code's full screen took the mouse, so a drag selected nothing and Ctrl+C interrupted (B845).
 - Changed: on the run page, a Plan queue row of a task no slot runs but which is under way no longer says only 'Being worked on'; it says 'Taken by the chat <its name>' (pressing the words opens that chat), 'Taken by a chat that has ended', 'Taken by hand' (taken from a terminal or unknown), 'Merging' or 'Waits to resume'; `take` now records the control session that ran it, in the git folder of its take worktree (B846).
 - Fixed: a run whose `web_port` is taken without Runner Home serves its page on every interface on the next free port (every second one, 8772, 8774, …, skipping Tailscale Serve's and recorded rules' ports), its run log saying which port it is on, instead of 127.0.0.1 only; the page-only process and a run that takes that page over keep the port (`web.fell`) (B844).
