@@ -837,6 +837,16 @@ const CHAT = `You are in a conversation with a person, in the main checkout of a
   `message comes when they send it. Paths are relative to the checkout. A message that names a file the person attached ` +
   `means that file: read it before you answer, an image too.`;
 
+// one short line for a tool call (B853): the name and its main argument, dim on a terminal
+export function toolLine(name, args, tty) {
+  const a = args || {};
+  const main = a.command ?? a.path ?? a.summary ?? a.question ?? Object.values(a).find((v) => typeof v === 'string') ?? '';
+  let arg = String(main).split('\n')[0].trim();
+  if (arg.length > 100) arg = `${arg.slice(0, 99)}…`;
+  const line = arg ? `· ${name}: ${arg}` : `· ${name}`;
+  return tty ? `\x1b[2m${line}\x1b[0m` : line;
+}
+
 function overBudget(a, tokens, usd) {
   const tok = tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1)}M` : `${Math.round(tokens / 1e3)}k`;
   const spent = `${tok} tok $${usd.toFixed(2)}`;
@@ -899,9 +909,13 @@ async function main() {
     if (a.chat && (over || !s.ctl)) s.ctl = new AbortController();
     over = false;
     is('busy');
-    for (const text of [...pending.splice(0), ...tells.take()]) {
+    for (const text of pending.splice(0)) {
       messages.push(t.user(text));
       console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
+    }
+    for (const text of tells.take()) { // B855: a chat's terminal already showed a typed tell as it came
+      messages.push(t.user(text));
+      if (!tells.echo) console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
     }
     const why = overBudget(a, tokens, usd);
     if (why) {
@@ -974,7 +988,7 @@ async function main() {
     if (said) console.log(said);
     const calls = m.content.filter((b) => b.type === 'toolCall');
     for (const c of calls) {
-      console.log(`· ${c.name} ${JSON.stringify(c.arguments || {}).slice(0, 200)}`);
+      console.log(toolLine(c.name, c.arguments, process.stdout.isTTY));
       const [text, isError, image] = s.ctl?.signal.aborted ? ['The person interrupted before this tool call ran; it did not run.', true] : c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
       messages.push(t.toolResult(c, text, isError, image));
       if (!s.ended) s.ended = s.endedNow();
