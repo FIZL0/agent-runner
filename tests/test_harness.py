@@ -550,6 +550,20 @@ def test_chat_echo(env: Env):
     eq(text.count('hello there'), 1, 'the sent message shows once')
 
 
+def test_said_lines(env: Env):
+    """B861: the person's message shows as Claude Code draws it: '❯ ', every line, on the colour-237 band."""
+    src = (Path(R.__file__).parent / 'harness.mjs').read_text(encoding='utf-8')
+    start = src.index('export function saidLines')
+    body = src[start:src.index('\n}\n', start) + 3].replace('export ', '')
+    js = body + "console.log(JSON.stringify(saidLines('first line\\n' + 'y'.repeat(50), 42)));"
+    out = json.loads(subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30).stdout)
+    rows = out.split('\n')[1:]
+    eq(len(rows), 3, 'every line shows, a long one wrapped')
+    check(all(r.startswith('\x1b[48;5;237m') and r.endswith('\x1b[0m') for r in rows), 'each row is on the highlight band', rows)
+    check(rows[0].startswith('\x1b[48;5;237m❯ first line ') and rows[1].startswith('\x1b[48;5;237m  y'), 'the first row has the ❯ mark', rows)
+    eq(len(rows[0]), len(rows[2]), 'rows are padded to one width')
+
+
 def main() -> int:
     node = shutil.which('node')
     if not node:
@@ -562,7 +576,7 @@ def main() -> int:
             return report([lambda: test_routing(env), lambda: test_finish(env),
                            lambda: test_finish_refused(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_context_warn(env), lambda: test_resume(env),
-                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_line(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
+                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_line(env), lambda: test_said_lines(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 

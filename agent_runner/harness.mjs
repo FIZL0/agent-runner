@@ -368,6 +368,18 @@ class Now {
 // A viewer that comes to a chat's terminal sees what was said: at its new size (attach.Viewers gives one to each viewer
 // that comes) the screen is drawn again from the last SCREEN characters printed.
 const SCREEN = 32000;
+// B861: the person's message as Claude Code draws it: '❯ ' and every line, wrapped, on the
+// colour-237 band the run page shows as the highlighted (.hy) band
+export function saidLines(text, cols = (process.stdout.columns || 100)) {
+  const w = Math.max(20, cols - 2), rows = [];
+  for (const line of String(text).replace(/\r/g, '').split('\n')) {
+    const cps = [...line];
+    if (!cps.length) rows.push('');
+    for (let i = 0; i < cps.length; i += w) rows.push(cps.slice(i, i + w).join(''));
+  }
+  return '\n' + rows.map((r, i) => `\x1b[48;5;237m${i ? '  ' : '❯ '}${r}${' '.repeat(Math.max(0, w - [...r].length))}\x1b[0m`).join('\n');
+}
+
 function redrawn(out) {
   let kept = '', due = null;
   const write = out.write.bind(out);
@@ -389,7 +401,7 @@ function recap(messages) {
   for (const m of messages.slice(-60)) {
     const said = m.role === 'toolResult' ? '' : textOf(m.content).trim();
     if (said.startsWith('[Request interrupted')) console.log('harness: interrupted');
-    else if (said) console.log(m.role === 'user' ? `\n> ${said}` : said);
+    else if (said) console.log(m.role === 'user' ? saidLines(said) : said);
   }
 }
 
@@ -921,11 +933,11 @@ async function main() {
     is('busy');
     for (const text of pending.splice(0)) {
       messages.push(t.user(text));
-      console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
+      console.log(saidLines(text));
     }
     for (const text of tells.take()) { // B855: a chat's terminal already showed a typed tell as it came
       messages.push(t.user(text));
-      if (!tells.echo) console.log(`\n> ${text.split('\n')[0].slice(0, 160)}`);
+      if (!tells.echo) console.log(saidLines(text));
     }
     const why = overBudget(a, tokens, usd);
     if (why) {
