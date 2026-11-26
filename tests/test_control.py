@@ -1140,9 +1140,9 @@ def settled_world():
         K.control_give(5, f'{R.ROOT.name} · R81 · Tailscale login')
         K.control_give(6, f'{R.ROOT.name} · 6 · R90 and R81')
 
-        def plan_cmd(*argv, by=0, slot=''):
+        def plan_cmd(*argv, by=0, slot='', person=''):
             from agent_runner import plan as P
-            env = {'AGENT_RUNNER_CONTROL': str(by or ''), 'AGENT_RUNNER_SLOT': slot, 'AGENT_RUNNER_BY': ''}
+            env = {'AGENT_RUNNER_CONTROL': str(by or ''), 'AGENT_RUNNER_SLOT': slot, 'AGENT_RUNNER_BY': person}
             with mock.patch.dict(os.environ, env), mock.patch.object(P, 'cfg', lambda *a: R.C), \
                     mock.patch.object(P, 'other_project', lambda *a: ''), contextlib.redirect_stdout(io.StringIO()):
                 return P.main(list(argv))
@@ -1494,6 +1494,98 @@ def test_settled_landing():
         eq([n for n, _ in w.typed], [4], 'not into the session that landed it')
 
 
+def test_settled_closes_f209b():
+    print('F209b: a chat about an item the person settles for good outside it is closed, unless something keeps it')
+    from agent_runner import control_held as H, taken_by
+    app = 'the person in the run app'
+
+    def world_drop(w, argv=('drop', 'R81', 'no need'), person=app, by=0):
+        ended = []
+        with mock.patch.object(K.plat, 'terminate', ended.append):
+            eq(w.plan(*argv, person=person, by=by), 0, ' '.join(argv))
+            w.look()
+            w.Z._SEEN.clear()  # a restarted run closes nothing twice
+            w.look(w.base + 400)
+        return ended
+    with settled_world() as w:  # c4 opened from R81, c5 titled R81: both close
+        ended = world_drop(w)
+        eq(sorted(ended), [44, 45], 'both chats about R81 end, once each')
+        eq(w.typed, [], 'nothing is typed into them')
+        check(not w.notes('control4.pid').exists() and not w.notes('control5.pid').exists(), 'their pid files go')
+        check(any(l.startswith('control 4: closed, R81 was dropped by the person in the run app (transcript kept')
+                  for l in w.logs), 'run.log names the item', w.logs)
+    for argv in (('confirm', 'R81', 'it works'),):
+        with settled_world() as w:
+            ended = world_drop(w, argv)
+            eq(sorted(ended), [44, 45], f'{argv[0]} closes them too')
+    with settled_world() as w:  # c6 filed concept K1: the person's approve closes it
+        w.plan('concept', 'the menu', '--page', 'https://claude.ai/code/artifact/aaa', by=6)
+        eq(world_drop(w, ('approve', 'K1', 'option B')), [46], 'approve closes the chat that filed it')
+    with settled_world() as w:  # a pick link runs `plan confirm ID "go with A"` with the same mark
+        eq(sorted(world_drop(w, ('confirm', 'R81', 'go with A: the laptop'))), [44, 45], 'a pick link closes them')
+    for argv in (('shelve', 'R81'), ('change', 'R81', 'No: the check failed')):
+        with settled_world() as w:
+            eq(world_drop(w, argv), [], f'{argv[0]} closes nothing')
+            eq(sorted(n for n, _ in w.typed), [4, 5], f'{argv[0]}: the line is typed as before')
+    with settled_world() as w:
+        w.plan('concept', 'the menu', '--page', 'https://claude.ai/code/artifact/aaa', by=6)
+        eq(world_drop(w, ('revise', 'K1', 'rounder')), [], 'revise closes nothing')
+        eq([n for n, _ in w.typed], [6], 'revise: the line is typed as before')
+    with settled_world() as w:
+        eq(world_drop(w, person='', by=6), [], 'a chat\'s own decision closes nothing')
+        eq(sorted(n for n, _ in w.typed), [4, 5], 'it is told')
+    with settled_world() as w:
+        eq(world_drop(w, person=''), [], 'nor one by the run or a terminal')
+
+    def keeps(why, setup, patches=(), told=(5,)):
+        with settled_world() as w, contextlib.ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p(w))
+            setup(w)
+            eq(world_drop(w), [44], f'{why}: c5 is kept open')
+            eq([n for n, _ in w.typed], list(told), f'{why}: and told as before')
+            check(any(l.startswith('control 5: kept open') for l in w.logs), f'{why}: run.log says so', w.logs)
+    keeps('renamed', lambda w: w.rows['s5'].append({'type': 'custom-title', 'customTitle': 'R81 my login'}))
+    keeps('the person spoke last', lambda w: w.rows['s5'].append(said('and then?', w.base - 880)))
+    keeps('another DECIDE', lambda w: w.rows['s5'].append(answer('DECIDE: Which phone? [Old / New]', w.base - 880)))
+    keeps('a dialog', lambda w: w.rows['s5'].extend([
+        {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'id': 'q', 'name': 'AskUserQuestion'}]}},
+        answer('Pick one.', w.base - 880)]), told=())  # typed once the dialog is answered
+    keeps('a message held', lambda w: None,
+          [lambda w: mock.patch.object(w.Z, 'closing', wrap_closing(w.Z.closing, H, 'holds', lambda x: x == 's5'))])
+    real_state = K.control_state
+    keeps('a background task', lambda w: None,
+          [lambda w: mock.patch.object(w.Z, 'closing', wrap_closing(
+              w.Z.closing, K, 'control_state', lambda rows: {**real_state(rows), 'running': {'b1'}}, 5))])
+
+    def took(w):
+        d = w.R.state.SLOTS_DIR / 'take-R90'
+        d.mkdir(parents=True, exist_ok=True)
+    keeps('a take', took, [lambda w: mock.patch.object(w.R.state, 'SLOTS_DIR', w.R.ROOT.parent / 'runs-f209b'),
+                           lambda w: mock.patch.object(taken_by, 'chat', lambda c, d, live: 5 if 5 in live else 0)])
+    keeps('another item waits', lambda w: w.Z.filed(w.R.C, ['R82'], {'n': 5, 'sid': 's5'})
+          or w.plan('block', 'R82', 'DECIDE: which probe?'))
+    with settled_world() as w:  # a turn under way: looked at again when it ends
+        w.rows['s5'].append(tool(w.base - 880))
+        ended = world_drop(w)
+        eq(ended, [44], 'c5 waits while its turn runs')
+        w.rows['s5'].append(answer('Done.', w.base - 870))
+        with mock.patch.object(K.plat, 'terminate', ended.append):
+            w.look(w.base + 500)
+        eq(ended, [44, 45], 'and is closed once it ends')
+        eq(w.typed, [], 'never typed into')
+
+
+def wrap_closing(real, mod, name, fake, only=5):
+    """`closing` with `mod.name` faked for chat `only`."""
+    def closing(n, s, tid, ev, fx):
+        if n != only:
+            return real(n, s, tid, ev, fx)
+        with mock.patch.object(mod, name, fake):
+            return real(n, s, tid, ev, fx)
+    return closing
+
+
 def test_settled_rule_in_guide():
     print('F160: the needs guide carries the re-read rule, and the brief points at it')
     from agent_runner import guide as G
@@ -1644,5 +1736,5 @@ if __name__ == '__main__':
                              test_first_message_typed_after_remote_control, test_takes_input_b158, test_rename_f129, test_held_delivered_once,
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once, test_settled_repeats_b812,
-                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing,
+                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing, test_settled_closes_f209b,
                              test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c, test_settings_two_writers_b806]))

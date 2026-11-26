@@ -611,6 +611,13 @@ _On screen_: From the runner, not the person: R81 was dropped at 13:28 by c4
 _In code_: control_settled, <notes>/settled/
 _Avoid_: notification, alert
 
+**Settled close**:
+A chat about an item is ended, its transcript kept, once the person settles that item for good outside it, unless something still goes on in it
+_Said_: pressing decide in the runner page should close these chats
+_On screen_: control 4: closed, R81 was dropped by the person in the run app
+_In code_: control_settled.closing, end_chat, CLOSES
+_Avoid_: kill, archive
+
 **Run speech**:
 Talk's replies made into sound on the run's own machine and played by the run app; without it the browser's own speech reads them.
 _Said_: the voice, natural voice

@@ -18,7 +18,8 @@ control server) are not told; the needs guide has every session re-read an item 
 Repeats (B812): an event like the last one of its item (same `what`, author and reason) is not told again to a session
 told in the last AGAIN s, and takes the place of one still waiting for it: one line. Another event of the item between
 them, also the session's own, ends that. After a told edit, one that says something else is still told. An edit of only
-`--files` or `--pri` records nothing. Known, not handled: a slot's edit in its unmerged worktree is told at once, so
+`--files` or `--pri` records nothing. F209b: a drop, confirm or approve by the person outside any chat (`by_person`)
+closes the chats about it instead (`closing`, `end_chat`), unless something keeps one open. Known, not handled: a slot's edit in its unmerged worktree is told at once, so
 the plan on main may not show it yet when the session re-reads the item.
 
 The control modules are imported in the functions: `plan` uses the first half from sessions with no run."""
@@ -55,6 +56,7 @@ VERBS = {'drop': 'was dropped', 'change': 'was changed', 'edit': 'was changed', 
          'unshelve': 'was put back under Needs you', 'restore': 'was restored', 'unblock': 'was reopened',
          'tick': 'was ticked'}
 NO_REASON = ('tick', 'restore', 'edit')  # what follows the id there is no reason
+CLOSES = ('drop', 'confirm', 'approve')  # F209b: settled for good: a person's closes the chats about it
 _SEEN: dict[str, tuple] = {}
 
 
@@ -85,11 +87,18 @@ def save(f: Path, d) -> None:
     tmp.replace(f)
 
 
+def by_person() -> bool:
+    """F209b: whether this command is the person's own, outside any chat: the run page, the TUI or a pick link run it
+    with BY_ENV set; not a slot's agent, a chat, or the run."""
+    return bool(os.environ.get(BY_ENV)) and not os.environ.get('AGENT_RUNNER_SLOT') \
+        and not os.environ.get('AGENT_RUNNER_CONTROL', '').isdigit()
+
+
 def record(c, ids, what: str, reason: str = '', who: dict | None = None, at: float = 0.0,
-           said: str = '') -> None:
+           said: str = '', close: bool = False) -> None:
     """Leave one event for the run: item `ids[0]` (the others name the same item) `what` ('was dropped'). Nothing
-    without a control session to tell. `said`: the command's words, whole, to know a repeat by.
-    Never stops the command that settled it."""
+    without a control session to tell. `said`: the command's words, whole, to know a repeat by. `close` (F209b):
+    the chats about it are closed, not told (`closing`). Never stops the command that settled it."""
     try:
         if not any(c.notes().glob('control*.pid')):
             return
@@ -99,7 +108,7 @@ def record(c, ids, what: str, reason: str = '', who: dict | None = None, at: flo
         save(folder(c) / f'{time.time_ns()}-{os.getpid()}.json',
              {'ids': list(dict.fromkeys(x for x in ids if x)), 'what': what, 'reason': reason,
               'said': hashlib.sha256(said.encode()).hexdigest()[:16] if said else '',
-              'at': at or time.time(), **(author(c) if who is None else who)})
+              'at': at or time.time(), **(author(c) if who is None else who), **({'close': True} if close else {})})
     except (OSError, AttributeError):
         pass
 
@@ -173,7 +182,7 @@ def noting(c, a, todo, run):
     rc = run()
     if not rc and (needed or a.cmd != 'tick'):  # an ordinary tick says nothing
         record(c, ids, VERBS[a.cmd], '' if a.cmd in NO_REASON else ' '.join(getattr(a, 'rest', None) or []),
-               said='\n'.join(said))
+               said='\n'.join(said), close=a.cmd in CLOSES and by_person())
     return rc
 
 
@@ -353,6 +362,17 @@ def step(f: Path, now: float) -> None:
         if not n or fx.get('closed'):  # ended since: nothing is typed, nor when it comes back
             del ev['to'][sid]
             continue
+        if ev.get('close') and not to.get('kept'):
+            how, why = closing(n, sid, to['id'], ev, fx)
+            if how == 'wait':  # a turn under way: looked at again when it ends
+                continue
+            if how == 'close':
+                del ev['to'][sid]
+                save(f, ev)  # before closing: a restarted run never closes it twice
+                end_chat(n, sid, f'{to["id"]} {ev["what"]}' + (f' by {ev["by"]}' if ev.get('by') else ''))
+                continue
+            state.log(f'control {n}: kept open, though {to["id"]} {ev["what"]}: {why}')
+            to = ev['to'][sid] = {**to, 'kept': True}  # typed as before, and not weighed again
         if not state.C.notes(f'control{n}.in').exists():
             state.log(f'control {n}: not told that {to["id"]} {ev["what"]}: it takes no typed text')
             del ev['to'][sid]
@@ -374,6 +394,70 @@ def step(f: Path, now: float) -> None:
         save(f, ev)
     else:
         f.unlink(missing_ok=True)
+
+
+# --- F209b: a chat about an item the person settled for good is closed -----------------------------------------
+
+def closing(n: int, sid: str, tid: str, ev: dict, fx: dict) -> tuple[str, str]:
+    """('close' | 'keep' | 'wait', why) for chat `n` (session `sid`, facts `fx`) about item `tid`, which the person
+    settled for good outside it (event `ev`). Kept, and told as before, for control_verdict's keep reasons and
+    for what still goes on in it; 'wait' while a turn is under way."""
+    from agent_runner import control as K, control_held as H
+    st = K.control_state(K.entries(sid, skip_bad=True))
+    if K.control_renamed(st, n):
+        return 'keep', 'renamed by the person'
+    if st['last'] == 'tool':
+        return 'wait', 'a turn is under way'
+    if st['last'] != 'claude':
+        return 'keep', 'the person spoke last' if st['last'] == 'person' else 'no turn yet'
+    if st['running']:
+        return 'keep', f'{len(st["running"])} background task(s) still running'
+    if q := K.decide_question(st['text']):
+        return 'keep', f'it asks another question: {q}'
+    if fx.get('dialog'):
+        return 'keep', 'a question dialog is up'
+    if H.holds(sid):
+        return 'keep', 'a message is held for it'
+    if took := chat_takes(n):
+        return 'keep', f'its take of {took} runs'
+    if other := waiting(about(n, sid, fx) - set(ev['ids'])):
+        return 'keep', f'it is also about {other}, which still waits'
+    return 'close', ''
+
+
+def chat_takes(n: int) -> str:
+    """The id of a take chat `n` runs ('' none)."""
+    from agent_runner import state, taken_by
+    try:
+        for d in sorted(state.SLOTS_DIR.glob('take-*')):
+            if taken_by.chat(state.C, d, [n]) == n:
+                return d.name.removeprefix('take-')
+    except OSError:
+        pass
+    return ''
+
+
+def waiting(ids) -> str:
+    """The first of `ids` still under Needs you ('' none)."""
+    if not ids:
+        return ''
+    from agent_runner import pitch, plan as P, state
+    needs = {i for a in [*P.asks(state.C.todo), *pitch.rows(state.C)] for i in (a[1], a[2]) if i}
+    return next((i for i in sorted(ids) if i in needs), '')
+
+
+def end_chat(n: int, sid: str, what: str) -> None:
+    """End chat `n`'s process: its pid file goes, its transcript stays (Resume brings it back); run.log says why."""
+    from agent_runner import control as K, control_harness, state
+    pidf = state.C.notes(f'control{n}.pid')
+    try:
+        pid = int(pidf.read_text(encoding='utf-8').split()[0])
+    except (OSError, ValueError, IndexError):
+        pid = 0
+    if pid:
+        K.plat.terminate(pid)
+    pidf.unlink(missing_ok=True)
+    state.log(f'control {n}: closed, {what} (transcript kept: {control_harness.resume_hint(sid)})')
 
 
 # --- what left Needs you with no event ---------------------------------------------------------------------------
