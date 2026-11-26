@@ -179,13 +179,21 @@ function projectMore(p){
    one version from another, and no token */
 function snapKept(s){const{home,boot,at,page,restart_needed,version,...keep}=s||{};return keep}
 /* F149: the popup for an answer of the run (or Home): {kind: 'refresh', key}, the page it serves is not this one;
-   {kind: 'restart', key}, newer code waits for a person to restart the run; else null. later: the keys put off. The
-   page never reloads by itself. */
+   {kind: 'restart', key}, newer code waits for a person to restart the run; else null. later: the keys put off. F207:
+   a refresh goes by itself once nothing is lost or interrupted (liveReload). */
 function pageNews(s,mine,later){
   const l=[];
   if(mine&&s.page&&s.page!==mine)l.push({kind:'refresh',key:'page:'+s.page});
   if(s.restart_needed)l.push({kind:'restart',key:'restart:'+s.restart_needed});
   return l.find(x=>!later.includes(x.key))||null;
+}
+/* F207: what a page does about pageNews' x by itself: 'go' reload now, 'wait' keep the popup and look again, '' leave it
+   to the person (no news, a restart, put off with Later, or this tab already reloaded by itself for that page: tried,
+   kept per tab, so it never loops). busy: what a reload would interrupt (a finger down, a scroll, a sheet, the
+   focus…); hold: refreshHold()'s words, what it would lose. hidden: the tab is not shown, it goes once shown */
+function liveReload(x,tried,o){
+  if(!x||x.kind!=='refresh'||tried===x.key)return'';
+  return o.hidden||(o.busy||[]).length||o.hold?'wait':'go';
 }
 /* why Refresh waits: o says what a refresh would lose. '' : nothing */
 function refreshHold(o){return o.mic?'Stop the mic first, then refresh.':o.uploading?'Wait for the attachments to finish uploading.'
@@ -200,4 +208,4 @@ const runStarts=snap=>!!snap&&snap.up===false&&!!snap.boot&&(snap.shown||[]).inc
 /* F402b3b: does the run-off banner show? o: what is there instead (home: Runner Home's page or All projects, view, thread);
    Status's Run card and Home's Start card (F402c) say it too */
 const runOff=(snap,o)=>runStarts(snap)&&!o.home&&(!!o.thread||!['status','home'].includes(o.view));
-if(typeof module!=='undefined')module.exports={addedWaits,dialWait,runStarts,runOff,kindChip,mergeRows,idleWhy,iconWords,hintSpot,responseRows,quietRows,pastLines,pastMerge,pastJoin,pastInk,pastMd,pastWrap,keptPut,chatLast,standMsgs,WALK,walkStep,walkParse,walkMove,walkHTML,exampleOffer,giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedGap,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,modelProviders,draftParse,draftSame,draftChanges,draftCount,undoChanges,undoCount,changeWords,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,chatSort,chatPlaces,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,planRows,planReleases,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={addedWaits,dialWait,runStarts,runOff,kindChip,mergeRows,idleWhy,iconWords,hintSpot,responseRows,quietRows,pastLines,pastMerge,pastJoin,pastInk,pastMd,pastWrap,keptPut,chatLast,standMsgs,WALK,walkStep,walkParse,walkMove,walkHTML,exampleOffer,giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,liveReload,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedGap,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,modelProviders,draftParse,draftSame,draftChanges,draftCount,undoChanges,undoCount,changeWords,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,chatSort,chatPlaces,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,planRows,planReleases,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};

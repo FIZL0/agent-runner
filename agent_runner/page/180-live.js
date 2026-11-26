@@ -38,9 +38,10 @@ function takeTyped(){
   if(!k||typeof k!=='object')return;
   S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?{[boxKey()]:k.atts}:k.atts||{};S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};S.setAway=Number(k.setAway)||0;
 }
-function newsRefresh(){
-  const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
-  if(said){toast(said,true);return false}  // F401: what asked is told that it is held
+const refreshSaid=()=>refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
+function newsRefresh(quiet){
+  const said=refreshSaid();
+  if(said){if(!quiet)toast(said,true);return false}  // F401: what asked is told that it is held
   location.reload();return true;
 }
 function takeSnap(s){
@@ -63,7 +64,7 @@ function takeSnap(s){
   if(S.kept)keptCheck();  // B177
   for(const x of S.snap.sessions||[])if(x.task||x.link)S.last[x.name]={task:x.task,title:x.title,link:x.link};  // F114: what it was, once it has ended
   const tw=talkWaitName();if(tw&&TK.wait.sent){addSent(tw,TK.wait.sent.text,TK.wait.sent.at,{talk:true,first:true},0);TK.wait.sent=null}if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
-  render();S.live=true;if(S.needGo)needGo();
+  render();S.live=true;if(S.needGo)needGo();if(typeof livePlaceBack==='function')livePlaceBack('');  // F207
 }
 let lost=0;  /* the banner shows only when no snapshot came for a while, not on every reconnect */
 /* F432: the words of the lost-connection bar. closed: Runner Home answers that nothing serves this page (its page-only
@@ -92,7 +93,7 @@ async function loadFeed(n){
     const moved=had!==JSON.stringify((sent&&sent.pending)||[]);
     talkHear(n);  // F93
     if(S.kept&&keptCheck())render(true);  // B177
-    if(moved||!old||JSON.stringify(old.entries)!==JSON.stringify(f.entries)||old.out!==f.out)render()}
+    if(moved||!old||JSON.stringify(old.entries)!==JSON.stringify(f.entries)||old.out!==f.out)render();if(typeof livePlaceBack==='function')livePlaceBack(n)}
   catch(e){}
 }
 setInterval(()=>{if(S.thread&&!document.hidden)loadFeed(S.thread)},2000);
@@ -100,3 +101,40 @@ setInterval(()=>{for(const n of Object.keys(S.sent))if(n!==S.thread&&S.sent[n].p
 setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited reply is polled in any view
   if(w)loadFeed(w);else if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);
 
+/* --- F207: an open page moves to a new version by itself, once nothing is lost or interrupted (liveReload) ------ */
+const LIVE_KEY='ar-live-tried', LIVE_PLACE='ar-live-place';
+let liveMoved=0;
+for(const t of ['scroll','wheel'])document.addEventListener(t,()=>{liveMoved=Date.now()},{capture:true,passive:true});
+/* what a reload now would interrupt */
+function liveBusy(){
+  const b=[], a=document.activeElement, sel=window.getSelection&&getSelection();
+  if(PD.down||MO.vt||MO.scroll.size||Date.now()-liveMoved<800)b.push('moving');
+  if(document.getAnimations&&document.getAnimations().some(x=>x.playState==='running'&&x.effect&&x.effect.getTiming&&x.effect.getTiming().iterations!==Infinity))b.push('animation');
+  if(S.sheet||S.sure||S.drawer)b.push('sheet');
+  if(sel&&!sel.isCollapsed)b.push('selection');
+  if(talkReads()||(window.speechSynthesis&&speechSynthesis.speaking))b.push('audio');
+  if(a&&a!==document.body&&(a.matches('input,textarea,select')||a.isContentEditable))b.push('focus');
+  if(OB.busy||S.ob.some(x=>x.state==='sending'))b.push('sending');
+  return b;
+}
+function liveCheck(){
+  const x=newsNow(), busy=x&&x.kind==='refresh'?liveBusy():[];
+  const what=liveReload(x,tabStore.get(LIVE_KEY),{hidden:document.hidden,busy,hold:busy.length||document.hidden?'':refreshSaid()});
+  if(what!=='go')return;
+  tabStore.set(LIVE_KEY,x.key);  // once per page print: a page that comes back old shows the popup
+  tabStore.set(LIVE_PLACE,JSON.stringify({t:S.thread||'',v:S.view,top:$('body').scrollTop,pin:!!S.pin}));
+  if(!newsRefresh(true))tabStore.set(LIVE_PLACE,'');
+}
+setInterval(liveCheck,1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)liveCheck()});
+/* back to the scroll place the page had before it moved by itself: once what it showed is drawn again */
+let livePlace=null;try{livePlace=JSON.parse(tabStore.get(LIVE_PLACE)||'null')}catch(e){}
+tabStore.set(LIVE_PLACE,'');
+if(livePlace&&livePlace.t&&!livePlace.pin)S.pin=false;
+function livePlaceBack(n){
+  const p=livePlace;if(!p||(S.thread||'')!==p.t||S.view!==p.v)return;
+  if(p.t&&n!==p.t)return;
+  livePlace=null;if(p.pin)return;
+  const b=$('body');b.scrollTop=p.top;if(p.t)S.pin=false;
+}
+setTimeout(()=>{livePlace=null},20000);

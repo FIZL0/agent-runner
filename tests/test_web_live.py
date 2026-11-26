@@ -1542,5 +1542,23 @@ def test_banner_f402c(tmp: Path) -> None:
     eq(got, [False, False, True, True, True, True, False], 'where the banner shows')
 
 
+def test_live_reload_f207(tmp: Path) -> None:
+    """F207: a new page goes by itself once nothing is lost or interrupted, waits otherwise, and never loops."""
+    page = W.page_html().decode()
+    check('setInterval(liveCheck,1000)' in page and "addEventListener('visibilitychange',()=>{if(!document.hidden)liveCheck()})" in page,
+          'the page looks again each second and as a hidden tab is shown')
+    if not shutil.which('node'):
+        return
+    x = {'kind': 'refresh', 'key': 'page:b'}
+    clear = {'hidden': False, 'busy': [], 'hold': ''}
+    got = logic_js([['liveReload', x, '', clear], ['liveReload', x, '', {**clear, 'busy': ['focus']}],
+                    ['liveReload', x, '', {**clear, 'hold': 'Stop the mic first, then refresh.'}],
+                    ['liveReload', x, '', {**clear, 'hidden': True}], ['liveReload', x, 'page:b', clear],
+                    ['liveReload', x, 'page:a', clear], ['liveReload', {'kind': 'restart', 'key': 'restart:k'}, '', clear],
+                    ['liveReload', None, '', clear]])
+    eq(got, ['go', 'wait', 'wait', 'wait', '', 'go', '', ''],
+       'idle: reload; busy, holding or hidden: wait; once per page; a restart never; nothing new: nothing')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c), in_tmp(test_live_reload_f207)]))
