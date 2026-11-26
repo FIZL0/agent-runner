@@ -182,7 +182,13 @@ CLOSED = re.compile(r'^confirmed and ticked ', re.M)  # F452: what `plan.confirm
 NOTE_CHAT_WAIT = 3.0  # s the answer's result waits to hear whether the chat about its note started
 
 
-def note_chat(tid: str, row: dict, said: str, note: str) -> str:
+def answer_chat(sent: dict) -> str:
+    """F465: the name (cN) of the chat an answer's words started (`sent`: what SEND gave), '' when it cannot tell."""
+    m = re.search(r'\bcontrol (\d+)\b', (sent or {}).get('out') or '') if (sent or {}).get('ok') else None
+    return f'c{m[1]}' if m else ''
+
+
+def note_chat(tid: str, row: dict, said: str, note: str, named: list | None = None) -> str:
     """F452: a new chat with the `note` of the answer `said`, which closed `tid` (`row`: `need_row`, read before), and
     what to say of it. Never fails the answer, nor holds it longer than NOTE_CHAT_WAIT: it starts in a thread. The
     sent response is kept first and goes once the chat starts, so a run that ends meanwhile loses no note."""
@@ -194,6 +200,8 @@ def note_chat(tid: str, row: dict, said: str, note: str) -> str:
             from agent_runner import sent_responses
             sent = send(sent_responses.note_message(*response_of(tid, row), said, note))
             why = '' if sent['ok'] else ((sent.get('out') or '').splitlines() or [why])[0]
+            if named is not None and (c := answer_chat(sent)):  # F465
+                named.append(c)
         except (Exception, SystemExit) as e:  # noqa: BLE001
             why = str(e) or type(e).__name__
         try:
@@ -247,6 +255,8 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
                 if words and argv[1] == 'approve':  # F162a: its tasks are done, so the words go where a reply does
                     sent = SEND[0](f'{tid}: approved. {words}')
                     to_chat = sent['ok']
+                    if c := answer_chat(sent):  # F465
+                        r['chat'] = c
                     if not sent['ok']:
                         why = (sent['out'].splitlines() or [''])[0]
                         S.log(f'{tid}: approved; the words with it went to no chat ({why}): {words}')
@@ -254,13 +264,19 @@ def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
             r.update(said=done, gone=tid)
             words = ' '.join((note or '').split())
             if words and argv[:2] == ['plan', 'confirm'] and CLOSED.search(r['out'] or ''):  # F452: no agent gets it
-                r['said'], to_chat = f'{done}. {note_chat(tid, row, (text or "").strip(), note.strip())}', True
+                named: list = []
+                r['said'], to_chat = f'{done}. {note_chat(tid, row, (text or "").strip(), note.strip(), named)}', True
+                if named:  # F465
+                    r['chat'] = named[0]
             if not to_chat and not (argv[0] == 'pitch' and pitch_waits(tid)):  # a part of a pitch settles nothing yet
                 said = (text or '').strip()
                 keep_response(tid, row, sheet_said(tid, said) if argv[0] == 'sheet' else said, note)
         return r
     title = P.titles(S.C.todo).get(tid, '')
-    return SEND[0](f'{tid}{f" ({title})" if title else ""}: {text}')
+    sent = SEND[0](f'{tid}{f" ({title})" if title else ""}: {text}')
+    if c := answer_chat(sent):  # F465: the page lists it under Quiet, new
+        sent = {**sent, 'chat': c}
+    return sent
 
 
 def as_data(value: str) -> str:
