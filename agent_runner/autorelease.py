@@ -144,3 +144,13 @@ def auto_release(branch: str, idle: bool = False, merging: bool = False) -> str:
         hold.close()
         if not merging:
             MERGE.release()
+
+
+def auto_release_landed(branch: str) -> str:
+    """B849a: a landing that reaches `[run] auto_release` every queues the release while its merge still holds MERGE,
+    before the next merge starts its gate. Never fails the landing."""
+    try:
+        return auto_release(branch, merging=True)
+    except Exception as e:  # noqa: BLE001
+        S.log(f'auto release at a landing failed: {e}')
+        return ''

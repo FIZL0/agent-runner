@@ -14,7 +14,7 @@ from unittest import mock
 
 from _check import check, eq, git, report
 
-from agent_runner import autorelease as A, merge as M, plan as P, runner as R, state as S  # noqa: E402
+from agent_runner import autorelease as A, plan as P, runner as R, state as S  # noqa: E402
 
 TODO = """# TODO
 
@@ -52,10 +52,10 @@ def test_starved():
                 A.AUTO_RELEASE_SEEN[0] = None
                 eq(A.auto_release('main'), '', f'the tick at {i} gets no MERGE')
                 if i < 10:
-                    eq(M.auto_release_landed('main'), '', f'not at {i}')
+                    eq(A.auto_release_landed('main'), '', f'not at {i}')
                     continue
                 # the landing runs inside its merge's MERGE turn: here, the held lock stands in for it
-                tid = M.auto_release_landed('main')
+                tid = A.auto_release_landed('main')
                 if i == 10:
                     check(tid, 'queued at the 10th landing')
                 else:
