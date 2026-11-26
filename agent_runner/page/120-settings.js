@@ -151,7 +151,7 @@ const settingBusy=id=>S.ob.filter(x=>x.setbar&&x.args.changes.some(c=>`${c.table
 /* F202b: the row's changes that are not saved yet, with where they go when that is not where the row saves */
 /* F447a: under the working branch: what Save will do, or why the pick cannot be saved */
 function branchHTML(k,side){
-  const s=branchSays(k,settingNow(k,side,true),settingText(k.value));
+  const s=branchSays(k,settingNow(k,side,true),settingText(k['has_'+side]?k[side]:k.value));
   return s.text?`<div class="small setnew${s.bad?' v-bad':''}">${esc(s.text)}</div>`:'';
 }
 function notSaved(k,side){

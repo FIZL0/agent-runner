@@ -1035,5 +1035,5 @@ _Avoid_: scope switch, home picker
 The branch finished work is applied to and tasks start from; found by itself when not set.
 _Said_: working branch
 _On screen_: Working branch
-_In code_: [git] master_branch
+_In code_: [git] master_branch, isBranch, branchSays, branchHTML
 _Avoid_: main branch, master branch
