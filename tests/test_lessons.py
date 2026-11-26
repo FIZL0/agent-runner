@@ -42,6 +42,8 @@ def test_matching_and_caps():
             check(False, 'a long lesson is refused')
         except ValueError:
             check(True, 'a long lesson is refused')
+        L.add(d, 'y' * 200, ['zzz/q.py'])
+        check(L.new_id('y' * 200) in L.read(d)[0], 'a 200-character lesson is taken')
         L.drop(d, b, 'wrong now')
         live, dropped = L.read(d)
         check(b not in live and 'wrong now' in dropped[b][2], 'a drop is logged with its reason')
@@ -70,11 +72,10 @@ def test_merge_two_adds():
         git(r, 'add', '-A')
         git(r, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base')
         git(r, 'checkout', '-qb', 'side')
-        run(r, 'plan', 'lesson', 'add', 'side one', '--files', 'src/b.py')
-        git(r, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'side')
+        run(r, 'plan', 'lesson', 'add', 'side one', '--files', 'src/b.py')  # a plan edit here commits itself
         git(r, 'checkout', '-q', 'main')
         run(r, 'plan', 'lesson', 'add', 'main one', '--files', 'src/a.py')
-        git(r, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'main')
+        eq(git(r, 'status', '--porcelain'), '', 'the add is committed')
         git(r, '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', '--no-edit', 'side')
         texts = [v[0] for v in L.read(r / 'plan')[0].values()]
         eq(sorted(texts), ['base one', 'main one', 'side one'], 'both adds kept')
@@ -83,6 +84,10 @@ def test_merge_two_adds():
     theirs = L.render({'L000001': ('a', ['x'], ''), 'L000002': ('b', ['y'], '')}, {})
     live, dropped = L.parse(L.merge(base, ours, theirs))
     eq((list(live), list(dropped)), (['L000002'], ['L000001']), 'a drop on one side stays dropped')
+    base = L.render({}, {'L000001': ('a', ['x'], 'today: wrong')})
+    ours = L.render({'L000001': ('a', ['x'], '')}, {})
+    live, dropped = L.parse(L.merge(base, ours, base))
+    eq((list(live), list(dropped)), (['L000001'], []), 'a lesson added again after its drop is kept')
 
 
 if __name__ == '__main__':

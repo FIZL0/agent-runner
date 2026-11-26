@@ -142,7 +142,10 @@ def merge(base: list[str], ours: list[str], theirs: list[str]) -> list[str]:
     """Three-way: every live lesson either side has (ours first), less any lesson dropped or removed on either side."""
     (bl, bd), (ol, od), (tl, td) = parse(base), parse(ours), parse(theirs)
     dropped = {**td, **od}
-    gone = set(dropped) | {i for i in bl if i not in ol or i not in tl}
+    readded = {i for i in {**ol, **tl} if i in bd}  # dropped before, added again on a side since
+    for i in readded:
+        dropped.pop(i, None)
+    gone = (set(dropped) - readded) | {i for i in bl if i not in ol or i not in tl}
     live = {i: v for i, v in {**tl, **ol}.items() if i not in gone}
     live = {i: live[i] for i in [*ol, *tl] if i in live}
     return render(live, dropped)
@@ -173,11 +176,31 @@ def install_driver(cwd, rel: str) -> None:
         att.write_text('\n'.join(have + [w]) + '\n', encoding='utf-8')
 
 
+def save(c, msg: str, commit: bool = True) -> None:
+    """Install the merge driver for LESSONS.md and, as a plan edit, commit it at once in the main checkout (a
+    worktree's change goes in with its task's commit)."""
+    top = subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=str(c.plan_dir), capture_output=True,
+                         text=True).stdout.strip()
+    if not top:
+        return
+    try:
+        install_driver(top, path(c.plan_dir).resolve().relative_to(Path(top).resolve()).as_posix())
+    except (ValueError, OSError):
+        return
+    if commit and path(c.plan_dir).exists():
+        from agent_runner import plan
+        plan._commit(Path(top), [path(c.plan_dir)], msg)
+
+
 def brief_lines(c, task_files: list[str]) -> list[str]:
     """The brief's section: lessons for the task's files, after dropping those whose files are gone."""
     if not c.raw['plan'].get('lessons') or not task_files:
         return []
     gone = drop_gone(c.plan_dir, c.root)
+    if gone:
+        save(c, f'lessons dropped, their files are gone: {", ".join(gone)}')
+    else:
+        save(c, '', commit=False)
     got = matching(c.plan_dir, task_files)
     out = ['', '## Lessons for these files (wrong? `plan lesson drop ID "why"`)'] if got else []
     out += [f'- {i} {t}' for i, t in got]
@@ -206,15 +229,12 @@ def command(c, words: list[str], prog: str = 'plan') -> int:
                     text.append(rest[k])
                     k += 1
             i = add(c.plan_dir, ' '.join(text), files)
-            try:
-                install_driver(c.plan_dir, Path(path(c.plan_dir)).resolve().relative_to(
-                    Path(subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=str(c.plan_dir),
-                                        capture_output=True, text=True).stdout.strip()).resolve()).as_posix())
-            except (ValueError, OSError):
-                pass
+            save(c, f'lesson {i} added')
             print(f'added lesson {i}')
         elif verb == 'list':
             gone = drop_gone(c.plan_dir, c.root)
+            if gone:
+                save(c, f'lessons dropped, their files are gone: {", ".join(gone)}')
             live, _ = read(c.plan_dir)
             for i, (t, f, _) in live.items():
                 print(f'{i} {t} | files: {", ".join(f)}')
@@ -224,6 +244,7 @@ def command(c, words: list[str], prog: str = 'plan') -> int:
                 print('no lessons')
         elif verb == 'drop' and len(rest) >= 2:
             drop(c.plan_dir, rest[0], ' '.join(rest[1:]))
+            save(c, f'lesson {rest[0]} dropped')
             print(f'dropped lesson {rest[0]}')
         else:
             print(f'usage: {prog} lesson add "TEXT" --files a,b | lesson list | lesson drop ID "why"', file=sys.stderr)
