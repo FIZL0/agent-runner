@@ -31,10 +31,10 @@ function talkDraw(){
   const sl=reads?'Stop speaking':TK.held?'Read the reply aloud':TS.read?'Read replies aloud: on':'Read replies aloud: off';
   spk.className='spk'+(reads?' on':TS.read?'':' off');spk.setAttribute('aria-label',sl);if(reads)spk.removeAttribute('aria-pressed');else spk.setAttribute('aria-pressed',String(TS.read));spk.title=sl;setHTML(spk,reads?I.stop:TS.read?I.speak:I.mute);
 }
-/* the person's words to the Talk session; true once sent */
-async function talkSend(msg){
+/* the person's words to the Talk session; true once sent. voice: words the mic sent, outside any tap, so the browser's voice is not unlocked here (B166a) */
+async function talkSend(msg,voice){
   const to=talkName(), len=to?feedOf(to).length:0, mark=to&&S.feeds[to]?feedMark(feedOf(to)):null;  // B134
-  if(TK.state!=='speaking')TK.state='thinking';TK.said=msg;TK.note=TK.held='';S.pin=true;if(chatShown())toEnd(true);unlockSpeech();loadVoices();render(true);
+  if(TK.state!=='speaking')TK.state='thinking';TK.said=msg;TK.note=TK.held='';S.pin=true;if(chatShown())toEnd(true);if(!voice)unlockSpeech();loadVoices();render(true);
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
   const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true,gen:TK.gen};TK.wait=w;

@@ -436,7 +436,7 @@ const feedOf = n => S.feeds[n].entries, talkName = () => 'c5', micWhy = () => ''
 const talkDraw = () => {}, talkSend = t => sent.push(t), talkTyping = () => false, voices = () => speechSynthesis.getVoices();
 eval(logic + `
 let TS = talkSetParse('');
-` + grab('function speak(') + line('function hush(') + grab('function playReply(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function listen(') + grab('function hear(') + grab('function micSent(') + grab('function earEnd(') + grab('function holdLost(') + grab('function micStop(')
+` + grab('function speak(') + line('function hush(') + grab('function playReply(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + 'const AU={el:null,got:null,ok:false};' + grab('function shush(') + grab('function unlockAudio(') + grab('function unlockSpeech(') + grab('function listen(') + grab('function hear(') + grab('function micSent(') + grab('function earEnd(') + grab('function holdLost(') + grab('function micStop(')
   + page.slice(page.indexOf('/* F124: hold to talk'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {defaults: TS, parsed: talkSetParse('{"read":false,"voice":"Ava","mic":"hold","auto":true}'), junk: talkSetParse('nope')};
 const mic = {target: {closest: s => s === '[data-mic]' ? {} : null}, button: 0};
@@ -495,7 +495,7 @@ let micEl = null;  // a redraw of the mic's markup makes a new element
 eval(logic + `
 function render() { if (setHTML($('talkmic'), talkMic())) els.mic = micEl = {...el(), setPointerCapture(id) { this.cap = id }}; talkDraw() }
 let TS = talkSetParse('');
-` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'holdLost', 'micStop', 'micPage', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
+` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'shush', 'unlockAudio', 'unlockSpeech', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'holdLost', 'micStop', 'micPage', 'async function micCopy', 'async function micCopyText'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
   + page.slice(page.indexOf('/* B162: the mic report\'s pointer'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {}; render();
 // two aborts: one retry by itself, then the words
@@ -946,7 +946,7 @@ const el = () => ({classList: {toggle() {}}, setAttribute(k, v) { this[k] = v },
 const $ = k => els[k] = els[k] || el(), I = {stop: 'STOP', talk: 'MIC', speak: 'SPEAKER', mute: 'MUTE', keys: ''};
 const S = {view: 'talk', thread: null, sheet: '', feeds: {}}, feedOf = n => (S.feeds[n] || {}).entries || [], kept = {};
 const TK = {state: '', playing: '', note: '', held: '', later: [], wait: null, watch: null, heard: '', hold: false, ear: null, unlocked: true, trail: null, report: ''};
-let TS; const micWhy = () => '', TM_KEY = 'tm', store = {get: k => kept[k] || ''}, tabStore = store, talkWaitName = () => 'c5', talkSet = (k, v) => { TS = {...TS, [k]: v} };
+let TS; const micWhy = () => '', TM_KEY = 'tm', store = {get: k => kept[k] || ''}, tabStore = store, talkWaitName = () => 'c5', talkSet = (k, v) => { TS = {...TS, [k]: v} }, talkName = () => 'c5', talkWas = () => '';
 const RUN_VERSION = '', DK = {};
 // a send waits for its reply, as talkSend does
 const talkSend = async t => { sent.push(t); if (TK.state !== 'speaking') TK.state = 'thinking'; awaitReply() };
@@ -955,7 +955,7 @@ const lands = t => { if (!TK.wait) awaitReply(); S.feeds.c5.entries = [{kind: 'y
 const press = k => { const b = {}, e = {target: {closest: s => s === k ? b : null}, button: 0, pointerId: 1, pointerType: 'touch', detail: 1}; return e };
 eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run speech:'), page.indexOf('const talkTyping='))
  + line('const chatShown=') + grab('function talkAway(') + line('const talkTyping=') + line('function setHTML(') + line('const MIC=')
- + ['micWhenFree', 'micFree', 'talkDraw', 'talkHear', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('') + line('function hush(')
+ + ['micWhenFree', 'micFree', 'talkDraw', 'talkHear', 'unlockSpeech', 'talkLastReply', 'speakerTap', 'speak', 'listen', 'hear', 'micSent', 'keptSend', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('') + line('function hush(')
  + page.slice(page.indexOf("document.addEventListener('visibilitychange',()=>{if(TK.ear)"), page.indexOf('/* F124: a swipe right anywhere'))
  + `const click = k => { const e = press(k), q = s => e.target.closest(s); ` + ['data-mic', 'data-spk'].map(k => line("  if(q('[" + k + "]'))").trim()).map(x => '(() => {' + x.replace(/\/\/ F93.*/, '') + '})();').join('') + ` };
 const shows = () => { talkDraw(); return [els.mic.innerHTML, els.mic['aria-label'], els.spk.innerHTML, els.spk['aria-label'], els.talkline.textContent, els.spkbox.hidden] };

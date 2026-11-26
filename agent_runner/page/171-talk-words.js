@@ -1,6 +1,6 @@
 function listen(){
   const why=micWhy();if(why)return toast(why,true);
-  if(TK.state==='listening'){micStop('a tap');return unlockAudio()}  // B166
+  if(TK.state==='listening'){micStop('a tap');unlockAudio();return unlockSpeech()}  // B166; B166a: the second tap unlocks the browser's voice
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
      and recognition hears nothing (talkSend unlocks speech). B174: a press during a reply cuts it and listens: clips
      stop here, the browser's voice right after rec.start(), or here when this listen must wait for a recognizer. */
@@ -101,10 +101,10 @@ function micSent(t,why){
   }
   TK.kept='';
   micLog(`sent ${t.words.length} letters, ended by ${why}`,false,t.trail,true);
-  return talkSend(t.words);
+  return talkSend(t.words,true);  // B166a: a voice send, outside any tap
 }
 /* B216a1: Send as it is */
-function keptSend(){if(TK.kept&&!TK.state){const w=TK.kept;TK.kept='';unlockAudio();return talkSend(w)}}
+function keptSend(){if(TK.kept&&!TK.state){const w=TK.kept;TK.kept='';unlockAudio();unlockSpeech();return talkSend(w)}}
 /* the listen is over: its words go out, or the talk line says why there are none */
 function earEnd(t){
   TK.ear=null;TK.heard='';if(TK.state==='listening')TK.state='';

@@ -56,7 +56,7 @@ document.addEventListener('pointerdown',e=>{
 });
 /* B162: a pointercancel (iOS took the touch) does not end the hold: the finger is still down. Its touchend does, and
    after a touchcancel the mic stops by itself at a silence, or at the next hold's end */
-const letGo=by=>{if(TK.hold){TK.hold=false;TK.upAt=Date.now();micStop(by);if(by!=='page hidden')unlockAudio();talkNext()}};
+const letGo=by=>{if(TK.hold){TK.hold=false;TK.upAt=Date.now();micStop(by);if(by!=='page hidden'){unlockAudio();unlockSpeech()}talkNext()}};
 document.addEventListener('pointerup',e=>{if(e.pointerId===TK.holdId)letGo('pointerup')});
 const onMic=e=>e.target.closest&&e.target.closest('[data-mic]');  // a touch event's target is where that finger went down
 document.addEventListener('pointercancel',e=>{if(e.pointerId===TK.holdId&&e.pointerType!=='touch')holdLost()});  // a pen or mouse has no touchend

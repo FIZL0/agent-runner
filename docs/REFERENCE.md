@@ -329,7 +329,7 @@ The run's printed addresses (the run log and `agent-runner status`) end with a l
 
 - **Talk.** The first view in the sidebar, for running the run hands-free: tap the mic, speak, and the
   reply is read aloud (the browser's own speech recognition; the reading is run speech when an engine is installed, else the browser's own). The speaker button left of the
-  mic turns reading aloud on and off; while a reply is read it is the stop (stop icon, "Stop speaking"), and a tap ends that
+  mic turns reading aloud on and off (on: accent colour and ring; a toast says which); turned on with a reply there, it reads the last reply in that tap. While a reply is read it is the stop (stop icon, "Stop speaking"), and a tap ends that
   reading, while replies still waiting keep their play buttons. The mic button keeps its mic icon and is never a stop: a press
   on it while a reply is read cuts the sound at once and listens in that same press (Tap and Hold), and a reply cut that way
   does not start again by itself. The line over the mic says "Speaking…" while a reply is read, and the typing mode's box row

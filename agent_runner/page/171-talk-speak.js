@@ -1,6 +1,19 @@
-function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
+function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap. Call it only in a real tap, after rec.start() (B132);
+     B166a: the voice counts as unlocked only once that utterance started */
   soundAs('playback');unlockAudio();  // F158
-  try{if(window.speechSynthesis&&!TK.unlocked){speechSynthesis.speak(new SpeechSynthesisUtterance(''));TK.unlocked=true}}catch(e){}
+  try{if(window.speechSynthesis&&!TK.unlocked){const u=new SpeechSynthesisUtterance('');u.volume=0;u.onstart=()=>{TK.unlocked=true};speechSynthesis.speak(u)}}catch(e){}
+}
+/* B166a: the last Talk reply, '' when there is none */
+function talkLastReply(){const ms=talkMsgs(feedOf(talkName()||talkWas())).filter(m=>m.w==='a');return ms.length?plain(ms[ms.length-1].text):''}
+/* B166a: the speaker's tap: stops a reading, reads a held reply, or turns read aloud on or off; on reads the last reply at once */
+function speakerTap(){
+  if(talkReads())return hush();
+  if(TK.held&&!TK.ear&&TK.state!=='thinking'){unlockSpeech();return speak(TK.held)}
+  const on=!TS.read;unlockAudio();talkSet('read',on);
+  if(!on){toast('Replies are not read aloud');return render(true)}
+  unlockSpeech();
+  const last=!TK.ear&&TK.state!=='thinking'&&!TK.wait?talkLastReply():'';
+  if(last)speak(last);else{toast('Replies are read aloud');render(true)}
 }
 /* F124: read text aloud; key, the reply a play button reads (a Talk reply read by itself has none). Auto listen:
    once a Talk reply was read to its end, the mic listens again */

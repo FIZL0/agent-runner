@@ -76,6 +76,7 @@ function talkNext(){
    w: turn, the reply's TK.turn; own, the browser's voice reads; clip, the element that plays a clip; at, the last sign
    of sound, and len, the letters the browser's voice is at; begun, heard at all; hid, the page was hidden; end(e) */
 const SOUND_LOOK=1000, SOUND_LIMIT=10000;
+const SPEECH_NONE='No sound came. Tap play on the reply, and check the silent switch and the volume';  // B166a
 function soundWatch(w){TK.watch=w;setTimeout(()=>soundCheck(w,true),SOUND_LOOK)}
 function soundCheck(w,more){
   if(TK.watch!==w||TK.turn!==w.turn||!talkReads())return;
@@ -88,6 +89,7 @@ function soundCheck(w,more){
     if(TK.trail)micLog(`sound: the browser's own voice ${w.begun?'ended, with no event':'never started'}`);
     const ok=quiet&&w.begun&&!w.hid&&!ss.paused;  // read to its end: auto listen may follow, so no speechSynthesis call (B132)
     if(!ok)ss.cancel();
+    if(!w.begun)TK.note=SPEECH_NONE;  // B166a: the voice never started: said in words, with what to do
     w.end(ok?null:{type:'error'});
   }else if(a){
     if(a.ended){if(a.onended)a.onended()}

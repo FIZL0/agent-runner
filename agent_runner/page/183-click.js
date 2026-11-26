@@ -85,7 +85,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-mictest]'))return micTest(x.dataset.mictest);  // B162b1
   if(q('[data-mictestcopy]'))return micCopyText('Mic test',micTestText());
   if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(TS.mic==='hold'&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
-  if(q('[data-spk]')){if(talkReads())return hush();if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);unlockAudio();talkSet('read',!TS.read);return}
+  if(q('[data-spk]'))return speakerTap();
   if(x=q('[data-talkmode]'))return talkMode(x.dataset.talkmode);
   if(x=q('[data-speak]'))return playReply(x.dataset.speak);
   if(q('[data-menu]')){if(!S.drawer)drawerBlur();S.drawer=true;render();return}
