@@ -151,7 +151,7 @@ const set = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
 const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
 const kept = {}, store = {get: k => kept[k] || '', set: (k, v) => { kept[k] = v }}, HKEY = '', HOME_PAGE = false;
-const S = {f: {}, ob: [], setOpen: {}, set, snap: {}, view: 'settings'}, esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const S = {f: {}, ob: [], setOpen: {}, set, snap: {}, view: 'settings', setTab: 'device'}, esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');  // F462: rows edit this device's file
 const I = {chev: '', x: 'x'}, card = t => `<div>${t}</div>`, emptyCard = card, obCards = () => '', controlOf = () => null, foldIn = (k, t) => t, SHEETS = {};
 const bar = {}, $ = () => bar, setHTML = (el, h) => { el.h = h }, loopsInStep = () => {}, obState = x => x.state, obBtns = () => '[btns]', OB = {};
 const document = {activeElement: null, querySelector: () => null, querySelectorAll: () => [], addEventListener: () => {}}, ears = {}, addEventListener = (k, f) => { ears[k] = f };
@@ -256,7 +256,7 @@ def test_bar(tmp: Path) -> None:
     eq(o['failed'][:2], ['1 change not saved Undo Save', 0], 'a Save that failed is in the bar again')
     check('Not saved yet. HTTP' in o['failed'][2], 'with why, on its row', o['failed'])
     check('[btns]' in o['old'], "one an older run refused has the outbox's buttons", o['old'])
-    eq((o['kinds'], o['kinds2']), ('1 change not saved Undo Save', ['2 changes not saved Undo Save', ['set:project:models.kinds']]), 'the kinds rows count as rows, one key')
+    eq((o['kinds'], o['kinds2']), ('1 change not saved Undo Save', ['2 changes not saved Undo Save', ['set:device:models.kinds']]), 'the kinds rows count as rows, one key, in the file of the tab in view')
     eq(o['kindsRow'], 2, 'both rows say so')
     check(o['more'][0].startswith('1 change') and not o['more'][1] and 'Not saved yet: 7 for everyone' in o['more'][2], "More…'s other home goes to the bar", o['more'])
     eq(o['parent'], [False, True], 'a row that depends on a changed one shows')

@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: Settings has two tabs, Project (runner.toml) and This device (runner.local.toml); every row edits the file of the tab in view, a row this device overrides shows its value on Project, Changed counts per tab, and the Settings bar names both files (F462)
 - Changed: `home install` sets up Runner Home's Tailscale Serve https address without asking (or says why it stays http only), then asks once in a terminal whether devices on the tailnet may open Home without the key, default No (F461).
 - Fixed: a chat closed for being idle stays in Chats, grayed under Quiet, until chat_quiet passes, and a message to it reopens it; before, it vanished from the list. A chat closed from the TUI or the run page still goes at once (B859).
 - Added: a task taken by hand has Cancel on its queue row in the run page and the terminal UI (it keeps the work and parks the task), and no Priority or Do it here while taken (F455b).

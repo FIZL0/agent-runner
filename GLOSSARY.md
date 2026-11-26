@@ -327,8 +327,8 @@ _Avoid_: archived chat, old chat, stale chat
 **Device override**:
 A setting this machine's runner.local.toml sets over the project's runner.toml
 _Said_: This device
-_On screen_: Saved on this device only, Reset on this device, This device overrides everyone's
-_In code_: save_local_setting, setting_device, setting_reset
+_On screen_: This device (the Settings tab), This device: 5 (its marker on Project), Reset
+_In code_: save_local_setting, setting_device, setting_reset, overSays, overNote
 _Avoid_: local config, user setting
 
 **Run app**:
@@ -1023,3 +1023,10 @@ _Said_: subtasks in a dropdown
 _On screen_: Parts, in the order they run
 _In code_: split.list, partRows, partsBar, partCard, 079-plan-parts
 _Avoid_: subtasks dropdown
+
+**Settings tab**:
+One of the two views of Settings, Project (runner.toml, for everyone) or This device (runner.local.toml); every row edits the file of the tab in view
+_Said_: Project and This device tabs
+_On screen_: Project, This device
+_In code_: setTab, settingsTab, SET_TABS, .settabs
+_Avoid_: scope switch, home picker

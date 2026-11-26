@@ -103,6 +103,11 @@ function settingSays(k,t){
 /* where a row's control saves: this device when it has its own value (it wins), else the setting's home */
 const settingSide=k=>k.has_device||k.home==='device'?'device':'project';
 const settingChanged=k=>k.source!=='default'&&JSON.stringify(k.value)!==JSON.stringify(k.default);
+/* F462: Settings' two tabs, Project (runner.toml, everyone) and This device (runner.local.toml): a row edits the file of the
+   tab in view. Changed per tab: what that file sets apart from the default; on This device, every value of its own */
+const SET_TABS=[['project','Project'],['device','This device']];
+const tabChanged=(k,tab)=>tab==='device'?!!k.has_device:k.source==='project'?settingChanged(k):!!k.has_project&&JSON.stringify(k.project)!==JSON.stringify(k.default);
+const overCount=all=>all.filter(k=>k.has_device).length;
 const settingHit=(k,q)=>!q||`${k.name} ${k.desc} ${k.table}.${k.key} [${k.table}] ${k.key}`.toLowerCase().includes(q);
 /* shown only while its parent is on */
 function settingShows(k,all){

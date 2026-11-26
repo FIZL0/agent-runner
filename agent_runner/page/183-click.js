@@ -127,6 +127,7 @@ document.addEventListener('click',async e=>{
   if(q('[data-planqclear]')){setqClear('planq');return}  // F212
   if(q('[data-planqload]')){PQ.err='';planLoad();render(true);return}
   if(q('[data-setqclear]')){setqClear();return}
+  if(x=q('[data-settab]')){settingsTab(x.dataset.settab,x.dataset.id);return}  // F462
   if(q('[data-setchanged]')){S.setChanged=!S.setChanged;render(true);return}
   if(x=q('[data-thread]')){const n=x.dataset.thread;return viewGo(()=>{S.ctx=null;open(n)},n===S.thread?null:n)}
   if(q('[data-newtalk]')){newTalk();if(S.live)viewIn($('body'));return}  // F157

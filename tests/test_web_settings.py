@@ -623,7 +623,7 @@ const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g
 const set = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
 const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b));
-const S = {f: {}, ob: [], setOpen: {}, set, snap: {}}, esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const S = {f: {}, ob: [], setOpen: {}, set, snap: {}, setTab: 'device'}, esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');  // F462: the program is this device's
 const I = {chev: '', x: ''}, card = t => `<div>${t}</div>`, emptyCard = card, obCards = () => '', controlOf = () => null, foldIn = (k, t) => t, SHEETS = {};
 const document = {querySelector: () => null, querySelectorAll: () => []}, render = () => {}, toast = t => { throw new Error(t) };
 let saved = [];
@@ -639,7 +639,7 @@ const was = [k.has_device, k.device]; k.has_device = true; k.device = '/opt/wrap
 pick(AGENT_OTHER, 'device', true); resetSetting('run.agent', 'device'); out.reset = !('setother:device:run.agent' in S.f); saved = [];
 pick('claude', 'device', true); out.picked = saved; saved = []; S.f = {};
 pick('claude', 'project', false); out.sheet = saved.length; saveSetting('run.agent', 'project'); out.sheetSaved = saved; S.f = {};
-setModels(); out.models = [...settingsHTML().matchAll(/data-k="set:([a-z.]+)/g)].map(m => m[1]);
+S.setTab = 'project'; setModels(); out.models = [...settingsHTML().matchAll(/data-k="set:([a-z.]+)/g)].map(m => m[1]);
 console.log(JSON.stringify(out));`);
 """
 
