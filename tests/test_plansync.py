@@ -365,7 +365,9 @@ def test_fetch_taken(tmp: Path) -> None:
     from agent_runner import runner as R, sched
     R.init(repo)
     check(sched.fetch_taken('T9'), 'the pushed branch is fetched')
-    eq(git(repo, 'rev-parse', 'took/T9'), pushed, 'into took/T9, which slots.start checks out')
+    eq(git(repo, 'rev-parse', 'took/T9'), pushed, 'into took/T9')
+    eq(sched.took_base('T9'), pushed, 'which slots.start checks out')
+    eq(sched.took_base('T9'), '', 'once: the took/T9 branch is dropped')
     check(not sched.fetch_taken('T8'), 'a task with no pushed branch starts fresh')
 
 

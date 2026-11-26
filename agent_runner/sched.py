@@ -646,6 +646,14 @@ def fetch_taken(tid: str) -> bool:
     return got
 
 
+def took_base(tid: str) -> str:
+    """F467: the commit of took/<tid> (what `fetch_taken` fetched), the branch dropped, or '' when there is none."""
+    sha = git('rev-parse', '-q', '--verify', f'refs/heads/took/{tid}').stdout.strip()
+    if sha:
+        git('branch', '-D', f'took/{tid}')
+    return sha
+
+
 PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
 
 
