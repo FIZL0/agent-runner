@@ -343,10 +343,36 @@ def test_repo_setup(tmp: Path):
         PS.store, PS.claims = real_store, real_claims
 
 
+def test_fetch_taken(tmp: Path) -> None:
+    print('takeover: the task starts from the task/<ID> branch the gone run pushed (F467)')
+    tmp.mkdir()
+    git(tmp, 'init', '-q', '--bare', 'origin.git')
+    repo = tmp / 'repo'
+    repo.mkdir()
+    git(repo, 'init', '-q')
+    (repo / 'a.py').write_text('# a\n')
+    (repo / '.gitignore').write_text('.runner/\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    git(repo, 'remote', 'add', 'origin', str(tmp / 'origin.git'))
+    git(repo, 'checkout', '-qb', 'task/T9')
+    (repo / 'a.py').write_text('# gone run\n')
+    git(repo, 'commit', '-qam', 'T9 wip')
+    pushed = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'push', '-q', 'origin', 'task/T9')
+    git(repo, 'checkout', '-q', '-')
+    git(repo, 'branch', '-D', 'task/T9')
+    from agent_runner import runner as R, sched
+    R.init(repo)
+    check(sched.fetch_taken('T9'), 'the pushed branch is fetched')
+    eq(git(repo, 'rev-parse', 'took/T9'), pushed, 'into took/T9, which slots.start checks out')
+    check(not sched.fetch_taken('T8'), 'a task with no pushed branch starts fresh')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         return report([lambda: test_all(Path(t)), lambda: test_in_repo(Path(t) / 'in-repo'),
-                       lambda: test_repo_setup(Path(t) / 'setup')])
+                       lambda: test_repo_setup(Path(t) / 'setup'), lambda: test_fetch_taken(Path(t) / 'took')])
 
 
 if __name__ == '__main__':

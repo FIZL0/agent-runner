@@ -844,12 +844,15 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     ask = asked(tid)  # F102: it asked the person, and the answer is in: its own session goes on
     wait = {} if ask else shared_tools.waited(tid)  # F168: it gave up its slot for a shared tool, free now
     base = f'asked/{tid}' if ask else f'waiting/{tid}' if wait else stack.begin(tid, branch)
+    if took := not (ask or wait) and not git('rev-parse', '-q', '--verify', f'refs/heads/took/{tid}').returncode:
+        base = f'took/{tid}'  # F467: a gone run's claim taken over: go on from the task/<ID> branch it pushed
     if not wait:
         shared_tools.forget(tid)
     co = git('checkout', '-q', '-B', f'task/{tid}', base, cwd=d)
     if co.returncode:  # e.g. another worktree still holds task/<ID>: never start an agent on the wrong branch
         log(f'slot {n}: checkout task/{tid} failed: {co.stderr.strip()[:200]}')
         return None
+    git('branch', '-D', base) if took else None
     if ask:
         if ask.get('dirty'):
             git('reset', '-q', 'HEAD~1', cwd=d)  # its edits are uncommitted again, as the session left them
