@@ -958,5 +958,19 @@ def test_project_file_f448b(tmp: Path) -> None:
     check('Cannot change here now: a task is running' in d['locked'] and 'data-f="set' not in d['locked'], 'a locked key says why, no control', d['locked'])
 
 
+def test_ask_settings_f449(tmp: Path) -> None:
+    """F449: Settings' top button opens a new chat with the first message in the box (nothing sent), sent as written."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('data-about="settings">Ask about my settings<' in page, 'the button at the top of Settings')
+    check("a==='settings'" in page and 'SETTINGS_ASK' in page, 'about() puts the message in the box')
+    from agent_runner import guide as G
+    check('Ask about my settings' in G.control_topic('settings'), 'guide settings has a part on it')
+    if not shutil.which('node'):
+        return
+    got = logic_js([['compose', {'kind': 'settings', 'label': 'x'}, 'What settings fit?', []],
+                    ['ctxKey', {'kind': 'settings'}]])
+    eq(got, ['What settings fit?', '+settings'], 'sent as written, one new chat key')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a), in_tmp(test_working_branch_f447a), in_tmp(test_project_file_f448b)]))
+    raise SystemExit(report([in_tmp(test_ask_settings_f449), in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a), in_tmp(test_working_branch_f447a), in_tmp(test_project_file_f448b)]))

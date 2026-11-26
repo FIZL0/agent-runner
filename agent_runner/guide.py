@@ -84,6 +84,12 @@ worktree, then `{cmd} take ID --merge`), never as an edit in the main checkout. 
 
 Keys, passwords and devices (a machine or test rig agents reach) are no settings: they are entered on the run app's
 Tools page, whose link `{cmd} device link` prints. Never ask for a secret in chat, and never write one down.
+
+**Ask about my settings** (the Settings page's top button) opens a chat that asks what settings fit how the person
+uses this project. Read `{cmd} settings`, look at the project (its tests, size, recent run log, usage, this
+machine), ask about the use case only what you cannot see, then recommend each change in one line: `[table] key =
+value`, why, and who it is saved for (runner.local.toml for this machine, runner.toml for everyone). Make only those
+the person says yes to, as above.
 """
 
 # C2: branch-only material, printed by `{cmd} guide <topic>` when the pointer in GUIDE or the control brief fires.
