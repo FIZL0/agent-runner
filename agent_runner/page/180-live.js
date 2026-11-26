@@ -84,21 +84,10 @@ function connect(n=0){
   const fine=()=>{heard=Date.now();n=0;clearTimeout(lost);lost=0;$('offline').hidden=true;lostDraw(false)};
   es.onmessage=e=>{fine();let s;try{s=JSON.parse(e.data)}catch(x){console.error('events: not a snapshot',x);return}
     try{takeSnap(s)}catch(x){console.error('events: the snapshot did not draw',x)}};
-  es.addEventListener('ping',()=>{if(ES===es)fine()});
+  if(es.addEventListener)es.addEventListener('ping',()=>{if(ES===es)fine()});
   es.onerror=()=>{if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000);
     if(es.readyState===2){es.onerror=null;if(ES===es)ES=null;askClosed();dialT=setTimeout(()=>connect(n+1),dialWait(n))}};  // F402b3b
 }
-/* B838: a stream that went quiet past two pings, or a page shown again, dials again; the bar shows if no answer in 8 s */
-function redial(why){
-  if(!ES){if(why==='shown'&&dialT)connect();return}  // waiting out a dial's backoff: shown again, it dials now
-  if(!streamRedial(heard,Date.now(),why))return;
-  if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000);
-  connect();
-}
-setInterval(()=>redial('quiet'),5000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)redial('shown')});
-addEventListener('pageshow',e=>{if(e.persisted)redial('shown')});
-addEventListener('online',()=>redial('shown'));
 async function poll(){try{takeSnap(await (await fetch(tq('snapshot'))).json())}catch(e){}setTimeout(poll,4000)}
 async function loadFeed(n){
   if(String(n||'')[0]==='@'||isNew(n))return;  // F137: a chat still starting has no feed yet; F172: nor one not started
@@ -117,4 +106,15 @@ setInterval(()=>{if(S.thread&&!document.hidden)loadFeed(S.thread)},2000);
 setInterval(()=>{for(const n of Object.keys(S.sent))if(n!==S.thread&&S.sent[n].pending.length&&!document.hidden)loadFeed(n)},4000);  // B154
 setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited reply is polled in any view
   if(w)loadFeed(w);else if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);
+/* B838: a stream that went quiet past two pings, or a page shown again, dials again; the bar shows if no answer in 8 s */
+function redial(why){
+  if(!ES){if(why==='shown'&&dialT)connect();return}  // waiting out a dial's backoff: shown again, it dials now
+  if(!streamRedial(heard,Date.now(),why))return;
+  if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000);
+  connect();
+}
+setInterval(()=>redial('quiet'),5000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)redial('shown')});
+addEventListener('pageshow',e=>{if(e.persisted)redial('shown')});
+addEventListener('online',()=>redial('shown'));
 
