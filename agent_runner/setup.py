@@ -323,11 +323,16 @@ def offer_web_open(root: Path) -> str | None:
     if not snap['ok'] or row['has_project'] or row['has_device']:
         return None
     try:
-        a = input('Who can reach the run page: other devices too, or only this machine? [Everywhere/here] ').strip().lower()
+        while True:
+            a = input('Who can reach the run page: other devices too (default) or only this machine? '
+                      '[Everywhere/here] ').strip().lower()
+            if a in ('', 'e', 'everywhere', 'h', 'here'):
+                break
+            print('Answer everywhere or here (Enter: everywhere).')
     except (EOFError, KeyboardInterrupt):
         print()
         return None
-    value = 'here' if a in ('h', 'here', 'only', 'this', 'local', 'localhost') else 'everywhere'
+    value = 'here' if a in ('h', 'here') else 'everywhere'
     try:
         f = CF.local_file(root) or CF.ensure_local(root)
         out = CF.setting_edit(f.read_bytes(), 'run', 'web_open', value, name=f.name)

@@ -192,8 +192,9 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
    one, and Ollama also sets `local = true`. A kind in `[models.kinds]` on another provider moves to the
    pick too, because a kind wins over `code`. A failed login is said, and the models are still written: the pick's tasks wait for the login. With no terminal it
    asks nothing and prints the login commands. `--yes` does not answer it.
-5. At a terminal it asks once who can reach the run page: `Who can reach the run page: other devices too, or only
-   this machine? [Everywhere/here]`. Enter takes the default, everywhere; `here` keeps the page on this machine.
+5. At a terminal it asks once who can reach the run page: `Who can reach the run page: other devices too (default) or only
+   this machine? [Everywhere/here]`. Enter takes the default, everywhere; `here` keeps the page on this machine; any
+   other answer asks again.
    The answer goes to `[run] web_open` in runner.local.toml (this machine only), so it is not asked again, nor
    when `web_open` is set already. Ctrl-C or Ctrl-D writes nothing and goes on; with no terminal it is not asked.
    Settings > Run page opens on changes it later, from the next run.

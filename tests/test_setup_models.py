@@ -203,6 +203,7 @@ def test_program():
 def test_web_open():
     print('F454b: who can reach the run page: asked once at a terminal, written to runner.local.toml')
     for answers, want, said in ((['here'], 'here', 'this machine only'), ([''], 'everywhere', 'other devices too'),
+                                (['hre', 'h'], 'here', 'this machine only'),
                                 ([KeyboardInterrupt()], None, None), ([EOFError()], None, None)):
         with tempfile.TemporaryDirectory() as t:
             root = repo(t)
@@ -231,6 +232,12 @@ def test_web_open():
         CF._cfg.cache_clear()
         with mock.patch.object(S, 'at_terminal', lambda: True), mock.patch.object(builtins, 'input', lambda q='': 1 / 0):
             eq(S.offer_web_open(root), None, 'set in runner.toml: not asked')
+        CF._cfg.cache_clear()
+    with tempfile.TemporaryDirectory() as t:
+        root = repo(t, local='[run]\nweb_open = "everywhere"\n')
+        CF._cfg.cache_clear()
+        with mock.patch.object(S, 'at_terminal', lambda: True), mock.patch.object(builtins, 'input', lambda q='': 1 / 0):
+            eq(S.offer_web_open(root), None, 'set in runner.local.toml: not asked')
         CF._cfg.cache_clear()
     with tempfile.TemporaryDirectory() as t:
         root = repo(t)
