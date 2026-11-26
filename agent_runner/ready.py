@@ -128,7 +128,8 @@ def change(rid: str, words: str, c=None, todo=None, done=None) -> str:
     title = P.titles(done, todo, width=200).get(tid, tid)
     files = P.files_on_line(line)
     kind = re.match(r'[A-Z]+', tid)
-    new = P.add(kind.group(0) if kind else 'F', f'Change what {tid} made ({title}): {words}'
+    kind = kind.group(0) if kind and kind.group(0) in ('B', 'F', 'D', 'C', 'T') else 'F'  # a concept's or research's: F
+    new = P.add(kind, f'Change what {tid} made ({title}): {words}'
                 + (f' | files: {", ".join(files)}' if files else ''), pri='normal', todo=todo, done=done)
     _file(c, tid).unlink(missing_ok=True)
     return f'{new} filed to change what {tid} made; {tid} stays done'

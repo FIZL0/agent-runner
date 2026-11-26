@@ -153,6 +153,8 @@ def test_ready(root: Path, env: dict) -> None:
     UA = ui_model
     print('done --ready ticks and lists a ready item; an ordinary task lists nothing')
     todo = root / 'plan' / 'TODO.md'
+    r = run(root, 'done', 'F6', 'F6: x', '--blocked', 'DECIDE: which one?', '--ready', 'The video is ready', env=env)
+    check(r.returncode == 2 and 'Nothing ticked' in r.stderr, 'refused with --blocked', r.stdout + r.stderr)
     r = run(root, 'done', 'F6', 'F6: video', '--ready', 'Showcase video is ready: watch it', '--ready-link',
             'https://x.test/v.mp4', env=env)
     check(r.returncode == 0 and 'ticked F6' in r.stdout, 'F6 ticks', r.stdout + r.stderr)

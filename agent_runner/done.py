@@ -113,6 +113,10 @@ def main(argv: list[str] | None = None) -> int:
     if why := until_refusal(a, c):  # F427b
         print(why, file=sys.stderr)
         return 2
+    if a.ready and (a.blocked or a.artifact or plan.concept(a.id)):  # F445b: never twice with a concept or an ask
+        print(f'{PROG}: --ready goes with a task that ticks, not with --blocked or a concept page, which ask the '
+              f'person already. Nothing ticked.', file=sys.stderr)
+        return 2
     if why := asks.line_refusal(a.id, a.blocked, a.after, a.until, c, PROG):  # B795
         print(why, file=sys.stderr)
         return 2
