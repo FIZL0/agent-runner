@@ -847,5 +847,33 @@ def test_provider_login_f406c(tmp: Path) -> None:
     check(o['claude'][0] == 'login' and 'Send code' in o['claude'][1] and 'password' not in o['claude'][1], "claude's is as it was", o['claude'])
 
 
+def test_plan_share_f460a(tmp: Path) -> None:
+    """F460a: Settings > Plan's "Share the plan between machines": the `plan_share` action runs plan repo-setup and
+    answers its lines; the page shows them, the last one apart as what the other machine runs."""
+    from agent_runner import web_actions
+    check(U.ACTIONS.get('plan_share') is web_actions.plan_share, 'the action is there')
+    with mock.patch.object(U, 'plan_repo_setup', return_value={'ok': True, 'lines': ['Moved the plan to x', 'git clone y && run plan join']}) as m:
+        r = U.act('plan_share', target=' git@h:p.git ')
+    eq(m.call_args.args, (' git@h:p.git ',), 'the URL goes to plan repo-setup')
+    eq((r['ok'], r['lines'], r['out']), (True, ['Moved the plan to x', 'git clone y && run plan join'], 'Moved the plan to x\ngit clone y && run plan join'), 'its lines')
+    with mock.patch.object(U, 'plan_repo_setup', return_value={'ok': False, 'lines': ['no gh login']}):
+        eq(U.act('plan_share')['ok'], False, 'a refusal is no ok')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('Share the plan between machines' in page and 'data-planshare' in page and "name:'plan_share'" in page, 'the button and its action')
+    if not shutil.which('node'):
+        return
+    js = page.split('<script id="logic">', 1)[1].split('</script>', 1)[0]
+    (tmp / 'logic.js').write_text(js + '\nmodule.exports.planShareView=planShareView;\n', encoding='utf-8')
+    (tmp / 'driver.js').write_text(LOGIC_DRIVER, encoding='utf-8')
+    cases = [['planShareView', {'ok': True, 'lines': ['a', 'b', 'run this']}], ['planShareView', {'ok': False, 'out': 'no'}],
+             ['planShareView', None]]
+    p = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'logic.js')], input=json.dumps(cases), capture_output=True, text=True, timeout=60)
+    check(p.returncode == 0, 'node runs', p.stderr[-800:])
+    got = json.loads(p.stdout or '[]') or [None] * 3
+    eq(got[0], {'lines': ['a', 'b'], 'cmd': 'run this', 'err': False}, 'the last line is the command')
+    eq(got[1], {'lines': ['no'], 'cmd': '', 'err': True}, 'a refusal says why')
+    eq(got[2]['err'], True, 'no answer')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c)]))
+    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a)]))

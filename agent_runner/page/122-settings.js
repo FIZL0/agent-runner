@@ -109,3 +109,20 @@ addEventListener('storage',e=>{  // another tab
   draftFields();
   if(S.set&&S.view==='settings')loadSettings();else render(true);
 });
+/* --- F460a: Settings > Plan: "Share the plan between machines" moves the plan to a repo of its own (the URL field: where; empty:
+   the runner's choice) by `plan_share`, and shows what it said, the last line being what the other machine runs ------------ */
+Object.assign(S,{planShare:null});  // null, {going:true}, or planShareView()
+function planShareHTML(){
+  const r=S.planShare, going=!!(r&&r.going);
+  const said=r&&!going?`${r.lines.map(x=>`<div class="small${r.err?' v-bad':''}">${esc(x)}</div>`).join('')}${r.cmd?`<div class="small">On the other machine, run:</div><div class="row"><code class="grow">${esc(r.cmd)}</code></div>`:''}`:'';
+  return `<div class="sec">Plan<span class="ln"></span></div>${card(`<div class="row"><input class="fld grow" data-f="planshare" placeholder="Plan repo URL (empty: made for you)" aria-label="Plan repo URL"><button class="btn" data-planshare${going?' disabled':''}>${going?'Sharing…':'Share the plan between machines'}</button></div>${said}`,'','data-k="sett:planshare"')}`;
+}
+async function planShare(){
+  if(S.planShare&&S.planShare.going)return;
+  S.planShare={going:true};render(true);
+  let j;
+  try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'plan_share',args:{target:String(S.f.planshare||'').trim()}})});j=await r.json()}
+  catch(e){j={ok:false,out:`Not sent: ${e.message||e}`}}
+  S.planShare=planShareView(j);render(true);
+}
+document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('[data-planshare]'))planShare()});
