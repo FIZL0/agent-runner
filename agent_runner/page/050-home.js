@@ -33,7 +33,7 @@ function homeDone(it,j){
   if(it.name==='start')H.begun[key]=Date.now();else if(it.name==='stop')delete H.begun[key];
   H.turn++;  // a list asked for before this is older than it
   H.projects=H.projects&&H.projects.map(p=>p.key===key?projectDid(p,it.name,it.args.arg):p);
-  const said=homeSaid(it.name,it.args.arg,it.say,j);if(said)toast(said);  // B851c: no raw output; none when the card shows it
+  const p0=(H.projects||[]).find(p=>p.key===key), said=homeSaid(it.name,it.args.arg,it.say,j,p0&&p0.slots);if(said)toast(said);  // B851c: no raw output; none when the card shows it
   loadProjects();
 }
 const homeHas=cid=>S.hob.some(x=>x.cid===cid);

@@ -27,6 +27,7 @@ out.failWhy = m.ctlSaid('Pause', {ok: false, out: 'The run is not up'}, false);
 for (const [n, a] of [['pause'], ['resume'], ['stop'], ['start'], ['slots', '5'], ['slots', '+1'], ['slots', '-1']])
   out['home_' + n + (a || '')] = m.homeSaid(n, a, n, ok);
 out.homeFail = m.homeSaid('pause', '', 'Pause · p', {ok: false, out: RAW});
+out.homeFour = m.homeSaid('slots', '+1', 'x', ok, 4);
 console.log(JSON.stringify(out));
 """
 
@@ -51,6 +52,7 @@ def test_control_said_b851c() -> None:
         eq(o['home_' + k], '', f'Home {k}: the card shows it, no toast')
     eq([o['home_slots+1'], o['home_slots-1']], ['One more slot', 'One slot less'], 'Home slot steps say plain words')
     eq(o['homeFail'], 'Not done: Pause · p', 'Home failure hides raw output')
+    eq(o['homeFour'], '5 slots', 'Home Slot +1 says the new count')
     for v in o.values():
         check('/' not in v and '`' not in v, 'no path in a toast', v)
 

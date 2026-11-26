@@ -11,9 +11,10 @@ function ctlSaid(say,j,shows){
   return j.said||`${say}: done`;
 }
 /* Home's project controls: the card shows pause, go on, stop and a set slot count at once; '+1'/'-1' say the change */
-function homeSaid(name,arg,say,j){
+function homeSaid(name,arg,say,j,was){
   if(!j||!j.ok)return ctlSaid(say,j,false);
-  if(name==='slots'&&!/^\d+$/.test(String(arg||'')))return arg==='-1'?'One slot less':'One more slot';
+  if(name==='slots'&&!/^\d+$/.test(String(arg||''))){const n=typeof was==='number'?was+(arg==='-1'?-1:1):null;
+    return n!=null?`${n} slot${n===1?'':'s'}`:arg==='-1'?'One slot less':'One more slot'}
   return ctlSaid(say,j,['start','pause','resume','stop','slots'].includes(name));
 }
 if(typeof module!=='undefined')module.exports={plainWhy,ctlSaid,homeSaid};
