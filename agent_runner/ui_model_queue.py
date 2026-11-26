@@ -561,6 +561,8 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
                 f'Not {w}: {how}' for w in ['this'] + ([x['id'] for x in xs] if len(xs) > 1 else [])
                 for how in ('reopen', 'drop')])
         needs[-1]['answers'] = need_answers(needs[-1])  # C33: both pages draw these
+        if frame := concept_frame(needs[-1]):
+            needs[-1]['frame'] = frame  # F463: its card shows the options page framed
     concepts += page_rows({c['concept'] or c['id'] for c in concepts} | {c['id'] for c in concepts},
                           {n['id'] for n in needs})
     return needs, concepts

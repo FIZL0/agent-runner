@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a concept's Needs you card shows its options page framed under the summary, with Expand and Open in claude.ai beside it, so the options read without leaving the run page (F463).
 ## 0.75.0 (2026-11-26)
 
 - Added: `agent-runner setup` at a terminal asks once who can reach the run page (other devices too, the default, or only this machine) and writes `[run] web_open` to runner.local.toml; Settings' "Run page opens on" says it applies from the next run (F454b).

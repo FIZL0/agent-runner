@@ -108,6 +108,7 @@ document.addEventListener('click',async e=>{
     if(S.sheet)closeSheet();
     if(!tid&&ctlTwice(c.key,S.held))return;  // B851b: the same press, still pending, is not sent again
     outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:need?`${tid} · answered “${text}”`:c.label+(tid?` ${tid}`:''),...(c.where==='need'?{need:tid}:c.where==='concept'?{concept:tid}:c.where==='shelved'?{shelved:tid}:{})});return}  // F124: through the outbox
+  if(x=q('[data-framefull]')){const k=x.dataset.framefull;S.frameFull={...(S.frameFull||{}),[k]:!(S.frameFull||{})[k]};render(true);return}  // F463
   if(x=q('[data-pitchopen]')){const n=S.snap.needs[+x.dataset.pitchopen];if(!n)return;  // F98
     S.pitchOpen={...(S.pitchOpen||{}),[n.id]:!(S.pitchOpen||{})[n.id]};S.sure=null;render(true);return}
   if(x=q('[data-pitchno]')){const n=S.snap.needs[+x.dataset.pitchno];if(!n)return;

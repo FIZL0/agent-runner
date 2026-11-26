@@ -27,3 +27,6 @@
 .waychat{display:flex;align-items:center;gap:var(--s1);justify-self:start;max-width:100%;min-width:0;min-height:var(--tap);margin:calc(-1*var(--s3)) 0;padding:0;border:0;background:none;color:var(--muted);text-align:left;cursor:pointer;touch-action:manipulation}
 .waychat .ell{min-width:0;text-decoration:underline;text-decoration-color:var(--line2);text-underline-offset:3px} .waychat svg{width:14px;height:14px;flex:none}
 .waychat:hover{color:var(--fg)}
+/* F463: a concept item's options page framed in its Needs you card: the card's width, about 60vh, Expand to the screen */
+.cframe{display:grid;gap:var(--s2);min-width:0} .cframe iframe{width:100%;height:60vh;border:1px solid var(--line);border-radius:var(--r-m);background:var(--bg)}
+.cframe.full iframe{height:calc(100dvh - 120px)}
