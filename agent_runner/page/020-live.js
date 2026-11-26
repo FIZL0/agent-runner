@@ -77,7 +77,7 @@ function obDone(it,j){
   if(j&&j.seen&&j.confirm&&it.ctl){  // F186: a release the last snapshot did not show is open: asked where New release stands
     obChange(b=>obDrop(b,it.cid));for(const c of controlsOf('release'))Object.assign(c,{confirm:j.confirm,seen:j.seen});
     S.sure=it.ctl.split(':')[0];toast(j.confirm,true);snapNow();return}
-  if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
+  if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:it.ctl?ctlSaid(it.say,j,false):`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
   if(it.name==='response_chat')S.responseGone=[...(S.responseGone||[]),it.args.rid];  // F425b
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){S.came=(S.came||[]).filter(x=>x.name!==j.name&&now-x.at<60000).concat([{name:j.name,was:'@'+it.cid,start:it.at,say:it.say,state:'sending',at:now}]);carrySent(j.name,j,it.ask);boxMove('@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name,true)}
@@ -88,7 +88,7 @@ function obDone(it,j){
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
   else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
-    else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
+    else{const ck=String(it.ctl), said=ctlSaid(it.say,j,ck.endsWith(':')&&!!ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n));if(said)toast(said)}}  // F124, B851c: plain words, none when the button shows it
   if(it.res&&FD.n===it.res)feedLoad();  // F114
   if(it.done)toast(it.done);
 }
