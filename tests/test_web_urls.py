@@ -119,7 +119,7 @@ def test_offer(tmp: Path) -> None:
     eq(ran, [], 'and runs no tailscale serve')
     within(Tailscale('', code=1), offer)
     eq(ran, [], 'nor with a Tailscale that does not answer')
-    eq(said[:1], ["No https link while Tailscale is not connected: Talk's mic needs one."], 'and says why')
+    eq(said[:1], ["http only (Tailscale is not connected; Talk's mic needs https)."], 'and says why')
 
 
 if __name__ == '__main__':

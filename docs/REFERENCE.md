@@ -276,8 +276,11 @@ last address in `X-Forwarded-For`, read from a loopback peer only, so another pr
 Home's links put the https address first, and only while `tailscale status --json` says BackendState Running; otherwise the plain http links are given, with no error. `home status`, `home install` (and its QR code, which holds the https
 link when there is one) and a run's link through Home (`/p/<project>/`) list a Tailscale Serve https address for
 Home's port first, then http by hostname and LAN address; Talk's mic and dictation need https. With no Tailscale
-Serve for Home (and Tailscale connected), `home install` offers (in a terminal, y/n) to run `tailscale serve --bg --https=8771
-http://127.0.0.1:8770` (Home's port plus one), or prints that command. Home's page
+Serve for Home, `home install` runs `tailscale serve --bg --https=8771 http://127.0.0.1:8770` (Home's port plus
+one) without asking, as runs do, when Tailscale is connected and port 8771 is free; otherwise it prints
+`http only (<why>)` (F461). Then, in a terminal only (skipped when stdin is no tty, or `tailnet` is trusted
+already), it asks once, y/N, default No, whether devices on the tailnet may open Home and run pages without the key
+(`home trust add tailnet`), warning that anyone on the tailnet can then do everything the page does. Home's page
 is now the run app itself: at `/` it is the Overview, Needs you over all projects, then a card per project with one
 main button (Start run or Open) and a … sheet for the rest (Pause or Go on, Slots, Stop and Unlist; the last two ask first), plus
 a + Project button and Devices. Projects with a run up (running, idle or paused) come first, then
