@@ -87,7 +87,7 @@ LOG_TAIL = 20  # run log lines a snapshot carries
 # module's, as before the split: a test's `ui_model.X = v` reaches all of it). Each has its test file:
 # tests/test_ui_model.py (queue, snapshot), _release, _actions, _controls, _chat, _need; the settings' are in
 # tests/test_config.py and test_web_settings.py. Put new code in the file of its area, not in this one.
-PARTS = ('ui_model_queue', 'ui_model_snapshot', 'ui_model_actions', 'ui_model_controls', 'ui_model_chat', 'ui_model_need', 'ui_model_settings')
+PARTS = ('ui_model_queue', 'ui_model_snapshot', 'ui_model_actions', 'ui_model_controls', 'ui_model_chat', 'ui_model_need', 'ui_model_concept', 'ui_model_sheet', 'ui_model_settings')
 
 
 def _load_parts() -> None:
