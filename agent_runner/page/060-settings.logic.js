@@ -23,7 +23,7 @@ function pickValue(k,t){
 }
 /* its options as [value, words], the one it has now among them; null when it is typed */
 function pickOptions(k,now){
-  if(isBranch(k)){const o=k.picks.map(p=>[p.value,branchWords(p)]);if(now!=null&&!o.some(x=>x[0]===now))o.push([now,String(now)]);return o}
+  if(isBranch(k)){const o=k.picks.map(p=>[p.value,branchWords(p)]);if(now!=null&&!o.some(x=>x[0]===now))o.push([now,now===''?'Found by itself':String(now)]);return o}
   const w=k.words||{}, o=(k.choices&&k.choices.length?k.choices.map(c=>[String(c),w[String(c)]||String(c)]):Object.keys(w).map(x=>[x,w[x]]));
   if(!o.length)return null;
   if(now!==''&&now!=null&&!o.some(x=>x[0]===now))o.push([now,settingSays(k,now)]);
@@ -56,12 +56,12 @@ function partSet(t,part,x,k){
    working_branch.py): a plain pick of the row, not the agent's picker */
 const isBranch=k=>!!k&&k.table==='git'&&k.key==='master_branch'&&Array.isArray(k.picks);
 const branchWords=p=>`${p.auto?`Found by itself (${p.branch})`:p.branch}${p.bad?` (${p.bad})`:''}`;
-/* what Save of `v` does, said before Save; '' when `v` is the branch it has */
+/* what Save of `v` does, said before Save: {text, bad}; no text when `v` is the branch it has */
 function branchSays(k,v,saved){
-  if(v===saved)return '';
+  if(v===saved)return{text:'',bad:false};
   const p=k.picks.find(x=>x.value===v), b=p?p.branch:v;
-  if(p&&p.bad)return `It cannot be saved: ${p.bad}.`;
-  return `Save: finished work is applied to ${b}, and tasks start from it, once the run restarts.`;
+  if(p&&p.bad)return{text:`It cannot be saved: ${p.bad}.`,bad:true};
+  return{text:`Save: finished work is applied to ${b}, and tasks start from it, once the run restarts.`,bad:false};
 }
 const AGENT_OTHER='other path', hasPicks=k=>Array.isArray(k.picks)&&!isBranch(k);
 const agentSaved=(k,v)=>['value','device','project'].some(x=>k[x]!==undefined&&settingText(k[x])===v);

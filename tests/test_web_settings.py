@@ -831,7 +831,8 @@ def test_working_branch_f447a(tmp: Path) -> None:
         return
     d = json.loads(r.stdout)
     check('<select class="fld setpick"' in d['row'] and 'Found by itself (main)' in d['row'] and 'data-setagent' not in d['row'], 'a pick of the branches', d['row'])
-    check('Save:' not in d['row'], 'nothing to say before a change')
+    check('Save:' not in d['row'] and 'v-bad' not in d['row'], 'nothing to say before a change', d['row'])
+    check('v-bad' in d['gone'], 'and in the refusal colour')
     check('Save: finished work is applied to dev' in d['dev'], 'what Save does', d['dev'])
     check('once the run restarts' in d['dev'], 'and that it waits for a restart')
     check('It cannot be saved: not a branch to pick' in d['gone'], 'a bad pick says why', d['gone'])

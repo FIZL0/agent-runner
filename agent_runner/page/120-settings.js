@@ -137,11 +137,10 @@ function settingRow(k,o={}){
 }
 const settingBusy=id=>S.ob.filter(x=>x.setbar&&x.args.changes.some(c=>`${c.table}.${c.key}`===id)).map(x=>`<div class="small">${x.setbar==='undo'?'Undo':'Save'}: ${esc(obState(x))}</div>`).join('');
 /* F202b: the row's changes that are not saved yet, with where they go when that is not where the row saves */
-/* F447a: under the working branch: what Save will do, or the switch that waits for a restart */
+/* F447a: under the working branch: what Save will do, or why the pick cannot be saved */
 function branchHTML(k,side){
   const s=branchSays(k,settingNow(k,side,true),settingText(k.value));
-  const w=k.next?`Waits for a restart to switch from ${k.now} to ${k.next}${k.held&&k.held.length?`: ${[].concat(k.held).join(', ')}`:''}.`:'';
-  return [s,w].filter(Boolean).map(t=>`<div class="small setnew${/^It cannot/.test(t)?' v-bad':''}">${esc(t)}</div>`).join('');
+  return s.text?`<div class="small setnew${s.bad?' v-bad':''}">${esc(s.text)}</div>`:'';
 }
 function notSaved(k,side){
   return ['device','project'].map(s=>{
