@@ -65,7 +65,7 @@ def split_parts(ls: list[str], tid: str, i: int, tasks: list[tuple], done: list[
         return None
     landed = sum(known[t] is None for t in own)
     order = {t: n for n, (_, _, t, _, _) in enumerate(tasks)}  # F453: plan order, from the plan itself
-    every = [t for t in own if known[t] is None] + sorted((t for t in own if known[t] is not None), key=lambda t: order.get(t, 0))
+    every = [t for t in own if known[t] is None] + sorted((t for t in own if known[t] is not None), key=lambda t: order.get(t, len(order)))
     return {'parts': len(own), 'landed': landed, 'open': [{'id': t, 'title': known[t]} for t in own if known[t] is not None],
             'list': [{'id': t, 'title': names[t], 'landed': known[t] is None} for t in every],
             'words': f'Split: {landed} of {len(own)} part{"s" * (len(own) != 1)} landed'}

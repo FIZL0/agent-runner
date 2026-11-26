@@ -101,6 +101,9 @@ def test_list() -> None:
        [('F427a', True), ('F427d', False), ('F427c', False), ('F427b', False)], 'landed, then plan order')
     eq(got['F427']['split']['list'][0]['title'], 'part a', "a landed part's title")
     eq([p['id'] for p in got['F427']['split']['open']], ['F427d', 'F427c', 'F427b'], 'open is as it was')
+    named = parent.replace('F427d)', 'F427d, Z5)')
+    got = rows(lines([part('c'), named, '- [ ] **Z5** (follow-up, normal) named part | files: z.py'], []))
+    eq([p['id'] for p in got['F427']['split']['list']], ['F427c', 'Z5'], "a part named in '(split into …)' with an id of its own")
 
 
 if __name__ == '__main__':
