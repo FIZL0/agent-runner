@@ -486,6 +486,7 @@ START_TRIES = 3  # a task whose session will not start is tried this many times 
 
 
 _account = [-1e9, None]
+_account_login = ['']  # B848a: the login _account[1] was read for
 
 
 def usage_login() -> str:
@@ -526,6 +527,13 @@ def kept_usage(now: float | None = None) -> dict | None:
         return None
     if not isinstance(got, dict):
         return None
+    return live_windows(got, now)
+
+
+def live_windows(got, now: float | None = None) -> dict | None:
+    """B848a: a reading without its windows whose resets_at has passed; None when nothing is left."""
+    if not isinstance(got, dict):
+        return None
     now = time.time() if now is None else now
     got = {k: v for k, v in got.items() if not (isinstance(v, dict) and _resets_passed(v, now))}
     return got or None
@@ -548,7 +556,9 @@ def keep_usage(got: dict) -> None:
 
 def known_usage() -> dict | None:
     """B848a: the usage the cap reads with no fetch: this process's last reading, else the kept one."""
-    return _account[1] if isinstance(_account[1], dict) else kept_usage()
+    if isinstance(_account[1], dict) and _account_login[0] == usage_login():
+        return live_windows(_account[1])
+    return kept_usage()
 
 
 def account_usage() -> dict | None:
@@ -566,10 +576,11 @@ def account_usage() -> dict | None:
         got = json.load(urllib.request.urlopen(req, timeout=10))
         if not isinstance(got, dict):
             raise ValueError
-        _account[1] = got
+        _account[1], _account_login[0] = got, usage_login()
         keep_usage(got)
     except Exception:
-        _account[1] = kept_usage()
+        _account[1] = known_usage()  # the last good reading: this process's, else the kept one, same login only
+        _account_login[0] = usage_login()
     _account[0] = time.time()
     return _account[1]
 
