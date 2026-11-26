@@ -90,7 +90,8 @@ function connect(n=0){
 }
 /* B838: a stream that went quiet past two pings, or a page shown again, dials again; the bar shows if no answer in 8 s */
 function redial(why){
-  if(!ES||!streamRedial(heard,Date.now(),why))return;
+  if(!ES){if(why==='shown'&&dialT)connect();return}  // waiting out a dial's backoff: shown again, it dials now
+  if(!streamRedial(heard,Date.now(),why))return;
   if(!lost)lost=setTimeout(()=>{$('offline').hidden=false},8000);
   connect();
 }
