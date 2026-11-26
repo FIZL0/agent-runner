@@ -39,3 +39,7 @@ function ctlHold(snap,held){
   const heldShown=(raw.shown||[]).map(k=>k==='force'||k==='caps_on'?(run.forced?'caps_on':'force'):k);
   return Object.assign(snap,{_raw:raw,run,slots:out.slots,card:heldCard,shown:heldShown});
 }
+/* B851b: a press of `key` while the same one is still held is not sent again; Slot +1/-1 presses each count, and the
+   opposite press (Go on after Pause) is a different key, so it goes, in order, behind the first in the outbox */
+const CTL_EACH=['slot_add','slot_remove'];
+const ctlTwice=(key,held)=>!CTL_EACH.includes(key)&&(held||[]).some(p=>p.key===key);

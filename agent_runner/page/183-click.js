@@ -106,6 +106,7 @@ document.addEventListener('click',async e=>{
     if(c.chat){const n=c.where==='need'&&(S.snap.needs||[]).find(x=>x.id===tid);  // B139, C35: it asks a new chat
       newChat(rq.name,rq.args,`${c.label} ${tid}`,n?needChatAsk(n):`do ${tid} here`);return}
     if(S.sheet)closeSheet();
+    if(!tid&&ctlTwice(c.key,S.held))return;  // B851b: the same press, still pending, is not sent again
     outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:need?`${tid} · answered “${text}”`:c.label+(tid?` ${tid}`:''),...(c.where==='need'?{need:tid}:c.where==='concept'?{concept:tid}:c.where==='shelved'?{shelved:tid}:{})});return}  // F124: through the outbox
   if(x=q('[data-pitchopen]')){const n=S.snap.needs[+x.dataset.pitchopen];if(!n)return;  // F98
     S.pitchOpen={...(S.pitchOpen||{}),[n.id]:!(S.pitchOpen||{})[n.id]};S.sure=null;render(true);return}
