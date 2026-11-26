@@ -280,7 +280,7 @@ function conceptCard(c,i){  // B219a: its one Chat is the new chat view; concept
   const b=x=>x.pick!=null?`<button class="btn ${x.rec?'pri':''}" data-pick="${i}" data-o="${x.pick}">${esc(x.label)}</button>`
     :x.about?`<button class="btn" data-about="concept:${i}">Chat</button>`
     :`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`;
-  return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${taskChip(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(optionName(os.find(o=>o.rec)))}`:''}`:''}</span>
+  return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${taskChip(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(optionName(os.find(o=>o.rec)))}`:''}`:''}${c.page&&c.waits?' · also waits in Needs you':''}</span>
     <div class="btns">${conceptButtons(c).map(b).join('')}${actBtns(acts,c.id)}</div>${actSure(acts,c.id)}`,'',`data-k="concept:${esc(c.id)}"`);
 }
 function box(ph,foot){
