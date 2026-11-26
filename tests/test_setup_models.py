@@ -55,6 +55,7 @@ def setup(root: Path, answers=(), claude: str = '', terminal: bool = True, creds
     out = io.StringIO()
     CF._cfg.cache_clear()
     with mock.patch.object(S, 'offer_ttyd', lambda: None), mock.patch.object(S, 'offer_audit', lambda root: None), mock.patch.object(S, 'at_terminal', lambda: terminal), \
+            mock.patch.object(S, 'offer_web_open', lambda root: None), \
             mock.patch.object(M, 'claude_program', lambda r: claude), mock.patch.object(builtins, 'input', answer), \
             mock.patch.object(login, 'stored', lambda: creds or {}), mock.patch.object(subprocess, 'run', run), \
             mock.patch.dict('os.environ', {'GEMINI_API_KEY': ''}), contextlib.redirect_stdout(out):
@@ -199,5 +200,47 @@ def test_program():
             eq(M.claude_state(CLAUDE), want, out)
 
 
+def test_web_open():
+    print('F454b: who can reach the run page: asked once at a terminal, written to runner.local.toml')
+    for answers, want, said in ((['here'], 'here', 'this machine only'), ([''], 'everywhere', 'other devices too'),
+                                ([KeyboardInterrupt()], None, None), ([EOFError()], None, None)):
+        with tempfile.TemporaryDirectory() as t:
+            root = repo(t)
+            left = list(answers)
+
+            def answer(q=''):
+                a = left.pop(0)
+                if isinstance(a, BaseException):
+                    raise a
+                return a
+            CF._cfg.cache_clear()
+            with mock.patch.object(S, 'at_terminal', lambda: True), mock.patch.object(builtins, 'input', answer), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                line = S.offer_web_open(root)
+                again = S.offer_web_open(root) if want else None
+            CF._cfg.cache_clear()
+            f = root / CF.LOCAL
+            if want:
+                has(line, said, f'{answers}: said')
+                has(f.read_text(encoding='utf-8'), f'web_open = "{want}"', f'{answers}: written')
+                eq(again, None, f'{answers}: not asked once set')
+            else:
+                eq((line, f.exists()), (None, False), f'{answers}: left open')
+    with tempfile.TemporaryDirectory() as t:
+        root = repo(t, '[run]\nweb_open = "here"\n')
+        CF._cfg.cache_clear()
+        with mock.patch.object(S, 'at_terminal', lambda: True), mock.patch.object(builtins, 'input', lambda q='': 1 / 0):
+            eq(S.offer_web_open(root), None, 'set in runner.toml: not asked')
+        CF._cfg.cache_clear()
+    with tempfile.TemporaryDirectory() as t:
+        root = repo(t)
+        with mock.patch.object(S, 'at_terminal', lambda: False), mock.patch.object(builtins, 'input', lambda q='': 1 / 0):
+            eq(S.offer_web_open(root), None, 'no terminal, nothing set: not asked')
+        eq((root / CF.LOCAL).exists(), False, 'nothing written')
+    from agent_runner import setting_words as SW
+    has(SW.WORDS['run.web_open'][2], 'next run', 'the row says it starts with the next run')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_claude_only, test_ghe_no_claude, test_several, test_none, test_no_terminal, test_program]))
+    raise SystemExit(report([test_claude_only, test_ghe_no_claude, test_several, test_none, test_no_terminal, test_program,
+                             test_web_open]))

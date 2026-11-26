@@ -308,6 +308,37 @@ def offer_audit(root: Path) -> str | None:
         f'no audit by itself ([run] auto_audit = false in {f.name}: commit it; once committed, Settings on the run page can turn it on)'
 
 
+def offer_web_open(root: Path) -> str | None:
+    """F454b: ask at a terminal, once for this machine, who can reach the run page ([run] web_open: everywhere, the
+    default, or here). The answer goes to runner.local.toml, so it is not asked again; Enter takes the default;
+    Ctrl-C or Ctrl-D leaves it open. The line to say about it; None when nothing was asked. Never fails setup."""
+    from agent_runner import config as CF
+    if not at_terminal():
+        return None
+    try:
+        snap = CF.settings_snapshot(root)
+        row = next(k for t in snap['tables'] if t['table'] == 'run' for k in t['keys'] if k['key'] == 'web_open')
+    except (Exception, SystemExit):  # a config that does not load is the session's to mend
+        return None
+    if not snap['ok'] or row['has_project'] or row['has_device']:
+        return None
+    try:
+        a = input('Who can reach the run page: other devices too, or only this machine? [Everywhere/here] ').strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+    value = 'here' if a in ('h', 'here', 'only', 'this', 'local', 'localhost') else 'everywhere'
+    try:
+        f = CF.local_file(root) or CF.ensure_local(root)
+        out = CF.setting_edit(f.read_bytes(), 'run', 'web_open', value, name=f.name)
+        CF.write_whole(f, out, f.stat().st_mode & 0o777)
+    except (OSError, ValueError) as e:
+        return f'[run] web_open is not written to {CF.LOCAL}: {e}'
+    CF._cfg.cache_clear()
+    return ('the run page opens on this machine only' if value == 'here' else 'the run page opens on your other devices too') + \
+        f' ([run] web_open = "{value}" in {f.name}; Settings can change it)'
+
+
 def no_claude(root: Path) -> str:
     """F406d: what cannot run while this machine has no Claude Code, in one line; '' when it has one."""
     from agent_runner import setup_models as M
@@ -371,6 +402,9 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     for line in offer_models(root):
         said.append(line)
         print(f'agent-runner setup: {line}')
+    if opens := offer_web_open(root):
+        said.append(opens)
+        print(f'agent-runner setup: {opens}')
     if audits := offer_audit(root):
         said.append(audits)
         print(f'agent-runner setup: {audits}')
