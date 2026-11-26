@@ -219,7 +219,6 @@ _WARNS: dict[str, str] = {
     'run.pass_env': 'A variable that tests need and that goes away here fails them in every slot.',
     'run.shared_files': 'Tasks that change a file named here run together, and their merges may conflict.',
     'run.joinable': 'Both sides of a conflict are kept and nobody looks, which breaks code and prose.',
-    'git.master_branch': 'Tasks start from it and land on it after the next start of the run.',
     'git.push': 'Off, finished work stays on this machine.',
     'plan.dir': 'Chats use the task list there at once, and the run from its next start.',
     'plan.repo': 'Chats use the task list there at once, and the run from its next start.',
