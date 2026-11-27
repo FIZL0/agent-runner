@@ -28,8 +28,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  B772: tasks blocked (after ID) on it ask you "still wanted? [Keep / Drop]";
                                  --duplicate-of X / --overtaken-by X (or a WHY that says so): they wait on X
                                  instead while X is open, else go on. (after all) and releases go on either way
-    ./run plan cancel <ID> [--yes]   stop the slot running it, keep its work on wip/<ID> and park it (as --pri later), so
-                                 no run starts it until `edit <ID> --pri normal`; says the minutes worked and stops
+    ./run plan cancel <ID> [--yes]   stop the slot running it, keep its work on wip/<ID> and hold it in its place, so
+                                 no run starts it until `unhold <ID>`; says the minutes worked and stops
                                  nothing without --yes; refused while it lands
     ./run plan restore <ID> [WHERE]   undo a mistaken tick or drop: back from DONE.md as open [ ], same id, text
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
@@ -61,7 +61,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  plan edit; an error when no slot runs ID, with the question it asks the person and the
                                  command that answers it, or the `note` to run
     ./run plan shelve <ID>       later: stays blocked, off Needs you; `unshelve <ID>` brings it back
-    ./run plan hold <ID>         it keeps its place in the queue and no run starts it; `unhold <ID>` ends it
+    ./run plan hold <ID>         it keeps its place in the queue and no run starts it; `unhold <ID>` ends it; on a task
+                                 a slot of this run is on, it is cancelled first (as `cancel <ID> --yes`)
     ./run plan hold|unhold|move|drop|restore next-release …   the same for the Next release row ([run] auto_release),
                                  which is no task: `move` makes it a release that waits for the tasks above its place,
                                  `drop … WHY` skips that cut (the count starts from zero) and `restore` undoes it
@@ -2862,6 +2863,12 @@ def main(argv: list[str] | None = None) -> int:
         rc, argv = cancel.main(c, argv[1:])
         if rc:
             return rc
+    elif argv[:1] == ['hold'] and len(argv) > 1:  # F480: a slot of this run on it: cancelled first, then held
+        from agent_runner import cancel, row_hold
+        if row_hold.slot_on(c, argv[1]):
+            rc, argv = cancel.main(c, [argv[1], cancel.YES])
+            if rc:
+                return rc
     restart = False
     if argv[:1] == ['change'] and '--restart' in argv[2:]:
         restart, argv = True, [a for a in argv if a != '--restart']
@@ -3243,8 +3250,8 @@ def _p_unhold(a, x):
 
 def _p_cancel(a, x):
     from agent_runner import cancel
-    cancel.park(a.id, _text(a))
-    return x.say(f'cancelled {a.id}: parked, so no run starts it (`{PROG} edit {a.id} --pri normal` unparks it)')
+    cancel.hold(a.id, _text(a), x.todo)  # F480: held in its place, as `hold` does
+    return x.say(f'cancelled {a.id}: held, so it keeps its place and no run starts it (`{PROG} unhold {a.id}` ends it)')
 
 
 def _p_kinds(a, x):

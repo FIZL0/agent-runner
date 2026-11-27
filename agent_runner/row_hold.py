@@ -54,7 +54,14 @@ def under_way(c, tid: str) -> str:
         cl = plansync.claims(c).get(tid)
     except (OSError, SystemExit, ValueError) as e:
         return f'what works on it could not be read ({e})'
-    return f'{cl.who} has claimed it' if cl and not plansync.stale(cl) else ''
+    return f"another machine's run has claimed it ({cl.who})" if cl and not plansync.stale(cl) else ''
+
+
+def slot_on(c, tid: str) -> str:
+    """F480: the slot of this run that works on `tid` ('s2'), '' when none does (or it merges): `plan hold` then
+    cancels it first, as `plan cancel` does, and holds it in its place."""
+    where = P.run_on(c, tid)
+    return where if where.startswith('s') else ''
 
 
 def _open_line(ls: list[str], tid: str) -> int:

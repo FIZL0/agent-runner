@@ -191,7 +191,7 @@ you, to act on a task or when the person asks which one.
     rest; queued already: `{cmd} plan edit ID --pri high`), never critical unless it blocks work. "do that next": `{cmd} plan move ID top`. "drop it": `{cmd} plan drop ID "why"`.
     "that wasn't done", "bring it back": `{cmd} plan restore ID`
   - "hold F5", "not yet but keep its place": `{cmd} plan hold ID` (no run starts it until `{cmd} plan unhold ID`)
-  - "cancel F5", "stop working on it, keep the task": `{cmd} plan cancel ID --yes` (keeps its work and parks the task; `{cmd} plan edit ID --pri normal` unparks it)
+  - "cancel F5", "stop working on it, keep the task": `{cmd} plan cancel ID --yes` (keeps its work and holds the task in its place; `{cmd} plan unhold ID` ends the hold)
   - "split that up": `{cmd} plan add ID "part"` per part (IDa, IDb), then `{cmd} plan edit ID "<title> (split
     into IDa, IDb)"`: the parts run, then ID ticks itself
   - "stop and sleep / shut down when done": `{cmd} stop --suspend` / `{cmd} stop --shutdown`

@@ -1,5 +1,5 @@
 """F426d: `plan cancel ID`: the run stops the agent on a running task and keeps its work on wip/ID, then the task is
-parked (`--pri later`), so no run starts it again until the person unparks it. Nothing is cancelled while the task lands.
+held (F480, `plan hold`'s mark): it keeps its place and no run starts it again until the person unholds it. Nothing is cancelled while the task lands.
 
 The run's part is `loop_requests.cancels`; it answers each request with JSON: {"cancelled", "msg", "wip"}."""
 from __future__ import annotations
@@ -12,7 +12,7 @@ from agent_runner import plan as P
 
 KIND = 'cancel'  # the request's channel. Not 'halt': a merge reads those, and deletes the branch of a halted task
 YES = '--yes'
-ASK = 'Cancel stops its agent, keeps its work and parks the task: no agent starts it until you unpark it.'
+ASK = 'Cancel stops its agent, keeps its work and holds the task in its place: no agent starts it until you unhold it.'
 
 
 def worked(tid: str, where: str, minutes: int | None) -> str:
@@ -53,14 +53,14 @@ def landing(c, tid: str, where: str) -> str:
 
 
 def stop(c, tid: str, words: list[str], wait: float | None = None) -> tuple[int, str, str]:
-    """Ask the run to stop `tid`: (exit code, what to say, the note for its plan line). Code 0: the plan edit parks it."""
+    """Ask the run to stop `tid`: (exit code, what to say, the note for its plan line). Code 0: the plan edit holds it."""
     if [w for w in words if w != YES]:
         return 2, f'{P.PROG} cancel <ID> [{YES}]', ''
     if (d := taken_dir(c, tid)) is not None:  # F455a
         return stop_taken(c, tid, d, words)
     if not (where := P.run_on(c, tid)):
         return 1, (f'{P.PROG}: {tid} is not running, so there is nothing to cancel (`{P.PROG} edit {tid} --pri later` '
-                   'parks a queued task)'), ''
+                   'parks a queued task, `hold` holds it)'), ''
     if why := landing(c, tid, where):
         return 1, f'{P.PROG}: {why}', ''
     mins = minutes_in(c, tid)
@@ -68,7 +68,7 @@ def stop(c, tid: str, words: list[str], wait: float | None = None) -> tuple[int,
         return 3, f'{question(tid, where, mins)} To go on: {P.PROG} cancel {tid} {YES}', ''
     said = P.request(c, KIND, tid, {'how': 'cancel'}, P.HALT_WAIT if wait is None else wait)
     after = '' if mins is None else f' after {mins} min'
-    if said is None:  # it stays asked; parked now, so the run starts it again in no case
+    if said is None:  # it stays asked; held now, so the run starts it again in no case
         return 0, f'asked the run to stop {where}: within seconds its work is on wip/{tid}, unless it lands first', \
             f'asked to cancel{after}: if it was stopped, what was done is on the newest wip/{tid} branch, go on from there'
     try:
@@ -86,6 +86,17 @@ def park(tid: str, note: str, todo=None) -> None:
     """Park `tid` in the plan, with what its next agent should know as a note."""
     todo, _ = P.ensure(todo)
     P.edit(tid, pri='later', todo=todo)
+    if note:
+        P.note(tid, note, todo=todo)
+
+
+def hold(tid: str, note: str, todo=None) -> None:
+    """F480: hold `tid` where it stands (`plan hold`'s mark), with what its next agent should know as a note."""
+    from agent_runner import row_hold
+    todo, _ = P.ensure(todo)
+    ls = list(P.lines(todo))
+    if not row_hold.is_held(ls[P._find(ls, tid)]):
+        P.edit(tid, keyed=f' | {row_hold.KEY}: yes', todo=todo)
     if note:
         P.note(tid, note, todo=todo)
 
