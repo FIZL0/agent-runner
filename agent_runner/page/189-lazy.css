@@ -12,13 +12,13 @@
   :root.lazy .sidein{font-family:var(--mono);font-size:var(--fs-m);gap:2px}
   :root.lazy .sidein .nav{display:contents}
   :root.lazy .sidein>*{order:2} :root.lazy .sidein>:first-child{order:0} :root.lazy .sidein .ni{order:6} :root.lazy .sidein>.me{order:7}
-  :root.lazy .sidein .ni[data-view="status"]{order:1} :root.lazy .sidein .ni[data-view="plan"]{order:3}
+  :root.lazy .sidein .ni[data-view="home"]{order:1} :root.lazy .sidein .ni[data-view="plan"]{order:3}
   :root.lazy .sidein .ni[data-view="tools"]{order:4} :root.lazy .sidein .ni[data-view="settings"]{order:5}
-  :root.lazy .sidein .ni[data-view="status"]::before{content:'[1]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .ni[data-view="home"]::before{content:'[1]';color:var(--muted);margin-right:var(--s1)}
   :root.lazy .sidein .shead.row>span:first-child::before{content:'[2] Sessions · ';color:var(--muted)}
   :root.lazy .sidein .ni[data-view="plan"]::before{content:'[3]';color:var(--muted);margin-right:var(--s1)}
   :root.lazy .sidein .ni[data-view="tools"]::before{content:'[4]';color:var(--muted);margin-right:var(--s1)}
   :root.lazy .sidein .ni[data-view="settings"]::before{content:'[5]';color:var(--muted);margin-right:var(--s1)}
-  :root.lazy .sidein .ni[data-view="status"],:root.lazy .sidein .ni[data-view="plan"],:root.lazy .sidein .ni[data-view="tools"],:root.lazy .sidein .ni[data-view="settings"]{border:1px solid var(--line)}
+  :root.lazy .sidein .ni[data-view="home"],:root.lazy .sidein .ni[data-view="plan"],:root.lazy .sidein .ni[data-view="tools"],:root.lazy .sidein .ni[data-view="settings"]{border:1px solid var(--line)}
   :root.lazy .sidein .ni.on{border-color:var(--accent)}
 }

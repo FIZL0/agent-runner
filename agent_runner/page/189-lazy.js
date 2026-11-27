@@ -4,7 +4,7 @@
    On a phone (narrower than 760px) the page stays in the Standard layout and these keys do nothing. */
 const UI_KEY='ui:look';
 /* the five panels: the key, what it opens (a sidebar view, or 'sessions': the sidebar's chats and agents), its name */
-const LAZY_PANELS=[['1','status','Status'],['2','sessions','Sessions'],['3','plan','Plans'],['4','tools','Tools'],['5','settings','Settings']];
+const LAZY_PANELS=[['1','home','Home'],['2','sessions','Sessions'],['3','plan','Plans'],['4','tools','Tools'],['5','settings','Settings']];
 const LAZY_KEYS=[['1-5','go to a panel'],['j k','move, or scroll the main pane'],['Enter l','open in the main pane'],['h l','previous or next tab; h on the first goes back'],
   ['i','type in the box (insert mode)'],['Esc','back to normal mode'],['a d p','approve, drop or park the row'],['c','new chat'],['?','this list of keys']];
 const UI_THEMES=[['','Standard (follows this device)'],['ryha','ryha'],['light','light'],['terminal','terminal'],['omarchy','omarchy']];
