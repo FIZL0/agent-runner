@@ -588,7 +588,7 @@ def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
             continue
         out.append({'id': tid, 'concept': tid, 'title': P.short_title(tasks[tid][1], 200), 'url': '',
                     'copy': str(f), 'page': True, 'waits': tid in waits})
-    out += chat_page_rows(files, shown)
+    out += chat_page_rows(files, shown, filed=filed_chat_pages(ls))
     pages = {f.stem: f for f in files}
     for row in approved_rows(ls, shown | {r['id'] for r in out}):
         if f := pages.get(row['id']):
@@ -599,13 +599,19 @@ def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
 CHAT_PAGE_DAYS = 7
 
 
-def chat_page_rows(files: list, shown: set[str], now: float | None = None) -> list[dict]:
+def filed_chat_pages(ls: list[str]) -> set[str]:
+    """B881: the chat<id> pages the plan names (/concept/chat<id>): a chat filed them as a concept."""
+    return set(re.findall(r'/concept/(chat[0-9a-f]+)\b', '\n'.join(ls)))
+
+
+def chat_page_rows(files: list, shown: set[str], now: float | None = None,
+                   filed: set[str] | None = None) -> list[dict]:
     """B875: a Concepts row for each page a chat published (<notes>/concepts/chat<id>.html): it has no task in the
     plan, so the task check above left it out. Pages from the last CHAT_PAGE_DAYS days only; its title is the page's
-    <title>."""
+    <title>. B881: only pages a chat filed as a concept (`filed`, the plan names them); its reports stay off."""
     out, now = [], now or time.time()
     for f in files:
-        if not re.fullmatch(r'chat[0-9a-f]+', f.stem) or f.stem in shown:
+        if not re.fullmatch(r'chat[0-9a-f]+', f.stem) or f.stem in shown or f.stem not in (filed or set()):
             continue
         try:
             if now - f.stat().st_mtime > CHAT_PAGE_DAYS * 86400:

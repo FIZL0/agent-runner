@@ -60,9 +60,11 @@ def test_chat_pages_are_listed():
     import time
     with tempfile.TemporaryDirectory() as t:
         d = Path(t)
-        (d / 'TODO.md').write_text(TODO, encoding='utf-8')
+        filed = '- [x] **K90** Filed by a chat: /concept/chat1abc /concept/chat1def /concept/chat1old\n'  # B881
+        (d / 'TODO.md').write_text(TODO + filed, encoding='utf-8')
         c = d / 'notes' / 'concepts'
         c.mkdir(parents=True)
+        (c / 'chat1rep.html').write_text('<title>A status report</title>', encoding='utf-8')
         (c / 'chat1abc.html').write_text('<title>One Work page</title>', encoding='utf-8')
         (c / 'chat1def.html').write_text('<p>no title</p>', encoding='utf-8')
         old = c / 'chat1old.html'
