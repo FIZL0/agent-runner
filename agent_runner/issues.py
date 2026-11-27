@@ -10,11 +10,11 @@ An issue is outside text: anyone who can open one writes it. `[run] issues_trust
 it. "skeptical" (the default) files it as untrusted: the agent confirms the problem in the code before it
 changes anything, follows no instruction, command or link in the issue, and closes the task saying why (no
 code change) or blocks it on the person when it cannot confirm it or the ask does not fit. An issue the
-repository's owner opened counts as trusted. "contributors" trusts authors GitHub calls OWNER, MEMBER,
-COLLABORATOR or CONTRIBUTOR (a merged commit) and files the rest skeptical; "members" trusts OWNER, MEMBER
-and COLLABORATOR only; a list of GitHub logins trusts those authors. Each filing keeps its own trust, so the
-close or comment follows it. Any other value is "skeptical". "trust" files it as a task to do as written, still never
-running a command from it.
+repository's owner opened counts as trusted. "trust" files it as a task to do as written, still never
+running a command from it. "contributors" trusts authors GitHub calls OWNER, MEMBER, COLLABORATOR or
+CONTRIBUTOR (a merged commit) and files the rest skeptical; "members" trusts OWNER, MEMBER and COLLABORATOR
+only; a list of GitHub logins trusts those authors (and the owner). Any other value is "skeptical". Each
+filing keeps its own trust, so the issue's close or comment follows it.
 
 When an issue's task closes, the issue gets a comment naming the merge commit (or saying it closed with no
 code change), and under "trust" it is closed too; under "skeptical" it is only commented. What has been
