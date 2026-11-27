@@ -65,6 +65,21 @@ def test_finish_keeps_writeup(tmp: Path) -> None:
     eq(D.writeup(S.C, 'B2'), 'Fixed the retry.', 'and its write-up is kept with B2')
 
 
+def test_writeup_from_log(tmp: Path) -> None:
+    """F513: a task finished before write-ups were kept: its summary from events, else from run.log."""
+    fake_repo(tmp)
+    S.C.notes('run.log').write_text('=== 2026-01-01T00:00:00 slot 1: B3 finished: Old fix, cut\n'
+                                    '=== 2026-01-01T00:00:00 slot 1: B33 finished: other\n', encoding='utf-8')
+    eq(D.writeup(S.C, 'B3'), 'Old fix, cut', 'from run.log')
+    S.C.notes('events.jsonl').write_text(json.dumps({'time': '2026-01-01T00:00:00', 'kind': 'finished', 'id': 'B3',
+                                                     'text': 'x', 'summary': 'Old fix, whole'}) + '\n',
+                                         encoding='utf-8')
+    eq(D.writeup(S.C, 'B3'), 'Old fix, whole', 'the events summary first')
+    D.keep_writeup(S.C, 'B3', 'Kept')
+    eq(D.writeup(S.C, 'B3'), 'Kept', 'a kept write-up wins')
+    eq(D.writeup(S.C, 'B4'), '', 'none for a task that never finished')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_writeup_kept_and_served), in_tmp(test_row_shows_writeup_first),
+    raise SystemExit(report([in_tmp(test_writeup_kept_and_served), in_tmp(test_writeup_from_log), in_tmp(test_row_shows_writeup_first),
                              in_tmp(test_finish_keeps_writeup)]))

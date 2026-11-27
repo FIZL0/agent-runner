@@ -573,7 +573,37 @@ def writeup(c, tid: str) -> str:
         said = writeup_file(c, tid).read_text(encoding='utf-8').strip()
     except OSError:
         said = ''
+    said = said or logged_writeup(c, tid)
     return '\n\n'.join(p for p in (said, journal_entry(c, tid)) if p)
+
+
+def logged_writeup(c, tid: str) -> str:
+    """F513: for a task that finished before write-ups were kept, its newest `finished:` summary from the run's
+    events (the full summary), else from run.log (cut at 300 characters); '' when neither has one."""
+    import json
+    said = ''
+    try:
+        for line in c.notes('events.jsonl').read_text(encoding='utf-8', errors='replace').splitlines():
+            if f'"{tid}"' not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get('kind') == 'finished' and e.get('id') == tid:
+                said = (e.get('summary') or '').strip() or said
+    except OSError:
+        pass
+    if said:
+        return said
+    pat = re.compile(rf'^=== \S+ slot \d+: {re.escape(tid)} finished: (.*)$')
+    try:
+        for line in c.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines():
+            if (m := pat.match(line)) and m[1].strip():
+                said = m[1].strip()
+    except OSError:
+        pass
+    return said
 
 
 def concept_link_refusal(tid: str, why: str | None, c) -> str | None:
