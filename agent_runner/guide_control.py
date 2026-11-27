@@ -88,7 +88,7 @@ What the person asks, and what you run:
 
 """ + CONTROL_SHELL + """
 
-**Keys, passwords:** never ask for one in chat; a device or a Login goes in its form on the Tools page (`{cmd} device link`); a secret a task asks for goes in its Needs you item's field.
+**Keys, passwords:** never in chat: a device or Login goes in its Tools page form; a task's secret in its item's field.
 
 **Settings.** When what the person says fits a runner.toml setting, read `guide settings` first, then recommend the one change in one line and ask.
 Never `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: work is lost.
