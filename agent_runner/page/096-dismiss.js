@@ -15,9 +15,9 @@ function questionMinimize(n,id,on){
   questionDraw();
 }
 document.addEventListener('click',e=>{
-  const el=e.target.closest('[data-qmin],[data-qshow]');if(!el)return;
-  const on=!!el.dataset.qmin;
-  questionMinimize(S.thread,el.dataset.qmin||el.dataset.qshow,on);
+  const el=e.target.closest('[data-qmin],[data-qshow],[data-qrowmin],[data-qrowshow]');if(!el)return;  // F496: the whole top row toggles too
+  const d=el.dataset, on=!!(d.qmin||d.qrowmin);
+  questionMinimize(S.thread,d.qmin||d.qshow||d.qrowmin||d.qrowshow,on);
   if(!e.detail){const b=document.querySelector('#dock [data-qshow],#dock [data-qmin]');if(b)b.focus({preventScroll:true})}  // pressed with a key: the focus stays with the card
 });
 addEventListener('storage',e=>{  // another tab

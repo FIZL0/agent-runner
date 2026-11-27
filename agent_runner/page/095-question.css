@@ -17,3 +17,4 @@
 .main.sess.qaway .dockwrap{pointer-events:none} .main.sess.qaway .dockwrap .dock{background-color:transparent;transition-delay:0s}
 .main.sess.qaway:not(.slim) :is(.dock>:not(.schips,.keys,.gone0),:is(.schips,.keys)>*,.slimground){pointer-events:auto}
 @media (pointer:coarse){.main.sess.qkeys .dock:has(>.keys) .qcard:not(.qheld,.qabout){margin-bottom:calc(var(--s2) - 2*var(--tap) - 14px)}}  /* the key row: two rows, 6px, 8px */
+.qrow{cursor:pointer}  /* F496: a tap on the top row minimizes or shows the question */
