@@ -9,8 +9,12 @@
    F437b: keys: the question the key row was opened under, with the keyboard button
    F437c: away: the chat whose reader is scrolled up, its card hidden where it stands; awayT: it is about to be back; cls: .main's classes */
 const QMARK_KEY='ar-qmark:'+(HKEY||document.title);
-const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0,gone:new Set(),min:new Set(),keys:'',away:'',awayT:0,auto:new Set(),growT:0,cls:'false false'};
-const questionAsk=n=>FD.n===n&&FD.live&&FD.live.ask||null;
+const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0,gone:new Set(),min:new Set(),keys:'',away:'',awayT:0,auto:new Set(),growT:0,done:new Set(),rowX:new Map(),cls:'false false'};
+/* F192b2: /live's questions of chat n (`asks`, else `ask`); of several, the ones not dismissed or answered here */
+const questionAll=n=>{const v=FD.n===n&&FD.live;return!v?[]:Array.isArray(v.asks)&&v.asks.length?v.asks:v.ask?[v.ask]:[]};
+const questionAsks=n=>{const l=questionAll(n);return l.length>1?l.filter(a=>!QN.gone.has(questionKey(n,a.id))&&!QN.done.has(questionKey(n,a.id))):l};
+/* the question chat n asks first, or the one of id */
+const questionAsk=(n,id)=>{const l=questionAsks(n);return(id?l.find(a=>a.id===id):l[0])||null};
 const questionSpoken=n=>questionSpoke(n,S.ob,(S.sent[n]&&S.sent[n].pending)||[],Date.now()-((S.sent[n]||{}).at||0));
 /* an answer to it, here or under Needs you, is on its way */
 const questionSettling=ask=>!!(ask&&ask.need)&&S.ob.some(x=>x.need===ask.need&&x.state!=='failed'&&(x.name==='question_answer'||x.name==='answer'||/^need_(yes|no|answer\d+|drop)$/.test((x.args||{}).key||'')));  // not Later
@@ -30,8 +34,11 @@ function questionCard(n){
   let sent=QN.sent.get(n);
   if(sent&&sent.need)questionNeedSent(n,sent);
   else if(sent=questionSent(sent,S.ob,(S.sent[n]||{}).at))QN.sent.set(n,sent);
+  if(sent&&sent.back)QN.done.delete(questionKey(n,sent.id));  // F192b2: discarded, it is in the row again
   const mark=QN.mark.get(n);if(mark&&!QN.held.has(n))return questionMarkHTML(n,mark);
   const ask=questionAsk(n);
+  const many=QN.held.has(n)?[]:questionAsks(n).filter(a=>questionShown(n,a)&&questionState(a,null,sent)==='ask');
+  if(many.length>1&&!QN.min.has(questionKey(n,ask.id))&&!QN.auto.has(questionKey(n,ask.id))){questionRowKeepSoon(n);return questionRowHTML(n,many)}
   return questionHTML(n,questionShown(n,ask),QN.held.get(n),sent,!!ask&&(QN.min.has(questionKey(n,ask.id))||QN.auto.has(questionKey(n,ask.id))));
 }
 /* an answer that settles an item is out of the outbox: done or discarded, /live says whether the question is still asked */
@@ -53,9 +60,9 @@ function questionMove(n,still){
 }
 function questionDraw(){const moved=questionMove(S.thread,false);render(true);moved()}
 function questionPick(n,id,i){
-  const ask=questionAsk(n), o=ask&&ask.id===id&&ask.options[i];
+  const ask=questionAsk(n,id), o=ask&&ask.options[i];
   if(!o||questionState(ask,QN.held.get(n),QN.sent.get(n))!=='ask'||Date.now()-QN.back<QUESTION_AGAIN)return;
-  const h={id,name:o.name,at:Date.now(),...(ask.need?{need:ask.need}:{})};
+  const h={id,name:o.name,at:Date.now(),...(ask.need?{need:ask.need}:{}),...(questionAll(n).length>1?{of:ask}:{})};  // F192b2: one of several
   h.timer=setTimeout(()=>questionSend(n,h),QUESTION_HOLD);QN.held.set(n,h);
   questionDraw();
 }
@@ -79,7 +86,8 @@ async function questionSend(n,h){
   questionSee(n);
   if(QN.held.get(n)!==h)return;  // Undo, or no longer asked
   QN.held.delete(n);
-  const moved=questionMove(n,false), it={id:h.id,name:h.name,cid:'',at:Date.now()}, ask=FD.n===n&&questionAsk(n), need=ask&&ask.id===h.id?ask.need:h.need;  // filed in the hold
+  const moved=questionMove(n,false), it={id:h.id,name:h.name,cid:'',at:Date.now()}, ask=FD.n===n&&questionAsk(n,h.id), need=ask?ask.need:h.need;  // filed in the hold
+  if(h.of)QN.done.add(questionKey(n,h.id));  // F192b2: the row moves to the next
   if(need){
     it.need=need;QN.sent.set(n,it);
     it.cid=outbox('question_answer',{chat:n,id:h.id,text:h.name},{need,say:`${need} · answered “${h.name}”`,done:`${need} answered: ${h.name}`}).cid;
@@ -88,7 +96,8 @@ async function questionSend(n,h){
   QN.sent.set(n,{...it,over:true});  // answered, before outbox() draws
   sendHold(n,SEND_HOLD);
   if(FD.shown&&FD.n===n)feedRest();
-  it.cid=outbox('chat_to',{text:h.name,to:n,...(FD.n===n&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text:h.name,key:n,say:`To ${threadTitle(n)}: ${h.name}`}).cid;
+  const text=h.of?questionAnswered(h.of,h.name):h.name;  // F192b2: of several, it names its question, so the others stay open
+  it.cid=outbox('chat_to',{text,to:n,...(FD.n===n&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key:n,say:`To ${threadTitle(n)}: ${h.name}`}).cid;
   QN.sent.set(n,it);
   moved();
 }
@@ -98,7 +107,7 @@ function questionMark(n,ask){
   tabStore.set(QMARK_KEY,QN.mark.size?JSON.stringify([...QN.mark]):'');
 }
 function questionChat(n,id){
-  const ask=questionAsk(n);if(!ask||ask.id!==id||questionState(ask,QN.held.get(n),QN.sent.get(n))!=='ask'||Date.now()-QN.back<QUESTION_AGAIN)return;
+  const ask=questionAsk(n,id);if(!ask||questionState(ask,QN.held.get(n),QN.sent.get(n))!=='ask'||Date.now()-QN.back<QUESTION_AGAIN)return;
   questionMark(n,ask);QN.marked=Date.now();questionDraw();
   const ta=document.querySelector('[data-in]');if(ta)kbFocus(ta);
 }
@@ -191,4 +200,33 @@ document.addEventListener('click',e=>{
   const key=!e.detail, n=el.dataset.qundo||S.thread;
   if(el.dataset.qundo)questionUndo(n);else questionPick(n,el.dataset.q,+el.dataset.qpick);
   if(key){const b=document.querySelector('#dock [data-qundo],#dock [data-qpick]');if(b)b.focus({preventScroll:true})}  // pressed with a key: the focus stays with the card
+});
+/* F192b2: the row of several questions. ✕ dismisses one (per question id, kept as F192b's were: QN.gone); the row
+   keeps its sideways place over a redraw (QN.rowX, per chat), and the count follows the card in view */
+function questionDismiss(n,id){
+  const ask=questionAsk(n,id);if(!ask||questionAll(n).length<2||Date.now()-QN.back<QUESTION_AGAIN)return;
+  QN.gone.add(questionKey(n,id));QN.back=Date.now();
+  try{store.set(QGONE_KEY,JSON.stringify([...QN.gone].slice(-100)))}catch(e){}  // 096-dismiss.js keeps them
+  questionDraw();
+}
+function questionRowAt(r){
+  const l=[...r.children], x=r.scrollLeft, o=l.length?l[0].offsetLeft:0;
+  let i=0;l.forEach((c,j)=>{if(Math.abs(c.offsetLeft-o-x)<Math.abs(l[i].offsetLeft-o-x))i=j});
+  const t=r.parentNode&&r.parentNode.querySelector('.qcount'), s=questionCount(i,l.length);if(t&&t.textContent!==s)t.textContent=s;
+}
+function questionRowKeepSoon(n){
+  Promise.resolve().then(()=>{
+    const r=document.querySelector('#dock .qswipe');if(!r||!r.children)return;
+    const x=QN.rowX.get(n)||0;if(Math.abs(r.scrollLeft-x)>1)r.scrollLeft=x;
+    questionRowAt(r);
+  });
+}
+document.addEventListener('scroll',e=>{
+  const r=e.target;if(!r||!r.classList||!r.classList.contains('qswipe'))return;
+  QN.rowX.set(S.thread,r.scrollLeft);questionRowAt(r);
+},{capture:true,passive:true});
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-qgone]');if(!el)return;
+  questionDismiss(S.thread,el.dataset.qgone);
+  if(!e.detail){const b=document.querySelector('#dock [data-qgone],#dock [data-qpick]');if(b)b.focus({preventScroll:true})}
 });
