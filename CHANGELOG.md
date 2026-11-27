@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: an open run page or Runner Home moves to a new version by itself once nothing would be lost or interrupted, back to the same view, chat and scroll place; otherwise the Refresh popup stays until then (F207).
 - Added: a change that waits on its task branch, or as a pull request in PR mode, has a Review page: `run review ID --page` writes it (diff, why, questions, how to answer) and `run review ID --ask "…"` asks about the change (F444d).
 - Added: `[run] usage_limits = false` switches the usage caps off: the runner never reads account usage, never holds or falls back a task on `session_max` / `weekly_max`, and status hides them (F488).
 - Changed: a diff whose only change to `pyproject.toml`, `package.json` or `Cargo.toml` is its description line counts as docs only, so `done` and the merge skip the gate for it (F494).

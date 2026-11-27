@@ -117,7 +117,7 @@ let dead = false, reloads = 0, said = [], ta = null, rc = {key: 'restart'};
 const store = mk(), tabStore = mk(), HKEY = 'p', HI = {i: null}, TK = {}, DK = {}, OB_KEY = 'ob';
 const DRAFT_KEY = k => 'd:' + k, boxKey = () => 'home', toast = t => said.push(t), esc = t => String(t), render = () => {};
 const document = {title: 't', querySelector: () => ta}, location = {reload() { reloads++ }}, els = {}, $ = k => els[k] = els[k] || {};
-const setHTML = (e, h) => { e.h = h }, controlOf = () => rc, ctlBusy = () => false, ctlSure = () => 'SURE';
+const setHTML = (e, h) => { e.h = h }, controlOf = () => rc, ctlBusy = () => false, ctlSure = () => 'SURE', chatShown = () => false;
 let H, S;
 const fresh = (snap, f) => { H = {add: ''}; S = {snap, f: f || {}, atts: {}, ob: [], setOpen: {}, sure: null}; };
 fresh({});
@@ -1598,5 +1598,30 @@ console.log(JSON.stringify([one,opened]));
         eq(json.loads(r.stdout), [['plan', None, '', ['B493']], ['B493']], 'the link opens its sheet once; again keeps it open')
 
 
+def test_self_reload_f207(tmp: Path) -> None:
+    """F207: a new version of the page loads by itself once nothing would be lost or cut off, waits otherwise, and
+    reloads once per page print so it never loops."""
+    page = W.page_html().decode()
+    check('setInterval(selfLook,1000)' in page and "tabStore.set(RELOADED_KEY,news.key)" in page,
+          'the page looks every second and keeps the print it reloaded for in this tab')
+    check("visibilitychange',()=>{if(!document.hidden)selfLook()" in page, 'a hidden tab reloads as it is shown')
+    if not shutil.which('node'):
+        return
+    n = {'kind': 'refresh', 'key': 'page:b'}
+    got = logic_js([['selfReload', {'news': n, 'done': ''}],
+                    ['selfReload', {'news': n, 'done': '', 'hold': 'Stop the mic first, then refresh.'}],
+                    ['selfReload', {'news': n, 'done': '', 'busy': True}],
+                    ['selfReload', {'news': n, 'done': '', 'hidden': True}],
+                    ['selfReload', {'news': n, 'done': 'page:b'}],
+                    ['selfReload', {'news': {'kind': 'restart', 'key': 'restart:k'}, 'done': ''}],
+                    ['selfReload', {'news': None, 'done': ''}],
+                    ['selfReload', {'news': {'kind': 'refresh', 'key': 'page:c'}, 'done': 'page:b'}]])
+    eq(got[0], 'now', 'idle: it reloads')
+    eq(got[1:4], ['wait', 'wait', 'wait'], 'held, busy or hidden: it waits with the popup')
+    eq(got[4], '', 'once per page print: never a loop')
+    eq(got[5:7], ['', ''], 'a restart or nothing new never reloads')
+    eq(got[7], 'now', 'a newer print reloads again')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c), in_tmp(test_copilot_jump_b863), in_tmp(test_task_links_f482)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c), in_tmp(test_copilot_jump_b863), in_tmp(test_task_links_f482), in_tmp(test_self_reload_f207)]))
