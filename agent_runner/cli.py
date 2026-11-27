@@ -47,7 +47,6 @@ Mostly for agents (you can run these too)
     agent-runner ask "question"       in a slot: park the task under Needs you; the answer resumes the session
     agent-runner review B646          in a slot: a fresh one-shot's spec review of its diff against its brief
     agent-runner publish-page p.html  in a slot: the run page shows it at /concept/<ID>, claude.ai gets a copy
-    agent-runner pick-links K7 A,B,C  each option's button link: tapping it answers the run, no AI session
     agent-runner plan block B12 --after B646 "why"
     agent-runner plan move B12 top    B12 to the top: the next free agent takes it
     agent-runner plan next            the task that starts next
@@ -202,7 +201,6 @@ COMMANDS = {
     'cost': ('cost', 'main'),
     'resume': ('runner', 'cmd_resume'),
     'sheet': ('runner', 'cmd_sheet'),  # F18
-    'pick-links': ('cmds', 'cmd_pick_links'),  # F138
     'pitch': ('pitch', 'cmd_pitch'),  # F98
     'take': ('runner', 'cmd_take'),
     'wip': ('runner', 'cmd_wip'),  # F23

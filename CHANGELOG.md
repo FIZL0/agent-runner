@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Removed: the pick-links command and the concept branch of /pick; an old concept link answers with a short page saying to pick in Concepts and changes nothing; a pick sheet's Send still answers (C40b).
 - Added: a chat whose answer ends on several questions has each filed under Needs you as an item of its own, a question with no options too, in one commit; a retry files none twice, and the chat closes only once all are filed (F192b1b).
 ## 0.84.0 (2026-11-28)
 

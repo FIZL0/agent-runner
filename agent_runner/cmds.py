@@ -442,31 +442,6 @@ NO_PICK_HTTPS = ('no https address for the run page ({why}): '
                  'put no option buttons on the page and keep today\'s flow (the person replies, or Sends)')
 
 
-def cmd_pick_links(argv: list[str], prog: str = f'{RUNNER} pick-links') -> int:
-    """F138: `agent-runner pick-links ID A,B,C`: one link per option, for the option buttons on a concept page;
-    each answers the run with no AI session (web /pick). Exit 1, saying so, when the run page has no https."""
-    import re
-    from agent_runner import web
-    ap = argparse.ArgumentParser(prog=prog, description="Print each option's button link for item ID: tapping "
-                                 'it answers the run with that option (a one-use code, not the page token).')
-    ap.add_argument('id', help='the item id: the concept (or the task whose question it is)')
-    ap.add_argument('options', help='the options, comma-separated: A,B,C')
-    a = ap.parse_args(argv)
-    if not re.fullmatch(r'[A-Za-z]+\d+[a-z0-9]*', a.id):
-        ap.error(f'{a.id!r} is not a task id')
-    opts = [o.strip() for o in a.options.split(',') if o.strip()]
-    if not opts or not all(web.PICK_OPTION.fullmatch(o) for o in opts):
-        ap.error('options are letters or digits, comma-separated: A,B,C')
-    init()
-    links = web.pick_links(a.id, opts)
-    if not links:
-        print(f'{prog}: ' + NO_PICK_HTTPS.format(why=web.no_https_why()), file=sys.stderr)
-        return 1
-    for o, link in zip(opts, links):
-        print(f'{o} {link}')
-    return 0
-
-
 def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     """`./run stop`: the running sessions finish and merge, nothing new starts, and the run exits."""
     ap = argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then the run stops. Its run page stays up (`agent-runner page-only stop` ends it), except after --suspend or --shutdown.')
