@@ -14,6 +14,7 @@ const LAZY_ROW_KEYS=[['J K','move the Plans row down or up'],['e','edit the row'
   ['r','rename the chat'],['o','open the row'],['a','approve, or answer the Needs you row'],['R','release when the running tasks land']];
 const LAZY_KEYS=[['1-7','go to a panel'],['j k','move, or scroll the main pane'],['Enter l','open in the main pane'],['h l','previous or next tab; h on the first goes back'],
   ['i','type in the box (insert mode)'],['Esc','back to normal mode'],['a d p','approve, drop or park the row'],['c','new chat'],['?','this list of keys']];
+const LAZY_INSERT_KEYS=[['Esc','normal mode'],['Enter','send'],['↑ ↓','earlier messages'],['Ctrl+C','interrupt the chat']];
 const UI_THEMES=[['','Standard (follows this device)'],['ryha','ryha'],['light','light'],['terminal','terminal'],['omarchy','omarchy']];
 function uiLook(){
   const d={theme:'',layout:'standard',keybar:true};
@@ -33,9 +34,11 @@ const lazyInsert=()=>typingIn(document.activeElement);
 function keyBarDraw(){
   const el=$('keybar'), shown=document.documentElement.classList.contains('lazybar');
   el.hidden=!shown;if(!shown)return;
-  const h=lazyInsert()?'<b class="mode ins">INSERT</b> typing · <b>Esc</b> normal · <b>Enter</b> send'
-    :'<b class="mode">NORMAL</b> <b>j/k</b> move · <b>J/K</b> reorder · <b>e</b> edit · <b>Enter/l</b> open · <b>i</b> type │ <b>1-7</b> panel · <b>+ -</b> slots · <b>c</b> new chat · <b>?</b> keys';
+  /* F484b: every key of the mode, from the same lists as the keys sheet */
+  const ks=lazyInsert()?LAZY_INSERT_KEYS:LAZY_KEYS.concat(lazyRunKeys(),LAZY_ROW_KEYS);
+  const h=(lazyInsert()?'<b class="mode ins">INSERT</b> ':'<b class="mode">NORMAL</b> ')+ks.map(([k,w])=>`<span><b>${esc(k)}</b> ${esc(w)}</span>`).join('');
   if(el._h!==h){el._h=h;el.innerHTML=h}
+  document.documentElement.style.setProperty('--kbh',el.offsetHeight+'px');
 }
 SHEETS.ui=()=>{const u=uiLook();
   return `<h2>Look and layout</h2>
@@ -59,7 +62,10 @@ function lazyPanel(k){
 function lazyMove(d){
   const rs=lazyRows(), i=rs.indexOf(document.activeElement);
   if(i<0){$('body').scrollBy({top:d*80});return}
-  const n=rs[Math.max(0,Math.min(rs.length-1,i+d))];if(n){n.focus();n.scrollIntoView({block:'nearest'})}
+  const n=rs[Math.max(0,Math.min(rs.length-1,i+d))];if(!n)return;n.focus();n.scrollIntoView({block:'nearest'});
+  /* F484b: a chat row the highlight lands on shows that chat on the right; the highlight stays in the sidebar */
+  const t=n.dataset.thread;if(!t||S.thread===t)return;
+  n.click();requestAnimationFrame(()=>{const r=$('sidein').querySelector(`[data-thread="${CSS.escape(t)}"]`);if(r){r.focus();r.scrollIntoView({block:'nearest'})}});
 }
 /* a tab: a pressed button among its group's in the main pane (Settings' tabs, a view's filters) */
 function lazyTab(d){
