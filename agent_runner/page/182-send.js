@@ -34,12 +34,15 @@ async function send(by){
    waiting, and its messages go once it has a name. B139: ask, its first message, shows in the stand-in. */
 function newChat(name,args,say,ask){const known=chats().map(c=>c.name), it=outbox(name,{...args,wait:false},{newchat:true,say,...(ask?{ask}:{})});
   S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open('@'+it.cid)}
+/* F209c1: a Needs you or Concepts row's Chat opens the open chat about it (its 'chat'), when the chat list still has it */
+function chatOpenOf(r){const v=r&&r.chat!=null?String(r.chat):'', n=v&&(/^c/.test(v)?v:'c'+v);if(!n||!chats().some(c=>c.name===n))return false;if(S.sheet)closeSheet();open(n);return true}
+function chatRowOf(id){return (S.snap.needs||[]).find(x=>x.id===id)||(S.snap.concepts||[]).find(x=>(x.concept||x.id)===id)}
 /* F172: a card's Chat opens its new chat view; the session starts with the first message (send) */
 function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
   if(a==='new')S.ctx={kind:'new',label:'Add a task'};
   else if(a==='newconcept')S.ctx={kind:'newconcept',label:'New concept'};
-  else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept,lead:c.lead}}
+  else if(k==='concept'){const c=S.snap.concepts[+v];if(!c||chatOpenOf(c))return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept,lead:c.lead}}
   else if(k==='setting'){const x=settingOf(v);if(!x)return;S.ctx={kind:'setting',id:`[${x.table}] ${x.key}`,title:x.name,label:x.name}}
   else if(k==='plan'){const q=S.snap.queue.concat(S.snap.shelved||[]).concat(mergeRows(S.snap),working_().map(s=>({id:s.task,title:s.title}))).find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
   else if(a==='settings')S.ctx={kind:'settings',label:'Ask about my settings'};  // F449: a first message ready to edit, sent only on Send
