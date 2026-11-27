@@ -61,6 +61,29 @@ def test_route():
         check('set up the phones' not in (mine / 'plan' / 'TODO.md').read_text(encoding='utf-8'), 'not here')
 
 
+def test_copilot_link_b874():
+    print('B874: a chat on an agent that is not Claude gives the run page link to that chat, never a claude.ai/code one')
+    from unittest import mock
+    from agent_runner import web as web_urls
+    with tempfile.TemporaryDirectory() as tmp:
+        mine = project(Path(tmp) / 'mine')
+        R.init(mine)
+        check(K.ROOT == mine.resolve(), 'the control module writes in the temp repo', K.ROOT)
+        before = git(REPO, 'log', '-1', '--format=%H', '--', 'plan/TODO.md')
+        page = 'https://box.example.ts.net/?t=tok'
+        with mock.patch.dict(K.C.run, {'agent': 'copilot'}), \
+                mock.patch.object(web_urls, 'page_line', lambda site=None: f'run page: {page} (or http://box:8770/?t=tok)'):
+            eq(K.ask_link(4, 'sid-4', 'https://claude.ai/code/session_01AbC'), f'{page}#c4', 'the run page, at chat c4')
+            tid = K.file_control_ask(4, 'sid-4', 'Which? [A / B]', 'https://claude.ai/code/session_01AbC')
+            line = (mine / 'plan' / 'TODO.md').read_text(encoding='utf-8')
+            check(tid and f'{page}#c4' in line and 'claude.ai/code' not in line, 'filed with it', line)
+            with mock.patch.object(web_urls, 'page_line', lambda site=None: ''):
+                eq(K.ask_link(4, 'sid-4', 'https://claude.ai/code/session_01AbC'), '', 'no page served: no link')
+        eq(K.ask_link(4, 'sid-4', 'https://claude.ai/code/session_01AbC'), 'https://claude.ai/code/session_01AbC',
+           'on Claude Code: its own link')
+        eq(git(REPO, 'log', '-1', '--format=%H', '--', 'plan/TODO.md'), before, "the checkout's plan is untouched")
+
+
 def test_answers():
     print('B785: which answers allow it')
     head = (f'- [ ] **F9** (follow-up, normal) Control session 5 asked the person: "{Q}" Carry on from their answer (x). '
@@ -87,4 +110,4 @@ def test_answers():
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_route, test_answers]))
+    raise SystemExit(report([test_route, test_copilot_link_b874, test_answers]))

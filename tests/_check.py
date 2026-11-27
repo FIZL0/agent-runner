@@ -23,6 +23,19 @@ _gitconfig = tempfile.NamedTemporaryFile('w', prefix='agent-runner-test-gitconfi
 _gitconfig.write('[user]\n\tname = test\n\temail = test@example.invalid\n[init]\n\tdefaultBranch = main\n')
 _gitconfig.close()
 os.environ.update(GIT_CONFIG_GLOBAL=_gitconfig.name, GIT_CONFIG_NOSYSTEM='1')
+# B874: a gate started from a git hook or a merge carries the real checkout's GIT_DIR: a temp repo's git would write there
+for _k in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_PREFIX'):
+    os.environ.pop(_k, None)
+
+
+def _test_commits() -> set[str]:
+    """B874: the commits a test's git identity made in this checkout's repository (all its branches)."""
+    r = subprocess.run(['git', 'log', '--all', '--author=test@example.invalid', '--format=%H', '-n', '200'],
+                       cwd=str(ROOT), capture_output=True, text=True)
+    return set(r.stdout.split()) if not r.returncode else set()
+
+
+_TEST_COMMITS = _test_commits()
 os.environ.pop('AGENT_RUNNER_REPO', None)
 # a gate run by `done` in a slot inherits the slot session's markers: without this the code under test acts
 # as a slot's agent (no skill install, a different plan path) and the suites fail only inside a run
@@ -181,6 +194,7 @@ def report(tests) -> int:
     for t in tests:
         t()
     check_real_claude_json()
+    check(_test_commits() == _TEST_COMMITS, 'B874: no test committed to the real checkout', _test_commits() - _TEST_COMMITS)
     calls = NO_MUX_LOG.read_text(encoding='utf-8').splitlines() if NO_MUX_LOG.exists() else []
     check(not calls, 'C26: nothing called tmux', f'{len(calls)} calls: {calls[:5]}')
     print()
