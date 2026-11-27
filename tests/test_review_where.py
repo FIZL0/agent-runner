@@ -53,6 +53,11 @@ def test_branch():
         said, _ = RV.ask_change(x, 'why one?', root, once=lambda text: ('because', ''))
         eq(said, 'because', 'answered')
         has(RV.where_page_html(x), 'why one\\?', 'the question is on its page')
+        from agent_runner import done_writeup as DW, pr
+        check(DW.keep_writeup(S.C, 'F1', 'did a thing') is not None, 'write-up kept')
+        check(RV.page_file('F1').is_file(), 'the Review page is written when the change starts waiting')
+        has(DW.writeup(S.C, 'F1'), 'Review page: .*F1.html', 'the write-up links it')
+        has(pr.review_line('F1'), 'review F1 --page', 'the pull request body line links it')
 
 
 def test_pr():

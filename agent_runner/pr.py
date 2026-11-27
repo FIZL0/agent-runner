@@ -453,6 +453,28 @@ def _task_text(tid: str, ls: list[str]) -> str:
         return text
 
 
+def review_page(tid: str, base: str = '') -> Path | None:
+    """F515: write the Review page of `tid`'s waiting change (as `run review ID --page` does); the file, or None."""
+    from agent_runner import review as RV
+    try:
+        x, _ = RV.waiting_change(tid, base or S.default_branch())
+        if not x:
+            return None
+        f = RV.page_file(tid)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(RV.where_page_html(x, S.project()), encoding='utf-8')
+        return f
+    except Exception:  # noqa: BLE001 - the page is a help; a pull request never fails for it
+        return None
+
+
+def review_line(tid: str) -> str:
+    """F515: the line that points at `tid`'s Review page, '' when it has none."""
+    from agent_runner import review as RV
+    f = RV.page_file(tid)
+    return f'Review page: {f} (`run review {tid} --page` writes it again)' if f.is_file() else ''
+
+
 def body(rec: dict, ls: list[str]) -> str:
     """What, why, how to try it and risk as each task's session wrote them, its text, the gate and its review."""
     room = BODY_MAX // max(1, len(rec['ids'])) // 2
@@ -464,6 +486,8 @@ def body(rec: dict, ls: list[str]) -> str:
         for k, h in (('what', 'What'), ('why', 'Why'), ('try', 'How to try it'), ('risk', 'Risk')):
             out.append(f'## {h}\n\n{_words(say.get(k))[:room // 4] or "Not said."}')
         out.append(f'## Spec review\n\n{_words(reviewed(tid))[:room // 4] or "None."}')
+        if line := review_line(tid):
+            out.append(line)
         text = _task_text(tid, ls)
         out.append('<details><summary>The task</summary>\n\n' +
                    _fence(text if len(text) <= room else text[:room] + '\n…') + '\n\n</details>')
@@ -506,6 +530,8 @@ def _open(rec: dict, ls: list[str], branch: str, gh: ci.Gh) -> str:
             return _why(r)
         if got:
             rec.update(number=int(got[0]['number']), url=got[0]['url'], at=time.time())
+    for tid in rec['ids']:
+        review_page(tid, branch)
     f = S.C.notes('prs', f'{rec["key"]}.md')
     f.write_text(body(rec, ls), encoding='utf-8')
     if rec['number']:

@@ -70,9 +70,11 @@ def keep_writeup(c, tid: str, text: str) -> Path | None:
     try:
         f = writeup_file(c, tid)
         f.write_text(text.strip() + '\n', encoding='utf-8')
-        return f
     except OSError:
         return None
+    from agent_runner import pr
+    pr.review_page(tid)  # F515: the change waits from here: its Review page, linked from the write-up
+    return f
 
 
 def journal_entry(c, tid: str) -> str:
@@ -94,7 +96,8 @@ def writeup(c, tid: str) -> str:
     except OSError:
         said = ''
     said = said or logged_writeup(c, tid)
-    return '\n\n'.join(p for p in (said, journal_entry(c, tid)) if p)
+    from agent_runner import pr
+    return '\n\n'.join(p for p in (said, journal_entry(c, tid), said and pr.review_line(tid)) if p)
 
 
 def logged_writeup(c, tid: str) -> str:
