@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: on the run page, a new chat's row in the sidebar stays one row from the send to the first reply: the same place and key, so the list does not redraw or jump while the chat starts (F196d).
 ## 0.83.0 (2026-11-28)
 
 - Changed: a new chat shows its first message's words in its row and header from the tap until it has its own title, never its bare number or New chat between (F196e).

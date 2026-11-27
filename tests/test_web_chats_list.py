@@ -517,5 +517,28 @@ def test_drag_quiet_f507(tmp: Path) -> None:
     eq(o['held'], ['c1 c2 c3 c4', 'c5 c6'], 'held first, a touch drags it into Quiet')
 
 
+def test_one_row_f196d(tmp: Path) -> None:
+    """F196d: a new chat's row keeps its key (data-k) and its place from the send until the first reply."""
+    page = W.page_html().decode()
+    for part in ('S.rowKeys=chatKeysAdd(S.rowKeys,S.came)', 'data-k="${esc(chatKey(x.name,S.rowKeys))}"', 'data-k="${esc(chatKey(n,S.rowKeys))}"'):
+        check(part in page, f'the page has {part}')
+    if not shutil.which('node'):
+        print('  (no node here: the F196d script test is skipped)')
+        return
+    c = lambda n, at: {'name': n, 'at': at}  # noqa: E731
+    old = [c('c1', 100), c('c2', 50)]
+    came = [{'name': 'c3', 'was': '@x', 'stand': True}]
+    s = logic_js([['chatSort', old + [c('c3', 0)], []], ['chatSort', old + [c('c3', 200)], []], ['chatKeysAdd', {}, came]])
+    keys = s[2]
+    stages = [({'top': old, 'quiet': []}, [{'name': '@x', 'stand': True}]), ({'top': old, 'quiet': []}, came),
+              ({'top': s[0], 'quiet': []}, []), ({'top': s[1], 'quiet': []}, [])]
+    got = logic_js([['chatPlaces', g, st, [], None, None] for g, st in stages])
+    names = [[x['name'] for x in g['top']] for g in got]
+    ks = logic_js([['chatKey', n, keys if i else {}] for i, l in enumerate(names) for n in l[:1]])
+    eq(ks, ['chat:@x'] * 4, 'the same key: sent, named, listed, first reply')
+    eq([l[0] for l in names], ['@x', 'c3', 'c3', 'c3'], 'and the same place, first under the pins')
+    eq(names[3], ['c3', 'c1', 'c2'], 'the others stay below it')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_drag_quiet_f507), in_tmp(test_delete_at_once_b876), in_tmp(test_delete_chats_f118), in_tmp(test_card_chat_b139), in_tmp(test_row_buttons_f187), in_tmp(test_rename_cancel_f446), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))
+    raise SystemExit(report([in_tmp(test_one_row_f196d), in_tmp(test_drag_quiet_f507), in_tmp(test_delete_at_once_b876), in_tmp(test_delete_chats_f118), in_tmp(test_card_chat_b139), in_tmp(test_row_buttons_f187), in_tmp(test_rename_cancel_f446), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))

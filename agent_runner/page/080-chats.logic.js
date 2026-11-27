@@ -20,6 +20,11 @@ function chatPlaces(g,stand,pins,was,held){
   const fresh=all.filter(s=>![s.name,s.was].some(n=>n&&was.top.concat(was.quiet).includes(n))), low=was.quiet.includes(held);
   return{top:keep(was.top).concat(low?[]:fresh),quiet:keep(was.quiet).concat(low?fresh:[])};
 }
+/* F196d: a chat row's key (data-k): a chat this page started keeps the key of its stand-in row ('@cid') from the send
+   on, so the row does not redraw or jump when it gets its name or its first reply. keys: {name: '@cid'};
+   chatKeysAdd: keys with the chats still starting (came: [{name, was}]) put in */
+const chatKey=(n,keys)=>'chat:'+((keys&&keys[n])||n);
+function chatKeysAdd(keys,came){const k={...(keys||{})};for(const x of came||[])if(x&&x.name&&x.was)k[x.name]=x.was;return k}
 /* F206: the kept screens, the last KEPT_MAX chats' (a Map, the newest last) */
 const KEPT_MAX=12;
 function keptPut(kept,n,x){kept.delete(n);kept.set(n,x);while(kept.size>KEPT_MAX)kept.delete(kept.keys().next().value);return[...kept.keys()]}

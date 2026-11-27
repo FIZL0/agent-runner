@@ -494,7 +494,7 @@ def test_chats_newest_f201(tmp: Path) -> None:
     eq(o['next'], ['c4', 'c1', 'c3', 'c10', 'c5', 'c6', 'c2'], 'the order next, previous and a range follow')
     eq(o['starting'], 'c4 c1 @b @a c3 c10 c5 c6 q c2 q', 'starting chats first under the pins, the last started on top')
     eq(o['startNext'], o['next'], 'a starting chat is no chat to pick yet')
-    eq(o['named'], 'c4 c1 c11 @a c3 c10 c5 c6 q c2 q', 'one with its name, not in the snapshot yet, keeps its place')
+    eq(o['named'], 'c4 c1 @b @a c3 c10 c5 c6 q c2 q', 'one with its name, not in the snapshot yet, keeps its place (F196d: and its key)')
     eq(o['namedEdit'], o['named'], 'and during a name edit')
     eq(o['up'], 'c4 c1 c11 c3 c10 c5 c6 q c2 q', 'a chat with no activity time keeps that place')
     eq(o['active'], o['up'], 'and so once it is active')
