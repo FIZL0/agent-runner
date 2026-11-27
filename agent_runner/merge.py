@@ -123,7 +123,8 @@ you used before are under another folder.
 
 def repair_prompt(batch: bool, **vals) -> str:
     text = re.sub(r'\[\[(.*?)\|(.*?)\]\]', lambda m: m.group(2 if batch else 1), REPAIR, flags=re.S)
-    return text.format(**vals)
+    from agent_runner import lessons_ask  # F414: a repair session may file a lesson
+    return text.format(**vals) + lessons_ask.repair_line(C)
 
 
 def last_words(sid: str) -> str:
