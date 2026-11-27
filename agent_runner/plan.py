@@ -553,8 +553,8 @@ def _above(ls: list[str], i: int) -> tuple[list[str], dict[str, list[str]]]:
     start = i
     while start and not _level(ls[start - 1]):
         start -= 1
-    return _split_skipped(ls, [j for j in range(start, i) if (m := ITEM.match(ls[j])) and not m.group(1)
-                               and m.group(2) != 'x'])
+    return _split_skipped(ls, _not_waiting_back(ls, i, [j for j in range(start, i) if (m := ITEM.match(ls[j]))
+                                                        and not m.group(1) and m.group(2) != 'x']))
 
 
 def _split_skipped(ls: list[str], at: list[int]) -> tuple[list[str], dict[str, list[str]]]:
@@ -679,7 +679,26 @@ def _before_all(ls: list[str], i: int) -> tuple[list[str], dict[str, list[str]]]
         if m and not m.group(1) and m.group(2) != 'x' and not section.startswith(SKIPPED) and \
                 release_ahead.counted(ls[i], m.group(3).rstrip('.')):  # F435
             at.append(j)
-    return _split_skipped(ls, at)
+    return _split_skipped(ls, _not_waiting_back(ls, i, at))
+
+
+def _not_waiting_back(ls: list[str], i: int, at: list[int]) -> list[int]:
+    """B868: the lines of `at` whose task does not wait, by name and down the chain, on the task at ls[i]: a task
+    that waits for a release is never one the release waits for, or neither could start."""
+    me, where = ITEM.match(ls[i]).group(3).rstrip('.'), _open_at(ls)
+
+    def back(j: int) -> bool:
+        seen, todo = {j}, _named_after(ls, j)
+        while todo:
+            t = todo.pop(0)
+            if t == me:
+                return True
+            k = where.get(t)
+            if k is not None and k not in seen:
+                seen.add(k)
+                todo += _named_after(ls, k)
+        return False
+    return [j for j in at if not back(j)]
 
 
 def resolve_after(ls: list[str], i: int, ids: list[str]) -> list[str]:

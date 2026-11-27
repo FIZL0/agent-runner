@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a release no longer waits on a task that waits for that release (directly or down its chain), so neither is stuck; the task runs after the release lands (B868).
 ## 0.78.0 (2026-11-26)
 
 - Added: a pitch's Ask… on Needs you, beside Approve and Not this…: per change Ask about it (its answer shows under it, and on the Review page) and Ask for a better way (undone and its task reopened with what you want instead) (F444c).
