@@ -324,7 +324,7 @@ def held(running: dict, branch: str) -> Held:
                 holding=frozenset(row_hold.held_ids(plan_text(branch))) if todo else frozenset(),
                 **({'prs': n, 'on': pr_rows.started()} if todo and (n := pr_rows.full()) else {}),
                 high=high_tasks(branch) if todo else frozenset(),
-                unchecked=unchecked_holds(plan_text(branch), todo) if todo else {},
+                unchecked=unchecked_holds(plan_text(branch), todo, shared) if todo else {},
                 splits=split_holds(branch) if todo else {}, **tool_fields(todo, live, branch))
 
 
@@ -380,10 +380,10 @@ def critical_tasks(branch: str) -> frozenset:
                                         (m := P.PRI_TAG.search(rest)) and m.group(1) == 'critical'))
 
 
-CONFIRM_ASK = re.compile(r'(?:^|\s)BLOCKED: CONFIRM: ')  # F415: not `BLOCKED: shelved: CONFIRM:`
+CONFIRM_ASK = re.compile(r'(?:^|\s)BLOCKED: CONFIRM:')  # F415: not `BLOCKED: shelved: CONFIRM:`
 
 
-def unchecked_holds(ls: list[str], todo: list) -> dict[str, str]:
+def unchecked_holds(ls: list[str], todo: list, shared: set = frozenset()) -> dict[str, str]:
     """F415: {open bug (B) task: the task under Needs you with CONFIRM whose files meet its own}. A fix waits while
     an earlier one on the same files awaits the person's check, so fixes do not pile up on unverified ones. A
     shelved CONFIRM holds nothing; critical and high tasks (a person's plan) pass; `holds` reads those."""
@@ -397,7 +397,7 @@ def unchecked_holds(ls: list[str], todo: list) -> dict[str, str]:
         if not t[0].startswith('B') or not t[2]:
             continue
         for cid, files in confirms:
-            if cid != t[0] and file_overlap(t[2], (cid, '', files, set()), set()):
+            if cid != t[0] and file_overlap(t[2], (cid, '', files, set()), set(shared)):
                 out[t[0]] = cid
                 break
     return out
