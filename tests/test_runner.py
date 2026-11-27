@@ -635,7 +635,8 @@ def gate_limit_b186(tmp: Path):
     d = at_limit('T3')
     (d / 'BROKEN').unlink()
     r = run(d, 'done', 'T3', 'T3: work', '--blocked', 'test_x fails: needs a fixture')
-    check(r.returncode == 0 and 'blocked T3' in r.stdout, 'any other why still blocks at the limit', r.stdout + r.stderr)
+    check(r.returncode == 0 and 'marked done, not blocked' in r.stdout,
+          'B879: any other why whose gate then passes ends done, not blocked', r.stdout + r.stderr)
     R.init(repo)
     has(R.prompt_for('T2', 1, 1, d, 'main'), r'never to have a finished task marked done',
         'the brief says what CONFIRM is not for')

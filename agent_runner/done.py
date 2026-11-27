@@ -367,8 +367,10 @@ def cut_off(rc: int | None) -> bool:
 
 def unblock_on_pass(a, capped: bool, key: str, docs: bool) -> bool:
     """B879: a --blocked `done` that the failed-gate cap forced, whose full gate then passed, marks the task done
-    instead: drop the block. True when it did. A block that asks a person to DECIDE stays."""
-    if not (a.blocked and capped and key == 'test' and not docs) or re.match(r'\s*DECIDE:', a.blocked):
+    instead: drop the block. True when it did. A block that asks a person (CONFIRM, DECIDE, BLOCKED) or waits on
+    a task or a check stays."""
+    if (not (a.blocked and capped and key == 'test' and not docs) or a.after or a.until
+            or re.match(r'\s*(CONFIRM|DECIDE|BLOCKED):', a.blocked)):
         return False
     a.blocked = a.after = a.until = None
     return True
