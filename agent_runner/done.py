@@ -149,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     own = c.run['done_test']  # F178: in place of `test`, whatever the diff is
     if docs and not own:  # no tested ref either: the merge decides by its own diff
         print(DOCS_SKIP + (f' (docs check: {c.run["docs_check"]})' if c.run['docs_check'] else ''))
+    capped = bool(a.blocked) and last_fail(fails_file(cwd, a.id))[0] >= MAX_FAILS  # B879
     if not a.no_test:
         from agent_runner import merge_rows  # B852: the run page says Waiting to test, then Testing
         if own or not docs:
@@ -167,8 +168,12 @@ def main(argv: list[str] | None = None) -> int:
         if rc:
             print(tail)
             lessons_ask.mark_failed_gate(cwd, a.id)  # F414
+            n = 0
             if a.blocked:
                 last = 'Commit only what is solid, and'
+            elif cut_off(rc):  # B879: a killed or timed-out gate says nothing about the code
+                n = last_fail(fails_file(cwd, a.id))[0]
+                last = f'The gate was cut off (exit {rc}): not counted as a failed gate. Run it again, or'
             elif (n := fails(cwd, a.id, add=True, content=content)) > MAX_FAILS:
                 last = (f'That is {n} failed gates on {a.id}: {PROG} refuses any more until it is blocked. Commit what '
                         f'is solid and')
@@ -187,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f'done_test passed: {own}')
         elif c.run['test'] and not docs:
             print(f'gate passed: {c.run["test"]}')
+    if not a.no_test and unblock_on_pass(a, capped, key, docs):
+        print(f'gate passed on {a.id} after its failed gates: marked done, not blocked')
     if a.blocked or not a.no_test:  # a pass, or a block: the next session on it starts its count afresh
         fails(cwd, a.id, reset=True)
 
@@ -351,6 +358,20 @@ def tested_tick(tid: str, c=None) -> bool:
     c = c or cfg()
     ref = git('rev-parse', '--verify', '-q', TESTED + tid, cwd=c.root).stdout.strip()
     return bool(ref) and ref == git('rev-parse', 'HEAD', cwd=c.root).stdout.strip() and ticked(tid, c)
+
+
+def cut_off(rc: int | None) -> bool:
+    """B879: a gate exit that means it was killed or ran out of time, not that a test failed."""
+    return rc is None or rc < 0 or rc in (124, 137, 143)
+
+
+def unblock_on_pass(a, capped: bool, key: str, docs: bool) -> bool:
+    """B879: a --blocked `done` that the failed-gate cap forced, whose full gate then passed, marks the task done
+    instead: drop the block. True when it did. A block that asks a person to DECIDE stays."""
+    if not (a.blocked and capped and key == 'test' and not docs) or re.match(r'\s*DECIDE:', a.blocked):
+        return False
+    a.blocked = a.after = a.until = None
+    return True
 
 
 def fails_file(cwd: Path, tid: str) -> Path | None:
