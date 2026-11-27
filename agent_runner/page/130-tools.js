@@ -120,6 +120,8 @@ const BTN_FIELDS=['label','cmd','confirm'], btnField=(i,k)=>`b${i}-${k}`;
 const devButtons=()=>`<div class="sec">Buttons<span class="ln"></span></div><div class="small">Each runs its command once on this machine, 30 s at most.</div>
     ${(S.devBtns||[]).map((i,at)=>`<div class="devbtn" data-k="devbtn:${i}" role="group" aria-label="Button ${at+1}"><div class="row setline"><b class="grow">Button ${at+1}</b><button class="btn" data-tool="btndel" data-i="${i}" aria-label="Remove button ${at+1}">Remove</button></div>${devText(btnField(i,'label'),'Label',{hint:'Restart'})}${devText(btnField(i,'cmd'),'Command (no secrets here)')}${devText(btnField(i,'confirm'),'Question asked first, if it needs one')}</div>`).join('')}
     <div class="btns"><button class="btn" data-tool="btnadd">Add a button</button></div>`;
+/* F466b: the Custom tool form's Describe it, under the Another way fields */
+const customDescribe=()=>S.devCustom?devText('describe','Describe it: what the tool is and how agents use it, in plain words. A task turns this into a tool entry, for you to approve before it is saved.',{area:4}):'';
 SHEETS.device=()=>{
   const edit=S.sheetArg, d=S.tools||{aliases:[]}, ssh=toolVal('kind')!=='other', n=edit||'';
   return `<h2>${edit?`Edit ${esc(edit)}`:'Add a device'}</h2>${devText('name','Name, as tasks name it',{hint:'macmini'})}${edit?'<div class="small">If you rename it, a task that needs it keeps the old name until it is edited.</div>':''}

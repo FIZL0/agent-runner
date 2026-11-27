@@ -25,8 +25,7 @@ function loginCard(l){
     :`<div class="btns"><button class="btn" data-tool="loginedit" data-name="${n}" ${off}>Replace…</button><button class="btn" data-tool="loginask" data-name="${n}" ${off}>Remove</button></div>`}`,'',`data-k="login:${n}"`);
 }
 const loginsHTML=()=>{const ls=(S.tools||{}).logins||[];return ls.length?`<div class="sec">Logins<span class="ln"></span></div>${ls.map(loginCard).join('')}`:''};
-/* the Custom tool form is the device sheet's 'Another way' with Describe it under it */
-const customDescribe=()=>S.devCustom?devText('describe','Describe it: what the tool is and how agents use it, in plain words. A task turns this into a tool entry, for you to approve before it is saved.',{area:4}):'';
+/* the Custom tool form is the device sheet's 'Another way' with Describe it under it (customDescribe(), 130-tools.js) */
 async function formClick(x){
   const {tool,name}=x.dataset;
   if(tool==='formssh'){S.devCustom=false;return toolEdit(null)}
