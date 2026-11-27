@@ -389,6 +389,55 @@ export function saidLines(text, cols = (process.stdout.columns || 100)) {
   return '\n' + rows.map((r, i) => `\x1b[48;5;237m${i ? '  ' : '❯ '}${r}${' '.repeat(Math.max(0, w - [...r].length))}\x1b[0m`).join('\n');
 }
 
+// F483: the model's reply as Claude Code draws it: '● ' then the markdown rendered (bold, italics, inline code,
+// lists, headings), word-wrapped to the terminal with a hanging indent under the marker and under each list item
+const visible = (s) => [...s.replace(/\x1b\[[0-9;]*m/g, '')].length;
+function inlineMd(s) {
+  return s
+    .replace(/`([^`]+)`/g, '\x1b[36m$1\x1b[39m')
+    .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (_, x, y) => `\x1b[1m${x ?? y}\x1b[22m`)
+    .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)|(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g,
+      (_, p, x, q, y) => `${p ?? q}\x1b[3m${x ?? y}\x1b[23m`);
+}
+function wrapped(text, first, rest, w) {
+  const out = [];
+  let line = first, len = visible(first), empty = true;
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const n = visible(word);
+    if (!empty && len + 1 + n > w) { out.push(line); line = rest; len = visible(rest); empty = true; }
+    line += (empty ? '' : ' ') + word; len += (empty ? 0 : 1) + n; empty = false;
+  }
+  out.push(line);
+  return out;
+}
+export function replyLines(text, cols = (process.stdout.columns || 100)) {
+  const w = Math.max(20, cols), out = [];
+  let fence = false;
+  for (const raw of String(text).replace(/\r/g, '').split('\n')) {
+    const lead = out.length ? '  ' : '● ';
+    if (/^\s*```/.test(raw)) { fence = !fence; continue; }
+    if (fence) { out.push(lead + raw); continue; }
+    if (!raw.trim()) { out.push(''); continue; }
+    const h = raw.match(/^#{1,6}\s+(.*)$/);
+    if (h) { out.push(...wrapped(`\x1b[1m${inlineMd(h[1])}\x1b[22m`, lead, '  ', w)); continue; }
+    const li = raw.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (li) {
+      const mark = `${lead}${li[1]}${/\d/.test(li[2]) ? li[2] : '-'} `;
+      out.push(...wrapped(inlineMd(li[3]), mark, ' '.repeat(visible(mark)), w));
+      continue;
+    }
+    out.push(...wrapped(inlineMd(raw), lead, '  ', w));
+  }
+  return out.join('\n');
+}
+// F483: the dim line after a chat turn, as Claude Code words it: '✻ Worked for 12s · done 14:03'
+export function doneLine(ms, at = new Date()) {
+  const s = Math.max(1, Math.round(ms / 1000));
+  const took = s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+  const hm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return `\x1b[2m✻ Worked for ${took} · done ${hm}\x1b[22m`;
+}
+
 function redrawn(out) {
   let kept = '', due = null;
   const write = out.write.bind(out);
@@ -410,7 +459,7 @@ function recap(messages) {
   for (const m of messages.slice(-60)) {
     const said = m.role === 'toolResult' ? '' : textOf(m.content).trim();
     if (said.startsWith('[Request interrupted')) console.log('harness: interrupted');
-    else if (said) console.log(m.role === 'user' ? saidLines(said) : said);
+    else if (said) console.log(m.role === 'user' ? saidLines(said) : replyLines(said));
   }
 }
 
@@ -947,7 +996,7 @@ async function main() {
     messages.push(t.user('[Request interrupted by user]'));
     console.log('harness: interrupted');
   };
-  let failures = 0, peak = t.peak(), over = a.chat; // over: a chat's turn is done (or none has begun)
+  let failures = 0, peak = t.peak(), over = a.chat, turnStart = Date.now(); // over: a chat's turn is done (or none has begun)
   for (;;) {
     if (over && !pending.length) {
       s.ctl = null;
@@ -956,6 +1005,7 @@ async function main() {
       if (tells.queue.some((x) => x === '/exit' || x === '/quit')) return 0;
     }
     if (a.chat && (over || !s.ctl)) s.ctl = new AbortController();
+    if (over) turnStart = Date.now();
     over = false;
     is('busy');
     for (const text of pending.splice(0)) {
@@ -1034,7 +1084,7 @@ async function main() {
     }
     messages.push(m);
     const said = textOf(m.content.filter((b) => b.type === 'text'));
-    if (said) console.log(a.chat ? `● ${said}` : said);
+    if (said) console.log(a.chat ? replyLines(said) : said);
     const calls = m.content.filter((b) => b.type === 'toolCall');
     for (const c of calls) {
       tally.add(c.name);
@@ -1054,6 +1104,7 @@ async function main() {
     if (calls.length) continue;
     if (a.once) return 0;
     if (a.chat) {
+      console.log(doneLine(Date.now() - turnStart));
       over = true;
       continue;
     }
