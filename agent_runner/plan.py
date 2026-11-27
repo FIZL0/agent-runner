@@ -3588,7 +3588,24 @@ def decide_question(text: str) -> str:
     `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none). B840: it is whole
     up to QUESTION_MAX, and `on_a_line`."""
     q = ' '.join(m[1].split()) if text.strip() and (m := DECIDE_LINE.match(text.strip().splitlines()[-1])) else ''
+    if not q and text.strip():
+        q = _wrapped_decide(text.strip().splitlines())
     return cut_question(on_a_line(q), QUESTION_MAX)
+
+
+def _wrapped_decide(lines: list) -> str:
+    """B871: a DECIDE line wrapped over several lines at the end of the last paragraph: the lines from the nearest
+    `DECIDE:` line down, joined. Only when that line leaves its bracket of options open (so the lines below carry it
+    on); a status that quotes a whole DECIDE and then says more is none."""
+    for i in range(len(lines) - 2, -1, -1):
+        if not lines[i].strip():
+            return ''
+        if m := DECIDE_LINE.match(lines[i]):
+            head = m[1]
+            if head.count('[') <= head.count(']'):
+                return ''
+            return ' '.join(' '.join([head] + lines[i + 1:]).split())
+    return ''
 
 
 QUESTION_MAX = 2000  # B840: a guard only; a view with little room cuts the question itself
