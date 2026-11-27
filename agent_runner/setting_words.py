@@ -177,8 +177,6 @@ _CHOICES: dict[str, dict[str, str]] = {
     'run.engine': {'terminal': 'Terminal', 'stream': 'Stream'},
     'run.ci_watch': {'auto': 'On', 'false': 'Off'},
     'run.issues_watch': {'true': 'On', 'false': 'Off'},
-    'run.weekly_max': {'50': '50%', '60': '60%', '70': '70%', '80': '80%', '90': '90%', '95': '95%', '100': '100%'},
-    'run.session_max': {'50': '50%', '60': '60%', '70': '70%', '80': '80%', '90': '90%', '95': '95%', '100': '100%'},
     'run.control_idle': {'1h': '1 hour', '3h': '3 hours', '6h': '6 hours', '12h': '12 hours', 'false': 'Never'},
     'run.control_ask': {'1h': '1 hour', '2h': '2 hours', '6h': '6 hours', '12h': '12 hours', 'false': 'Off'},
     'ui.chat_quiet': {'1h': '1 hour', '3h': '3 hours', '6h': '6 hours', '12h': '12 hours', '1d': '1 day', 'false': 'Off'},
