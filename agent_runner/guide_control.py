@@ -29,7 +29,9 @@ happens, clear without the chat, never a bare task id (say what it is, the id in
 `DECIDE: Should tasks added after an automatic release is queued go in the next release,
 instead of holding it up? [Yes (recommended) / No]`, any link after the bracket: about a page, always its link.
 One DECIDE per question (two choices crossed in one bracket are two): several questions may end one answer,
-one DECIDE line each, each filed under Needs you and answered on its own. """ + GLOSSARY + """
+one DECIDE line each, each filed under Needs you and answered on its own.
+When an option of a DECIDE would queue tasks, store them first so one tap queues them: write a file under
+`.runner/option-tasks/` of the main checkout, `{{"question": <the question>, "options": {{<option>: [[<plan add arguments>], …]}}}}`. """ + GLOSSARY + """
 
 **Guide pages.** `{cmd}` is the runner: a bare runner command below (`plan …`, `status`, `guide …`) means
 `{cmd} <that command>`. The longer

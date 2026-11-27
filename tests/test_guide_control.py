@@ -85,4 +85,8 @@ topics = guide.control_topic('summary') + guide.control_topic('output')
 has(topics, r'23 tasks left: 6 can start now, 12 wait on another task, 5 need you', 'the summary headline')
 has(topics, r'tasks left: …` line \(how many can start\s+now, wait on another task, need you', 'the how-much-is-left answer')
 
+print('F192d: the brief names the option-tasks store')
+has(text, r'`\.runner/option-tasks/`', 'names where option tasks go')
+has(text, r'\{"question": <the question>, "options"', 'its shape, braces kept by format')
+
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
