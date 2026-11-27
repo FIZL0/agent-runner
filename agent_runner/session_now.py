@@ -176,14 +176,33 @@ def output_tail(path: str) -> str:
 _TASKS: dict[str, tuple[int, list[dict]]] = {}  # transcript -> (its size, its tasks then)
 
 
+def several_asks(rows: list[dict], ask: dict | None) -> list[dict]:
+    """F192b1a: `chat_question.asks_of` of the message open question `ask` is in (transcript entries `rows`), in order;
+    [] for none."""
+    if not ask:
+        return []
+    from agent_runner.control import message_text
+    said = next((d for d in reversed(rows) if isinstance(d, dict) and d.get('type') == 'assistant' and d.get('uuid') == ask['id']), None)
+    return chat_question.asks_of(message_text(said), ask['id']) if said else [ask]
+
+
+def joined_asks(asks: list[dict], sid: str) -> list[dict]:
+    """F192b1a: `asks` still open, each with 'need' when filed under Needs you (`chat_question.joined`)."""
+    out = []
+    for a in asks:
+        if (j := chat_question.joined(a, sid)['ask']):
+            out.append(j)
+    return out
+
+
 def live(name: str) -> dict:
     """The page's word on session `name`: {'ok', 'status', 'since' (when it began, epoch s), 'mode' (its permission mode
     as the transcript has it), 'queued' (F190b: how many sent messages are queued in it), 'ask' (F192a: the question a chat's last answer ends on,
-    `chat_question.ask`; None for none; F192a3: with 'need' and 'answered', `chat_question.joined`), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
+    `chat_question.ask`; None for none; F192a3: with 'need' and 'answered', `chat_question.joined`), 'asks' (F192b1a: each question that answer ends on still open, in order, as 'ask'; 'ask' is the first), 'tasks' (`tasks`, the running ones and the last few ended; a shell's output tail in
     'tail'), 'harness' (F406g: on the harness loop)}."""
     rec = record(name)
     if not rec:
-        return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'queued': 0, 'ask': None, 'tasks': []}
+        return {'ok': False, 'status': '', 'since': 0, 'mode': '', 'queued': 0, 'ask': None, 'asks': [], 'tasks': []}
     path = transcript(name, rec)
     rows: list[dict] = []
     if path:
@@ -199,7 +218,8 @@ def live(name: str) -> dict:
                 elif d.get('type') == 'queue-operation':
                     ops.append(d)
                 kept.append(d)
-            _TASKS[path] = (size, [{'mode': mode, 'ops': ops, 'ask': chat_question.ask(kept) if name[0] == 'c' else None}, *tasks(kept)])
+            one = chat_question.ask(kept) if name[0] == 'c' else None
+            _TASKS[path] = (size, [{'mode': mode, 'ops': ops, 'ask': one, 'asks': several_asks(kept, one)}, *tasks(kept)])
             while len(_TASKS) > 20:
                 _TASKS.pop(next(iter(_TASKS)))
         rows = _TASKS[path][1]
@@ -209,9 +229,16 @@ def live(name: str) -> dict:
     if rec.get('status') == 'idle':  # nothing of it runs any more, whatever the transcript missed
         run = [t for t in run if t['kind'] == 'agent']
     waits = queued(rec, rows[0]['ops'] if rows else ())
-    ask = rows[0]['ask'] if rows and not queue_answers(rec, rows[0]['ops']) else None  # queued words: the person has spoken since
+    spoken = not rows or queue_answers(rec, rows[0]['ops'])  # queued words: the person has spoken since
+    ask = None if spoken else rows[0]['ask']
+    sid = U.session_sid(name) if name[0] == 'c' and U.S.C else ''
+    said = chat_question.joined(ask, sid)
+    several = [] if spoken else rows[0].get('asks') or []
+    asks = joined_asks(several, sid) if len(several) > 1 else ([said['ask']] if said['ask'] else [])
+    if len(several) > 1:
+        said['ask'] = asks[0] if asks else None  # F192b1a: the first one still open
     return {'ok': True, **({'harness': True} if rec.get('harness') else {}), 'status': str(rec.get('status') or ''), 'since': (rec.get('statusUpdatedAt') or 0) / 1000,
-            'mode': mode, **chat_question.joined(ask, U.session_sid(name) if name[0] == 'c' and U.S.C else ''), 'queued': waits, 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
+            'mode': mode, **said, 'asks': asks, 'queued': waits, 'tasks': [{**{k: v for k, v in t.items() if k != 'out'},
                                      **({'tail': output_tail(t['out'])} if t.get('out') else {})} for t in run + done]}
 
 
