@@ -2,6 +2,7 @@
 
 ### Next
 
+- [ ] **B876** (follow-up, high) Run page: deleting chats (one or a bulk delete) works but the rows stay in the Chats list until a later refresh (the person, 2026-11-27: 'it didnt show until later'). Remove the rows at once on the tap (optimistic), put them back with a plain toast if the delete fails. Check: a page test deletes several chats; the rows go in the same frame, before the server answers; a failed delete restores them. | files: agent_runner/page/060-chats.js, agent_runner/page/183-click.js, agent_runner/page/040-chats.js, tests/test_web_chats_list.py
 - [ ] **F506** Several logins for Codex, Copilot, Gemini (multi-login 5/5), as for Claude: run login <provider> --as <name>, kept in Pi's auth.json per name; the harness picks the task's login. Check: two Codex logins listed and used. | files: agent_runner/login.py, agent_runner/harness.mjs, tests/test_login.py | after: F502
 - [ ] **F505** Status shows a task's login (multi-login 4/5), only when the provider has more than one. Check: status test with one and two logins. | files: agent_runner/status.py, tests/test_status.py | after: F503
 - [ ] **F504** Pin a login in a model name (multi-login 3/5): claude@work:opus anywhere a model is named ([models] kinds, roles, sizes, fallback); a capped pinned login falls back to its provider's other logins. Check: config parse and fallback tests. | files: agent_runner/config.py, agent_runner/fallback.py, tests/test_fallback.py | after: F503
