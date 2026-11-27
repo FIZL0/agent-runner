@@ -582,6 +582,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
         if need and 'news' in c:
             need.update(news=c['news'], news_words=c['news_words'])
         c['item'] = concept_item(c, need)
+    name_chats(needs, concepts)  # F209c: Chat opens the open chat about it
     return needs, concepts
 
 

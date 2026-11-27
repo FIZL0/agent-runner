@@ -324,6 +324,19 @@ def test_concept_item_f197b1(tmp: Path) -> None:
     eq((concepts[1]['item']['label'], concepts[1]['item']['what'], concepts[1]['item']['answers']),
        ('CONCEPT', 'an old page', []), 'a kept page with no Needs you entry still gets one')
 
+def test_open_chat_f209c(tmp: Path) -> None:
+    """F209c: a Needs you row and a Concepts row name the open chat about them (the latest begun); none: no 'chat'"""
+    from agent_runner import control_settled as Z
+    live = [(3, 's3', {'begun': 10.0}, {'F9'}), (5, 's5', {'begun': 20.0}, {'F9', 'K2'}), (7, 's7', {'begun': 5.0}, {'B1'})]
+    with mock.patch.object(Z, 'live', lambda: live), mock.patch.object(U, 'page_rows', lambda *a: []), \
+            mock.patch.object(U, 'concept_copy', lambda k: ''):
+        needs, concepts = U.needs_rows([('CONCEPT', 'F9', 'K2', 'waiting for your OK', '', 'a title', False, ''),
+                                        ('DECIDE', 'B4', '', 'which?', '', 'other', False, '')], NOW)
+    eq((needs[0].get('chat'), concepts[0].get('chat'), concepts[0]['item'].get('chat')), (5, 5, 5), 'the latest open chat')
+    check('chat' not in needs[1], 'no open chat: no chat named')
+    with mock.patch.object(Z, 'live', lambda: []):
+        eq(U.open_chats({'F9'}), {}, 'nothing open: nothing named')
+
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_concept_item_f197b1), in_tmp(test_frame_kept_b860), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
+    raise SystemExit(report([in_tmp(test_open_chat_f209c), in_tmp(test_concept_item_f197b1), in_tmp(test_frame_kept_b860), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))

@@ -881,6 +881,9 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
   Updated when its page changed after that. A page published again at the same link is invisible to the run, so
   the chat that updated it runs `plan concept-updated K7 "<what changed>" [--file <the page>]`; `--file`
   replaces the run's local copy. A local copy changed with no command reads as Updated with no words.
+- **The open chat about it** (F209c): a Needs you row and a Concepts row (and its `item`) carry `chat`, the
+  number of the open chat about that item (its title, the item it was opened from, or the concept or DECIDE it
+  filed; the latest begun when several); no `chat` when none is open. Nothing is started for it.
 - The build gets `F` where the kinds have it, else their first non-K letter. A repo whose `[plan] kinds`
   lack `K` has no concepts: a K-lettered id there is an ordinary task.
 
