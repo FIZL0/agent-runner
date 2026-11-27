@@ -160,3 +160,12 @@ def need_lines(rows: list[dict], indent: str = '') -> list[str]:
         opts = ' / '.join(o['name'] + (' (recommended)' if o.get('rec') else '') for o in r.get('options') or [])
         out.append(f'{indent}{r["chat"]} - {r["question"]}' + (f' [{opts}]' if opts else ''))
     return out
+
+
+def with_chats(lines: list[str]) -> list[str]:
+    """F486: the `needs` command's lines (`plan.needs_lines`, its count last) with the live chats' DECIDE questions
+    before the count, counted too."""
+    if not (chats := need_lines(live_needs())):
+        return lines
+    n = len(lines) - 1 + len(chats)
+    return lines[:-1] + chats + ['1 thing needs you' if n == 1 else f'{n} things need you']
