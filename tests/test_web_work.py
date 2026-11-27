@@ -43,6 +43,7 @@ def test_folds_and_jump() -> None:
     r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=60)
     eq(json.loads(r.stdout), [False, True, True, False, False], 'open by default but Parked and Run log; a fold kept')
     check('data-workjump' in WORK and 'class="workjump"' in WORK, 'a jump bar of buttons')
+    check('S.workJump===k' in WORK and 'aria-current' in WORK, 'UX1: the pressed jump pill is marked')
 
 
 if __name__ == '__main__':
