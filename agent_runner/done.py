@@ -538,6 +538,44 @@ def finished(c=None, a=None) -> int:
     return 0
 
 
+def writeup_file(c, tid: str) -> Path:
+    """F509: where a task's finished write-up is kept, beside the run's notes, so it outlives log rotation."""
+    return c.notes('writeups', f'{tid}.md')
+
+
+def keep_writeup(c, tid: str, text: str) -> Path | None:
+    """F509: keep what the agent says it did when it finishes (`run finish`'s summary) with task `tid`."""
+    if not tid or not (text or '').strip():
+        return None
+    try:
+        f = writeup_file(c, tid)
+        f.write_text(text.strip() + '\n', encoding='utf-8')
+        return f
+    except OSError:
+        return None
+
+
+def journal_entry(c, tid: str) -> str:
+    """F509: the task's newest journal notes, when the repo keeps a journal; '' else."""
+    if not (j := c.journal):
+        return ''
+    try:
+        dirs = sorted(d for d in j.iterdir() if d.is_dir() and
+                      (d.name == tid or re.search(rf'-{re.escape(tid.lower())}(-|$)', d.name.lower())))
+        return (dirs[-1] / 'notes.md').read_text(encoding='utf-8').strip() if dirs else ''
+    except OSError:
+        return ''
+
+
+def writeup(c, tid: str) -> str:
+    """F509: a task's finished write-up: its kept summary, then its journal entry; '' when it has none."""
+    try:
+        said = writeup_file(c, tid).read_text(encoding='utf-8').strip()
+    except OSError:
+        said = ''
+    return '\n\n'.join(p for p in (said, journal_entry(c, tid)) if p)
+
+
 def concept_link_refusal(tid: str, why: str | None, c) -> str | None:
     """B839: why `done --blocked` refuses a CONFIRM whose line or ask file names /concept/<ID> of a task that is no
     concept: no concept is filed for it, so that page is in no Concepts list and the person cannot open it."""

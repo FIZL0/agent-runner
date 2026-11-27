@@ -32,7 +32,7 @@ function histWhen(at){
 /* a landed task's or past release's row: it opens to when it landed, its text and its options, Chat last */
 function histRow(l,list){
   const open=taskIsOpen(list,l.id), t=S.tasks[l.id], when=histWhen(l.at), rel=list==='pastrel', part=l.kind==='part';
-  const text=t&&t.text?`<pre class="tasktext" data-k="text:${esc(list+':'+l.id)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>';
+  const text=t&&t.text?taskBodyHTML(t,list+':'+l.id,!rel):t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>';
   const b=(act,word)=>`<button class="btn${act==='changed'?' pri':''}" data-hist="${act}" data-id="${esc(l.id)}">${word}</button>`;
   const small=[part?'part landed':'',l.at?agoWords(l.at):''].filter(Boolean).join(' · ');
   return `<div class="srow" data-k="${esc(list+':'+l.id)}"><button class="fold" data-task="${esc(l.id)}" data-list="${list}" aria-expanded="${open}">${taskChip(l.id)}<span class="grow"><b class="ell">${esc(l.title||l.id)}</b><span class="small">${esc(small)}</span></span><span class="chev">${I.chev}</span></button>${open?foldIn(list+':'+l.id,`${when?`<div class="small">${rel?'Released':part?'Part landed':'Landed'} at ${esc(when)}.</div>`:''}${text}<div class="btns">${b('changed','What changed')}${b('report','Report a problem')}${b('chat','Chat')}</div>`):''}</div>`;

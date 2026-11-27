@@ -235,7 +235,7 @@ async function openTask(id,list='queue'){
   if(!on)return;
   taskInView(id,list);
   if(/^s\d+$/.test(id))return;  // F426e: an idle slot's row, which is no task
-  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read'),old:oldRun(j)}}
+  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text,writeup:j.writeup||''}:{err:plainOut(j,'It could not be read'),old:oldRun(j)}}
   catch(e){if(!S.tasks[id])S.tasks[id]={err:'Could not reach the run page: fold it and open it again'}}
   if(taskIsOpen(list,id))MO.folded=Date.now();  // what the press opened goes on to its words
   render(true);
