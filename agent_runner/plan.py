@@ -35,7 +35,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
                                  a dropped blocked task comes back blocked, with its ask file if this machine still has it
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
-    ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
+    ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons); a
+                                 slot running it is told the note in its pane, as `tell` does
     ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--size simple|complex] [--needs TOOL] [--pri LEVEL] [--alone | --no-alone]
                                  rewrite the task in place: TEXT replaces its whole description, notes included;
                                  id, checkbox, BLOCKED, tags and fields kept, but each flag replaces its field,
@@ -3411,8 +3412,10 @@ def _p_add(a, x):
 
 
 def _p_note(a, x):
-    note(a.id, _text(a))
-    return x.say(f'noted {a.id}' + big_note(a.id, x))
+    text = _text(a)
+    note(a.id, text)
+    told, said = tell(x.c, a.id, text)  # F512: a slot running it reads the note too
+    return x.say(f'noted {a.id}' + (f'; {said}' if told is not False and said else '') + big_note(a.id, x))
 
 
 def _p_edit(a, x):
