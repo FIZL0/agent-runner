@@ -177,16 +177,6 @@ def output_tail(path: str) -> str:
 _TASKS: dict[str, tuple[int, list[dict]]] = {}  # transcript -> (its size, its tasks then)
 
 
-def several_asks(rows: list[dict], ask: dict | None) -> list[dict]:
-    """F192b1a: `chat_question.asks_of` of the message open question `ask` is in (transcript entries `rows`), in order;
-    [] for none."""
-    if not ask:
-        return []
-    from agent_runner.control import message_text
-    said = next((d for d in reversed(rows) if isinstance(d, dict) and d.get('type') == 'assistant' and d.get('uuid') == ask['id']), None)
-    return chat_question.asks_of(message_text(said), ask['id']) if said else [ask]
-
-
 def joined_asks(asks: list[dict], sid: str) -> list[dict]:
     """F192b1a: `asks` still open, each with 'need' when filed under Needs you (`chat_question.joined`)."""
     out = []

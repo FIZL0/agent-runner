@@ -40,7 +40,9 @@ def test_named(w: World) -> None:
     w.rows[:] = []
     w.add(say(TWO, 'u7'))
     eq(ids(), ['u7', 'u7#2'], 'both open')
-    w.add(you(Q.answered_with('Which size?', 'Big')), say('Noted: big.', 'u8'))
+    w.add(you(Q.ABOUT + 'Which look?' + Q.NOT + 'what is Full?'), say('Full is wider.', 'u9'))
+    eq(ids(), ['u7', 'u7#2'], 'a Marked question leaves both open')
+    w.add(you(Q.answered_with('Which size? [Big / Little]', 'Big')), say('Noted: big.', 'u8'))
     eq(ids(), ['u7'], 'only the named one closes')
     eq(N.live('c6')['ask']['id'], 'u7', 'the other stays ask')
     w.add(you(Q.answered_with('Which look?', 'Full')))

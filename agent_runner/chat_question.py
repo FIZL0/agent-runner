@@ -233,6 +233,7 @@ def open_asks(rows, bare: bool = False) -> list[dict]:
     said = next((d for d in reversed(kept) if isinstance(d, dict) and d.get('type') == 'assistant' and d.get('uuid') == first['id']), None)
     every = asks_of(message_text(said), first['id'], bare) if said else []
     every = every if any(a['id'] == first['id'] for a in every) else [first]
+    named = [re.sub(r'\s*\[[^\]]*\]$', '', n).strip() for n in named]  # its options' bracket too
     if any(n not in {a['question'].strip() for a in every} for n in named):
         return []
     return [a for a in every if a['question'].strip() not in named]
