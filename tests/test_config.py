@@ -332,6 +332,7 @@ def test_global_provider_f443(tmp: Path) -> None:
     eq((c.models['docs'], c.fallback), ('copilot:mai-code-2-flash', ['copilot:mai-code-2-flash']), '[models.tiers] over the built-in')
     eq((c.task_model('F9', 'sonnet'), c.task_model('F9', 'claude:haiku'), c.task_model('X9')),
        ('copilot:claude-sonnet-5.5', 'haiku', 'opus'), "a task's own model: bare is the provider's")
+    eq(c.task_model('D7'), 'copilot:claude-sonnet-5.5', "B864: a kind's default tier runs on [models] provider")
     eq(CF.settled(c)['models', 'provider'], 'copilot', 'a run that is up sees it change')
     for bad, said in (('provider = "acme"', '[models] provider must be one of'), ('provider = "ollama"', 'local provider'),
                       ('[models.tiers.copilot]\nbig = "x"', 'maps opus, sonnet or haiku'), ('[models.tiers.claude]\nopus = "x"', 'not a provider')):

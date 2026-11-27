@@ -30,6 +30,14 @@ def test_adaptive_model_sends_no_disabled_thinking():
     eq(got['thinkingLevelMap']['max'], 'max', 'the other levels stay')
 
 
+def test_claude5_without_compat_flag_b864():
+    sonnet = {'id': 'claude-sonnet-5.5', 'api': 'anthropic-messages', 'reasoning': True, 'compat': {}}
+    got = _run(f'thinkingOff({json.dumps(sonnet)})')
+    eq(got['thinkingLevelMap'].get('off', 'missing'), None, 'B864: a Claude 5 model sends no disabled thinking')
+    old = {'id': 'claude-sonnet-4-5', 'api': 'anthropic-messages', 'reasoning': True, 'compat': {}}
+    check(_run(f'thinkingOff({json.dumps(old)})') == old, 'an older Claude model is left as it is')
+
+
 def test_other_models_unchanged():
     for m in ({'id': 'x', 'api': 'anthropic-messages', 'reasoning': True, 'compat': {}},
               {'id': 'g', 'api': 'openai-completions', 'reasoning': True, 'compat': {'forceAdaptiveThinking': True}},
@@ -41,7 +49,7 @@ def main() -> int:
     if not shutil.which('node'):
         print('skip: no node')
         return 0
-    return report([test_adaptive_model_sends_no_disabled_thinking, test_other_models_unchanged])
+    return report([test_adaptive_model_sends_no_disabled_thinking, test_claude5_without_compat_flag_b864, test_other_models_unchanged])
 
 
 if __name__ == '__main__':
