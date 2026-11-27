@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: the Tools page's Add… offers SSH machine, Login (write-only, saved only over https or on the machine) and Custom tool, whose description queues a task that turns it into a tool entry for you to approve (F466b).
 - Added: `run login set|use|type|list|show|code` keeps website and account logins (an Apple ID) for agents, the password in the keyring or a 0600 file, never on argv or in chats (F466a).
 - Added: opening a concept's details popup, from Home's Needs you card or its Concepts row, clears its New or Updated badge on every device; View clears nothing (F197b3).
 - Fixed: a chat's live screen fits its terminal again when the box font loads late or its box changes size, so Copilot CLI's prompt wraps at the box's edge (B883).

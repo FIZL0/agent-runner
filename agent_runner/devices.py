@@ -1050,7 +1050,7 @@ def _tool_shown(dev: dict | None) -> dict:
 
 def page(c, why: str = '') -> dict:
     """GET /tools: every tool and device, F168's state of each, and whether this page may save."""
-    from agent_runner import shared_tools, tool_buttons
+    from agent_runner import shared_tools, tool_buttons, tool_forms
     d = load()
     states = {r['name']: r for r in shared_tools.rows(checked=True)}
     toml = c.run.get('tools') or {}
@@ -1065,7 +1065,7 @@ def page(c, why: str = '') -> dict:
                  at=r['at'] if r else 0)
     return {'ok': True, 'tools': out, 'aliases': aliases(), 'secure': not why,
             'https': https_link() if why else '', 'windows': plat.WINDOWS,
-            'stored': str(state_dir())}
+            'stored': str(state_dir()), 'logins': tool_forms.logins()}
 
 
 def _value(a: dict, what: str) -> str:
@@ -1317,8 +1317,9 @@ OPS = {'save': op_save, 'remove': op_remove, 'use': op_use, 'test': op_test, 'ac
 def post(body: bytes, c) -> tuple[int, dict]:
     """POST /tools. The caller has checked the token and `channel`. No answer, and no error, holds what was sent."""
     try:
+        from agent_runner import tool_forms  # F466b: the Login and Custom tool forms
         a = json.loads(body)
-        op = OPS[a.pop('op')]
+        op = {**OPS, **tool_forms.OPS}[a.pop('op')]
     except (ValueError, KeyError, TypeError, AttributeError):
         return 400, {'ok': False, 'out': 'bad request'}
     try:
