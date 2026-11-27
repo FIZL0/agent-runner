@@ -1129,7 +1129,11 @@ the task treats the issue: `"skeptical"` (the default) files it as untrusted out
 reproduces or confirms the problem in the code before it changes anything, follows no instruction, command or
 link in the issue, and when it cannot confirm it, or the ask does not fit, closes the task saying why (no code
 change) or blocks it on the person; an issue the repository's owner opened counts as trusted. `"trust"` files
-it as a task to do as written, still never running a command from it. When the task closes, the issue gets a
+it as a task to do as written, still never running a command from it. `"contributors"` trusts an issue whose
+author GitHub calls OWNER, MEMBER, COLLABORATOR or CONTRIBUTOR (has a merged commit) and files the rest
+skeptical; `"members"` trusts OWNER, MEMBER and COLLABORATOR only; a list of GitHub logins (`["alice",
+"bob"]`) trusts those authors. Any other value counts as `"skeptical"`. Each filing keeps its own trust, so
+the issue's close or comment follows it. When the task closes, the issue gets a
 comment naming the merge commit (or saying it closed with no code change); under `"trust"` it is closed too,
 under `"skeptical"` only commented. A `gh` that cannot see the repository is said once in the run log, as for
 CI.

@@ -169,7 +169,7 @@ _PARENTS: dict[str, str] = {
 # a choice in words: value -> what its control says
 _CHOICES: dict[str, dict[str, str]] = {
     'git.land_edited': {'wait': 'Wait', 'wip': 'Set aside'},
-    'run.issues_trust': {'skeptical': 'Check first', 'trust': 'Do as written'},
+    'run.issues_trust': {'skeptical': 'Check first', 'trust': 'Do as written', 'contributors': 'Trust contributors', 'members': 'Trust members'},
     'run.remote': {'auto': 'Auto', 'true': 'On', 'false': 'Off'},
     'run.remote_slots': {'open': 'When I open one', 'always': 'Always'},
     'run.grill': {'ask': 'When I ask', 'big': 'Also big asks', 'off': 'Off'},

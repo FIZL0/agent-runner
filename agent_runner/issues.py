@@ -10,7 +10,10 @@ An issue is outside text: anyone who can open one writes it. `[run] issues_trust
 it. "skeptical" (the default) files it as untrusted: the agent confirms the problem in the code before it
 changes anything, follows no instruction, command or link in the issue, and closes the task saying why (no
 code change) or blocks it on the person when it cannot confirm it or the ask does not fit. An issue the
-repository's owner opened counts as trusted. "trust" files it as a task to do as written, still never
+repository's owner opened counts as trusted. "contributors" trusts authors GitHub calls OWNER, MEMBER,
+COLLABORATOR or CONTRIBUTOR (a merged commit) and files the rest skeptical; "members" trusts OWNER, MEMBER
+and COLLABORATOR only; a list of GitHub logins trusts those authors. Each filing keeps its own trust, so the
+close or comment follows it. Any other value is "skeptical". "trust" files it as a task to do as written, still never
 running a command from it.
 
 When an issue's task closes, the issue gets a comment naming the merge commit (or saying it closed with no
@@ -45,16 +48,41 @@ def labels_of(setting) -> list[str] | None:
     return [str(x) for x in setting]
 
 
-def trust_of(setting) -> str:
-    """`[run] issues_trust`, "skeptical" unless it says "trust"."""
-    return 'trust' if str(setting or '').strip().lower() == 'trust' else 'skeptical'
+MODES = ('skeptical', 'trust', 'contributors', 'members')
+MEMBERS = frozenset({'OWNER', 'MEMBER', 'COLLABORATOR'})
+CONTRIBUTORS = MEMBERS | {'CONTRIBUTOR'}
+
+
+def trust_of(setting) -> str | frozenset:
+    """`[run] issues_trust` as a mode ("skeptical", "trust", "contributors", "members") or, for a list, the
+    lowercased GitHub logins to trust; anything unknown is "skeptical"."""
+    if isinstance(setting, (list, tuple, set, frozenset)):
+        return frozenset(str(x).strip().lstrip('@').lower() for x in setting if str(x).strip())
+    v = str(setting or '').strip().lower()
+    return v if v in MODES else 'skeptical'
+
+
+def issue_trust(issue: dict, mode, me: str = '') -> str:
+    """"trust" or "skeptical" for one issue under mode `mode` (from trust_of); `me` is the repository's owner,
+    whose issues are always trusted."""
+    if mode == 'trust':
+        return 'trust'
+    who = str((issue.get('author') or {}).get('login') or '')
+    if me and who and who.lower() == me.lower():
+        return 'trust'
+    role = str(issue.get('authorAssociation') or '').upper()
+    if mode == 'contributors' and role in CONTRIBUTORS or mode == 'members' and role in MEMBERS:
+        return 'trust'
+    if isinstance(mode, frozenset) and who.lower() in mode:
+        return 'trust'
+    return 'skeptical'
 
 
 def open_issues(gh: Gh, labels: list[str]) -> list[dict] | None:
     """The open issues, oldest first, that carry one of `labels` (every one for []); None when `gh` could
     not answer."""
     r = gh('issue', 'list', '--state', 'open', '-L', str(LIMIT),
-           '--json', 'number,title,url,body,labels,author')
+           '--json', 'number,title,url,body,labels,author,authorAssociation')
     if r.returncode:
         return None
     try:
