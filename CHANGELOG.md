@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.85.0 (2026-11-28)
+
 - Added: deciding an item for good on the run page, in the TUI or by a pick link (an answer or option button, approve, confirm or drop) closes the chats about it instead of typing a line into them; the transcript stays and Resume brings one back. Shelve, revise and a No still type the line, and a chat the person spoke in last, that asks another DECIDE, runs work, holds a message, has a question up, is about another waiting item or was renamed stays open (F209b).
 - Changed: the Concepts view draws a concept waiting in Needs you as its Home Needs you card, same buttons and actions, with its New or Updated badge (F197b).
 - Added: while a run is up, it reads the until checks blocked tasks wait on every 2 min, each check once a round, and reopens a task once all of its checks pass, committed as a merge's reopening; a check that cannot run for 30 min, or has not passed for 3 days, is one Needs you item that says which check, its last words and how to free the task (F427c).
@@ -12,6 +14,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Changed: on the run page, the Run card's More… sheet lists every run control shown now (slot +1 and -1, pause or go on, stop or take the stop back, Start the run while no run is up joined it), each row with its icon on the left and its key in `agent-runner ui` on the right (B763b).
 - Removed: the pick-links command and the concept branch of /pick; an old concept link answers with a short page saying to pick in Concepts and changes nothing; a pick sheet's Send still answers (C40b).
 - Added: a chat whose answer ends on several questions has each filed under Needs you as an item of its own, a question with no options too, in one commit; a retry files none twice, and the chat closes only once all are filed (F192b1b).
+
 ## 0.84.0 (2026-11-28)
 
 - Changed: a new chat started from Home's message box goes the way one from + does, one row reading Starting the chat… until its name comes, now checked by a test (F196f).
