@@ -103,26 +103,6 @@ def pick_base(tid: str, https=None) -> str:
     return pick_link(base, tid, pick_code(tid)) if (base := https_base(https)) else ''
 
 
-def pick_links(tid: str, options: list[str], https=None) -> list[str]:
-    """F138: one link per option of item `tid` ([] with no https address)."""
-    if not (base := https_base(https)):
-        return []
-    code = pick_code(tid)
-    return [pick_link(base, tid, code, o) for o in options]
-
-
-def _concept_of(tid: str) -> tuple[str, str]:
-    """(concept id, build id) of a waiting concept that `tid` names (either one); ('', '') for none."""
-    from agent_runner import plan as P
-    try:
-        for build, cid, _, _ in P.waiting(S.C.todo, all=True):
-            if tid in (build, cid):
-                return cid, build
-    except (SystemExit, OSError):
-        pass
-    return '', ''
-
-
 def pick(tid: str, option: str, code: str) -> tuple[int, str]:
     """F138: answer item `tid` with `option` when `code` is its unused pick code: (HTTP status, what to say)."""
     from agent_runner.brief import has_sheet
@@ -135,26 +115,17 @@ def pick(tid: str, option: str, code: str) -> tuple[int, str]:
         if not U.need_label(tid):
             return 409, f'{tid} is settled already: nothing waits for an answer on it.'
         sheet = has_sheet(tid)
-        if not option or (len(option) > PICK_MAX if sheet else not PICK_OPTION.fullmatch(option)):
+        if not sheet:  # C40b: a link on an old concept page changes nothing
+            return 410, 'This link no longer answers: pick in Concepts on the run page.'
+        if not option or len(option) > PICK_MAX:
             return 400, f'{option!r} is not an option of {tid}.'
-        if sheet:
-            argv = ['sheet', tid, '--go'] if option.lower() in ('go', 'recommended') else \
-                ['sheet', tid, '--picks', option]
-            said = f'Sent your picks for {tid}: the run starts it again.'
-        else:
-            cid, build = _concept_of(tid)
-            opts = concept_options(U.concept_copy(cid or tid))
-            i = ord(option.upper()) - ord('A') if len(option) == 1 and option.isalpha() else -1
-            name = opts[i]['name'] if 0 <= i < len(opts) else ''
-            name = re.sub(r'\s*\(recommended\)\s*$', '', re.sub(rf'^\s*{option}\s*[:.)-]\s*', '', name, flags=re.I),
-                          flags=re.I).strip()  # 'B: drawer (recommended)' is named 'drawer'
-            argv = ['plan', 'confirm', tid, f'go with {option}' + (f': {name}' if name else '')]
-            said = (f'Approved {option}' + (f' ({name})' if name else '') + f': the run starts {build}.'
-                    if build else f'Answered {tid} with {option}: the run starts it again.')
+        argv = ['sheet', tid, '--go'] if option.lower() in ('go', 'recommended') else \
+            ['sheet', tid, '--picks', option]
+        said = f'Sent your picks for {tid}: the run starts it again.'
         r = U.call(argv)
         if not r['ok']:
             return 409, f'{tid} was not answered: {(r.get("out") or "").strip() or "the runner refused it"}'
-        d.update(used=time.strftime('%Y-%m-%d %H:%M'), option=option if not sheet else 'picks')
+        d.update(used=time.strftime('%Y-%m-%d %H:%M'), option='picks')
         pick_file(tid).write_text(json.dumps(d) + '\n', encoding='utf-8')
         return 200, said
 

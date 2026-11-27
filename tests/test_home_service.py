@@ -1021,8 +1021,8 @@ def pick_links_through_home(root: Path, hp: int, mine: int, ts) -> None:
     from agent_runner import cmds as M
     nots = lambda p, t: []  # noqa: E731
     eq(W.https_base(ts), 'https://box.tail.ts.net/p/proj', "F167: the base is Home's https address at /p/KEY")
-    link = W.pick_links('B1', ['A'], ts)[0]
     code = W.pick_code('B1')
+    link = W.pick_base('B1', ts) + '&o=A'
     eq(link, f'https://box.tail.ts.net/p/proj/pick?id=B1&k={code}&o=A', 'an option link through Home')
     check(H.home_token() not in link and W.web_token() not in link, "with neither Home's token nor the run's", link)
     eq(W.pick_base('B1', ts), f'https://box.tail.ts.net/p/proj/pick?id=B1&k={code}', "a pick sheet's Send too")
@@ -1030,16 +1030,7 @@ def pick_links_through_home(root: Path, hp: int, mine: int, ts) -> None:
     check(str(mine) not in W.no_https_why(), "the reason never names the run's port", W.no_https_why())
     with mock.patch.object(W, 'run_port', lambda: 9999):
         has(W.no_https_why(), f'port {hp}; ', "Home's is said first, as its links are, when the run has a port too")
-    eq(W.pick_links('B1', ['A'], nots), [], 'and no links')
-    # the case a person hit: Serve's https on a port of its own (8771) to Home's, where another entry proxies to 8771
-    serve = lambda p, t: {hp: [f'https://box.tail.ts.net:8771/?t={t}'],  # noqa: E731
-                          8771: [f'https://other.ts.net/?t={t}']}.get(p, [])
-    with mock.patch.object(W, 'tailscale_https_urls', serve), redirect_stdout(io.StringIO()) as out, \
-            mock.patch.object(M, 'init'):
-        rc = M.cmd_pick_links(['B1', 'A,B'])
-    eq(rc, 0, 'pick-links prints links with Serve on port 8771 to Home')
-    eq([x.split('&k=')[0] for x in out.getvalue().splitlines()],
-       [f'{o} https://box.tail.ts.net:8771/p/proj/pick?id=B1' for o in 'AB'], "on Home's https address")
+    eq(W.pick_base('B1', nots), '', 'and no link')
     own = W.url_file().read_text(encoding='utf-8')
     with mock.patch.object(W, 'home_port', lambda: hp), mock.patch.object(W, 'site_urls', lambda **kw: []):
         W.url_file().write_text(f'http://h:{hp}/?t=x\n', encoding='utf-8')
@@ -1060,9 +1051,8 @@ def pick_links_through_home(root: Path, hp: int, mine: int, ts) -> None:
             eq(get(f'{here}/p/proj/pick/../snapshot')[0], 403, 'nothing else goes past the token')
             eq(get(f'{here}/p/proj/pick', b'{}')[0], 403, 'a POST neither')
             code_, body, _ = get(here + path)
-            eq((code_, ran), (200, [['plan', 'confirm', 'B1', 'go with A']]), "the link answers the run, no token")
-            has(body.decode(), 'Answered B1 with A', 'and says so')
-            eq(get(here + path)[0], 409, 'once')
+            eq((code_, ran), (410, []), "an old concept link changes nothing, through Home")
+            has(body.decode(), 'pick in Concepts', 'and says where to pick')
             home._link = lambda r: None
             off = get(f'{here}/p/proj/pick?x="><script>')
             eq((off[0], off[1]), get(f'{here}/p/nope/pick')[:2], 'no run up: the same answer as an unknown project')

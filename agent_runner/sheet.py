@@ -168,7 +168,7 @@ def _rich(s) -> str:
 
 def render(spec: dict, tid: str, pick: str = '', local: bool = False) -> str:
     """The pick sheet's page (the Artifact tool's page contract: no html/head/body of its own). F138: `pick`, the
-    run page's /pick link for this sheet with no option (`web.pick_links`), makes Send also show a plain link
+    run page's /pick link for this sheet with no option (`web.pick_base`), makes Send also show a plain link
     that answers the run with the picks; '' (no https address) keeps today's flow. F411: `local`, the
     run page's own copy: its sandbox opens no new tab, so that link opens in place."""
     groups = []
