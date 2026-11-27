@@ -105,7 +105,7 @@ def wait(env_file: Path, deadline: float, every: float = 2.0, clock=time.time, s
         if code:
             return code, ''
         if clock() >= deadline:
-            return None, 'no code came before the deadline' if why == 'none yet' else why
+            return None, 'no code came before the deadline' if why == 'none yet' else f'{why}; the deadline passed'
         sleep(every)
 
 
