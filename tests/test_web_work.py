@@ -15,7 +15,8 @@ NAVJS = (ROOT / 'agent_runner' / 'page' / '030-shared.logic.js').read_text(encod
 def test_order() -> None:
     """The sections stand in timeline order: the run, Now, Up next, Landed, then Parked and Run log folded."""
     body = WORK[WORK.index('function workHTML'):]
-    at = [body.index(s) for s in ("['now','Now'", "['upnext','Up next'", "['landed','Landed'", "['parked','Parked'", "['log','Run log'")]
+    at = [body.index(s) for s in ("['now','Now'", "['upnext','Up next'", "['landed','Landed'", "['parked','Parked'")]
+    eq('Run log' in body, False, 'no Run log section')
     eq(at, sorted(at), 'in timeline order')
     check(body.index('controlsCard()') < body.index('<div class="worksecs">'), 'the run first')
     check("['plan','Work']" in NAVJS and "['status','Status']" not in NAVJS and "['history','History']" not in NAVJS, 'one NAV item, Work')
