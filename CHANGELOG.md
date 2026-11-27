@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: lessons, what a project's agents learned, one line per lesson in plan/LESSONS.md with the files it applies to; a brief shows those whose files meet the task's (most specific first, at most 8); `plan lesson add/list/drop`; a lesson whose files are all gone drops itself. `[plan] lessons`, off by default, on in this repo (F413).
+
 - Changed: Hold on a running task (`plan hold`) stops its slot as Cancel does and holds it in its place; Cancel (the page's and `plan cancel`) now holds the task too instead of parking it, so no run restarts it until Unhold. Still refused while it merges, waits to merge, is taken by hand, or is claimed by another machine's run, which it names (F480).
 ## 0.77.0 (2026-11-26)
 

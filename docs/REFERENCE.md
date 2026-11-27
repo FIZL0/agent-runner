@@ -1690,6 +1690,17 @@ code map each task appended a line to). Leave the rules there; put code maps, ho
 `run` warns at start when it's over, and the prompt tells agents where new reference material goes.
 Big files get a map too: `[plan] outline` runs only for files on the task line that are over 300 lines, and all the outlines in one brief stay within 2 KB. When they don't fit, each file gets an even share and shows lines picked evenly through the file, labelled `outline (trimmed evenly: N of M lines)`; a note after the files gives the command for a whole one and how many have none. `tools/outline.py` (stdlib only) lists functions, classes, methods, section comments and headings, with line numbers, for Python, .js, .mjs and Markdown.
 
+### Lessons
+
+With `[plan] lessons = true`, `<plan dir>/LESSONS.md` holds what a project's agents learned, one line each: an id
+taken from the text, at most 200 characters, and the files or globs it applies to. `plan lesson add "TEXT" --files
+a,dir/**` adds one, `plan lesson list` lists them, and `plan lesson drop ID "why"` drops one: any agent shown a
+wrong lesson may, with a reason. A brief shows the lessons whose files meet the task's `files:`, a plain path
+before a glob and a longer one before a shorter, at most 8. A lesson whose files are all gone from the tree drops
+itself when a brief is made, and says so. Dropped lessons move under `## Dropped` with the date and the reason.
+Two branches that each add a lesson get different ids, so list the file in `[run] joinable` and their adds join
+by line, as this repo does.
+
 ## Making it fast
 
 With several slots, the gate is what fills the machine and what holds the queue up: every `done` runs it,
@@ -1907,6 +1918,7 @@ journal_layout = "dated"  # or "id": one folder per task, journal/<ID>/, a retry
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id
 outline = ""              # a command printing one file's outline; {file} is the path, e.g.
                           # "python3 tools/outline.py {file}": the brief shows it under each file the line names over 300 lines
+lessons = false           # plan/LESSONS.md: what agents learned per file, shown in briefs (`plan lesson`; see "Lessons")
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
 lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]

@@ -93,6 +93,8 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             out += [f'- `{t}` ({size})', *[f'  - {l[:120]}' for l in log]]
             out += maps.pop(t, [])  # once, when the line names a file twice
         out += left_out
+    from agent_runner import lessons  # F413: what agents learned about these files
+    out += lessons.brief_lines(c, files_on_line(text))
     if cmd := c.raw['plan']['brief_extra']:  # what only the project knows: its oracle names, a spec, …
         r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True,
                            errors='replace')
