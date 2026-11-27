@@ -61,7 +61,6 @@ def test_other(w: World) -> None:
 
 
 def test_need(w: World) -> None:
-    from agent_runner import control_settled, plan as P, state as S
     w.rows[:] = []
     w.add(say(TWO, 'u7'))
     first, second = w.file(TWO).split(', ')  # F192b1b: an item each
