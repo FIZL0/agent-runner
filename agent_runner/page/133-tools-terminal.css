@@ -1,0 +1,3 @@
+/* F466d: the Tools page's terminal */
+.termout{height:50vh;max-height:28rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.termkeys .btn{min-width:var(--tap);min-height:var(--tap);justify-content:center}

@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a Terminal on the Tools page, so a phone can run a command on this machine (in the project or home), only over https or on the machine; agents cannot open or read it, nothing typed is kept, and it ends on tab close, after 15 min idle or with End every terminal (F466d).
+
 - Added: the Tools page's Add… offers SSH machine, Login (write-only, saved only over https or on the machine) and Custom tool, whose description queues a task that turns it into a tool entry for you to approve (F466b).
 - Added: the option-tasks store: a control session stores the tasks each DECIDE option queues, for one-tap queueing later (F192d).
 - Added: with several questions, the question's minimized line (shrunk while typing or by scrolling) shows the count, e.g. 1 of 3 (F192c1).
