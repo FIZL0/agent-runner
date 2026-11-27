@@ -10,7 +10,7 @@ const KEPT=new Map(), FEED_SAY=5000, FEED_DIAL=10000, FEED_KEEP=2000, LIVE_GIVE=
 const FEED_LINES=1;  // lines of a drag to one wheel step
 const TOUCH=()=>!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
 const enterHint=()=>TOUCH()?' enterkeyhint="enter"':'';  // B181
-const feedNow=n=>feedState({stand:String(n||'')[0]==='@',starting:starting(n),info:FD.n===n?FD.info:null,chat:!isAgent(n)});
+const feedNow=n=>feedState({stand:String(n||'')[0]==='@',starting:starting(n),born:bornNow(n),info:FD.n===n?FD.info:null,chat:!isAgent(n)});
 const feedSize=()=>TOUCH()?12:13;  // the terminal's text size, px: the stand-in's too (standHTML)
 const feedSrc=n=>`t/${encodeURIComponent(T)}/${encodeURIComponent(n)}/?fontSize=${feedSize()}`;
 /* the chat the frame is to be connected to, '' for none (session_frame.HEAD asks once its page is up) */

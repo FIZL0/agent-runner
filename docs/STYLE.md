@@ -166,6 +166,8 @@ Every list and view has all four, drawn the same way:
   a `.livedot` in the words of its row and card, its Open button `.busy`, the project's name in the sidebar (`.slevel`)
   when that is the project's level, and a toast when none of these is on screen. The mark goes when the page comes back,
   its load fails, or after `OPEN_MS`.
+- **Starting:** a chat this page started reads `Starting the chat…` until its first reply or 2 minutes (`bornNow()`),
+  never Loading or ended while its session comes up (F196).
 - **Failed:** what did not happen and why, in `--bad`, with Retry or the way out. Nothing the person wrote is lost.
 
 ## Instant feedback

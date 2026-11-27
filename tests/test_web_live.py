@@ -854,7 +854,7 @@ const timers = [], setTimeout = (f, ms) => timers.push({f, ms}), clearTimeout = 
 const said = [], toast = t => said.push(t), sheets = [], openSheet = n => sheets.push(n), upload = f => said.push(f);
 const S = {snap: {sessions: [{name: 'c6', link: 'L'}, {name: 'c12'}], fixups: {resume: [{id: 'F1'}]}}, sent: {}, ob: [], last: {s3: {task: 'F1', title: 'a'}}};
 const isAgent = n => !/^(c\d+|@.+)$/.test(n), sessionOf = n => S.snap.sessions.find(s => s.name === n), threadTitle = n => n;
-const starting = n => n === 'c8', sentBubbles = () => '', obBubbles = () => 'WAITS', controlOf = () => ({}), ctlBusy = () => false;
+const starting = n => n === 'c8', bornNow = () => false, sentBubbles = () => '', obBubbles = () => 'WAITS', controlOf = () => ({}), ctlBusy = () => false;
 const setHTML = (e, h) => { e.innerHTML = h }, render = () => feedDraw(S.thread);
 const feedGone = () => {}, feedUp = () => {}, feedSee = () => {}, feedPlace = () => {}, feedLook = () => 'dark', feedShown = on => { hold.FD.shown = on }, feedAt = (x, y) => [x, y];
 let answers = {};
