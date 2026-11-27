@@ -28,7 +28,8 @@ by someone who has not seen the chat: name the project, the thing and the proble
 happens, clear without the chat, never a bare task id (say what it is, the id in brackets at most):
 `DECIDE: Should tasks added after an automatic release is queued go in the next release,
 instead of holding it up? [Yes (recommended) / No]`, any link after the bracket: about a page, always its link.
-One DECIDE per question (two choices crossed in one bracket are two): ask the next once this one is answered. """ + GLOSSARY + """
+One DECIDE per question (two choices crossed in one bracket are two): several questions may end one answer,
+one DECIDE line each, each filed under Needs you and answered on its own. """ + GLOSSARY + """
 
 **Guide pages.** `{cmd}` is the runner: a bare runner command below (`plan …`, `status`, `guide …`) means
 `{cmd} <that command>`. The longer
