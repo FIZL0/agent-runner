@@ -17,6 +17,7 @@ from _check import check, eq, git, report
 
 from agent_runner import config as CF, runner as R  # noqa: E402
 from agent_runner import merge as M  # noqa: E402
+from agent_runner import gated_moves as GM  # noqa: E402
 
 CF.FIXED['merge_ahead'] = False  # F166: no merge built beside a gate here
 
@@ -253,10 +254,10 @@ def test_gated_moves(tmp: Path):
 
     def skips(new: str) -> bool:
         moved = git(repo, 'diff', '--name-only', base, new).split()
-        return M.moved_by_gated_only(base, new, merged, moved)
+        return GM.moved_by_gated_only(base, new, merged, moved)
 
-    old = M.git
-    M.git = lambda *a, cwd=None, **k: old(*a, cwd=cwd or repo, **k)
+    old = GM.git
+    GM.git = lambda *a, cwd=None, **k: old(*a, cwd=cwd or repo, **k)
     try:
         eq(skips(land('D1', 'doc.md')), True, 'a gated merge on another file: not tested again')
         eq(skips(land('D2', 'mine.py')), False, 'a gated merge sharing a file: tested again')
@@ -265,7 +266,7 @@ def test_gated_moves(tmp: Path):
         git(repo, 'reset', '-q', '--hard', 'HEAD~1')
         eq(skips(land('G1', 'runner.toml')), False, 'a gated merge changing runner.toml: tested again')
     finally:
-        M.git = old
+        GM.git = old
 
 
 def main() -> int:
