@@ -1573,13 +1573,14 @@ def test_task_links_f482(tmp: Path) -> None:
     """F482: a known task id in a reply is a link that opens its sheet in Work; #task-ID opens it on load and on hashchange."""
     page = W.PAGE.read_text(encoding='utf-8')
     check("q('[data-taskgo]')){e.preventDefault();taskGo(" in page, 'a press on a task link opens the task')
+    check("takePlace();if(S.ren)renameLeave(S.thread);S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();" in page, 'a hashchange takes the place and loads it, so #task-ID opens the task')
     check('return taskLinks(h,taskIds())' in page, 'replies link the ids of known tasks')
     if not shutil.which('node'):
         return
-    got = logic_js([['taskLinks', '<p>B493 and F453, not X1 or <a href="u">B493</a></p>', ['B493', 'F453']],
+    got = logic_js([['taskLinks', '<p>B493 and F453, not X1 or <a href="u">B493</a> <code>B493</code></p>', ['B493', 'F453']],
                     ['placeOf', '{}', '#task-B493', False, []], ['placeOf', '{}', '#task-', False, []]])
     eq(got[0], '<p><a href="#task-B493" class="tasklink" data-taskgo="B493">B493</a> and '
-       '<a href="#task-F453" class="tasklink" data-taskgo="F453">F453</a>, not X1 or <a href="u">B493</a></p>', 'known ids become links')
+       '<a href="#task-F453" class="tasklink" data-taskgo="F453">F453</a>, not X1 or <a href="u">B493</a> <code>B493</code></p>', 'known ids become links')
     eq(got[1], {'v': 'plan', 't': '', 'link': True, 'task': 'B493'}, '#task-B493 opens Work with the task')
     eq(got[2]['link'], False, 'a #task- with no id is no link')
     src = ''.join(page[page.index(f'function {f}('):].split('\n', 1)[0] + '\n' for f in ('taskGo', 'placeLoad'))
