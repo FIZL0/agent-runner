@@ -57,7 +57,11 @@ def news(c, cid: str, copy: str = '') -> dict:
 def opened(c, cid: str, ver: str) -> None:
     """Concept `cid`'s details popup was opened showing version `ver`: it is no longer New, nor Updated up to `ver`."""
     data = _read(c)
-    data.setdefault(cid, {})['opened'] = ver
+    rec = data.setdefault(cid, {})
+    old = str(rec.get('opened', '')).partition('-')[0]
+    if old.isdigit() and str(ver).partition('-')[0].isdigit() and int(str(ver).partition('-')[0]) < int(old):
+        return  # a stale popup on another device: keep the newer version already opened
+    rec['opened'] = ver
     _write(c, data)
 
 
