@@ -18,3 +18,11 @@
 .main.sess.qaway:not(.slim) :is(.dock>:not(.schips,.keys,.gone0),:is(.schips,.keys)>*,.slimground){pointer-events:auto}
 @media (pointer:coarse){.main.sess.qkeys .dock:has(>.keys) .qcard:not(.qheld,.qabout){margin-bottom:calc(var(--s2) - 2*var(--tap) - 14px)}}  /* the key row: two rows, 6px, 8px */
 .qrow{cursor:pointer}  /* F496: a tap on the top row minimizes or shows the question */
+/* F192b2: several questions: one card each in a sideways swipe row, the next card's edge showing, and the count */
+.qmany{max-width:720px;min-width:0;margin:0 auto var(--s2)}
+.qswipe{display:flex;gap:var(--s2);overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none}
+.qswipe::-webkit-scrollbar{display:none}
+.qswipe>.qcard{flex:0 0 calc(100% - 2*var(--s4));min-width:0;margin:0;scroll-snap-align:start}
+.qone .qtop .icon{flex:none;width:var(--tap);height:var(--tap);margin:calc(-1*var(--s2)) calc(-1*var(--s2)) 0 0}
+.qcount{text-align:center;color:var(--muted);padding-top:var(--s1)}
+.main.sess.qaway .qmany{display:none}

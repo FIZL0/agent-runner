@@ -13,9 +13,9 @@ function questionSent(sent,ob,at){
   return{...sent,over:true,back:!(at>=sent.at)};
 }
 /* has the person sent chat n words that it does not have yet? Unless they are about its question (F192a2), they answer its question, until /live says what is asked then */
-const questionSpoke=(n,ob,pending,ago)=>ob.some(x=>x.name==='chat_to'&&x.args.to===n&&x.state!=='failed'&&!questionIsAbout(x.args.text))||ago<QUESTION_LAND&&pending.some(p=>p.state!=='failed'&&!questionIsAbout(p.text));
+const questionSpoke=(n,ob,pending,ago)=>ob.some(x=>x.name==='chat_to'&&x.args.to===n&&x.state!=='failed'&&!questionIsAbout(x.args.text)&&!questionIsAnswer(x.args.text))||ago<QUESTION_LAND&&pending.some(p=>p.state!=='failed'&&!questionIsAbout(p.text)&&!questionIsAnswer(p.text));  // F192b2: an answer to one of several leaves the others
 /* may the held answer still go? Not once /live says the question is gone or another; with no word of it, it may */
-const questionOpen=(live,id)=>!live||!live.ok||!!(live.ask&&live.ask.id===id);
+const questionOpen=(live,id)=>!live||!live.ok||!!(live.ask&&live.ask.id===id)||(live.asks||[]).some(a=>a&&a.id===id);  // F192b2: or one of several
 /* a question, as QN.gone (F192b, dismissed) and QN.min (F437a, minimized) have it */
 const questionKey=(n,id)=>n+' '+id;
 /* F437c: is the reader away from the bottom? o: up (px the history is scrolled from its end), off (px the frame is pulled),
@@ -34,4 +34,15 @@ function questionHTML(n,ask,held,sent,min){
   if(st==='held')return `<div class="card qcard qheld" role="status" data-k="question:${esc(n)}" data-v="held"><div class="row"><span class="grow">Sending “${esc(held.name)}”</span><button type="button" class="btn" data-qundo="${esc(n)}">Undo</button></div></div>`;
   if(min)return `<div class="card qcard qmin" role="group" aria-label="Question, minimized" data-k="question:${esc(n)}" data-v="min:${esc(ask.id)}"><div class="row qrow" data-qrowshow="${esc(ask.id)}"><span class="grow ell">${esc(ask.question)}</span><button type="button" class="icon" data-qshow="${esc(ask.id)}" aria-label="Show question" title="Show question">${questionIcon('M6 15l6-6 6 6')}</button></div></div>`;
   return `<div class="card qcard" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(ask.id)}"><div class="row qtop qrow" data-qrowmin="${esc(ask.id)}"><span class="grow q">${esc(ask.question)}</span><button type="button" class="icon" data-qmin="${esc(ask.id)}" aria-label="Minimize question" title="Minimize question">${questionIcon('M5 12h14')}</button></div>${ask.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(ask.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(ask)}</div>`;
+}
+/* --- F192b2: several questions, the row: one card each in a sideways swipe row, with a count ----------------------- */
+// chat_question.py's answer_to reads a message that begins so as the answer to that one question alone (F192b1c)
+const QUESTION_ANSWER='My answer to your question “', QUESTION_ANSWER_END='”: ';
+const questionAnswered=(ask,text)=>QUESTION_ANSWER+ask.question+QUESTION_ANSWER_END+text;
+const questionIsAnswer=text=>String(text||'').startsWith(QUESTION_ANSWER)&&text.includes(QUESTION_ANSWER_END);
+const questionCount=(i,all)=>`${i+1} of ${all}`;
+/* the row of the questions l of chat n, each a whole card with a ✕ (Dismiss question), and the count */
+function questionRowHTML(n,l){
+  const one=a=>`<div class="card qcard qone" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(a.id)}"><div class="row qtop"><span class="grow q">${esc(a.question)}</span><button type="button" class="icon" data-qgone="${esc(a.id)}" aria-label="Dismiss question" title="Dismiss question">✕</button></div>${a.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(a.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(a)}</div>`;
+  return `<div class="qmany" data-k="questions:${esc(n)}" data-v="${esc(l.map(a=>a.id).join(' '))}"><div class="qswipe" role="region" aria-label="Questions">${l.map(one).join('')}</div><div class="qcount small" aria-live="polite">${questionCount(0,l.length)}</div></div>`;
 }

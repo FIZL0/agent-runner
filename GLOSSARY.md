@@ -1068,3 +1068,10 @@ _Said_: keep the worktrees of removed slots
 _On screen_: kept as a spare
 _In code_: slot_prep.spares, .spare-sN
 _Avoid_: cached slot
+
+**Question row**:
+Several questions a chat asks at once, one question card each, side by side to swipe through, with a count
+_Said_: horizontal scrolling if there's multiple questions
+_On screen_: 1 of 3
+_In code_: questionRowHTML, .qmany, .qswipe
+_Avoid_: carousel, slider
