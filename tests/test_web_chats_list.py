@@ -437,5 +437,85 @@ def test_delete_at_once_b876(tmp: Path) -> None:
     eq(o['down'], ['c1', 'c2', 'c3', 'c4'], 'and so does no answer at all')
 
 
+# F507: the page's drag listeners on a fake sidebar: rows 40px high from y=0, the Quiet line between the sections
+DRAG_DRIVER = r"""
+const fs = require('fs'), src = fs.readFileSync(process.argv[2], 'utf8');
+const fn = name => { const i = src.indexOf('function ' + name + '('); let d = 0, j = src.indexOf('{', i);
+  for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && !--d) return src.slice(i, k + 1) } };
+const on = {}, sent = [], out = {};
+let S, ROWS, DR = null, els = [], timers = [];
+const setTimeout = (f, ms) => { timers.push(f); return timers.length }, clearTimeout = () => {};
+const shiftOf = () => ({m42: 0}), glideTo = () => {}, rowTap = () => {}, act = (n, a) => sent.push([n, JSON.parse(JSON.stringify(a))]);
+const chatPins = () => S.snap.chat_pins || [];
+const el = (cls, name) => { const c = new Set(cls.split(' ')); const x = {dataset: name ? {crow: name} : {}, style: {}, classList: {add: k => c.add(k), remove: (...k) => k.forEach(y => c.delete(y)), contains: k => c.has(k)}, _c: c,
+  closest: s => s === '.crow[data-crow]' && name ? x : null, getBoundingClientRect: () => { const t = els.indexOf(x) * 40; return {top: t, height: 40} },
+  setPointerCapture() {}, remove: () => els.splice(els.indexOf(x), 1), after: y => els.splice(els.indexOf(x) + 1, 0, y)}; return x };
+const document = {addEventListener: (t, f) => (on[t] = on[t] || []).push(f), createElement: () => el('div'),
+  querySelector: s => s === '#sidein .qline' ? els.find(x => x._c.has('qline')) || null : null,
+  querySelectorAll: s => els.filter(x => s === '.crow.pinned[data-crow]' ? x._c.has('pinned') : x._c.has('crow'))};
+const base = {top: ['c2', 'c1', 'c3', 'c4', 'c5'], quiet: ['c6']}, at = {c1: 9, c2: 8, c3: 7, c4: 6, c5: 5, c6: 1};
+const render = () => { const row = n => ({name: n, at: at[n]}), g = chatForce({top: base.top.map(row), quiet: base.quiet.map(row)}, S.snap.chat_put_quiet, S.snap.chat_put_up, chatPins());
+  ROWS = {top: g.top.map(x => x.name), quiet: g.quiet.map(x => x.name)};
+  els = [...ROWS.top.map(n => el('crow' + (chatPins().includes(n) ? ' pinned' : ''), n)), ...(ROWS.quiet.length ? [el('qline')] : []), ...ROWS.quiet.map(n => el('crow quiet', n))] };
+const shown = () => [ROWS.top.join(' '), ROWS.quiet.join(' ')];
+eval(src.split('/* F507: any chat')[1].split('let noClick')[0].replace(/^[^\n]*\n/, '') + ';let noClick=false;' + fn('saveQuiet') + fn('chatDrop') + fn('chatForce') + fn('chatMove'));
+const fire = (t, e) => { for (const f of on[t] || []) f({preventDefault() {}, pointerId: 1, pointerType: 'mouse', button: 0, ...e}) };
+const at_ = n => els.findIndex(x => x.dataset.crow === n) * 40 + 20;
+const drag = (n, y, touch) => { const r = els.find(x => x.dataset.crow === n), y0 = at_(n), pt = touch ? 'touch' : 'mouse';
+  fire('pointerdown', {target: r, clientY: y0, pointerType: pt}); if (touch) timers.splice(0).forEach(f => f());
+  fire('pointermove', {clientY: y, pointerType: pt}); fire('pointerup', {clientY: y, pointerType: pt}) };
+const reload = () => { const put = sent[sent.length - 1][1]; S = {sel: [], snap: {chat_pins: put.pins, chat_put_quiet: put.quiet, chat_put_up: put.up}}; render(); return shown() };
+S = {sel: [], snap: {chat_pins: ['c2']}}; render();
+out.before = shown();
+drag('c3', 1000); out.one = [shown(), sent.length]; out.oneReload = reload();
+drag('c3', 0); out.back = shown(); out.backReload = reload();
+S.sel = ['c1', 'c2', 'c4']; drag('c4', 1000); out.three = [shown(), S.sel, sent[sent.length - 1][1]]; out.threeReload = reload();
+S.sel = ['c1', 'c2', 'c4']; drag('c1', 0); out.threeBack = shown(); out.threeBackReload = reload();
+{ const n = sent.length, r = els.find(x => x.dataset.crow === 'c5'); fire('pointerdown', {target: r, clientY: at_('c5'), pointerType: 'touch'}); fire('pointermove', {clientY: 1000, pointerType: 'touch'}); fire('pointerup', {clientY: 1000, pointerType: 'touch'}); out.swipe = [shown(), sent.length - n] }
+drag('c5', 1000, true); out.held = shown();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_drag_quiet_f507(tmp: Path) -> None:
+    """F507: a chat's row dragged into Quiet and back out, one alone and a bulk select of three; the run keeps it
+    (chat_order quiet/up), so a reload shows the same sections and order; a touch drags after a hold, as Plan rows do."""
+    fake_repo(tmp)
+    sessions = [{'name': n} for n in ('c1', 'c2', 'c3', 's1')]
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'sessions': sessions})
+    try:
+        base = f'http://127.0.0.1:{srv.server_address[1]}'
+        snap = lambda: json.loads(get(f'{base}/snapshot?t={token}')[1])  # noqa: E731
+        eq((snap()['chat_put_quiet'], snap()['chat_put_up']), ([], []), 'nothing put anywhere yet')
+        eq(post(f'{base}/act?t={token}', {'name': 'chat_order', 'args': {'pins': ['c1'], 'quiet': ['c2', 'c3'], 'up': []}})[1].get('ok'), True, 'taken')
+        eq(post(f'{base}/act?t={token}', {'name': 'chat_order', 'args': {'quiet': 'c2'}})[1].get('ok'), False, 'quiet is a list')
+        eq(post(f'{base}/act?t={token}', {'name': 'chat_order', 'args': {'pins': ['c2', 'c1']}})[1].get('ok'), True, 'pins alone')
+        s = snap()
+        eq((s['chat_pins'], s['chat_put_quiet'], s['chat_put_up']), (['c2', 'c1'], ['c2', 'c3'], []), 'a pin change keeps Quiet')
+    finally:
+        srv.stop()
+    if not shutil.which('node'):
+        print('  (no node here: the drag script test is skipped)')
+        return
+    (tmp / 'page.js').write_text(W.page_html().decode(), encoding='utf-8')
+    (tmp / 'driver.js').write_text(DRAG_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'page.js')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the drag', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['before'], ['c2 c1 c3 c4 c5', 'c6'], 'the pinned c2 first, c6 quiet')
+    eq(o['one'], [['c2 c1 c4 c5', 'c3 c6'], 1], 'c3 dropped below the line goes Quiet at once, sent once')
+    eq(o['oneReload'], ['c2 c1 c4 c5', 'c3 c6'], 'and stays there over a reload')
+    eq((o['back'], o['backReload']), (['c2 c1 c3 c4 c5', 'c6'], ['c2 c1 c3 c4 c5', 'c6']), 'dragged back up: in its place again')
+    eq(o['three'][:2], [['c3 c5', 'c1 c2 c4 c6'], []], 'a selection of three goes Quiet together, the selection cleared')
+    eq(o['three'][2]['pins'], [], 'a pinned chat put in Quiet is unpinned')
+    eq(o['threeReload'], ['c3 c5', 'c1 c2 c4 c6'], 'over a reload too')
+    eq((o['threeBack'], o['threeBackReload']), (['c2 c1 c3 c4 c5', 'c6'], ['c2 c1 c3 c4 c5', 'c6']), 'and back out together')
+    eq(o['swipe'], [['c2 c1 c3 c4 c5', 'c6'], 0], 'a touch that moves before the hold is a scroll: nothing moves')
+    eq(o['held'], ['c1 c2 c3 c4', 'c5 c6'], 'held first, a touch drags it into Quiet')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_delete_at_once_b876), in_tmp(test_delete_chats_f118), in_tmp(test_card_chat_b139), in_tmp(test_row_buttons_f187), in_tmp(test_rename_cancel_f446), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))
+    raise SystemExit(report([in_tmp(test_drag_quiet_f507), in_tmp(test_delete_at_once_b876), in_tmp(test_delete_chats_f118), in_tmp(test_card_chat_b139), in_tmp(test_row_buttons_f187), in_tmp(test_rename_cancel_f446), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))
