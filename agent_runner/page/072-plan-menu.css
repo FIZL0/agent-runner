@@ -8,3 +8,4 @@
 .qacts svg,.qmenu svg{width:18px;height:18px} .qacts [data-menuact="menu_remove"]{color:var(--bad)}
 .card:has(>.qacts)>.fold>.chev{display:none}
 .card.relph:has(>.qmenu),.card.relph:has(>.qacts){opacity:1} .card.relph:has(>.qmenu)>.row,.card.relph:has(>.qacts)>.row{opacity:.6}
+.qmenu.saving,.qacts.saving{animation:pulse 1.2s ease-in-out infinite} @media (prefers-reduced-motion:reduce){.qmenu.saving,.qacts.saving{animation:none;opacity:.5}}

@@ -13,6 +13,7 @@ function menuLive(d){
 }
 /* the Queue's rows with what was pressed */
 function menuRows(rows){
+  const st=rowPress(PM.did,S.ob);  // F478: saving while sent; a refusal goes back (020-live.js toasts it)
   PM.did=PM.did.filter(menuLive);
   let out=rows.slice();
   const put=(r,d)=>{const i=d.down.map(t=>out.findIndex(q=>menuId(q)===t)).find(n=>n>=0);out.splice(i===undefined?out.length:i,0,r)};
@@ -28,16 +29,17 @@ function menuRows(rows){
       ...(q.placeholder?{words:q.words.replace(/^held · /,'')}:q.state==='held'?{state:'tool',tool_wait:'no longer held'}:{}),...(q.release?{release:{...q.release,words:'no longer held'}}:{})}}
     else if(!q.held)out[i]={...q,held:true,state:q.placeholder?q.state:'held',...(q.placeholder?{words:`held · ${q.words}`}:{}),...(q.release?{release:{...q.release,words:'held',waits:[],note:''}}:{})};
   }
+  if(st.saving.length)out=out.map(q=>st.saving.includes(menuId(q))?{...q,saving:true}:q);
   return PM.rows=out;
 }
 function rowMenu(q,list='queue'){
   const id=menuId(q), acts=q.menu||[];
   if(list!=='queue'||!acts.length)return '';
   const name=menuName(id);
-  if(S.planMenu!==id)return `<button class="qmenu" data-planmenu="${esc(id)}" aria-expanded="false" aria-label="More for ${esc(name)}">${I.dots}</button>`;
+  if(S.planMenu!==id)return `<button class="qmenu${q.saving?' saving':''}" data-planmenu="${esc(id)}" aria-expanded="false" aria-label="More for ${esc(name)}${q.saving?' (saving)':''}">${I.dots}</button>`;
   const waits=waitMay(q)?`<button data-waitset="${esc(id)}" aria-label="Wait for…">${I.wait}</button>`:'';
   const keys=[...new Set(acts.map(k=>k==='menu_hold'||k==='menu_unhold'?(q.held?'menu_unhold':'menu_hold'):k))].filter(controlOf);
-  return `<span class="qacts" role="group" aria-label="${esc(name)}">${keys.map(k=>`<button data-menuact="${k}" data-tid="${esc(id)}" aria-label="${esc(controlOf(k).label)}">${I[MENU_ICON[k]]}</button>${k.endsWith('hold')?waits:''}`).join('')}${keys.some(k=>k.endsWith('hold'))?'':waits}</span>`;
+  return `<span class="qacts${q.saving?' saving':''}" role="group" aria-label="${esc(name)}">${keys.map(k=>`<button data-menuact="${k}" data-tid="${esc(id)}" aria-label="${esc(controlOf(k).label)}">${I[MENU_ICON[k]]}</button>${k.endsWith('hold')?waits:''}`).join('')}${keys.some(k=>k.endsWith('hold'))?'':waits}</span>`;
 }
 const removedCard=q=>card(`<div class="row">${q.id?taskChip(q.id):''}<div class="grow"><b class="ell">${esc(q.title||q.id)}</b><span class="small">Removed</span></div><button class="btn" data-menuundo="${esc(menuId(q))}">Undo</button></div>`,'',`data-k="${q.placeholder?'rel:next':'task:'+esc(q.id)}"`);
 /* F442: can what row q waits for be set: a task no run has started, not parked, and not one that waits on a person or a check */
@@ -50,7 +52,8 @@ function menuPlace(q){
 function menuDo(k,id,more){
   const d={id,k,cid:'',at:Date.now(),ms:PM_MS,...more};
   PM.did=PM.did.filter(x=>x.id!==id||k!=='menu_remove'&&x.k!==k&&!(x.k.endsWith('hold')&&k.endsWith('hold'))).concat([d]);
-  d.cid=outbox('run_control',{key:k,tid:id},{ctl:k+':'+id,say:`${controlOf(k).label.split(':')[0]}: ${menuName(id)}`}).cid;
+  d.say=`${controlOf(k).label.split(':')[0]}: ${menuName(id)}`;
+  d.cid=outbox('run_control',{key:k,tid:id},{ctl:k+':'+id,say:d.say}).cid;
   return d;
 }
 function menuAct(k,id){
@@ -73,7 +76,8 @@ function menuUndo(id){
   const d=PM.did.find(x=>x.id===id&&x.k==='menu_remove'&&!x.back);
   if(!d||Date.now()-PM.gone<PM_AGAIN)return;  // nor does one on Remove undo it
   d.back=true;d.at=Date.now();d.ms=PM_MS;
-  d.cid=outbox('run_control',{key:'menu_restore',tid:id,text:d.place},{ctl:'menu_restore:'+id,say:`Put back: ${menuName(id)}`}).cid;
+  d.say=`Put back: ${menuName(id)}`;
+  d.cid=outbox('run_control',{key:'menu_restore',tid:id,text:d.place},{ctl:'menu_restore:'+id,say:d.say}).cid;
   render(true);menuFocus(`[data-task="${id}"]`);
 }
 function menuFocus(sel){const b=$('body').querySelector(sel);if(b)b.focus({preventScroll:true})}

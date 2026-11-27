@@ -89,7 +89,7 @@ function obDone(it,j){
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
   else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
-    else{const ck=String(it.ctl), said=ctlSaid(it.say,j,ck.endsWith(':')&&!!ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n));if(said)toast(said)}}  // F124, B851c: plain words, none when the button shows it
+    else{const ck=String(it.ctl), said=ctlSaid(it.say,j,rowShows(ck)||ck.endsWith(':')&&!!ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n));if(said)toast(said)}}  // F124, B851c: plain words, none when the button shows it
   if(it.res&&FD.n===it.res)feedLoad();  // F114
   if(it.done)toast(it.done);
 }
