@@ -117,6 +117,8 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1]['tool_wait'] = tool_waits[tid]
         if tid in untils and tid not in where:  # F427b: neither the person nor a slot: it says what it waits for
             out[-1].update(state='tool', tool_wait=untils[tid])
+        if size := ' '.join(f.get('size') or []).strip():  # F485: size: simple|complex, beside its other fields
+            out[-1]['size'] = size
         if tid in busy:
             out[-1].update(under_way=True, way=busy[tid])
         if row_hold._not_queued(ls, i):  # F429b: `plan hold` refuses it
