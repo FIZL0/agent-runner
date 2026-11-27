@@ -502,10 +502,16 @@ def test_link_junction(tmp: Path):
         check(plat.link(src, tmp / 'link-dst'), 'linked')
         eq(made, [(src, tmp / 'link-dst')], 'a junction, no symlink first')
         old = tmp / 'link-old'
-        old.symlink_to(src, target_is_directory=True)
+        try:
+            old.symlink_to(src, target_is_directory=True)
+        except OSError:  # Windows with no symlink privilege: nothing old to turn over
+            return
         check(plat.relink_dir(src, old), 'an old directory symlink becomes a junction')
         check(not old.is_symlink() and old.is_dir() and src.is_dir(), 'link replaced, target kept')
-    check(not plat.relink_dir(src, tmp / 'link-dst'), 'nothing to do off Windows / for a non-symlink')
+    if os.name != 'nt':
+        other = tmp / 'link-other'
+        other.symlink_to(src, target_is_directory=True)
+        check(not plat.relink_dir(src, other) and other.is_symlink(), 'off Windows a symlink stays')
 
 
 def main() -> int:
