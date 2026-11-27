@@ -217,6 +217,22 @@ def test_usage_held_f468() -> None:
         H.FORCE_IDS.clear()
 
 
+def test_login_f505() -> None:
+    from agent_runner import fallback, slots
+    with tempfile.TemporaryDirectory() as t:
+        repo(Path(t))
+        st = {'state': 'running', 'running': {'1': 'F1'}}
+        with mock.patch.object(slots.MUX, 'panes', lambda: {'s1': ('m', 42)}), \
+                mock.patch.object(slots.MUX, 'session_id', lambda pid: 'sid1'), \
+                mock.patch.object(fallback, 'session_login', lambda sid: 'work'):
+            with mock.patch('agent_runner.claude_use.logins', lambda: [{'name': 'me'}]):
+                out = R.status_text(True, st, [], {'F1': 'one'}, now=0)
+                check('login' not in out, 'one login: not shown', out)
+            with mock.patch('agent_runner.claude_use.logins', lambda: [{'name': 'me'}, {'name': 'work'}]):
+                out = R.status_text(True, st, [], {'F1': 'one'}, now=0)
+                check('login work' in out, 'two logins: the slot names its login', out)
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_placeholder, test_releases, test_count_beside_f195c, test_released, test_plan_index, test_lately,
-                             test_usage_held_f468]))
+                             test_usage_held_f468, test_login_f505]))
