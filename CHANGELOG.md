@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a chat's live screen fits its terminal again when the box font loads late or its box changes size, so Copilot CLI's prompt wraps at the box's edge (B883).
 - Added: deciding an item for good on the run page, in the TUI or by a pick link (an answer or option button, approve, confirm or drop) closes the chats about it instead of typing a line into them; the transcript stays and Resume brings one back. Shelve, revise and a No still type the line, and a chat the person spoke in last, that asks another DECIDE, runs work, holds a message, has a question up, is about another waiting item or was renamed stays open (F209b).
 - Changed: the Concepts view draws a concept waiting in Needs you as its Home Needs you card, same buttons and actions, with its New or Updated badge (F197b).
 - Added: while a run is up, it reads the until checks blocked tasks wait on every 2 min, each check once a round, and reopens a task once all of its checks pass, committed as a merge's reopening; a check that cannot run for 30 min, or has not passed for 3 days, is one Needs you item that says which check, its last words and how to free the task (F427c).
