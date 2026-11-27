@@ -575,9 +575,10 @@ def test_reply_lines(env: Env):
     end = src.index('function redrawn')
     js = src[start:end].replace('export ', '') + (
         "console.log(JSON.stringify([replyLines('## Plan\\nSome **bold** and *it* and `code` ' + 'word '.repeat(12)"
-        " + '\\n- item ' + 'long '.repeat(10), 40), doneLine(65000, new Date(2026, 0, 1, 9, 5))]));")
+        " + '\\n- item ' + 'long '.repeat(10), 40), doneLine(65000, new Date(2026, 0, 1, 9, 5)), replyLines('`__init__` x', 40)]));")
     run = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
-    out, done = json.loads(run.stdout)
+    out, done, code = json.loads(run.stdout)
+    eq(code, '● \x1b[36m__init__\x1b[39m x', 'inline code is kept as written')
     rows = out.split('\n')
     eq(rows[0], '● \x1b[1mPlan\x1b[22m', 'a heading is bold, after the reply marker')
     check('\x1b[1mbold\x1b[22m' in rows[1] and '\x1b[3mit\x1b[23m' in rows[1] and '\x1b[36mcode\x1b[39m' in rows[1], 'inline markdown is rendered', rows)

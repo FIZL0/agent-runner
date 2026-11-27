@@ -393,11 +393,13 @@ export function saidLines(text, cols = (process.stdout.columns || 100)) {
 // lists, headings), word-wrapped to the terminal with a hanging indent under the marker and under each list item
 const visible = (s) => [...s.replace(/\x1b\[[0-9;]*m/g, '')].length;
 function inlineMd(s) {
+  const code = [];
   return s
-    .replace(/`([^`]+)`/g, '\x1b[36m$1\x1b[39m')
+    .replace(/`([^`]+)`/g, (_, x) => `\x00${code.push(x) - 1}\x00`)
     .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (_, x, y) => `\x1b[1m${x ?? y}\x1b[22m`)
     .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)|(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g,
-      (_, p, x, q, y) => `${p ?? q}\x1b[3m${x ?? y}\x1b[23m`);
+      (_, p, x, q, y) => `${p ?? q}\x1b[3m${x ?? y}\x1b[23m`)
+    .replace(/\x00(\d+)\x00/g, (_, i) => `\x1b[36m${code[i]}\x1b[39m`);
 }
 function wrapped(text, first, rest, w) {
   const out = [];
@@ -413,9 +415,9 @@ function wrapped(text, first, rest, w) {
 export function replyLines(text, cols = (process.stdout.columns || 100)) {
   const w = Math.max(20, cols), out = [];
   let fence = false;
-  for (const raw of String(text).replace(/\r/g, '').split('\n')) {
+  for (const raw of String(text).trim().replace(/\r/g, '').split('\n')) {
     const lead = out.length ? '  ' : '● ';
-    if (/^\s*```/.test(raw)) { fence = !fence; continue; }
+    if (/^\s*```/.test(raw)) { fence = !fence; if (!out.length) out.push('●'); continue; }
     if (fence) { out.push(lead + raw); continue; }
     if (!raw.trim()) { out.push(''); continue; }
     const h = raw.match(/^#{1,6}\s+(.*)$/);
