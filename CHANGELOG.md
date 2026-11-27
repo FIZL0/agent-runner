@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: `done.py` is split by area (`done_docs.py`, `done_refusals.py`, `done_writeup.py`), and its test is `tests/test_done_docs.py`; no behaviour change (C62).
+
 - Added: session_max / weekly_max read each Claude login's own usage (from its own config folder's login), so a new task passes over every login past its caps, not only the default one (F514).
 - Added: `status` names the Claude login each slot's session runs on, only when there is more than one login (F505).
 - Added: on the run page, drag a chat's row into Quiet and back out, or a bulk select of chats all at once; the run keeps where they are, and a finger drags after a short hold (F507).

@@ -56,6 +56,10 @@ from pathlib import Path
 
 from agent_runner import asks, audit_fix, lessons_ask, plan, plansync, shared_tools, stale
 from agent_runner.config import cfg, finished_mark
+from agent_runner.done_docs import DOCS_SKIP, changed, docs_only  # noqa: F401  (moved; kept importable here)
+from agent_runner.done_refusals import artifact_refusal, concept_link_refusal, until_refusal  # noqa: F401
+from agent_runner.done_writeup import (journal_entry, journal_link, keep_page, keep_writeup,  # noqa: F401
+                                       logged_writeup, writeup, writeup_file)
 from agent_runner.gitops import git, missing_remote, push, shared_branch, shared_name, shell
 
 
@@ -76,31 +80,6 @@ def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = No
         return 124, f'`{cmd}` ran past [run] command_timeout ({cfg(cwd).run["command_timeout"]}s): counted as failing'
     out = out.strip()
     return rc, out if full else '\n'.join(out.splitlines()[-15:])
-
-
-DOCS_SKIP = 'docs only, gate skipped'  # what `done` and the merge say when a diff is all `[run] docs_files`
-
-
-def docs_only(files: list[str], globs: list[str]) -> bool:
-    """Every one of `files` (at least one) matches `[run] docs_files` (the last glob that matches decides,
-    `!glob` takes a file back): a diff the test gate need not run on."""
-    def doc(f: str) -> bool:
-        hit = False
-        for g in globs:
-            if fnmatch.fnmatch(f, g.lstrip('!')):
-                hit = not g.startswith('!')
-        return hit
-    return bool(files) and all(map(doc, files))
-
-
-def changed(cwd: Path) -> list[str]:
-    """The files this worktree's work changes: commits since the shared branch, staged, unstaged and untracked
-    (renames as both names, so a code file moved into docs/ still counts as code)."""
-    shared = shared_name(cwd, cfg(cwd).push_remote or 'origin', default=None)
-    base = shared and git('merge-base', 'HEAD', shared, cwd=cwd).stdout.strip() or 'HEAD'
-    files = git('diff', '--name-only', '--no-renames', base, cwd=cwd).stdout.splitlines()
-    files += git('ls-files', '--others', '--exclude-standard', cwd=cwd).stdout.splitlines()
-    return sorted({f for f in files if f})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -456,75 +435,6 @@ def gate_limit(a, cwd: Path) -> str | None:
             f'    {PROG} {a.id} "<msg>" --blocked "{BLOCK_WHY}"\nNothing ticked.')
 
 
-def until_refusal(a, c) -> str | None:
-    """F427b: why `done` refuses its `--until`, or None."""
-    if a.until is None:
-        return None
-    if not a.blocked:
-        return f'{PROG}: --until goes with --blocked WHY. Nothing ticked.'
-    if a.after:
-        return plan.UNTIL_AFTER.format(prog=PROG)
-    try:
-        plan.until_list(a.until, c)
-    except SystemExit as e:
-        return str(e).replace(plan.PROG, PROG, 1)
-    return None
-
-
-def artifact_refusal(a) -> str | None:
-    """Why `done` refuses these arguments, or None: a concept task finishes only with the page it published."""
-    if a.artifact and not re.match(r'https?://\S+$', a.artifact) and a.artifact != f'/concept/{a.id}':  # F406e: local page
-        return f'{PROG}: --artifact takes the page\'s URL (https://…), not {a.artifact!r}'
-    if plan.concept(a.id) and not a.artifact and not a.blocked:
-        return (f'{PROG}: {a.id} is a concept task: it builds nothing, it publishes a page of options. Publish it '
-                f'(the Artifact tool), then\n    {PROG} {a.id} "<msg>" --artifact <its url>\nNothing ticked.')
-    return None
-
-
-def journal_link(c, tid: str, url: str) -> Path | None:
-    """Write the page's link into the task's journal, when the repo keeps one (`[plan] journal`): the newest
-    folder named for the task, else a new one in the repo's layout. The file it wrote to, or None."""
-    if not (j := c.journal):
-        return None
-    try:
-        dirs = sorted(d for d in j.iterdir() if d.is_dir() and
-                      (d.name == tid or re.search(rf'-{re.escape(tid.lower())}(-|$)', d.name.lower())))
-    except OSError:
-        dirs = []
-    d = dirs[-1] if dirs else j / (tid if c.raw['plan']['journal_layout'] == 'id'
-                                   else f'{dt.date.today().isoformat()}-{tid.lower()}-concept')
-    f = d / 'notes.md'
-    try:
-        d.mkdir(parents=True, exist_ok=True)
-        with f.open('a', encoding='utf-8') as fh:
-            fh.write(f'\n**Page:** {url}\n')
-    except OSError:
-        return None
-    return f
-
-
-def keep_page(c, tid: str, page: str | None = None) -> Path | None:
-    """F74: keep a local copy of the page a concept task published, at <notes>/concepts/<ID>.html, so the run
-    page shows it inline: `page` (`--page FILE`), else the newest .html file this worktree changed. The copy,
-    or None when there is no such file."""
-    src = Path(page) if page else None
-    if src is None:
-        found = [p for p in (c.root / f for f in changed(c.root) if f.lower().endswith(('.html', '.htm')))
-                 if p.is_file()]
-        src = max(found, key=lambda p: p.stat().st_mtime) if found else None
-    if src is None or not src.is_file():
-        if page:
-            print(f'{PROG}: --page {page} is not a file: no local copy kept', file=sys.stderr)
-        return None
-    try:
-        dest = c.notes('concepts', f'{tid}.html')
-        dest.write_bytes(src.read_bytes())
-    except OSError as e:
-        print(f'{PROG}: could not keep a copy of the page ({e})', file=sys.stderr)
-        return None
-    return dest
-
-
 def finished(c=None, a=None) -> int:
     """Publish a plan kept outside the repo; tell the slot's stop waiter this task is done, so a leftover
     background command can't hold the slot."""
@@ -538,90 +448,3 @@ def finished(c=None, a=None) -> int:
     return 0
 
 
-def writeup_file(c, tid: str) -> Path:
-    """F509: where a task's finished write-up is kept, beside the run's notes, so it outlives log rotation."""
-    return c.notes('writeups', f'{tid}.md')
-
-
-def keep_writeup(c, tid: str, text: str) -> Path | None:
-    """F509: keep what the agent says it did when it finishes (`run finish`'s summary) with task `tid`."""
-    if not tid or not (text or '').strip():
-        return None
-    try:
-        f = writeup_file(c, tid)
-        f.write_text(text.strip() + '\n', encoding='utf-8')
-        return f
-    except OSError:
-        return None
-
-
-def journal_entry(c, tid: str) -> str:
-    """F509: the task's newest journal notes, when the repo keeps a journal; '' else."""
-    if not (j := c.journal):
-        return ''
-    try:
-        dirs = sorted(d for d in j.iterdir() if d.is_dir() and
-                      (d.name == tid or re.search(rf'-{re.escape(tid.lower())}(-|$)', d.name.lower())))
-        return (dirs[-1] / 'notes.md').read_text(encoding='utf-8').strip() if dirs else ''
-    except OSError:
-        return ''
-
-
-def writeup(c, tid: str) -> str:
-    """F509: a task's finished write-up: its kept summary, then its journal entry; '' when it has none."""
-    try:
-        said = writeup_file(c, tid).read_text(encoding='utf-8').strip()
-    except OSError:
-        said = ''
-    said = said or logged_writeup(c, tid)
-    return '\n\n'.join(p for p in (said, journal_entry(c, tid)) if p)
-
-
-def logged_writeup(c, tid: str) -> str:
-    """F513: for a task that finished before write-ups were kept, its newest `finished:` summary from the run's
-    events (the full summary), else from run.log (cut at 300 characters); '' when neither has one."""
-    import json
-    said = ''
-    try:
-        for line in c.notes('events.jsonl').read_text(encoding='utf-8', errors='replace').splitlines():
-            if f'"{tid}"' not in line:
-                continue
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            if e.get('kind') == 'finished' and e.get('id') == tid:
-                said = (e.get('summary') or '').strip() or said
-    except OSError:
-        pass
-    if said:
-        return said
-    pat = re.compile(rf'^=== \S+ slot \d+: {re.escape(tid)} finished: (.*)$')
-    try:
-        for line in c.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines():
-            if (m := pat.match(line)) and m[1].strip():
-                said = m[1].strip()
-    except OSError:
-        pass
-    return said
-
-
-def concept_link_refusal(tid: str, why: str | None, c) -> str | None:
-    """B839: why `done --blocked` refuses a CONFIRM whose line or ask file names /concept/<ID> of a task that is no
-    concept: no concept is filed for it, so that page is in no Concepts list and the person cannot open it."""
-    if not re.match(r'\s*CONFIRM:', why or ''):
-        return None
-    text = why or ''
-    try:
-        f = asks.ask_file(tid, c)
-        if f.is_file():
-            text += '\n' + f.read_text(encoding='utf-8')
-    except OSError:
-        pass
-    bad = sorted({i for i in re.findall(r'/concepts?/([A-Za-z]+\d+[a-z]*)', text) if not plan.concept(i)})
-    if not bad:
-        return None
-    return (f'{PROG}: the CONFIRM names /concept/{bad[0]}, but no concept is filed for {", ".join(bad)}: the person '
-            f'has no such page to open. Put what they watch or look at in the ask file\'s "shots" (pictures, or .mp4 '
-            f'and .webm videos under {asks.ask_file(tid, c).with_suffix("")}/, 50 MB each), or give a link they can '
-            f'open. Nothing blocked.')

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """F37: `done` skips the slow test gate on a docs-only diff.
 
-    python3 tests/test_done.py        (no network; a few seconds, mostly git)
+    python3 tests/test_done_docs.py        (no network; a few seconds, mostly git)
 
 The gate decides by the diff, not the task's letter: when every file the work changes (commits since the
 shared branch, staged, unstaged, untracked) matches `[run] docs_files` (default `*.md`, `docs/**`), `done`
