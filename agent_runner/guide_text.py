@@ -11,6 +11,12 @@ SAFE_SHELL = ('Change files with your file-editing tool, never with `sed -i`, `p
               '--hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: they destroy work you '
               'cannot get back.')
 
+# B880: control sessions (and the concepts they write) hit the same safety prompt, with nobody to answer it.
+CONTROL_SHELL = ('**Shell commands:** edit files with the edit/write tools, never a python or sed heredoc; one plain '
+                 'command per bash call, with absolute paths, no shell variables (`$S`), no `&&` chains and no `| '
+                 "tail`: a command Claude Code cannot parse safely stops on a \"can't rule out a dangerous removal\" "
+                 'prompt, and an unattended session waits on it for ever.')
+
 # B80: slots try what the machine and the repo already reach before handing a check to a person.
 VERIFY = ('Verify before asking: before you turn a check into an F task for a person, try it '
           'yourself with what is already here: ~/.claude/ACCESS.md if it exists (this machine\'s logins) and the '

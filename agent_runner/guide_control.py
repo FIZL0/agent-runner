@@ -83,6 +83,8 @@ What the person asks, and what you run:
 
 """ + NO_BANG + """
 
+""" + CONTROL_SHELL + """
+
 **Keys, passwords:** never ask for one in chat; give the Tools page's link (`{cmd} device link`).
 
 **Settings.** When what the person says fits a runner.toml setting, read `guide settings` first, then recommend the one change in one line and ask.

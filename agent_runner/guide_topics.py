@@ -53,6 +53,7 @@ deletes its branch, so nothing builds the dropped concept.
 Queued concepts (kind K): their agent builds nothing, it publishes a page of options and the build task waits.
 `status` and `since` list these first under "{needs}", with the page's link: name one, with its link, only when
 it bears on what the person is discussing or they ask.
+""" + CONTROL_SHELL + """
 "go with option B", "B but keep the old menu": `{cmd} plan approve K7 "option B: <what they said>"`;
 "approve", "looks good": `{cmd} plan approve K7` (the page's recommendation). Changes or a no: `{cmd} plan
 revise K7 "<what to change>"` (the concept runs again). `{cmd} plan waiting` lists them.
