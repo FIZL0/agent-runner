@@ -2,6 +2,7 @@
 
 ### Next
 
+- [ ] **F505** Status shows a task's login (multi-login 4/5), only when the provider has more than one. Check: status test with one and two logins. | files: agent_runner/status.py, tests/test_status.py | after: F503
 - [ ] **F504** Pin a login in a model name (multi-login 3/5): claude@work:opus anywhere a model is named ([models] kinds, roles, sizes, fallback); a capped pinned login falls back to its provider's other logins. Check: config parse and fallback tests. | files: agent_runner/config.py, agent_runner/fallback.py, tests/test_fallback.py | after: F503
 - [ ] **F503** Cap per login (multi-login 2/5): capped.json keyed by login; a capped login falls back to the same provider's other logins, then the next provider in [models] fallback; a local model (ollama) stays usable as a chain entry, normally last; a task capped mid-run carries on in its worktree on the next login; session_max/weekly_max apply per login; all capped and no local model: wait for the earliest reset. Check: tests for each case. | files: agent_runner/fallback.py, agent_runner/cap_hold.py, tests/test_fallback.py | after: F502
 - [ ] **F502** Several model provider logins per provider (multi-login 1/5; not website logins, F466a): run login claude --as <name>; each Claude login in its own CLAUDE_CONFIG_DIR; logins kept per machine; the first is the default login, so one-login setups are unchanged. Check: two Claude logins listed by run login, a task runs on the default. | files: agent_runner/login.py, agent_runner/claude_use.py, agent_runner/config.py, tests/test_login.py
