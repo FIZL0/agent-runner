@@ -108,7 +108,7 @@ function toolsHTML(){
   if(!d)return `<div class="col">${err||emptyCard('Loading…')}</div>`;
   const toml=d.tools.filter(t=>t.source!=='device'), devs=d.tools.filter(t=>t.source==='device');
   return `<div class="col">${d.secure?'':card(`<b>Read only here</b><div class="small">Devices and secrets are saved only over https or on the machine itself.${d.https?'':' There is no https link yet: Tailscale Serve gives one.'}</div>${d.https?`<div class="btns"><a class="btn pri" href="${esc(d.https)}">Open the https link</a></div>`:''}`)}
-    ${err}${untilsHTML((S.snap||{}).untils)}<div class="sec">Devices<span class="ln"></span></div>${devs.length?devs.map(toolCard).join(''):emptyCard('No device yet. Add a machine or test rig for agents to reach.')}${loginsHTML()}
+    ${err}${untilsHTML((S.snap||{}).untils)}<div class="sec">Devices<span class="ln"></span></div>${devs.length?devs.map(toolCard).join(''):emptyCard('No device yet. Add a machine or test rig for agents to reach.')}${loginsHTML()}${terminalHTML()}
     ${toml.length?`<div class="sec">From runner.toml<span class="ln"></span></div>${toml.map(toolCard).join('')}`:''}
     <div class="small">Devices belong to this machine and its projects share them. Keys and passwords stay out of every chat, but agents run as the same user here, so this is no wall against an agent that goes looking.</div></div>`;
 }
@@ -199,6 +199,7 @@ async function toolClick(x){
   if(tool==='btnadd'||tool==='btndel')return btnClick(x);
   if(tool==='add'){S.devCustom=false;openSheet('tooladd');return}  // F466b
   if(/^(form|login|customsave)/.test(tool))return formClick(x);
+  if(tool.startsWith('term'))return termClick(x);  // F466d
   if(tool==='edit'){const t=toolOf(name);if(t)toolEdit(t);return}
   if(tool==='secrets'){toolForget();S.toolSaid={};openSheet('devsecrets',name);return}
   if(tool==='ask'){S.sure='tool:'+name;render(true);return}

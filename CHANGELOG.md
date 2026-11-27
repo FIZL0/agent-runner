@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a Terminal on the Tools page, so a phone can run a command on this machine (in the project or home), only over https or on the machine; agents cannot open or read it, nothing typed is kept, and it ends on tab close, after 15 min idle or with End every terminal (F466d).
 - Changed: in the TUI, N on a Needs you item or concept with an open chat about it selects that chat instead of starting a new one (F209c2).
 - Changed: in the run app, Chat on a Needs you item or concept that already has an open chat opens that chat instead of a new one (F209c1).
 - Added: a task that makes something for a person to look at or use (a video, pictures, a post) finishes with `done ID MSG --ready "Showcase video is ready: watch it"`: it ticks as any other, and once it lands Needs you lists the item until they answer Looks good (closes), Change it (files a follow-up with their words) or Not now (shelves) (F445b).

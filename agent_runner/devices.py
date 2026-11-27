@@ -1065,7 +1065,13 @@ def page(c, why: str = '') -> dict:
                  at=r['at'] if r else 0)
     return {'ok': True, 'tools': out, 'aliases': aliases(), 'secure': not why,
             'https': https_link() if why else '', 'windows': plat.WINDOWS,
-            'stored': str(state_dir()), 'logins': tool_forms.logins()}
+            'stored': str(state_dir()), 'logins': tool_forms.logins(), 'terminals': _terminals()}
+
+
+def _terminals() -> int:
+    """F466d: how many Tools page terminals are open."""
+    from agent_runner import tools_terminal
+    return tools_terminal.count()
 
 
 def _value(a: dict, what: str) -> str:
@@ -1319,7 +1325,8 @@ def post(body: bytes, c) -> tuple[int, dict]:
     try:
         from agent_runner import tool_forms  # F466b: the Login and Custom tool forms
         a = json.loads(body)
-        op = {**OPS, **tool_forms.OPS}[a.pop('op')]
+        from agent_runner import tools_terminal  # F466d: the Tools page's terminal
+        op = {**OPS, **tool_forms.OPS, **tools_terminal.OPS}[a.pop('op')]
     except (ValueError, KeyError, TypeError, AttributeError):
         return 400, {'ok': False, 'out': 'bad request'}
     try:
