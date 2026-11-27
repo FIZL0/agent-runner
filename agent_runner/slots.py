@@ -826,7 +826,7 @@ def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, k
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: frozenset = frozenset()):
     """Start `task` in slot n. `held` (F142): the providers past a usage cap, not to start it on."""
-    from agent_runner.fallback import note_model, start_model
+    from agent_runner.fallback import note_model, session_env, start_model
     tid = task[0]
     model = start_model(task_model(tid, model, branch), held)  # F106g: a capped provider's task starts on the chain
     finished_mark(n, C).unlink(missing_ok=True)  # the last task's `done`, not this one's
@@ -870,7 +870,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     prompt = prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch)  # F132: the harness loop's brief has no subagents
     logfile, since = slot_header(n, f'{tid} session {sid}')
     note_model(sid, model)
-    if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
+    if not (pid := MUX.open(n, d, prompt, sid, model, idle, [*slot_env(n), *session_env(tid, sid, model, held)], logfile)):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
         shared_tools.not_started(tid, d, wait)
         return None
@@ -958,7 +958,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     F106g: with `fallback` (the next model in [models] fallback, its provider having hit its cap), a new session
     on that model goes on with the work in the worktree instead, told to read it and the journal first.
     """
-    from agent_runner.fallback import FALLBACK, note_model, session_model
+    from agent_runner.fallback import FALLBACK, note_model, session_env, session_login, session_model
     from agent_runner import settings_live
     model = fallback or task_model(tid, model, branch, **({'kept': settings_live.KEPT[sid][0]} if sid in settings_live.KEPT else {}))  # F105: on its task's model, as at its start
     if not fallback and on_harness(model) != bool(HARNESS.find_transcript(sid)):
@@ -985,14 +985,14 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
         prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch) + told
         logfile, since = slot_header(n, f'{tid} session {sid} (fallback: {why})')
         note_model(sid, model)
-        if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
+        if not (pid := MUX.open(n, d, prompt, sid, model, idle, [*slot_env(n), *session_env(tid, sid, model)], logfile)):
             log(f'slot {n}: the session for {tid} on {model} did not start in {MUX.where(n)}')
             return None
         log(f'slot {n}: {tid} goes on with {model} ({why})', EV_STARTED, tid)
         return pid, sid, since
     logfile, since = slot_header(n, f'{tid} {"woken" if told else "resume"} {sid} ({why})')  # woken: no cut-off's resume
     if told and not move_transcript(sid, d) or not (pid := MUX.open(
-            n, d, told or RESUME.format(why=why, tid=tid), sid, model, idle, slot_env(n), logfile, resume=True)):
+            n, d, told or RESUME.format(why=why, tid=tid), sid, model, idle, [*slot_env(n), *session_env(tid, sid, model, login=session_login(sid))], logfile, resume=True)):
         log(f'slot {n}: the session for {tid} did not resume in {MUX.where(n)}')
         return None
     log(f'slot {n}: {tid} resumed ({why})')
