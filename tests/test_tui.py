@@ -1124,6 +1124,20 @@ def test_enter_on_concept() -> None:
     eq((p.main, p.typing), (True, 'concept:+'), 'Enter on a new concept item: typing in its box')
 
 
+def test_concept_as_need_f197b2() -> None:
+    """F197b2: a Concepts row shows its Needs you item's badge word, label and answers; Needs you the same badge."""
+    snap = dict(SNAP, concepts=[dict(SNAP['concepts'][0], news_words='Updated')])
+    p = page(snap)
+    row = ''.join(t for t, _ in p.row(5, p.items(5)[0]))
+    check(row.startswith('Updated ◆ Lazy layout') and 'CONCEPT 1d' in row, 'the concept row', row)
+    need = ''.join(t for t, _ in p.row(4, snap['needs'][1]))
+    check(need.startswith('Updated F4'), 'the Needs you row has the same badge', need)
+    p.key('5')
+    lines, _ = p.preview_pane(p.sel(), 80)
+    head = ''.join(t for t, _ in lines[1])
+    check('CONCEPT' in head and 'Option A · Option B · A + B · recommended' in head, 'its answers', head)
+
+
 def test_escape_tail() -> None:
     def more_of(s):
         it = iter(s)
@@ -2511,7 +2525,7 @@ if __name__ == '__main__':
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
-                               test_concept_chat, test_new_concept, test_enter_on_concept,
+                               test_concept_chat, test_new_concept, test_enter_on_concept, test_concept_as_need_f197b2,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked, test_shelved_f184,
                                test_themes,
                                test_idle_run_of_another_project, test_run_key_binds, test_run_controls,
