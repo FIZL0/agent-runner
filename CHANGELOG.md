@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a release card in the Plan queue has Wait for… too: tick the tasks it waits for, in the place of the tasks above it (B870).
 - Fixed: Home's Needs you lists a chat's DECIDE question at once, with its option buttons, an answer box and Chat, and counts it; before, it showed only once the run filed it, hours later, and never for a renamed chat (B832).
 - Changed: a Plan row's hold, to the top, remove and Undo show as saving while sent, with no toast on success; a refusal puts the row back with a toast (F478).
 - Added: a task's size, `plan add/edit --size simple|complex` (`size: simple` on its line); `[models] sizes` (empty, off, by default; e.g. `{ simple = "sonnet" }`) runs a size on its own model, over its kind's and under its own `--model`; a simple task that fails or blocks on it retries once on its kind's model; on the Settings page as Model for each size (F470).

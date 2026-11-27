@@ -85,8 +85,7 @@ def test_refused():
     refused('P5a', ['P5'], 'P5a is a subtask of P5')
     refused('P6', ['T7'], 'T7 is a subtask of P6')
     refused('T7', ['P6'], 'T7 is a subtask of P6')
-    refused('V1', ['T1'], 'V1 is a release: move it to change what it waits for')
-    refused('V1', [], 'V1 is a release: move it to change what it waits for')
+    refused('V1', ['V1'], 'V1 cannot wait for itself')
     for ids in (['T2'], []):
         refused('B2', ids, 'B2 is waiting for you')
         refused('B4', ids, 'B4 is shelved')
@@ -150,6 +149,8 @@ def test_clear():
     eq(line('T1'), '- [ ] **T1** (follow-up, low) first | files: a.py | test: t | held: yes — a note', 'T1')
     put('T2')
     eq(line('T2'), '- [ ] **T2** second | files: b.py', 'none before')
+    put('V1', 'T1')
+    eq(line('V1'), '- [ ] **V1** Release | after: T1', 'B870: a release waits for the list, its all replaced')
 
 
 def test_blocked():

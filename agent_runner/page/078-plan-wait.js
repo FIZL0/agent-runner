@@ -19,13 +19,16 @@ function waitName(q){
 function waitDrawn(q,ids){
   if(waitSame(ids,waitNow(q)))return q;
   const all=waitKnown(), words=ids.map(t=>waitName(all.find(x=>x.id===t)||{id:t})).join(', ');
+  if(q.release){const r=q.release;  // B870: a release says it on its own line
+    return {...q,after:ids,release:{...r,waits:ids.map(t=>({id:t,title:(all.find(x=>x.id===t)||{}).title||t})),everything:false,note:'',
+      ...(ids.length?{state:'waits'}:{state:'next',words:'next'})}}}
   const free=['ready','after','tool'].includes(q.state);  // the other states come first, as in ui_model_queue.queue_state()
   return {...q,after:ids,after_title:words,...(free?{state:ids.length?'after':'ready'}:{})};
 }
 /* every open task the snapshot has */
 const waitKnown=()=>(S.snap.queue||[]).concat(S.snap.shelved||[]);
 /* what row q waits for now, of the tasks still open */
-const waitNow=q=>{const open=waitKnown().map(x=>x.id);return (q.after||[]).filter(t=>open.includes(t))};
+const waitNow=q=>{const open=waitKnown().map(x=>x.id), r=q.release;return (r&&!(q.after||[]).length?(r.waits||[]).map(w=>w.id):q.after||[]).filter(t=>open.includes(t))};  // B870: a release's waits
 const waitParts=(q,t)=>gripChild(q.id,t)||((q.split||{}).open||[]).some(p=>p.id===t);
 /* what row q, at place i of `rows`, cannot be done before, as plan_wait._edges() */
 function waitEdges(q,i,rows){
@@ -94,7 +97,7 @@ function waitEnd(){
 function waitDone(){
   const id=S.planWait, q=waitRows(S.snap.queue||[]).find(x=>x.id===id);if(!q)return;
   const open=waitKnown().map(x=>x.id), ids=S.waitPicks.filter(t=>open.includes(t));  // one that landed meanwhile is waited for no more
-  const all=!ids.length&&/^all:/.test(q.after_title||'');  // after: all, with nothing above it to tick: cleared too
+  const all=!!(q.release||{}).everything||!ids.length&&/^all:/.test(q.after_title||'');  // B870: a release's all becomes the list ticked  // after: all, with nothing above it to tick: cleared too
   if(all||!waitSame(ids,waitNow(q))){
     S.planWait='';S.waitPicks=[];  // outbox() draws
     for(const x of S.ob.filter(x=>x.waitset===id&&x.state==='failed'))obChange(b=>obDrop(b,x.cid));  // a refused one this replaces

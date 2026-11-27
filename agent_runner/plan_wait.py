@@ -132,9 +132,7 @@ def why_not(ls: list[str], done: list[str], tid: str, ids: list[str]) -> str:
         return f'{t} is done' if t in over else f'there is no task {t}'
     if tid not in where:
         return gone(tid)
-    if P.release(tid):
-        return f'{tid} is a release: move it to change what it waits for'
-    i = where[tid]
+    i = where[tid]  # B870: a release's waits are set the same way, its `after: all` replaced by the list
     if P.ITEM.match(ls[i]).group(2) == '~' and not _wait_at(ls, i):
         return f'{tid} is ' + ('shelved' if P._shelved(ls, i) else 'waiting for you' if P._on_person(ls, i)
                                else f'waiting for {P.until_label(c)}' if (c := P.until_of(ls, i))

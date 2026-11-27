@@ -43,7 +43,7 @@ function rowMenu(q,list='queue'){
 }
 const removedCard=q=>card(`<div class="row">${q.id?taskChip(q.id):''}<div class="grow"><b class="ell">${esc(q.title||q.id)}</b><span class="small">Removed</span></div><button class="btn" data-menuundo="${esc(menuId(q))}">Undo</button></div>`,'',`data-k="${q.placeholder?'rel:next':'task:'+esc(q.id)}"`);
 /* F442: can what row q waits for be set: a task no run has started, not parked, and not one that waits on a person or a check */
-const waitMay=q=>!!q.id&&!q.release&&!q.removed&&(q.menu||[]).length>0&&!(q.blocked&&['blocked','tool'].includes(q.state));
+const waitMay=q=>!!q.id&&(!q.release||['waits','next'].includes(q.release.state))&&!q.removed&&(q.menu||[]).length>0&&!(q.blocked&&['blocked','tool'].includes(q.state));
 /* where a row stands in its section, for Undo */
 function menuPlace(q){
   const xs=(S.snap.queue||[]).filter(x=>x.section===q.section), i=xs.findIndex(x=>x.id===q.id), ids=l=>l.map(x=>x.id);
