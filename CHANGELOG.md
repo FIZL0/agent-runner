@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: `run login code NAME "why"` asks for a Login's 2FA code under Needs you (a 6-digit field, kept 5 minutes, used once, never logged) and waits for it; a Login that does not exist gives a block line whose link opens the Login form with its name and purpose filled in (F466c).
 - Added: a task that makes something for a person to look at or use (a video, pictures, a post) finishes with `done ID MSG --ready "Showcase video is ready: watch it"`: it ticks as any other, and once it lands Needs you lists the item until they answer Looks good (closes), Change it (files a follow-up with their words) or Not now (shelves) (F445b).
 - Added: a chat's question in /live carries each option's count of stored tasks, and POST /queue queues the chosen option's tasks once, with one chat line and no message to Claude (F192d1).
 ## 0.86.0 (2026-11-28)

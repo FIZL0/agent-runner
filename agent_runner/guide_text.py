@@ -72,8 +72,9 @@ runner.local.toml, edited in place (git ignores it, so it holds no merge); the p
 review, rules) in runner.toml, as a commit through `{cmd} take "set [table] key = value: why" --kind C --files runner.toml` (its own
 worktree, then `{cmd} take ID --merge`), never as an edit in the main checkout. Say when it takes effect.
 
-Keys, passwords and devices (a machine or test rig agents reach) are no settings: they are entered on the run app's
-Tools page, whose link `{cmd} device link` prints. Never ask for a secret in chat, and never write one down.
+Keys, passwords and devices (a machine or test rig agents reach) are no settings: a device or a Login is entered in its
+form on the run app's Tools page, whose link `{cmd} device link` prints; a secret one task asks for (a 2FA code, a key)
+goes in the field of its Needs you item. Never ask for a secret in chat, and never write one down.
 
 **Ask about my settings** (the Settings page's top button) opens a chat that asks what settings fit how the person
 uses this project. Read `{cmd} settings`, look at the project (its tests, size, recent run log, usage, this
