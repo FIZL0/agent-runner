@@ -53,5 +53,18 @@ def test_approved_concept_stays():
             check(cs[-1]['id'] == 'K24' and cs[-1]['waits'], 'a parked build with a Needs you item says so', cs)
 
 
+def test_chat_pages_only_when_filed():
+    """B881: a chat's report page stays off Concepts; a page the chat filed as a concept shows."""
+    Q = U
+    with tempfile.TemporaryDirectory() as t:
+        d = Path(t)
+        for cid in ('chat1a', 'chat2b'):
+            (d / f'{cid}.html').write_text(f'<title>{cid}</title>', encoding='utf-8')
+        files = sorted(d.glob('*.html'))
+        filed = Q.filed_chat_pages(['- [x] **K9** Themes', '  - page: /concept/chat2b'])
+        eq([r['id'] for r in Q.chat_page_rows(files, set(), filed=filed)], ['chat2b'], 'only the filed concept')
+        eq(Q.chat_page_rows(files, set()), [], 'no filed concept: no chat pages')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_approved_concept_stays]))
+    raise SystemExit(report([test_approved_concept_stays, test_chat_pages_only_when_filed]))
