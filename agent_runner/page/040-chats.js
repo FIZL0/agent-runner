@@ -21,8 +21,10 @@ function side(){
    <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n" data-k="n:${k}" data-roll data-v="${count[k]}">${count[k]}</span>`:''}</button>`).join('')}</div>${walkRow()}
    <div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button></div>${chatBar()}${cs.length||g.quiet.length?'':'<div class="none">No chats yet</div>'}${g.top.map(x=>sideRow(x)).join('')}${g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>x.response?responseRow(x):answerNewRow(sideRow(x,true),x,S.answerChats)).join(''):''}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}" data-k="ag:${esc(s.name)}"><span class="livedot"></span><span class="t"><span class="tt">${esc(s.title||s.task)}</span></span></button>`).join(''):'<div class="none">None right now</div>'}
-   <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>`,'in');
+   <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>${runnerVer()}`,'in');
 }
+/* F471: the agent-runner version the run is on, a muted line ('' from an older run) */
+const runnerVer=(c='runver')=>S.snap&&S.snap.version?`<div class="${c}">agent-runner ${esc(S.snap.version)}</div>`:'';
 /* F425b: a sent response's row in Quiet: opening it starts no chat */
 const responseRow=x=>`<div class="crow quiet response" data-k="chat:${esc(x.name)}"><button class="thread ${S.thread===x.name?'on':''}" data-thread="${esc(x.name)}"><span class="t"><span class="tt">${esc(x.label)}</span></span>${responseNew(x)}</button></div>`;
 /* the sidebar drawn again only when it changed, its scroll and a name being typed kept */
