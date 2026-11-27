@@ -408,6 +408,12 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'split', None
     if P.release(tid) and MERGE.locked():  # F99: a merge under way lands first, so the release starts from it
         return 'merging', None
+    return holds_after_merge(t, tried, h)
+
+
+def holds_after_merge(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
+    """`holds`' reasons after the merge under way ('unpushed' on): B849b reads them for a release the merge holds."""
+    tid = t[0]
     if P.release(tid) and unpushed():  # F98: a release waits until everything before it is approved and pushed
         return 'unpushed', None
     if h.prs and tid not in h.on and tid not in h.waits:  # F420
@@ -581,6 +587,8 @@ def choose(h: Held, tried: set, branch: str, claim: bool = False):
     its slot for a shared tool goes ahead of them all, the longest wait first (F168), but for this: while a critical `(alone)` task
     waits for its turn, only critical tasks start (F208, `turn_of`)."""
     turn = turn_of(tried, h, branch)
+    if claim:
+        mark_ready_releases(h, tried, turn)
     for t in sorted(h.todo, key=lambda t: (h.waits[t[0]][1] if t[0] in h.waits else float('inf'),
                                            t[0] not in h.critical, t[0] not in h.high)):
         if turn and t[0] not in h.critical or holds(t, tried, h):
@@ -655,6 +663,28 @@ def took_base(tid: str) -> str:
 
 
 PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
+RELEASE_READY: dict[str, float] = {}  # B849b: {release: time.monotonic() of the last pick that found the merge alone holds it}
+READY_FOR = 45.0  # s: a mark no pick has renewed since (run paused, usage cap, no free slot) holds no merge
+
+
+def mark_ready_releases(h: Held, tried: set, turn: str) -> None:
+    """B849b: a pick that may start a task (`choose` with claim: the run is not paused, the caps let it, a slot is free)
+    marks each release that waits on the merge under way alone, so the merges waiting behind it hold for it; every
+    other release is unmarked, so one held, dropped or blocked holds nothing."""
+    RELEASE_READY.clear()
+    if not MERGE.locked():
+        return
+    now = time.monotonic()
+    for t in h.todo:
+        if P.release(t[0]) and not (turn and t[0] not in h.critical) and \
+                (holds(t, tried, h) or ('',))[0] == 'merging' and holds_after_merge(t, tried, h) is None:
+            RELEASE_READY[t[0]] = now
+
+
+def ready_release() -> str:
+    """B849b: the release a recent pick found ready to start but for the merge under way, else ''."""
+    now = time.monotonic()
+    return next((v for v, at in sorted(RELEASE_READY.items()) if now - at < READY_FOR), '')
 
 
 CLAIMS_AT = [0.0]
