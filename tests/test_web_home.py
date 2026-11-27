@@ -1150,6 +1150,7 @@ def test_home_new_chat_f196f(tmp: Path) -> None:
     eq(o['named'], ['c7', 'starting', [['c7', 'what is up']]], 'its name keeps one row, still starting, with the same words')
     # the server: Home's chip (quick_ask) and its box (new_control with ask) are answered as + is: a name, the ask, at
     said = {'ok': True, 'code': 0, 'out': 'control 7 started', 'argv': []}
+    fake_repo(tmp)
     srv = W.serve('RT', 0, '127.0.0.1', snap=lambda: {})
     try:
         with mock.patch.object(U, 'call', lambda argv, *a, **k: dict(said, argv=argv)), mock.patch.object(U, 'name_new', lambda r, ask: r):
