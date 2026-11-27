@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: session_max / weekly_max read each Claude login's own usage (from its own config folder's login), so a new task passes over every login past its caps, not only the default one (F514).
 - Added: usage caps are kept per Claude login: a capped login goes on with the next free login, then `[models] fallback` (a local model normally last); session_max / weekly_max hold only the login they read; all capped and no local model waits for the earliest reset (F503).
 - Added: `run login codex|copilot|gemini --as NAME` adds another login, kept in Pi's auth.json as `<id>@NAME` beside the default; `run login` lists them, and a harness session runs on that login when its model is `<provider>@NAME:<model>` or it is given `AGENT_RUNNER_LOGIN_AS=NAME` (F506).
 - Fixed: on the run page, a chat message shows sent (no longer faded) as soon as the run takes it, not only once the chat's transcript has it (B878).
