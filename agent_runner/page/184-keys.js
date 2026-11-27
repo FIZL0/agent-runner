@@ -25,8 +25,7 @@ addEventListener('keydown',e=>{
 });
 document.addEventListener('keydown',e=>{
   /* B116: Ctrl+C interrupts the open chat while it works (not while text is selected, so copying still works);
-     B120: in the message box Esc closes the menu, then interrupts a working chat (never goes back), else leaves
-     the box; out of the box Esc never interrupts, it goes back */
+     B120, F484c: in the message box Esc closes the menu, else leaves the box (never interrupts, never goes back); out of the box Esc never interrupts, it goes back */
   if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='c'||e.key==='C')&&!selectedText(e.target)){const n=shownSession();if(n&&busy(n)){e.preventDefault();act('interrupt',{session:n});return}}  // B141
   if(e.target.matches&&e.target.matches('[data-f="ren"],[data-rencancel]')){  // F129: Enter keeps the name (its form), Esc does not
     if(e.key==='Escape'){e.preventDefault();cancelRename()}
@@ -51,8 +50,7 @@ document.addEventListener('keydown',e=>{
     }
     if(e.key==='Enter'&&boxEnter(e,TOUCH())==='send'){e.preventDefault();send();return}
     if((e.key==='ArrowUp'||e.key==='ArrowDown')&&histKey(e,e.target)){e.preventDefault();return}  // B120: earlier messages
-    if(e.key==='Escape'){const n=shownSession();if(n&&busy(n)){e.preventDefault();act('interrupt',{session:n});return}}  // B120; B142: the shown session
-    if(e.key==='Escape'){e.preventDefault();e.target.blur();return}
+    if(e.key==='Escape'){e.preventDefault();e.target.blur();return}  // F484c: Esc only leaves the box; Ctrl+C stops a reply
     return}
   if(e.key==='Escape'&&S.sel.length){S.sel=[];render(true);return}  // F118
   if(e.key==='Escape'&&S.drawer){S.drawer=false;render();return}

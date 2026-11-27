@@ -54,7 +54,7 @@ const slashPick=c=>`/${c.name} `;
 const slashMove=(i,n,key)=>n?(key==='ArrowUp'?(i-1+n)%n:(i+1)%n):0;
 /* B120: the message box's keys, as in the agent CLI's own input, listed here once (the box's foot shows them) */
 const BOX_KEYS=[['Enter','sends'],['Shift+Enter','new line'],['↑ ↓','earlier messages'],['/','commands'],
-  ['Esc','closes the menu, then interrupts'],['Ctrl+C','interrupts'],['Paste','attaches pictures or files']];
+  ['Esc','closes the menu'],['Ctrl+C','interrupts'],['Paste','attaches pictures or files']];
 /* B181: what a key does in a message box: 'send', 'line' (Enter left to the box: a new line) or '' (not Enter, or an
    input method still composing, which Safari ends with keyCode 229). On touch only Ctrl/Cmd+Enter sends */
 const composing=e=>!!e.isComposing||e.keyCode===229;
@@ -71,8 +71,8 @@ function sendIs(words,atts,works,queued,held){
   if(!works||String(words||'').trim()||(atts||[]).length)return'send';
   return held?'held':queued>0?'force':'send';
 }
-/* F406g: noSlash: a chat that takes no commands */
-const keysLine=noSlash=>'<span class="keysl">'+BOX_KEYS.filter(([k])=>!noSlash||k!=='/').map(([k,d])=>`${k} ${d}`).join(' · ')+'</span>';
+/* F406g: noSlash: a chat that takes no commands. F484c: the box shows no keys line any more (BOX_KEYS stays the list) */
+const keysLine=noSlash=>'';
 /* B120: the chat's message history (kept per chat): HIST_MAX the most it keeps; histPush the list once `text` is
    sent (not twice in a row); histEdge whether ArrowUp / ArrowDown leaves the box's text for history (the caret on
    its first / last line, nothing selected); histStep the place after the key, n meaning the unsent draft */
