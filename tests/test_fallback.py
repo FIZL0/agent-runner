@@ -158,6 +158,34 @@ def test_login_usage_kept():
     check(W.login_usage(str(TMP / 'none')) is None, 'a dir with no login reads nothing')
 
 
+@patched
+def test_pinned_login():
+    from agent_runner import config as CF
+    eq(CF.claude_model('claude@home:opus'), 'claude@home:opus', 'a pinned login stays in the settled model')
+    eq(CF.claude_model('claude:opus'), 'opus', 'claude with no pin is the bare name')
+    eq(CF.pinned_login('claude@home:opus'), ('opus', 'home'), 'the pin splits into model and login')
+    eq(CF.pinned_login('opus'), ('opus', None), 'no pin: no login')
+    for bad in ('openai@x:gpt', 'claude@:opus', 'claude@a b:opus'):
+        try:
+            CF.parse_model(bad, {'openai': {}})
+            check(False, f'{bad} is refused')
+        except SystemExit:
+            pass
+    setup(['work', 'home', 'spare'], [])
+    with mock.patch('agent_runner.fallback.harness_model', CF.harness_model):
+        eq(FB.provider('claude@home:opus'), 'claude', 'a pinned model runs on claude')
+        eq(FB.session_env('T1', 's1', 'claude@home:opus'), [f'CLAUDE_CONFIG_DIR={TMP / "home"}'],
+           'the session starts on its pinned login')
+        FB.mark_capped('claude@home')
+        eq(FB.start_model('claude@home:opus'), 'claude@home:opus', 'a capped pin keeps its model')
+        eq(FB.session_env('T2', 's2', 'claude@home:opus'), [],
+           'a capped pinned login falls back to its provider\'s first free login')
+        FB.mark_capped('claude')
+        eq(FB.session_env('T3', 's3', 'claude@home:opus'), [f'CLAUDE_CONFIG_DIR={TMP / "spare"}'],
+           'then the next free one')
+
+
 if __name__ == '__main__':
     sys.exit(report([test_keys, test_same_provider_first, test_then_chain_local_last, test_new_task_free_login,
-                     test_all_capped_waits, test_one_login_unchanged, test_other_login_usage, test_login_usage_kept]))
+                     test_all_capped_waits, test_one_login_unchanged, test_other_login_usage, test_login_usage_kept,
+                     test_pinned_login]))

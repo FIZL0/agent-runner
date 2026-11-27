@@ -26,7 +26,7 @@ import re
 import time
 
 from agent_runner import plat, state
-from agent_runner.config import finished_mark, harness_model
+from agent_runner.config import finished_mark, harness_model, pinned_login
 from agent_runner.state import log
 
 CAP_HOLD = 3600  # s a provider counts as capped when its error named no reset time
@@ -138,7 +138,10 @@ def session_env(tid: str, sid: str, model: str, held: frozenset = frozenset(), l
         except OSError:
             login = None
     if login is None:
-        login = free_login('claude', with_held(held)) or ''
+        _, pin_to = pinned_login(model)  # F504: a pinned login, while free; capped, its provider's next free one
+        free = with_held(held)
+        login = pin_to if pin_to in login_names('claude') and cap_key('claude', pin_to) not in free else \
+            free_login('claude', free) or ''
     note_login(sid, login)
     return [f'{k}={v}' for k, v in login_env(login).items()]
 

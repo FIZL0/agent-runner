@@ -21,7 +21,7 @@ from pathlib import Path
 from agent_runner import audit, inbox_lock, slot_prep, join, no_push, plan as P, plat, pr, pr_feedback, sched, session_theme, shared_tools, stack, task_size
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
-from agent_runner.config import finished_mark, runner_cmd, shown_cmd
+from agent_runner.config import finished_mark, pinned_login, runner_cmd, shown_cmd
 from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, hook, log, note, ROOT, SLOTS_DIR
 from agent_runner.state import EV_STARTED
@@ -177,7 +177,7 @@ class Claude:
         ends = {'Stop': stop} if stream_engine() else {'Stop': stop, 'StopFailure': stop}
         return [*(STREAM_FLAGS if stream_engine() else []),
                 '--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
-                '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(artifact),
+                '--disallowedTools', 'AskUserQuestion', '--model', pinned_login(model)[0], *lean(artifact),
                 # F101: the review and docs subagents, each on its [models] role, so all of it is plan usage
                 *(['--agents', json.dumps(agents)] if (agents := subagents()) else []),
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),

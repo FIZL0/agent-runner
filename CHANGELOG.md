@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a model name can pin a Claude login, `claude@work:opus`, anywhere a model is named ([models] roles, kinds, sizes, fallback, `--model`); a session on it starts on that login, and when that login is capped it goes on with claude's next free login (F504).
 ## 0.82.0 (2026-11-28)
 
 - Changed: `done.py` is split by area (`done_docs.py`, `done_refusals.py`, `done_writeup.py`), and its test is `tests/test_done_docs.py`; no behaviour change (C62).

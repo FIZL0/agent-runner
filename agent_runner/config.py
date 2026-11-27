@@ -411,6 +411,9 @@ def parse_model(value: str, providers: dict[str, dict] | None = None, local: boo
     head, sep, rest = value.partition(':')
     if not sep:
         return 'claude', value
+    head, at, login = head.partition('@')  # F504: 'claude@work:opus' pins claude's login 'work'
+    if at and (head != 'claude' or not login or not login.replace('-', 'a').replace('_', 'a').isalnum()):
+        raise SystemExit(f'agent-runner: {where} = {value!r}: only claude has logins to pin, as claude@<login>:<model>')
     if head not in PROVIDERS and head not in providers:
         raise SystemExit(f'agent-runner: {where} = {value!r}: unknown provider {head!r}; use one of '
                          f'{", ".join([*PROVIDERS, *providers])}, or define it in [models.providers.{head}]')
@@ -433,8 +436,19 @@ def claude_model(value: str, providers: dict[str, dict] | None = None, local: bo
     provider's as '<provider>:<model>', which the harness loop runs (F106c)."""
     provider, model = parse_model(value, providers, local, where)
     if provider == 'claude':
-        return model
+        _, login = pinned_login(value)
+        return f'claude@{login}:{model}' if login else model
     return f'{provider}:{model}'
+
+
+def pinned_login(model: str) -> tuple[str, str | None]:
+    """F504: a model with a pinned login ('claude@work:opus') as (the model Claude Code runs, 'opus'; the login,
+    'work'); any other model as (model, None)."""
+    head, sep, rest = (model or '').partition(':')
+    prov, at, login = head.partition('@')
+    if sep and at and prov == 'claude' and login:
+        return rest, login
+    return model, None
 
 
 def model_provider(given: object, providers: dict[str, dict] | None = None, local: bool = False) -> str:
