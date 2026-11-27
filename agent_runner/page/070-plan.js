@@ -208,7 +208,7 @@ async function askLoad(id){
     S[key]={...(S[key]||{}),[id]:got};if(S.sheet==='need'&&S.sheetArg===id&&S.askFold[key==='askWhy'?'why':'task'])MO.folded=Date.now();render(true)};
   await Promise.all([one('why/','askWhy'),one('task/','askText')]);
 }
-function needOpen(id){if(!needOf(id))return;shotEnd();S.askShot=-1;S.askFold={};S.giveSaid={};openSheet('need',id);askLoad(id);if(typeof conceptOpened==='function')conceptOpened(id)}
+function needOpen(id){if(!needOf(id))return;shotEnd();S.askShot=-1;S.askFold={};S.giveSaid={};openSheet('need',id);askLoad(id);conceptOpened(id)}
 function needReply(id){
   const n=needOf(id), text=String(S.f[askField(id)]||'').trim();if(!n)return;
   if(!text)return toast('Write your reply first',true);
