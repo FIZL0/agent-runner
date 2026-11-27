@@ -77,3 +77,9 @@ DESCRIBED = '#description'  # marks a manifest whose only change is its descript
 def mark_descriptions(base: str, head: str | None, files: list[str], cwd: Path) -> list[str]:
     """`files`, each manifest whose only change is its description marked with DESCRIBED (F494)."""
     return [f + DESCRIBED if description_only(base, head, f, cwd) else f for f in files]
+
+
+def merge_files(base: str, merged: str, cwd: Path) -> list[str]:
+    """The files a merge changes on its base, description-only manifests marked (F494)."""
+    files = git('diff', '--name-only', '--no-renames', base, merged, cwd=cwd).stdout.split()
+    return mark_descriptions(base, merged, files, cwd)
