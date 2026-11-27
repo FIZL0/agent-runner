@@ -2039,6 +2039,7 @@ issues_trust = "skeptical"  # "skeptical": the task confirms the issue in the co
 releases = true          # false: no releases in this project (status and plan show none, auto_release queues nothing); an open V task stays an ordinary task
 auto_release = false      # queue a release by itself: { every = 10 } once 10 tasks landed since the last release, starting at once (a cut, F195a);
                           # { idle = true } when the run goes idle with landed work (`plan add V`); both may be set; idle never while a release is open
+slot_memory = true        # false (after a person OKed the audit's move of memories into lessons): Claude Code's memories off for slot, fix and repair sessions
 auto_audit = false        # { every = 50 } queues an audit once 50 tasks landed since the last one and the run is idle; true = every 50 (see Auto audit)
 audit_tokens = 1000000    # an audit's token cap, counted as task_tokens: past it the audit lands what it found; 0 = none
 batch_max = 16            # finished branches waiting for the merge go in together under one gate run, and one push,
