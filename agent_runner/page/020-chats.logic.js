@@ -174,6 +174,9 @@ function compose(ctx,text,paths){
 /* B139: where the message box sends msg: with a card's context (Add a task, a card's Chat) a new control
    session that gets it as its first message; F176: with no chat open (Home) too; else chat_to the open chat */
 function sendReq(ctx,to,msg){if(ctx&&ctx.kind==='response')return{name:'response_chat',args:{rid:ctx.id,text:msg}};return ctx||!to?{name:'new_control',args:{ask:msg}}:{name:'chat_to',args:{text:msg,to}}}
+/* B219b: a Needs you item that is a concept waiting for a pick: its place in concepts, else -1 (its Chat then opens the
+   concept's new chat view, as the Concepts card's Chat does) */
+function needConcept(tid,concepts){return tid?(concepts||[]).findIndex(c=>(c.concept||c.id)===tid):-1}
 /* F172: the new chat view of a card's Chat, before its first message: its name in S.thread ('+plan:F1'; no session has it) */
 const ctxKey=ctx=>'+'+(ctx.kind==='new'||ctx.kind==='newconcept'||ctx.kind==='settings'?ctx.kind:ctx.kind+':'+ctx.id);
 /* its message box's placeholder */

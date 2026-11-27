@@ -548,5 +548,39 @@ def test_born_name_f196e(tmp: Path) -> None:
     eq(U.given_title(K.control_given(7), 7), 'Login page fix', 'never over a name it has')
 
 
+
+NEED_CONCEPT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const line = s => { const i = page.indexOf(s); if (i < 0) throw new Error('missing ' + s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+let did = [];
+const S = {sheet: null, snap: {concepts: [{concept: 'K9', title: 'Other'}, {concept: 'K14', title: 'Lazy layout'}], needs: [{id: 'K14'}, {id: 'B5'}]}};
+const about = a => did.push(['about', a]), closeSheet = () => { did.push(['close']); S.sheet = null },
+  newChat = (n, a) => did.push(['newChat', n, a.tid]), needChatAsk = () => 'ask', outbox = () => did.push(['act']);
+eval(line('function needConcept(') + 'var CLICK=(c,tid)=>{const rq={name:"need_chat",args:{tid}};' + line('    if(c.chat&&c.where===') + line("    if(c.chat){const n=") + line('      newChat(rq.name') + '}');
+const need = {chat: true, where: 'need'}, o = {};
+did = []; CLICK(need, 'K14'); o.card = did;
+did = []; S.sheet = 'need'; CLICK(need, 'K14'); o.popup = did;
+did = []; CLICK(need, 'B5'); o.other = did;
+console.log(JSON.stringify(o));
+"""
+
+
+def test_need_concept_chat_b219b(tmp: Path) -> None:
+    """B219b: Chat on a Needs you concept (card or popup) opens the concept's new chat view and sends nothing; other
+    Needs you items keep their Chat."""
+    if not shutil.which('node'):
+        print('  (no node here: the Needs you concept Chat test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(NEED_CONCEPT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node presses Chat', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['card'], [['about', 'concept:1']], 'the card opens the concept view, nothing posted')
+    eq(o['popup'], [['close'], ['about', 'concept:1']], 'the popup closes and opens it, nothing posted')
+    eq(o['other'], [['newChat', 'need_chat', 'B5']], 'a non-concept item keeps its Chat')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_born_name_f196e), in_tmp(test_new_chat), in_tmp(test_new_chat_view_f172), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762), in_tmp(test_first_lines_b766), in_tmp(test_rest_b786), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201)]))
+    raise SystemExit(report([in_tmp(test_born_name_f196e), in_tmp(test_new_chat), in_tmp(test_new_chat_view_f172), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762), in_tmp(test_first_lines_b766), in_tmp(test_rest_b786), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201), in_tmp(test_need_concept_chat_b219b)]))
