@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: Hold on a running task (`plan hold`) stops its slot as Cancel does and holds it in its place; Cancel (the page's and `plan cancel`) now holds the task too instead of parking it, so no run restarts it until Unhold. Still refused while it merges, waits to merge, is taken by hand, or is claimed by another machine's run, which it names (F480).
 ## 0.77.0 (2026-11-26)
 
 - Changed: `agent_runner/guide.py` is split by area into `guide_text.py`, `guide_topics.py` and `guide_control.py` (still imported through `guide`), and its control test is `tests/test_guide_control.py`; no behaviour change (C59).

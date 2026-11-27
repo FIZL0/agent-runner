@@ -82,7 +82,7 @@ RUN_CONTROLS = (
      'where': 'run', 'group': 'Fix up', 'fix': 'wip', 'confirm': WIP_DROP_ASK},
     # F426d: what it asks names the minutes worked (`confirm_of`; the page adds them itself, `cutsOff`)
     {'key': 'task_cancel', 'label': 'Cancel', 'argv': ('plan', 'cancel', '{id}', '--yes'), 'tui': 'C', 'where': 'task',
-     'help': 'cancel: stop it, keep its work and park it', 'confirm': cancel.ASK + ' Cancel {id}?',
+     'help': 'cancel: stop it, keep its work and hold it', 'confirm': cancel.ASK + ' Cancel {id}?',
      'confirm_of': lambda r: cancel.question(r['task'], r.get('name', ''), r.get('minutes'))},
     {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'task'},
@@ -98,7 +98,7 @@ RUN_CONTROLS = (
      'fits': lambda r: not taken_row(r)},
     # F455b: a task taken by hand is cancelled from its queue row (cancel keeps its work and parks it); not one merging
     {'key': 'queue_cancel', 'label': 'Cancel', 'argv': ('plan', 'cancel', '{id}', '--yes'), 'tui': 'C', 'where': 'queue',
-     'help': 'cancel (a task taken by hand): keep its work and park it', 'confirm': cancel.ASK + ' Cancel {id}?',
+     'help': 'cancel (a task taken by hand): keep its work and hold it', 'confirm': cancel.ASK + ' Cancel {id}?',
      'fits': taken_row, 'confirm_of': lambda r: cancel.question(r['id'])},
     {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
