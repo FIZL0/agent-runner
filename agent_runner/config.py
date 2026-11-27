@@ -295,7 +295,7 @@ DEFAULTS: dict = {
         'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
                   'R': 'sonnet'},  # a task's session by its kind (the id's letters): a kind set here replaces
                                 # only that kind; one not listed runs on `code`; `plan add --model` wins for a task
-        'sizes': {},            # F470: a task's session by its size (`plan add --size simple`), e.g. simple = "sonnet";
+        'sizes': {},            # a task's session by its size (`plan add --size simple`), e.g. simple = "sonnet";
                                 # empty: sizes are ignored. Over [models.kinds]; `--model` wins for a task. A
                                 # simple task that fails or blocks retries once on its kind's model
         'local': False,         # allow a local provider (ollama, or a provider url on localhost or a private
