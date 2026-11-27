@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a page a chat published (publish-page from a chat) shows in the run page's Concepts for a week; it has no task, so it was left out (B875).
 - Added: `[run] slot_memory` (default true) turns Claude Code memories off for slot sessions; the audit offers moving them into lessons (C49)
 - Fixed: on the run page's Plan, a row dragged (mouse or finger) shows in its new place at once and glides only the last bit from where it was let go; before, the drag's shifts stayed on through the redraw and the rows jumped (B877).
 - Added: a chat's history on the run page (Copilot and Claude Code alike) shows a thin grey scrollbar you can drag (F474).
