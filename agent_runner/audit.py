@@ -42,6 +42,10 @@ ending with no commits ({notes}/no-commits.json counts them, now, and `no commit
 history or {notes}/events.jsonl gives).
 - Docs, the glossary and lessons that name something gone or say what is no longer so; lessons that repeat or \
 contradict each other.
+- Claude Code memories of the slots (the project's `.claude` memory folders): on the sheet offer one question to move the \
+good ones into the lessons file with the files each applies to, and to remove stale ones (a removed route, work long \
+built). Delete or move none yourself; the answer is carried out as a task. After a move is OKed, `[run] slot_memory = false` \
+turns memories off for slot, fix and repair sessions.
 - Code and tests nothing uses any more: search for every name before you say so.
 - Waste in run cost (`{runner} cost --days {days}`, `{runner} cost --files --days {days}`): the same file or command read \
 over and over, sessions past the context warning, work done twice.

@@ -588,6 +588,8 @@ def slot_env(n: int | None) -> list[str]:
     env = ['AGENT_RUNNER=1'] + ([] if n is None else [f'AGENT_RUNNER_SLOT={n}', f'AGENT_SLOT={n}',
                                                       f'AGENT_RUNNER_WORKTREE={SLOTS_DIR / f"s{n}"}'])  # B103
     env.append(f'CLAUDE_CODE_TMPDIR={session_tmp()}')
+    if C.run['slot_memory'] is False:  # C49: memories moved into lessons, a person OKed
+        env.append('CLAUDE_CODE_DISABLE_AUTO_MEMORY=1')
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]

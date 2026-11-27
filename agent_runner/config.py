@@ -211,6 +211,8 @@ DEFAULTS: dict = {
         'auto_release': False,  # queue a release (`plan add V`) by itself: { every = 10 } once that many tasks
                                 # landed since the last release, { idle = true } when the run goes idle with
                                 # landed work; both may be set; false: off
+        'slot_memory': True,    # slot, fix and repair sessions keep Claude Code's memories; false (after a person OKed the
+                                # move of a project's memories into lessons): autoMemoryEnabled off for them; control sessions keep theirs
         'auto_audit': False,    # queue an audit task by itself: { every = 50 } once that many tasks landed since the last
                                 # audit and the run is idle; true: every 50; false: off
         'audit_tokens': 1_000_000,  # tokens (as task_tokens counts them) an audit's session may use; past it, it lands
