@@ -385,7 +385,8 @@ def main(argv: list[str]) -> int:
         print(f'{RUNNER} login: --as is for claude only', file=sys.stderr)
         return 2
     if name == 'claude':
-        print("claude runs as Claude Code, on Claude Code's own login: `claude /login`.")
+        print("claude runs as Claude Code, on Claude Code's own login: `claude /login`. "
+              f"Another account: `{RUNNER} login claude --as NAME`.")
         return 0
     providers = c.providers if c else {}
     custom = providers.get(name)
