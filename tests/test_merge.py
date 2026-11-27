@@ -223,12 +223,58 @@ def test_foreign_folder(repo: Path, tmp: Path):
         restore()
 
 
+def test_gated_moves(tmp: Path):
+    print('F493: main moved only by gated merges on other files is not tested again; else it is')
+    repo = tmp / 'f493'
+    repo.mkdir()
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'a.py').write_text('# a\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    base = git(repo, 'rev-parse', 'HEAD').strip()
+    git(repo, 'checkout', '-q', '-b', 'mine')
+    (repo / 'mine.py').write_text('# mine\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'mine')
+    merged = git(repo, 'rev-parse', 'HEAD').strip()
+
+    def land(tid: str, f: str, gated: bool = True) -> str:
+        git(repo, 'checkout', '-q', 'main')
+        if gated:
+            git(repo, 'checkout', '-q', '-b', f'task/{tid}')
+        (repo / f).write_text(f'# {tid}\n', encoding='utf-8')
+        git(repo, 'add', '-A')
+        git(repo, 'commit', '-qm', tid)
+        if gated:
+            git(repo, 'checkout', '-q', 'main')
+            git(repo, 'merge', '-q', '--no-ff', '-m', f"Merge branch 'task/{tid}'", f'task/{tid}')
+        return git(repo, 'rev-parse', 'HEAD').strip()
+
+    def skips(new: str) -> bool:
+        moved = git(repo, 'diff', '--name-only', base, new).split()
+        return M.moved_by_gated_only(base, new, merged, moved)
+
+    old = M.git
+    M.git = lambda *a, cwd=None, **k: old(*a, cwd=cwd or repo, **k)
+    try:
+        eq(skips(land('D1', 'doc.md')), True, 'a gated merge on another file: not tested again')
+        eq(skips(land('D2', 'mine.py')), False, 'a gated merge sharing a file: tested again')
+        git(repo, 'reset', '-q', '--hard', 'HEAD~1')
+        eq(skips(land('H1', 'hand.py', gated=False)), False, 'a hand commit: tested again')
+        git(repo, 'reset', '-q', '--hard', 'HEAD~1')
+        eq(skips(land('G1', 'runner.toml')), False, 'a gated merge changing runner.toml: tested again')
+    finally:
+        M.git = old
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
         repo = make_repo(Path(tmp))
         return report([lambda: test_build(repo), lambda: test_test(repo), lambda: test_land(repo),
-                       lambda: test_release_holds(repo), lambda: test_foreign_folder(repo, Path(tmp))])
+                       lambda: test_release_holds(repo), lambda: test_foreign_folder(repo, Path(tmp)),
+                       lambda: test_gated_moves(Path(tmp))])
 
 
 if __name__ == '__main__':

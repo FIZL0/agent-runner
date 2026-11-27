@@ -1188,6 +1188,25 @@ def carry_notes(base: str, d: Path) -> None:
         path.write_text('\n'.join(got) + '\n', encoding='utf-8')
 
 
+GATE_FILES = ('runner.toml',)  # a change here may change the gate itself: always tested again
+
+
+def moved_by_gated_only(base: str, new: str, merged: str, moved: list[str]) -> bool:
+    """Main went from `base` to `new` only by merges the runner made (each passed its own gate), none of them
+    touching a file the merge `merged` changes or the gate's own settings: the tested merge needs no new gate.
+    A hand commit on main (any first-parent commit that is not a runner's merge) tests it again."""
+    if not moved or any(f in GATE_FILES for f in moved):
+        return False
+    ours = set(git('diff', '--name-only', base, merged).stdout.split())
+    if ours & set(moved):
+        return False
+    for line in git('log', '--first-parent', '--format=%P%x09%s', f'{base}..{new}').stdout.splitlines():
+        parents, _, subject = line.partition('\t')
+        if len(parents.split()) != 2 or not subject.startswith(("Merge branch 'task/", 'Merge: ')):
+            return False
+    return True
+
+
 def caught_up(tid: str, branch: str, d: Path, base: str, merged: str, tids: list[str]) -> tuple[str, str] | None:
     """The tested merge in `d`, with what `branch` got since `base` during its gate merged in and tested: the
     branch's commit it is on and the commit to land, or None for the caller to build and test the whole merge again. `merged` passed the gate
@@ -1199,6 +1218,9 @@ def caught_up(tid: str, branch: str, d: Path, base: str, merged: str, tids: list
         if all(map(untestable, moved)):
             return base, merged
         new = git('rev-parse', branch).stdout.strip()
+        if moved_by_gated_only(base, new, merged, moved):
+            log(f'{tid}: {branch} moved only by gated work on other files; not tested again')
+            return base, merged
         if not C.run['test_since']:
             log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
             return None
