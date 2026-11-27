@@ -65,6 +65,24 @@ def not_open(tid: str) -> str:
     return '' if tid in open_tasks(default_branch()) else f'{tid} is no open task: `{C.command} plan` lists them'
 
 
+def cmd_force_id(tid: str) -> int:
+    """`force ID`: just that open task may start past the usage caps, in the run that is up."""
+    import sys
+    from agent_runner.loop import send_key
+    from agent_runner.state import init, run_up
+    from agent_runner import state
+    init()
+    if not run_up():
+        print(f'no run is up in this repository: `{state.C.command} run` starts one', file=sys.stderr)
+        return 1
+    if bad := not_open(tid):
+        print(bad, file=sys.stderr)
+        return 1
+    send_key(f'f {tid}')
+    print(f'sent to the run: f {tid} (it acts within a second; `{state.C.command} status` shows it)')
+    return 0
+
+
 def only_forced(open_ids: set[str], forced: set[str]) -> set[str]:
     """What a pick passes over while the caps hold: every open task but the forced ones."""
     return set(open_ids) - set(forced)

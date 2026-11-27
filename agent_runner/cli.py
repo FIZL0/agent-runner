@@ -294,6 +294,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(what)
         return 0
+    if cmd == 'force' and rest and not rest[0].startswith('-'):  # F468: `force ID`, just that task
+        from agent_runner import cap_hold
+        return cap_hold.cmd_force_id(rest[0])
     if cmd in ('pause', 'force', 'slots', 'key'):
         from agent_runner import runner
         return runner.cmd_key(rest, f'{runner.RUNNER} {cmd}')
