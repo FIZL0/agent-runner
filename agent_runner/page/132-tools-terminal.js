@@ -36,7 +36,7 @@ function termStop(){const t=S.term;if(t){clearInterval(t.timer);S.term=null}}
 async function termSend(data){const t=S.term;if(!t)return;const j=await termPost({op:'term_send',id:t.id,data});if(!j.ok)termSaid(plainOut(j,'That did not reach the terminal.'));termPoll()}
 function termEnd(){const t=S.term;if(!t)return;termStop();termPost({op:'term_close',id:t.id})}
 addEventListener('pagehide',()=>{const t=S.term;if(t&&navigator.sendBeacon)navigator.sendBeacon(tq('tools'),new Blob([JSON.stringify({op:'term_close',id:t.id})],{type:'application/json'}))});
-document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='termin'&&e.key==='Enter'){e.preventDefault();termClick({dataset:{tool:'termenter'}})}});
+addEventListener('keydown',e=>{if(e.target&&e.target.id==='termin'&&e.key==='Enter'){e.preventDefault();termClick({dataset:{tool:'termenter'}})}});
 async function termClick(x){
   const {tool,where}=x.dataset;
   if(tool==='termopen'){
