@@ -48,7 +48,7 @@ function takeSnap(s){
   if(s.version)RUN_VERSION=s.version;
   const booted=!!s.boot&&s.boot!==S.snap.boot;
   if(s.queue){const said=addedWaits(S.queued,s);S.queued=[...new Set([...(S.queued||[]),...s.queue.map(q=>q.id)])];if(said)toast(said)}  // F402c1
-  S.snap={...S.snap,...s};S.snapRaw=S.snap;S.snapAt=Date.now();  // F508: as the run sent it, for a refused act's change to go back
+  S.snap={...S.snap,...s};S.snapRaw={...S.snap};S.snapAt=Date.now();  // F508: as the run sent it, for a refused act's change to go back
   if(!HOME_PAGE)document.title=pageTitle(S.snap.project);  // B153
   if(OB.offline)drain();  // F137: the run answers again: the outbox goes on at once
   S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());  // B138: a snapshot taken before an answer keeps it off

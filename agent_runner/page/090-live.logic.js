@@ -88,6 +88,7 @@ function instRename(n,title){return snap=>({...snap,sessions:(snap.sessions||[])
 function instFx(name,args){const a=args||{};
   if(name==='rename_chat'&&a.chat&&a.title)return instRename(a.chat,a.title);
   if(name==='run_control'&&INST_GONE.includes(a.key)&&a.tid)return instGone(a.tid);
+  if(name==='answer'&&a.tid)return snap=>({...snap,needs:(snap.needs||[]).filter(r=>r.id!==a.tid),concepts:(snap.concepts||[]).filter(r=>r.id!==a.tid)});  // answered: off Needs you
   return null}
 /* F478: a task control's row shows its result itself, so a success needs no toast (a failure still has one) */
 const rowShows=ctl=>/^menu_[a-z]+:./.test(String(ctl||''));

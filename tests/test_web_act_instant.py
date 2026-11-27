@@ -41,6 +41,7 @@ const acts = {
   delete: ['run_control', {key: 'shelved_drop', tid: 'F4'}, s => !s.shelved.length],
   quiet: ['run_control', {key: 'concept_drop', tid: 'K5'}, s => !s.concepts.length],
   rename: ['rename_chat', {chat: 'c1', title: 'New'}, s => s.sessions[0].title === 'New'],
+  answer: ['answer', {tid: 'F3', text: 'yes'}, s => !s.needs.length && s.queue.length === 2],
 };
 const wait = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
@@ -89,7 +90,7 @@ def test_wired() -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     check('instAdd(it.cid,fx||instFx(name,it.args))' in page, 'every outbox act gives its change at once')
     check('function obHide(){\n  instNow();' in page, 'each draw lays the standing changes over the snapshot')
-    check('S.snapRaw=S.snap' in page, 'the snapshot as sent is kept for a refused act')
+    check('S.snapRaw={...S.snap}' in page, 'the snapshot as sent is kept for a refused act')
 
 
 def test_snapshot_within_1s() -> None:
