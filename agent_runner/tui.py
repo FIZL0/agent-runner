@@ -1096,6 +1096,8 @@ class RunPage:
         if key == 'start':
             self.start_run()
             return
+        if c['where'] in ('need', 'concept') and c.get('chat') and self.open_chat_about():  # F209c2
+            return
         if c.get('fix') and not c.get('each') and not args.get('tid'):  # F124: which one of those to fix
             ids = [x['id'] for x in (self.snap.get('fixups') or {}).get(c['fix']) or []]
             if not ids:
@@ -1145,6 +1147,22 @@ class RunPage:
                 self.cur[3] = ids.index(args['tid'])
             else:
                 self.main = False
+
+    def open_chat_about(self) -> bool:
+        """F209c2: N on a Needs you item or concept whose row names an open chat ('chat'): select that chat in
+        Sessions and start nothing. False when it names none, or Sessions no longer lists it open (ended)."""
+        it = self.sel()
+        name = it.get('chat') if isinstance(it, dict) else ''
+        if not name:
+            return False
+        rows = self.items(2)
+        at = next((i for i, s in enumerate(rows) if isinstance(s, dict) and s.get('name') == name
+                   and not s.get('closed') and s.get('state') != 'closed'), None)
+        if at is None:
+            return False
+        self.panel, self.cur[2], self.main = 2, at, False
+        self.msg, self.msg_ok = f'{name} is the open chat about it (selected)', True
+        return True
 
     def ask_again(self, key: str, r: dict) -> bool:
         """F186: a New release refused because a release is open that the last snapshot did not show: ask."""
