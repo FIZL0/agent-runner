@@ -2,6 +2,7 @@
 .msgs{display:grid;gap:18px;padding:8px 0 10px}
 .u{justify-self:end;max-width:80%;background:var(--bubble);border-radius:var(--r-xl);padding:9px 14px;display:grid;gap:8px;white-space:pre-wrap;overflow-wrap:anywhere}
 .u.pending{opacity:.7}
+.u.pending.sent{opacity:1}  /* B878: the run took it: shown sent at once, not faded until the feed has it */
 .u img{max-width:200px;border-radius:var(--r-m)}
 .u .file{font-size:var(--fs-s);color:var(--muted);display:inline-flex;gap:6px;align-items:center}
 .a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif);max-width:100%;min-width:0;overflow-wrap:anywhere}

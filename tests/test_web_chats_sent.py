@@ -603,5 +603,48 @@ def test_answer_chats_f465(tmp: Path) -> None:
     eq(o['asks'], [['[c5]', '[c1]'], None], 'it asks the person something: at the top')
 
 
+SENT_SOON_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const kept = {}, store = {get: k => kept[k] || '', set(k, v) { if (v) kept[k] = v; else delete kept[k] }};
+let t0 = 0, answered = 0, shownSent = 0;
+const fetch = async () => { await new Promise(r => setTimeout(r, 50)); answered = Date.now() - t0;
+  return {status: 200, json: async () => ({ok: true, at: 1, out: 'sent to c1'})} };
+const document = {hidden: false, addEventListener: () => {}};
+const P = new Function('store', 'fetch', 'document', 'addEventListener', 'HKEY', logic
+  + "const S={snap:{},ob:[]},obDraw=()=>{},tq=p=>p,toast=()=>{},feedOf=()=>[],esc=s=>String(s),render=()=>{};"
+  + slice("const OB_KEY=", '/* B154: the sent messages') + slice('/* B154: the sent messages', '/* a new chat') + grab('const tkey=') + grab('function sentBubbles(')
+  + grab('function outbox(') + grab('async function drain(') + grab('function obDone(')
+  + 'return {S,outbox,sentBubbles}')(store, fetch, document, () => {}, '');
+(async () => {
+  t0 = Date.now(); P.outbox('chat_to', {text: 'hi', to: 'c1'});
+  for (const end = Date.now() + 2000; Date.now() < end && !shownSent; await new Promise(r => setTimeout(r, 5)))
+    if (/class="u pending sent"/.test(P.sentBubbles('c1', t => t))) shownSent = Date.now() - t0;
+  console.log(JSON.stringify({answered, shownSent, sending: P.S.ob.length}));
+  process.exit(0);
+})();
+"""
+
+
+def test_sent_soon_b878(tmp: Path) -> None:
+    """B878: a message the run took shows sent as soon as the send's own answer comes, not when the feed has it."""
+    css = (W.PAGE_DIR / '060-shared.css').read_text(encoding='utf-8')
+    check('.u.pending.sent{opacity:1}' in css, 'a sent bubble is not faded like one still sending')
+    if not shutil.which('node'):
+        print('  (no node here: the sent-soon script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(SENT_SOON_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the send', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    print(f"  B878: answer {o['answered']} ms, bubble sent {o['shownSent']} ms")
+    check(0 < o['shownSent'] <= 200, 'a 50 ms answer: the bubble is sent within 200 ms', o)
+    eq(o['sending'], 0, 'and the outbox has nothing left sending')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_install_command_b761), in_tmp(test_responses_f425b), in_tmp(test_answer_chats_f465)]))
+    raise SystemExit(report([in_tmp(test_upload), in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_once_b161), in_tmp(test_install_command_b761), in_tmp(test_responses_f425b), in_tmp(test_answer_chats_f465), in_tmp(test_sent_soon_b878)]))
