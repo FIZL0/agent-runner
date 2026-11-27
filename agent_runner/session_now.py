@@ -106,7 +106,8 @@ def queue_answers(rec: dict, ops) -> bool:
         return False
     if rec.get('harness'):
         return bool(rec.get('answers', True))
-    return not all(map(chat_question.is_about, queue_in(ops, (rec.get('startedAt') or 0) / 1000)))
+    return not all(chat_question.is_about(t) or chat_question.answer_to(t) is not None  # F192b1c: one answered by name
+                   for t in queue_in(ops, (rec.get('startedAt') or 0) / 1000))
 
 
 def queued_now(name: str) -> int:
@@ -218,8 +219,9 @@ def live(name: str) -> dict:
                 elif d.get('type') == 'queue-operation':
                     ops.append(d)
                 kept.append(d)
-            one = chat_question.ask(kept) if name[0] == 'c' else None
-            _TASKS[path] = (size, [{'mode': mode, 'ops': ops, 'ask': one, 'asks': several_asks(kept, one)}, *tasks(kept)])
+            several = chat_question.open_asks(kept) if name[0] == 'c' else []  # F192b1c: less the ones answered by name
+            one = several[0] if several else None
+            _TASKS[path] = (size, [{'mode': mode, 'ops': ops, 'ask': one, 'asks': several}, *tasks(kept)])
             while len(_TASKS) > 20:
                 _TASKS.pop(next(iter(_TASKS)))
         rows = _TASKS[path][1]

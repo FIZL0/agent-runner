@@ -194,3 +194,45 @@ def asks_of(text: str, uuid: str = '', bare: bool = False) -> list[dict]:
         if a:
             out.append(a)
     return out
+
+
+# F192b1c: how a message that answers one of several questions begins (the page words it alike)
+ANSWER, ANSWER_END = 'My answer to your question “', '”: '
+
+
+def answer_to(text) -> str | None:
+    """F192b1c: the question a person's message `text` names as the one it answers (`ANSWER`…`ANSWER_END`), else None."""
+    if not isinstance(text, str) or not (t := text.strip()).startswith(ANSWER) or ANSWER_END not in t:
+        return None
+    return t[len(ANSWER):].split(ANSWER_END, 1)[0].strip()
+
+
+def answered_with(question: str, text: str) -> str:
+    """F192b1c: the message that answers `question` alone, `text` its words."""
+    return f'{ANSWER}{question}{ANSWER_END}{text}'
+
+
+def open_asks(rows, bare: bool = False) -> list[dict]:
+    """F192b1c: each question the open message of transcript entries `rows` ends on (`ask`), in order, less the ones a
+    person's message since named as answered (`answer_to`); a named answer that names none of them closes all, as any
+    other message does. [] for none."""
+    from agent_runner.control import message_text, person_turn
+    from agent_runner.feed import queued_message
+    named: list[str] = []
+    kept: list = []
+    for d in rows:
+        if isinstance(d, dict) and not d.get('isSidechain'):
+            q = queued_message(d) or d
+            if q.get('type') == 'user' and person_turn(q) and (n := answer_to(message_text(q))) is not None:
+                named.append(n)
+                d = {**q, 'message': {**(q.get('message') or {}), 'content': f'{ABOUT}{n}{NOT}'}}  # `ask` reads it as no answer
+        kept.append(d)
+    first = ask(kept, bare)
+    if not first:
+        return []
+    said = next((d for d in reversed(kept) if isinstance(d, dict) and d.get('type') == 'assistant' and d.get('uuid') == first['id']), None)
+    every = asks_of(message_text(said), first['id'], bare) if said else []
+    every = every if any(a['id'] == first['id'] for a in every) else [first]
+    if any(n not in {a['question'].strip() for a in every} for n in named):
+        return []
+    return [a for a in every if a['question'].strip() not in named]
