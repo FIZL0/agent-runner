@@ -54,6 +54,7 @@ def worktree(n, branch: str) -> Path:
     for pat in [*C.run['links'], 'runner.toml']:
         for src in map(Path, glob.glob(str(ROOT / pat))):
             dst = d / src.relative_to(ROOT)
+            plat.relink_dir(src, dst)  # Windows: an old directory symlink becomes a junction (issue #6)
             if src.exists() and not dst.is_symlink() and not dst.exists():
                 try:
                     dst.parent.mkdir(parents=True, exist_ok=True)
