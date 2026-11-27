@@ -2,7 +2,12 @@ function settingValue(k,text){
   const t=String(text==null?'':text).trim(), also=k.also||[];
   if(k.type==='choice'||k.type==='switch'||typeof k.default==='boolean'||k.off){if(t==='true'&&k.type!=='text'||t==='true'&&typeof k.default==='boolean')return{v:true};if(t==='false')return{v:false}}
   if(k.type==='choice')return{v:t};
-  if(k.type==='number'||(also.includes('number')&&/^\d/.test(t)))return /^-?\d+(\.\d+)?$/.test(t)?{v:Number(t)}:{err:`${k.key} takes a number`};
+  if(k.type==='number'||(also.includes('number')&&/^\d/.test(t))){
+    if(!/^-?\d+(\.\d+)?$/.test(t))return{err:`${k.key} takes a number`};
+    const n=Number(t);  // F469: a % is 1-100, a size or time not below 0
+    if(k.unit==='%'&&(n<1||n>100))return{err:`${k.key} takes 1 to 100`};
+    if(k.unit&&k.unit!=='%'&&n<0)return{err:`${k.key} takes 0 or more`};
+    return{v:n}}
   const list=()=>t.split(/\n/).map(x=>x.trim()).filter(Boolean);
   if(k.type==='list')return{v:list()};
   if(k.type==='table'||/^\{/.test(t)){

@@ -113,9 +113,11 @@ function settingField(k,side,onRow){
   const opts=pickOptions(k,now);
   if(opts)return `<select class="fld setpick" ${d}>${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===now?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
   if(k.type==='list'||k.type==='table'||now.length>40)return `<textarea class="fld setlong" rows="${Math.min(10,Math.max(3,now.split('\n').length+1))}" ${d} placeholder="${k.type==='list'?'one per line':k.type==='table'?'{ key = value }':'not set'}">${esc(now)}</textarea>`;
+  if(k.type==='number'&&k.unit){const r=k.unit==='%'?'min="1" max="100"':'min="0"';  // F469: a number with its unit beside it
+    return `<span class="setnum"><input class="fld" type="number" inputmode="decimal" ${r} step="any" style="width:6em" ${d} value="${esc(now)}" placeholder="not set" autocomplete="off"> ${esc(k.unit)}</span>`}
   return `<input class="fld" ${k.type==='number'?'inputmode="decimal"':''} ${d} value="${esc(now)}" placeholder="not set" autocomplete="off" autocapitalize="off" spellcheck="false">`;
 }
-const onRow=k=>k.type==='switch'||hasParts(k)||hasPicks(k)||!!pickOptions(k,'');
+const onRow=k=>k.type==='switch'||(k.type==='number'&&!!k.unit)||hasParts(k)||hasPicks(k)||!!pickOptions(k,'');
 /* what stands at the right of a folded row: its control, or its value when it is typed in the open row */
 function settingControl(k,side){
   if(k.locked)return `<span class="setval">${esc(settingSays(k,settingText(k.value)))}</span>`;
