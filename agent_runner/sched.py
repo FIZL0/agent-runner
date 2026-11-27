@@ -681,10 +681,16 @@ def mark_ready_releases(h: Held, tried: set, turn: str) -> None:
             RELEASE_READY[t[0]] = now
 
 
-def ready_release() -> str:
-    """B849b: the release a recent pick found ready to start but for the merge under way, else ''."""
+def ready_release(branch: str = '') -> str:
+    """B849b: the release a recent pick found ready to start but for the merge under way, else ''. One since held
+    (`plan hold`), blocked or dropped in `branch`'s plan holds nothing, even before the next pick unmarks it."""
     now = time.monotonic()
-    return next((v for v, at in sorted(RELEASE_READY.items()) if now - at < READY_FOR), '')
+    if not (marked := [v for v, at in sorted(RELEASE_READY.items()) if now - at < READY_FOR]):
+        return ''
+    text = plan_text(branch)
+    held_ = row_hold.held_ids(text)
+    ready_ = {tid for _, box, tid, _, _ in P.iter_tasks(text) if box == ' '}
+    return next((v for v in marked if v in ready_ and v not in held_), '')
 
 
 CLAIMS_AT = [0.0]

@@ -70,6 +70,25 @@ def test_held_otherwise():
         row_hold.held_ids = keep_h
 
 
+def test_dropped():
+    print('a marked release since blocked or dropped holds no merge, before any pick')
+    check(MERGE.acquire(blocking=False), 'a merge under way')
+    try:
+        pick()
+        eq(M.release_first('F3', 'main'), 'V1', 'marked')
+        R.C.todo.write_text(TODO.replace('- [ ] **V1** Release', '- [~] **V1** Release BLOCKED: DECIDE: now?'), encoding='utf-8')
+        git(R.ROOT, 'commit', '-qam', 'block V1')
+        eq(M.release_first('F3', 'main'), '', 'blocked: merges go on')
+        R.C.todo.write_text(TODO.replace('- [ ] **V1** Release\n', ''), encoding='utf-8')
+        git(R.ROOT, 'commit', '-qam', 'drop V1')
+        eq(M.release_first('F3', 'main'), '', 'dropped: merges go on')
+    finally:
+        MERGE.release()
+        R.C.todo.write_text(TODO, encoding='utf-8')
+        git(R.ROOT, 'commit', '-qam', 'V1 back')
+        sched.RELEASE_READY.clear()
+
+
 def test_paused():
     print('a paused run (no pick renews the mark) still merges')
     keep = sched.READY_FOR, M.RELEASE_POLL
@@ -105,7 +124,7 @@ def main() -> int:
     git(repo, 'commit', '-qm', 'start')
     os.environ['AGENT_RUNNER_REPO'] = str(repo)
     R.init(repo)
-    return report([test_ready, test_held_otherwise, test_paused])
+    return report([test_ready, test_held_otherwise, test_dropped, test_paused])
 
 
 if __name__ == '__main__':

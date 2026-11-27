@@ -855,7 +855,7 @@ def release_first(tid: str, branch: str) -> str:
     merge under way alone (`sched.ready_release`); '' for none, or for a release's own merge."""
     if P.release(tid):
         return ''
-    return releasing(tid, branch) or sched.ready_release()
+    return releasing(tid, branch) or sched.ready_release(branch)
 
 
 def hold_for_release(tid: str, branch: str) -> None:
@@ -866,8 +866,8 @@ def hold_for_release(tid: str, branch: str) -> None:
     while v := release_first(tid, branch):
         if v != said:
             said = v
-            note(f'{tid}: waits to merge: {v} is releasing')
-            log(f'{tid}: waits to merge: {v} is releasing; it merges once {v} has landed')
+            note(f'{tid}: waits to merge: {v} is releasing' if releasing(tid, branch) else f'{tid}: waits to merge: {v} starts first')
+            log(f'{tid}: waits to merge: {v} goes first; it merges once {v} has landed, or cannot start')
         time.sleep(RELEASE_POLL)
     if said:
         log(f'{tid}: {said} is no longer releasing; merging task/{tid} now')
