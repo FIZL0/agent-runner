@@ -202,7 +202,7 @@ function pastYou(e,cols){
   const words=(e.text||'')+(e.images&&!/\[Image/.test(e.text||'')?' [Image]'.repeat(e.images):'')+(e.cut?`… +${e.cut} characters`:'');
   return pastWrap([[words,'']],cols-2).map((r,i)=>{const used=2+r.reduce((n,s)=>n+pastWide(s[0]),0), l=pastLine([[i?'  ':'❯ ',i?'':'hm'],...r,[' '.repeat(Math.max(0,cols-used)),'']]);return{t:l.t,h:`<span class="hy">${l.h}</span>`}});
 }
-/* F489: a fold line ('Ran 3 shell commands') opens to the calls it stands for, as Claude Code's ctrl+o does: its key
+/* F489: a fold line ('Ran 3 shell commands') opens to the calls it stands for, as the agent CLI's ctrl+o does: its key
    is its first call's id; open holds the keys of the open ones. A tap on it opens or folds it: whether it was one */
 const pastFoldKey=e=>String(e.call||e.id||'');
 function pastFoldTap(open,el){
