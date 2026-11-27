@@ -451,7 +451,10 @@ def relink_dir(src: Path, dst: Path) -> bool:
         return False
     if junction(src, dst):
         return True
-    dst.symlink_to(src, target_is_directory=True)
+    try:
+        dst.symlink_to(src, target_is_directory=True)
+    except OSError:
+        pass  # link() makes it again next
     return False
 
 
