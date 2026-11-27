@@ -32,6 +32,8 @@ from agent_runner import box_font, plat, session_theme
 # menu; while words are selected a bare move is not sent (it would drop them), and Ctrl+C or Cmd+C copies them (a held key
 # once) and is no interrupt. Not the login's.
 # The box font is loaded before xterm.js measures its glyphs (and, when it was late, they are measured again).
+# B883: and the terminal is fitted again then, and whenever its box changes size (a frame shown after it was hidden), so
+# the session (Copilot CLI's prompt) draws for the columns the box shows, not those of a first, wrong measure.
 HEAD = '''<meta name="referrer" content="no-referrer"><style>
 __FONT__:root{--ar-bg:__BG__} html,body{overscroll-behavior:none;touch-action:none;background:var(--ar-bg)!important}
 #terminal-container{margin:0!important} #terminal-container .terminal{padding:__PAD__!important;height:100%!important;box-sizing:border-box}
@@ -85,7 +87,10 @@ keep:function(){var t=window.term, rows=t&&t.element&&t.element.querySelector('.
 var k=document.createElement('div'), s=document.createElement('div');k.id='ar-kept';k.setAttribute('aria-hidden','true');k.className=t.element.className;
 s.className='xterm-screen';s.style.cssText=rows.parentNode.style.cssText;s.appendChild(rows.cloneNode(true));k.appendChild(s);return k},
 show:function(k){var o=document.getElementById('ar-kept'), c=document.getElementById('terminal-container');if(o===k)return;if(o)o.remove();if(k&&c)c.appendChild(k)}};
-document.fonts.load('13px ar-box','\\u2500').then(function(){var t=window.term;if(t)t.options.fontFamily+=',monospace'});
+function refit(){var t=window.term;if(t&&t.fit&&t.element&&t.element.offsetWidth)t.fit()}
+document.fonts.load('13px ar-box','\\u2500').then(function(){var t=window.term;if(t){t.options.fontFamily+=',monospace';requestAnimationFrame(refit)}});
+var fitting=0;addEventListener('load',function(){var c=document.getElementById('terminal-container');
+if(c&&window.ResizeObserver)new ResizeObserver(function(){clearTimeout(fitting);fitting=setTimeout(refit,60)}).observe(c)});
 addEventListener('wheel',function(e){var px=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?innerHeight:1);
 if(!own&&!e.ctrlKey&&e.isTrusted&&parent.feedTake&&parent.feedTake(px)){e.preventDefault();e.stopImmediatePropagation()}},{capture:true,passive:false});
 function ours(e,paste){try{if(parent.feedTyped&&parent.feedTyped(e,paste)){e.preventDefault();e.stopImmediatePropagation()}}catch(x){}}
