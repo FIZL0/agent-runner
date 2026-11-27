@@ -738,6 +738,23 @@ def chat_need_lines() -> list[str]:
     return chat_question.need_lines(chat_question.live_needs(), '  ')
 
 
+def slot_login(n: str) -> str:
+    """F505: the Claude login slot `n`'s session runs on ('default' for the first), only when claude has more than
+    one login; '' otherwise, or when it cannot be read."""
+    try:
+        from agent_runner import fallback
+        if not fallback.multi():
+            return ''
+        from agent_runner.slots import MUX
+        pane = MUX.panes().get(f's{n}')
+        sid = pane and MUX.session_id(pane[1])
+        if not sid:
+            return ''
+        return 'login ' + (fallback.session_login(sid) or fallback.login_names('claude')[0] or 'default')
+    except Exception:  # noqa: BLE001 - status never fails on a login it cannot read
+        return ''
+
+
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
                 waiting=None, progress: str = '', wips=None, login: str = '', agent: str = '') -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
@@ -767,7 +784,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
         mins = f'{int((now - st["since"][n]) // 60)} min' if n in st.get('since', {}) else ''
         out.append('  ' + '  '.join(x for x in (f's{n}' if n.isdigit() else n, task_words(tid, title, kinds),
-                                                 mins, spend_shown(st, n)) if x))
+                                                 mins, spend_shown(st, n), slot_login(n)) if x))
     if up and not st.get('running'):
         out.append('  no task running')
     if up:
