@@ -45,5 +45,26 @@ def test_row_shows_writeup_first(tmp: Path) -> None:
     check('Asked' not in none, 'no write-up: the prompt as before', none)
 
 
+def test_finish_keeps_writeup(tmp: Path) -> None:
+    """`run finish` in a slot whose `done` ran keeps its summary with the task."""
+    import os
+    from unittest import mock
+    from _check import git
+    from agent_runner import tools as T
+    from agent_runner.config import finished_mark
+    repo = fake_repo(tmp)
+    git(repo, 'checkout', '-qb', 'task/B2')
+    old = os.getcwd()
+    os.chdir(repo)
+    try:
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_SLOT': '7'}):
+            finished_mark().touch()
+            eq(T.cmd_finish(['Fixed the retry.']), 0, 'finish ends the session')
+    finally:
+        os.chdir(old)
+    eq(D.writeup(S.C, 'B2'), 'Fixed the retry.', 'and its write-up is kept with B2')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_writeup_kept_and_served), in_tmp(test_row_shows_writeup_first)]))
+    raise SystemExit(report([in_tmp(test_writeup_kept_and_served), in_tmp(test_row_shows_writeup_first),
+                             in_tmp(test_finish_keeps_writeup)]))
