@@ -2104,6 +2104,14 @@ given on the command line (it sets every task without its own); `[models] audit`
 the run refuses to start with a `[models.kinds]` error. A repo that sets `[models] code` still gets
 the default kinds for F, B, T, V, K, D, C and R; to run every kind on one model, set those kinds in `[models.kinds]`.
 
+`[models] sizes` picks the model by a task's size (F470): `plan add … --size simple` (or `complex`, or `plan edit ID
+--size simple`) writes `size: simple` on its line, and `sizes = { simple = "sonnet" }` runs simple tasks on that
+model. Empty, the default, sizes are ignored; a size with no entry (complex, above) keeps its kind's model. The order
+is then: the task's own `model:`; `run --model`; `[models] audit`; its size's in `[models] sizes`; its kind's;
+`[models] code`. Guard: a simple task that ran on its size's model and whose `done` did not pass (it failed, or
+blocked) is tried once more on its kind's model; a block it left is opened again for that attempt. Settings shows
+it under Models, as Model for each size.
+
 ### Model providers
 
 Any `[models]` role value, and any `[models.kinds]` value, may be `<provider>:<model>`. A bare name like `opus`

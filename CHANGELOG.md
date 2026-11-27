@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a task's size, `plan add/edit --size simple|complex` (`size: simple` on its line); `[models] sizes` (empty, off, by default; e.g. `{ simple = "sonnet" }`) runs a size on its own model, over its kind's and under its own `--model`; a simple task that fails or blocks on it retries once on its kind's model; on the Settings page as Model for each size (F470).
 - Added: lessons, what a project's agents learned, one line per lesson in plan/LESSONS.md with the files it applies to; a brief shows those whose files meet the task's (most specific first, at most 8); `plan lesson add/list/drop`; a lesson whose files are all gone drops itself. `[plan] lessons`, off by default, on in this repo (F413).
 - Changed: the run page's Status, Plan and History are one page, Work: the run bar and usage on top, then Now (what the agents work on and what merges), Up next (the queue, without what Now shows), Landed and Releases, with Parked and the Run log folded at the bottom; one search; old Status and History links open Work (F476).
 - Added: the run page's UI settings (Settings → Look and layout): a theme (ryha, light, terminal, omarchy, from theme.py) or Standard, the Lazyrunner layout (from 760px: the sidebar as numbered panels Status, Sessions, Plans, Tools, Settings on the left, the view on the right, keys 1-5, j/k, Enter/l, h, i, Esc, a/d/p, c, ?) and a key bar; only a layout and keys over the page's own panels (F473).

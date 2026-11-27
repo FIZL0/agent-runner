@@ -295,6 +295,9 @@ DEFAULTS: dict = {
         'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
                   'R': 'sonnet'},  # a task's session by its kind (the id's letters): a kind set here replaces
                                 # only that kind; one not listed runs on `code`; `plan add --model` wins for a task
+        'sizes': {},            # F470: a task's session by its size (`plan add --size simple`), e.g. simple = "sonnet";
+                                # empty: sizes are ignored. Over [models.kinds]; `--model` wins for a task. A
+                                # simple task that fails or blocks retries once on its kind's model
         'local': False,         # allow a local provider (ollama, or a provider url on localhost or a private
                                 # address) in a role; off, a role naming one is refused
         'providers': {},        # the repo's own providers, [models.providers.<name>]: kind = "openai" or
@@ -314,8 +317,9 @@ DEFAULTS: dict = {
 PROVIDERS = ('claude', 'copilot', 'codex', 'gemini', 'ollama')
 LOCAL_PROVIDERS = ('ollama',)
 PROVIDER_KINDS = ('openai', 'anthropic')
+SIZES = ('simple', 'complex')  # F470: a task's `size:` field
 # the [models] keys that are not roles
-MODEL_SETTINGS = ('kinds', 'local', 'providers', 'fallback', 'provider', 'tiers')
+MODEL_SETTINGS = ('kinds', 'sizes', 'local', 'providers', 'fallback', 'provider', 'tiers')
 # F443: the claude model names a bare role value may use on any provider, and what each means on a built-in one
 TIER_NAMES = ('opus', 'sonnet', 'haiku')
 TIERS: dict[str, dict[str, str]] = {
@@ -864,9 +868,14 @@ class Config:
                                                   for k, v in kinds.items()):
             raise SystemExit(f'agent-runner: [models.kinds] maps a kind to a model name (D = "sonnet"), not {kinds!r}')
         m['kinds'] = {**DEFAULTS['models']['kinds'], **kinds}
+        sizes = given.get('sizes', {})  # F470: [models] sizes, simple or complex -> a model
+        if not isinstance(sizes, dict) or not all(k in SIZES and isinstance(v, str) and v for k, v in sizes.items()):
+            raise SystemExit(f'agent-runner: [models] sizes maps simple or complex to a model name '
+                             f'(simple = "sonnet"), not {sizes!r}')
+        m['sizes'] = {k: self.settle(v, f'[models.sizes] {k}') for k, v in sizes.items()}
         # F106a: each role as '<provider>:<model>'; claude's are kept as the bare name the agent takes, another
         # provider's as '<provider>:<model>' for the harness loop (F106c)
-        refs = {f'[models] {role}': role for role in m if role != 'kinds' and isinstance(m[role], str)}
+        refs = {f'[models] {role}': role for role in m if role not in ('kinds', 'sizes') and isinstance(m[role], str)}
         refs.update({f'[models.kinds] {k}': k for k in m['kinds']})
         for where, key in refs.items():
             table = m['kinds'] if where.startswith('[models.kinds]') else m
@@ -880,8 +889,9 @@ class Config:
         return claude_model(on_provider(value, self.model_provider, self.tiers), self.providers, self.models_local,
                             where)
 
-    def task_model(self, tid: str, own: str = '') -> str:
-        """F105: the model a task's own session runs on: its own (`plan add --model`, `own`), else its kind's in
+    def task_model(self, tid: str, own: str = '', size: str = '') -> str:
+        """F105: the model a task's own session runs on: its own (`plan add --model`, `own`), else its size's in
+        `[models] sizes` (F470, `size`: the task's `size:` field), else its kind's in
         `[models.kinds]` (the id's letters: 'P17a' is P), else `[models] code`."""
         if own:  # F106a: 'claude:<model>' runs as the bare name; F106c: another provider's as '<provider>:<model>'
             if own.partition(':')[0] not in (*PROVIDERS, *self.providers):
@@ -889,6 +899,8 @@ class Config:
             provider, model = parse_model(own, self.providers, True, 'model') \
                 if own.partition(':')[0] in (*PROVIDERS, *self.providers) else ('claude', own)
             return model if provider == 'claude' else f'{provider}:{model}'
+        if size and (by_size := (self.models.get('sizes') or {}).get(size)):
+            return by_size
         kind = tid[:len(tid) - len(tid.lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))]
         return (self.models.get('kinds') or {}).get(kind) or self.models['code']
 
@@ -1383,7 +1395,7 @@ def setting_check(root: Path, table: str, key: str, v, device: bool = False) -> 
         providers, local = model_providers(snap['models', 'providers']), bool(snap['models', 'local'])
         model_provider(snap['models', 'provider'], providers, local)  # F443
         model_tiers(snap['models', 'tiers'], providers)
-        named = v.values() if key == 'kinds' else v if key == 'fallback' else \
+        named = v.values() if key in ('kinds', 'sizes') else v if key == 'fallback' else \
             [v] if key not in MODEL_SETTINGS and isinstance(v, str) else []
         for m in named:
             if not isinstance(m, str) or not m:

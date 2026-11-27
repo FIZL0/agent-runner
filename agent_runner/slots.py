@@ -823,7 +823,9 @@ def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, k
         own = ''
     if not own and (flag := kept or C.run.get('model_flag')):
         return flag
-    return not own and audit.model(tid, ls or []) or C.task_model(tid, own) or model
+    from agent_runner import task_size  # F470: its size's model, unless it already retries on its kind's
+    size = task_size.size_for(C, tid, task_size.field(ls or [], tid))
+    return not own and audit.model(tid, ls or []) or C.task_model(tid, own, size) or model
 
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: frozenset = frozenset()):
