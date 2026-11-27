@@ -100,8 +100,21 @@ def test_concept_shown():
         eq(run(root, 'plan', 'concept', 'Run picker colours', env=env).returncode, 2, 'no --page: refused')
         eq(run(root, 'plan', 'concept', 'Run picker colours', '--page', 'the page', env=env).returncode, 2,
            '--page must be a URL')
+        cdir = root / '.runner' / 'concepts'
+        cdir.mkdir(parents=True)
+        (cdir / 'F9.html').write_text('<h1>Colours</h1><p>Two ways.</p><h2>Option A</h2><p>Bright.</p>'
+                                      '<h2>Option B</h2><p>Muted.</p>', encoding='utf-8')
+        (cdir / 'F9.url').write_text(url + '\n', encoding='utf-8')
         r = run(root, 'plan', 'concept', 'Run picker colours', '--page', url, '--files', 'web/picker.css', env=env)
         check(r.returncode == 0, 'plan concept goes through', r.stdout + r.stderr)
+        concept_options = U.concept_options
+        check((cdir / 'K1.html').is_file() and (cdir / 'K1.url').read_text(encoding='utf-8').strip() == url,
+              'B882: the K gets the copy publish-page kept of its claude.ai page')
+        check(len(concept_options(str(cdir / 'K1.html'))) == 2, 'B882: and its options are found',
+              concept_options(str(cdir / 'K1.html')))
+        (cdir / 'K1.html').unlink()
+        from agent_runner.config import Config
+        eq(plan.concept_copy_backfill(Config(root), done), ['K1'], 'B882: backfill gives an earlier concept its copy')
         has(r.stdout, r'concept K1 filed, done: its build F1 waits for the OK on ' + re.escape(url),
             'it names the concept and its waiting build')
         has(done.read_text(encoding='utf-8'), r'- \[x\] \*\*K1\*\* Run picker colours \| files: web/picker\.css.*'
