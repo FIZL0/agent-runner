@@ -586,7 +586,9 @@ function piCredentials() {
 // Claude models with adaptive thinking only (Copilot's claude-sonnet-5.5 in Pi 1.6.0's data) refuse that with a 400.
 // Such a model sends no thinking field then, as Pi already does for claude-opus-5.5, so the API's default applies.
 export function thinkingOff(model) {
-  if (model?.api !== 'anthropic-messages' || !model.reasoning || model.compat?.forceAdaptiveThinking !== true) return model;
+  // B864: a Claude 5 model whose data lacks forceAdaptiveThinking refuses {type:'disabled'} the same way
+  const newer = Number((/^claude-[a-z]+-(\d+)/.exec(model?.id || '') || [])[1]) >= 5;
+  if (model?.api !== 'anthropic-messages' || !model.reasoning || (model.compat?.forceAdaptiveThinking !== true && !newer)) return model;
   if (model.thinkingLevelMap?.off === null) return model;
   return { ...model, thinkingLevelMap: { ...(model.thinkingLevelMap || {}), off: null } };
 }
