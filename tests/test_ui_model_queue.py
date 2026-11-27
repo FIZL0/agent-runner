@@ -48,6 +48,9 @@ def test_approved_concept_stays():
             (d / 'TODO.md').write_text(TODO.replace('[ ] **F473**', '[x] **F473**'), encoding='utf-8')
             _, cs = U.needs_rows([], dt.datetime.now())
             eq([c['id'] for c in cs], ['K24'], 'gone once its build lands')
+            waiting = [('BLOCKED', 'F474', '', 'needs the person', '', 'Themes', False, '')]
+            _, cs = U.needs_rows(waiting, dt.datetime.now())
+            check(cs[-1]['id'] == 'K24' and cs[-1]['waits'], 'a parked build with a Needs you item says so', cs)
 
 
 if __name__ == '__main__':

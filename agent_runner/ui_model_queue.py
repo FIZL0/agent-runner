@@ -589,7 +589,7 @@ def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
     pages = {f.stem: f for f in files}
     for row in approved_rows(ls, shown | {r['id'] for r in out}):
         if f := pages.get(row['id']):
-            out.append({**row, 'copy': str(f)})
+            out.append({**row, 'copy': str(f), 'waits': row['build'] in waits})  # a parked build's Needs you item
     return out
 
 
