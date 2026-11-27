@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import io
 import json
 from contextlib import ExitStack
 from pathlib import Path
@@ -299,6 +300,10 @@ def test_cli_f486(w: World) -> None:
             mock.patch.object(U, 'control_titles', lambda: {6: 'six'}):
         eq(CQ.need_lines(CQ.live_needs()), ['c6 - Which look? [Full (recommended) / Small / No change]'], 'one line, its options')
         check('  c6 - Which look?' in status.status_text(False, {}, [], {}, 0), 'status lists it under Needs you')
+        from agent_runner import cmds
+        with mock.patch('sys.stdout', new_callable=io.StringIO) as o, mock.patch.object(cmds, 'init', lambda: None):
+            cmds.cmd_needs([])
+        check('c6 - Which look?' in o.getvalue() and o.getvalue().rstrip().endswith(f'{len(o.getvalue().splitlines()) - 1} things need you'), 'the needs command lists and counts it', o.getvalue())
         w.file()
         eq(CQ.live_needs(), [], 'once filed, only the filed item')
 
