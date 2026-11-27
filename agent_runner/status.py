@@ -27,18 +27,68 @@ def tasks_left(ls: list[str]) -> tuple[int, int]:
     """(tasks left, how many of those are blocked) in TODO.md's lines `ls`: the open and blocked top-level tasks,
     not those under a section a run never starts (Parked, where `--pri later` files, and Stretch), nor shelved
     ones (`plan shelve`: blocked, off Needs you until a person brings them back)."""
-    left = blocked = 0
-    for section, box, _, _, i in P.iter_tasks(ls):
-        if box not in ' ~' or section.startswith(P.SKIPPED):
-            continue
-        if box == '~':
-            tail = ' '.join(P._item_block(ls, i))
-            at = P._block_at(tail)
-            if at >= 0 and tail[at:].lstrip().startswith('BLOCKED: ' + P.SHELVED):
-                continue
-            blocked += 1
-        left += 1
-    return left, blocked
+    rows = _counted(ls)
+    return len(rows), sum(box == '~' for box, _, _ in rows)
+
+
+GROUP_WORDS = (('start', 'can start now'), ('running', 'running now'), ('wait', 'wait on another task'),
+               ('check', 'wait on a check'), ('needs', 'need you'), ('held', 'held for another reason'))
+
+
+def _counted(ls: list[str]) -> list[tuple[str, str, int]]:
+    """(box, id, index) of each task the tasks left count counts: open or blocked top-level tasks, not in Parked
+    or Stretch, not shelved, and not a split task's own line while any of its parts is still open (B816)."""
+    rows = [(box, tid, i) for section, box, tid, _, i in P.iter_tasks(ls)
+            if box in ' ~' and not section.startswith(P.SKIPPED) and not P._shelved(ls, i)]
+    ids = {tid for _, tid, _ in rows}
+    return [(box, tid, i) for box, tid, i in rows
+            if not (P.SPLIT.search(ls[i]) and P.subtasks(tid, ls[i], ids))]
+
+
+def task_groups(ls: list[str], running=()) -> dict[str, int]:
+    """F440: how the tasks left divide, each task counted once: `start` (open, nothing it waits on still open),
+    `running` (a slot or a taken session has it: ids in `running`), `wait` (an `after:` or `(after …)` task
+    still open), `check` (blocked on an --until check), `needs` (blocked on a person, as Needs you has it) and
+    `held` (blocked for any other reason). Zero groups are left out."""
+    open_ = P.open_ids(ls)
+    out: dict[str, int] = {}
+    for box, tid, i in _counted(ls):
+        if tid in running:
+            g = 'running'
+        elif box == '~' and P._on_person(ls, i):
+            g = 'needs'
+        elif box == '~' and P.until_of(ls, i):
+            g = 'check'
+        else:
+            tail = ls[i + len(P._item_block(ls, i)) - 1]
+            after = [t.strip() for w in P.WAITS.findall(tail)[-1:] for t in w.split(',')] if box == '~' else []
+            waits = [t for t in dict.fromkeys(P.waits_on(ls, i) + P.resolve_after(ls, i, after))
+                     if t in open_ and t != tid]
+            g = 'wait' if waits else 'start' if box == ' ' else 'held'
+        out[g] = out.get(g, 0) + 1
+    return out
+
+
+def groups_text(groups: dict[str, int]) -> str:
+    """'23 tasks left: 6 can start now, 12 wait on another task, 5 need you' ('0 tasks left' for none)."""
+    left = sum(groups.values())
+    parts = [f'{groups[g]} {w}' for g, w in GROUP_WORDS if groups.get(g)]
+    return f'{left} task{"" if left == 1 else "s"} left' + (': ' + ', '.join(parts) if parts else '')
+
+
+def _running_ids() -> set[str]:
+    """The ids a slot runs (STATE) or a person's session has taken."""
+    from agent_runner.sched import taken  # here, not at the top: as merge and land do
+    ids: set[str] = set()
+    try:
+        ids |= {str(v) for v in (json.loads(C.notes('STATE').read_text(encoding='utf-8')).get('running') or {}).values() if v}
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        ids |= set(taken())
+    except (OSError, SystemExit):
+        pass
+    return ids
 
 
 MERGED_SUBJECT = re.compile(r"^(?:Merge branch '?task/)?([A-Z]+\d+[a-z0-9]*)\b")  # a commit subject's task id
@@ -75,9 +125,7 @@ def progress_line(window: str = '24h', now: dt.datetime | None = None) -> str:
     w = window.strip()
     span = f'in the last {w}' if re.fullmatch(r'\d+(?:\.\d+)?\s*[a-zA-Z]+', w) else \
         'today' if w.lower() == 'today' else f'since {w}'
-    left, blocked = tasks_left(P.lines(C.todo))
-    return (f'merged {merges_since(start)} {span} · {left} task{"" if left == 1 else "s"} left'
-            + (f' ({blocked} blocked)' if blocked else ''))
+    return f'merged {merges_since(start)} {span} · ' + groups_text(task_groups(P.lines(C.todo), _running_ids()))
 
 
 RELEASE_TASK = re.compile(r'\W*(?:\(alone\)\s*)?(?:release\b|cut (?:a|the next) (?:release|version)\b)',
