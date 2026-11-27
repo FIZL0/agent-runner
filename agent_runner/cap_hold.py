@@ -86,3 +86,9 @@ def cmd_force_id(tid: str) -> int:
 def only_forced(open_ids: set[str], forced: set[str]) -> set[str]:
     """What a pick passes over while the caps hold: every open task but the forced ones."""
     return set(open_ids) - set(forced)
+
+
+def limits_on(run) -> bool:
+    """F488: `[run] usage_limits`, the master switch above session_max / weekly_max: off, the runner never reads
+    the account's usage, never holds or falls back a task on the % caps and never asks about them."""
+    return bool((run or {}).get('usage_limits', True))

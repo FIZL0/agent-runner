@@ -164,6 +164,7 @@ DEFAULTS: dict = {
         'task_tokens': 0,       # tokens (input, cache writes, output; not cache reads) one task's session may use; past
                                 # it the task stops at a clean point and is parked as wip/<ID>; 0 = no cap
         'task_usd': 0,          # the same in dollars at the API's list prices (a plan bills none); 0 = no cap
+        'usage_limits': True,   # false: never read the account's usage, no hold or fallback on weekly_max / session_max
         'weekly_max': 90,       # % of the account's 7-day usage past which new tasks wait, or start on [models] fallback
         'session_max': 90,      # % of the account's 5-hour session usage past which new tasks wait, or start on [models] fallback
         'notes': '.runner',     # logs and the ledger; keep it git-ignored
@@ -620,6 +621,7 @@ LOCAL_TEMPLATE = """\
 # Uncomment and edit; any key runner.toml takes works here, in the same tables.
 
 # [run]
+# usage_limits = true    # false: never read the account's usage, no hold or fallback on the two caps below
 # weekly_max = 90        # % of the account's 7-day usage past which new tasks wait, or start on [models] fallback
 # session_max = 90       # % of the account's 5-hour session usage past which new tasks wait, or start on [models] fallback
 # slots = 3              # parallel sessions on this machine

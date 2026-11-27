@@ -32,6 +32,7 @@ _HOME = {g: home for g, _, _, home in GROUPS}
 WORDS: dict[str, tuple[str, str, str]] = {
     # on the page
     'run.slots': ('speed', 'Tasks at once', 'How many tasks are worked on together. More finishes sooner and uses your limit faster.'),
+    'run.usage_limits': ('speed', 'Usage limits', 'Hold new tasks at the 5-hour and weekly limits below. Off: usage is never read or shown.'),
     'run.weekly_max': ('speed', 'Weekly limit', 'New tasks wait once your 7-day Claude usage passes this. Running tasks finish.'),
     'run.session_max': ('speed', '5-hour limit', 'New tasks wait once your 5-hour Claude usage passes this. Running tasks finish.'),
     'git.master_branch': ('landing', 'Working branch', 'The branch finished work is applied to; tasks start from it. Empty: found by itself.'),

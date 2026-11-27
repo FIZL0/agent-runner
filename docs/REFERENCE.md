@@ -1208,7 +1208,7 @@ already made in the main checkout there. Never use a slot's worktree, which the 
 refuses to push `main`.
 
 **Usage caps.** Past `[run] session_max`% of the 5-hour session usage, or `[run] weekly_max`% of
-the 7-day usage, no new task starts unless `--force` is given (or `f` typed in the run view); hitting one raises the STOPPED alarm with that hint. With `[models] fallback` set, a new task whose model is claude's starts on the chain's first free provider instead, until the reset (see Fallback chain); a task with no free provider waits.
+the 7-day usage, no new task starts unless `--force` is given (or `f` typed in the run view); hitting one raises the STOPPED alarm with that hint. With `[models] fallback` set, a new task whose model is claude's starts on the chain's first free provider instead, until the reset (see Fallback chain); a task with no free provider waits. `[run] usage_limits = false` switches both caps off: the runner never reads the account's usage, never holds or falls back a task on them, and status hides them.
 
 **A cut-off session resumes.** A session whose turn ended on an API error (the network dropped, the
 API was down, the account hit its usage limit) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
@@ -2041,6 +2041,7 @@ split_files = true        # free slots that start nothing while 3 or more ready 
 task_size = 10            # a task bigger than this is split: its size is its code files (`docs_files` not counted) + 2 per numbered outcome + 1 per 400 characters of text (a long form is not read); `plan add`, `edit`, `note` and an approval say so, and its session splits it first; 0 = off (F177)
 task_tokens = 0           # tokens one task's session (and its subagents) may use: input, cache writes, output (cache reads are left out: they grow with turns times the context, and task_usd counts them). Past it the runner tells the task to stop at a clean point (commit, write its journal, end its turn) and parks it as wip/<ID>; one whose done already passed lands; one that goes on to 1.25 times the cap is ended. `status` shows each running task's spend ("1.2M tok $3.40"); 0 = no cap (F103)
 task_usd = 0              # the same cap in dollars, at the API's list prices (a plan bills none; Opus prices for a model it does not know); 0 = no cap
+usage_limits = true       # false: never read the account's usage; no hold or fallback on the two caps below
 weekly_max = 90           # % of 7-day usage past which new tasks wait, or start on [models] fallback
 session_max = 90          # % of 5-hour session usage past which new tasks wait, or start on [models] fallback
 notes = ".runner"         # logs + ledger (git-ignore it)

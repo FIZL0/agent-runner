@@ -221,7 +221,7 @@ def write_state(running: dict, held=()) -> None:
     merging = sorted({t.name[6:] for t in threading.enumerate()
                       if t.name.startswith('merge:') and t.name != 'merge:ahead' and t.is_alive()} | set(held))
     # what the cap last read (`capped`, the start line); never a fetch of its own from here
-    got = (known_usage() or {}) if claude_use.account(C) else {}
+    got = (known_usage() or {}) if claude_use.account(C) and cap_hold.limits_on(C.run) else {}
     use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
     resets = {k: got[k].get('resets_at') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict) and got[k].get('resets_at')}
     tmp = C.notes('STATE.tmp')
@@ -501,7 +501,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
 def capped(force: bool, own: bool = False) -> str | None:
     """Why no new task may start: the 5-hour session usage at or past `[run] session_max`, or the 7-day usage
     at or past `[run] weekly_max` (and not --force). None when neither is. `own`: there are tasks it holds alone (claude_use.own_tasks)."""
-    if force or not (own or claude_use.account(C)):
+    if force or not cap_hold.limits_on(C.run) or not (own or claude_use.account(C)):
         return None
     for name, what, key in (('five_hour', 'session', 'session_max'), ('seven_day', 'weekly', 'weekly_max')):
         w = usage_pct(name)
@@ -842,7 +842,7 @@ class Run:
         reserve_branch_ids()
         log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
             (''.join(f', {what} usage {p}%' for what, p in (('session', usage_pct('five_hour')), ('weekly', weekly()))
-                     if p is not None) if not a.force and claude_use.account(C) else ''),
+                     if p is not None) if not a.force and claude_use.account(C) and cap_hold.limits_on(C.run) else ''),
             EV_RUN_UP, slots=slots)
         if nogate := no_gate_line():
             log(nogate)
