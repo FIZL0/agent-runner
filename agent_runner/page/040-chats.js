@@ -16,7 +16,7 @@ function side(){
   if(atAll()){S.menuDot=!!due0;sideShow(allSide(),'all');return}  // F150
   if(HOME_PAGE){S.menuDot=!!due0;sideShow(offSide(),'in');return}  // F134: no run behind it
   const g=sideRows(), due=needs||cn;S.menuDot=!!due;  // F128: the phone's menu button gets a dot
-  ROWS={top:g.top.map(x=>x.name),quiet:g.quiet.map(x=>x.name)};S.came=(S.came||[]).filter(x=>!sessionOf(x.name));
+  ROWS={top:g.top.map(x=>x.name),quiet:g.quiet.map(x=>x.name)};S.rowKeys=chatKeysAdd(S.rowKeys,S.came);S.came=(S.came||[]).filter(x=>!sessionOf(x.name));
   sideShow(`${allRow()}
    <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n" data-k="n:${k}" data-roll data-v="${count[k]}">${count[k]}</span>`:''}</button>`).join('')}</div>${walkRow()}
    <div class="shead row"><span>Chats</span><button class="shadd" data-new title="New chat">${I.plus}Chat</button></div>${chatBar()}${cs.length||g.quiet.length?'':'<div class="none">No chats yet</div>'}${g.top.map(x=>sideRow(x)).join('')}${g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>x.response?responseRow(x):answerNewRow(sideRow(x,true),x,S.answerChats)).join(''):''}

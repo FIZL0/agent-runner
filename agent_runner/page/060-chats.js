@@ -1,6 +1,6 @@
 function chatRow(s,quiet){
   const n=s.name,u=S.undo,gone=!!(u&&u.names.includes(n)),cls=[S.thread===n&&!gone?'on':'',S.sel.includes(n)?'sel':'',gone?'gone':''].join(' ');
-  if(S.ren&&S.ren===n)return `<form class="renform" data-renform data-k="chat:${esc(n)}"><input data-f="ren" aria-label="The chat's name" maxlength="80" autocomplete="off"><button class="icon" type="button" data-rencancel aria-label="Cancel rename" title="Cancel rename">${I.x}</button></form>`;  // F129, F446
+  if(S.ren&&S.ren===n)return `<form class="renform" data-renform data-k="${esc(chatKey(n,S.rowKeys))}"><input data-f="ren" aria-label="The chat's name" maxlength="80" autocomplete="off"><button class="icon" type="button" data-rencancel aria-label="Cancel rename" title="Cancel rename">${I.x}</button></form>`;  // F129, F446
   const due=!gone&&replyDue(s);  // F128
   const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}" title="Double-click to rename"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t"><span class="tt">${esc(chatTitle(s))}</span></span>${due?'<span class="bdot" role="img" aria-label="needs your reply" title="needs your reply"></span>':''}</button>`;
   const btn=gone?(u.bar?'':`<button class="del undo" data-undo>Undo</button>`):
@@ -8,7 +8,7 @@ function chatRow(s,quiet){
   const pinned=chatPins().includes(n), pin=gone?'':`<button class="pin${pinned?' on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat" title="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button>`;
   const on=!gone&&S.rowOpen===n, menu=gone?'':on?`<span class="rowacts" role="group" aria-label="This chat"><button data-ren="${esc(n)}" aria-label="Rename this chat">${I.edit}</button><button class="${pinned?'on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button><button data-del="${esc(n)}" aria-label="Delete this chat">${I.trash}</button></span>`:
     `<button class="rowmenu" data-rowmenu="${esc(n)}" aria-expanded="false" aria-label="More for this chat">${I.dots}</button>`;  // F187
-  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}${on?' open':''}" data-k="chat:${esc(n)}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
+  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}${on?' open':''}" data-k="${esc(chatKey(n,S.rowKeys))}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
 }
 /* F187: on touch, the chat row opened by its three dots: one at a time, its buttons in the row, Delete in the dots' place.
    A tap anywhere else only closes it, and so do Esc, one of its buttons and the drawer closing */
