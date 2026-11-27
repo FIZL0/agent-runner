@@ -169,3 +169,28 @@ def with_chats(lines: list[str]) -> list[str]:
         return lines
     n = len(lines) - 1 + len(chats)
     return lines[:-1] + chats + ['1 thing needs you' if n == 1 else f'{n} things need you']
+
+
+def decide_questions(text: str) -> list[str]:
+    """F192b1: the questions Claude's message `text` ends on, in order: the trailing run of `DECIDE:` lines (each as
+    `plan.decide_question` reads one, so a wrapped one too), blank lines between allowed. A DECIDE quoted above other
+    words is none."""
+    from agent_runner.plan import DECIDE_LINE
+    out, lines = [], text.strip().splitlines()
+    while lines and (q := decide_question('\n'.join(lines))):
+        out.append(q)
+        i = max((j for j, x in enumerate(lines) if DECIDE_LINE.match(x)), default=0)
+        lines = '\n'.join(lines[:i]).strip().splitlines()
+    return out[::-1]
+
+
+def asks_of(text: str, uuid: str = '', bare: bool = False) -> list[dict]:
+    """F192b1: `ask_of` of each question `decide_questions` reads in `text`, in order. The first keeps `ask_of`'s id;
+    with `uuid`, the next ones are '<uuid>#2', '<uuid>#3'…, else each is made of its own words. With no `bare`, a
+    question with no options is left out."""
+    out = []
+    for i, q in enumerate(decide_questions(text)):
+        a = ask_of(f'DECIDE: {q}', uuid if not (uuid and i) else f'{uuid}#{i + 1}', bare)
+        if a:
+            out.append(a)
+    return out
