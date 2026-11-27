@@ -34,18 +34,18 @@ def run(tmp: Path, steps: str) -> list | None:
 
 def test_history(tmp: Path) -> None:
     out = run(tmp, """
-      live(ASK); questionOn.scroll(); say(hid()); scroll(24); say(hid()); scroll(25); say(hid(), questionUp('c1') !== '');
+      live(ASK); questionOn.scroll(); say(hid()); scroll(24); say(hid()); scroll(25); say(hid(), look());
       scroll(10); await pass(1000); say(hid()); scroll(0); say(hid()); await pass(100); scroll(40); await pass(1000); say(hid());
-      scroll(0); await pass(200); say(hid(), look());
+      scroll(0); await pass(200); say(hid(), look()); await pass(2000); say(look());
       mini(); scroll(400); say(hid(), look()); scroll(0); await pass(200); say(hid(), look());
       FD.off = 60; questionOn.scroll(); say(hid()); FD.off = 0; questionOn.scroll(); await pass(200); say(hid());""")
     if out is None:
         return
-    eq(out[:3], [[False], [False], [True, True]], 'a scroll at the edge hides nothing; one past it hides the card, its question still asked')
+    eq(out[:3], [[False], [False], [True, 'min']], 'a scroll at the edge hides nothing; one past it shrinks the card to its pill (F511)')
     eq(out[3:6], [[True], [True], [True]], 'it is back only once the end is reached and kept: no flicker at the edge')
-    eq(out[6], [False, 'card'], 'back at the bottom, as it was')
-    eq(out[7:9], [[True, 'min'], [False, 'min']], 'the minimized line too')
-    eq(out[9:], [[True], [False]], 'and over a frame that is pulled')
+    eq(out[6:8], [[False, 'min'], ['card']], 'F511: back at the bottom the pill stays, and grows into the card after 2 s still')
+    eq(out[8:10], [[True, 'min'], [False, 'min']], 'the minimized line too')
+    eq(out[10:], [[True], [False]], 'and over a frame that is pulled')
 
 
 def test_terminal(tmp: Path) -> None:
@@ -72,7 +72,7 @@ def test_held(tmp: Path) -> None:
     if out is None:
         return
     eq(out[:2], [['held', False], ['held', False]], 'a held answer stays, with its Undo')
-    eq(out[2:4], [['card', True], ['card', False]], 'after Undo the card is hidden until the bottom')
+    eq(out[2:4], [['', True], ['', False]], 'F511: after Undo scrolled up it is the pill, also just back at the bottom')
     eq(out[4], [['Full']], 'and it goes as it would')
     out = run(tmp, "live(ASK); tap({qchat: 'u1'}); scroll(400); say(hid());")
     eq(out, [[False]], 'the marked question stays too')
@@ -85,14 +85,14 @@ def test_keys(tmp: Path) -> None:
       FD.whole = true; FD.foot = null; live({...ASK, id: 'u2'}); jump(true); say(keys());""")
     if out is None:
         return
-    eq(out[:3], [[0], [1, True], [0, False]], 'the key row is back while the card is hidden, in its room')
+    eq(out[:3], [[0], [1, False], [1, False]], 'F511: the key row is back under the pill, which keeps its own room')
     eq(out[3:6], [[1, False], [0, False], [0]], 'opened under the card it stays, with its own room, and the button closes it')
     eq(out[6], [1], 'one row in a menu')
 
 
 def test_page(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
-    rule = re.search(r'\.main\.sess\.qaway \.qcard:not\(\.qheld,\.qabout\)\{([^}]*)\}', page)
+    rule = re.search(r'\.main\.sess\.qaway \.qcard:not\(\.qheld,\.qabout,\.qmin\)\{([^}]*)\}', page)
     eq(rule and rule.group(1), 'display:none', 'B854b: hidden with no room left, so the text shows down to the message box')
     check('margin-bottom:calc(var(--s2) - 2*var(--tap) - 14px)' in page and 'gap:6px;max-width:720px;margin:0 auto 8px} .keys' in page, 'the key row takes of the card\'s room what it is high')
     check('const slimMay=()=>!QN.held.has(FD.n)&&' in page, 'the bars, and a held answer with them, stay')

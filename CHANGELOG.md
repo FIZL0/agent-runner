@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: on the run page, a chat's question card shows whole when the question comes; a scroll up shrinks it to its small Decide pill, which stays at the bottom and grows back into the card on a tap or after 2 s still with no touch (F511).
 - Fixed: on the run page's Plan, a row dragged (mouse or finger) shows in its new place at once and glides only the last bit from where it was let go; before, the drag's shifts stayed on through the redraw and the rows jumped (B877).
 - Added: a chat's history on the run page (Copilot and Claude Code alike) shows a thin grey scrollbar you can drag (F474).
 - Added: a queue row in the snapshot carries the task's size (`size: simple`) beside its other fields (F485).
