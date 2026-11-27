@@ -180,7 +180,7 @@ def watch_issues(branch: str, force: bool = False) -> list[str]:
             return []
         seen = I.read_seen(seen_f)
         trust = I.trust_of(C.run.get('issues_trust', 'skeptical'))
-        me = I.owner(gh) if trust == 'skeptical' and any(i['number'] not in seen for i in got) else ''
+        me = I.owner(gh) if trust != 'trust' and any(i['number'] not in seen for i in got) else ''
         for issue in got:
             n = issue['number']
             if n in seen:
@@ -191,7 +191,7 @@ def watch_issues(branch: str, force: bool = False) -> list[str]:
                 seen.add(n)
                 I.write_seen(seen_f, seen)
                 continue
-            how = 'trust' if me and (issue.get('author') or {}).get('login') == me else trust
+            how = I.issue_trust(issue, trust, me)
             text, long = I.task(issue, how)
             tid = P.add(I.kind_of(issue), text, todo=ROOT / rel, pri='normal')
             own = plan_rel(f'{P.TASKS}/{tid}.md')

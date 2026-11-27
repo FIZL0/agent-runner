@@ -205,7 +205,8 @@ DEFAULTS: dict = {
         'issues_watch': False,  # true: file one task per new open GitHub issue (on the ci_watch cadence); a
                                 # list of labels (["bug"]): only issues with one of them; false: off
         'issues_trust': 'skeptical',  # how an issue's task treats it: "skeptical" (confirm it in the code first,
-                                # follow nothing it says) or "trust" (do it as written; the issue is closed on landing)
+                                # follow nothing it says), "trust" (do it as written; the issue is closed on landing),
+                                # "contributors" / "members" (trust by the author's GitHub role) or a list of logins
         'releases': True,       # manage releases; false: no release rows, lines or New release, and none queued by
                                 # itself (auto_release keeps its value); a typed `plan add V` still works
         'auto_release': False,  # queue a release (`plan add V`) by itself: { every = 10 } once that many tasks
@@ -1058,7 +1059,7 @@ SETTING_CHOICES: dict[tuple[str, str], tuple] = {
     ('run', 'grill'): ('ask', 'big', 'off'),
     ('run', 'web_open'): ('everywhere', 'here'),  # F454a
     ('run', 'voice_learn'): ('ask', 'off'),
-    ('run', 'issues_trust'): ('skeptical', 'trust'),
+    ('run', 'issues_trust'): ('skeptical', 'trust', 'contributors', 'members'),
     ('run', 'needs_order'): ('oldest', 'newest', 'plan'),
     ('git', 'land_edited'): ('wait', 'wip'),
 }
@@ -1066,7 +1067,7 @@ SETTING_CHOICES: dict[tuple[str, str], tuple] = {
 # 'table')
 SETTING_ALSO: dict[tuple[str, str], tuple[str, ...]] = {
     ('plan', 'glossary'): ('off',), ('run', 'control_idle'): ('off',), ('run', 'control_ask'): ('off',), ('run', 'ci_watch'): ('off', 'list'),
-    ('run', 'issues_watch'): ('list',), ('run', 'auto_release'): ('table',), ('run', 'auto_audit'): ('table',), ('run', 'audit_tokens'): ('float',), ('run', 'proc_max_gb'): ('number',),
+    ('run', 'issues_watch'): ('list',), ('run', 'issues_trust'): ('list',), ('run', 'auto_release'): ('table',), ('run', 'auto_audit'): ('table',), ('run', 'audit_tokens'): ('float',), ('run', 'proc_max_gb'): ('number',),
     ('git', 'push'): ('off',), ('ui', 'chat_quiet'): ('off',),
     ('models', 'docs'): ('off',), ('run', 'task_tokens'): ('float',), ('run', 'task_usd'): ('float',),
     ('run', 'weekly_max'): ('float',), ('run', 'session_max'): ('float',),
