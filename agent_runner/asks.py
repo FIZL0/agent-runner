@@ -229,17 +229,19 @@ def drop_option_tasks(c, now: float | None = None) -> int:
     import time
     try:
         d = c.notes(option_tasks.DIR, 'x').parent
-        plan = ' '.join(re.findall(r'DECIDE:[^\n]*', Path(c.todo).read_text(encoding='utf-8'))).casefold()
+        plan = [' '.join(x.split()).casefold() for x in
+                re.findall(r'DECIDE:([^\n]*)', Path(c.todo).read_text(encoding='utf-8'))]
     except (OSError, ValueError, AttributeError):
         return 0
-    plan, now, n = ' '.join(plan.split()), now or time.time(), 0
+    now, n = now or time.time(), 0
     for p in sorted(d.glob('*.json')) if d.is_dir() else []:
         try:
             q = json.loads(p.read_text(encoding='utf-8')).get('question', '')
             young = now - p.stat().st_mtime < OPTION_TASKS_GRACE
         except (OSError, ValueError, AttributeError):
             continue
-        if not young and option_tasks._key(q) not in plan:
+        k = option_tasks._key(q)
+        if not young and not any(re.match(re.escape(k) + r'(\s*[\[(]|\s*https?:|\s*$)', x) for x in plan if k):
             n += option_tasks.drop(q, d)
     return n
 
