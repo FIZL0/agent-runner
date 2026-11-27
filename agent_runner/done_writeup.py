@@ -10,7 +10,8 @@ from agent_runner.done_docs import changed
 
 
 def _prog() -> str:
-    return sys.modules['agent_runner.done'].PROG  # read late: a wrapper sets its own name
+    from agent_runner import done
+    return done.PROG  # read late: a wrapper sets its own name
 
 
 def journal_link(c, tid: str, url: str) -> Path | None:

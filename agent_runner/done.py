@@ -43,8 +43,6 @@ the worktree changed.
 from __future__ import annotations
 
 import argparse
-import datetime as dt
-import fnmatch
 import os
 import re
 import shutil

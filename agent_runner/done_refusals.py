@@ -8,7 +8,8 @@ from agent_runner import asks, plan
 
 
 def _prog() -> str:
-    return sys.modules['agent_runner.done'].PROG  # read late: a wrapper sets its own name
+    from agent_runner import done
+    return done.PROG  # read late: a wrapper sets its own name
 
 
 def until_refusal(a, c) -> str | None:
