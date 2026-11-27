@@ -1519,6 +1519,7 @@ def test_decide_options_f181d():
     git(d, 'add', '-A')
     git(d, 'commit', '-qm', 'start')
     R.init(d)
+    eq(K.ROOT, d.resolve(), 'B874: control files in the temp repo, never the checkout')
     todo, link, names = d / 'plan' / 'TODO.md', 'https://claude.ai/code/session_01AbC', ['Full', 'Small', 'No change']
     more = ' https://example.com/a'
     for n, (words, after) in enumerate((('Which look?', ''), ('Which look? ' + 'It is a long story. ' * 20, ''),

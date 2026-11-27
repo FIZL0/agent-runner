@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import io
 import json
 from contextlib import ExitStack
 from pathlib import Path
@@ -290,6 +291,23 @@ console.log(JSON.stringify(out));
     eq(out[5], [['chat_to', {'text': 'because', 'to': 'c9'}], 0], 'typed words go to the chat as a message')
 
 
+
+def test_cli_f486(w: World) -> None:
+    """F486: the `needs` command and status's Needs you list the chat's DECIDE too, until the run files it."""
+    from agent_runner import chat_question as CQ, slots, status
+    with mock.patch.object(slots, 'transcript', lambda sid: w.path), \
+            mock.patch.object(slots, 'entries', lambda sid, skip_bad=False: list(w.rows)), \
+            mock.patch.object(U, 'control_titles', lambda: {6: 'six'}):
+        eq(CQ.need_lines(CQ.live_needs()), ['c6 - Which look? [Full (recommended) / Small / No change]'], 'one line, its options')
+        check('  c6 - Which look?' in status.status_text(False, {}, [], {}, 0), 'status lists it under Needs you')
+        from agent_runner import cmds
+        with mock.patch('sys.stdout', new_callable=io.StringIO) as o, mock.patch.object(cmds, 'init', lambda: None):
+            cmds.cmd_needs([])
+        check('c6 - Which look?' in o.getvalue() and o.getvalue().rstrip().endswith(f'{len(o.getvalue().splitlines()) - 1} things need you'), 'the needs command lists and counts it', o.getvalue())
+        w.file()
+        eq(CQ.live_needs(), [], 'once filed, only the filed item')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([*(world(f) for f in (test_card_settles, test_needs_you_closes, test_closed_chat, test_dropped_and_shelved, test_only_its_own,
-                                                  test_filed_once, test_long_b840, test_marks_b840, test_filed_cut_b840, test_home_b832, test_home_filed_once_b832)), in_tmp(test_page_sends), in_tmp(test_page_needs_you), in_tmp(test_page_b832)]))
+                                                  test_filed_once, test_long_b840, test_marks_b840, test_filed_cut_b840, test_home_b832, test_home_filed_once_b832, test_cli_f486)), in_tmp(test_page_sends), in_tmp(test_page_needs_you), in_tmp(test_page_b832)]))

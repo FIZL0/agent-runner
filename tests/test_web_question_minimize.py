@@ -88,6 +88,20 @@ def test_motion() -> None:
     check('prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}' in (page / '150-shared.css').read_text(), 'no motion under reduced motion')
 
 
+def test_row(tmp: Path) -> None:
+    """F496: a tap on the question text (its top row) minimizes the card, and on the minimized line shows it again."""
+    out = run(tmp, """
+      live(ASK); say(dock.includes('data-qrowmin="u1"')); tap({qrowmin: 'u1'}); say(look(), dock.includes('data-qrowshow="u1"'));
+      now += 600; tap({qrowshow: 'other'}); say(look()); tap({qrowshow: 'u1'}); say(look()); now += 600; pick(0); say(look());""")
+    if out is None:
+        return
+    eq(out[0], [True], "the open card's top row carries the toggle")
+    eq(out[1], ['min', True], 'a tap on the question text minimizes it; the line toggles back')
+    eq(out[2], ['min'], 'a tap meant for another question opens nothing')
+    eq(out[3], ['card'], 'a tap on the minimized line shows it again')
+    eq(out[4], ['held'], 'an option still picks, and does not toggle')
+
+
 if __name__ == '__main__':
     test_motion()
-    raise SystemExit(report([in_tmp(f) for f in (test_minimize, test_kept, test_held, test_presses)]))
+    raise SystemExit(report([in_tmp(f) for f in (test_minimize, test_kept, test_held, test_presses, test_row)]))

@@ -732,12 +732,20 @@ def cap_held_line(st: dict, now: float) -> str:
     return held_line(st, caps, now)
 
 
+def chat_need_lines() -> list[str]:
+    """F486: Needs you's lines of the live chats' DECIDE questions the run has not filed yet (`chat_question.live_needs`)."""
+    from agent_runner import chat_question
+    return chat_question.need_lines(chat_question.live_needs(), '  ')
+
+
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
                 waiting=None, progress: str = '', wips=None, login: str = '', agent: str = '') -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
     run's state, `progress` (`progress_line`, `release_line`), each slot's task, title and minutes, what is
     merging, the last few merged / blocked / parked, and usage."""
     out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None, wips=wips)
+    if chats := chat_need_lines():  # F486: a live chat's DECIDE, before the run files it
+        out = (out or [needs_heading(P.needs_cfg()['heading'])]) + chats
     if up and (held := cap_held_line(st, now)):  # F468: first, plainly
         out.insert(0, held)
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')

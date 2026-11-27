@@ -15,7 +15,32 @@ from agent_runner.state import EV_AUTO_RELEASE, EV_LANDED, EV_PART, MERGE
 
 def releases_on() -> bool:
     """F193: `[run] releases` (Manage releases): does this project manage releases? On before `state.init`."""
-    return S.C is None or S.C.run.get('releases', True) is not False
+    if S.C is None:
+        return True
+    return _releases_read() is not False
+
+
+_READ: list = [None, None, None, None]  # B872: (the run's config, settings_print, its [run] releases, the one in force)
+
+
+def _releases_read():
+    """B872: `[run] releases` as the settings files hold it now: a process that does not run the loop (the page's
+    server) sees a Settings save at once, with no restart. A change of the run's own value (a reload) wins until the
+    files change again; a file that does not read leaves the value as it was."""
+    from agent_runner import config
+    own = S.C.run.get('releases', True)
+    try:
+        now = config.settings_print(S.C.root)
+    except Exception:  # noqa: BLE001 - no root: the run's own
+        return own
+    if _READ[0] is not S.C or _READ[2] != own:
+        _READ[:] = [S.C, now, own, own]
+    elif _READ[1] != now:
+        try:
+            _READ[1], _READ[3] = now, config.Config(S.C.root).run.get('releases', True)
+        except (Exception, SystemExit):  # noqa: BLE001 - a half-written file: looked at again on its next change
+            pass
+    return _READ[3]
 
 
 def auto_release_of(v) -> tuple[int, bool]:
