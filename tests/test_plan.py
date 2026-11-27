@@ -1302,6 +1302,13 @@ def test_edit():
               'and `plan edit --model nope:m` too, the task unchanged', r.stderr)
         run(root, 'plan', 'edit', 'R1', '--model', 'claude:opus')
         has(run(root, 'plan', 'R1').stdout, r'\| model: claude:opus$', 'claude:<model> is taken')
+        r = run(root, 'plan', 'add', 'D', 'Reword the README intro', '--files', 'r.md', '--size', 'simple')
+        has(run(root, 'plan', r.stdout.split()[1]).stdout, r'\| files: r\.md \| size: simple',
+            'F470: `plan add --size simple` stores the size on the task line')
+        run(root, 'plan', 'edit', 'R1', '--size', 'complex')
+        has(run(root, 'plan', 'R1').stdout, r'\| model: claude:opus \| size: complex$', 'and `plan edit --size` sets it')
+        r = run(root, 'plan', 'add', 'D', 'Huge thing', '--files', 'h.md', '--size', 'huge')
+        check(r.returncode == 2 and '--size takes simple or complex' in r.stderr, 'F470: another size is refused', r.stderr)
     with tempfile.TemporaryDirectory() as tmp:
         todo = Path(tmp) / 'TODO.md'
         todo.write_text('\n'.join(['# TODO', '', '### Next', '',

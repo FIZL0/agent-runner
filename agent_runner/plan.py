@@ -15,7 +15,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> --until CHECK[,CHECK] WHY   the same, waiting on what this machine checks by itself (below)
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--needs TOOL] [--pri LEVEL] [--alone] [--last] [--force] [@ WHERE]
+    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--size simple|complex] [--needs TOOL] [--pri LEVEL] [--alone] [--last] [--force] [@ WHERE]
                                  new "- [ ] **<next free id>** TEXT | files: A, B | after: X, Y …"; prints
                                  the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
                                  same work: `plan note` it there, or --force when it is different work.
@@ -36,7 +36,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  a dropped blocked task comes back blocked, with its ask file if this machine still has it
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
-    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--needs TOOL] [--pri LEVEL] [--alone | --no-alone]
+    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--size simple|complex] [--needs TOOL] [--pri LEVEL] [--alone | --no-alone]
                                  rewrite the task in place: TEXT replaces its whole description, notes included;
                                  id, checkbox, BLOCKED, tags and fields kept, but each flag replaces its field,
                                  --pri retags it and moves it as `add` files that level, --alone/--no-alone sets
@@ -115,7 +115,8 @@ The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name |
 headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
 off a line: `files:` keeps running tasks apart, `after:` holds a task until those ids are done, `test:`
 names the test it adds, `journal:` a journal dir its brief lists, `model:` the model its session runs on
-(`--model haiku`, over its kind's in [models.kinds]), `needs:` the shared tools it needs (`--needs iphone15`, a
+(`--model haiku`, over its kind's in [models.kinds]), `size:` simple or complex (`--size simple`, the
+model in [models] sizes when set, F470), `needs:` the shared tools it needs (`--needs iphone15`, a
 name in [run.tools]), without which no run starts it. Prose is never parsed for files or ids.
 
 **A task that goes last** (a release) is filed with `add … --last`: at the end of Next, with `after: all above`.
@@ -199,7 +200,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from agent_runner import plansync
-from agent_runner.config import cfg, claude_model, main_checkout
+from agent_runner.config import cfg, claude_model, main_checkout, SIZES
 from agent_runner.gitops import git
 
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
@@ -213,7 +214,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-KEYS = ('files', 'ahead', 'after', 'test', 'journal', 'model', 'needs', 'split-by', 'held', 'moved')  # F435: ahead, written by auto release alone (release_ahead); F429a: moved, written by `move` alone (release_moves); F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
+KEYS = ('files', 'ahead', 'after', 'test', 'journal', 'model', 'size', 'needs', 'split-by', 'held', 'moved')  # F435: ahead, written by auto release alone (release_ahead); F429a: moved, written by `move` alone (release_moves); F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
 # ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
 FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
@@ -1179,6 +1180,8 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         no('@ needs a place (top, bottom, before ID, after ID, in SECTION)')
     if (m := vals.get('--model')) is not None and (not m.strip() or len(m.split()) > 1 or ',' in m):
         no(f'--model takes one model name (haiku, sonnet, opus), not {m!r}')
+    if (sz := vals.get('--size')) is not None and sz.strip() not in SIZES:  # F470
+        no(f'--size takes {" or ".join(SIZES)}, not {sz!r}')
     if m is not None and ':' in m:  # F125: another provider is refused here, not swapped for the kind's model later
         c = cfg()
         try:
@@ -1190,7 +1193,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
     keyed = ''
     for key in KEYS:  # `--files a,b` → ` | files: a, b`, in KEYS order
         if (v := vals.get(f'--{key}')) is not None:
-            keyed += f' | {key}: ' + (v if key in ('test', 'model') else ', '.join(
+            keyed += f' | {key}: ' + (v.strip() if key == 'size' else v if key in ('test', 'model') else ', '.join(
                 LAST if x == LAST else ', '.join(re.split(r'[,\s]+', x)) for x in re.split(r',\s*', v.strip(', '))))
     t, _, w = ' '.join(text).partition(' @ ')
     t, w, keyed = one_line(t), one_line(w), one_line(keyed)

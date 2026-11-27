@@ -357,6 +357,22 @@ def not_attempt(tid: str, branch: str) -> bool:
     return bool(rx and last and re.search(rx.replace('{id}', re.escape(tid)), last))
 
 
+def size_retry(tid: str, branch: str) -> bool:
+    """F470: a simple task that ran on its size's model and whose `done` did not pass is tried once more, on its
+    kind's model (`task_size`); False when it is not."""
+    from agent_runner import task_size
+    from agent_runner.state import plan_text
+    try:
+        passed = (plansync.ticks(C) / tid).exists() or \
+            any(t == tid and box == 'x' for _, box, t, _, _ in P.iter_tasks(plan_text(branch)))
+        due = task_size.retry_due(C, tid, plan_text(branch), passed)
+    except OSError:
+        return False
+    if due:
+        log(f'{tid}: a simple task that did not pass on its size\'s model; it tries once more on its kind\'s model')
+    return due
+
+
 ON_EDITS: set[str] = set()  # B227: tasks whose merge waits for a person's edits in the main checkout
 
 
@@ -366,6 +382,9 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         if _finish(tid, n, sid, branch):
             (plansync.ticks(C) / tid).unlink(missing_ok=True)
             plansync.release(C, tid)
+            from agent_runner import task_size
+            if task_size.reopen_blocked(C, tid):  # F470: blocked on its size's model: open for the retry
+                log(f'{tid}: opened again, to try once more on its kind\'s model')
             try:
                 prune_wips(branch, force=True)  # F23: ticked by this merge: its wip/<ID> go with it
             except Exception as e:  # never reads as a crashed merge
@@ -946,7 +965,7 @@ class Run:
             drop_session_tmp(sid)  # ended for good: a resume (above) keeps its scratchpad
             if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
                 clean(d)  # saved: the next start finds the slot clean
-            if not not_attempt(task[0], branch):
+            if not not_attempt(task[0], branch) and not size_retry(task[0], branch):
                 self.tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
             git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
             self.merge_in(task[0], n, sid)

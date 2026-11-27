@@ -102,6 +102,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'plan.context_kb': ('work', 'Warn about long rules', 'Kilobytes of rules every session loads before the run warns you. 0: never.'),
     'plan.lessons': ('work', 'Lessons', "What agents learned about some files, shown to the next task on them. Off: none kept or shown."),
     'models.kinds': ('roles', 'Model for each kind', 'The model a task runs on, by the letter of its id. It wins over Other tasks.'),
+    'models.sizes': ('roles', 'Model for each size', 'The model for a task marked simple or complex, like { simple = "sonnet" }. It wins over its kind. Empty: sizes are ignored.'),
     'models.code': ('roles', 'Other tasks', 'The model for a task whose kind has none. Every kind has one, so this rarely changes anything.'),
     'models.fix': ('roles', 'Conflict fixes', 'The model that resolves conflicts and repairs merges. A cheaper one fails more often.'),
     'models.docs': ('roles', 'Docs helper', 'The model that writes docs and changelog lines for a task. Off: the task writes them itself.'),

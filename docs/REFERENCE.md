@@ -1959,6 +1959,7 @@ feed = "haiku"            # the run page's claude.ai copy (the one-shot that pub
 audit = "opus"            # an audit task's session ([run] auto_audit, or one added by hand); see Auto audit
 kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonnet", C = "sonnet", R = "sonnet" }
                           # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
+sizes = {}                # a task's session by its size (`plan add --size simple`), e.g. { simple = "sonnet" }; empty: sizes ignored; see Models per kind
 local = false             # allow a local provider (ollama, or a provider url on localhost or a private address); see Model providers
 providers = {}            # the repo's own providers, [models.providers.<name>]; see Model providers
 fallback = []             # '<provider>:<model>' to go on with when a provider hits its cap, in order; see Fallback chain
@@ -2103,6 +2104,14 @@ given on the command line (it sets every task without its own); `[models] audit`
 `run ask`) goes on on the same model. A kind's value must be a model name (a string), or
 the run refuses to start with a `[models.kinds]` error. A repo that sets `[models] code` still gets
 the default kinds for F, B, T, V, K, D, C and R; to run every kind on one model, set those kinds in `[models.kinds]`.
+
+`[models] sizes` picks the model by a task's size (F470): `plan add … --size simple` (or `complex`, or `plan edit ID
+--size simple`) writes `size: simple` on its line, and `sizes = { simple = "sonnet" }` runs simple tasks on that
+model. Empty, the default, sizes are ignored; a size with no entry (complex, above) keeps its kind's model. The order
+is then: the task's own `model:`; `run --model`; `[models] audit`; its size's in `[models] sizes`; its kind's;
+`[models] code`. Guard: a simple task that ran on its size's model and whose `done` did not pass (it failed, or
+blocked) is tried once more on its kind's model; a block it left is opened again for that attempt. Settings shows
+it under Models, as Model for each size.
 
 ### Model providers
 
