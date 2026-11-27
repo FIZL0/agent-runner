@@ -490,6 +490,8 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   and the keys sheet lists them from that list; a key whose button is not in view opens the panel that draws it
   (Home's Run card, Plans) and presses it there (`lazyPress`).
 - The terminal theme is monospace with square corners.
+- The key bar lists every key of the mode it is in (normal or insert), from the same lists as the keys sheet; it wraps
+  to more lines rather than cut one off. Moving the highlight onto a chat row shows that chat in the main pane.
 
 ## Sound
 
