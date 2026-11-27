@@ -29,6 +29,8 @@ def after(run) -> None:
     if not stopping():
         auto_release(branch)  # F63: { every = N }
         audit.tick(run)  # F417
+        from agent_runner import until_watch
+        until_watch.tick(branch)  # F427c: until checks, on a thread of their own
     if not stopping():
         from agent_runner.control_held import controls_tick
         controls_tick(branch)  # B26, B53, B170

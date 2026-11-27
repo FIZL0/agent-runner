@@ -523,6 +523,50 @@ def _reopen_landed(branch: str, why: str) -> None:
         said = f'{t}: back under Needs you' if t in back else f'{t}: reopened'
         note(f'{said}, {", ".join(ids)} landed')
         log(f'{said}, {", ".join(ids)} landed')
+def reopen_until(branch: str, ids: list[str]) -> list[str]:
+    """F427c: reopen the tasks `ids` whose until checks all passed, committed in the main checkout as
+    `_reopen_landed` commits: holding MERGE, left alone when TODO.md has edits nobody committed (the next round tries
+    again). With a shared plan it is pulled first, so a task another machine reopened is not reopened twice. The ids
+    reopened."""
+    from agent_runner.state import MERGE
+    if not ids or not MERGE.acquire(blocking=False):
+        return []
+    try:
+        if not C.plan_external:
+            return _reopen_until(branch, ids)
+        with plansync.locked(C):
+            plansync.pull(C, force=True)
+            return _reopen_until(branch, ids)
+    finally:
+        MERGE.release()
+
+
+def _reopen_until(branch: str, ids: list[str]) -> list[str]:
+    rel = plan_rel('TODO.md')
+    if git('branch', '--show-current').stdout.strip() != branch or git('status', '--porcelain', '--', rel).stdout.strip():
+        return []
+    todo = ROOT / rel
+    ls = P.lines(todo)
+    said = {}
+    for _, box, tid, _, i in P.iter_tasks(ls):
+        if tid in ids and box == '~' and (got := P.until_of(ls, i)):
+            said[tid] = P.until_label(got, C)
+    back = {a[1] for a in P.asks(todo)}
+    done = [t for t in said if P.until_passed(t, todo)]
+    if not done:
+        return []
+    if not commit_plan(f'Plan: reopen {", ".join(done)} (until checks passed)', rel):
+        git('checkout', '-q', '--', rel)
+        return []
+    REOPENED.update(done)
+    back = {a[1] for a in P.asks(todo)} - back
+    for t in done:
+        msg = f'{t}: {"back under Needs you" if t in back else "reopened"}, {said[t]} passed'
+        note(msg)
+        log(msg)
+    return done
+
+
 # F42: a task the stopping run no longer waits for (B19's `halts` logs 'dropped <ID>; …')
 
 
