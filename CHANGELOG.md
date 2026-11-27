@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page, a chat message shows sent (no longer faded) as soon as the run takes it, not only once the chat's transcript has it (B878).
 ## 0.81.0 (2026-11-28)
 
 - Changed: the settings area (types, checks, toml edits) moved from config.py to config_settings.py, no behaviour change (C61).

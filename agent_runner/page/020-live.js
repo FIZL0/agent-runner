@@ -36,7 +36,7 @@ const tkey=t=>String(t||'').replace(/\s+/g,' ').trim().slice(0,120);
 function sentBubbles(n,shown){
   let h='';
   for(const p of (S.sent[n]&&S.sent[n].pending)||[]){const b=p.state==='failed', d=`data-n="${esc(n)}"`;
-    h+=`<div class="u pending${b?' failed':''}" data-k="s:${esc(p.id)}" data-t="${esc(tkey(shown(p.text)))}">${esc(shown(p.text))}${b?`<div class="small">Not delivered: it is not in ${esc(n)}'s chat</div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" ${d}>Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" ${d}>Discard</button></div>`:''}</div>`}
+    h+=`<div class="u pending ${b?'failed':'sent'}" data-k="s:${esc(p.id)}" data-t="${esc(tkey(shown(p.text)))}">${esc(shown(p.text))}${b?`<div class="small">Not delivered: it is not in ${esc(n)}'s chat</div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" ${d}>Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" ${d}>Discard</button></div>`:''}</div>`}
   return h;
 }
 /* take an action: drawn at once by the caller, kept in the outbox, sent behind */
