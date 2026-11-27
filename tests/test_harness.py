@@ -568,6 +568,27 @@ def test_said_lines(env: Env):
     eq(len(rows[0]), len(rows[2]), 'rows are padded to one width')
 
 
+def test_reply_lines(env: Env):
+    """F483: the model's reply shows as Claude Code draws it: '● ', markdown rendered, wrapped with a hanging indent."""
+    src = (Path(R.__file__).parent / 'harness.mjs').read_text(encoding='utf-8')
+    start = src.index('const visible = ')
+    end = src.index('function redrawn')
+    js = src[start:end].replace('export ', '') + (
+        "console.log(JSON.stringify([replyLines('## Plan\\nSome **bold** and *it* and `code` ' + 'word '.repeat(12)"
+        " + '\\n- item ' + 'long '.repeat(10), 40), doneLine(65000, new Date(2026, 0, 1, 9, 5)), replyLines('`__init__` x', 40)]));")
+    run = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+    out, done, code = json.loads(run.stdout)
+    eq(code, '● \x1b[36m__init__\x1b[39m x', 'inline code is kept as written')
+    rows = out.split('\n')
+    eq(rows[0], '● \x1b[1mPlan\x1b[22m', 'a heading is bold, after the reply marker')
+    check('\x1b[1mbold\x1b[22m' in rows[1] and '\x1b[3mit\x1b[23m' in rows[1] and '\x1b[36mcode\x1b[39m' in rows[1], 'inline markdown is rendered', rows)
+    check(rows[2].startswith('  word'), 'a wrapped line hangs under the text', rows)
+    item = [i for i, r in enumerate(rows) if r.startswith('  - item')][0]
+    check(rows[item + 1].startswith('    long'), 'a list item wraps under its text', rows)
+    check(all(len(r.replace('\x1b[1m', '').replace('\x1b[22m', '').replace('\x1b[3m', '').replace('\x1b[23m', '').replace('\x1b[36m', '').replace('\x1b[39m', '')) <= 40 for r in rows), 'rows fit the width', rows)
+    eq(done, '\x1b[2m✻ Worked for 1m 5s · done 09:05\x1b[22m', 'the turn ends with a dim done line')
+
+
 def main() -> int:
     node = shutil.which('node')
     if not node:
@@ -580,7 +601,7 @@ def main() -> int:
             return report([lambda: test_routing(env), lambda: test_finish(env),
                            lambda: test_finish_refused(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_context_warn(env), lambda: test_resume(env),
-                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_tally(env), lambda: test_said_lines(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
+                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_tally(env), lambda: test_said_lines(env), lambda: test_reply_lines(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 
