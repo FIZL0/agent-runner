@@ -86,7 +86,7 @@ function md(src){
       else h+=`<p>${ls.map(inline).join('<br>')}</p>`;
     }
   });
-  return h;
+  return taskLinks(h,taskIds());  // F482
 }
 
 const taskChip=id=>kindChip(id,S.snap.kinds);  // F195b

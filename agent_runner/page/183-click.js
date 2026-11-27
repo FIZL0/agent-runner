@@ -125,6 +125,7 @@ document.addEventListener('click',async e=>{
       outbox('pitch_ask',{pid:n.id,tid,q:said},{review:k,say:`${tid} · Ask about it`});return}
     if(!x.hasAttribute('data-sure')){S.sure=`better:${k}`;render(true);return}
     S.sure=null;delete S.f[f];outbox('pitch_better',{pid:n.id,tid,why:said,confirm:true},{need:n.id,say:`${tid} · Ask for a better way`});return}
+  if(x=q('[data-taskgo]')){e.preventDefault();taskGo(x.dataset.taskgo);return}  // F482: a task named in a chat
   if(x=q('[data-task]')){openTask(x.dataset.task,x.dataset.list);return}  // F85
   if(x=q('[data-setopen]')){const id=x.dataset.setopen;S.setOpen[id]=!S.setOpen[id];render(true);return}  // F97
   if(q('[data-setload]')){loadSettings();return}
