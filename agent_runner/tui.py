@@ -573,11 +573,29 @@ class RunPage:
                     (said in [*d.get('steps', []), *d.get('expect', [])] or said.casefold() in flat):
                 said = U.ask_short(said)  # B793b: the ask's own words, whole in detail; a question and an ask file's summary stay
             short = ' '.join(str(said or it.get('ask_short') or it.get('title') or it.get('ask', '')).split())
-            return [(f'{it["id"]} ', self.kind_colour(it['id'])), (short, 'fg'),
-                    (f' {it.get("age", "")}', 'dim')]
+            return self.news_badge(it) + [(f'{it["id"]} ', self.kind_colour(it['id'])), (short, 'fg'),
+                                          (f' {it.get("age", "")}', 'dim')]
         if it.get('new'):
             return [('+ ', 'green'), ('new concept ', 'dim'), ('n', 'hkey')]
-        return [('◆ ', 'magenta'), (it.get('title', ''), 'fg')]
+        need = self.concept_need(it)  # F197b2: its Needs you item's badge, label and age, as panel 4 shows them
+        tail = ' '.join(x for x in (need.get('label', ''), need.get('age', '')) if x)
+        return self.news_badge(it) + [('◆ ', 'magenta'), (it.get('title', ''), 'fg')] + \
+            ([(f' {tail}', 'dim')] if tail else [])
+
+    def news_badge(self, it) -> list[tuple[str, str]]:
+        """F197b2: the New / Updated badge of a Needs you item or a concept (its own or its concept's news_words)."""
+        words = it.get('news_words') or self.concept_of(it).get('news_words') or ''
+        return [(f'{words} ', 'green')] if words else []
+
+    def concept_of(self, it) -> dict:
+        """F197b2: the Concepts row of the same concept as Needs you item `it` ({} none)."""
+        return next((c for c in self.snap.get('concepts') or [] if isinstance(c, dict) and it.get('label') == 'CONCEPT'
+                     and c.get('id') == it.get('id')), {})
+
+    def concept_need(self, it) -> dict:
+        """F197b2: the Needs you item of Concepts row `it` ({} none)."""
+        return next((n for n in self.snap.get('needs') or [] if isinstance(n, dict) and n.get('label') == 'CONCEPT'
+                     and n.get('id') == it.get('id')), {})
 
     def queue_tag(self, it) -> tuple[str, str]:
         """A queue row's right tag: 'sN Nm' (yellow) while a slot runs it, 'critical' (red), 'blocked' (red),
@@ -1266,6 +1284,10 @@ class RunPage:
         L = lambda *segs: list(segs)  # noqa: E731
         page = self.concept(it)
         out = [L((page['title'] or it.get('title', ''), 'accent'))]
+        if need := self.concept_need(it):  # F197b2: the answers its Needs you item gives, the same words
+            said = [a['label'] for a in need.get('answers') or U.need_answers(need)]
+            out.append(L(*self.news_badge(it), (need.get('label', ''), 'yellow'), (f'  {need.get("age", "")}', 'dim'),
+                         *([('  answers: ', 'dim'), (' · '.join(said), 'fg')] if said else [])))
         if not page['options'] and not page['intro']:
             out += [L(), L(('no local copy of this page (done --artifact keeps one)', 'dim'))]
         for p in page['intro']:

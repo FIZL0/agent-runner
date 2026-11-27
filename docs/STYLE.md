@@ -74,6 +74,11 @@ a chat's message box (inside `.main.term`). A session draws its own text with tt
   the sheet; an explanation shows only its first sentence here, the rest in the sheet. Its answer buttons sit below it. A DECIDE's options are its answer buttons, the recommended first, marked "(recommended)" and `.pri`. A pick
   sheet's start with "Go with the recommended picks" (`.pri`), then, for one question, its answers the same way. A
   device's or tool's Use or Open NAME in Tools (`needDevices()`) is a plain button, not `.pri`.
+- **Tasks wait on** (Tools page, `untilsHTML()`, F427d): one card per check a blocked task waits on, above Devices, and
+  no section at all when none waits. The card: the check's label in bold, its last result capitalised (passed `.v-ok`,
+  cannot run `.v-bad`, not yet plain) with its age and last words, or "Not checked yet"; the waiting tasks as id and
+  title; and a plain Check now button (busy while it runs, the others disabled). The run adds and drops these cards;
+  the page has no way to add one.
 - **Needs you sheet** (`SHEETS.need`, `needSheet()`): the whole ask in order: what is asked, its task's
   title small under it as on the card, label (with its kind chip, as on the card), age; the explanation first in the body (`.explain`, `needExplain()`: text over EXPLAIN_LONG, 600 characters, is cut at a block, else at a sentence, the rest in a fold, "The rest of the explanation"); Why (a BLOCKED item's, left out when the heading says it); where and when, or a DECIDE's background as paragraphs; What to do (a DECIDE's
   only when its ask file has steps); What you should see; notes; videos (`.shotvideo`, `needVideos()`, played in place above the pictures; a redraw leaves a playing one alone, `videoHTML()`, closing the sheet pauses it, and a swipe that starts on one is the video's); pictures (`.shot`, full size inside the sheet, Back or

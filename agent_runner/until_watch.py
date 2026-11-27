@@ -75,7 +75,7 @@ def round_(branch: str, now: float | None = None, run=None, reopen=None) -> list
             state, said = got[c]
             o = old.get(c, {})
             asked = o.get('cannot') and now - o['cannot'] >= CANNOT_ASK  # a shown item stays until the check passes
-            d[c] = {'waiting': o.get('waiting') or now, 'state': state, 'said': ' '.join(str(said).split())[:240],
+            d[c] = {'at': now, 'waiting': o.get('waiting') or now, 'state': state, 'said': ' '.join(str(said).split())[:240],
                     'cannot': 0 if state == until.PASSED else (o.get('cannot') or now) if state == until.CANNOT
                     else o['cannot'] if asked else 0,
                     'tasks': sorted(t for t, cs in waits.items() if c in cs)}

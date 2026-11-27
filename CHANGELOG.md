@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: the Tools page lists each check a blocked task waits on, with its last result and when, the tasks that wait, and Check now; nothing when none waits (F427d).
 ## 0.85.0 (2026-11-28)
 
 - Added: deciding an item for good on the run page, in the TUI or by a pick link (an answer or option button, approve, confirm or drop) closes the chats about it instead of typing a line into them; the transcript stays and Resume brings one back. Shelve, revise and a No still type the line, and a chat the person spoke in last, that asks another DECIDE, runs work, holds a message, has a question up, is about another waiting item or was renamed stays open (F209b).
