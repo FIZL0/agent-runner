@@ -54,7 +54,12 @@ def under_way(c, tid: str) -> str:
         cl = plansync.claims(c).get(tid)
     except (OSError, SystemExit, ValueError) as e:
         return f'what works on it could not be read ({e})'
-    return f"another machine's run has claimed it ({cl.who})" if cl and not plansync.stale(cl) else ''
+    if not cl or plansync.stale(cl):
+        return ''
+    import socket
+    if cl.who.rpartition('@')[2] == socket.gethostname():
+        return f'{cl.who} has claimed it'
+    return f"another machine's run has claimed it ({cl.who})"
 
 
 def slot_on(c, tid: str) -> str:
