@@ -256,6 +256,8 @@ def test_groups_f440() -> None:
     eq(R.groups_text({}), '0 tasks left', 'none left')
     eq(R.task_groups(ls[:4] + ['- [~] **F8** (split into F8b) BLOCKED: split', '- [x] **F8b** done']),
        {'held': 1}, 'a split task whose parts are all done still counts')
+    eq(R.groups_text(R.task_groups(ls[:4] + ['- [~] **B11** stuck BLOCKED: tests failed'])),
+       '1 task left: 1 held for another reason', 'a task blocked for another reason gets a group of its own')
 
 
 if __name__ == '__main__':

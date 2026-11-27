@@ -81,7 +81,8 @@ with tempfile.TemporaryDirectory() as tmp:
             check(guide.OWN_FILES in p and guide.SPLIT_FILES in p, f'{what} carries both rules with {slots} slot(s)')
         check(guide.OWN_FILES not in brief.prompt_for('K1', 1, 1, root, 'main'), 'a concept, which builds nothing, does not')
 print('F440: the headline names how the tasks left divide')
-has(text, r'23 tasks left: 6 can start now, 12 wait on another task, 5 need you', 'the summary headline')
-has(text, r'tasks left: …` line \(how many can start\s+now, wait on another task, need you', 'the how-much-is-left answer')
+topics = guide.control_topic('summary') + guide.control_topic('output')
+has(topics, r'23 tasks left: 6 can start now, 12 wait on another task, 5 need you', 'the summary headline')
+has(topics, r'tasks left: …` line \(how many can start\s+now, wait on another task, need you', 'the how-much-is-left answer')
 
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
