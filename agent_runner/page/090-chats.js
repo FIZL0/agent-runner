@@ -274,15 +274,24 @@ function feedUp(){
 }
 /* B867: a harness chat draws its screen again for each viewer that comes (and at each resize) with a clear of the
    scrollback (CSI 3J) and its last output; xterm's view then stays at the top of it. A view that was at its end stays
-   there: for a moment after the clear, each write parsed takes it to its end again, unless the reader scrolled up */
+   there: for a moment after the clear, each write parsed takes it to its end again, unless the reader scrolled up.
+   B884: a view scrolled up keeps its distance from the end across the clear, so it shows the same lines, never the top */
 const REDRAW_PIN_MS=800;
 function feedRedrawPin(t){
   if(!t.parser||!t.parser.registerCsiHandler)return;
-  let until=0;
-  t.parser.registerCsiHandler({final:'J'},p=>{const b=t.buffer.active;if(p[0]===3&&b.viewportY>=b.baseY)until=Date.now()+REDRAW_PIN_MS;return false});
-  const pin=()=>{if(Date.now()<until)t.scrollToBottom();else until=0};
+  let until=0,back=0,want=-1;
+  t.parser.registerCsiHandler({final:'J'},p=>{
+    const b=t.buffer.active;
+    if(p[0]===3){back=Math.max(0,b.baseY-b.viewportY);want=-1;until=Date.now()+REDRAW_PIN_MS}
+    return false});
+  const pin=()=>{
+    if(Date.now()>=until){until=0;return}
+    const b=t.buffer.active;
+    if(!back){t.scrollToBottom();return}
+    want=Math.max(0,b.baseY-back);if(b.viewportY!==want)t.scrollToLine(want)};
   if(t.onWriteParsed)t.onWriteParsed(pin);else t.onLineFeed(pin);
-  t.onScroll(()=>{const b=t.buffer.active;if(until&&b.viewportY<b.baseY&&b.viewportY>0)until=0});
+  t.onScroll(()=>{const b=t.buffer.active;if(!until||b.viewportY<=0)return;
+    if(back?(want>=0&&b.viewportY!==want):b.viewportY<b.baseY)until=0});
 }
 function feedLines(t){const b=t.buffer.active,l=[];for(let y=b.baseY;y<b.baseY+t.rows;y++){const x=b.getLine(y);l.push(x?x.translateToString(true):'')}return l}
 function feedSee(){
