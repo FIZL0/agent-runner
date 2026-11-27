@@ -12,6 +12,10 @@
 .sec .ln{flex:1;height:1px;background:var(--line)}
 .sec .secfold{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;min-height:var(--tap)}  /* F476: Work's folded sections (Parked, Run log) */
 .sec .secfold .chev{display:inline-flex;transition:transform var(--dur) var(--ease)}.sec .secfold[aria-expanded="true"] .chev{transform:rotate(90deg)}
+/* F487: Work's sections in one block (a sticky grid item would stay in its own row), the jump bar sticks under the search */
+.worksecs{display:block}.worksecs>*+*{margin-top:12px}
+.workjump{position:sticky;top:var(--workjump-top,56px);z-index:1;background:var(--bg);display:flex;gap:var(--s1);overflow-x:auto;padding:var(--s1) 0;scrollbar-width:none}
+.workjump .chip{flex:none;min-height:var(--tap)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);padding:14px 16px;display:grid;gap:10px;min-width:0}
 .card.tap{cursor:pointer} .card.tap:hover{border-color:var(--line2)}
 .card.need{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}

@@ -341,7 +341,8 @@ What you ask of a person (a CONFIRM, DECIDE or BLOCKED, or `ask`) is read in Nee
 one short sentence, at most about 100 characters. It starts with what the person does, in words a person who never saw \
 the task understands, and the reason comes second; it names no task id without that task's title. \
 A wait on a task or a release is `--after <ID>`, and a wait a check can read is `--until <CHECK>` (`version:X.Y.Z`, \
-`login:PROVIDER`, `tool:NAME`, `check:NAME`): never `BLOCKED:`, as no person is needed. `done --blocked` refuses a \
+`login:PROVIDER`, `tool:NAME`, `check:NAME`, or `date:YYYY-MM-DD` when all it waits for is a day, and it reopens by \
+itself then): never `BLOCKED:`, as no person is needed. `done --blocked` refuses a \
 CONFIRM or BLOCKED line over 200 characters with no ask file, or one that waits on an open task or release with no \
 `--after`. When there is more to say, write it first to the ask file {path}, as \
 JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place>, "steps": [<what to do>, …], \
