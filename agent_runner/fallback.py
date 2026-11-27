@@ -128,15 +128,15 @@ def session_env(tid: str, sid: str, model: str, held: frozenset = frozenset(), l
     """F503: the env entries for session `sid` of `tid` on `model`: on claude, the login it runs on (`login`, else
     the one a cap stop pinned in `<tid>.login`, else the first free one), noted for the session; [] elsewhere."""
     from agent_runner.claude_use import login_env
+    if provider(model) != 'claude':
+        return []
     pin = state.C.notes(f'{tid}.login')
     if login is None:
         try:
             login = pin.read_text(encoding='utf-8').strip()
+            pin.unlink(missing_ok=True)
         except OSError:
             login = None
-    pin.unlink(missing_ok=True)
-    if provider(model) != 'claude':
-        return []
     if login is None:
         login = free_login('claude', with_held(held)) or ''
     note_login(sid, login)
