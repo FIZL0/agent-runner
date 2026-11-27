@@ -1477,7 +1477,16 @@ Neither it nor a task that waits on it holds an `after: all` or `all above` task
 
 A check that `[run.checks]` names only on the branch, or only in the main checkout, is taken.
 
-`plan.until_passed` does the reopening, for whoever runs the checks. Nothing reopens the task by itself yet, except `plan unblock`.
+**The run reads them by itself** (`until_watch.py`). While a run is up, every 2 min and off the scheduling thread,
+each distinct check some blocked task waits on runs once, however many tasks wait on it; none runs with no task
+waiting. When all of a task's checks pass it is reopened with a note of what passed (`plan.until_passed`), committed
+in the main checkout as a merge's reopening is: holding the merge turn, left alone while TODO.md has edits nobody
+committed, and tried again next round. It is logged once. With several machines on one plan, the plan is pulled
+first, so the one machine where a version, login or tool passes reopens it once.
+
+A check that cannot run for 30 min, or has not passed for 3 days, is one Needs you item (`until-<check>`) saying which
+check, its last words and the tasks it holds, which `plan unblock` frees. It goes by itself once the check passes.
+No agent session and no model call is made for any of this.
 
 ### Waiting for memory
 
