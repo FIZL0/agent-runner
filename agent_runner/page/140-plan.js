@@ -51,9 +51,9 @@ function planHTML(){
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
 function conceptsHTML(){
-  const cs=S.snap.concepts||[];
+  const all=S.snap.concepts||[], cs=all.filter(c=>!c.history), past=all.map((c,i)=>[c,i]).filter(([c])=>c.history);  // F516: History rows come last, so the open ones keep their index
   return `<div class="col"><div class="sec">Concepts<span class="ln"></span></div>
-    ${obCards(x=>x.concept)}${cs.length?cs.map(conceptCard).join(''):emptyCard(`${NO_CONCEPT}`)}</div>`;
+    ${obCards(x=>x.concept)}${cs.length?cs.map(conceptCard).join(''):emptyCard(`${NO_CONCEPT}`)}${typeof conceptHistoryHTML==='function'?conceptHistoryHTML(past):''}</div>`;
 }
 /* F83: where each view was scrolled to (S.at), whether Talk follows its newest words (S.pin) */
 /* F463: a concept item's options page, framed in its Needs you card (the run page's own copy, sandboxed, lazy):

@@ -593,7 +593,33 @@ def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
     for row in approved_rows(ls, shown | {r['id'] for r in out}):
         if f := pages.get(row['id']):
             out.append({**row, 'copy': str(f), 'waits': row['build'] in waits})  # a parked build's Needs you item
+    out += history_rows(files, ls, done_lines(), shown | {r['id'] for r in out})
     return out
+
+
+def history_rows(files: list, ls: list[str], done: list[str], shown: set[str]) -> list[dict]:
+    """F516: a Concepts row for each past concept whose page file is still in <notes>/concepts: its task is ticked
+    or dropped (in TODO.md's lines `ls` or DONE.md's `done`), so approved and built, dropped or done. Newest page
+    first. `history`: the page lists it grayed under History, with View and Chat only."""
+    past = {}
+    for _, box, tid, rest, _i in P.iter_tasks(done):
+        past[tid] = rest
+    for _, box, tid, rest, _i in P.iter_tasks(ls):
+        if box in 'x-':
+            past[tid] = rest
+        else:
+            past.pop(tid, None)  # open again in TODO.md
+    rows = []
+    for f in files:
+        if f.stem in shown or f.stem not in past or not f.stem.startswith('K'):  # concepts only, not a task's report
+            continue
+        try:
+            at = f.stat().st_mtime
+        except OSError:
+            continue
+        rows.append((at, {'id': f.stem, 'concept': f.stem, 'title': P.short_title(past[f.stem], 200), 'url': '',
+                          'copy': str(f), 'page': True, 'waits': False, 'history': True}))
+    return [r for _, r in sorted(rows, key=lambda x: -x[0])]
 
 
 CHAT_PAGE_DAYS = 7

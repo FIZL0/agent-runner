@@ -66,5 +66,23 @@ def test_chat_pages_only_when_filed():
         eq(Q.chat_page_rows(files, set()), [], 'no filed concept: no chat pages')
 
 
+def test_history_rows():
+    """F516: a done or dropped concept whose page file is still there shows under History, newest first; one whose
+    file is gone does not; an open one is no history row."""
+    import os
+    with tempfile.TemporaryDirectory() as t:
+        d = Path(t)
+        for n, cid in enumerate(('K1', 'K2', 'K3', 'K5')):
+            (d / f'{cid}.html').write_text('<h2>A</h2>', encoding='utf-8')
+            os.utime(d / f'{cid}.html', (1000 + n, 1000 + n))
+        files = sorted(d.glob('*.html'))
+        ls = ['- [-] **K2** Dropped one', '- [ ] **K3** Still open', '- [x] **K5** Done here']
+        done = ['- [x] **K1** Built one', '- [x] **K4** No page left']
+        rows = U.history_rows(files, ls, done, {'K5x'})
+        eq([r['id'] for r in rows], ['K5', 'K2', 'K1'], 'past concepts with pages, newest first')
+        check(all(r['history'] and r['copy'].endswith(r['id'] + '.html') for r in rows), 'grayed rows keep View', rows)
+        eq([r['id'] for r in U.history_rows(files, ls, done, {'K5'})], ['K2', 'K1'], 'one shown already is left out')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_approved_concept_stays, test_chat_pages_only_when_filed]))
+    raise SystemExit(report([test_approved_concept_stays, test_chat_pages_only_when_filed, test_history_rows]))
