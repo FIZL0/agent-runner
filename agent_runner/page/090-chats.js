@@ -269,8 +269,20 @@ function feedShown(on){if(FD.shown!==on){FD.shown=on;if(!on){FD.slim=false;FD.of
 /* its socket is open: its screen is read at each draw, in the very frame it shows: one frame later, a row more or less is a jump (F206a) */
 function feedUp(){
   let t;try{t=FD.frame.contentWindow.term}catch(e){}
-  if(t&&!t.arSeen){t.arSeen=true;t.onRender(feedSee)}
+  if(t&&!t.arSeen){t.arSeen=true;t.onRender(feedSee);feedRedrawPin(t)}
   lookAgain();liveLoad();
+}
+/* B867: a harness chat draws its screen again for each viewer that comes (and at each resize) with a clear of the
+   scrollback (CSI 3J) and its last output; xterm's view then stays at the top of it. A view that was at its end stays
+   there: for a moment after the clear, each write parsed takes it to its end again, unless the reader scrolled up */
+const REDRAW_PIN_MS=800;
+function feedRedrawPin(t){
+  if(!t.parser||!t.parser.registerCsiHandler)return;
+  let until=0;
+  t.parser.registerCsiHandler({final:'J'},p=>{const b=t.buffer.active;if(p[0]===3&&b.viewportY>=b.baseY)until=Date.now()+REDRAW_PIN_MS;return false});
+  const pin=()=>{if(Date.now()<until)t.scrollToBottom();else until=0};
+  if(t.onWriteParsed)t.onWriteParsed(pin);else t.onLineFeed(pin);
+  t.onScroll(()=>{const b=t.buffer.active;if(until&&b.viewportY<b.baseY&&b.viewportY>0)until=0});
 }
 function feedLines(t){const b=t.buffer.active,l=[];for(let y=b.baseY;y<b.baseY+t.rows;y++){const x=b.getLine(y);l.push(x?x.translateToString(true):'')}return l}
 function feedSee(){
