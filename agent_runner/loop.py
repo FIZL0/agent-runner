@@ -1062,7 +1062,7 @@ class Run:
         skip = set()  # F468: while the caps hold, every task but those `force ID` lets through
         if w is None:
             self.cap_said = self.cap_fell = False
-        elif C.fallback or own:
+        elif C.fallback or own or FB.multi():  # F503: another login takes them
             held = FB.USAGE_HELD  # F142: new tasks start down the chain instead
         elif cap_hold.FORCE_IDS:
             skip = cap_hold.only_forced(open_tasks(self.branch), cap_hold.FORCE_IDS)

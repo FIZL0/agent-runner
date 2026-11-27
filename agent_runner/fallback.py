@@ -12,7 +12,11 @@ provider hits its cap (a Claude usage limit, a provider's quota error).
   (`start_model`), and once the cap resets new tasks go back to their own model.
 * F142: past `[run] session_max` / `weekly_max` a new task whose model is claude's starts on the chain's first free
   one too (`free_model`); one with none waits for the reset (`no_free`). Running tasks are not touched.
-* With no chain, nothing here acts: a task waits for the reset as before.
+* F503: capped.json is keyed by login ('claude' its default login, 'claude@<name>' another, `cap_key`): a capped
+  login goes on with the same provider's next free login (`free_login`, the session's env `session_env`), then the
+  chain; a provider is capped only when all its logins are. A local model (ollama, no login) is a chain entry
+  like any other, normally the last. `session_max` / `weekly_max` hold the login whose usage they read.
+* With no chain and one login, nothing here acts: a task waits for the reset as before.
 """
 from __future__ import annotations
 
@@ -36,7 +40,7 @@ CAP_TOLD: dict[str, float] = {}  # sid -> when it was told to stop over a cap
 CAP_STOP = ('Stop at a clean point: {provider} has hit its usage cap ({why}). If your `{runner} done` is already '
             'running its test gate, let it finish and do nothing else. Otherwise do not run `done`: commit what is '
             'solid on task/{tid}, write in your journal what is done and what is left, then end your turn. The run '
-            'goes on with {tid} in this worktree on {model}, the next provider in [models] fallback.')
+            'goes on with {tid} in this worktree on {model}, the next free login or [models] fallback entry.')
 
 FALLBACK = """The runner started this session on {model} for task {tid}: an earlier session worked on it in this \
 worktree and stopped because {why}. Its commits on task/{tid} and its uncommitted edits are here as it left them. \
@@ -69,8 +73,79 @@ def mark_capped(name: str, until: float | None = None) -> None:
     state.C.notes('capped.json').write_text(json.dumps(d), encoding='utf-8')
 
 
+def login_names(prov: str) -> list[str]:
+    """F503: the logins of provider `prov`, the default first: claude's from `run login claude --as`; [''] (its one
+    login) for a provider with no logins of its own."""
+    if prov != 'claude':
+        return ['']
+    from agent_runner.claude_use import logins
+    return [r['name'] for r in logins()] or ['']
+
+
+def cap_key(prov: str, login: str = '') -> str:
+    """F503: the key in capped.json of `prov`'s login `login`: '<provider>' for its default login (as before
+    multi-login, and as the harness loop writes it), '<provider>@<login>' for another."""
+    names = login_names(prov)
+    return prov if not login or login == names[0] else f'{prov}@{login}'
+
+
+def free_login(prov: str, capped: dict | None = None) -> str | None:
+    """F503: the first login of `prov` that is not capped ('' its default with no name); None when all are."""
+    capped = capped_now() if capped is None else capped
+    return next((n for n in login_names(prov) if cap_key(prov, n) not in capped), None)
+
+
 def is_capped(name: str, capped: dict | None = None) -> bool:
-    return name in (capped_now() if capped is None else capped)
+    """A capped.json key ('<provider>@<login>') is capped; a provider is capped when every login of it is (F503)."""
+    capped = capped_now() if capped is None else capped
+    if '@' in name:
+        return name in capped
+    return free_login(name, capped) is None
+
+
+def earliest_reset(capped: dict | None = None) -> float | None:
+    """F503: when the first cap lifts (all capped and no local model: the run waits for it); None with none."""
+    capped = capped_now() if capped is None else capped
+    return min((u for u in capped.values() if u != float('inf')), default=None)
+
+
+def note_login(sid: str, login: str) -> None:
+    """F503: the Claude login session `sid` runs on ('' the default)."""
+    try:
+        state.C.notes(f'{sid}.login').write_text(login, encoding='utf-8')
+    except OSError:
+        pass
+
+
+def session_login(sid: str) -> str:
+    try:
+        return state.C.notes(f'{sid}.login').read_text(encoding='utf-8').strip()
+    except OSError:
+        return ''
+
+
+def session_env(tid: str, sid: str, model: str, held: frozenset = frozenset(), login: str | None = None) -> list[str]:
+    """F503: the env entries for session `sid` of `tid` on `model`: on claude, the login it runs on (`login`, else
+    the one a cap stop pinned in `<tid>.login`, else the first free one), noted for the session; [] elsewhere."""
+    from agent_runner.claude_use import login_env
+    pin = state.C.notes(f'{tid}.login')
+    if login is None:
+        try:
+            login = pin.read_text(encoding='utf-8').strip()
+        except OSError:
+            login = None
+    pin.unlink(missing_ok=True)
+    if provider(model) != 'claude':
+        return []
+    if login is None:
+        login = free_login('claude', with_held(held)) or ''
+    note_login(sid, login)
+    return [f'{k}={v}' for k, v in login_env(login).items()]
+
+
+def multi() -> bool:
+    """F503: claude has more than one login, so a cap moves to the next one even with no chain."""
+    return len(login_names('claude')) > 1
 
 
 def chain_next(model: str, capped: dict | None = None, whole: bool = False) -> str | None:
@@ -110,7 +185,7 @@ def with_held(held: frozenset) -> dict[str, float]:
 def start_model(model: str, held: frozenset = frozenset()) -> str:
     """The model a new task starts on: its own, unless its provider is capped (or in `held`) and the chain has a
     free one."""
-    if state.C.fallback and is_capped(provider(model), capped := with_held(held)):
+    if (state.C.fallback or multi()) and is_capped(provider(model), capped := with_held(held)):
         return chain_next(model, capped, whole=True) or model
     return model
 
@@ -219,16 +294,37 @@ def fallback_due(tid: str, sid: str) -> tuple[str, str] | None:
         d = json.loads(mark.read_text(encoding='utf-8'))
         mark.unlink()
         if isinstance(d, dict) and d.get('model'):
+            if isinstance(d.get('login'), str):
+                state.C.notes(f'{tid}.login').write_text(d['login'], encoding='utf-8')
             return d['model'], d.get('why') or 'its provider hit its cap'
     except (OSError, ValueError):
         pass
-    if not state.C.fallback or not (text := cap_text(sid)):
+    if not (state.C.fallback or multi()) or not (text := cap_text(sid)):
         return None
-    was = session_model(sid)
-    mark_capped(provider(was), reset_at(text))
-    if not (nxt := chain_next(was)):
+    if not (nxt := after_cap(tid, sid, text)):
         return None
-    return nxt, f'{provider(was)} hit its cap ({text[:120]})'
+    return nxt[0], nxt[2]
+
+
+def after_cap(tid: str, sid: str, text: str) -> tuple[str, str | None, str] | None:
+    """F503: session `sid` of `tid` hit a cap (`text`): its login is marked capped, and (model, login, why) says where
+    the task goes on: the same model on its provider's next free login, else the chain's next free entry (its
+    login picked at start: None); None when all are capped and no local model is left (it waits for
+    `earliest_reset`). A login to go on on is pinned in `<tid>.login` for the next session."""
+    was, login = session_model(sid), session_login(sid)
+    prov = provider(was)
+    key = cap_key(prov, login)
+    mark_capped(key, reset_at(text))
+    why = f'{key} hit its cap ({text[:120]})'
+    if (other := free_login(prov)) is not None:
+        state.C.notes(f'{tid}.login').write_text(other, encoding='utf-8')
+        return was, other, why
+    if nxt := chain_next(was):
+        return nxt, None, why
+    if (at := earliest_reset()) is not None:
+        log(f'{tid}: every login and provider is capped; it waits for the first reset, '
+            f'{dt.datetime.fromtimestamp(at):%a %H:%M}', None, tid)
+    return None
 
 
 def queue_fallback(tid: str, n: int, sid: str, why: str, model: str) -> None:
@@ -249,7 +345,7 @@ def caps(procs: dict, running: dict, type_into) -> None:
     """Each running Claude Code task that hit a cap, with a chain to go on: claude marked capped, the task told to
     stop at a clean point and commit (its `<tid>.fallback` mark says where it goes on), and ended once it has
     had CAP_GRACE s, or at once when nothing could be typed into it. One whose `done` passed is left to land."""
-    if not state.C.fallback:
+    if not (state.C.fallback or multi()):
         return
     for sid in [s for s in CAP_TOLD if s not in {p[1] for p in procs.values()}]:
         CAP_TOLD.pop(sid)
@@ -265,11 +361,12 @@ def caps(procs: dict, running: dict, type_into) -> None:
             continue
         if provider(was := session_model(sid)) != 'claude' or not (text := cap_text(sid)):
             continue  # the harness loop switches within its session
-        mark_capped('claude', reset_at(text))
-        if not (nxt := chain_next(was)):
-            continue  # every provider in the chain is capped: it waits for the reset, as with no chain
-        why = f'claude hit its cap ({text[:120]})'
-        state.C.notes(f'{tid}.fallback').write_text(json.dumps({'model': nxt, 'why': why}), encoding='utf-8')
+        if not (got := after_cap(tid, sid, text)):
+            continue  # every login and provider in the chain is capped: it waits for the reset, as with no chain
+        nxt, login, why = got
+        state.C.notes(f'{tid}.fallback').write_text(json.dumps({'model': nxt, 'why': why, 'login': login}),
+                                                   encoding='utf-8')
+        nxt = f'{nxt} on login {login or "default"}' if login is not None else nxt
         CAP_TOLD[sid] = time.time()
         said = type_into(n, procs, CAP_STOP.format(provider='claude', why=text[:120], runner=state.C.command, tid=tid,
                                                    model=nxt))

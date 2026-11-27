@@ -2209,6 +2209,13 @@ Each login must be a separate real account (a work or Team account beside a pers
 Holding extra subscriptions only to get past usage limits breaks Anthropic's terms (and OpenAI's and GitHub's), and the
 accounts can be banned.
 
+Caps are kept per login (F503): `<notes>/capped.json` keys the default login as `claude` and another as
+`claude@NAME`. A task whose login hits a cap goes on in its worktree on the next free login of the same provider
+(same model, a new session told to read the work), then down `[models] fallback`; claude counts as capped only when
+every login is. A local model (ollama) is a chain entry like any other, normally the last. `[run] session_max` /
+`weekly_max` hold the login whose usage they read (the default login's), so new tasks start on another login. With
+every login and provider capped and no local model, the task waits for the earliest reset.
+
 ### Fallback chain
 
 `[models] fallback` is a list of models a task goes on with when its provider hits a cap, in order:

@@ -3,6 +3,7 @@
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
 ## Unreleased
+- Added: usage caps are kept per Claude login: a capped login goes on with the next free login, then `[models] fallback` (a local model normally last); session_max / weekly_max hold only the login they read; all capped and no local model waits for the earliest reset (F503).
 - Changed: the settings area (types, checks, toml edits) moved from config.py to config_settings.py, no behaviour change (C61).
 
 - Changed: a merge is not tested again when the shared branch moved during its gate only by the runner's own gated merges on other files; a hand commit, a shared file or a `runner.toml` change still tests it again (F493).
