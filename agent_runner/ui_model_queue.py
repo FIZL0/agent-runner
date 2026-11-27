@@ -531,6 +531,14 @@ def _need_devices(text: str) -> list[dict]:
         return []
 
 
+def concept_row_news(k: str, copy: str) -> dict:
+    """F197a: a concept row's 'version', 'news' ('new', 'updated' or '') and 'news_words' (`concept_news`)."""
+    if not S.C or not k:
+        return {'version': '', 'news': '', 'news_words': ''}
+    from agent_runner import concept_news
+    return concept_news.news(S.C, k, copy)
+
+
 def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
     """(needs-you items, concepts) from `status.waiting_ok()`'s list; shelved items are left out of both."""
     needs, concepts = [], []
@@ -544,6 +552,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
             url = '' if url.startswith('/concept/') else url  # F406e: no claude.ai page: `copy` is the page
             concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
             concepts[-1]['lead'] = concept_chat_text(concepts[-1])  # B219a: the run page's first message opens with it
+            concepts[-1].update(concept_row_news(k, concepts[-1]['copy']))  # F197a: New / Updated
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
                       'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
                       'age': P.age(stamps.get(tid, ''), now),

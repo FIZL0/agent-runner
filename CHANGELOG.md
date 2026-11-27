@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: the run knows a concept's New and Updated: never opened is New, changed after its details popup was opened is Updated with a few words on what changed; one record every device shares. `plan concept-updated K "<what changed>" [--file PAGE]` tells the run a page republished at the same link changed, and the run app's `concept_opened` action (or `plan concept-opened K VERSION`), sent when a concept's details popup opens, clears both; the guide's concepts topic tells chats to run the first (F197a).
 - Changed: on the run page, the Run card's More… sheet lists every run control shown now (slot +1 and -1, pause or go on, stop or take the stop back, Start the run while no run is up joined it), each row with its icon on the left and its key in `agent-runner ui` on the right (B763b).
 - Removed: the pick-links command and the concept branch of /pick; an old concept link answers with a short page saying to pick in Concepts and changes nothing; a pick sheet's Send still answers (C40b).
 - Added: a chat whose answer ends on several questions has each filed under Needs you as an item of its own, a question with no options too, in one commit; a retry files none twice, and the chat closes only once all are filed (F192b1b).

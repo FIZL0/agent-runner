@@ -43,7 +43,10 @@ on the page (they do not work in the Claude app): the person picks in Concepts o
 in the chat. While the concept is
 shown here, a question or a change in their reply, even after "yes", "good" or "very good" ("yes its good, does it
 still handle X? Y should have Z too"), is not a pick: answer it, update the same page (publish it again to the
-same file, then `open`), and build nothing. Queue the build only on a plain go with no change asked ("build it",
+same file, then `open`), and build nothing. Once a filed concept's page is published again, run `{cmd} plan
+concept-updated <its id> "<what changed, a few words>"` (with `--file <the page>` when you have the page as a
+file, so the run's copy is refreshed): the same link hides the change from the run, which then
+shows the concept as Updated. Queue the build only on a plain go with no change asked ("build it",
 "queue it", "go with B"): `{cmd} plan approve <the concept's id> "<the option they chose>"`, not a fresh `plan
 add`; a no or another direction: `{cmd} plan revise <its id> "<what to change>"`.
 Queue a concept (`{cmd} plan add K "..."`) only when they say queue it, later, or add a task. Queued one by
