@@ -853,9 +853,7 @@ def releasing(tid: str, branch: str) -> str:
 def release_first(tid: str, branch: str) -> str:
     """The release `tid`'s merge waits for: one busy (`releasing`), or (B849b) one a recent pick found held by the
     merge under way alone (`sched.ready_release`); '' for none, or for a release's own merge."""
-    if P.release(tid):
-        return ''
-    return releasing(tid, branch) or sched.ready_release(branch)
+    return '' if P.release(tid) else releasing(tid, branch) or sched.ready_release(branch)
 
 
 def hold_for_release(tid: str, branch: str) -> None:
@@ -866,8 +864,10 @@ def hold_for_release(tid: str, branch: str) -> None:
     while v := release_first(tid, branch):
         if v != said:
             said = v
-            note(f'{tid}: waits to merge: {v} is releasing' if releasing(tid, branch) else f'{tid}: waits to merge: {v} starts first')
-            log(f'{tid}: waits to merge: {v} goes first; it merges once {v} has landed, or cannot start')
+            busy = releasing(tid, branch)
+            note(f'{tid}: waits to merge: {v} ' + ('is releasing' if busy else 'starts first'))
+            log(f'{tid}: waits to merge: {v} ' + (f'is releasing; it merges once {v} has landed' if busy else
+                                                  'starts first; it merges once it has landed, or cannot start'))
         time.sleep(RELEASE_POLL)
     if said:
         log(f'{tid}: {said} is no longer releasing; merging task/{tid} now')
