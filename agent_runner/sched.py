@@ -614,6 +614,7 @@ def claim_task(t: tuple, h: Held, branch: str):
         return None
     if over := plansync.TOOK.pop(t[0], ''):
         log(over)  # B857: a gone run's claim, not refreshed for plansync.TAKEOVER
+        fetch_taken(t[0])  # F467: it starts from the task/<ID> branch the gone run pushed
     FETCHED[0] = 0.0  # in-repo: the merge that closed it may have landed since the last fetch
     if t[0] not in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
         plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
@@ -630,6 +631,27 @@ def claim_task(t: tuple, h: Held, branch: str):
             log(f'{t[0]}: {cl.who} claimed {b[0]} first and it clashes; given way')
             return None
     return t
+
+
+def fetch_taken(tid: str) -> bool:
+    """F467: fetch the task/<tid> branch a gone run pushed into local took/<tid>, which `slots.start` checks out
+    instead of a fresh fork. False when there is none (it never pushed) or no remote to fetch from."""
+    from agent_runner.gitops import _net
+    remote = C.push_remote
+    if not remote or git('remote', 'get-url', remote).returncode:
+        return False
+    got = _net(ROOT)('fetch', '-q', remote, f'+refs/heads/task/{tid}:refs/heads/took/{tid}').returncode == 0
+    if got:
+        log(f'{tid}: starts from the task/{tid} branch the gone run pushed')
+    return got
+
+
+def took_base(tid: str) -> str:
+    """F467: the commit of took/<tid> (what `fetch_taken` fetched), the branch dropped, or '' when there is none."""
+    sha = git('rev-parse', '-q', '--verify', f'refs/heads/took/{tid}').stdout.strip()
+    if sha:
+        git('branch', '-D', f'took/{tid}')
+    return sha
 
 
 PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
