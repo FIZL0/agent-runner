@@ -33,7 +33,7 @@ def test_switch():
 
 
 def test_loop_no_hold():
-    old = state.C
+    old, old_loop = state.C, loop.C
     try:
         for on, want in ((True, True), (False, False)):
             loop.C = state.C = SimpleNamespace(run=run_cfg(on))
@@ -41,7 +41,7 @@ def test_loop_no_hold():
                     mock.patch('agent_runner.claude_use.account', lambda c: True):
                 eq(loop.capped(False) is not None, want, f'usage_limits={on}: held at 100%')
     finally:
-        loop.C = state.C = old
+        state.C, loop.C = old, old_loop
 
 
 def test_status_hidden():
