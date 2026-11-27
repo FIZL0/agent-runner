@@ -221,6 +221,7 @@ def to_answer(filed: dict[str, dict], plan_lines: list[str], commit_of: Callable
 # F492: `issues_trust = "approve"`: no agent sees an issue's text until the person approves it.
 APPROVE = 'approve'
 OPTIONS = ('Approve', 'Decline')
+APPROVED = 'approved:'  # a gates key for an approved issue whose task is not filed yet (tried again each look)
 
 
 def gate(number: int, url: str) -> tuple[str, str]:
@@ -261,6 +262,8 @@ def settle_gates(gates: dict[str, int], todo, done) -> list[tuple[str, int, str]
     from agent_runner import plan as P, plan_drop
     out = []
     for tid, n in sorted(gates.items()):
+        if tid.startswith(APPROVED):
+            continue
         ls = list(P.lines(todo))
         box = next((m.group(2) for l in ls if (m := P.ITEM.match(l)) and m.group(3).rstrip('.') == tid), None)
         if box == '~':

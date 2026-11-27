@@ -212,11 +212,21 @@ def watch_issues(branch: str, force: bool = False) -> list[str]:
                 git('checkout', '-q', '--', rel, done_rel)
                 continue
             gates.pop(gid, None)
+            if v == I.APPROVE:
+                gates[f'{I.APPROVED}{n}'] = n
             I.write_filed(gates_f, gates)
             log(f'{gid}: {I.marker(n)} {v}d by the person')
-            issue = next((i for i in got if i['number'] == n), None)
-            if v == I.APPROVE and issue:
+        for key, n in sorted(gates.items()):  # approved: filed now, or on a later look when filing failed
+            if not key.startswith(I.APPROVED):
+                continue
+            if issue := next((i for i in got if i['number'] == n), None):
                 file_issue(issue, 'skeptical')
+                if not any(f.get('number') == n for f in book.values()):
+                    continue
+            else:
+                log(f'{I.marker(n)} was approved but is no longer open: nothing filed')
+            gates.pop(key, None)
+            I.write_filed(gates_f, gates)
         for issue in got:
             n = issue['number']
             if n in seen:

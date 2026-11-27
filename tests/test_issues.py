@@ -104,6 +104,7 @@ def approve_gate():
         assert got_v == [(g7, 7, 'approve'), (g8, 8, 'decline')], got_v
         assert f'**{g7}**' not in todo.read_text() and f'**{g8}**' not in todo.read_text()
         assert 'TITLEX' not in todo.read_text() + done.read_text()
+        assert I.settle_gates({'approved:9': 9}, todo, done) == []
         t, long = I.task(got[0], I.issue_trust(got[0], I.APPROVE))
         assert 'TITLEX' in t and 'Trust: skeptical' in long[4], long
     assert I.verdict('your answer (DECIDE x): Decline') == 'decline' and I.verdict('') == 'decline'
