@@ -140,6 +140,11 @@ const drop = async (id, by) => { const n = sent.length; noClick = false; const y
   y = start('F1'); move(y + 130); S.snap.queue[0] = {...S.snap.queue[0], state: 'running s1 1m', menu: []}; render(); move(y + 131); fire('pointerup', {}); out.ran = [rows(), last(), !!grip('F1')]; land();
   y = start('V6'); move(y - 130); S.snap.queue[3] = {...S.snap.queue[3], started: true, grip: false, menu: []}; render(); const n = sent.length; move(y - 131); fire('pointerup', {}); out.started = [GR.d, sent.length - n, !!grip('V6'), rows()];
   PM.did = [{id: 'F7', k: 'menu_remove', back: true, cid: 'x', at: now, ms: 9000, q: {...S.snap.queue[4]}, down: []}]; const f7 = S.snap.queue.splice(4, 1); render(); out.undone = [rows().includes('F7'), !!grip('F7')]; S.snap.queue.splice(4, 0, ...f7); render(); out.back = [out.back, !!grip('F7')]; PM.did = [];
+  const body = id => cardOf(id).all.find(e => e.nodeName === 'b'), hold = async (id, by) => { const n = sent.length; noClick = false; const y = 125 + 60 * at(id);
+    fire('pointerdown', {target: body(id), clientY: y}); const held = GR.d; later.splice(0).forEach(f => f()); const up = !!GR.d; move(y + by); fire('pointerup', {clientY: y + by}); const swallowed = noClick;
+    later.splice(0).forEach(f => f()); await tap(body(id)); return [held, up, rows(), sent.slice(n), opened(), swallowed, GR.d] };
+  out.holdRow = await hold('F1', 130); land(); out.holdStill = await hold('F1', 0); land();
+  { const y = 125; fire('pointerdown', {target: body('F1'), clientY: y}); move(y + 40); later.splice(0).forEach(f => f()); out.holdSwipe = [GR.d, rows()]; fire('pointerup', {clientY: y + 40}) }
   S.f.planq = 'x'; PM.did = []; out.search = planHTML().includes('data-grip');
   console.log(JSON.stringify(out));
 })();
@@ -196,6 +201,9 @@ def test_page(tmp: Path) -> None:
     eq(o['ran'], [['B2', 'F3', 'F1', *start[3:]], mv('F1', 'after', 'F3'), True], 'a task that started meanwhile is moved')
     eq(o['started'], [None, 0, False, start], 'a release that started meanwhile is not')
     eq((o['undone'], o['back'][1]), ([True, False], True), 'a row whose Remove is undone: once the plan has it')
+    eq(o['holdRow'], [None, True, ['B2', 'F3', 'F1', *start[3:]], [mv('F1', 'after', 'F3')], ['F1'], True, None], 'F477: a hold on the row body picks it up and a drag moves it; its click is swallowed, a tap after opens it')
+    eq(o['holdStill'], [None, True, start, [], [], True, None], 'held and let go in place: nothing moves, its click is swallowed (the tap after shuts the row again)')
+    eq(o['holdSwipe'], [None, start], 'moved before the hold ends: no drag')
     eq(o['search'], False, 'none in a search')
 
 
