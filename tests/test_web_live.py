@@ -1569,5 +1569,33 @@ console.log(JSON.stringify([one,[ends,downs]]));
         eq(json.loads(r.stdout), [[1, 0, False, 1], [1, 1]], 'a press takes the terminal to its end; the history still goes back its own way')
 
 
+def test_task_links_f482(tmp: Path) -> None:
+    """F482: a known task id in a reply is a link that opens its sheet in Work; #task-ID opens it on load and on hashchange."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("q('[data-taskgo]')){e.preventDefault();taskGo(" in page, 'a press on a task link opens the task')
+    check('return taskLinks(h,taskIds())' in page, 'replies link the ids of known tasks')
+    if not shutil.which('node'):
+        return
+    got = logic_js([['taskLinks', '<p>B493 and F453, not X1 or <a href="u">B493</a></p>', ['B493', 'F453']],
+                    ['placeOf', '{}', '#task-B493', False, []], ['placeOf', '{}', '#task-', False, []]])
+    eq(got[0], '<p><a href="#task-B493" class="tasklink" data-taskgo="B493">B493</a> and '
+       '<a href="#task-F453" class="tasklink" data-taskgo="F453">F453</a>, not X1 or <a href="u">B493</a></p>', 'known ids become links')
+    eq(got[1], {'v': 'plan', 't': '', 'link': True, 'task': 'B493'}, '#task-B493 opens Work with the task')
+    eq(got[2]['link'], False, 'a #task- with no id is no link')
+    src = ''.join(page[page.index(f'function {f}('):].split('\n', 1)[0] + '\n' for f in ('taskGo', 'placeLoad'))
+    (tmp / 'driver.js').write_text(src + r"""
+const S={taskGo:'B493',view:'home',thread:'c1',taskOpen:{}}, opened=[];
+const taskIsOpen=(l,id)=>S.taskOpen[l]===id, openTask=id=>{opened.push(id);S.taskOpen.queue=id}, render=()=>{}, loadFeed=()=>{};
+placeLoad();
+const one=[S.view,S.thread,S.taskGo,opened.slice()];
+taskGo('B493');
+console.log(JSON.stringify([one,opened]));
+""", encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the task link', r.stderr[-900:])
+    if r.returncode == 0:
+        eq(json.loads(r.stdout), [['plan', None, '', ['B493']], ['B493']], 'the link opens its sheet once; again keeps it open')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c), in_tmp(test_copilot_jump_b863)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c), in_tmp(test_copilot_jump_b863), in_tmp(test_task_links_f482)]))

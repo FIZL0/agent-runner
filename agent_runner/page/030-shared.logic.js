@@ -71,6 +71,7 @@ function placeOf(text,hash,projects,starting){
   if(known(hv))return{v:hv,t:'',link:true};
   const nd=h.match(/^need-([A-Za-z0-9][\w.-]*)$/);if(nd)return{v:'home',t:'',link:true,need:nd[1]};  // F150: an item of Needs you
   if(/^[cs]\d+$/.test(h))return{v:'home',t:h,link:true};
+  const tk=h.match(/^task-([A-Z]\d+[a-z0-9]*)$/);if(tk)return{v:'plan',t:'',link:true,task:tk[1]};  // F482: a task, its sheet open in Work
   let o;try{o=JSON.parse(text||'{}')}catch(e){}
   if(!o||typeof o!=='object')o={};
   const v=viewOf(o.v), t=typeof o.t==='string'?o.t:'';
