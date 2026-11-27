@@ -141,3 +141,31 @@ def chat_needs(sessions: list[dict]) -> list[dict]:
         out.append({'chat': r['name'], 'id': q['id'], 'title': r.get('title') or r['name'], 'question': q['question'],
                     'options': q['options'], 'at': int(r.get('at') or 0)})
     return out
+
+
+def live_needs() -> list[dict]:
+    """F486: `chat_needs` of this repository's live chats, for the `needs` command and status's Needs you, which run in
+    a process of their own with no cached transcript read: one read per live chat. [] when they cannot be read."""
+    try:
+        from agent_runner import ui_model as U
+        return chat_needs(U.control_rows(U.control_titles()))
+    except Exception:  # noqa: BLE001 - a nicety of Needs you: the filed items still show
+        return []
+
+
+def need_lines(rows: list[dict], indent: str = '') -> list[str]:
+    """F486: one 'cN - question [A (recommended) / B]' line per `chat_needs` row."""
+    out = []
+    for r in rows:
+        opts = ' / '.join(o['name'] + (' (recommended)' if o.get('rec') else '') for o in r.get('options') or [])
+        out.append(f'{indent}{r["chat"]} - {r["question"]}' + (f' [{opts}]' if opts else ''))
+    return out
+
+
+def with_chats(lines: list[str]) -> list[str]:
+    """F486: the `needs` command's lines (`plan.needs_lines`, its count last) with the live chats' DECIDE questions
+    before the count, counted too."""
+    if not (chats := need_lines(live_needs())):
+        return lines
+    n = len(lines) - 1 + len(chats)
+    return lines[:-1] + chats + ['1 thing needs you' if n == 1 else f'{n} things need you']
