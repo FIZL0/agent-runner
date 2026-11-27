@@ -52,6 +52,13 @@ def test_logins():
         check(PW not in text, 'use: output redacted')
         check(D.HIDDEN in text, 'use: the password came on stdin and was hidden')
         check("'LOGIN_USER': 'me@example.com'" in text, 'use: $LOGIN_USER')
+        dump = tmp / 'dump.txt'  # raw, not through the redactor
+        L.run_with('apple-id-free', [sys.executable, '-c',
+                   'import os,sys; open(sys.argv[1],"w").write(repr(sys.argv)+repr(dict(os.environ)))', str(dump)],
+                   project='proj', out=Out())
+        raw = dump.read_text()
+        check('LOGIN_USER' in raw and PW not in raw, 'use: no password on argv or in the environment (raw dump)')
+        check(not any(PW in p.read_text(errors='replace') for p in tmp.rglob('run.log')), 'no password in a run.log')
         out = Out()
         L.run_with('apple-id-free', ['sh', '-c', '"$LOGIN_ASKPASS" "Password:"'], askpass=True, project='proj', out=out)
         text = out.getvalue().decode()
@@ -72,7 +79,8 @@ def test_logins():
             check(False, 'a repo path is refused')
         except D.Refused:
             pass
-        check(not (repo / 'state' / 'secrets').exists(), 'nothing written in the repo')
+        check(not (repo / 'state' / 'secrets').exists() and not (repo / 'state' / 'logins.json').exists(),
+              'nothing written in the repo')
 
         # the CLI: `run login list` through login.main, the provider list untouched
         os.environ['AGENT_RUNNER_DEVICES'] = str(tmp / 'state')

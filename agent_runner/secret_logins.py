@@ -149,10 +149,9 @@ def run_with(name: str, cmd: list[str], *, askpass: bool = False, project: str |
 
 
 def type_cmd() -> list[str]:
-    """The command that types its stdin into the focused field."""
+    """The command that types its stdin into the focused field (macOS: stdin is the script, see `_typed`)."""
     if sys.platform == 'darwin':
-        return ['osascript', '-e', 'set t to do shell script "cat"',
-                '-e', 'tell application "System Events" to keystroke t']
+        return ['osascript', '-']
     if os.environ.get('WAYLAND_DISPLAY') and shutil.which('wtype'):
         return ['wtype', '-']
     if shutil.which('xdotool'):
@@ -163,9 +162,17 @@ def type_cmd() -> list[str]:
 def type_field(name: str, field: str, project: str | None = None) -> None:
     lg = get(name)
     project = project_here() if project is None else project
-    pw = password(name, lg, project)  # the project check also guards the username
-    value = pw if field == 'password' else lg.get('user') or ''
-    r = sp.run(type_cmd(), input=value.encode(), capture_output=True, timeout=60)
+    if field == 'password':
+        pw = value = password(name, lg, project)
+    else:
+        if not may_use(lg, project):
+            raise Refused(f'login {name} is not for project {project or "(none)"}')
+        pw, value = '', lg.get('user') or ''
+    data = value
+    if sys.platform == 'darwin':  # the script on stdin, never argv
+        q = value.replace('\\', '\\\\').replace('"', '\\"')
+        data = f'tell application "System Events" to keystroke "{q}"\n'
+    r = sp.run(type_cmd(), input=data.encode(), capture_output=True, timeout=60)
     if r.returncode:
         raise Refused('typing failed: ' + devices.Redactor([pw]).all(r.stderr).decode('utf-8', 'replace').strip())
 
@@ -203,6 +210,8 @@ def main(argv: list[str]) -> int:
             if not a.keep_password:
                 pw = getpass.getpass(f'password for {a.name} (hidden): ') if sys.stdin.isatty() \
                     else sys.stdin.readline().rstrip('\n')
+                if not pw:
+                    raise Refused('no password given; --keep-password changes the facts only')
             projects = a.project
             if projects is None and a.name not in load():
                 projects = [p] if (p := project_here()) else []
