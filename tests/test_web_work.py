@@ -51,5 +51,13 @@ def test_folds_and_jump() -> None:
     check('background:var(--bg)' in chip and 'border:1px solid' in chip, 'F517: each pill has its own solid background')
 
 
+def test_releases_in_up_next_and_scroll_spy() -> None:
+    """BUG3: no Releases section or chip; the marked chip follows scroll; a jump lands below the sticky bar."""
+    body = WORK[WORK.index('function workHTML'):]
+    eq("'Releases'" in body or 'pastrel' in WORK, False, 'no Releases section')
+    check("document.addEventListener('scroll'" in WORK and 'function workSpy' in WORK, 'the marked chip follows scroll')
+    check('workBarBottom(b,bar)' in WORK, 'a jump lands below the bar where it sticks')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_order, test_up_next, test_folds_and_jump]))
+    raise SystemExit(report([test_order, test_up_next, test_folds_and_jump, test_releases_in_up_next_and_scroll_spy]))
