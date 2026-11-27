@@ -550,10 +550,19 @@ function piCredentials() {
     }
   };
   let chain = Promise.resolve();
+  // F506: a named login (`run login <provider> --as NAME`) is kept beside the default one, under `<id>@<NAME>`;
+  // AGENT_RUNNER_LOGIN_AS names the login this session (or login) uses, none the default
+  const as = process.env.AGENT_RUNNER_LOGIN_AS || '';
+  const key = (id) => (as ? `${id}@${as}` : id);
+  const own = (k) => (as ? k.endsWith(`@${as}`) : !k.includes('@'));
   return {
-    async read(id) { return all()[id]; },
-    async list() { return Object.entries(all()).map(([providerId, c]) => ({ providerId, type: c?.type })); },
-    modify(id, fn) {
+    async read(id) { return all()[key(id)]; },
+    async list() {
+      return Object.entries(all()).filter(([k]) => own(k))
+        .map(([k, c]) => ({ providerId: as ? k.slice(0, -as.length - 1) : k, type: c?.type }));
+    },
+    modify(id0, fn) {
+      const id = key(id0);
       const run = chain.then(async () => {
         const unlock = await lock();
         try {
@@ -569,7 +578,7 @@ function piCredentials() {
       chain = run.catch(() => {});
       return run;
     },
-    async delete(id) { const data = all(); delete data[id]; save(data); },
+    async delete(id) { const data = all(); delete data[key(id)]; save(data); },
   };
 }
 
@@ -673,9 +682,16 @@ async function realProvider(name, modelId, custom) {
   return { call: (context, signal) => models.completeSimple(model, context, { signal }) };
 }
 
+// F506: the login the runner named for this session (login.harness_env), kept as a fallback model names none
+const LOGIN_GIVEN = process.env.AGENT_RUNNER_LOGIN_AS || '';
+
 async function loadProvider(spec, custom) {
   const at = spec.indexOf(':');
-  const provider = at < 0 ? spec : spec.slice(0, at), model = at < 0 ? '' : spec.slice(at + 1);
+  let provider = at < 0 ? spec : spec.slice(0, at), model = at < 0 ? '' : spec.slice(at + 1);
+  // F506: `<provider>@<login>:<model>` runs on that login (`run login <provider> --as <login>`), else the default one
+  const login = provider.includes('@') ? provider.slice(provider.indexOf('@') + 1) : LOGIN_GIVEN;
+  if (provider.includes('@')) provider = provider.slice(0, provider.indexOf('@'));
+  if (login) process.env.AGENT_RUNNER_LOGIN_AS = login; else delete process.env.AGENT_RUNNER_LOGIN_AS;
   if (!model) throw new Error(`harness: --model ${spec} names no model after the provider`);
   if (process.env.AGENT_RUNNER_HARNESS_PROVIDER) {
     const mod = await import(pathToFileURL(path.resolve(process.env.AGENT_RUNNER_HARNESS_PROVIDER)).href);
@@ -1203,6 +1219,8 @@ async function login(argv) {
   for (let i = 1; i < argv.length; i++) {
     if (argv[i] === '--provider') custom = JSON.parse(argv[++i]);
     else if (argv[i] === '--enterprise') enterprise = argv[++i] ?? '';
+    else if (argv[i] === '--as') process.env.AGENT_RUNNER_LOGIN_AS = argv[++i] || ''; // F506: a named login
+
     else throw new Error(`harness: --login: unknown argument ${argv[i]}`);
   }
   if (!name) throw new Error('harness: --login names no provider');
@@ -1247,7 +1265,8 @@ async function login(argv) {
   const dir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   await piCredentials().modify(id, async () => credential);
-  out({ saved: id, file: path.join(dir, 'auth.json') });
+  const as = process.env.AGENT_RUNNER_LOGIN_AS;
+  out({ saved: as ? `${id}@${as}` : id, file: path.join(dir, 'auth.json') });
   process.stdin.pause();
   return 0;
 }
