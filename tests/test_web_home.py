@@ -1205,5 +1205,50 @@ def test_concept_popup_f197b3(tmp: Path) -> None:
     eq((o['again'], o['opened']), (1, ['B1', 'K14', 'K14']), 'a second open posts nothing more; the popup opens each time')
 
 
+CHAT_OPEN_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const opened = [], posted = [];
+let live = ['c7'];
+const S = {sheet: 'need', snap: {needs: [{id: 'B1', label: 'CONFIRM', chat: 7}, {id: 'B2', label: 'CONFIRM'}],
+  concepts: [{id: 'K14', concept: 'K14', title: 'Lazy', chat: 7}, {id: 'K15', concept: 'K15', title: 'Wide'}]}};
+const env = {S, chats: () => live.map(name => ({name})), open: n => opened.push(n), closeSheet: () => { S.sheet = '' },
+  ctxKey: c => '+' + c.kind + ':' + c.id, document: {querySelector: () => null}, kbFocus: () => {},
+  outbox: (n, a) => posted.push(n), fetch: () => posted.push('fetch')};
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+const out = new Function('known', 'with (known) {' + slice('function chatOpenOf(', '\n') + '\n' + slice('function chatRowOf(', '\n') + '\n'
+  + slice('function about(', '\n}\n') + '\n}\nreturn {about, chatOpenOf, chatRowOf}}')(known);
+const r = {};
+out.about('concept:0'); r.concept = [opened.slice(), S.ctx || null, S.sheet];
+r.need = [out.chatOpenOf(out.chatRowOf('B1')), out.chatOpenOf(out.chatRowOf('B2')), opened.slice()];
+out.about('concept:1'); r.none = [opened.slice(), S.ctx && S.ctx.id];
+live = []; S.ctx = null; opened.length = 0;
+r.ended = out.chatOpenOf(out.chatRowOf('B1')); out.about('concept:0'); r.endedConcept = [opened.slice(), S.ctx && S.ctx.id];
+r.posted = posted;
+console.log(JSON.stringify(r));
+"""
+
+
+def test_chat_opens_open_chat_f209c1(tmp: Path) -> None:
+    """F209c1: Chat on a Needs you or Concepts row whose snapshot names 'chat' opens that chat and posts nothing; with
+    none, or once that chat has left the chat list, it is the new chat view as before."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("chatOpenOf(chatRowOf(tid)))return;" in page, 'a Needs you card\'s Chat tries the open chat first')
+    if not shutil.which('node'):
+        print('  (no node here: the open chat script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(CHAT_OPEN_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs Chat', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['concept'], [['c7'], None, ''], "a concept's Chat opens c7, no new chat view, the sheet closes")
+    eq(o['need'], [True, False, ['c7', 'c7']], "a Needs you row's Chat opens c7; a row with no chat does not")
+    eq(o['none'], [['c7', 'c7', '+concept:K15'], 'K15'], 'a concept with no open chat gets the new chat view')
+    eq((o['ended'], o['endedConcept']), (False, [['+concept:K14'], 'K14']), 'an ended chat falls back to the new chat view')
+    eq(o['posted'], [], 'nothing is posted')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_home_f426a), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a), in_tmp(test_home_new_chat_f196f), in_tmp(test_concept_popup_f197b3)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_home_f426a), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a), in_tmp(test_home_new_chat_f196f), in_tmp(test_concept_popup_f197b3), in_tmp(test_chat_opens_open_chat_f209c1)]))

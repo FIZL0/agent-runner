@@ -103,6 +103,7 @@ document.addEventListener('click',async e=>{
     if(rq.ask){S.sure=c.key+(tid?':'+tid:'');render(true);return}  // F82: asked in the page, no browser dialog
     if(c.needs==='n'&&!/^\d+$/.test(n))return toast('Type how many slots first',true);
     S.sure=null;S.f.slotsn='';
+    if(c.chat&&/^(need|concept)$/.test(c.where)&&chatOpenOf(chatRowOf(tid)))return;  // F209c1: its open chat, nothing sent
     if(c.chat&&c.where==='need'){const k=needConcept(tid,S.snap.concepts);if(k>=0){if(S.sheet)closeSheet();about('concept:'+k);return}}  // B219b: nothing sent until the first message
     if(c.chat){const n=c.where==='need'&&(S.snap.needs||[]).find(x=>x.id===tid);  // B139, C35: it asks a new chat
       newChat(rq.name,rq.args,`${c.label} ${tid}`,n?needChatAsk(n):`do ${tid} here`);return}

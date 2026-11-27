@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: in the run app, Chat on a Needs you item or concept that already has an open chat opens that chat instead of a new one (F209c1).
+
 - Added: the option-tasks store: a control session stores the tasks each DECIDE option queues, for one-tap queueing later (F192d).
 - Added: with several questions, the question's minimized line (shrunk while typing or by scrolling) shows the count, e.g. 1 of 3 (F192c1).
 - Added: `run login set|use|type|list|show|code` keeps website and account logins (an Apple ID) for agents, the password in the keyring or a 0600 file, never on argv or in chats (F466a).
