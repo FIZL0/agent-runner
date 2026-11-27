@@ -429,9 +429,42 @@ def line_refusal(tid: str, why: str, after: str | None, until: str | None, c, pr
         return (f'{prog}: the {m.group(1)} line waits for {", ".join(ids)}, still open, and no person is needed for that: '
                 f'write {label}, and the run goes on once it lands. If it does not wait for it, start with what the '
                 f'person does and name the task by its title, not its id. Nothing blocked.')
+    if not waits and (w := wait_refusal(tid, why, after, until, c, prog)):  # B810
+        return w
     if len(why) > LINE_MAX and not _has_ask_file(tid, c):
         return (f'{prog}: the {m.group(1)} line is {len(why)} characters, over {LINE_MAX}, and it has no ask file. '
                 f'Write one short sentence that starts with what the person does, the reason second, and the rest first '
                 f'to {ask_file(tid, c)} as {{"summary", "where", "steps": [...], "expect": [...], "shots": [{{"file", '
                 f'"caption"}}]}}. Nothing blocked.')
     return None
+
+
+# B810: a BLOCKED whose wait a machine can read: a rerun on a command's exit, or a held tool
+_PERSON_ACTS = re.compile(r'(?:^|[;:]\s|\.\s)\s*(?i:plug|unplug|unlock|sign|log|connect|turn|press|open|install|charge|insert|reboot|restart|'
+                          r'approve|accept|grant|add|set|enter|give|pair|tap|click|renew|pay|create)\b')
+_MACHINE_WAIT = re.compile(
+    r'(?i:\b(?:re-?runs?|reopens?|retr(?:y|ies)|try again|resumes?|goes on)\b[^.;]{0,80}?\b(?:when|once|after|until|if)\b'
+    r'|\b(?:exits?|returns?) (?:with )?(?:code |status )?0\b|\b(?:command|check|script|state)\b[^.;]{0,40}?\b(?:passes|succeeds)\b'
+    r'|\b(?:lock|tool|device|phone|iphone|slot|simulator|emulator)\b[^.;]{0,40}?\b(?:held|busy|in use|taken|locked)\b)')
+
+
+def machine_wait(why: str) -> bool:
+    """B810: whether a BLOCKED line waits for what a check can read (a command exiting 0, a held tool), not a person."""
+    body = re.sub(r'^\s*BLOCKED:', '', P.URL.sub('', why or ''))
+    return not _PERSON_ACTS.search(body) and bool(_MACHINE_WAIT.search(body))
+
+
+def wait_refusal(tid: str, why: str, after: str | None, until: str | None, c, prog: str) -> str | None:
+    """B810: why `done --blocked` refuses a BLOCKED line a machine can wait on, with no --after or --until; or None."""
+    if not re.match(r'\s*BLOCKED:', why or '') or until or (after or '').replace(',', ' ').split() or not machine_wait(why):
+        return None
+    tools, checks = sorted((c.run.get('tools') or {})), sorted((c.run.get('checks') or {}))
+    if tools or checks:
+        have = ', '.join([f'tool:{t}' for t in tools] + [f'check:{k}' for k in checks])
+        how = (f'run `run wait-for NAME` and stop, or block with --until tool:NAME or check:NAME instead '
+               f'(this project has {have})')
+    else:
+        how = ('this project has no [run.tools] or [run.checks]: file a task that adds one (`run plan add T ...`) '
+               'and block --after it')
+    return (f'{prog}: the BLOCKED line waits for a command, tool or lock the run can watch, and no person is needed for '
+            f'that: {how}. If a person must act, start with what they do (plug in, unlock, sign in). Nothing blocked.')
