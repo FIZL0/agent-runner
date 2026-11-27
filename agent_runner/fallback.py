@@ -190,7 +190,8 @@ def usage_held_logins() -> frozenset:
     """F514: the cap keys of claude's logins other than the default whose own usage (read from their own config
     dir's credentials) is at or past `[run] session_max` / `weekly_max`; none with one login or while forced. The
     default login's usage is read by the loop (`capped`, USAGE_HELD)."""
-    if state.FORCED[0] or not multi():
+    from agent_runner.cap_hold import limits_on
+    if state.FORCED[0] or not multi() or not limits_on(getattr(state.C, 'run', None)):
         return frozenset()
     from agent_runner.claude_use import logins
     from agent_runner.watch import login_usage

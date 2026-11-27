@@ -726,9 +726,11 @@ def event_words(tid: str, said: str, kinds: dict) -> str:
 
 def cap_held_line(st: dict, now: float) -> str:
     """F468: the usage caps holding new tasks, with the settings' caps; '' when they do not."""
-    from agent_runner.cap_hold import held_line
+    from agent_runner.cap_hold import held_line, limits_on
     from agent_runner.state import C
     caps = C.run if C else {'session_max': 90, 'weekly_max': 90}
+    if not limits_on(caps):
+        return ''
     return held_line(st, caps, now)
 
 
