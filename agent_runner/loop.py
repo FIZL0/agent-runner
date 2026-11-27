@@ -878,6 +878,7 @@ class Run:
         self.tagged = None
         for n in list(self.free_at):
             self.slot(n)
+        write_state(self.running, [m[0] for m in self.held_merges])  # F497: a slot's start shows at once
         self.after()
         return self.end()
 
