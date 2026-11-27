@@ -1095,5 +1095,60 @@ def test_page_gzip_b769a(tmp: Path) -> None:
         srv.stop()
 
 
+HOME_NEW_DRIVER = r"""
+const page = require('fs').readFileSync(0, 'utf8').replace(/\r\n/g, '\n');
+const grab = s => { const i = page.indexOf(s); if (i < 0) throw new Error('missing ' + s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); if (i < 0) throw new Error('missing ' + s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const acts = [], ta = {value: '', classList: {contains: () => false}};
+const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [], concepts: []}, view: 'home', thread: null, ctx: null,
+    atts: {}, ob: [], feeds: {}, sent: {}, came: []},
+  HI: {i: null}, FD: {}, HOME_PAGE: false, HB: '', TOUCH: () => false, store: {get: () => '', set: () => {}},
+  document: {querySelector: () => ta}, setTimeout: () => 0, Date, Math, JSON,
+  outbox: (name, args, o) => { const it = {cid: 'k' + (acts.length + 1), name, args, state: 'sending', at: Date.now(), ...o}; acts.push([name, args, !!o.newchat]); env.S.ob.push(it); return it },
+  chats: () => [], loadFeed: () => {}, render: () => {}};
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+env.env = env;
+const won = line('  if(it.newchat&&j.name)');
+new Function('known', 'env', 'with (known) {' + logic + line('const DRAFT_KEY=') + line('const boxKey=') + line('const feedOf=')
+  + line('const bornNow=') + line('const starting=') + line('const BORN_MS=') + line('const standRows=')
+  + line('const sessionOf=') + grab('function addSent(') + line('function carrySent(')
+  + line('function open(') + grab('async function send(') + line('function newChat(') + line("  S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open(")
+  + 'function answered(it,j){const now=Date.now();' + won + '}'
+  + 'env.send=send;env.answered=answered;env.standRows=standRows;env.state=n=>feedState({stand:String(n||"")[0]==="@",starting:starting(n),born:bornNow(n),info:null,chat:true});}')(known, env);
+const S = env.S, out = {};
+(async () => {
+  ta.value = 'what is up'; await env.send();
+  const it = S.ob[0];
+  out.sent = [acts, S.view, S.thread, env.state(S.thread), env.standRows().map(r => r.name)];
+  S.ob = [];  // settled: the outbox drops it
+  env.answered(it, {ok: true, name: 'c7', ask: 'what is up', at: Date.now() / 1000});
+  out.named = [S.thread, env.state(S.thread), env.standRows().map(r => [r.name, r.say])];
+  console.log(JSON.stringify(out));
+})().catch(e => { console.error(e.stack); process.exit(1) });
+"""
+
+
+def test_home_new_chat_f196f(tmp: Path) -> None:
+    """F196f: a new chat started from Home's message box goes as one from +: new_control through the outbox without
+    waiting, one stand-in opened in place that reads Starting the chat, and the server's answer (its name) turns that one
+    row into the chat, still starting, never Loading or ended."""
+    if not shutil.which('node'):
+        print('  (no node here: the Home new chat test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(HOME_NEW_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js')], input=W.PAGE.read_text(encoding='utf-8'),
+                       capture_output=True, text=True, encoding='utf-8', timeout=60)
+    eq(r.returncode, 0, 'node runs the Home new chat')
+    if r.returncode:
+        print(r.stderr)
+        return
+    o = json.loads(r.stdout)
+    acts, view, thread, state, rows = o['sent']
+    eq([(a[0], a[1].get('wait'), a[2]) for a in acts], [('new_control', False, True)], 'one new_control, not waited for, a new chat')
+    eq((view, thread, state, rows), ('home', '@k1', 'starting', ['@k1']), 'opened in place as one stand-in, Starting the chat')
+    eq(o['named'], ['c7', 'starting', [['c7', 'what is up']]], 'its name keeps one row, still starting, with the same words')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_home_f426a), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_home_f426a), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a), in_tmp(test_home_new_chat_f196f)]))

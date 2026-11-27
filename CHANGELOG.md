@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a new chat started from Home's message box goes the way one from + does, one row reading Starting the chat… until its name comes, now checked by a test (F196f).
 - Changed: a new chat shows its first message's words in its row and header from the tap until it has its own title, never its bare number or New chat between (F196e).
 - Changed: an open run page or Runner Home moves to a new version by itself once nothing would be lost or interrupted, back to the same view, chat and scroll place; otherwise the Refresh popup stays until then (F207).
 - Added: a waiting change's Review page is written when it starts waiting, and linked from its pull request body and its done write-up (F515).
