@@ -2,7 +2,7 @@
 
 With `[plan] lessons = true`, `run done` asks the session for one lesson (or 'none') only after a failed gate in
 this task or a person's plan change on it; a merge repair's prompt says its session may file one. Each trigger
-asks once per task; a clean task is never asked; it never blocks `done`.
+asks once per task (the repair session files its own: the task's done is past by then); a clean task is never asked; it never blocks `done`.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from agent_runner.gitops import git
 
-PERSON = re.compile(r'you said\b|do this instead', re.I)  # the notes `plan change` and a stuck answer write
+PERSON = re.compile(r' — you said\b')  # the notes `plan change` and a stuck answer write
 
 CHECK_FIRST = ('If a test or the git fence can enforce it, add or file that check instead of a lesson '
                '(`run plan add T …`); once the check exists, the lesson goes (`plan lesson drop ID "why"`).')
@@ -67,14 +67,15 @@ def ask(cwd: Path, tid: str, item: str, c) -> str:
     for w in new:
         _add(d / f'{tid}.asked', w)
     why = ' and '.join(WHY[w] for w in new if w in WHY)
-    return (f'Lesson? {why[:1].upper() + why[1:]}. {CHECK_FIRST} Otherwise, if it taught something the next '
+    return (f'Lesson? {why[:1].upper() + why[1:]}. First: {CHECK_FIRST[:1].lower() + CHECK_FIRST[1:]} Otherwise, if it taught something the next '
             f'agent on these files should know: `run plan lesson add "TEXT" --files …`; if not, nothing to do '
             f'(none). This does not hold up {tid}.')
 
 
-REPAIR_LINE = ('6. Lessons are on here: if this clash taught something the next agent on these files should know, '
-               'say so in your last words and file it with `run plan lesson add "TEXT" --files …`; if a test or '
-               'the git fence can enforce it, file that check instead (`run plan add T …`).\n')
+REPAIR_LINE = ('6. Lessons are on here. If this clash taught something, first: if a test or the git fence can enforce '
+               'it, file that check (`run plan add T …`) instead of a lesson. Otherwise, if the next agent on these '
+               'files should know it, file it with `run plan lesson add "TEXT" --files …` and say so in your last '
+               'words.\n')
 
 
 def repair_line(c) -> str:
