@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from contextlib import ExitStack
 
-from agent_runner import audit_fix, autorelease, freeze, pitch, plan as P, plat, plansync, pr, sched, stack
+from agent_runner import audit_fix, autorelease, freeze, lessons_ask, pitch, plan as P, plat, plansync, pr, sched, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -123,8 +123,7 @@ you used before are under another folder.
 
 def repair_prompt(batch: bool, **vals) -> str:
     text = re.sub(r'\[\[(.*?)\|(.*?)\]\]', lambda m: m.group(2 if batch else 1), REPAIR, flags=re.S)
-    from agent_runner import lessons_ask  # F414: a repair session may file a lesson
-    return text.format(**vals) + lessons_ask.repair_line(C)
+    return text.format(**vals) + lessons_ask.repair_line(C)  # F414: a repair session may file a lesson
 
 
 def last_words(sid: str) -> str:
