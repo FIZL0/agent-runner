@@ -306,6 +306,6 @@ def cmd_where(tid: str, base: str, page: bool, q: str | None, cwd: Path) -> int:
     if page or q:
         f = page_file(tid)
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(where_page_html(x, state.C.name if hasattr(state.C, 'name') else ''), encoding='utf-8')
+        f.write_text(where_page_html(x, state.project()), encoding='utf-8')
         print(f)
     return 0
