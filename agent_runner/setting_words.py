@@ -91,7 +91,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.auto_audit': ('work', 'Audit by itself', 'When the run is idle and so many tasks have landed, one looks for what is stale, unused or wasted. Off: none.'),
     'models.audit': ('work', 'Audit model', 'The model that audits what changed, also in an audit you add. A cheaper one finds less.'),
     'run.audit_tokens': ('work', 'Token cap per audit', 'An audit that uses more tokens than this stops and keeps what it found. 0: no cap.'),
-    'run.slot_memory': ('work', 'Slots keep memories', 'Slot, fix and repair sessions keep Claude Code\'s memories. Off, after the audit\'s move of them into lessons was OKed: they start with none.'),
+    'run.slot_memory': ('work', 'Slots keep memories', 'Slot sessions keep Claude Code\'s memories. Off: they start with none (after memories moved into lessons).'),
     'run.task_tokens': ('work', 'Token cap per task', 'A task that uses more tokens than this stops and is parked. 0: no cap.'),
     'run.task_usd': ('work', 'Dollar cap per task', 'A task that costs more than this at list price stops and is parked. 0: no cap.'),
     'run.context_warn': ('work', 'Warn about a full session', 'A session larger than this many thousand tokens is named in the log and told once to finish. Nothing stops. 0: never.'),
