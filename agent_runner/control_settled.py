@@ -446,3 +446,17 @@ def outcome(tid: str) -> tuple[str, str]:
             return ('was shelved', '') if any(tid in (a[1], a[2]) for a in P.asks(state.C.todo, all=True)) else \
                 ('no longer waits on the person', '')
     return 'no longer waits on the person', ''
+
+
+def several_questions(rows: list, ask: dict | None) -> list[tuple[dict, str]]:
+    """F192b1b: (its `chat_question.asks_of` entry, its DECIDE question as written) of each question the answer that
+    holds open question `ask` ends on, when it ends on more than one; [] otherwise."""
+    from agent_runner import chat_question
+    from agent_runner.control import message_text
+    said = ask and next((d for d in reversed(rows) if isinstance(d, dict) and d.get('type') == 'assistant'
+                         and d.get('uuid') == ask['id']), None)
+    if not said:
+        return []
+    text = message_text(said)
+    qs, asks = chat_question.decide_questions(text), chat_question.asks_of(text, ask['id'], bare=True)
+    return list(zip(asks, qs)) if len(qs) > 1 and len(asks) == len(qs) else []

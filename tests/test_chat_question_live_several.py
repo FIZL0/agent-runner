@@ -38,7 +38,7 @@ def test_several(w: World) -> None:
     eq([(a['id'], a['question']) for a in live['asks']], [('u7', 'Which look?'), ('u7#2', 'Which size?')], 'both, in order')
     eq([o['name'] for o in live['asks'][1]['options']], ['Big', 'Little'], 'each with its options')
     eq(live['ask']['id'], 'u7', 'ask is the first')
-    first = w.file(TWO.split('\n\nDECIDE: Which size')[0])
+    first = w.file(TWO.split('\n\nDECIDE: Which size')[0]).split(', ')[0]  # F192b1b: files both, the first first
     live = N.live('c6')
     eq(live['asks'][0].get('need'), first, 'a filed one says its item')
     from agent_runner import plan as P, state as S
