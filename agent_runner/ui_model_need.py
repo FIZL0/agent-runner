@@ -46,6 +46,8 @@ def need_answers(row: dict) -> list[dict]:
             or ['A', 'B', 'C']
     elif label == 'BLOCKED':
         names = ['Done']
+    elif label == 'READY':  # F445b
+        names = ['Looks good', 'Change it', 'Not now']
     else:
         names = []
     return [{'label': n[:1].upper() + n[1:], 'value': n[:1].upper() + n[1:]} for n in names]

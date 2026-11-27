@@ -906,6 +906,21 @@ before and after), then `plan restyle "<style>" --page <url> --from K7`:
 - approving the restyle (`plan approve K9`, or yes on Needs you) opens its build and reopens every task held
   on it with `style to use (restyle K9 approved): …` noted.
 
+### Ready items
+
+A task whose deliverable is for a person's eyes outside the code (a video, pictures, a post, a document) finishes
+with `done F290 "msg" --ready "Showcase video is ready: watch it" [--ready-link URL]`. It ticks and lands as any
+other task: its dependants go on and no release waits. Once it has landed, Needs you lists the item `ready-F290`
+(status, `needs`, `plan waiting`, the run page) until the person answers it:
+
+- **Looks good** (`plan confirm ready-F290`): the item closes.
+- **Change it** (`plan change ready-F290 "<words>"`): a follow-up is filed with their words, on the task's files;
+  F290 stays done.
+- **Not now** (`plan shelve ready-F290`): shelved (`plan waiting --all` lists it, `plan unshelve` brings it back).
+
+Its pictures or video go in the ask file `<notes>/asks/ready-F290.json`. It is not for a check's screenshots, and not
+beside a concept page or a `CONFIRM:`, which already ask the person. Code diffs are the Review page's.
+
 ### Research tasks
 
 A research task changes no product: it finds out, measures or checks, writes its findings and queues the
@@ -1929,6 +1944,8 @@ agent-runner done ID "MSG" [--blocked WHY [--after X,Y | --until CHECK,…]] [--
                                        --artifact: a concept's page (a K task without it takes the URL that
                                        `publish-page` recorded; --page FILE names its copy)
                                        --named: answers the removal check's list (**The removal check** above)
+                                       --ready WHAT [--ready-link URL]: a deliverable for a person's eyes
+                                       (**Ready items** above)
 agent-runner review [ID] [--base BRANCH]
                                        the spec review before `done`, a fresh one-shot on [models] review
                                        (**Spec review one-shot** above); its findings print

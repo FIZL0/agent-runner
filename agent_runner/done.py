@@ -38,6 +38,9 @@ approves an option (`plan approve`). F74: it also keeps a local copy of the page
 for the run page to show inline: `--page FILE` (the HTML it was published from), else the newest .html file
 the worktree changed.
 
+F445b: `--ready WHAT [--ready-link URL]` (not with `--blocked`) is for a deliverable a person looks at or uses outside
+the code: the task ticks as any other, and once it lands Needs you lists WHAT until they answer (`ready.py`).
+
     ./run done K7 "K7: three layouts for the settings page" --artifact https://claude.ai/code/artifact/…
 """
 from __future__ import annotations
@@ -97,6 +100,10 @@ def main(argv: list[str] | None = None) -> int:
                     help='with --artifact: the local HTML file the page was published from; a copy is kept '
                          '(<notes>/concepts/<ID>.html) for the run page to show inline')
     ap.add_argument('--no-test', action='store_true', help='skip the gate (say why in the message)')
+    ap.add_argument('--ready', metavar='WHAT',
+                    help='F445b: what the task made for a person to look at or use outside the code, as Needs you '
+                         'says it once the task lands ("Showcase video is ready: watch it")')
+    ap.add_argument('--ready-link', metavar='URL', default='', help='with --ready: where it is')
     ap.add_argument('--named', metavar='ANSWERS',
                     help='answers the removal check\'s list of what still names what this diff removes, e.g. '
                          '"1 filed B12; 2-3 kept because <why>"')
@@ -105,6 +112,10 @@ def main(argv: list[str] | None = None) -> int:
     cwd = c.root
     if why := until_refusal(a, c):  # F427b
         print(why, file=sys.stderr)
+        return 2
+    if a.ready and (a.blocked or a.artifact or plan.concept(a.id)):  # F445b: never twice with a concept or an ask
+        print(f'{PROG}: --ready goes with a task that ticks, not with --blocked or a concept page, which ask the '
+              f'person already. Nothing ticked.', file=sys.stderr)
         return 2
     if why := asks.line_refusal(a.id, a.blocked, a.after, a.until, c, PROG):  # B795
         print(why, file=sys.stderr)
@@ -248,6 +259,10 @@ def record(a, c) -> int:
     else:
         plan.tick(a.id)
         print(f'ticked {a.id}')
+    if not a.blocked and getattr(a, 'ready', None):  # F445b: listed under Needs you once it lands
+        from agent_runner import ready
+        ready.keep(c, a.id, a.ready, getattr(a, 'ready_link', ''))
+        print(f'{ready.item_id(a.id)} lists under Needs you once {a.id} lands: {a.ready}')
 
     g = partial(git, cwd=cwd)
 

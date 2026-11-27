@@ -1075,3 +1075,10 @@ _Said_: horizontal scrolling if there's multiple questions
 _On screen_: 1 of 3
 _In code_: questionRowHTML, .qmany, .qswipe
 _Avoid_: carousel, slider
+
+**Ready item**:
+A Needs you item for something a landed task made for a person to look at or use outside the code
+_Said_: a new review category
+_On screen_: Showcase video is ready: watch it
+_In code_: ready.py, done --ready, ready-ID
+_Avoid_: deliverable review

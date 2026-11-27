@@ -93,6 +93,9 @@ the items in plain words, when you cannot tell which. Map the answer to one of t
 An item `pitch3` ([run] approve): landed work waits for their yes to be pushed. Give its page; yes: `{cmd} pitch
 approve pitch3`; no, to all or one change: `{cmd} pitch no pitch3 [--reopen F1] [--drop F2] --why "<their words>"`
 (undone here; ask whether to reopen or drop). Say what it prints: it may wait for an earlier pitch.
+An item `ready-F290`: what a landed task made for them to look at or use (a video, a post); the task is done.
+Looks good: `{cmd} plan confirm ready-F290`; change it: `{cmd} plan change ready-F290 "<their words>"` (files a
+follow-up); not now: `{cmd} plan shelve ready-F290`.
 A DECIDE whose question ends in a bracket, `[Full (recommended) / Small]`, or whose ask file has `options`, shows
 them as answer buttons (F181c): a name they reply is `{cmd} plan confirm ID "<the name>"`.
 A DECIDE with several questions (F18, `[run] questionnaires`) has a pick sheet: its line reads "<what is ready>. Pick

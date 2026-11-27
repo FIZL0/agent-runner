@@ -43,6 +43,11 @@ and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `s
 ~/.claude/ACCESS.md if it exists; the `BLOCKED:` line then names, after what the person does, the exact command that failed and its error \
 (e.g. `BLOCKED: Log in to Cloudflare again; wrangler OAuth login cannot change Workers Builds settings: Authentication error`).
 
+When the task's deliverable is itself for a person's eyes outside the code (a video, pictures, a post, a document), add \
+`--ready "<what is ready: what to do>"` (e.g. "Showcase video is ready: watch it"; `--ready-link <URL>` for where it is) \
+to `done`: the task still ticks, and once it lands the person answers it under Needs you; its pictures or video go in \
+the ask file named `ready-<ID>.json`. Not for a check's screenshots, nor beside a concept page or a `CONFIRM:`.
+
 Once `done` has run (or `done --blocked`), run `{runner} finish "<one line: what you did>"` and stop: it \
 records the summary and ends this session at once. If you hit a question only a person can answer and the work \
 should go on afterwards with what you know now, run `{runner} ask "<the question, with what you recommend, one short sentence>"` \
