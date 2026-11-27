@@ -39,7 +39,7 @@ function questionCard(n){
   const ask=questionAsk(n);
   const many=QN.held.has(n)?[]:questionAsks(n).filter(a=>questionShown(n,a)&&questionState(a,null,sent)==='ask');
   if(many.length>1&&!QN.min.has(questionKey(n,ask.id))&&!QN.auto.has(questionKey(n,ask.id))){questionRowKeepSoon(n);return questionRowHTML(n,many)}
-  return questionHTML(n,questionShown(n,ask),QN.held.get(n),sent,!!ask&&(QN.min.has(questionKey(n,ask.id))||QN.auto.has(questionKey(n,ask.id))));
+  return questionHTML(n,questionShown(n,ask),QN.held.get(n),sent,!!ask&&(QN.min.has(questionKey(n,ask.id))||QN.auto.has(questionKey(n,ask.id))),many);  // F192c1: the line counts them
 }
 /* an answer that settles an item is out of the outbox: done or discarded, /live says whether the question is still asked */
 function questionNeedSent(n,sent){

@@ -26,3 +26,4 @@
 .qone .qtop .icon{flex:none;width:var(--tap);height:var(--tap);margin:calc(-1*var(--s2)) calc(-1*var(--s2)) 0 0}
 .qcount{text-align:center;color:var(--muted);padding-top:var(--s1)}
 .main.sess.qaway .qmany{display:none}
+.qmin .qcount{padding-top:0;flex:none}  /* F192c1: the count on the minimized line */

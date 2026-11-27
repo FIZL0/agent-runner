@@ -29,10 +29,12 @@ const questionPill=(lines,cols,lit)=>lines.some((l,y)=>[...l.matchAll(FEED_PILL)
   const at=feedCells(l.slice(0,m.index));return Math.abs(at-(cols-feedCells(m[0].trim())-2)/2)<1&&lit(y,at+2)}));
 const questionIcon=d=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const questionLabel=o=>o.name+(o.rec?' (recommended)':'');
-function questionHTML(n,ask,held,sent,min){
+/* many: the questions shown (F192b2); the minimized line counts them when there are several (F192c1) */
+function questionHTML(n,ask,held,sent,min,many){
   const st=questionState(ask,held,sent);if(!st)return '';
+  const i=min&&many&&many.length>1?many.findIndex(a=>a.id===ask.id):-1, count=i<0?'':`<span class="qcount small">${questionCount(i,many.length)}</span>`;
   if(st==='held')return `<div class="card qcard qheld" role="status" data-k="question:${esc(n)}" data-v="held"><div class="row"><span class="grow">Sending “${esc(held.name)}”</span><button type="button" class="btn" data-qundo="${esc(n)}">Undo</button></div></div>`;
-  if(min)return `<div class="card qcard qmin" role="group" aria-label="Question, minimized" data-k="question:${esc(n)}" data-v="min:${esc(ask.id)}"><div class="row qrow" data-qrowshow="${esc(ask.id)}"><span class="grow ell">${esc(ask.question)}</span><button type="button" class="icon" data-qshow="${esc(ask.id)}" aria-label="Show question" title="Show question">${questionIcon('M6 15l6-6 6 6')}</button></div></div>`;
+  if(min)return `<div class="card qcard qmin" role="group" aria-label="Question, minimized" data-k="question:${esc(n)}" data-v="min:${esc(ask.id)}"><div class="row qrow" data-qrowshow="${esc(ask.id)}"><span class="grow ell">${esc(ask.question)}</span>${count}<button type="button" class="icon" data-qshow="${esc(ask.id)}" aria-label="Show question" title="Show question">${questionIcon('M6 15l6-6 6 6')}</button></div></div>`;
   return `<div class="card qcard" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(ask.id)}"><div class="row qtop qrow" data-qrowmin="${esc(ask.id)}"><span class="grow q">${esc(ask.question)}</span><button type="button" class="icon" data-qmin="${esc(ask.id)}" aria-label="Minimize question" title="Minimize question">${questionIcon('M5 12h14')}</button></div>${ask.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(ask.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(ask)}</div>`;
 }
 /* --- F192b2: several questions, the row: one card each in a sideways swipe row, with a count ----------------------- */
