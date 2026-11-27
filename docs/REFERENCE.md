@@ -196,6 +196,15 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   those started from the apps' control server, are not told; events older than a day are dropped; a run must be up. Not tried
   with real Claude sessions: typed-in delivery, a message arriving mid-turn, and how the transcript records it were tested
   only against made-up transcripts.
+- **Decided chats close** (F209b): when the person settles an item for good from the run page, the TUI or a pick link
+  (plan drop, confirm or approve, so also an answer or option button and `sheet`), the chats about it are closed in place
+  of being told: the process ends, the transcript stays (listed as closed, Resume brings it back), and run.log says
+  `control 4: closed, R81 was dropped by the person`. Shelve, revise, change (a No) and the rest type the line as before, as
+  does a decision made in a chat, by an agent or by the run. A chat stays open and is told when the person spoke last,
+  its last message asks another DECIDE, a background task or a take it started runs, a message is held, a question
+  dialog is up, it is about another item still under Needs you, or the person renamed it (run.log: `kept open, … but
+  <why>`); a chat whose turn is under way is looked at again once the turn ends. The event is marked before the close,
+  so a restarted run closes nothing twice.
 - **Their settings**: every control session, and the control server, gets `.runner/control-settings.json`
   with `--settings`: a SessionStart hook that runs `agent-runner control --brief`, which prints the control
   brief (so a resumed or compacted session gets it again). They run on `[models] control` with every tool

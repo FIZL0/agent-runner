@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: deciding an item for good on the run page, in the TUI or by a pick link (an answer or option button, approve, confirm or drop) closes the chats about it instead of typing a line into them; the transcript stays and Resume brings one back. Shelve, revise and a No still type the line, and a chat the person spoke in last, that asks another DECIDE, runs work, holds a message, has a question up, is about another waiting item or was renamed stays open (F209b).
+
 - Added: while a run is up, it reads the until checks blocked tasks wait on every 2 min, each check once a round, and reopens a task once all of its checks pass, committed as a merge's reopening; a check that cannot run for 30 min, or has not passed for 3 days, is one Needs you item that says which check, its last words and how to free the task (F427c).
 - Added: a chat that asks several questions shows one question card each in a sideways swipe row above the message box, with a count (1 of 3); answering or dismissing one moves to the next, and an answer names its question so the others stay open (F192b2).
 - Added: the run knows a concept's New and Updated: never opened is New, changed after its details popup was opened is Updated with a few words on what changed; one record every device shares. `plan concept-updated K "<what changed>" [--file PAGE]` tells the run a page republished at the same link changed, and the run app's `concept_opened` action (or `plan concept-opened K VERSION`), sent when a concept's details popup opens, clears both; the guide's concepts topic tells chats to run the first (F197a).
