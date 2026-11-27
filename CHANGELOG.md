@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a task that makes something for a person to look at or use (a video, pictures, a post) finishes with `done ID MSG --ready "Showcase video is ready: watch it"`: it ticks as any other, and once it lands Needs you lists the item until they answer Looks good (closes), Change it (files a follow-up with their words) or Not now (shelves) (F445b).
+
 - Added: the option-tasks store: a control session stores the tasks each DECIDE option queues, for one-tap queueing later (F192d).
 - Added: with several questions, the question's minimized line (shrunk while typing or by scrolling) shows the count, e.g. 1 of 3 (F192c1).
 - Added: `run login set|use|type|list|show|code` keeps website and account logins (an Apple ID) for agents, the password in the keyring or a 0600 file, never on argv or in chats (F466a).
