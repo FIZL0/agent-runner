@@ -31,15 +31,15 @@ def nav_views() -> list[str]:
 
 
 def lazy_panels() -> list[tuple[str, str]]:
-    m = re.search(r"const LAZY_PANELS=(\[.*?\]\]);", JS)
+    m = re.search(r"const LAZY_PANELS=(\[.*?\]\]);", JS, re.S)
     return [(k, v) for k, v, _ in json.loads(m.group(1).replace("'", '"'))]
 
 
 def test_panel_sets_match():
     nav, panels = nav_views(), lazy_panels()
-    eq([k for k, _ in panels], ['1', '2', '3', '4', '5'], 'F473: five panels, keys 1 to 5')
+    eq([k for k, _ in panels], ['1', '2', '3', '4', '5', '6', '7'], 'F484a: seven panels, keys 1 to 7')
     for _, v in panels:
-        check(v == 'sessions' or v in nav, f'F473: panel {v} is a view the Standard sidebar has', f'NAV: {nav}')
+        check(v in ('sessions', 'needs') or v in nav, f'F473: panel {v} is a view the Standard sidebar has', f'NAV: {nav}')
     # the layout only places the sidebar's rows: it hides none of them, so both layouts have the same panels
     for rule in re.findall(r'([^{}]+)\{([^{}]*)\}', CSS):
         sel, body = rule
@@ -47,7 +47,7 @@ def test_panel_sets_match():
             check('sidein' not in sel and '.ni' not in sel and 'data-view' not in sel and 'thread' not in sel,
                   f'F473: lazyrunner hides no panel ({sel.strip()})', body)
     for _, v in panels:
-        if v != 'sessions':
+        if v not in ('sessions', 'needs'):
             has(CSS, rf'\.ni\[data-view="{v}"\]', f'F473: the layout numbers panel {v}')
     # the other way: every view of the Standard sidebar stays in Lazyrunner's (the CSS above hides none) and the key
     # layer opens views only by pressing the sidebar's own [data-view] buttons
@@ -57,6 +57,16 @@ def test_panel_sets_match():
     # no view, panel or renderer of its own: no *HTML function, no new view, no body or sidebar drawn
     check(not re.search(r'function \w*HTML|S\.view=|\$\(\'(body|sidein|side)\'\)\.innerHTML|setHTML\(', JS),
           'F473: lazyrunner draws no view or panel of its own')
+
+
+def test_run_keys():
+    from agent_runner import ui_model as C
+    m = re.search(r"const LAZY_RUN_KEYS=(\[.*?\]);", JS)
+    keys = json.loads(m.group(1).replace("'", '"'))
+    tui = {c['tui'] for c in C.RUN_CONTROLS if c['where'] == 'run'}
+    for k in keys:
+        check(k in tui, f'F484a: run key {k} is a run control\'s terminal UI key')
+    has(JS, r"controlsOf\('run'\)\.find\(c=>c\.tui===k\)", 'F484a: the keys sheet reads the run controls list')
 
 
 def test_themes_css():
@@ -79,7 +89,7 @@ def test_js_parses():
 
 
 def main() -> int:
-    return report([test_panel_sets_match, test_themes_css, test_js_parses])
+    return report([test_panel_sets_match, test_run_keys, test_themes_css, test_js_parses])
 
 
 if __name__ == '__main__':
