@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: opening a concept's details popup, from Home's Needs you card or its Concepts row, clears its New or Updated badge on every device; View clears nothing (F197b3).
 - Fixed: a chat's live screen fits its terminal again when the box font loads late or its box changes size, so Copilot CLI's prompt wraps at the box's edge (B883).
 - Added: the Tools page lists each check a blocked task waits on, with its last result and when, the tasks that wait, and Check now; nothing when none waits (F427d).
 ## 0.85.0 (2026-11-28)

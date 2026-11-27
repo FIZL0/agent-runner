@@ -117,6 +117,10 @@ const needHead=n=>askWords(needAsk(n));
 const askChip=(n,kinds)=>/^[A-Za-z]+\d/.test(n.id)?kindChip(n.id,kinds):'';  // F195b: a tool or a pitch has no kind
 function needTap(n,kinds){const d=needD(n), k=d.steps.length, t=needTitle(n), say=[d.question?d.lead.join(' '):'',explainFirst(d.text)].filter(Boolean);
   return `<button class="asktap" data-needopen="${E_(n.id)}" aria-haspopup="dialog"><span class="askkind">${askChip(n,kinds)}<span class="asklab">${E_(needLab(n))}</span></span><b class="q">${needHead(n)}</b>${t?`<span class="small">${E_(t)}</span>`:''}${say.map(x=>`<span class="askdo">${askWords(x)}</span>`).join('')}<span class="small">${['Press for details',k>1?`${k} steps`:'',askChip(n,kinds)?'':E_(n.id),E_(n.age||'')].filter(Boolean).join(' · ')}</span></button>`}
+/* F197b3: what a Needs you item's details popup tells the run when it opens on a concept that is New or Updated
+   ({concept, version} for concept_opened), else null: only the popup clears them, never View */
+function conceptSeen(id,concepts){const c=(concepts||[]).find(x=>x.id===id||(x.concept||'')===id);
+  return c&&c.news&&c.version?{concept:c.concept||c.id,version:c.version}:null}
 /* F175a: a step's link to open and its command to copy */
 function stepMore(m,j){if(!m)return '';
   return (/^https?:/i.test(m.link||'')?`<div class="btns"><a class="btn" href="${E_(m.link)}" target="_blank" rel="noopener noreferrer">Open</a></div>`:'')
