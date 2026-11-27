@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-runner"
 dynamic = ["version"]
-description = "N Claude Code sessions working through a markdown task list, unattended: worktrees, a test gate, merges, pushes"
+description = "Coding agents work through a markdown task list in parallel, tested and merged, run from a web app on any device"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
