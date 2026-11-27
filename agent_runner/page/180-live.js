@@ -124,7 +124,7 @@ addEventListener('online',()=>redial('shown'));
 /* F207: a new version loads by itself once nothing would be lost or cut off (selfReload); else the popup stays and it
    looks again. Once per page print in this tab (RELOADED_KEY), so it never loops */
 const RELOADED_KEY='ar-reloaded';
-const SELF={down:0,moved:0,back:null,until:0};
+var SELF={down:0,moved:0,back:null,until:0};
 for(const t of ['pointerdown','touchstart'])document.addEventListener(t,()=>{SELF.down++},{capture:true,passive:true});
 for(const t of ['pointerup','pointercancel','touchend','touchcancel'])document.addEventListener(t,()=>{SELF.down=0;SELF.moved=Date.now()},{capture:true,passive:true});
 document.addEventListener('scroll',()=>{SELF.moved=Date.now()},{capture:true,passive:true});
@@ -132,7 +132,7 @@ function selfBusy(){
   const a=document.activeElement, sel=window.getSelection&&String(getSelection()||'');
   const anim=document.getAnimations?document.getAnimations().some(x=>x.playState==='running'&&x.effect&&x.effect.getTiming().iterations!==Infinity):false;
   return SELF.down>0||Date.now()-SELF.moved<1500||MO.scroll.size>0||anim||!!S.sheet||!!S.drawer||!!S.sure||!!sel
-    ||TK.state==='speaking'||!!TK.playing||!!(a&&a!==document.body&&(a.matches('input,textarea,select,[contenteditable]')))||S.ob.length>0;
+    ||TK.state==='speaking'||!!TK.playing||!!(a&&a!==document.body&&(a.matches('input,textarea,select,[contenteditable]')))||OB.busy;
 }
 function selfLook(){
   if(SELF.gone)return;

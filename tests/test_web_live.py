@@ -1598,6 +1598,46 @@ console.log(JSON.stringify([one,opened]));
         eq(json.loads(r.stdout), [['plan', None, '', ['B493']], ['B493']], 'the link opens its sheet once; again keeps it open')
 
 
+SELF_RELOAD_CDP = r"""
+const [port, url] = process.argv.slice(2);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  let tabs = null; const up = Date.now() + 30000;
+  while (!tabs) { try { tabs = await (await fetch(`http://127.0.0.1:${port}/json`)).json() } catch (e) { if (Date.now() > up) throw e; await sleep(200) } }
+  const ws = new WebSocket(tabs.find(t => t.type === 'page').webSocketDebuggerUrl);
+  await new Promise(r => ws.onopen = r);
+  let id = 0, loads = 0; const wait = {};
+  ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && wait[m.id]) { wait[m.id](m.result); delete wait[m.id] } if (m.method === 'Page.loadEventFired') loads++ };
+  const call = (method, params = {}) => new Promise(r => { const i = ++id; wait[i] = r; ws.send(JSON.stringify({id: i, method, params})) });
+  const ev = async x => { const r = await call('Runtime.evaluate', {expression: x, returnByValue: true}); return r && r.result ? r.result.value : undefined };
+  const until = async (f, ms = 20000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await f()) return true; await sleep(200) } return false };
+  const ready = () => until(async () => await ev("typeof S!=='undefined'&&!!S.live"));
+  const say = (k, v) => console.log(k + ' ' + JSON.stringify(v));
+  const popup = () => ev("!document.getElementById('news').hidden");
+  await call('Page.enable');
+  await call('Emulation.setDeviceMetricsOverride', {width: 390, height: 844, deviceScaleFactor: 3, mobile: true});
+  await call('Emulation.setTouchEmulationEnabled', {enabled: true, maxTouchPoints: 5});
+  await call('Page.addScriptToEvaluateOnNewDocument', {source: "addEventListener('DOMContentLoaded',()=>{const st=document.createElement('style');st.textContent='#body>*{min-height:3000px}';document.head.appendChild(st)})"});
+  await call('Page.navigate', {url}); await until(async () => loads >= 1); await ready();
+  await ev("(()=>{const t=document.querySelector('[data-in]');t.focus();t.value='my draft';t.dispatchEvent(new Event('input',{bubbles:true}))})()");
+  console.log('NEW p1'); await until(popup); await sleep(2500);
+  say('focused', [loads, await popup()]);
+  await ev('document.activeElement.blur()'); await until(async () => loads >= 2); await ready();
+  say('blurred', [loads, await ev("(document.querySelector('[data-in]')||{}).value")]);
+  await ev('TK.rec={}');
+  console.log('NEW p2'); await until(popup); await sleep(2500);
+  say('mic', [loads, await popup()]);
+  await ev("document.getElementById('body').scrollTop=700"); await sleep(300);
+  await ev('TK.rec=null'); await until(async () => loads >= 3); await ready();
+  await until(async () => await ev("document.getElementById('body').scrollTop") === 700, 5000);
+  say('scrolled', [loads, await ev("document.getElementById('body').scrollTop"), await ev('S.view')]);
+  await sleep(3000);
+  say('end', [loads]);
+  process.exit(0);
+})().catch(e => { console.error(String(e)); process.exit(1) });
+"""
+
+
 def test_self_reload_f207(tmp: Path) -> None:
     """F207: a new version of the page loads by itself once nothing would be lost or cut off, waits otherwise, and
     reloads once per page print so it never loops."""
@@ -1621,6 +1661,45 @@ def test_self_reload_f207(tmp: Path) -> None:
     eq(got[4], '', 'once per page print: never a loop')
     eq(got[5:7], ['', ''], 'a restart or nothing new never reloads')
     eq(got[7], 'now', 'a newer print reloads again')
+    chrome = next(filter(None, map(shutil.which, ('chromium', 'chromium-browser', 'google-chrome'))), None)
+    if not chrome:
+        print('  (no Chromium here: the browser reload test is skipped)')
+        return
+    prints = [W.PAGE_PRINT]
+    os.chdir(fake_repo(tmp))  # the run page serves a project
+    srv = W.serve('TOK', 0, '127.0.0.1', snap=lambda: {'queue': [], 'tick': int(time.time()), 'page': prints[0]})
+    with socket.socket() as s:
+        s.bind(('127.0.0.1', 0))
+        port = s.getsockname()[1]
+    ch = subprocess.Popen([chrome, '--headless', '--no-sandbox', '--disable-gpu', f'--user-data-dir={tmp / "chrome"}',
+                           f'--remote-debugging-port={port}', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    (tmp / 'cdp.js').write_text(SELF_RELOAD_CDP, encoding='utf-8')
+    node = subprocess.Popen(['node', str(tmp / 'cdp.js'), str(port), f'http://127.0.0.1:{srv.server_address[1]}/?t=TOK'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    out = {}
+    try:
+        for line in node.stdout:
+            k, _, v = line.strip().partition(' ')
+            if k == 'NEW':
+                prints[0] = v
+            elif k:
+                out[k] = json.loads(v)
+        node.wait(30)
+    finally:
+        if node.poll() is None:
+            node.kill()
+        ch.kill()
+        ch.wait(10)
+        srv.shutdown()
+    check(out.get('end'), 'Chromium runs the page', node.stderr.read()[-800:] if node.stderr else '')
+    if not out.get('end'):
+        return
+    eq(out['focused'], [1, True], 'a focused box with a typed draft: no reload, the popup')
+    eq(out['blurred'], [2, 'my draft'], 'once the box lets go: it reloads by itself and the draft is there')
+    eq(out['mic'], [2, True], 'a running mic: no reload, the popup')
+    eq(out['scrolled'][0], 3, 'the mic stopped: it reloads')
+    eq(out['scrolled'][1:], [700, 'home'], 'back to the same view and scroll place')
+    eq(out['end'], [3], 'once per print: no loop')
 
 
 if __name__ == '__main__':
