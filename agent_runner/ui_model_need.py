@@ -234,9 +234,9 @@ def concept_item(row: dict, need: dict | None = None) -> dict:
     return item
 
 
-def open_chats(ids: set[str]) -> dict[str, int]:
+def open_chats(ids: set[str]) -> dict[str, tuple[float, int]]:
     """F209c: {an item of `ids`: the number of the open chat about it} (`control_settled.live`: its title, what it
-    was opened from, what it filed); the latest begun when several. Nothing is started."""
+    was opened from, what it filed), as (begun, number); the latest begun when several. Nothing is started."""
     if not ids:
         return {}
     from agent_runner import control_settled
@@ -249,7 +249,7 @@ def open_chats(ids: set[str]) -> dict[str, int]:
         for x in about & ids:
             if x not in out or (f.get('begun') or 0.0, n) > out[x]:
                 out[x] = (f.get('begun') or 0.0, n)
-    return {x: n for x, (_b, n) in out.items()}
+    return {x: b_n for x, b_n in out.items()}
 
 
 def name_chats(needs: list[dict], concepts: list[dict]) -> None:
@@ -257,7 +257,7 @@ def name_chats(needs: list[dict], concepts: list[dict]) -> None:
     got = open_chats({r['id'] for r in needs + concepts if r.get('id')} | {r['concept'] for r in needs + concepts
                                                                           if r.get('concept')})
     for r in needs + concepts:
-        if n := got.get(r.get('id', '')) or got.get(r.get('concept') or ''):
-            r['chat'] = n
+        if hits := [got[x] for x in (r.get('id', ''), r.get('concept') or '') if x in got]:
+            r['chat'] = n = max(hits)[1]
             if isinstance(r.get('item'), dict):
                 r['item']['chat'] = n
