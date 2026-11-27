@@ -15,7 +15,7 @@ const workIsOpen=k=>{const o=(S.workOpen||{})[k];return o===undefined?!!WORK_OPE
 /* a folded section: its head is a fold, as a row's (S.workOpen[k]) */
 function workFold(k,name,n,h){
   const open=workIsOpen(k);
-  return `<div class="sec" id="work-${esc(k)}"><button class="fold secfold" data-workfold="${esc(k)}" aria-expanded="${open}">${esc(name)}${n?` · ${n}`:''}<span class="chev">${I.chev}</span></button><span class="ln"></span></div>${open?foldIn('work:'+k,h):''}`;
+  return `<div class="sec" id="work-${esc(k)}"><button class="fold secfold" data-workfold="${esc(k)}" aria-expanded="${open}">${esc(name)}${n?` · ${n}`:''}<span class="chev">${I.chev}</span></button><span class="ln"></span></div>${!open?'':WORK_OPEN[k]?h:foldIn('work:'+k,h)}`;  // the sections open by default draw their rows in place, not in a fold's box: going to the pick mode, a box would leave as a picture over it
 }
 function workHTML(qs,pk,sh,shOb){
   histAsk();
