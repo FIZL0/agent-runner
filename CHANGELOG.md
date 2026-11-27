@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: under Needs you, a DECIDE option with stored tasks says how many it queues, and its button queues them once and settles the item; stored tasks of a question no longer asked are dropped when an item is answered or asked again (F192d3).
 - Added: a Terminal on the Tools page, so a phone can run a command on this machine (in the project or home), only over https or on the machine; agents cannot open or read it, nothing typed is kept, and it ends on tab close, after 15 min idle or with End every terminal (F466d).
 - Changed: in the TUI, N on a Needs you item or concept with an open chat about it selects that chat instead of starting a new one (F209c2).
 - Changed: in the run app, Chat on a Needs you item or concept that already has an open chat opens that chat instead of a new one (F209c1).

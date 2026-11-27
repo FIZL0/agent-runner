@@ -263,3 +263,59 @@ def name_chats(needs: list[dict], concepts: list[dict]) -> None:
             r['chat'] = n = max(hits)[1]
             if isinstance(r.get('item'), dict):
                 r['item']['chat'] = n
+
+
+# --- F192d3: one tap queues the tasks stored for a DECIDE's option (option_tasks) -------------------------------
+
+def option_counts(row: dict) -> dict[str, int]:
+    """F192d3: {option: how many tasks it queues} stored for a DECIDE row's question (`option_tasks.counts`)."""
+    if row.get('label') != 'DECIDE' or not row.get('what'):
+        return {}
+    try:
+        from agent_runner import option_tasks
+        return option_tasks.counts(row['what'])
+    except Exception:  # noqa: BLE001 - no notes readable: plain answers
+        return {}
+
+
+def _tasks_words(n: int) -> str:
+    return f'{n} task{"" if n == 1 else "s"}'
+
+
+_need_answers_plain = need_answers
+
+
+def need_answers(row: dict) -> list[dict]:  # noqa: F811 - F192d3: the plain answers, each with its stored task count
+    out = _need_answers_plain(row)
+    if out and (got := option_counts(row)):
+        for a in out:
+            if n := got.get(a['value']):
+                a.update(tasks=n, label=f'{a["label"]} · queues {_tasks_words(n)}')
+    return out
+
+
+_answer_sends = answer
+
+
+def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:  # noqa: F811
+    """F192d3: a button's answer to a DECIDE whose option has stored tasks queues them (`option_tasks.queue`, once
+    however often it is pressed) and settles the item with that said, instead of leaving the work to a session; every
+    other answer as `_answer_sends`."""
+    row = need_row(tid) if button and TASK_ID.fullmatch(tid or '') and need_label(tid) == 'DECIDE' else None
+    q = (row or {}).get('what') or ''
+    if not q or not option_counts(row).get(text):
+        return _answer_sends(tid, text, button, note)
+    from agent_runner import option_tasks
+    queued = option_tasks.queue(q, text)
+    if not queued:  # queued already by another press: the item settles as it would anyway
+        return _answer_sends(tid, text, button, note)
+    words = f'its {_tasks_words(len(queued))} are queued already; do not file them again'
+    r = _answer_sends(tid, text, button, f'{note.strip()} ({words})' if note.strip() else words)
+    option_tasks.drop(q)
+    r['queued'] = len(queued)
+    if r.get('ok'):
+        r['said'] = f'{text}: {_tasks_words(len(queued))} queued'
+    return r
+
+
+ACTIONS['answer'] = answer
