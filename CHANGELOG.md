@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a task whose gone run's claim is taken over starts from the task/<ID> branch that run pushed, not from a fresh fork (F467).
 - Added: Settings has an "Ask about my settings" button at the top: it opens a new chat with a first message ready to edit (what settings fit how I use this project?); nothing is sent before Send, and the chat recommends each change in one line and makes only those you say yes to (F449).
 - Changed: dropping a task as not wanted no longer starts the tasks that waited on it as if it had landed: each is held under Needs you with one question, still wanted? (Keep / Drop); `plan drop ID --duplicate-of X` or `--overtaken-by X` (or a reason that says so) has them wait on X instead while it is open, else go on. Tasks waiting on all before them and releases go on as before (B772).
 - Added: Settings asks `[run] auto_audit` as a question (On / Off) while neither the project nor the device sets it; either answer is saved by the usual Save and the question goes (C55b).
