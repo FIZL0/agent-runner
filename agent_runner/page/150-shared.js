@@ -2,7 +2,7 @@ let lastPlace=null;
 S.at={};S.pin=true;S.last={};S.keys=false;
 const chatShown=()=>!S.thread&&S.view==='talk';
 /* F189a: press: a press asked for it, so it glides; anything else is at once, but leaves a glide under way to reach the end */
-function toEnd(press){const b=$('body');seeRoom();if(press)scrollGlide(b,endOf);else if(!MO.scroll.has(b)&&!handOn())b.scrollTop=b.scrollHeight;S.pin=true;seeBar()}
+function toEnd(press){const b=$('body');seeRoom();if(press)scrollGlide(b,endOf);else if(!MO.scroll.has(b)&&!(typeof handOn==='function'&&handOn()))b.scrollTop=b.scrollHeight;S.pin=true;seeBar()}
 /* B873: the person's own hand on the chat (a finger down, or a wheel in the last 250 ms): nothing else moves its scroll then */
 const HAND={down:false,wheel:0};
 const handOn=()=>HAND.down||Date.now()-HAND.wheel<250;
@@ -109,7 +109,7 @@ function render(force){
   lastPlace=place;
 }
 /* F83: Talk follows its newest words until the person scrolls up; it follows a box that grows or a keyboard too */
-$('body').addEventListener('scroll',()=>{if(chatShown()){S.pin=glidesEnd($('body'))||!MO.scroll.has($('body'))&&atEnd($('body'));seeBar()}},{passive:true});
+$('body').addEventListener('scroll',()=>{if(chatShown()){S.pin=typeof glidesEnd==='function'?glidesEnd($('body'))||!MO.scroll.has($('body'))&&atEnd($('body')):MO.scroll.has($('body'))||atEnd($('body'));seeBar()}},{passive:true});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
 /* B160, F126a: a notice's row comes or goes: the text stays where it was (a pinned chat by the line above) */
 let noticeH=0, noticeAt=null;
