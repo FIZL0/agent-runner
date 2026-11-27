@@ -611,7 +611,7 @@ def history_rows(files: list, ls: list[str], done: list[str], shown: set[str]) -
             past.pop(tid, None)  # open again in TODO.md
     rows = []
     for f in files:
-        if f.stem in shown or f.stem not in past:
+        if f.stem in shown or f.stem not in past or not f.stem.startswith('K'):  # concepts only, not a task's report
             continue
         try:
             at = f.stat().st_mtime
