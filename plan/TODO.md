@@ -66,6 +66,5 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 - [ ] **F466** (follow-up, normal) Tools page: SSH machines, Logins kept secret, custom tools from a prompt, and a web terminal (split into parts) | files: agent_runner/devices.py
 - [ ] **F514** (follow-up, normal) Read session_max / weekly_max usage for each Claude login (its own CLAUDE_CONFIG_DIR credentials), not only the default login's, so every login is held by the usage caps (follow-up of F503) | files: agent_runner/watch.py, agent_runner/fallback.py, tests/test_fallback.py | after: F503
 - [ ] **D10** (follow-up, low) PR mode needs: GitHub protects main of a private repo only on a paid plan; free accounts get HTTP 403 (Upgrade to GitHub Pro or make the repo public). So PR mode cannot be on for a private repo on a free account. | files: docs/REFERENCE.md
-- [ ] **F513** (follow-up, low) Run page: a task that finished before F509 shows its write-up from the run log's or events' 'finished:' summary when no kept write-up exists | files: agent_runner/done.py, tests/test_web_task_writeup.py | after: F509
 
 ### Parked
