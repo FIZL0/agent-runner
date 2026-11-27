@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a chat's history on the run page (Copilot and Claude Code alike) shows a thin grey scrollbar you can drag (F474).
 - Added: a queue row in the snapshot carries the task's size (`size: simple`) beside its other fields (F485).
 ## 0.79.0 (2026-11-27)
 

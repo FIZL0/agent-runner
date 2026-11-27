@@ -300,6 +300,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **The page never moves on its own.** A refresh keeps the reading position in every view (`keepScroll()`): the first
   `data-k` on screen stays where it was. At the very top, new things show.
 - **Talk is pinned to its newest words** when you open it, when you send (it glides there if you had scrolled up; see Scroll jumps), and while a reply comes in, unless you scrolled up. It has no jump button. The page scrolls a session only through its history, a scroller laid over the frame (see History in The session); otherwise the frame keeps its own scroll, and a refresh never redraws it. Scrolling up in a session scrolls it, and its bars fade away over the text; the slim message box stays (see The session).
+- **A chat's history shows its scrollbar**: thin, `--line2` thumb on no track, `--faint` on hover; every other scroller hides its bar (F474).
 - Going to a view starts at its top; coming back to one you left returns to where you were.
 - **A page never reloads by itself.** A new version shows the `.news` notice (`newsDraw()`) with one `.acc` button (Refresh) beside Later. Refresh keeps all typed words (`keepTyped()`) except secrets: a device form and a typed secret (`givesec:` keys) are not kept, so Refresh waits while one is open (`refreshHold()`). A new kind of field must be kept there or hold Refresh.
 - **The off page turns into the app.** An off project's page (see Off page in GLOSSARY.md) becomes its run's app once the
