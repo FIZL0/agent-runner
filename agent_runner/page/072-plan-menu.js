@@ -14,7 +14,7 @@ function menuLive(d){
 /* the Queue's rows with what was pressed */
 function menuRows(rows){
   PM.did=PM.did.filter(menuLive);
-  const st=rowPress(PM.did,S.ob);  // F478: saving while sent (a move and Wait for… too); a refusal goes back (020-live.js toasts it)
+  const st=typeof rowPress==='function'?rowPress(PM.did,S.ob):{saving:[]};  // F478: saving while sent (a move and Wait for… too); a refusal goes back (020-live.js toasts it)
   let out=rows.slice();
   const put=(r,d)=>{const i=d.down.map(t=>out.findIndex(q=>menuId(q)===t)).find(n=>n>=0);out.splice(i===undefined?out.length:i,0,r)};
   for(const d of PM.did){
