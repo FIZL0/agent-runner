@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a chat's history on the run page (Copilot and Claude Code alike) shows a thin grey scrollbar you can drag (F474).
 - Added: a pitch's Ask… on Needs you, beside Approve and Not this…: per change Ask about it (its answer shows under it, and on the Review page) and Ask for a better way (undone and its task reopened with what you want instead) (F444c).
 - Fixed: a release ready to start but for the merge under way now starts before the merges waiting behind it; they go on as before when the release is held for anything else or cannot start (run paused, usage caps, no free slot) (B849b).
 - Added: lessons, what a project's agents learned, one line per lesson in plan/LESSONS.md with the files it applies to; a brief shows those whose files meet the task's (most specific first, at most 8); `plan lesson add/list/drop`; a lesson whose files are all gone drops itself. `[plan] lessons`, off by default, on in this repo (F413).
