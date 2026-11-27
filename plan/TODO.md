@@ -77,6 +77,5 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 - [ ] **F466** (follow-up, normal) Tools page: SSH machines, Logins kept secret, custom tools from a prompt, and a web terminal (split into parts) | files: agent_runner/devices.py
 - [ ] **F486** (follow-up, normal) The 'needs' command and status's Needs you also list a live chat's DECIDE question before the run files it, as Home does (B832's chat_question.chat_needs); they run in another process with no cached transcript read, so it costs one transcript read per live chat | files: agent_runner/status.py, agent_runner/chat_question.py, tests/test_chat_question_need.py | after: B832
 - [ ] **D10** (follow-up, low) PR mode needs: GitHub protects main of a private repo only on a paid plan; free accounts get HTTP 403 (Upgrade to GitHub Pro or make the repo public). So PR mode cannot be on for a private repo on a free account. | files: docs/REFERENCE.md
-- [ ] **F485** (follow-up, low) Show a task's size (size: simple) on its run page row, beside its other fields | files: agent_runner/ui_model_queue.py, tests/test_ui_model.py | after: F470
 
 ### Parked

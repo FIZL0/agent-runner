@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a queue row in the snapshot carries the task's size (`size: simple`) beside its other fields (F485).
 - Fixed: a release card in the Plan queue has Wait for… too: tick the tasks it waits for, in the place of the tasks above it (B870).
 - Fixed: Home's Needs you lists a chat's DECIDE question at once, with its option buttons, an answer box and Chat, and counts it; before, it showed only once the run filed it, hours later, and never for a renamed chat (B832).
 - Changed: a Plan row's hold, to the top, remove and Undo show as saving while sent, with no toast on success; a refusal puts the row back with a toast (F478).

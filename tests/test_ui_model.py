@@ -22,7 +22,7 @@ QUEUE_TODO = """# TODO
 ## Now
 
 ### Next
-- [ ] **F1** Board page for the run | files: a.py
+- [ ] **F1** Board page for the run | files: a.py | size: simple
 - [ ] **F66** Run page: lazygit layout on web | files: w.py
 - [ ] **B2** Fix the merge retry | files: b.py | after: B109
 - [ ] **F67** Terminal pane per slot | files: t.py | after: F66
@@ -195,6 +195,7 @@ def test_queue_rows(tmp: Path) -> None:
         'D5': 'blocked', 'V6': 'after', 'V5': 'ready', 'F8': 'after', 'F83': 'parked'},
        'state: running sN Nm, ready, after (an open task ahead), critical, blocked ([~]), parked (B118)')
     eq(q['F83']['pri'], 'later', 'B118: a task under Parked is level later')
+    eq((q['F1'].get('size'), q['F66'].get('size')), ('simple', None), 'F485: a sized task carries its size; others none')
     check(all(q[t]['state'].split()[0] in U.QUEUE_STATES for t in q), 'every state is one of QUEUE_STATES')
 
 
