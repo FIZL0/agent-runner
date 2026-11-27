@@ -404,7 +404,7 @@ def test_chat_order_f133(tmp: Path) -> None:
     fake_repo(tmp)
     page = W.page_html().decode()
     check('data-pin=' in page and "act('chat_order'" in page and "'pointerdown'" in page and "closest('.crow[data-crow]')" in page,
-          'the page: a pin button per chat, only pinned rows dragged by pointer events, the chat_order action')
+          'the page: a pin button per chat, chat rows dragged by pointer events, the chat_order action')
     sessions = [{'name': n} for n in ('c1', 'c3', 'c4', 's1')]
     token = W.web_token()
 

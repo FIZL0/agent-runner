@@ -1,7 +1,8 @@
-/* F507: the chats the person dragged into Quiet (quiet) or out of it (up) stand there whatever their activity says.
+/* F507: the chats the person dragged into Quiet (quiet) or out of it (up) stand there whatever their activity says,
+   but a chat with a question for the person comes up all the same.
    g: {top, quiet}, the rows as grouped; pins: the pinned chats in their order. The top keeps chatSort's order, Quiet newest first */
 function chatForce(g,quiet,up,pins){
-  const q=quiet||[], u=up||[], down=g.top.filter(s=>q.includes(s.name)), lift=g.quiet.filter(s=>!s.response&&u.includes(s.name));
+  const q=quiet||[], u=up||[], down=g.top.filter(s=>q.includes(s.name)&&!s.needs_reply), lift=g.quiet.filter(s=>!s.response&&u.includes(s.name));
   if(!down.length&&!lift.length)return g;
   const top=g.top.filter(s=>!down.includes(s)), rest=g.quiet.filter(s=>!lift.includes(s));
   const p=pins||[], pin=s=>{const i=p.indexOf(s.name);return i<0?p.length:i}, at=s=>s.at>0?s.at:Infinity;

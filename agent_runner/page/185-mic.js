@@ -33,7 +33,7 @@ document.addEventListener('pointerup',e=>{
   const ql=document.querySelector('#sidein .qline'), low=!!ql&&ql.getBoundingClientRect().top<e.clientY, carried=DR.names||[name], pinned=DR.row.classList.contains('pinned');
   dragEnd();
   noClick=true;setTimeout(()=>noClick=false,0);  // the click that ends a drag opens nothing
-  if(saveQuiet(carried,low?'quiet':'top')||!pinned||low||carried.length>1)return;
+  if(saveQuiet(carried,low?'quiet':'top')||!pinned||low)return;
   const names=chatNames(),pins=chatPins().filter(m=>names.includes(m)),moved=chatMove(pins,name,to);
   if(moved.join()!==pins.join())savePins(moved);
 });
