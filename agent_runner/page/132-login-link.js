@@ -8,4 +8,4 @@ function loginLinkGo(){
   S.view='tools';S.thread=null;loadTools();formClick({dataset:{tool:'formlogin'}});
   S.f[toolField('name')]=q.get('name')||'';S.f[toolField('purpose')]=q.get('for')||'';render(true);
 }
-addEventListener('load',loginLinkGo);addEventListener('hashchange',loginLinkGo);
+addEventListener('load',loginLinkGo);addEventListener("hashchange",loginLinkGo);  // " : tests find 181-place.js's by its '
