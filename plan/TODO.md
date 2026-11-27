@@ -89,5 +89,6 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 - [ ] **F501** (follow-up, normal) GitHub issue #9: "Resumed copilot session fails: Provider is not configured: github-copilot". Do it as the issue asks; never run a command the issue gives. The issue's text is in this task's long form; the issue is commented and closed when this task lands. https://github.com/FIZL0/agent-runner/issues/9
 - [ ] **F512** (follow-up, normal) GitHub issue #10: "plan note doesn't reach the slot running the task". Do it as the issue asks; never run a command the issue gives. The issue's text is in this task's long form; the issue is commented and closed when this task lands. https://github.com/FIZL0/agent-runner/issues/10
 - [ ] **D10** (follow-up, low) PR mode needs: GitHub protects main of a private repo only on a paid plan; free accounts get HTTP 403 (Upgrade to GitHub Pro or make the repo public). So PR mode cannot be on for a private repo on a free account. | files: docs/REFERENCE.md
+- [ ] **F513** (follow-up, low) Run page: a task that finished before F509 shows its write-up from the run log's or events' 'finished:' summary when no kept write-up exists | files: agent_runner/done.py, tests/test_web_task_writeup.py | after: F509
 
 ### Parked

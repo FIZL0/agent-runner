@@ -100,6 +100,7 @@ const env = {S: {snap, f: {}, taskOpen: {}, tasks: {}}, I: new Proxy({}, {get: (
   open: k => opened.push(k), ctxKey: c => '+' + c.kind + ':' + c.id, newChat: (...a) => chats.push(a), kbFocus: () => {},
   document: {querySelector: () => null}, fetch: async u => { asked.push(u); return {json: async () => env.reply} }};
 env.taskIsOpen = (l, id) => env.S.taskOpen[l] === id;
+env.taskBodyHTML = new Function(grab('function taskBodyHTML') + ';return taskBodyHTML')();  // F509
 new Function('env', 'with(env){' + src + ';Object.assign(env,{historyHTML,histAct,histLoad})}')(env);
 (async () => {
   const out = {shut: env.historyHTML()};
