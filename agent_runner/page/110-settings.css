@@ -13,3 +13,5 @@
 textarea.setlong{width:100%;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere} .setwarn{color:var(--warn)} .setlock{color:var(--muted)}
 /* C55b: a setting asked as a question */
 .setask{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2)} .setask .btn{min-height:var(--tap)}
+/* F471: the runner version at the foot of Settings */
+.setver{color:var(--muted);text-align:center}
