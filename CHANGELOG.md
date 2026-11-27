@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a new chat started from Home's message box goes the way one from + does, one row reading Starting the chat… until its name comes, now checked by a test (F196f).
 - Changed: on the run page, a new chat's row in the sidebar stays one row from the send to the first reply: the same place and key, so the list does not redraw or jump while the chat starts (F196d).
 ## 0.83.0 (2026-11-28)
 
