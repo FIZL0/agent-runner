@@ -9,6 +9,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from contextlib import redirect_stdout
@@ -208,6 +209,7 @@ def test_named_logins(e: Env):
     rc, out = run_login(['codex', '--as', 'work'], e, secret=lambda q='': 'k-work')
     eq(rc, 0, f'codex --as work logs in: {out}')
     rc, out = run_login(['codex', '--as', 'home'], e, secret=lambda q='': 'k-home')
+    eq(rc, 0, f'and codex --as home: {out}')
     a = e.auth()
     eq((a.get('openai-codex@work') or {}).get('key'), 'k-work', 'the named login is kept under <id>@NAME')
     eq((a.get('openai-codex@home') or {}).get('key'), 'k-home', 'and a second one beside it')
@@ -220,6 +222,16 @@ def test_named_logins(e: Env):
     has(lines, r'codex --as home', 'and the second')
     eq(L.harness_env('work'), {'AGENT_RUNNER_LOGIN_AS': 'work'}, 'a session on a named login is told its name')
     eq(L.harness_env(), {}, 'the default login needs nothing')
+    # the harness reads the login it is told: piCredentials, run alone in node
+    src = L.HARNESS_JS.read_text(encoding='utf-8')
+    start = src.index('function piCredentials')
+    fn = src[start:src.index('\n}\n', start) + 3]
+    js = ("import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os';\n" + fn +
+          "\nconsole.log(JSON.stringify((await piCredentials().read('openai-codex'))?.key ?? null));")
+    for name, want in (('work', 'k-work'), ('home', 'k-home'), ('', None)):
+        p = subprocess.run(['node', '--input-type=module', '-e', js], capture_output=True, text=True, timeout=60,
+                           env={**os.environ, 'PI_CODING_AGENT_DIR': str(e.pi), **L.harness_env(name)})
+        eq(json.loads(p.stdout or 'false'), want, f'a session on login {name or "default"} uses its own credential')
     rc, _ = run_login(['codex', '--as', 'bad name'], e)
     eq(rc, 2, 'a name with a space is refused')
 

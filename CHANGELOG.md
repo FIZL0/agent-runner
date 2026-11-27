@@ -3,7 +3,7 @@
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
 ## Unreleased
-- Added: `run login codex|copilot|gemini --as NAME` adds another login, kept in Pi's auth.json as `<id>@NAME` beside the default; `run login` lists them, and a harness session given `AGENT_RUNNER_LOGIN_AS=NAME` runs on that login (F506).
+- Added: `run login codex|copilot|gemini --as NAME` adds another login, kept in Pi's auth.json as `<id>@NAME` beside the default; `run login` lists them, and a harness session runs on that login when its model is `<provider>@NAME:<model>` or it is given `AGENT_RUNNER_LOGIN_AS=NAME` (F506).
 - Changed: the settings area (types, checks, toml edits) moved from config.py to config_settings.py, no behaviour change (C61).
 
 - Changed: a merge is not tested again when the shared branch moved during its gate only by the runner's own gated merges on other files; a hand commit, a shared file or a `runner.toml` change still tests it again (F493).

@@ -682,9 +682,16 @@ async function realProvider(name, modelId, custom) {
   return { call: (context, signal) => models.completeSimple(model, context, { signal }) };
 }
 
+// F506: the login the runner named for this session (login.harness_env), kept as a fallback model names none
+const LOGIN_GIVEN = process.env.AGENT_RUNNER_LOGIN_AS || '';
+
 async function loadProvider(spec, custom) {
   const at = spec.indexOf(':');
-  const provider = at < 0 ? spec : spec.slice(0, at), model = at < 0 ? '' : spec.slice(at + 1);
+  let provider = at < 0 ? spec : spec.slice(0, at), model = at < 0 ? '' : spec.slice(at + 1);
+  // F506: `<provider>@<login>:<model>` runs on that login (`run login <provider> --as <login>`), else the default one
+  const login = provider.includes('@') ? provider.slice(provider.indexOf('@') + 1) : LOGIN_GIVEN;
+  if (provider.includes('@')) provider = provider.slice(0, provider.indexOf('@'));
+  if (login) process.env.AGENT_RUNNER_LOGIN_AS = login; else delete process.env.AGENT_RUNNER_LOGIN_AS;
   if (!model) throw new Error(`harness: --model ${spec} names no model after the provider`);
   if (process.env.AGENT_RUNNER_HARNESS_PROVIDER) {
     const mod = await import(pathToFileURL(path.resolve(process.env.AGENT_RUNNER_HARNESS_PROVIDER)).href);
