@@ -178,5 +178,15 @@ def test_taken_row_f455b(tmp: Path) -> None:
         eq(ran, [['plan', 'cancel', 'F1', '--yes']], 'plan cancel F1 --yes')
 
 
+def test_stopping_card_f472(tmp: Path) -> None:
+    card = U.controls_shown(True, {'stopping': True}, {})['card']
+    check('stop_now' in card and 'stop_undo' in card, 'a stopping run shows Stop now beside Take the stop back')
+    check('stop_now' not in U.controls_shown(True, {}, {})['card'], 'a running run does not')
+    on = {c['key']: c for c in U.controls()}
+    eq((on['slot_add']['card_label'], on['slot_remove']['card_label']), ('Slot', 'Slot'), 'the card says Slot by its icon')
+    eq((on['slot_add']['label'], on['slot_remove']['label']), ('Slot +1', 'Slot -1'), 'elsewhere the label is clear')
+    check(on['stop_now']['confirm'], 'Stop now asks first')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_no_run_f402c1), in_tmp(test_taken_row_f455b)]))
+    raise SystemExit(report([in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_no_run_f402c1), in_tmp(test_taken_row_f455b), in_tmp(test_stopping_card_f472)]))
