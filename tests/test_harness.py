@@ -514,6 +514,29 @@ def test_tool_tally(env: Env):
     check(any('echo three' in json.dumps(e) for e in env.entries(sid)), 'the transcript keeps the full calls')
 
 
+def test_tally_calls(env: Env):
+    """F489: the tally keeps each call (its tool, argument, ok and first output lines), and Ctrl+O lists them."""
+    src = (Path(R.__file__).parent / 'harness.mjs').read_text(encoding='utf-8')
+    start = src.index('const TALLY = ')
+    end = src.index('\n}\n', src.index('export function callLines')) + 3
+    js = src[start:end].replace('export ', '') + """
+const out = {s: '', write(x) { this.s += x; }}, t = new Tally(out, false);
+const k = t.add('read', {path: 'README.md'}); t.done(k, 'line 1\\nline 2', false);
+for (const c of ['echo one', 'echo two', 'false']) { const x = t.add('bash', {command: c}); t.done(x, c === 'false' ? 'exit code 1' : c.slice(5), c === 'false'); }
+t.end(); out.s = ''; t.expand();
+console.log(JSON.stringify({last: t.last, shown: out.s}));"""
+    r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+    got = json.loads(r.stdout or 'null') or {}
+    calls = got.get('last') or []
+    check(len(calls) == 4, 'a tally of 1 read and 3 bash calls keeps 4 entries', r.stderr)
+    eq([(c['tool'], c['arg'], c['ok']) for c in calls], [('read', 'README.md', True), ('bash', 'echo one', True),
+       ('bash', 'echo two', True), ('bash', 'false', False)], 'each with its tool, argument and ok or failed')
+    eq(calls[0]['out'], 'line 1\nline 2', 'and its first lines of output')
+    shown = got.get('shown', '')
+    check('Read(README.md)' in shown and 'Bash(echo two)' in shown and 'Bash(false) failed' in shown and '⎿  line 1' in shown,
+          'Ctrl+O lists the calls', shown)
+
+
 def test_chat_echo(env: Env):
     """B855: a message typed into a chat's terminal shows once, not again as '> message'."""
     if os.name == 'nt':
@@ -601,7 +624,7 @@ def main() -> int:
             return report([lambda: test_routing(env), lambda: test_finish(env),
                            lambda: test_finish_refused(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_context_warn(env), lambda: test_resume(env),
-                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_tally(env), lambda: test_said_lines(env), lambda: test_reply_lines(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
+                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_tally(env), lambda: test_tally_calls(env), lambda: test_said_lines(env), lambda: test_reply_lines(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 

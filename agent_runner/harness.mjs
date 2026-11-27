@@ -274,6 +274,8 @@ class Tells {
   key(c) {
     if (c === '\x03' || c === '\x1b') {
       if (!this.chat.interrupt() && c === '\x03') this.chat.end();
+    } else if (c === '\x0f') { // Ctrl+O (F489): the calls behind the tally line
+      this.chat.expand?.();
     } else if (c === '\x04') {
       if (!this.buf) this.chat.end();
     } else if (c === '\x7f' || c === '\b') {
@@ -932,16 +934,51 @@ export function tallyLine(counts) {
 
 // the tally of the run of tool calls going on now: counted up live on a terminal, said once off one
 export class Tally {
-  constructor(out, tty) { this.out = out; this.tty = tty; this.counts = {}; }
-  add(name) {
+  constructor(out, tty) { this.out = out; this.tty = tty; this.counts = {}; this.calls = []; this.last = []; }
+  // F489: each call is kept, {tool, arg, ok, out}: ok and out once done() has its result
+  add(name, args = {}) {
     this.counts[name] = (this.counts[name] || 0) + 1;
+    const call = { tool: name, arg: callArg(args), ok: null, out: '' };
+    this.calls.push(call);
     if (this.tty) this.out.write(`\r\x1b[2K\x1b[2m${tallyLine(this.counts)}\x1b[0m`);
+    return call;
+  }
+  done(call, text, isError) {
+    call.ok = !isError;
+    call.out = String(text || '').split('\n').slice(0, CALL_LINES).join('\n');
   }
   end() {
     if (!Object.keys(this.counts).length) return;
     this.out.write(this.tty ? '\n' : `${tallyLine(this.counts)}\n`);
     this.counts = {};
+    this.last = this.calls;
+    this.calls = [];
   }
+  // Ctrl+O: the calls of the tally going on now, or else of the last one, a line each and their output under it
+  expand() {
+    const calls = this.calls.length ? this.calls : this.last;
+    if (!calls.length) return;
+    const live = this.calls.length && this.tty;
+    this.out.write(`${live ? '\r\x1b[2K' : ''}${callLines(calls)}\n`);
+    if (live) this.out.write(`\x1b[2m${tallyLine(this.counts)}\x1b[0m`);
+  }
+}
+
+const CALL_LINES = 5; // the lines of a call's output it keeps
+// a call's argument as Claude Code words it: the command, the path
+export function callArg(args) {
+  const a = args && typeof args === 'object' ? args : {};
+  const v = ['command', 'path', 'file_path', 'name', 'title'].map((k) => a[k]).find((x) => typeof x === 'string' && x.trim())
+    ?? Object.values(a).find((x) => typeof x === 'string' && x.trim()) ?? '';
+  return v.trim();
+}
+export function callLines(calls) {
+  return calls.map((c) => {
+    const name = c.tool.charAt(0).toUpperCase() + c.tool.slice(1);
+    const mark = c.ok === false ? '\x1b[31m●\x1b[0m' : c.ok ? '\x1b[32m●\x1b[0m' : '●';
+    const out = c.out ? `\n${c.out.split('\n').map((l, i) => `${i ? '     ' : '  ⎿  '}${l}`).join('\n')}` : '';
+    return `${mark} ${name}(${c.arg.split('\n')[0]})${c.ok === false ? ' failed' : ''}${out}`;
+  }).join('\n');
 }
 
 function overBudget(a, tokens, usd) {
@@ -983,7 +1020,7 @@ async function main() {
     process.exit(code);
   };
   if (a.chat && process.stdout.isTTY) redrawn(process.stdout); // F406g
-  const tells = new Tells(process.stdin, a.chat ? { end: () => quit(0),
+  const tells = new Tells(process.stdin, a.chat ? { end: () => quit(0), expand: () => tally.expand(),
     interrupt: () => { const going = Boolean(s.ctl && !s.ctl.signal.aborted); s.ctl?.abort(); return going; } } : null);
   if (a.chat) for (const sig of ['SIGTERM', 'SIGHUP']) process.on(sig, () => quit(0));
   const now = a.chat ? new Now(a) : null; // F406g
@@ -1089,8 +1126,9 @@ async function main() {
     if (said) console.log(a.chat ? replyLines(said) : said);
     const calls = m.content.filter((b) => b.type === 'toolCall');
     for (const c of calls) {
-      tally.add(c.name);
+      const kept = tally.add(c.name, c.arguments);
       const [text, isError, image] = s.ctl?.signal.aborted ? ['The person interrupted before this tool call ran; it did not run.', true] : c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
+      tally.done(kept, text, isError);
       messages.push(t.toolResult(c, text, isError, image));
       if (!s.ended) s.ended = s.endedNow();
     }
