@@ -123,6 +123,37 @@ document.addEventListener('pointerdown',e=>{
   g.focus({preventScroll:true});
   GR.d={id:g.dataset.grip,pid:e.pointerId,y0:e.clientY,y:e.clientY,grab:e.clientY-card.getBoundingClientRect().top,on:false,g:0,sc:$('body').scrollTop};
 });
+/* F477: a mouse held still on a row's body for GRIP_HOLD_MS picks the row up, as its grip does (a finger: 076-plan-lift).
+   Moved before that, or let go, it is a click or a selection as before. Not from the opened row's details nor a control.
+   GR.hold: that press {pid,id,x,y,wait} */
+const GRIP_HOLD_MS=350, GRIP_HOLD_PX=8;
+function gripHoldRow(el){
+  for(let x=el;x&&x!==document.body;x=x.parentNode){
+    const c=x.getAttribute&&(x.getAttribute('class')||'').split(' ');
+    if(c&&c.includes('foldin'))return '';
+    const n=x.nodeName&&x.nodeName.toLowerCase(), k=x.dataset&&x.dataset.k;
+    if(['button','a','input','textarea','select'].includes(n)&&!(c&&c.includes('fold')))return '';
+    if(k&&/^(task:|rel:next$)/.test(k)){const g=[...(x.childNodes||[])].find(y=>y.dataset&&y.dataset.grip);return g?g.dataset.grip:''}
+  }
+  return '';
+}
+function gripHoldOff(){const h=GR.hold;GR.hold=null;if(h)clearTimeout(h.wait)}
+document.addEventListener('pointerdown',e=>{
+  gripHoldOff();
+  if(e.pointerType!=='mouse'||e.button||GR.d||S.sheet||!e.target||e.target.closest&&e.target.closest('[data-grip]'))return;
+  const id=gripHoldRow(e.target);if(!id||!GR.rows.some(q=>menuId(q)===id&&gripOn(q)))return;
+  const h=GR.hold={pid:e.pointerId,id,x:e.clientX||0,y:e.clientY,wait:0};
+  h.wait=setTimeout(()=>{
+    if(GR.hold!==h||GR.d)return;GR.hold=null;
+    const card=gripCard(id);if(!card)return;
+    if(window.getSelection)window.getSelection().removeAllRanges();
+    GR.d={id,pid:h.pid,y0:h.y,y:h.y,grab:h.y-card.getBoundingClientRect().top,on:true,g:0,sc:$('body').scrollTop};
+    gripDraw();requestAnimationFrame(gripTick);
+  },GRIP_HOLD_MS);
+});
+document.addEventListener('pointermove',e=>{const h=GR.hold;if(h&&e.pointerId===h.pid&&Math.hypot((e.clientX||0)-h.x,e.clientY-h.y)>=GRIP_HOLD_PX)gripHoldOff()});
+document.addEventListener('pointerup',gripHoldOff);
+document.addEventListener('pointercancel',gripHoldOff);
 document.addEventListener('mousedown',e=>{if(e.target.closest&&e.target.closest('[data-grip]'))e.preventDefault()});  // selects no words
 document.addEventListener('pointermove',e=>{
   const d=GR.d;if(!d||e.pointerId!==d.pid)return;
