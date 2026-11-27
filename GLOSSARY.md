@@ -1058,3 +1058,6 @@ _Said_: lesson
 _On screen_: Lessons on these files
 _In code_: lessons.py, plan lesson
 _Avoid_: tip, hint
+
+**Default login**:
+The first login of a provider, used when a model name pins none
