@@ -41,8 +41,12 @@ def chat_state(n: int, sid: str) -> dict:
             f = Path(path).stat()
             mark = (f.st_size, f.st_mtime_ns)
             if _CHAT_STATE.get(path, (None,))[0] != mark:
-                _CHAT_STATE[path] = (mark, K.control_state(entries(sid, skip_bad=True)))
+                from agent_runner import chat_question
+                rows = list(entries(sid, skip_bad=True))
+                _CHAT_STATE[path] = (mark, K.control_state(rows), chat_question.ask(rows, bare=True))  # B832: one read
             st = _CHAT_STATE[path][1]
+            if q := _CHAT_STATE[path][2]:  # B832: the DECIDE it ends on, for Home's Needs you (`chat_question.chat_needs`)
+                out.update(question=q, sid=sid)
         name, renamed = person_name(n, st.get('title') or ''), K.control_renamed(st, n)
         out.update(link=K.control_link(st.get('bridge') or ''), last=st.get('last') or '', at=int(st.get('at') or 0),
                    renamed=renamed, title=name or (st.get('title') or '' if renamed else ''))
@@ -532,7 +536,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': queue, 'manage_releases': manage, 'releases': releases,
             'release_acts': [c['key'] for c in RUN_CONTROLS if c['where'] == 'release' and manage],
-            'shelved': shelved, 'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release if manage else '',
+            'shelved': shelved, 'needs': needs, 'chat_needs': chat_needs(sessions),  # B832
+            'concepts': concepts, 'log': log_tail(log_n), 'release': release if manage else '',
             'release_said': rel_ask['said'] if rel_ask else '',
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(rel_ask),
             'no_settings': no_settings(st=st if up else None),  # F178
@@ -593,3 +598,12 @@ def tools_line(tools: list[dict]) -> str:
 
 def snapshot_json(**kw) -> str:
     return json.dumps(snapshot(**kw), ensure_ascii=False)
+
+
+def chat_needs(sessions: list[dict]) -> list[dict]:
+    """B832: `chat_question.chat_needs`; [] when it cannot be read (a nicety of Home, not the snapshot's)."""
+    try:
+        from agent_runner import chat_question
+        return chat_question.chat_needs(sessions)
+    except Exception:  # noqa: BLE001
+        return []
