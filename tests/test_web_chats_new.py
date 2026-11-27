@@ -520,7 +520,9 @@ S.ob = [{newchat: true, cid: 'k1', say: 'fix the login page', state: 'sending'}]
 seen.push(threadTitle('@k1'));
 S.ob = []; S.came = [{name: 'c7', was: '@k1', say: 'fix the login page', state: 'sending'}];
 seen.push(threadTitle('@k1'), threadTitle('c7'));
-sess.c7 = {name: 'c7', title: 'Login page fix'}; S.came = [];
+sess.c7 = {name: 'c7', title: 'fix the login page'}; S.came = [];
+seen.push(threadTitle('c7'));
+sess.c7 = {name: 'c7', title: 'Login page fix'};
 seen.push(threadTitle('c7'));
 console.log(JSON.stringify(seen));`);
 """
@@ -533,8 +535,8 @@ def test_born_name_f196e(tmp: Path) -> None:
     if shutil.which('node'):
         r = subprocess.run(['node', '-e', NAME_DRIVER], input=W.page_html().decode(), capture_output=True, text=True, timeout=60)
         check(r.returncode == 0, 'node runs threadTitle()', r.stderr[-900:])
-        eq(json.loads(r.stdout or '[]'), ['fix the login page'] * 3 + ['Login page fix'],
-           'the words while it starts, under both its names, then its title')
+        eq(json.loads(r.stdout or '[]'), ['fix the login page'] * 4 + ['Login page fix'],
+           'the words while it starts, under both its names and in its first snapshot row (name_new), then its title')
     else:
         print('  (no node here: the shown name test is skipped)')
     from agent_runner import control as K
