@@ -100,6 +100,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.rules_pointer': ('work', 'Guide line in the rules file', 'A run adds one line to the rules file that points at its guide. Off: the file is left alone.'),
     'plan.need_files': ('work', 'Tasks must name files', 'A new task without files or a test is refused. Off: it is taken, but may clash with others.'),
     'plan.context_kb': ('work', 'Warn about long rules', 'Kilobytes of rules every session loads before the run warns you. 0: never.'),
+    'plan.lessons': ('work', 'Lessons', "What agents learned about some files, shown to the next task on them. Off: none kept or shown."),
     'models.kinds': ('roles', 'Model for each kind', 'The model a task runs on, by the letter of its id. It wins over Other tasks.'),
     'models.code': ('roles', 'Other tasks', 'The model for a task whose kind has none. Every kind has one, so this rarely changes anything.'),
     'models.fix': ('roles', 'Conflict fixes', 'The model that resolves conflicts and repairs merges. A cheaper one fails more often.'),

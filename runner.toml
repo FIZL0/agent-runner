@@ -2,6 +2,7 @@
 
 [plan]
 outline = "python3 tools/outline.py {file}"  # the brief's map of each big file a task names
+lessons = true  # plan/LESSONS.md: what agents learned, shown in briefs whose files it names
 
 [run]
 rules = "AGENTS.md"  # the short rules file every slot is pointed at
@@ -12,7 +13,7 @@ test = "for t in tests/test_*.py; do echo \"== $t\"; python3 \"$t\" || exit 1; d
 # Every task appends to the changelog: the merge joins those appends itself (joinable), so no fix session is
 # needed; shared_files only keeps an overlap from holding a task back. A plain line union would put an entry
 # written before a release under the released version, so tools/changelog_join.py (below) joins it.
-joinable = ["CHANGELOG.md"]
+joinable = ["CHANGELOG.md", "plan/LESSONS.md"]
 shared_files = ["CHANGELOG.md", "docs/STYLE.md"]
 prompt_extra = """
 A task that changes how the run app looks, moves or speaks (agent_runner/page/*, the parts of the run app's page; Runner Home's page): read

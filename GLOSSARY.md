@@ -1051,3 +1051,10 @@ _Said_: lazyrunner, keyboard mode
 _On screen_: Layout: Lazyrunner
 _In code_: 189-lazy.js, 189-lazy.css, LAZY_PANELS, :root.lazy
 _Avoid_: TUI mode, lazy view
+
+**Lesson**:
+Something a project's agents learned about some files, shown to the next task that works on them
+_Said_: lesson
+_On screen_: Lessons on these files
+_In code_: lessons.py, plan lesson
+_Avoid_: tip, hint
