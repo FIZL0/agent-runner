@@ -306,6 +306,24 @@ def test_frame_kept_b860(tmp: Path) -> None:
     check("querySelector('iframe[data-keep]')" in shared and 'morphKids(el,t.content)' in shared, 'setHTML morphs a box holding one')
     check("o.dataset.keep===n.dataset.keep&&o.getAttribute('src')===n.getAttribute('src')" in shared, 'the same frame is left alone')
 
+def test_concept_item_f197b1(tmp: Path) -> None:
+    """F197b1: one concept gives one item shape in needs and in concepts, waiting or a kept page; news on both"""
+    kept = {'id': 'K7', 'concept': 'K7', 'title': 'an old page', 'url': '', 'copy': '', 'page': True, 'waits': False,
+            'history': True}
+    news = {'version': '2', 'news': 'updated', 'news_words': 'Updated today'}
+    with mock.patch.object(U, 'page_rows', lambda *a: [dict(kept)]), \
+            mock.patch.object(U, 'concept_row_news', lambda *a: dict(news)), \
+            mock.patch.object(U, 'concept_copy', lambda k: ''):
+        needs, concepts = U.needs_rows([('CONCEPT', 'F9', 'K2', 'waiting for your OK', '', 'a title', False, '')], NOW)
+    keys = set(U.ITEM_KEYS) | {'news', 'news_words'}
+    eq([sorted(c['item']) for c in concepts], [sorted(keys)] * 2, 'every Concepts row carries the same item shape')
+    item = concepts[0]['item']
+    eq({k: item[k] for k in U.ITEM_KEYS}, {k: needs[0].get(k, item['acts'] if k == 'acts' else None) for k in U.ITEM_KEYS},
+       'a waiting concept: the item is its Needs you entry')
+    eq((needs[0]['news'], needs[0]['news_words']), ('updated', 'Updated today'), 'the Needs you item shows Updated too')
+    eq((concepts[1]['item']['label'], concepts[1]['item']['what'], concepts[1]['item']['answers']),
+       ('CONCEPT', 'an old page', []), 'a kept page with no Needs you entry still gets one')
+
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_frame_kept_b860), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
+    raise SystemExit(report([in_tmp(test_concept_item_f197b1), in_tmp(test_frame_kept_b860), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
