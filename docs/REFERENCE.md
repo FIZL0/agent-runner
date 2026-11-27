@@ -747,6 +747,9 @@ It needs:
   holds for admins and has no bypass for the token. Only an admin token can read classic protection, so for any other
   token use a ruleset.
 
+GitHub protects main of a private repository only on a paid plan: a free account gets HTTP 403 (Upgrade to GitHub
+Pro or make the repository public). So PR mode cannot be on for a private repository on a free account.
+
 The check reads gh's token, not git's push credentials. `agent-runner setup` and the run's start check it, and refuse
 with why. What GitHub cannot be asked about counts as refused, so a start needs the network.
 
