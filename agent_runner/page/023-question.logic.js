@@ -21,6 +21,7 @@ const questionKey=(n,id)=>n+' '+id;
 /* F437c: is the reader away from the bottom? o: up (px the history is scrolled from its end), off (px the frame is pulled),
    jump (the terminal itself is scrolled). was: they were; it takes more to go than to stay, so the edge does not flicker */
 const QUESTION_EDGE=24, QUESTION_BACK=150;  // px; ms at the bottom before the card is back
+const QUESTION_GROW=2000;  // F511: ms still at the bottom, with no touch, before the Decide pill grows back into the card
 const questionFar=(was,o)=>!!o.jump||Math.max(o.up||0,o.off||0)>(was?1:QUESTION_EDGE);
 /* the agent CLI's own Jump to bottom pill, on a screen too low for feedFoot to find its prompt: by its place, the middle,
    and its ground (lit), which the same words in an answer do not have */

@@ -9,7 +9,7 @@
    F437b: keys: the question the key row was opened under, with the keyboard button
    F437c: away: the chat whose reader is scrolled up, its card hidden where it stands; awayT: it is about to be back; cls: .main's classes */
 const QMARK_KEY='ar-qmark:'+(HKEY||document.title);
-const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0,gone:new Set(),min:new Set(),keys:'',away:'',awayT:0,cls:'false false'};
+const QN={held:new Map(),sent:new Map(),back:0,mark:new Map(questionMarks(tabStore.get(QMARK_KEY))),marked:0,gone:new Set(),min:new Set(),keys:'',away:'',awayT:0,auto:new Set(),growT:0,cls:'false false'};
 const questionAsk=n=>FD.n===n&&FD.live&&FD.live.ask||null;
 const questionSpoken=n=>questionSpoke(n,S.ob,(S.sent[n]&&S.sent[n].pending)||[],Date.now()-((S.sent[n]||{}).at||0));
 /* an answer to it, here or under Needs you, is on its way */
@@ -21,7 +21,7 @@ function questionUp(n){
   if(!/^c\d+$/.test(n||''))return '';
   const held=QN.held.get(n);if(held)return questionKey(n,held.id);
   const ask=QN.mark.has(n)?null:questionShown(n,questionAsk(n)), k=ask?questionKey(n,ask.id):'';
-  return questionState(ask,null,QN.sent.get(n))==='ask'&&!QN.min.has(k)?k:'';
+  return questionState(ask,null,QN.sent.get(n))==='ask'&&!QN.min.has(k)&&!QN.auto.has(k)?k:'';
 }
 /* the card of chat n, drawn over its chips (sessRow) */
 function questionCard(n){
@@ -32,7 +32,7 @@ function questionCard(n){
   else if(sent=questionSent(sent,S.ob,(S.sent[n]||{}).at))QN.sent.set(n,sent);
   const mark=QN.mark.get(n);if(mark&&!QN.held.has(n))return questionMarkHTML(n,mark);
   const ask=questionAsk(n);
-  return questionHTML(n,questionShown(n,ask),QN.held.get(n),sent,!!ask&&QN.min.has(questionKey(n,ask.id)));
+  return questionHTML(n,questionShown(n,ask),QN.held.get(n),sent,!!ask&&(QN.min.has(questionKey(n,ask.id))||QN.auto.has(questionKey(n,ask.id))));
 }
 /* an answer that settles an item is out of the outbox: done or discarded, /live says whether the question is still asked */
 function questionNeedSent(n,sent){
@@ -138,7 +138,10 @@ function questionScroll(){
 }
 function questionAwaySet(n){
   if(QN.away===n)return;
-  QN.away=n;questionAwayClass();
+  QN.away=n;
+  if(n){const k=questionUp(n);if(k){QN.auto.add(k);clearTimeout(QN.growT);QN.growT=0;render(true)}}  // F511: a scroll shrinks the card to its pill
+  else questionGrowSoon();
+  questionAwayClass();
   if((S.keys||TOUCH()&&FD.whole)&&questionUp(FD.n))render(true);  // the key row comes or goes with it (F437b)
   if($('pastjump'))pastJumpDraw();
 }
@@ -153,7 +156,7 @@ function questionAwayClass(){
 const QUESTION_MOVE=[{opacity:1,transform:'none'},{opacity:0,transform:'translateY(12px)'}];
 function questionAwayMove(on,set){
   if(QN.mv){QN.mv.cancel();QN.mv=null}
-  const c=document.querySelector('#dock .qcard:not(.qheld,.qabout)'), o={ease:'--ease',dur:'--dur',fill:'both'};
+  const c=document.querySelector('#dock .qcard:not(.qheld,.qabout,.qmin)'), o={ease:'--ease',dur:'--dur',fill:'both'};
   if(!on){set();const a=c&&moAnim(c,[...QUESTION_MOVE].reverse(),o);if(a){QN.mv=a;a.onfinish=()=>{a.cancel();if(QN.mv===a)QN.mv=null}}return}
   const a=c&&moAnim(c,QUESTION_MOVE,o);if(!a)return set();
   QN.mv=a;a.onfinish=()=>{if(QN.mv!==a)return;QN.mv=null;set();a.cancel()};
@@ -164,6 +167,19 @@ function questionRoom(){
   return next?Math.max(0,next.offsetTop-c.offsetTop):0;
 }
 questionOn.scroll=questionScroll;questionOn.room=questionRoom;
+/* F511 (K27, option B): QN.auto: the questions a scroll shrank to the Decide pill. Back at the bottom the pill stays, and
+   grows into the card on a tap or after QUESTION_GROW ms still with no touch; it grows upward from where the pill
+   stands, so what is under the finger does not move */
+function questionGrowSoon(){
+  clearTimeout(QN.growT);QN.growT=0;
+  if(!QN.auto.size||QN.away)return;
+  QN.growT=setTimeout(()=>{QN.growT=0;if(QN.away||questionFarNow())return;QN.auto.clear();questionDraw()},QUESTION_GROW);
+}
+for(const t of['touchstart','pointerdown','wheel'])document.addEventListener(t,()=>{if(QN.growT)questionGrowSoon()},{passive:true,capture:true});
+document.addEventListener('click',e=>{  // before 096-dismiss.js shows it: a tap on the pill grows it now
+  const el=e.target.closest('[data-qshow],[data-qrowshow]');if(!el)return;
+  clearTimeout(QN.growT);QN.growT=0;QN.auto.clear();
+});
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-qchat],[data-qunchat]');if(!el)return;
   if(el.dataset.qchat)return questionChat(S.thread,el.dataset.qchat);

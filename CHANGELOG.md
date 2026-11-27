@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: on the run page, a chat's question card shows whole when the question comes; a scroll up shrinks it to its small Decide pill, which stays at the bottom and grows back into the card on a tap or after 2 s still with no touch (F511).
 ## 0.80.0 (2026-11-28)
 
 - Changed: the run page shows a person's own act (drop, cancel, rename…) at once, before the run answers, through one shared change in the page's act path; a refused act goes back; with no events stream the act's snapshot is fetched at once (F508)
