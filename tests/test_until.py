@@ -195,11 +195,11 @@ def test_date():
     eq(U.problem('date:2026-12-03'), '', 'a real day is taken')
     eq(U.label('date:2026-12-03'), '2026-12-03', 'what the screens call it')
     keep = U.today
+    todo = R.C.todo
+    text = todo.read_text(encoding='utf-8')
     try:
         U.today = lambda: datetime.date(2026, 12, 2)
         eq(U.run('date:2026-12-03'), (U.NOT_YET, 'today is 2026-12-02'), 'the day before: not yet')
-        todo = R.C.todo
-        text = todo.read_text(encoding='utf-8')
         todo.write_text(text + '- [ ] **T2** later | files: b.py\n', encoding='utf-8')
         P.block('T2', 'measure a week on', todo=todo, until=['date:2026-12-03'])
         has(P.section(todo, 'T2')[0], r'BLOCKED: \(until date:2026-12-03\) measure a week on$', 'written as a date block')
@@ -209,9 +209,9 @@ def test_date():
         eq(U.run('date:2026-12-03')[0], U.PASSED, 'on the day it passes')
         check(P.until_passed('T2', todo), 'and the task is freed')
         has(P.section(todo, 'T2')[0], r'^- \[ \] \*\*T2\*\*', 'open again')
-        todo.write_text(text, encoding='utf-8')
     finally:
         U.today = keep
+        todo.write_text(text, encoding='utf-8')
 
 
 def main() -> int:
