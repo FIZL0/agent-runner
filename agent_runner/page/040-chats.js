@@ -8,7 +8,7 @@ function side(){
   if(DR&&(DR.on||DR.ready&&DR.hold))return;  // F133: a redraw would drop the row from under the finger
   if(pressHeld()){PD.late=true;PD.since=PD.row;return}  // F201: drawn once the press ends
   const nav=NAV;  // F93: Talk first
-  const needs=S.snap.needs.length+(S.snap.chat_needs||[]).length, use=usageOf(S.snap.status), cn=(S.snap.concepts||[]).length;
+  const needs=S.snap.needs.length+(S.snap.chat_needs||[]).length, use=usageOf(S.snap.status), cn=(S.snap.concepts||[]).filter(c=>!c.history).length;  /* F516: History rows wait for nothing */
   const count={home:needs,concepts:cn};
   const cs=chats(), ws=working_();
   S.sel=S.sel.filter(n=>cs.some(c=>c.name===n));  // F118: a picked chat that ended elsewhere leaves the pick
