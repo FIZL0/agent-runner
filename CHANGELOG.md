@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: `agent_runner/guide.py` is split by area into `guide_text.py`, `guide_topics.py` and `guide_control.py` (still imported through `guide`), and its control test is `tests/test_guide_control.py`; no behaviour change (C59).
+
 - Added: when the usage caps hold new tasks, `status` says so first (which cap, its %, when it lifts) and the run page's Run card shows the same line; `force ID` lets just that task start past the caps (F468)
 - Changed: a task whose gone run's claim is taken over starts from the task/<ID> branch that run pushed, not from a fresh fork (F467).
 - Added: Settings has an "Ask about my settings" button at the top: it opens a new chat with a first message ready to edit (what settings fit how I use this project?); nothing is sent before Send, and the chat recommends each change in one line and makes only those you say yes to (F449).
