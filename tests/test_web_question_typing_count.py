@@ -1,4 +1,4 @@
-"""F192c1: with several questions, the minimized line (shrunk by typing or by hand) shows the count, e.g. 1 of 3.
+"""F192c1: with several questions, the minimized line (shrunk by typing or by scrolling) shows the count, e.g. 1 of 3.
 
     python3 tests/test_web_question_typing_count.py
 """
@@ -26,15 +26,17 @@ def run(tmp: Path, steps: str) -> list | None:
 
 def test_count(tmp: Path) -> None:
     out = run(tmp, """
-      lives([R_A, R_B, R_C]); say(look(), count());
+      lives([A, B, C]); say(look(), count());
       focus(); type('hi'); say(look(), count()); ta.value = ''; blur(); say(look(), count());
-      lives([R_A]); focus(); type('x'); say(look(), count());""".replace('R_', ''))
+      QN.auto.add(questionKey('c1', 'u7')); render(); say(look(), count()); QN.auto.clear(); render();
+      lives([A]); focus(); type('x'); say(look(), count());""")
     if out is None:
         return
     eq(out[0], ['card', '1 of 3'], 'the row, counted')
     eq(out[1], ['min', '1 of 3'], 'shrunk while typing: the line shows the count')
-    eq(out[2][1], '1 of 3', 'open again: the row counts')
-    eq(out[3], ['min', ''], 'one question: the line has no count')
+    eq(out[2], ['card', '1 of 3'], 'open again: the row counts')
+    eq(out[3], ['min', '1 of 3'], 'shrunk by scrolling: the line shows the count')
+    eq(out[4], ['min', ''], 'one question: the line has no count')
 
 
 if __name__ == '__main__':
