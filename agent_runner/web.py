@@ -178,7 +178,7 @@ class Handler(BaseHTTPRequestHandler):
             of = (parse_qs(urlsplit(self.path).query).get('s') or [''])[0]
             return self.send(200, json.dumps(slash_commands(of), ensure_ascii=False))
         if path.startswith('/live/'):  # F170
-            return self.send(200, json.dumps(session_now.live(path.split('/')[2]), ensure_ascii=False))
+            return self.send(200, json.dumps(U.with_task_counts(session_now.live(path.split('/')[2])), ensure_ascii=False))  # F192d1: counts
         if path.startswith('/terminal/'):
             name = path.split('/')[2]
             login = provider_login.is_login(name)  # F406a: its whole rest is the name, so a domain's path is refused
@@ -238,8 +238,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.tools()
         if urlsplit(self.path).path == '/give':
             return self.give()
+        if urlsplit(self.path).path == '/queue':
+            return self.queue()
         if urlsplit(self.path).path != '/act':
-            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /give, /upload, /speech, /recorded or /tools'}))
+            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /give, /queue, /upload, /speech, /recorded or /tools'}))
         try:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
             name, args = str(body.get('name', '')), body.get('args') or {}
@@ -327,6 +329,21 @@ class Handler(BaseHTTPRequestHandler):
         code, got = devices.post(self.rfile.read(size), S.C)
         self.server.snaps.at = 0.0
         self.send(code, json.dumps(got, ensure_ascii=False))
+
+    def queue(self) -> None:
+        """F192d1: a tap on an option with stored tasks: {chat, question, option} queues them once
+        (`ui_model.option_queue`), with one chat line and no message to Claude."""
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+            args = {k: str(body.get(k) or '') for k in ('chat', 'question', 'option')}
+        except (ValueError, AttributeError) as e:
+            return self.send(400, json.dumps({'ok': False, 'out': f'bad request: {e}'}))
+        try:
+            r = U.option_queue(**args)
+        except Exception as e:  # noqa: BLE001 - an answer, so the page shows it failed
+            r = {'ok': False, 'code': 1, 'out': f'queueing failed: {e}', 'argv': []}
+        self.server.snaps.fresh()
+        self.send(200, json.dumps(r, ensure_ascii=False))
 
     def give(self) -> None:
         """F175a: Done on a Needs you item with inputs. `secure` is the connection's (`devices.channel`), never the
