@@ -64,13 +64,8 @@ def test_need(w: World) -> None:
     from agent_runner import control_settled, plan as P, state as S
     w.rows[:] = []
     w.add(say(TWO, 'u7'))
-    first = w.file(TWO.split('\n\nDECIDE: Which size')[0])
+    first, second = w.file(TWO).split(', ')  # F192b1b: an item each
     eq(Q.need_of('c6', 'u7', 'sid-6'), first, 'the first found by its id')
-    second = P.add('F', 'Control session 6 asked the person: "Which size?"', todo=S.C.todo, pri='normal')
-    P.block(second, 'DECIDE: Which size? [Big / Little]', todo=S.C.todo, after=[])
-    what = next(a[3] for a in P.asks(S.C.todo, all=True) if a[1] == second)
-    control_settled.filed(S.C, [second], {'n': 6, 'sid': 'sid-6'})
-    control_settled.filed_question(S.C, 'sid-6', second, 'u7#2', what)
     eq(Q.need_of('c6', 'u7#2', 'sid-6'), second, 'the second found by its id')
     r = U.question_answer('c6', 'u7#2', 'Big')
     eq(r['ok'], True, 'its option settles the second')
