@@ -544,8 +544,16 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'kinds': theme.kind_table(_kind_names()),  # F195b
             'merging': merge_rows.rows(st, titles, _bridge_link, links) if up else [],  # F426e
             'usage_max': {'session': S.C.run.get('session_max'), 'week': S.C.run.get('weekly_max')},  # F426e
+            'usage_held': _usage_held(st) if up else '',  # F468
             'usage': usage_rows(st), 'lately': lately(titles), 'past_releases': past_releases(titles), 'chat_quiet': chat_quiet(), 'chat_model': new_chat_model(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
+
+
+def _usage_held(st: dict) -> str:
+    """F468: the line saying the usage caps hold new tasks, '' when they do not."""
+    import time
+    from agent_runner.cap_hold import held_line
+    return held_line(st, S.C.run, time.time())
 
 
 def kept_responses() -> list[dict]:
