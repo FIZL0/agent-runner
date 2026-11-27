@@ -31,7 +31,7 @@ function workHTML(qs,pk,sh,shOb){
     ['landed','Landed',land.length,land.length?card(land.map(x=>histRow(x,'landed')).join(''),'','data-k="landed"'):emptyCard('Nothing has landed yet.')],
     rel&&['pastrel','Releases',past.length,card(past.map(x=>histRow(x,'pastrel')).join(''),'','data-k="pastrel"')],
     parked&&['parked','Parked',pk.length+sh.length,parked]].filter(Boolean);
-  const jump=`<div class="workjump" role="navigation" aria-label="Sections">${secs.map(([k,name])=>`<button class="chip" data-workjump="${k}">${esc(name)}</button>`).join('')}</div>`;
+  const jump=`<div class="workjump" role="navigation" aria-label="Sections">${secs.map(([k,name])=>`<button class="chip${S.workJump===k?' on':''}" data-workjump="${k}"${S.workJump===k?' aria-current="true"':''}>${esc(name)}</button>`).join('')}</div>`;
   return `${ttydLine()}${controlsCard()}${meters}
     <div class="worksecs">${jump}${secs.map(([k,name,n,h,before,after])=>`${before||''}${workFold(k,name,n,h)}${after||''}`).join('')}</div>`;
 }
@@ -42,8 +42,9 @@ document.addEventListener('click',e=>{
 /* F487: a jump button opens its section and scrolls its head under the jump bar */
 document.addEventListener('click',e=>{
   const x=e.target.closest('[data-workjump]');if(!x)return;
-  const k=x.dataset.workjump;S.workOpen=S.workOpen||{};
-  if(!workIsOpen(k)){S.workOpen[k]=true;render(true)}
+  const k=x.dataset.workjump;S.workOpen=S.workOpen||{};S.workJump=k;
+  if(!workIsOpen(k))S.workOpen[k]=true;
+  render(true);
   const el=document.getElementById('work-'+k), box=el&&el.closest('.body');if(!box)return;
   const bar=box.querySelector('.workjump'), q=box.querySelector('.planq');
   scrollGlide(box,b=>{const h=document.getElementById('work-'+k);return h?h.getBoundingClientRect().top-b.getBoundingClientRect().top+b.scrollTop-(q?q.offsetHeight:0)-(bar?bar.offsetHeight:0)-8:b.scrollTop});
