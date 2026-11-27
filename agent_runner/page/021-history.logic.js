@@ -202,14 +202,25 @@ function pastYou(e,cols){
   const words=(e.text||'')+(e.images&&!/\[Image/.test(e.text||'')?' [Image]'.repeat(e.images):'')+(e.cut?`… +${e.cut} characters`:'');
   return pastWrap([[words,'']],cols-2).map((r,i)=>{const used=2+r.reduce((n,s)=>n+pastWide(s[0]),0), l=pastLine([[i?'  ':'❯ ',i?'':'hm'],...r,[' '.repeat(Math.max(0,cols-used)),'']]);return{t:l.t,h:`<span class="hy">${l.h}</span>`}});
 }
+/* F489: a fold line ('Ran 3 shell commands') opens to the calls it stands for, as the agent CLI's ctrl+o does: its key
+   is its first call's id; open holds the keys of the open ones. A tap on it opens or folds it: whether it was one */
+const pastFoldKey=e=>String(e.call||e.id||'');
+function pastFoldTap(open,el){
+  const f=el&&el.closest&&el.closest('[data-fold]');if(!f||!open)return false;
+  const k=f.getAttribute('data-fold');if(open.has(k))open.delete(k);else open.add(k);
+  return true;
+}
 /* a page's entries as lines of cols cells; a blank line stands before each block */
-function pastLines(entries,cols){
+function pastLines(entries,cols,open){
   const out=[];
   for(let i=0;i<entries.length;i++){
     const e=entries[i];let part=[],under=false;
     if(e.kind==='you')part=pastYou(e,cols);
     else if(e.kind==='say')part=pastMd(e.text,cols-2).map((l,j)=>({t:j?l.t&&'  '+l.t:'● '+l.t,h:(j?l.t?'  ':'':'● ')&&(j?'  ':pastCellsHTML('● '))+l.h}));
-    else if(e.kind==='tool'&&pastFold(e)){const g=[];for(;i<entries.length&&pastFold(entries[i]);i++)g.push([entries[i],pastFold(entries[i])]);i--;part=pastFoldLine(g,cols)}
+    else if(e.kind==='tool'&&pastFold(e)){const g=[];for(;i<entries.length&&pastFold(entries[i]);i++)g.push([entries[i],pastFold(entries[i])]);i--;
+      const k=pastFoldKey(g[0][0])||`at${i-g.length+1}`, at=`<span class="hfold" data-fold="${pastEsc(k).replace(/"/g,'&quot;')}">`;
+      part=pastFoldLine(g,cols).map(l=>({t:l.t,h:at+l.h+'</span>'}));
+      if(open&&open.has(k))for(const [x] of g)part.push(...pastTool(x,cols))}
     else if(e.kind==='tool')part=pastTool(e,cols);
     else if(e.kind==='note')[under,part]=pastNote(e,cols);
     if(!part.length)continue;
