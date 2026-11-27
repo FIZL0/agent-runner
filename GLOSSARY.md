@@ -1044,3 +1044,10 @@ _Said_: review page
 _On screen_: The diff / You asked / Answer it
 _In code_: pitch.page_html, review.diff_html, pitch ask, pitch better
 _Avoid_: code review, PR page
+
+**Lesson**:
+Something a project's agents learned about some files, shown to the next task that works on them
+_Said_: lesson
+_On screen_: Lessons on these files
+_In code_: lessons.py, plan lesson
+_Avoid_: tip, hint
