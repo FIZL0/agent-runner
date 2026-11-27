@@ -54,5 +54,26 @@ def test_pages_are_listed():
             check(cs[1]['waits'], 'a page whose task has a Needs you item says so', cs)
 
 
+def test_chat_pages_are_listed():
+    """B875: a page a chat published has no task, and is listed while recent."""
+    import os
+    import time
+    with tempfile.TemporaryDirectory() as t:
+        d = Path(t)
+        (d / 'TODO.md').write_text(TODO, encoding='utf-8')
+        c = d / 'notes' / 'concepts'
+        c.mkdir(parents=True)
+        (c / 'chat1abc.html').write_text('<title>One Work page</title>', encoding='utf-8')
+        (c / 'chat1def.html').write_text('<p>no title</p>', encoding='utf-8')
+        old = c / 'chat1old.html'
+        old.write_text('<title>Old</title>', encoding='utf-8')
+        os.utime(old, (time.time() - 30 * 86400,) * 2)
+        with mock.patch.object(U.S, 'C', Fake(d)), mock.patch.object(U.need_detail, 'task_lines', lambda: {}):
+            _, cs = U.needs_rows([], dt.datetime.now())
+        eq([(r['id'], r['title']) for r in cs], [('chat1abc', 'One Work page'), ('chat1def', 'A page from a chat')],
+           'recent chat pages listed, with their title; an old one not')
+        check(all(r['page'] and r['copy'].endswith('.html') for r in cs), 'they are page rows', cs)
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_pages_are_listed]))
+    raise SystemExit(report([test_pages_are_listed, test_chat_pages_are_listed]))
