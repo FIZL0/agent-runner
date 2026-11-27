@@ -385,7 +385,12 @@ def cmd_needs(argv: list[str], prog: str = f'{RUNNER} needs') -> int:
     init()
     w = waiting_ok()
     stamps = {a[1]: a[7] for a in w if len(a) > 7 and a[7]}
-    print('\n'.join(P.needs_lines(P.in_order(w, stamps, P.needs_cfg()['order']), has_sheet)))
+    lines = P.needs_lines(P.in_order(w, stamps, P.needs_cfg()['order']), has_sheet)
+    from agent_runner import chat_question  # F486: a live chat's DECIDE, before the run files it
+    if chats := chat_question.need_lines(chat_question.live_needs()):
+        lines = lines[:-1] + chats + ([f'{len(chats)} chat question{"s" * (len(chats) > 1)} need{"s" * (len(chats) == 1)} you']
+                                      if lines[-1].startswith('Nothing') else lines[-1:])
+    print('\n'.join(lines))
     if run_up():  # F168: they wait for a shared tool, not for the person
         print(*(f'{t} {said}\n' for t, said in shared_tools.wait_words().items()), sep='', end='')
     return 0
