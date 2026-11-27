@@ -54,7 +54,7 @@ import tempfile
 from functools import partial
 from pathlib import Path
 
-from agent_runner import asks, audit_fix, plan, plansync, shared_tools, stale
+from agent_runner import asks, audit_fix, lessons_ask, plan, plansync, shared_tools, stale
 from agent_runner.config import cfg, finished_mark
 from agent_runner.gitops import git, missing_remote, push, shared_branch, shared_name, shell
 
@@ -189,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
             merge_rows.clear_slot_gate(c, a.id)
         if rc:
             print(tail)
+            lessons_ask.mark_failed_gate(cwd, a.id)  # F414
             if a.blocked:
                 last = 'Commit only what is solid, and'
             elif (n := fails(cwd, a.id, add=True, content=content)) > MAX_FAILS:
@@ -212,11 +213,24 @@ def main(argv: list[str] | None = None) -> int:
     if a.blocked or not a.no_test:  # a pass, or a block: the next session on it starts its count afresh
         fails(cwd, a.id, reset=True)
 
+    if not a.blocked:
+        lesson_ask(a.id, c)
     if not c.plan_external:
         return record(a, c)
     with plansync.locked(c):  # after the gate: a gate can take an hour, and the lock holds every plan edit
         plansync.pull(c, force=True)
         return record(a, c)
+
+
+def lesson_ask(tid: str, c) -> None:
+    """F414: print the lesson question when something went wrong in `tid`; never stops `done`."""
+    try:
+        ls = plan.lines(c.todo)
+        item = '\n'.join(plan._item_block(ls, plan._find(ls, tid)))
+    except (OSError, SystemExit, ValueError, IndexError):
+        item = ''
+    if q := lessons_ask.ask(c.root, tid, item, c):
+        print(q, file=sys.stderr)
 
 
 def record(a, c) -> int:

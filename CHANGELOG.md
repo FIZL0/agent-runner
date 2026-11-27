@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: with lessons on, `run done` asks for a lesson (or none) only after a failed gate in the task or a person's change to it in the plan, once per trigger, checks first; a merge repair's session may file one. It never holds up done (F414).
 - Fixed: a release no longer waits on a task that waits for that release (directly or down its chain), so neither is stuck; the task runs after the release lands (B868).
 ## 0.78.0 (2026-11-26)
 
