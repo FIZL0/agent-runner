@@ -215,6 +215,33 @@ def clear_ask(tid: str, todo: str | Path | None = None) -> None:
     for c in _plans(todo):
         _clear_file(c, tid)
         _clear_sheet(c, tid)
+        drop_option_tasks(c)
+
+
+OPTION_TASKS_GRACE = 600  # seconds: tasks stored this recently may be for a question not filed yet
+
+
+def drop_option_tasks(c, now: float | None = None) -> int:
+    """F192d3: an item was answered, dropped or asked again: drop the tasks stored for each question
+    (`option_tasks`) that no open DECIDE in `c`'s plan asks any more, except those stored in the last
+    OPTION_TASKS_GRACE seconds, whose question may not be filed yet. How many questions' tasks went."""
+    from agent_runner import option_tasks
+    import time
+    try:
+        d = c.notes(option_tasks.DIR, 'x').parent
+        plan = ' '.join(re.findall(r'DECIDE:[^\n]*', Path(c.todo).read_text(encoding='utf-8'))).casefold()
+    except (OSError, ValueError, AttributeError):
+        return 0
+    plan, now, n = ' '.join(plan.split()), now or time.time(), 0
+    for p in sorted(d.glob('*.json')) if d.is_dir() else []:
+        try:
+            q = json.loads(p.read_text(encoding='utf-8')).get('question', '')
+            young = now - p.stat().st_mtime < OPTION_TASKS_GRACE
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not young and option_tasks._key(q) not in plan:
+            n += option_tasks.drop(q, d)
+    return n
 
 
 def reopened(tid: str, todo: str | Path | None = None) -> None:

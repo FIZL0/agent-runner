@@ -338,5 +338,38 @@ def test_open_chat_f209c(tmp: Path) -> None:
         eq(U.open_chats({'F9'}), {}, 'nothing open: nothing named')
 
 
+def test_option_tasks_f192d3(tmp: Path) -> None:
+    """F192d3: a DECIDE option with stored tasks shows how many, a press queues them (once) instead of leaving them to
+    a session, and an answered question's stored tasks go."""
+    import os
+    from agent_runner import asks, option_tasks
+    repo = fake_run(tmp)
+    todo = repo / 'plan' / 'TODO.md'
+    todo.write_text(todo.read_text(encoding='utf-8').replace('DECIDE: which layout https://claude.ai/artifact/abc',
+                                                             'DECIDE: Which layout? [Full / Small]'), encoding='utf-8')
+    option_tasks.store('Which layout?', {'Full': [['F', 'a'], ['F', 'b']], 'Small': []}, 'q1')
+    row = U.row_of('need', 'D3')
+    eq([(a['value'], a.get('tasks')) for a in row['answers']], [('Full', 2), ('Small', None)], 'the count, options with tasks')
+    check('queues 2 tasks' in row['answers'][0]['label'], 'the label says it', row['answers'])
+    added: list = []
+    from agent_runner import plan
+    real = plan.main
+    with mock.patch.object(plan, 'main', lambda a: added.append(a[1:]) or 0 if a[:1] == ['add'] else real(a)), \
+            mock.patch.object(U, 'SEND', [lambda t: check(False, 'no session starts', t)]):
+        r = U.act('run_control', key='need_answer1', tid='D3', text='Full')
+    eq((r['ok'], r.get('queued'), added), (True, 2, [['F', 'a'], ['F', 'b']]), 'a press queues the tasks')
+    check('queued already' in todo.read_text(encoding='utf-8'), 'the answer says they are queued')
+    eq(option_tasks.stored('Which layout?'), {}, 'and they are dropped')
+    p = option_tasks.store('Old question?', {'A': [['F', 'x']]}, 'q2')
+    option_tasks.store('Which layout?', {'A': [['F', 'y']]}, 'q3')
+    asks.drop_option_tasks(S.C)
+    check(p.exists(), 'a just stored question is kept')
+    for f in p.parent.glob('*.json'):
+        os.utime(f, (1, 1))
+    todo.write_text(todo.read_text(encoding='utf-8') + '- [~] **D4** x BLOCKED: DECIDE: Which layout? [A / B]\n', encoding='utf-8')
+    eq(asks.drop_option_tasks(S.C), 1, 'an old question no DECIDE asks any more is dropped')
+    eq((p.exists(), option_tasks.counts('Which layout?')), (False, {'A': 1}), 'one still asked stays')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_open_chat_f209c), in_tmp(test_concept_item_f197b1), in_tmp(test_frame_kept_b860), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
+    raise SystemExit(report([in_tmp(test_option_tasks_f192d3), in_tmp(test_open_chat_f209c), in_tmp(test_concept_item_f197b1), in_tmp(test_frame_kept_b860), in_tmp(test_decide_options_f181c), in_tmp(test_decide_question_b223a), in_tmp(test_part_of_part_b199), in_tmp(test_whole_b793b), in_tmp(test_old_script_c37a), in_tmp(test_need_detail_f162), in_tmp(test_need_answers_c33)]))
