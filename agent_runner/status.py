@@ -87,6 +87,8 @@ def _running_ids() -> set[str]:
     try:
         ids |= set(taken())
     except (OSError, SystemExit):
+        pass
+    return ids
 
 
 MERGED_SUBJECT = re.compile(r"^(?:Merge branch '?task/)?([A-Z]+\d+[a-z0-9]*)\b")  # a commit subject's task id
