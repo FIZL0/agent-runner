@@ -261,6 +261,15 @@ class Tells {
 
   show(s) { if (this.echo) process.stdout.write(s); }
 
+  // B865: erase the line(s) the typed message was echoed on; it is printed again as saidLines once sent
+  unshow() {
+    if (!this.echo) return;
+    const cols = process.stdout.columns || 100;
+    let rows = 0;
+    for (const line of this.buf.split('\n')) rows += Math.max(1, Math.ceil([...line].length / cols));
+    this.show('\r\x1b[2K' + '\x1b[1A\x1b[2K'.repeat(rows - 1));
+  }
+
   // a key of a chat's line editor; whether it was one
   key(c) {
     if (c === '\x03' || c === '\x1b') {
@@ -302,7 +311,7 @@ class Tells {
       const crlf = this.cr && c === '\n';
       this.cr = c === '\r';
       if (crlf) continue;
-      if ((c === '\r' || c === '\n') && !this.paste) { this.show('\r\n'); this.push(this.buf); this.buf = ''; continue; }
+      if ((c === '\r' || c === '\n') && !this.paste) { this.unshow(); this.push(this.buf); this.buf = ''; continue; }
       if (this.chat && !this.paste && this.key(c)) continue;
       if (c === '\x03') process.exit(130); // Ctrl-C in its terminal
       if (c === '\x1b' && !this.paste) continue; // a lone Escape (an interrupt to Claude Code): nothing here
@@ -942,7 +951,6 @@ async function main() {
   for (;;) {
     if (over && !pending.length) {
       s.ctl = null;
-      console.log('\n(waiting for you)');
       if (!tells.queue.length) is('idle');
       if (!(await tells.wait(Infinity))) return 0;
       if (tells.queue.some((x) => x === '/exit' || x === '/quit')) return 0;
@@ -954,9 +962,9 @@ async function main() {
       messages.push(t.user(text));
       console.log(saidLines(text));
     }
-    for (const text of tells.take()) { // B855: a chat's terminal already showed a typed tell as it came
+    for (const text of tells.take()) { // B865: the raw echo was erased at Enter; the tell shows as saidLines
       messages.push(t.user(text));
-      if (!tells.echo) console.log(saidLines(text));
+      console.log(saidLines(text));
     }
     const why = overBudget(a, tokens, usd);
     if (why) {

@@ -245,6 +245,14 @@ def test_trusted_networks(tmp: Path) -> None:
         check('[ui] trusted_networks' in got and repr(bad) in got, f'{bad} is an error that names it', got)
     for bad in ('"tailnet"', 'true', '[1]'):
         check('[ui] trusted_networks must be' in said(bad), f'{bad} is no list of networks', said(bad))
+    from _trust import name_checks  # F481
+    name_checks()
+    import time
+    from agent_runner import trust
+    trust._names['omarchy-desktop.beetal-ling.ts.net'] = (time.monotonic(), ['100.101.1.2'])
+    eq(CF.setting_problem('ui', 'trusted_networks', ['omarchy-desktop.beetal-ling.ts.net', 'all']), '',
+       'the Settings page saves a host name and all')
+    trust._names.clear()
 
 
 def test_releases_f193(tmp: Path) -> None:
