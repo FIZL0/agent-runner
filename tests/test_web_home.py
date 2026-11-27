@@ -1148,6 +1148,18 @@ def test_home_new_chat_f196f(tmp: Path) -> None:
     eq([(a[0], a[1].get('wait'), a[2]) for a in acts], [('new_control', False, True)], 'one new_control, not waited for, a new chat')
     eq((view, thread, state, rows), ('home', '@k1', 'starting', ['@k1']), 'opened in place as one stand-in, Starting the chat')
     eq(o['named'], ['c7', 'starting', [['c7', 'what is up']]], 'its name keeps one row, still starting, with the same words')
+    # the server: Home's chip (quick_ask) and its box (new_control with ask) are answered as + is: a name, the ask, at
+    said = {'ok': True, 'code': 0, 'out': 'control 7 started', 'argv': []}
+    srv = W.serve('RT', 0, '127.0.0.1', snap=lambda: {})
+    try:
+        with mock.patch.object(U, 'call', lambda argv, *a, **k: dict(said, argv=argv)), mock.patch.object(U, 'name_new', lambda r, ask: r):
+            url = f'http://127.0.0.1:{srv.server_address[1]}/act?t=RT'
+            asks = {'plus': ('new_control', {}), 'box': ('new_control', {'ask': 'what is up'}), 'chip': ('quick_ask', {'key': 'since'})}
+            got = {k: post(url, {'name': n, 'args': {**a, 'wait': False}, 'cid': k})[1] for k, (n, a) in asks.items()}
+    finally:
+        srv.stop()
+    eq({k: (v['ok'], v['name'], '--no-wait' in v['argv'], bool(v['at'])) for k, v in got.items()},
+       {k: (True, 'c7', True, True) for k in got}, "Home's new chats get the name and time + gets, started without waiting")
 
 
 if __name__ == '__main__':
