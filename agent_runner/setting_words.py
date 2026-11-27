@@ -69,7 +69,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.web_port': ('look', 'Run page port', 'The port this page is on. With Runner Home, setting one keeps it open beside Home.'),
     'run.web_open': ('look', 'Run page opens on', 'Everywhere: your other devices open this page too. Here: only this computer, by its localhost link. Applies from the next run.'),
     'run.web_https': ('look', 'Run page over https', 'An https address for this page on your tailnet, by Tailscale Serve on the next port. Talk needs https for the mic.'),
-    'ui.trusted_networks': ('look', 'Networks with no key', 'A device on one of these networks opens this page without its key. Empty: the key is always needed.'),
+    'ui.trusted_networks': ('look', 'Networks with no key', 'Open this page without its key from: a CIDR, tailnet, a host name, or all (careful: no key anywhere). Empty: the key is needed.'),
     'ui.theme': ('look', 'Terminal colors', 'The colors of the terminal page and of a session on this page. Light suits a bright terminal.'),
     'run.auto_upgrade': ('look', 'Update by itself', 'A newer agent-runner is installed, and the run restarts on new code, between merges. Off: only when you press upgrade or restart.'),
     'run.install_skill': ('look', 'Guide for your own sessions', 'Keeps the agent-runner guide where sessions you start find it. Off: they do not know the run.'),
