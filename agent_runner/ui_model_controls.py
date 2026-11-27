@@ -362,6 +362,15 @@ def control_argv(key: str, n='', tid: str = '', why: str = '', pri: str = '') ->
 
 def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True,
                 text: str = '', note: str = '') -> dict:
+    """F479: _run_control, its whole time (checks, plan lock, subprocess) logged when slow."""
+    t0 = time.monotonic()
+    r = _run_control(key, n, tid, why, confirm, wait, text, note)
+    slow_log('control', [key, tid], time.monotonic() - t0)
+    return r
+
+
+def _run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True,
+                 text: str = '', note: str = '') -> dict:
     """F82: run one run control (RUN_CONTROLS) for the web page or agent-runner ui. One with a confirm question
     runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'. B139:
     one with an 'ask' starts a new control session with it (`new_control`, `wait` as there). F180: an answer takes `text`, the label the

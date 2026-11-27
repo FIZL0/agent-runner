@@ -19,9 +19,20 @@ def _run(argv: list[str]) -> tuple[int, str]:
 RUN = [_run]  # what every action runs; a test or a wrapping UI swaps it
 
 
+SLOW_S = 1.0  # F479: an action slower than this is logged with its time
+
+
+def slow_log(what: str, argv, secs: float) -> None:
+    """F479: write to the run log how long a run page `what` (its `argv`) took, when over SLOW_S."""
+    if secs > SLOW_S:
+        S.log(f'slow run page {what}: {" ".join(map(str, argv))} took {secs:.1f} s')
+
+
 def call(argv: list[str]) -> dict:
     """One action's result: {'ok', 'code', 'out', 'argv'}."""
+    t0 = time.monotonic()
     code, out = RUN[0](argv)
+    slow_log('action', argv, time.monotonic() - t0)
     return {'ok': code == 0, 'code': code, 'out': out, 'argv': argv}
 
 

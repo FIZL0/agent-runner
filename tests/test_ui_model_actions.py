@@ -274,5 +274,21 @@ def test_need_give_f175(tmp: Path) -> None:
     check(not env.exists(), 'gone once dropped')
 
 
+def test_slow_log_f479(tmp: Path) -> None:
+    fake_run(tmp)
+    logged, real_run = [], U.RUN[0]
+    with mock.patch.object(U.S, 'log', lambda msg, *a, **k: logged.append(msg)), mock.patch.object(U, 'SLOW_S', 0.05):
+        try:
+            U.RUN[0] = lambda argv: (0, 'ok')
+            U.call(['plan', 'drop', 'B2'])
+            eq(logged, [], 'a fast action logs nothing')
+            U.RUN[0] = lambda argv: (time.sleep(0.1), (0, 'ok'))[1]
+            U.call(['plan', 'drop', 'B2'])
+            eq(len(logged), 1, 'a slow action logs once')
+            check('plan drop B2 took' in logged[0], f'it names the command and its time: {logged}')
+        finally:
+            U.RUN[0] = real_run
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_need_give_f175), in_tmp(test_actions), in_tmp(test_real_command), in_tmp(test_shelved_f184), in_tmp(test_to_new), in_tmp(test_answers_f180), in_tmp(test_typed_decide_f181a)]))
+    raise SystemExit(report([in_tmp(test_need_give_f175), in_tmp(test_actions), in_tmp(test_real_command), in_tmp(test_shelved_f184), in_tmp(test_to_new), in_tmp(test_answers_f180), in_tmp(test_typed_decide_f181a), in_tmp(test_slow_log_f479)]))
