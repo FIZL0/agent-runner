@@ -42,10 +42,7 @@ def worktree(n, branch: str) -> Path:
     """Slot n's worktree (or the merge worktree), created once and kept: a warm build is worth more than a
     clean one. `[run] links` — git-ignored data the work needs — are symlinked in, never copied."""
     d = SLOTS_DIR / (f's{n}' if isinstance(n, int) else str(n))
-    with slot_prep.dir_lock(d):  # F500: a slot prepared in the background is not built twice
-        if not join.own_worktree(d):  # BUG2: a folder from another copy of the repo is added again from this one
-            slot_prep.build(d, branch)  # F500: a spare reused, else registered under a lock, checked out beside others
-    t0 = time.monotonic()
+    t0 = slot_prep.ensure(d, branch, join.own_worktree)  # BUG2: another copy's folder is added again; F500: built at once
     for pat in C.run['copies']:  # git-ignored files a worktree needs its own copy of (a local config)
         for src in map(Path, glob.glob(str(ROOT / pat))):
             if src.is_file() and not (dst := d / src.relative_to(ROOT)).exists():
@@ -60,9 +57,7 @@ def worktree(n, branch: str) -> Path:
                     plat.link(src, dst)  # a symlink; on Windows without Developer Mode a junction or hard link
                 except OSError:
                     pass
-    with slot_prep.REGISTER:  # trust writes one shared settings file
-        backend().trust(d)
-    slot_prep.timed(f'worktree {d.name}', 'its copies, links and trust', t0)
+    slot_prep.trust(d, backend(), t0)
     return d
 
 
@@ -836,12 +831,14 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     finished_mark(n, C).unlink(missing_ok=True)  # the last task's `done`, not this one's
     C.notes(f'{tid}.budget').unlink(missing_ok=True)  # F103: an earlier attempt's budget stop, not this one's
     C.notes(f'{tid}.fallback').unlink(missing_ok=True)  # F106g: an earlier attempt's cap stop
+    t0 = time.monotonic()
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if not vacate(n, d, head, branch, f'for {tid}'):
         return None
     if trim(d, f'slot {n}'):
         worktree(n, branch)  # the `links` the clean took
+    slot_prep.timed(f'slot {n}', f'getting its worktree ready for {tid}', t0)  # F500
     end_mark(n, C).unlink(missing_ok=True)  # F102: the last session's finish or ask, read when it ended
     ask = asked(tid)  # F102: it asked the person, and the answer is in: its own session goes on
     wait = {} if ask else shared_tools.waited(tid)  # F168: it gave up its slot for a shared tool, free now

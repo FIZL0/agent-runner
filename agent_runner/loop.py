@@ -36,7 +36,7 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, free_bra
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged, budget_mark, budgets, SPENT)
 from agent_runner import slot_prep  # noqa: E402  (F500)
-from agent_runner.slots import worktree  # noqa: E402,F811  (F500)
+from agent_runner.slots import worktree  # noqa: E402  (F500)
 from agent_runner.teardown import close_page, end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, known_usage, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
@@ -862,7 +862,8 @@ class Run:
         foreign = self.foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
         sweep_tmp(force=True)
         drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
-        slot_prep.prepare([n for n in range(1, slots + 1) if n not in procs], branch, worktree)  # F500: all at once
+        for t in slot_prep.prepare([n for n in range(1, slots + 1) if n not in procs], branch, worktree):  # F500
+            t.join(1800)  # built at once, and whole before anything reads them
         left = left_merging()
         finished = unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign])
         # the riders of a merge an earlier run gated wait from the start, so its turn finds them and reuses it

@@ -4,7 +4,6 @@ use instead of being built again; each step's time is logged, so the slow one sh
 
 from __future__ import annotations
 
-import re
 import threading
 import time
 from pathlib import Path
@@ -52,15 +51,33 @@ def build(d: Path, branch: str) -> None:
                 break
         else:
             s = None
-            S.git('worktree', 'add', '-q', '--no-checkout', '--detach', str(d), branch)
+            if S.git('worktree', 'add', '-q', '--no-checkout', '--detach', str(d), branch).returncode:
+                S.log(f'{what}: git worktree add failed')
+                return
     if s is not None:
-        S.git('checkout', '-q', '--detach', branch, cwd=d)
+        if S.git('checkout', '-q', '-f', '--detach', branch, cwd=d).returncode:
+            S.log(f'{what}: the spare {s.name} could not check out {branch}')
         timed(what, f'reusing the spare {s.name}', t0, always=True)
         return
     t1 = time.monotonic()
     S.git('checkout', '-q', '-f', cwd=d)
     timed(what, 'the checkout', t1)
     timed(what, 'building it', t0, always=True)
+
+
+def ensure(d: Path, branch: str, own) -> float:
+    """`d` built if `own(d)` says it is not a worktree of this repo, under its folder's lock; the time after."""
+    with dir_lock(d):  # a slot prepared in the background is not built twice
+        if not own(d):
+            build(d, branch)
+    return time.monotonic()
+
+
+def trust(d: Path, agent, t0: float) -> None:
+    """The agent's trust of `d` (one shared settings file, so one at a time), and the time since `t0` logged."""
+    with REGISTER:
+        agent.trust(d)
+    timed(f'worktree {d.name}', 'its copies, links and trust', t0)
 
 
 def prepare(ns: list[int], branch: str, worktree) -> list[threading.Thread]:
@@ -79,7 +96,3 @@ def _prepare_one(n: int, branch: str, worktree) -> None:
         worktree(n, branch)
     except Exception as e:  # the slot's own start builds it again and reports
         S.log(f'slot {n}: preparing its worktree failed: {e}')
-
-
-def is_slot(name: str) -> bool:
-    return bool(re.fullmatch(r's\d+', name))
