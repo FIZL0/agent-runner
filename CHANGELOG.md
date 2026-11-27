@@ -3,12 +3,15 @@
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
 ## Unreleased
-- Changed: the settings area (types, checks, toml edits) moved from config.py to config_settings.py, no behaviour change (C61).
 
+## 0.81.0 (2026-11-28)
+
+- Changed: the settings area (types, checks, toml edits) moved from config.py to config_settings.py, no behaviour change (C61).
 - Changed: a merge is not tested again when the shared branch moved during its gate only by the runner's own gated merges on other files; a hand commit, a shared file or a `runner.toml` change still tests it again (F493).
 - Added: `run login claude --as NAME` adds another Claude login in its own CLAUDE_CONFIG_DIR, kept per machine; the first (Claude Code's own) stays the default login, and `run login` lists them. Each must be a separate real account (F502).
 - Changed: lazyrunner's key bar lists every key of the mode; Concepts' panel is framed like Work, Tools and Settings; moving the highlight onto a chat shows that chat on the right (F484b)
 - Changed: on the run page, a chat's question card shows whole when the question comes; a scroll up shrinks it to its small Decide pill, which stays at the bottom and grows back into the card on a tap or after 2 s still with no touch (F511).
+
 ## 0.80.0 (2026-11-28)
 
 - Changed: the run page shows a person's own act (drop, cancel, rename…) at once, before the run answers, through one shared change in the page's act path; a refused act goes back; with no events stream the act's snapshot is fetched at once (F508)
