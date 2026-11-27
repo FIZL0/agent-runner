@@ -1,8 +1,10 @@
 /* F133, F201: drag a pinned chat's row to set its place among the pins, by pointer events so a phone's touch works too: a mouse drags at once,
    a touch after a short hold (a swipe before it still scrolls the list); the drop is kept by the run */
-const dragEnd=()=>{if(!DR)return;const {row,on}=DR, y=on?shiftOf(row).m42:0;clearTimeout(DR.hold);row.classList.remove('lift','drag');row.style.transform='';DR=null;if(y)glideTo(row,0,y);if(on)render(true)};
+/* F507: any chat's row drags, into Quiet and back out; a row of the bulk select carries the whole selection along */
+const dragEnd=()=>{if(!DR)return;const {row,on}=DR, y=on?shiftOf(row).m42:0;clearTimeout(DR.hold);row.classList.remove('lift','drag');
+  for(const r of DR.with||[])r.classList.remove('drag');if(DR.line)DR.line.remove();row.style.transform='';DR=null;if(y)glideTo(row,0,y);if(on)render(true)};
 document.addEventListener('pointerdown',e=>{
-  const row=e.target.closest&&e.target.closest('.crow.pinned[data-crow]');
+  const row=e.target.closest&&e.target.closest('.crow[data-crow]');
   if(!row||e.button>0||S.ren||e.target.closest('.pin,.del,.rowmenu,.rowacts')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
   dragEnd();
   DR={row,name:row.dataset.crow,id:e.pointerId,y0:e.clientY,on:false,ready:e.pointerType==='mouse'};
@@ -14,7 +16,11 @@ document.addEventListener('pointermove',e=>{
   if(!DR.on){
     if(Math.abs(dy)<6)return;
     if(!DR.ready){dragEnd();return}  // a touch that moves before the hold is a scroll
-    DR.on=true;DR.row.classList.add('drag');try{DR.row.setPointerCapture(e.pointerId)}catch(err){}
+    DR.on=true;DR.row.classList.add('drag');
+    if(S.sel.length>1&&S.sel.includes(DR.name)){DR.names=S.sel.slice();DR.with=[...document.querySelectorAll('.crow[data-crow]')].filter(r=>r!==DR.row&&DR.names.includes(r.dataset.crow));for(const r of DR.with)r.classList.add('drag')}
+    if(!document.querySelector('#sidein .qline')){const rs=document.querySelectorAll('#sidein .crow'), l=rs[rs.length-1];  // no Quiet yet: its line, to drop on
+      if(l){DR.line=document.createElement('div');DR.line.className='qline drop';DR.line.textContent='Quiet';l.after(DR.line)}}
+    try{DR.row.setPointerCapture(e.pointerId)}catch(err){}
   }
   DR.row.style.transform=`translateY(${dy}px)`;e.preventDefault();
 });
@@ -24,8 +30,10 @@ document.addEventListener('pointerup',e=>{
   if(!DR.on)return dragEnd();
   const name=DR.name, others=[...document.querySelectorAll('.crow.pinned[data-crow]')].filter(r=>r!==DR.row);
   const to=others.filter(r=>{const b=r.getBoundingClientRect();return b.top+b.height/2<e.clientY}).length;
+  const ql=document.querySelector('#sidein .qline'), low=!!ql&&ql.getBoundingClientRect().top<e.clientY, carried=DR.names||[name], pinned=DR.row.classList.contains('pinned');
   dragEnd();
   noClick=true;setTimeout(()=>noClick=false,0);  // the click that ends a drag opens nothing
+  if(saveQuiet(carried,low?'quiet':'top')||!pinned||low||carried.length>1)return;
   const names=chatNames(),pins=chatPins().filter(m=>names.includes(m)),moved=chatMove(pins,name,to);
   if(moved.join()!==pins.join())savePins(moved);
 });

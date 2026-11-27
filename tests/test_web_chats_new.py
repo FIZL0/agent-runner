@@ -403,7 +403,7 @@ def test_chat_order_f133(tmp: Path) -> None:
     button, only a pinned one drags, by pointer events, and chatMove places it among the pins."""
     fake_repo(tmp)
     page = W.page_html().decode()
-    check('data-pin=' in page and "act('chat_order'" in page and "'pointerdown'" in page and "closest('.crow.pinned[data-crow]')" in page,
+    check('data-pin=' in page and "act('chat_order'" in page and "'pointerdown'" in page and "closest('.crow[data-crow]')" in page,
           'the page: a pin button per chat, only pinned rows dragged by pointer events, the chat_order action')
     sessions = [{'name': n} for n in ('c1', 'c3', 'c4', 's1')]
     token = W.web_token()

@@ -3,6 +3,7 @@
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
 ## Unreleased
+- Added: on the run page, drag a chat's row into Quiet and back out, or a bulk select of chats all at once; the run keeps where they are, and a finger drags after a short hold (F507).
 - Changed: the settings area (types, checks, toml edits) moved from config.py to config_settings.py, no behaviour change (C61).
 
 - Changed: a merge is not tested again when the shared branch moved during its gate only by the runner's own gated merges on other files; a hand commit, a shared file or a `runner.toml` change still tests it again (F493).
