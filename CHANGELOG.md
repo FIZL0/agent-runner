@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.86.0 (2026-11-28)
+
 - Added: the Tools page's Add… offers SSH machine, Login (write-only, saved only over https or on the machine) and Custom tool, whose description queues a task that turns it into a tool entry for you to approve (F466b).
 - Added: the option-tasks store: a control session stores the tasks each DECIDE option queues, for one-tap queueing later (F192d).
 - Added: with several questions, the question's minimized line (shrunk while typing or by scrolling) shows the count, e.g. 1 of 3 (F192c1).
@@ -11,6 +13,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Added: opening a concept's details popup, from Home's Needs you card or its Concepts row, clears its New or Updated badge on every device; View clears nothing (F197b3).
 - Fixed: a chat's live screen fits its terminal again when the box font loads late or its box changes size, so Copilot CLI's prompt wraps at the box's edge (B883).
 - Added: the Tools page lists each check a blocked task waits on, with its last result and when, the tasks that wait, and Check now; nothing when none waits (F427d).
+
 ## 0.85.0 (2026-11-28)
 
 - Added: deciding an item for good on the run page, in the TUI or by a pick link (an answer or option button, approve, confirm or drop) closes the chats about it instead of typing a line into them; the transcript stays and Resume brings one back. Shelve, revise and a No still type the line, and a chat the person spoke in last, that asks another DECIDE, runs work, holds a message, has a question up, is about another waiting item or was renamed stays open (F209b).
