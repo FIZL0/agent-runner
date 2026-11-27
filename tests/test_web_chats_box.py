@@ -47,8 +47,7 @@ def test_esc_ctrl_c(tmp: Path) -> None:
         if ln.strip() in out_of_box:
             check('interrupt' not in ln, 'an Esc branch out of the box sends no interrupt', ln)
     esc_int = [ln for ln in esc_lines if 'interrupt' in ln]
-    check(len(esc_int) == 1 and 'shownSession()' in esc_int[0] and 'busy(n)' in esc_int[0] and 'S.thread=null' not in esc_int[0],
-          'Esc in the box interrupts only a working chat, and does not go back', esc_int)
+    check(esc_int == [], 'F484c: Esc never interrupts, only Ctrl+C', esc_int)
     check(any("e.key==='Escape'" in ln and 'blur()' in ln for ln in lines), 'Esc in the box leaves it')
     check(any("e.key==='Escape'&&S.thread&&" in ln and 'S.thread=null' in ln for ln in lines), 'Esc out of the box goes back')
     ctrl = [ln for ln in lines if 'e.ctrlKey' in ln]
@@ -302,11 +301,11 @@ def test_composer_keys_b120(tmp: Path) -> None:
     eq(got.get('none'), [False, ''], 'a chat with no history leaves Up alone')
     eq(got.get('shift'), [False, 0], 'Shift+Enter is left to the box (a new line), not sent')
     eq(got.get('enter'), [True, 1], 'Enter sends')
-    eq(got.get('escBusy'), [True, [['interrupt', 'c1']], 0, 'c1'], 'Esc interrupts the working chat and stays in it')
-    eq(got.get('escIdle'), [True, 1, 1, 'c1'], 'Esc in an idle chat leaves the box, sends nothing, does not go back')
+    eq(got.get('escBusy'), [True, [], 1, 'c1'], 'F484c: Esc in a working chat leaves the box and interrupts nothing')
+    eq(got.get('escIdle'), [True, 0, 2, 'c1'], 'Esc in an idle chat leaves the box, sends nothing, does not go back')
     eq(got.get('bad'), [False, ''], 'a broken stored history is read as none')
     eq(got.get('homeEsc'), [True, []], 'B142, F176: Esc on Home interrupts nothing')
-    eq(got.get('talkEsc'), [True, [['interrupt', 'c7']]], 'B142: in the Talk view, the Talk session')
+    eq(got.get('talkEsc'), [True, []], 'F484c: Esc in the Talk view interrupts nothing')
     eq(got.get('homeEscIdle'), [True, 0, 1], 'B142: Esc on Home leaves the box')
     eq(got.get('homeCtrlC'), [False, []], 'F176: Ctrl+C with no chat open is the browser\'s')
     eq(got.get('homeStop'), [], 'Stop with no chat open interrupts nothing')

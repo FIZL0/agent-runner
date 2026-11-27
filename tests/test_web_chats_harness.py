@@ -264,7 +264,7 @@ def test_page(env: Env) -> None:
                     ['keysLine', True], ['keysLine', False]])
     eq(got[0], [{'key': 'work', 'label': 'Working'}, {'key': 'model', 'label': WORDS}], 'Working and the model, no mode')
     eq(got[1], [{'key': 'model', 'label': WORDS}], 'idle: the model')
-    check('commands' not in got[2] and 'commands' in got[3], 'the box names no commands where there are none')
+    eq(got[2:], ['', ''], 'F484c: the box shows no keys line')
     page = W.page_html().decode()
     check('sessmodel(){' in page, 'the model chip has its sheet')
     check('i.why' in page, 'an ended chat says why it cannot come back')
