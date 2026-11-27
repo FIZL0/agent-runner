@@ -2726,6 +2726,15 @@ def test_prompt_and_hooks(repo: Path):
     check(f'`{R.C.command} done <ID> "<commit message>"`' in head, 'it says <ID> where the id goes')
     check(p2.rstrip().endswith(R.brief_for('T2', repo).rstrip()), 'the task\'s brief comes last')
     check(p2.index('Project policies:') < p2.index('The task\'s brief'), 'after its policies')
+    # B869: a worktree on a base older than the task (its plan has no line for it) still gets the full brief
+    old = repo.parent / f'{repo.name}-b869'
+    if not old.exists():
+        subprocess.run(['git', '-C', str(repo), 'worktree', 'add', '-q', '--detach', str(old)], check=True)
+    (old / 'plan').mkdir(parents=True, exist_ok=True)
+    (old / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
+    b = R.brief_for('T2', old)
+    check('produced nothing' not in b and b.strip() == R.brief_for('T2', repo).strip(),
+          'a session in a worktree whose plan lacks its task gets the main plan\'s brief', b[:300])
     cmd = R.agent_cmd('hi', 'sid', 'opus', 90, 'slot1')
     has(cmd, r'--stop-hook --idle 90', 'the agent command carries the idle Stop hook')
     big = 'x' * 40000  # a long brief

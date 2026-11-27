@@ -145,6 +145,13 @@ def brief_for(tid: str, cwd: Path) -> str:
     try:
         return '\n'.join(P.brief(tid, root=cwd, plan_dir=plan_at(cwd)))
     except SystemExit as e:
+        # B869: a worktree started on a base older than the task (a merge ahead, a task filed on main since) has no
+        # line for it in its own plan; the main checkout's plan has, so the session still gets its brief.
+        if not C.plan_external and Path(cwd).resolve() != Path(C.root).resolve():
+            try:
+                return '\n'.join(P.brief(tid, root=cwd, plan_dir=C.plan_dir))
+            except SystemExit:
+                pass
         return f'({C.command} plan brief {tid} produced nothing: {e})'
 
 
