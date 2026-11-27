@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a change that waits on its task branch, or as a pull request in PR mode, has a Review page: `run review ID --page` writes it (diff, why, questions, how to answer) and `run review ID --ask "…"` asks about the change (F444d).
 - Added: `[run] usage_limits = false` switches the usage caps off: the runner never reads account usage, never holds or falls back a task on `session_max` / `weekly_max`, and status hides them (F488).
 - Changed: a diff whose only change to `pyproject.toml`, `package.json` or `Cargo.toml` is its description line counts as docs only, so `done` and the merge skip the gate for it (F494).
 - Added: a model name can pin a Claude login, `claude@work:opus`, anywhere a model is named ([models] roles, kinds, sizes, fallback, `--model`); a session on it starts on that login, and when that login is capped it goes on with claude's next free login (F504).

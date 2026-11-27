@@ -699,8 +699,13 @@ lines (400 by default; 0 shows none). Plan files are not in it. While the change
   with "asked for a better way: …" as the reason.
 - `agent-runner pitch approve pitch1`.
 
-The change waits after landing, on the local shared branch. A change waiting on its task branch, or as a pull
-request (PR mode), has no Review page yet.
+The change waits after landing, on the local shared branch. A change that waits on its task branch, or as a pull
+request (PR mode), has a Review page too (F444d): `agent-runner review F1 --page` writes it to
+`<notes>/review/F1.html` and prints the path. It shows where the change waits (task/F1, or the pull request's link),
+what its agent wrote, its diff (from where the branch leaves the shared branch, or from the pull request's base to
+its tested commit) and the questions asked. `agent-runner review F1 --ask "why this way?"` asks one, the same
+one-shot as `pitch ask`, and writes the page again. For a better way: `agent-runner plan note F1 "…"` on a branch;
+say so on the pull request in PR mode.
 
 `agent-runner status` and the run page say "3 changes wait to be pushed (1 pitch for you to approve)". Release tasks
 (V) do not start while anything waits. If the remote moved, the next merge takes it in, and the approved work goes out

@@ -78,6 +78,10 @@ def cmd_review(argv: list[str]) -> int:
                                  'and its findings are printed.')
     ap.add_argument('id', nargs='?', help="the task (default: this worktree's task/<ID> branch)")
     ap.add_argument('--base', help='the branch the diff is taken against (default: the shared branch)')
+    ap.add_argument('--page', action='store_true', help="F444d: write the Review page of the task's change that waits "
+                    'on its task branch or as a pull request, and print its path')
+    ap.add_argument('--ask', metavar='QUESTION', help='F444d: ask about that waiting change; the answer is printed '
+                    'and kept on its Review page')
     a = ap.parse_args(argv)
     state.init()
     tid = a.id or task_here()
@@ -86,6 +90,8 @@ def cmd_review(argv: list[str]) -> int:
         return 2
     top = git('rev-parse', '--show-toplevel', cwd=Path.cwd())
     cwd = Path(top.stdout.strip()) if not top.returncode else Path.cwd()
+    if a.page or a.ask:
+        return cmd_where(tid, a.base or state.default_branch(), a.page, a.ask, cwd)
     said, why = review(tid, a.base or state.default_branch(), cwd)
     if why:
         print(f'run review: no review: {why}', file=sys.stderr)
@@ -217,3 +223,89 @@ border:1px solid var(--line);border-radius:8px;white-space:pre}
 details.diff .a{color:#1a7f37}details.diff .d{color:#cf222e}details.diff .h{color:var(--muted)}
 @media (prefers-color-scheme: dark){details.diff .a{color:#56d364}details.diff .d{color:#f85149}}
 </style>"""
+
+
+# --- F444d: the Review page of a change that waits on its task branch, or as a pull request in PR mode ----------------
+#
+# A change that is not merged here yet waits elsewhere: on its task/<ID> branch, or (PR mode) as the pull request
+# that carries it. It gets the same Review page: its diff, what its agent wrote (why), the questions asked about it,
+# and how to answer it. `run review ID --page` writes it; `run review ID --ask "…"` asks about the change.
+
+def _change(tid: str, before: str, after: str, where: str, url: str = '') -> dict:
+    from agent_runner import pitch as PI
+    from agent_runner.plan_concepts import title_of
+    plan = PI._plan_prefix()
+    files = state.git('diff', '--name-only', '--no-renames', before, after).stdout.split('\n')
+    line = PI._line_of(tid, after)
+    return {'key': f'{tid}@{after[:12]}', 'id': tid, 'title': title_of(line) if line else tid, 'before': before,
+            'after': after, 'files': [f for f in files if f and not (plan and f.startswith(plan))],
+            'say': PI.part(tid), 'subject': state.git('log', '-1', '--format=%s', after).stdout.strip(),
+            'where': where, 'url': url}
+
+
+def waiting_change(tid: str, base: str) -> tuple[dict | None, str]:
+    """(task `tid`'s change as it waits now, why there is none): in its pull request when PR mode holds one, else on
+    task/<tid> against where it leaves `base`."""
+    from agent_runner import pr
+    rec = pr.of(tid)
+    if rec and rec.get('head') and rec.get('base'):
+        tip = rec.get('tips', {}).get(tid) or rec['head']
+        before = state.git('merge-base', rec['base'], tip).stdout.strip() or rec['base']
+        return _change(tid, before, tip, 'pr', rec.get('url', '')), ''
+    tip = state.git('rev-parse', '-q', '--verify', f'refs/heads/task/{tid}^{{commit}}').stdout.strip()
+    if not tip:
+        return None, f'{tid} has no task/{tid} branch and no pull request'
+    before = state.git('merge-base', base, tip).stdout.strip()
+    if not before or before == tip:
+        return None, f'task/{tid} has nothing that {base} does not have'
+    return _change(tid, before, tip, 'branch'), ''
+
+
+def where_html(x: dict) -> str:
+    if x.get('where') == 'pr':
+        link = f' <a href="{_esc(x["url"])}">{_esc(x["url"])}</a>' if x.get('url') else ''
+        return f'<p class="m">It waits as a pull request.{link}</p>'
+    return f'<p class="m">It waits on its branch task/{_esc(x["id"])}, not merged yet.</p>'
+
+
+def where_answers_html(x: dict) -> str:
+    """How to answer a change that waits on its branch or as a pull request, as commands."""
+    cmd = state.C.command if hasattr(state.C, 'command') else 'agent-runner'
+    tid = _esc(x['id'])
+    better = (f'say so on the pull request' + (f' (<a href="{_esc(x["url"])}">open it</a>)' if x.get('url') else '')
+              if x.get('where') == 'pr' else f'<code>{_esc(cmd)} plan note {tid} "what you want instead"</code>')
+    return ('<section><h3>Answer it</h3><ul>'
+            f'<li>Ask about it: <code>{_esc(cmd)} review {tid} --ask "your question"</code></li>'
+            f'<li>Ask for a better way: {better}</li></ul></section>')
+
+
+def where_page_html(x: dict, project: str = '') -> str:
+    """The Review page of change `x` that waits on its branch or as a pull request."""
+    why = why_text(x)
+    body = f'<section><h3>Why</h3><p>{_esc(why).replace(chr(10), "<br>")}</p></section>' if why else ''
+    return (f'<title>{_esc(project)} {_esc(x["id"])}</title>\n{REVIEW_STYLE}<div class="wrap"><article>'
+            f'<h1>{_esc(x["title"])}</h1><p class="m">{_esc(x["id"])}</p>{where_html(x)}{body}'
+            + diff_html(x) + asked_html(x['key']) + where_answers_html(x) + '</article></div>\n')
+
+
+def page_file(tid: str) -> Path:
+    return state.C.notes('review', f'{tid}.html')
+
+
+def cmd_where(tid: str, base: str, page: bool, q: str | None, cwd: Path) -> int:
+    x, why = waiting_change(tid, base)
+    if not x:
+        print(f'run review: {why}', file=sys.stderr)
+        return 1
+    if q:
+        said, why = ask_change(x, q, cwd)
+        if not said:
+            print(f'run review: no answer: {why}', file=sys.stderr)
+            return 1
+        print(said)
+    if page or q:
+        f = page_file(tid)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(where_page_html(x, state.C.name if hasattr(state.C, 'name') else ''), encoding='utf-8')
+        print(f)
+    return 0
