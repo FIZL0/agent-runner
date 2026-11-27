@@ -28,14 +28,17 @@ const questionFar=(was,o)=>!!o.jump||Math.max(o.up||0,o.off||0)>(was?1:QUESTION_
 const questionPill=(lines,cols,lit)=>lines.some((l,y)=>[...l.matchAll(FEED_PILL)].some(m=>{
   const at=feedCells(l.slice(0,m.index));return Math.abs(at-(cols-feedCells(m[0].trim())-2)/2)<1&&lit(y,at+2)}));
 const questionIcon=d=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
-const questionLabel=o=>o.name+(o.rec?' (recommended)':'');
+const questionLabel=(o,ask)=>o.name+(o.rec?' (recommended)':'')+(questionTasks(ask,o)?` · queues ${questionTasksSay(questionTasks(ask,o))}`:'');
+/* F192d2: how many stored tasks a tap on option o queues at once (/live's ask.tasks, F192d1); 0: it sends the answer */
+const questionTasks=(ask,o)=>+(((ask||{}).tasks||{})[(o||{}).name])||0;
+const questionTasksSay=k=>`${k} task${k===1?'':'s'}`;
 /* many: the questions shown (F192b2); the minimized line counts them when there are several (F192c1) */
 function questionHTML(n,ask,held,sent,min,many){
   const st=questionState(ask,held,sent);if(!st)return '';
   const i=min&&many&&many.length>1?many.findIndex(a=>a.id===ask.id):-1, count=i<0?'':`<span class="qcount small">${questionCount(i,many.length)}</span>`;
-  if(st==='held')return `<div class="card qcard qheld" role="status" data-k="question:${esc(n)}" data-v="held"><div class="row"><span class="grow">Sending “${esc(held.name)}”</span><button type="button" class="btn" data-qundo="${esc(n)}">Undo</button></div></div>`;
+  if(st==='held')return `<div class="card qcard qheld" role="status" data-k="question:${esc(n)}" data-v="held"><div class="row"><span class="grow">${held.tasks?`Queueing ${questionTasksSay(held.tasks)} for “${esc(held.name)}”`:`Sending “${esc(held.name)}”`}</span><button type="button" class="btn" data-qundo="${esc(n)}">Undo</button></div></div>`;
   if(min)return `<div class="card qcard qmin" role="group" aria-label="Question, minimized" data-k="question:${esc(n)}" data-v="min:${esc(ask.id)}"><div class="row qrow" data-qrowshow="${esc(ask.id)}"><span class="grow ell">${esc(ask.question)}</span>${count}<button type="button" class="icon" data-qshow="${esc(ask.id)}" aria-label="Show question" title="Show question">${questionIcon('M6 15l6-6 6 6')}</button></div></div>`;
-  return `<div class="card qcard" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(ask.id)}"><div class="row qtop qrow" data-qrowmin="${esc(ask.id)}"><span class="grow q">${esc(ask.question)}</span><button type="button" class="icon" data-qmin="${esc(ask.id)}" aria-label="Minimize question" title="Minimize question">${questionIcon('M5 12h14')}</button></div>${ask.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(ask.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(ask)}</div>`;
+  return `<div class="card qcard" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(ask.id)}"><div class="row qtop qrow" data-qrowmin="${esc(ask.id)}"><span class="grow q">${esc(ask.question)}</span><button type="button" class="icon" data-qmin="${esc(ask.id)}" aria-label="Minimize question" title="Minimize question">${questionIcon('M5 12h14')}</button></div>${ask.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(ask.id)}">${esc(questionLabel(o,ask))}</button>`).join('')}${questionChatHTML(ask)}</div>`;
 }
 /* --- F192b2: several questions, the row: one card each in a sideways swipe row, with a count ----------------------- */
 // chat_question.py's answer_to reads a message that begins so as the answer to that one question alone (F192b1c)
@@ -45,6 +48,6 @@ const questionIsAnswer=text=>String(text||'').startsWith(QUESTION_ANSWER)&&text.
 const questionCount=(i,all)=>`${i+1} of ${all}`;
 /* the row of the questions l of chat n, each a whole card with a ✕ (Dismiss question), and the count */
 function questionRowHTML(n,l){
-  const one=a=>`<div class="card qcard qone" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(a.id)}"><div class="row qtop"><span class="grow q">${esc(a.question)}</span><button type="button" class="icon" data-qgone="${esc(a.id)}" aria-label="Dismiss question" title="Dismiss question">✕</button></div>${a.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(a.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(a)}</div>`;
+  const one=a=>`<div class="card qcard qone" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(a.id)}"><div class="row qtop"><span class="grow q">${esc(a.question)}</span><button type="button" class="icon" data-qgone="${esc(a.id)}" aria-label="Dismiss question" title="Dismiss question">✕</button></div>${a.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(a.id)}">${esc(questionLabel(o,a))}</button>`).join('')}${questionChatHTML(a)}</div>`;
   return `<div class="qmany" data-k="questions:${esc(n)}" data-v="${esc(l.map(a=>a.id).join(' '))}"><div class="qswipe" role="region" aria-label="Questions">${l.map(one).join('')}</div><div class="qcount small" aria-live="polite">${questionCount(0,l.length)}</div></div>`;
 }
