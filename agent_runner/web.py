@@ -465,6 +465,15 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
 
+def ui_themes_css() -> str:
+    """F473: the themes the page's UI settings offer, as CSS (theme.py's table; omarchy read now, from this machine)."""
+    from agent_runner import theme
+    try:
+        return theme.page_css()
+    except Exception:  # noqa: BLE001 - an unreadable colors.toml: the page keeps its own look
+        return ''
+
+
 class WebServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = os.name != 'nt'  # F165: on Windows it would let two runs share one port

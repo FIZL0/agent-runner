@@ -1044,3 +1044,10 @@ _Said_: review page
 _On screen_: The diff / You asked / Answer it
 _In code_: pitch.page_html, review.diff_html, pitch ask, pitch better
 _Avoid_: code review, PR page
+
+**Lazyrunner**:
+The run page's keyboard-first layout: the sidebar as numbered panels on the left, the view on the right, keys to move; the same panels as the Standard layout
+_Said_: lazyrunner, keyboard mode
+_On screen_: Layout: Lazyrunner
+_In code_: 189-lazy.js, 189-lazy.css, LAZY_PANELS, :root.lazy
+_Avoid_: keyboard mode, TUI mode, lazy view

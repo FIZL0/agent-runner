@@ -45,6 +45,7 @@ def page_html(home: bool = False) -> bytes:
     UI's). F134: `home`
     is Runner Home's own page (HOME_PAGE): the All projects view and the project switcher, no run behind it."""
     page = PAGE_TEXT.replace('/*PAGE_PRINT*/', PAGE_PRINT, 1)
+    page = page.replace('/*UI_THEMES*/', ui_themes_css(), 1)  # F473
     if home:
         page = page.replace('/*HOME_PAGE*/false', 'true', 1).replace(
             '<title>agent-runner</title>', '<title>Runner Home</title>', 1)

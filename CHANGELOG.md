@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: the run page's UI settings (Settings → Look and layout): a theme (ryha, light, terminal, omarchy, from theme.py) or Standard, the Lazyrunner layout (from 760px: the sidebar as numbered panels Status, Sessions, Plans, Tools, Settings on the left, the view on the right, keys 1-5, j/k, Enter/l, h, i, Esc, a/d/p, c, ?) and a key bar; only a layout and keys over the page's own panels (F473).
+
 ## 0.77.0 (2026-11-26)
 
 - Changed: `agent_runner/guide.py` is split by area into `guide_text.py`, `guide_topics.py` and `guide_control.py` (still imported through `guide`), and its control test is `tests/test_guide_control.py`; no behaviour change (C59).
