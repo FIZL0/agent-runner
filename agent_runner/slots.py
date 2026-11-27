@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import audit, inbox_lock, join, no_push, plan as P, plat, pr, pr_feedback, sched, session_theme, shared_tools, stack
+from agent_runner import audit, inbox_lock, join, no_push, plan as P, plat, pr, pr_feedback, sched, session_theme, shared_tools, stack, task_size
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -823,9 +823,7 @@ def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, k
         own = ''
     if not own and (flag := kept or C.run.get('model_flag')):
         return flag
-    from agent_runner import task_size  # F470: its size's model, unless it already retries on its kind's
-    size = task_size.size_for(C, tid, task_size.field(ls or [], tid))
-    return not own and audit.model(tid, ls or []) or C.task_model(tid, own, size) or model
+    return not own and audit.model(tid, ls or []) or C.task_model(tid, own, task_size.size_of(C, tid, ls or [])) or model  # F470
 
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: frozenset = frozenset()):

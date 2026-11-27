@@ -1959,6 +1959,7 @@ feed = "haiku"            # the run page's claude.ai copy (the one-shot that pub
 audit = "opus"            # an audit task's session ([run] auto_audit, or one added by hand); see Auto audit
 kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonnet", C = "sonnet", R = "sonnet" }
                           # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
+sizes = {}                # a task's session by its size (`plan add --size simple`), e.g. { simple = "sonnet" }; empty: sizes ignored; see Models per kind
 local = false             # allow a local provider (ollama, or a provider url on localhost or a private address); see Model providers
 providers = {}            # the repo's own providers, [models.providers.<name>]; see Model providers
 fallback = []             # '<provider>:<model>' to go on with when a provider hits its cap, in order; see Fallback chain

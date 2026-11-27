@@ -872,10 +872,11 @@ class Config:
         if not isinstance(sizes, dict) or not all(k in SIZES and isinstance(v, str) and v for k, v in sizes.items()):
             raise SystemExit(f'agent-runner: [models] sizes maps simple or complex to a model name '
                              f'(simple = "sonnet"), not {sizes!r}')
-        m['sizes'] = {k: self.settle(v, f'[models.sizes] {k}') for k, v in sizes.items()}
+        m.pop('sizes', None)  # F470: a setting, kept apart from the roles as self.sizes
+        self.sizes = {k: self.settle(v, f'[models.sizes] {k}') for k, v in sizes.items()}
         # F106a: each role as '<provider>:<model>'; claude's are kept as the bare name the agent takes, another
         # provider's as '<provider>:<model>' for the harness loop (F106c)
-        refs = {f'[models] {role}': role for role in m if role not in ('kinds', 'sizes') and isinstance(m[role], str)}
+        refs = {f'[models] {role}': role for role in m if role != 'kinds' and isinstance(m[role], str)}
         refs.update({f'[models.kinds] {k}': k for k in m['kinds']})
         for where, key in refs.items():
             table = m['kinds'] if where.startswith('[models.kinds]') else m
@@ -899,7 +900,7 @@ class Config:
             provider, model = parse_model(own, self.providers, True, 'model') \
                 if own.partition(':')[0] in (*PROVIDERS, *self.providers) else ('claude', own)
             return model if provider == 'claude' else f'{provider}:{model}'
-        if size and (by_size := (self.models.get('sizes') or {}).get(size)):
+        if size and (by_size := self.sizes.get(size)):
             return by_size
         kind = tid[:len(tid) - len(tid.lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))]
         return (self.models.get('kinds') or {}).get(kind) or self.models['code']
@@ -1534,7 +1535,8 @@ def settled(c: Config) -> dict[tuple[str, str], object]:
     """Every setting as `c` runs on it."""
     out = {(t, k): c.raw[t].get(k) for t, keys in DEFAULTS.items() for k in keys}
     return {**out, ('models', 'local'): c.models_local, ('models', 'providers'): c.providers,
-            ('models', 'fallback'): c.fallback, ('models', 'provider'): c.model_provider, ('models', 'tiers'): c.tiers}
+            ('models', 'fallback'): c.fallback, ('models', 'provider'): c.model_provider, ('models', 'tiers'): c.tiers,
+            ('models', 'sizes'): c.sizes}
 
 
 def _keep(c: Config, values: dict) -> None:

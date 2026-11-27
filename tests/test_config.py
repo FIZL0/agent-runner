@@ -361,7 +361,7 @@ def test_sizes_f470(tmp: Path) -> None:
     from agent_runner import task_size
     repo = project(tmp)
     c = CF.Config(repo)
-    eq((c.models['sizes'], c.task_model('F9', '', 'simple')), ({}, 'opus'), 'off by default: the size is ignored')
+    eq((c.sizes, c.task_model('F9', '', 'simple')), ({}, 'opus'), 'off by default: the size is ignored')
     (repo / 'runner.local.toml').write_text('[models]\ncode = "haiku"\nsizes = { simple = "sonnet" }\n[models.kinds]\nX = "opus"\n',
                                             encoding='utf-8')
     c = CF.Config(repo)

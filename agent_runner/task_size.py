@@ -25,6 +25,11 @@ def size_for(c, tid: str, size: str) -> str:
     return '' if size and mark(c, tid).exists() else size
 
 
+def size_of(c, tid: str, ls: list[str]) -> str:
+    """The size `tid`'s model goes by now (`size_for` of its `size:` field)."""
+    return size_for(c, tid, field(ls, tid))
+
+
 def on_size_model(c, tid: str, ls: list[str]) -> bool:
     """Its session ran on a model `[models] sizes` picked for a simple task, other than its kind's, own `model:`
     unset, and it has not retried yet."""

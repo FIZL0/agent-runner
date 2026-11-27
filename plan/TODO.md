@@ -78,5 +78,6 @@ What it shows: one recognizer, no retry, no cancel, no lost touch; it started at
 - [ ] **F466** (follow-up, normal) Tools page: SSH machines, Logins kept secret, custom tools from a prompt, and a web terminal (split into parts) | files: agent_runner/devices.py
 - [ ] **F483** (follow-up, normal) Copilot (harness) chat replies look like Claude Code: '● ' reply marker, markdown rendered (bold, italics, inline code, lists, headings), word wrap with hanging indent, and a dim '✻ <verb> for Ns · done <time>' line after each turn | files: agent_runner/harness.mjs, tests/test_harness.py
 - [ ] **D10** (follow-up, low) PR mode needs: GitHub protects main of a private repo only on a paid plan; free accounts get HTTP 403 (Upgrade to GitHub Pro or make the repo public). So PR mode cannot be on for a private repo on a free account. | files: docs/REFERENCE.md
+- [ ] **F485** (follow-up, low) Show a task's size (size: simple) on its run page row, beside its other fields | files: agent_runner/ui_model_queue.py, tests/test_ui_model.py | after: F470
 
 ### Parked
