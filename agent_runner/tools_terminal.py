@@ -66,10 +66,15 @@ class Term:
             os.close(self.fd)
         except OSError:
             pass
-        try:
-            os.waitpid(self.pid, os.WNOHANG)
-        except OSError:
-            pass
+        threading.Thread(target=_reap, args=(self.pid,), daemon=True).start()
+
+
+def _reap(pid: int) -> None:
+    """Wait for the killed shell, so it leaves no zombie."""
+    try:
+        os.waitpid(pid, 0)
+    except OSError:
+        pass
 
 
 def _folder(where: str, c) -> Path:
@@ -126,6 +131,8 @@ def op_open(a: dict, c) -> dict:
     sweep()
     where = 'project' if a.get('where') == 'project' else 'home'
     cwd = _folder(where, c)
+    if not cwd.is_dir():
+        raise Refused(f'{cwd} is not a folder here')
     with _lock:
         if len(_terms) >= MAX_OPEN:
             raise Refused(f'{MAX_OPEN} terminals are open already: end one first')
@@ -146,7 +153,10 @@ def op_send(a: dict, c) -> dict:
         raise Refused('that is too long to type at once')
     t = _get(a)
     t.typed = t.seen = time.monotonic()
-    os.write(t.fd, b)
+    try:
+        os.write(t.fd, b)
+    except OSError:
+        raise Refused('that terminal has ended') from None
     return {'out': ''}
 
 

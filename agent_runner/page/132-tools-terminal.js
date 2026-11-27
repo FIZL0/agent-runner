@@ -47,6 +47,6 @@ async function termClick(x){
   if(tool==='termclose'){termEnd();closeSheet();return loadTools()}
   if(tool==='termkey')return termSend(TERM_KEYS[+x.dataset.i][1]);
   if(tool==='termenter'){const el=$('termin');const v=el?el.value:'';if(el)el.value='';return termSend(v+'\n')}
-  if(tool==='termcopy'){try{await navigator.clipboard.writeText((S.term||{}).text||($('termout')||{}).textContent||'');termSaid('Copied.')}catch(e){termSaid('Copy is not allowed here: hold the text to select it.')}return}
+  if(tool==='termcopy'){try{await navigator.clipboard.writeText(String(getSelection()||'')||(S.term||{}).text||($('termout')||{}).textContent||'');termSaid('Copied.')}catch(e){termSaid('Copy is not allowed here: hold the text to select it.')}return}
   if(tool==='termpaste'){try{const v=await navigator.clipboard.readText();const el=$('termin');if(el){el.value+=v;el.focus()}}catch(e){termSaid('Paste is not allowed here: hold the Command box and paste.')}return}
 }
