@@ -659,7 +659,11 @@ pictures under `<notes>/asks/ID/`. The line starts with what the person does, in
 understands, the reason comes second, and no task id appears without its title. `done --blocked` refuses, before its
 gate runs and with nothing blocked, a CONFIRM or BLOCKED over 200 characters with no ask file (an ask file an earlier
 block took does not count), and a CONFIRM or BLOCKED that says it waits for an open task or release ("release V5 …", "once F4 lands") with
-no `--after`; a wait a check can read goes with `--until`. A BLOCKED with `--after` or `--until` asks the person nothing, so
+no `--after`; a wait a check can read goes with `--until`. With neither, it also refuses a BLOCKED that says it reruns,
+reopens or waits for a command to exit 0 or pass, or for a tool, device or lock that is held, busy or in use ("rerun when
+tools/ui-15.sh state exits 0"): it says to use `run wait-for NAME` or `--until tool:NAME`/`check:NAME`, listing the
+project's tools and checks, or, when it has none, to file a task that adds one and block `--after` it. A line that says, at its start
+or after a `;`, `:` or `.`, what a person does (plug in, unlock, sign in) passes. A BLOCKED with `--after` or `--until` asks the person nothing, so
 neither refusal applies; a CONFIRM with one can still be too long. A DECIDE over 200 characters with no ask file is not
 refused: it says so once, names the file, and blocks. The file and its pictures are removed when the item
 is answered (confirm, change, unblock), the task is ticked or dropped (a drop keeps a copy, see below), it blocks again (any block but `done --blocked`
