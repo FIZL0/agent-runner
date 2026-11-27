@@ -26,6 +26,7 @@ MSG = f'{TEXT}\n\nDECIDE: {Q}'
 class World:
     def __init__(self, tmp: Path, env: ExitStack):
         self.tmp, self.root, self.rows = tmp, fake_run(tmp), []
+        assert K.ROOT == self.root.resolve(), f'B874: control writes in {K.ROOT}, not the temp repo'
         A.FILLED.clear()
         env.enter_context(mock.patch.object(K, 'entries', lambda sid, skip_bad=False: iter(self.rows)))
         env.enter_context(mock.patch.object(K, 'transcript', lambda sid: 'there' if self.rows else None))
