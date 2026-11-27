@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a model name can pin a Claude login, `claude@work:opus`, anywhere a model is named ([models] roles, kinds, sizes, fallback, `--model`); a session on it starts on that login, and when that login is capped it goes on with claude's next free login (F504).
 - Changed: `done.py` is split by area (`done_docs.py`, `done_refusals.py`, `done_writeup.py`), and its test is `tests/test_done_docs.py`; no behaviour change (C62).
 
 - Added: session_max / weekly_max read each Claude login's own usage (from its own config folder's login), so a new task passes over every login past its caps, not only the default one (F514).
