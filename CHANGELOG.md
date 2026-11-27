@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a new chat shows its first message's words in its row and header from the tap until it has its own title, never its bare number or New chat between (F196e).
 - Changed: an open run page or Runner Home moves to a new version by itself once nothing would be lost or interrupted, back to the same view, chat and scroll place; otherwise the Refresh popup stays until then (F207).
 - Added: a waiting change's Review page is written when it starts waiting, and linked from its pull request body and its done write-up (F515).
 - Added: a change that waits on its task branch, or as a pull request in PR mode, has a Review page: `run review ID --page` writes it (diff, why, questions, how to answer) and `run review ID --ask "…"` asks about the change (F444d).

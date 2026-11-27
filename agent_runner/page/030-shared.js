@@ -65,7 +65,7 @@ function responseOpened(id){
 function responseOpen(n){const r=responseOf(n), id=n.slice('+response:'.length);S.ctx={kind:'response',id,label:r?r.label:'Sent response'};if(r)responseOpened(id)}
 const responseNew=x=>S.responseSeen.includes(x.id)?'':'<span class="newlabel">new</span>';
 addEventListener('storage',e=>{if(e.key===RESPONSE_SEEN_KEY){S.responseSeen=responseSeenGet();render()}});
-const threadTitle=n=>{if(isNew(n))return S.ctx?S.ctx.label:'New chat';if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
+const threadTitle=n=>{if(isNew(n))return S.ctx?S.ctx.label:'New chat';if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:(bornSay(n,S.came,S.ob)||'New chat')}const s=sessionOf(n);if(!s)return bornSay(n,S.came,S.ob)||n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
 const feedOf=n=>(S.feeds[n]||{}).entries||[];
 function lastWords(n){const e=feedOf(n).filter(x=>x.kind==='say');return e.length?plain(e[e.length-1].text):''}
 const busy=n=>working(feedOf(n))||!!(S.sent[n]&&Date.now()-S.sent[n].at<90000&&feedOf(n).length<=S.sent[n].len);

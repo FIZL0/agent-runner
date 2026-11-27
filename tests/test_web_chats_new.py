@@ -509,5 +509,42 @@ def test_chats_newest_f201(tmp: Path) -> None:
     eq([o['drag'], o['after']], ['kept', o['long']], 'a drag holds the list too')
 
 
+NAME_DRIVER = r"""
+const page = require('fs').readFileSync(0, 'utf8');
+const line = a => { const i = page.indexOf(a); return page.slice(i, page.indexOf('\n', i)) };
+const S = {ob: [], came: []}, sess = {};
+const isNew = n => n === '+', isAgent = n => false, sessionOf = n => sess[n], chatTitle = s => s.title;
+eval(line('const threadTitle=') + page.slice(page.indexOf('function bornSay('), page.indexOf('\n}\n', page.indexOf('function bornSay(')) + 3) + `
+const seen = [];
+S.ob = [{newchat: true, cid: 'k1', say: 'fix the login page', state: 'sending'}];
+seen.push(threadTitle('@k1'));
+S.ob = []; S.came = [{name: 'c7', was: '@k1', say: 'fix the login page', state: 'sending'}];
+seen.push(threadTitle('@k1'), threadTitle('c7'));
+sess.c7 = {name: 'c7', title: 'Login page fix'}; S.came = [];
+seen.push(threadTitle('c7'));
+console.log(JSON.stringify(seen));`);
+"""
+
+
+def test_born_name_f196e(tmp: Path) -> None:
+    """F196e: a new chat's shown name goes from its first message's words straight to its own title, never the bare cN
+    or 'New chat' between; the server names a new chat that has no name yet with those words."""
+    fake_repo(tmp)
+    if shutil.which('node'):
+        r = subprocess.run(['node', '-e', NAME_DRIVER], input=W.page_html().decode(), capture_output=True, text=True, timeout=60)
+        check(r.returncode == 0, 'node runs threadTitle()', r.stderr[-900:])
+        eq(json.loads(r.stdout or '[]'), ['fix the login page'] * 3 + ['Login page fix'],
+           'the words while it starts, under both its names, then its title')
+    else:
+        print('  (no node here: the shown name test is skipped)')
+    from agent_runner import control as K
+    K.control_give(7, K.control_base_name(7))
+    U.name_new({'ok': True, 'out': 'control 7 is up'}, 'fix the login page')
+    eq(U.given_title(K.control_given(7), 7), 'fix the login page', 'a new chat with no name gets its first words')
+    K.control_give(7, K.control_summary_name(7, 'Login page fix'))
+    U.name_new({'ok': True, 'out': 'control 7 is up'}, 'fix the login page')
+    eq(U.given_title(K.control_given(7), 7), 'Login page fix', 'never over a name it has')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_new_chat), in_tmp(test_new_chat_view_f172), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762), in_tmp(test_first_lines_b766), in_tmp(test_rest_b786), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201)]))
+    raise SystemExit(report([in_tmp(test_born_name_f196e), in_tmp(test_new_chat), in_tmp(test_new_chat_view_f172), in_tmp(test_plus_hold_b213), in_tmp(test_plus_chat_b762), in_tmp(test_first_lines_b766), in_tmp(test_rest_b786), in_tmp(test_chat_order_f133), in_tmp(test_chats_newest_f201)]))

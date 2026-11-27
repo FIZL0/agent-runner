@@ -85,7 +85,7 @@ def drop(tid: str, why: str) -> dict:
 def to_new(text: str) -> dict:
     """F176: a prompt opens a chat of its own: a new control session with `text` as its first message, started
     without waiting for its link (`control --new --no-wait --ask`)."""
-    return call(['control', '--new', '--no-wait', '--ask', text, '--no-feed'])
+    return name_new(call(['control', '--new', '--no-wait', '--ask', text, '--no-feed']), text)  # F196e
 
 
 SEND = [to_new]  # how chat and answers start a chat; a test swaps it

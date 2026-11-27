@@ -382,7 +382,7 @@ def new_control(ask: str = '', wait: bool = True) -> dict:
     (`--no-wait`) returns once it starts, before its link is known. B154: 'ask' and 'at' (when it was called) let the
     page keep the ask shown until the feed has it."""
     at = time.time()
-    r = call(['control', '--new', *([] if wait else ['--no-wait']), *(['--ask', ask, '--no-feed'] if ask else [])])
+    r = name_new(call(['control', '--new', *([] if wait else ['--no-wait']), *(['--ask', ask, '--no-feed'] if ask else [])]), ask)
     m = LINK.search(r['out'] or '')
     n = re.search(r'\bcontrol (\d+) ', r['out'] or '')
     return {**r, 'link': m.group(0).rstrip('.,)') if m else '', 'name': f'c{n.group(1)}' if n else '',
@@ -449,3 +449,19 @@ def delete_chats(names: list | None = None) -> dict:
 
 
 ACTIONS['delete_chats'] = delete_chats
+
+
+def name_new(r: dict, ask: str) -> dict:
+    """F196e: a new chat (`r`, the answer of `control --new`, which names it 'control N') that has no name of its own yet
+    gets its first message's words (`control_name`), so its row reads them while it starts, never the bare cN; its own
+    title (`control --title`) replaces them later. `r` as it was."""
+    n = re.search(r'\bcontrol (\d+) ', r.get('out') or '') if r.get('ok') and ask else None
+    if not n:
+        return r
+    try:
+        from agent_runner import control as K
+        if given_title(K.control_given(int(n.group(1))), int(n.group(1))) == 'control session':
+            K.control_give(int(n.group(1)), K.control_name(int(n.group(1)), ask))
+    except Exception:  # noqa: BLE001 - no notes dir: the name stays as control gave it
+        pass
+    return r
