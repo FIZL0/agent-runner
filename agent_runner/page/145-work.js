@@ -1,6 +1,6 @@
 /* F476: the Work page (concept K25, option A): Status, Plan and History as one timeline, in the Plan view's place.
    The run bar and usage on top, then Now (what the slots work on, what merges, open pull requests), Up next (the Queue
-   without the tasks Now shows), Landed (and past releases), and at the bottom Parked and the Run log, each folded.
+   without the tasks Now shows), Landed (and past releases), and at the bottom Parked, folded.
    One search: Plan's (open, parked and done tasks). The rows are the ones each old page drew, so they open as before */
 function workNowIds(){
   const ids=new Set(mergeRows(S.snap).map(m=>m.id));
@@ -9,7 +9,7 @@ function workNowIds(){
 }
 /* the Queue's rows a Now row already shows are left out of Up next */
 const workUpNext=(qs,now)=>qs.filter(q=>q.release||q.placeholder||!now.has(q.id));
-/* F487 (concept K26, option A): every section folds; these start open, Parked and Run log closed */
+/* F487 (concept K26, option A): every section folds; these start open, Parked closed */
 const WORK_OPEN={now:1,prs:1,upnext:1,landed:1,pastrel:1};
 const workIsOpen=k=>{const o=(S.workOpen||{})[k];return o===undefined?!!WORK_OPEN[k]:!!o};
 /* a folded section: its head is a fold, as a row's (S.workOpen[k]) */
@@ -20,7 +20,7 @@ function workFold(k,name,n,h){
 function workHTML(qs,pk,sh,shOb){
   histAsk();
   const use=S.snap.usage||[], ms=mergeRows(S.snap), ws=slots().filter(s=>s.state!=='merging'&&s.task), now=workNowIds();
-  const up=workUpNext(qs,now), land=histLanded(S.snap), past=S.snap.past_releases||[], log=(S.snap.log||[]).slice().reverse();
+  const up=workUpNext(qs,now), land=histLanded(S.snap), past=S.snap.past_releases||[];
   const nowRows=ws.map(slotRow).join('')+ms.map(mergeRow).join('');
   const meters=use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):'';
   const parked=pk.length||sh.length||shOb?pk.map(q=>parkedCard(q)).join('')+shOb+sh.map(q=>shelvedCard(q)).join(''):'';
@@ -30,8 +30,7 @@ function workHTML(qs,pk,sh,shOb){
     ['upnext','Up next',up.length,up.length?up.map(queueCard).join(''):emptyCard('The queue is empty.'),newReleaseCard(),obCards(x=>obActs(x,'queue')||(x.grip||x.waitset)&&x.state==='failed')],
     ['landed','Landed',land.length,land.length?card(land.map(x=>histRow(x,'landed')).join(''),'','data-k="landed"'):emptyCard('Nothing has landed yet.')],
     rel&&['pastrel','Releases',past.length,card(past.map(x=>histRow(x,'pastrel')).join(''),'','data-k="pastrel"')],
-    parked&&['parked','Parked',pk.length+sh.length,parked],
-    ['log','Run log',0,log.length?histLog(log):emptyCard('Nothing in the run log yet.')]].filter(Boolean);
+    parked&&['parked','Parked',pk.length+sh.length,parked]].filter(Boolean);
   const jump=`<div class="workjump" role="navigation" aria-label="Sections">${secs.map(([k,name])=>`<button class="chip" data-workjump="${k}">${esc(name)}</button>`).join('')}</div>`;
   return `${ttydLine()}${controlsCard()}${meters}
     <div class="worksecs">${jump}${secs.map(([k,name,n,h,before,after])=>`${before||''}${workFold(k,name,n,h)}${after||''}`).join('')}</div>`;
