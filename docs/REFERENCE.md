@@ -526,6 +526,13 @@ come from the one kind table (`theme.KINDS`); a project's own `[plan] kinds` nam
 gray, and the same word under another letter keeps its colour. `agent-runner since` and `--follow` are unchanged: the
 id stays in brackets last.
 
+Under the run line, `status` says how the run is getting on: `merged 11 in the last 24h · 23 tasks left: 6 can start
+now, 12 wait on another task, 5 need you` (F440). Each task left counts once, in the first group it fits: running
+now (a slot or a taken session has it), need you (blocked on a person, as Needs you has it), wait on a check (an
+`--until` check), wait on another task (an `after:` or `(after …)` task still open), can start now, or held for
+another reason; the groups sum to the total and an empty one is left out. Shelved and Parked tasks are not
+counted, nor a split task's own line while any of its parts is open. The run picker and Runner Home keep the bare
+total.
 `agent-runner since [WHEN]` lists what happened, oldest first, one line each: started, landed, part landed
 with the rest stuck (`done --blocked`), stuck and not merged (parked on `wip/`), needs you (left for a human,
 or the run held by a stoppage only you can clear), looks stuck (stalled), a session whose context peaked past

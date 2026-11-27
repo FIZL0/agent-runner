@@ -233,6 +233,31 @@ def test_login_f505() -> None:
                 check('login work' in out, 'two logins: the slot names its login', out)
 
 
+def test_groups_f440() -> None:
+    print('F440: the tasks left divide into groups that sum to the total')
+    ls = ['# TODO', '', '### Next', '',
+          '- [ ] **F1** can start | files: a.py',
+          '- [ ] **F2** waits on F1 | after: F1',
+          '- [~] **B3** waits BLOCKED: (after F1) for it',
+          '- [~] **B4** asks BLOCKED: DECIDE: which one? [A / B]',
+          '- [~] **B5** a check BLOCKED: (until version:9.9.9) a new tool',
+          '- [ ] **F6** running now',
+          '- [~] **B7** shelved BLOCKED: shelved: DECIDE: later?',
+          '- [~] **F8** (split into F8a, F8b) BLOCKED: split',
+          '- [ ] **F8a** part one',
+          '- [x] **F8b** part two',
+          '- [x] **F9** done',
+          '', '### Parked', '', '- [ ] **F10** later work']
+    g = R.task_groups(ls, {'F6'})
+    eq(g, {'start': 2, 'wait': 2, 'needs': 1, 'check': 1, 'running': 1}, 'one group each; shelved, Parked, split line out')
+    eq(sum(g.values()), R.tasks_left(ls)[0], 'the groups sum to the total')
+    eq(R.groups_text(g), '7 tasks left: 2 can start now, 1 running now, 2 wait on another task, 1 wait on a check, '
+       '1 need you', 'the line, zero groups left out')
+    eq(R.groups_text({}), '0 tasks left', 'none left')
+    eq(R.task_groups(ls[:4] + ['- [~] **F8** (split into F8b) BLOCKED: split', '- [x] **F8b** done']),
+       {'held': 1}, 'a split task whose parts are all done still counts')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_placeholder, test_releases, test_count_beside_f195c, test_released, test_plan_index, test_lately,
-                             test_usage_held_f468, test_login_f505]))
+                             test_usage_held_f468, test_login_f505, test_groups_f440]))

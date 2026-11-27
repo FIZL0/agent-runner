@@ -6615,7 +6615,7 @@ def test_progress_and_release(repo: Path):
     check(line.startswith(f'merged {want} in the last 2h · '), 'the line carries merges_since over the window '
           '(test_merged_count_b78 checks the count itself)', line)
     left, blocked = R.tasks_left(P.lines(R.C.todo))
-    check(f'· {left} task' in line and (f'({blocked} blocked)' in line) == bool(blocked), 'and the TODO\'s counts', line)
+    check(f'· {left} task' in line and 'blocked)' not in line, 'and the TODO\'s counts, split into groups (F440)', line)
     eq(R.progress_line('yesterday', now).split(' · ')[0].split(' ', 2)[2], 'since yesterday', 'yesterday counts from its midnight')
     text = R.status_text(False, {}, [], {}, 0.0, progress=line + '\nrelease: waits on 2 of 4 tasks (T5)')
     eq(text.splitlines(), ['no run is up', line, 'release: waits on 2 of 4 tasks (T5)'], 'status: right under the run line')
