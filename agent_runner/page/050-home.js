@@ -107,7 +107,7 @@ function goDown(stay,keys){
   const p=!HOME_PAGE&&!stay&&projectOf(HKEY);if(p&&projectGroup(p)==='off'&&!p.starting&&!p.page){openProject(HKEY,projectLink(HB,HKEY,T));return}  // its run ended meanwhile and nothing serves its page (F402b2): its page as it is off
   const b=S.below||{v:lastTab()||'home',t:null,c:null};S.below=null;
   if(!stay)try{history.pushState({level:'in'},'')}catch(e){}
-  if(b.t){S.view=b.v;S.ctx=b.c;open(b.t)}else goView(b.v==='projects'?'home':b.v);
+  if(b.t){S.view=viewOf(b.v);S.ctx=b.c;open(b.t)}else goView(b.v==='projects'?'home':b.v);
   if(keys)focusSide('[data-up]');
 }
 function focusSide(s){const el=$('sidein').querySelector(s);if(el)el.focus({preventScroll:true})}

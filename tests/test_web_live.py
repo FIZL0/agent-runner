@@ -677,7 +677,7 @@ const snap = (...l) => ({at: 'now', sessions: [c('c1'), ...l], needs: []});
 (async () => {
   const out = {views: {}}, talk = {ok: true, name: 'c4', entries: [{kind: 'you', text: 'hi'}, {kind: 'say', text: 'An old reply.'}]};
   let tab = map(), p;
-  for (const v of ['home', 'talk', 'status', 'plan', 'concepts', 'settings', 'projects']) {
+  for (const v of ['home', 'talk', 'tools', 'plan', 'concepts', 'settings', 'projects']) {  // F476: Status is Work ('plan')
     load({tab}).goView(v); p = load({tab}); out.views[v] = [p.log.draws[0][0], p.log.draws.length];
     p.takeSnap(snap()); out.views[v].push(p.at()[0]);
     if (v === 'settings') out.settings = p.log.settings;
@@ -760,10 +760,10 @@ def test_reload_b177(tmp: Path) -> None:
     eq(o['talkEnded'], [True, True, True, '', 0], "Talk's chat that has ended: its words and that it ended; the next message opens a new one")
     eq((o['talkGone'], o['talkNone'], o['talkOwn']), (True, '', ['', 'c4']), 'a gone one greets; another tab, or another project on the same address, does not set it')
     eq(o['other'], [home, ['plan', None], home], 'two projects, or two tabs, do not share')
-    eq(o['own'], [home, ['status', None]], "nor two projects on a run's own address")
-    eq(o['junk'], [home] * 4 + [['status', None]], 'what is no place is Home; an old view name is its new one')
+    eq(o['own'], [home, ['plan', None]], "nor two projects on a run's own address")
+    eq(o['junk'], [home] * 4 + [['plan', None]], 'what is no place is Home; an old view name is its new one')
     eq(o['boom'], ['talk', None], 'storage that throws: the page loads and works')
-    eq(o['link'], [['plan', None], '/p/a/?t=x', ['status', None], ['home', 'c5'], ['home', 'c5'], ['settings', None, 1]],
+    eq(o['link'], [['plan', None], '/p/a/?t=x', ['plan', None], ['home', 'c5'], ['home', 'c5'], ['settings', None, 1]],
        "a link's view or chat wins and leaves the address; one that names nothing does not; one followed in the open page")
     eq(o['talkFirst'], [True, False], 'Talk waits for its chat without a greeting')
     eq(o['talk'], [['talk', None], 'c4', True, [], 0, ''], "Talk's own chat, with no reply read aloud and no mic")
@@ -1539,7 +1539,7 @@ def test_banner_f402c(tmp: Path) -> None:
     s = {'up': False, 'boot': 'b', 'shown': U.controls_shown(False, {}, {})['shown']}
     got = logic_js([['runOff', s, {'view': v}] for v in ('home', 'status', 'plan', 'talk')]
                    + [['runOff', s, {'view': 'home', 'thread': 'c1'}], ['runStarts', s], ['runStarts', {**s, 'up': True}]])
-    eq(got, [False, False, True, True, True, True, False], 'where the banner shows')
+    eq(got, [False, False, False, True, True, True, False], 'where the banner shows (F476: Work has the run controls, as Status had)')
 
 
 def test_copilot_jump_b863(tmp: Path) -> None:

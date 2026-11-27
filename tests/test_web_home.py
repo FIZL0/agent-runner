@@ -920,7 +920,7 @@ def test_status_view_f124(tmp: Path) -> None:
                     ['swipeOpens', -60, 0, 280, True], ['atEnd', {'scrollHeight': 500, 'scrollTop': 400, 'clientHeight': 100}],
                     ['atEnd', {'scrollHeight': 500, 'scrollTop': 300, 'clientHeight': 100}],
                     ['controlGroups', winup]])
-    eq(got[:3], ['status', 'status', 'plan'], 'the old views land on Status')
+    eq(got[:3], ['plan', 'plan', 'plan'], 'the old views land on Work (F476)')
     eq(got[3:5], [{'text': 'Caps forced', 'cls': 'warn'}, {'text': 'Not up', 'cls': ''}], "the pill's words")
     eq(got[5], ['slot_remove', 'slot_add', 'pause', 'stop'], "the card's everyday buttons")
     eq(got[6], ['slot_remove', 'slot_add', 'go_on', 'stop_undo'], 'paused and stopping: what undoes it')

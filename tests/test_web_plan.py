@@ -362,7 +362,7 @@ def test_concepts_view(tmp: Path) -> None:
     opens a new chat (F183); the Plan view no longer lists concepts."""
     fake_repo(tmp)
     app = W.page_html().decode()
-    for part in ("['plan','Plan'],['history','History'],['concepts','Concepts']", 'count={home:needs,concepts:cn}',
+    for part in ("['plan','Work'],['concepts','Concepts']", 'count={home:needs,concepts:cn}',
                  'concepts:conceptsHTML', "concepts:'Concepts'", 'cs.map(conceptCard)'):
         check(part in app, f'the run app has {part}')
     for gone in ('data-kadd', 'kform', '[data-kin]', 'newConceptReq', 'growKin', 'S.kOpen', 'S.kText', 'S.kSaid', 'x.kq'):
