@@ -1629,6 +1629,14 @@ def user_settings_file() -> Path:
     return Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / 'settings.json'
 
 
+def claude_logins_file() -> Path:
+    """F502: this machine's Claude logins (`run login claude --as NAME`), kept per machine, outside any project:
+    `$AGENT_RUNNER_LOGINS` else ~/.config/agent-runner/claude-logins.json."""
+    if p := os.environ.get('AGENT_RUNNER_LOGINS'):
+        return Path(p)
+    return Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'agent-runner' / 'claude-logins.json'
+
+
 def user_hook_command() -> str:
     """The hook's command: the runner, quiet whatever happens (a moved clone, a missing interpreter)."""
     return plat.command_text([*runner_cmd(), *USER_HOOK.split()]) + ' 2>/dev/null || true'

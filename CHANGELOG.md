@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: `run login claude --as NAME` adds another Claude login in its own CLAUDE_CONFIG_DIR, kept per machine; the first (Claude Code's own) stays the default login, and `run login` lists them. Each must be a separate real account (F502).
 - Added: `[run] issues_trust` takes `"contributors"` (trust OWNER, MEMBER, COLLABORATOR and CONTRIBUTOR authors), `"members"` (OWNER, MEMBER, COLLABORATOR) or a list of GitHub logins; the rest are filed skeptical, and each issue's close or comment follows its own trust (F510).
 - Fixed: a page a chat published (publish-page from a chat) shows in the run page's Concepts for a week; it has no task, so it was left out (B875).
 - Added: `[run] slot_memory` (default true) turns Claude Code memories off for slot sessions; the audit offers moving them into lessons (C49)

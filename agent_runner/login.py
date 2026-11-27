@@ -275,6 +275,47 @@ def answer_prompt(q: dict, ask, secret, say) -> str | None:
         return None
 
 
+TERMS = ('Each Claude login must be a separate real account (a work or Team one beside a personal one, or a '
+         'pay-as-you-go API key): holding extra subscriptions only to get past usage limits breaks Anthropic\'s terms '
+         '(and OpenAI\'s, GitHub\'s) and risks a ban.')
+
+
+def claude_add(name: str, run_login=None) -> tuple[bool, str]:
+    """F502: add the Claude login `name` in a CLAUDE_CONFIG_DIR of its own, beside the logins file, and sign it in
+    with `claude /login`. The first time, Claude Code's own login is kept first, as 'default', so it stays the
+    default login."""
+    from agent_runner.claude_use import logins
+    from agent_runner.config import claude_logins_file
+    if not name or not name.replace('-', '').replace('_', '').isalnum():
+        return False, f'a login name is letters, digits, - and _: {name!r}'
+    rows = logins() or [{'name': 'default', 'dir': ''}]
+    row = next((r for r in rows if r['name'] == name), None)
+    if row is None:
+        row = {'name': name, 'dir': str(claude_logins_file().parent / 'claude' / name)}
+        rows.append(row)
+    if row.get('dir'):
+        Path(row['dir']).mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, **({'CLAUDE_CONFIG_DIR': row['dir']} if row.get('dir') else {})}
+    if run_login is None:
+        if not shutil.which('claude'):
+            return False, 'Claude Code (claude) is not on this machine'
+        run_login = lambda e: subprocess.run(['claude', '/login'], env=e).returncode == 0  # noqa: E731
+    if not run_login(env):
+        return False, 'claude /login did not finish'
+    f = claude_logins_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({'logins': rows}, indent=1) + '\n', encoding='utf-8')
+    return True, row.get('dir') or "Claude Code's own login"
+
+
+def claude_lines() -> list[str]:
+    """F502: one line per Claude login, the default first; none with only Claude Code's own."""
+    from agent_runner.claude_use import logins
+    rows = logins()
+    return [f'  claude --as {r["name"]}{" (default)" if i == 0 else ""}: {r.get("dir") or "Claude Code" + chr(39) + "s own login"}'
+            for i, r in enumerate(rows)]
+
+
 def list_lines(c) -> list[str]:
     names = named(c)
     if not names:
@@ -284,6 +325,8 @@ def list_lines(c) -> list[str]:
     for n in names:
         ok, where = login_of(n, c.providers, creds)
         out.append(f'{n.ljust(width)}  {"✓" if ok else "✗"} {where}')
+        if n == 'claude':
+            out += claude_lines()
     return out
 
 
@@ -314,6 +357,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument('--enterprise', metavar='DOMAIN', default=None,
                     help='copilot: your GitHub Enterprise domain (company.ghe.com); "" for github.com. Asked when left out')
     ap.add_argument('--reopen', action='store_true', help=argparse.SUPPRESS)  # F406a: logged in elsewhere, by Home
+    ap.add_argument('--as', dest='as_name', metavar='NAME', default=None,
+                    help='claude: add another Claude login NAME, in its own CLAUDE_CONFIG_DIR; the first stays the default')
     a = ap.parse_args(argv)
     from agent_runner.config import cfg, toplevel
     try:
@@ -328,6 +373,17 @@ def main(argv: list[str]) -> int:
         print('\n'.join(list_lines(c)))
         return 0
     name = a.provider
+    if name == 'claude' and a.as_name:
+        print(TERMS)
+        ok, where = claude_add(a.as_name)
+        if not ok:
+            print(f'{RUNNER} login claude --as {a.as_name}: {where}', file=sys.stderr)
+            return 1
+        print(f'claude --as {a.as_name}: logged in; kept in {where}')
+        return 0
+    if a.as_name:
+        print(f'{RUNNER} login: --as is for claude only', file=sys.stderr)
+        return 2
     if name == 'claude':
         print("claude runs as Claude Code, on Claude Code's own login: `claude /login`.")
         return 0

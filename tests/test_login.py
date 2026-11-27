@@ -182,13 +182,34 @@ def test_needs_you(e: Env):
         check(not [a for a in P.asks(R.C.todo, all=True) if a[1] == tid], 'it is off Needs you again')
 
 
+def test_claude_logins(e: Env):
+    from agent_runner import claude_use as CU
+    f = e.tmp / 'logins.json'
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_LOGINS': str(f), 'PI_CODING_AGENT_DIR': str(e.pi)}):
+        eq(CU.login_env(), {}, 'with no logins added a session runs on Claude Code\'s own login, unchanged')
+        seen = []
+        ok, where = L.claude_add('work', lambda env: seen.append(env.get('CLAUDE_CONFIG_DIR')) or True)
+        check(ok and where.endswith('claude/work') and seen == [where], 'claude /login runs in its own folder', where)
+        L.claude_add('home', lambda env: True)
+        eq([r['name'] for r in CU.logins()], ['default', 'work', 'home'], "Claude Code's own login stays first")
+        eq(CU.login_env(), {}, 'a task runs on the default login')
+        eq(CU.login_env('work'), {'CLAUDE_CONFIG_DIR': where}, 'a named login has its own CLAUDE_CONFIG_DIR')
+        rc, out = run_login([], e)
+        has(out, r'claude --as default \(default\)', 'run login lists the default')
+        has(out, r'claude --as work: .*claude/work', 'and the other logins')
+        check(not L.claude_add('bad name', lambda env: True)[0], 'a name with a space is refused')
+        with mock.patch.object(L, 'claude_add', lambda n: (True, 'x')):
+            rc, out = run_login(['claude', '--as', 'x'], e)
+        has(out, 'separate real account', '--as says each login must be a real account of its own')
+
+
 def main() -> int:
     here = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
         e = Env(Path(tmp))
         try:
             return report([lambda: test_list(e), lambda: test_copilot(e), lambda: test_keys(e),
-                           lambda: test_needs_you(e)])
+                           lambda: test_needs_you(e), lambda: test_claude_logins(e)])
         finally:
             os.chdir(here)
 

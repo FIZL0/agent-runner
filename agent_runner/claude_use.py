@@ -90,6 +90,27 @@ def resume_held(run, n: int) -> bool:
     return True
 
 
+def logins() -> list[dict]:
+    """F502: this machine's Claude logins, in order, each {'name', 'dir'}; the first is the default login. 'dir' ''
+    is Claude Code's own login (its own CLAUDE_CONFIG_DIR, else ~/.claude). Empty: only Claude Code's own."""
+    import json
+    from agent_runner.config import claude_logins_file
+    try:
+        d = json.loads(claude_logins_file().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    rows = d.get('logins') if isinstance(d, dict) else None
+    return [r for r in rows or [] if isinstance(r, dict) and isinstance(r.get('name'), str)]
+
+
+def login_env(name: str = '') -> dict[str, str]:
+    """F502: the env a Claude Code session on login `name` ('' the default) gets: CLAUDE_CONFIG_DIR for a login
+    with a folder of its own, nothing for Claude Code's own (so a one-login setup runs as before)."""
+    rows = logins()
+    row = next((r for r in rows if r['name'] == name), None) if name else (rows[0] if rows else None)
+    return {'CLAUDE_CONFIG_DIR': row['dir']} if row and row.get('dir') else {}
+
+
 def cap_alarm(w: str, own: str, detail: str) -> tuple[str, str]:
     """The usage-cap alarm's line and detail; `own`: the task it holds alone (B791)."""
     if not own:
