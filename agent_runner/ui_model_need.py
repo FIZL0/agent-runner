@@ -232,3 +232,32 @@ def concept_item(row: dict, need: dict | None = None) -> dict:
     item['acts'] = row_acts('need', need) if need else row_acts('concept', row)
     item.update(news=row.get('news', ''), news_words=row.get('news_words', ''))
     return item
+
+
+def open_chats(ids: set[str]) -> dict[str, int]:
+    """F209c: {an item of `ids`: the number of the open chat about it} (`control_settled.live`: its title, what it
+    was opened from, what it filed); the latest begun when several. Nothing is started."""
+    if not ids:
+        return {}
+    from agent_runner import control_settled
+    try:
+        live = control_settled.live()
+    except Exception:  # noqa: BLE001 - no sessions readable: no chat named
+        return {}
+    out: dict[str, tuple[float, int]] = {}
+    for n, _sid, f, about in live:
+        for x in about & ids:
+            if x not in out or (f.get('begun') or 0.0, n) > out[x]:
+                out[x] = (f.get('begun') or 0.0, n)
+    return {x: n for x, (_b, n) in out.items()}
+
+
+def name_chats(needs: list[dict], concepts: list[dict]) -> None:
+    """F209c: each Needs you and Concepts row (and a row's item) gets 'chat', the open chat about it (`open_chats`)."""
+    got = open_chats({r['id'] for r in needs + concepts if r.get('id')} | {r['concept'] for r in needs + concepts
+                                                                          if r.get('concept')})
+    for r in needs + concepts:
+        if n := got.get(r.get('id', '')) or got.get(r.get('concept') or ''):
+            r['chat'] = n
+            if isinstance(r.get('item'), dict):
+                r['item']['chat'] = n
