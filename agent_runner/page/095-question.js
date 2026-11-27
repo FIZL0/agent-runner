@@ -62,7 +62,7 @@ function questionDraw(){const moved=questionMove(S.thread,false);render(true);mo
 function questionPick(n,id,i){
   const ask=questionAsk(n,id), o=ask&&ask.options[i];
   if(!o||questionState(ask,QN.held.get(n),QN.sent.get(n))!=='ask'||Date.now()-QN.back<QUESTION_AGAIN)return;
-  const h={id,name:o.name,at:Date.now(),...(ask.need?{need:ask.need}:{}),...(questionAll(n).length>1?{of:ask}:{})};  // F192b2: one of several
+  const h={id,name:o.name,at:Date.now(),...(ask.need?{need:ask.need}:{}),...(questionAll(n).length>1?{of:ask}:{}),...(questionTasks(ask,o)?{tasks:questionTasks(ask,o),question:ask.question}:{})};  // F192b2: one of several; F192d2: its stored tasks
   h.timer=setTimeout(()=>questionSend(n,h),QUESTION_HOLD);QN.held.set(n,h);
   questionDraw();
 }
@@ -88,6 +88,7 @@ async function questionSend(n,h){
   QN.held.delete(n);
   const moved=questionMove(n,false), it={id:h.id,name:h.name,cid:'',at:Date.now()}, ask=FD.n===n&&questionAsk(n,h.id), need=ask?ask.need:h.need;  // filed in the hold
   if(h.of)QN.done.add(questionKey(n,h.id));  // F192b2: the row moves to the next
+  if(h.tasks)return questionQueue(n,h,it,moved);
   if(need){
     it.need=need;QN.sent.set(n,it);
     it.cid=outbox('question_answer',{chat:n,id:h.id,text:h.name},{need,say:`${need} · answered “${h.name}”`,done:`${need} answered: ${h.name}`}).cid;
@@ -100,6 +101,16 @@ async function questionSend(n,h){
   it.cid=outbox('chat_to',{text,to:n,...(FD.n===n&&FD.foot&&FD.foot.text?{unsent:true}:{})},{text,key:n,say:`To ${threadTitle(n)}: ${h.name}`}).cid;
   QN.sent.set(n,it);
   moved();
+}
+/* F192d2: an option with stored tasks queues them at once (POST /queue, F192d1), with no message sent to the chat; the chat
+   gets the one line of what was queued from the server, and the toast says it now. A failure brings the card back */
+async function questionQueue(n,h,it,moved){
+  QN.sent.set(n,{...it,over:true});render(true);moved();
+  let j=null;try{const r=await fetch(tq('queue'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat:n,question:h.question,option:h.name})});j=await r.json()}catch(e){j=null}
+  if(j&&j.ok){toast(j.out);if(FD.n===n)await liveLoad();return}
+  QN.sent.set(n,{...it,over:true,back:true});QN.done.delete(questionKey(n,h.id));
+  toast(`“${h.name}” queued nothing: ${(j&&j.out)||'the run app did not answer'}`,true);
+  if(S.thread===n)questionDraw();
 }
 /* F192a2: Chat about this: the question marked above the box, and the box in focus, in the tap itself */
 function questionMark(n,ask){
