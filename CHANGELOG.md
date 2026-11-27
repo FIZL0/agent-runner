@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a diff whose only change to `pyproject.toml`, `package.json` or `Cargo.toml` is its description line counts as docs only, so `done` and the merge skip the gate for it (F494).
 - Changed: `done.py` is split by area (`done_docs.py`, `done_refusals.py`, `done_writeup.py`), and its test is `tests/test_done_docs.py`; no behaviour change (C62).
 
 - Added: session_max / weekly_max read each Claude login's own usage (from its own config folder's login), so a new task passes over every login past its caps, not only the default one (F514).

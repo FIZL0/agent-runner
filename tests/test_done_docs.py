@@ -85,6 +85,45 @@ def test_docs_only_skips_gate():
         check('- [ ] **B3**' in (root / 'plan/TODO.md').read_text(), 'B3 stays open')
 
 
+def test_description_only_manifest():
+    print('F494: a manifest whose only change is its description counts as docs; a version or dependency change does not')
+    from agent_runner.done_docs import changed, docs_only
+    globs = ['*.md', 'docs/**']
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        git(root, 'init', '-q', '-b', 'main')
+        (root / 'pyproject.toml').write_text('[project]\nname = "x"\nversion = "1.0"\ndescription = "old"\n'
+                                             'dependencies = []\n', encoding='utf-8')
+        (root / 'package.json').write_text('{\n  "name": "x",\n  "description": "old",\n  "version": "1.0"\n}\n',
+                                           encoding='utf-8')
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'start')
+        old = os.environ.get('AGENT_RUNNER_REPO')
+        os.environ['AGENT_RUNNER_REPO'] = str(root)
+        git(root, 'checkout', '-q', '-b', 'task/D1')
+        (root / 'README.md').write_text('# x\n', encoding='utf-8')
+        (root / 'pyproject.toml').write_text('[project]\nname = "x"\nversion = "1.0"\ndescription = "new"\n'
+                                             'dependencies = []\n', encoding='utf-8')
+        (root / 'package.json').write_text('{\n  "name": "x",\n  "description": "new",\n  "version": "1.0"\n}\n',
+                                           encoding='utf-8')
+        check(docs_only(changed(root), globs), 'description-only manifests and a readme: gate skipped',
+              changed(root))
+        (root / 'pyproject.toml').write_text('[project]\nname = "x"\nversion = "1.1"\ndescription = "new"\n'
+                                             'dependencies = []\n', encoding='utf-8')
+        check(not docs_only(changed(root), globs), 'description plus a version: gated', changed(root))
+        (root / 'pyproject.toml').write_text('[project]\nname = "x"\nversion = "1.0"\ndescription = "new"\n'
+                                             'dependencies = ["y"]\n', encoding='utf-8')
+        check(not docs_only(changed(root), globs), 'description plus a dependency: gated', changed(root))
+        from agent_runner.done_docs import mark_descriptions
+        git(root, 'commit', '-qam', 'deps')
+        eq(mark_descriptions('main', 'HEAD', ['package.json', 'pyproject.toml'], root),
+           ['package.json#description', 'pyproject.toml'], 'a merge diff marks only the description-only one')
+        if old is None:
+            os.environ.pop('AGENT_RUNNER_REPO', None)
+        else:
+            os.environ['AGENT_RUNNER_REPO'] = old
+
+
 def test_concept_brief_page():
     print('F77: the concept brief tells a K task to pass --page <its HTML> to done --artifact')
     from agent_runner import brief as B
@@ -95,4 +134,4 @@ def test_concept_brief_page():
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_docs_only_skips_gate, test_concept_brief_page]))
+    raise SystemExit(report([test_docs_only_skips_gate, test_description_only_manifest, test_concept_brief_page]))

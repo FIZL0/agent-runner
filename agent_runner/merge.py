@@ -21,6 +21,7 @@ from contextlib import ExitStack
 
 from agent_runner import audit_fix, autorelease, freeze, gated_moves as GM, lessons_ask, pitch, plan as P, plat, plansync, pr, sched, stack
 from agent_runner.brief import findings_globs, research_task
+from agent_runner.done_docs import mark_descriptions
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
 from agent_runner.sched import agent_held, AgentHeld
@@ -1344,6 +1345,7 @@ def docs_merge(t) -> bool:
     """The merge t.merged changes only `[run] docs_files` on its base (every task in it, the plan's archive
     commit and a remote's commits taken in too): the slow gate need not run on it."""
     files = git('diff', '--name-only', '--no-renames', t.base, t.merged, cwd=t.d).stdout.split()
+    files = mark_descriptions(t.base, t.merged, files, t.d)  # F494: a manifest's description is docs
     return bool(C.run['test']) and docs_only(files, C.run['docs_files'])
 
 
