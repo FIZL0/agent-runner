@@ -651,25 +651,14 @@ _login_usage: dict[str, list] = {}  # F514: {config dir: [read at, reading]} of 
 
 
 def config_login(cfg: str) -> str:
-    """F514: `usage_login` of the Claude login kept in config dir `cfg`, '' when it cannot be told."""
-    with env_set('CLAUDE_CONFIG_DIR', cfg):
-        return usage_login()
-
-
-class env_set:
-    """F514: one environment variable set for the time of a `with` (this process's own reads only)."""
-    def __init__(self, k: str, v: str):
-        self.k, self.v = k, v
-
-    def __enter__(self):
-        self.was = os.environ.get(self.k)
-        os.environ[self.k] = self.v
-
-    def __exit__(self, *a):
-        if self.was is None:
-            os.environ.pop(self.k, None)
-        else:
-            os.environ[self.k] = self.was
+    """F514: `usage_login` of the Claude login kept in config dir `cfg`, '' when it cannot be told (read from that
+    dir alone, the process's environment untouched)."""
+    import hashlib
+    try:
+        uid = json.loads((Path(cfg) / '.claude.json').read_text(encoding='utf-8'))['oauthAccount']['accountUuid']
+    except (OSError, ValueError, KeyError, TypeError):
+        return ''
+    return hashlib.sha256(str(uid).encode()).hexdigest()[:16] if uid else ''
 
 
 def _fetch_login_usage(cfg: str) -> dict:
