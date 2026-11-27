@@ -1086,6 +1086,29 @@ def test_concept_chat() -> None:
     check('N        chat about it' in T.HELP, 'the keys list names N under Concepts')
 
 
+def test_open_chat_f209c2() -> None:
+    """F209c2: N on a Needs you item or concept that names an open chat ('chat') selects that chat in Sessions
+    and starts nothing; when the chat ended (closed) or none is named, N starts a new one as before."""
+    import copy
+    for panel, rows in ((5, 'concepts'), (4, 'needs')):
+        for state, starts in (('live', False), ('closed', True), (None, True)):
+            snap = copy.deepcopy(SNAP)
+            if state:
+                snap['sessions'].append({'name': 'c9', 'task': '', 'title': 'about K5', 'minutes': None,
+                                         'state': state, 'files': [], 'link': '', 'terminal': '',
+                                         **({'closed': True} if state == 'closed' else {})})
+                for r in snap[rows]:
+                    r['chat'] = 'c9'
+            ran = []
+            p = page(snap)
+            with mock.patch.object(U, 'run_control', lambda key, **a: (ran.append(key), {'ok': True, 'out': ''})[1]):
+                p.key(str(panel))
+                p.key('N')
+            eq(bool(ran), starts, f'{rows} chat {state}: N starts a new chat: {starts}')
+            if not starts:
+                eq((p.panel, p.sel().get('name')), (2, 'c9'), f'{rows}: N selects the open chat in Sessions')
+
+
 def test_new_concept() -> None:
     """F87: Concepts ends with a '+ new concept' row; n on Concepts opens its box, and Enter queues what was typed
     as a K task (plan add K TEXT), the result on the message line; the keys list and footer name n."""
@@ -2525,7 +2548,7 @@ if __name__ == '__main__':
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
-                               test_concept_chat, test_new_concept, test_enter_on_concept, test_concept_as_need_f197b2,
+                               test_concept_chat, test_open_chat_f209c2, test_new_concept, test_enter_on_concept, test_concept_as_need_f197b2,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked, test_shelved_f184,
                                test_themes,
                                test_idle_run_of_another_project, test_run_key_binds, test_run_controls,
