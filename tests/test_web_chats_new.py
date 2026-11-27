@@ -308,7 +308,7 @@ def test_plus_chat_b762(tmp: Path) -> None:
     for t in ('+new', '+plan:F1', '@k1'):
         eq(o[t], '', f'{t}: none in a new or starting chat')
     words = {v: re.sub('<[^>]*>', '', h) for v, h in o['views'].items()}
-    eq(words, {'home': 'Task', 'plan': 'Task', 'concepts': 'Concept', 'status': '', 'tools': 'Device',
+    eq(words, {'home': 'Task', 'plan': 'Task', 'concepts': 'Concept', 'status': '', 'tools': 'Tool',
                'talk': 'New talk', 'settings': '', 'projects': 'Project'}, 'the other views keep their own +')
     check(not any('data-new ' in h for h in o['views'].values()), 'and none of them starts a chat')
     eq([re.sub('<[^>]*>', '', o['homeAll']), o['homeOne']], ['Project', ''], "Runner Home's own page is unchanged")

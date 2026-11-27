@@ -29,7 +29,7 @@ function plusBtn(){
   if(S.thread)return b('data-new','Chat','New chat',!!PLUS_HOLD);  // B762: a chat or a slot's session; not one still empty or starting
   return{projects:()=>b('data-addproject','Project','Add a project'),home:()=>b('data-about="new"','Task','Add a task',!!PLUS_HOLD),plan:()=>b('data-about="new"','Task','Add a task',!!PLUS_HOLD),
     concepts:()=>b('data-about="newconcept"','Concept','New concept'),
-    tools:()=>S.tools&&S.tools.secure?b('data-tool="add"','Device','Add a device'):'',talk:()=>b('data-newtalk','New talk','New Talk chat')}[S.view]?.()||'';
+    tools:()=>S.tools&&S.tools.secure?b('data-tool="add"','Tool','Add an SSH machine, login or custom tool'):'',talk:()=>b('data-newtalk','New talk','New Talk chat')}[S.view]?.()||'';
 }
 /* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, and the view's + (F150) */
 function topHTML(){

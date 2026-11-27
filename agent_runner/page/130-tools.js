@@ -108,7 +108,7 @@ function toolsHTML(){
   if(!d)return `<div class="col">${err||emptyCard('Loading…')}</div>`;
   const toml=d.tools.filter(t=>t.source!=='device'), devs=d.tools.filter(t=>t.source==='device');
   return `<div class="col">${d.secure?'':card(`<b>Read only here</b><div class="small">Devices and secrets are saved only over https or on the machine itself.${d.https?'':' There is no https link yet: Tailscale Serve gives one.'}</div>${d.https?`<div class="btns"><a class="btn pri" href="${esc(d.https)}">Open the https link</a></div>`:''}`)}
-    ${err}${untilsHTML((S.snap||{}).untils)}<div class="sec">Devices<span class="ln"></span></div>${devs.length?devs.map(toolCard).join(''):emptyCard('No device yet. Add a machine or test rig for agents to reach.')}
+    ${err}${untilsHTML((S.snap||{}).untils)}<div class="sec">Devices<span class="ln"></span></div>${devs.length?devs.map(toolCard).join(''):emptyCard('No device yet. Add a machine or test rig for agents to reach.')}${loginsHTML()}
     ${toml.length?`<div class="sec">From runner.toml<span class="ln"></span></div>${toml.map(toolCard).join('')}`:''}
     <div class="small">Devices belong to this machine and its projects share them. Keys and passwords stay out of every chat, but agents run as the same user here, so this is no wall against an agent that goes looking.</div></div>`;
 }
@@ -120,16 +120,18 @@ const BTN_FIELDS=['label','cmd','confirm'], btnField=(i,k)=>`b${i}-${k}`;
 const devButtons=()=>`<div class="sec">Buttons<span class="ln"></span></div><div class="small">Each runs its command once on this machine, 30 s at most.</div>
     ${(S.devBtns||[]).map((i,at)=>`<div class="devbtn" data-k="devbtn:${i}" role="group" aria-label="Button ${at+1}"><div class="row setline"><b class="grow">Button ${at+1}</b><button class="btn" data-tool="btndel" data-i="${i}" aria-label="Remove button ${at+1}">Remove</button></div>${devText(btnField(i,'label'),'Label',{hint:'Restart'})}${devText(btnField(i,'cmd'),'Command (no secrets here)')}${devText(btnField(i,'confirm'),'Question asked first, if it needs one')}</div>`).join('')}
     <div class="btns"><button class="btn" data-tool="btnadd">Add a button</button></div>`;
+/* F466b: the Custom tool form's Describe it, under the Another way fields */
+const customDescribe=()=>S.devCustom?devText('describe','Describe it: what the tool is and how agents use it, in plain words. A task turns this into a tool entry, for you to approve before it is saved.',{area:4}):'';
 SHEETS.device=()=>{
   const edit=S.sheetArg, d=S.tools||{aliases:[]}, ssh=toolVal('kind')!=='other', n=edit||'';
   return `<h2>${edit?`Edit ${esc(edit)}`:'Add a device'}</h2>${devText('name','Name, as tasks name it',{hint:'macmini'})}${edit?'<div class="small">If you rename it, a task that needs it keeps the old name until it is edited.</div>':''}
     ${devText('description','What it is, what it is for, and its rules (agents read this; no secrets here)',{area:4})}
-    ${devPick('kind','How agents reach it',[['ssh','SSH'],['other','Another way (a command or address)']])}
+    ${S.devCustom&&!edit?'':devPick('kind','How agents reach it',[['ssh','SSH'],['other','Another way (a command or address)']])}
     ${ssh?`${d.aliases.length||toolVal('alias')?devPick('alias','Host',[['','Its own host, below'],...[...new Set([...(toolVal('alias')?[toolVal('alias')]:[]),...d.aliases])].map(a=>[a,`${a}, in ~/.ssh/config`])]):''}${toolVal('alias')?'<div class="small">Signs in as ~/.ssh/config says. No secret is copied.</div>':devText('host','Host name or address',{hint:'macmini.local'})+devText('user','User')+devText('port','Port',{num:true,hint:'22'})}`
-    :devText('reach','The command or address it uses',{hint:'vnc://rig.local:5900'})+devText('page','Web page to open, if it has one',{hint:'http://rig.local:8080'})+devText('start','Command that starts the page, if it needs one',{hint:'npm start'})+devText('folder','Working directory of that command',{hint:'~/repos/rig'})}
+    :devText('reach','The command or address it uses',{hint:'vnc://rig.local:5900'})+devText('page','Web page to open, if it has one',{hint:'http://rig.local:8080'})+devText('start','Command that starts the page, if it needs one',{hint:'npm start'})+devText('folder','Working directory of that command',{hint:'~/repos/rig'})+(edit?'':customDescribe())}
     <label class="row setline"><span class="grow">Only one task may use it at a time</span><input type="checkbox" role="switch" class="sw" data-f="${toolField('exclusive')}" aria-label="Only one task may use it at a time" ${toolVal('exclusive')==='true'?'checked':''}></label>
     ${devButtons()}
-    ${toolSaid(n)}<div class="btns"><button class="btn pri${toolBusy('save',n)}" data-tool="save" data-name="${esc(n)}">Save</button><button class="btn" data-closesheet>Cancel</button></div>`;
+    ${toolSaid(n)}<div class="btns">${S.devCustom&&!edit?`<button class="btn pri${toolBusy('custom','')}" data-tool="customsave">Save</button>`:`<button class="btn pri${toolBusy('save',n)}" data-tool="save" data-name="${esc(n)}">Save</button>`}<button class="btn" data-closesheet>Cancel</button></div>`;
 };
 SHEETS.devsecrets=()=>{
   const t=toolOf(S.sheetArg);if(!t)return '<div class="small">That device is gone.</div>';
@@ -195,7 +197,8 @@ async function toolClick(x){
   if(tool==='show'){if(S.sheet)closeSheet();viewGo(()=>{S.toolGo=key;goView('tools')},S.thread);return}
   if(tool.startsWith('press'))return pressClick(tool,name,source,x.dataset.label);
   if(tool==='btnadd'||tool==='btndel')return btnClick(x);
-  if(tool==='add')return toolEdit(null);
+  if(tool==='add'){S.devCustom=false;openSheet('tooladd');return}  // F466b
+  if(/^(form|login|customsave)/.test(tool))return formClick(x);
   if(tool==='edit'){const t=toolOf(name);if(t)toolEdit(t);return}
   if(tool==='secrets'){toolForget();S.toolSaid={};openSheet('devsecrets',name);return}
   if(tool==='ask'){S.sure='tool:'+name;render(true);return}
