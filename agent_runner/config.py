@@ -550,7 +550,7 @@ def toplevel(cwd: Path | str | None = None) -> Path:
     if env and cwd is None:
         return Path(env).resolve()
     key = str(Path(cwd or Path.cwd()).resolve())
-    if key in _TOPS:
+    if key in _TOPS and (_TOPS[key] / '.git').exists():  # a deleted checkout (a test's temp repo) is asked again
         return _TOPS[key]
     r = subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=str(cwd or Path.cwd()),
                        capture_output=True, text=True)
@@ -584,7 +584,7 @@ def git_path(out: str) -> Path | None:
 def main_checkout(cwd: Path | str | None = None) -> Path:
     """The main checkout of the repo around `cwd`, even when `cwd` is one of its worktrees."""
     top = toplevel(cwd)
-    if top in _MAINS:
+    if top in _MAINS and (_MAINS[top] / '.git').exists():
         return _MAINS[top]
     r = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=str(top),
                        capture_output=True, text=True)
