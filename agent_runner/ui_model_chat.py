@@ -519,6 +519,3 @@ def option_queue(chat: str, question: str, option: str) -> dict:
     except OSError:
         pass
     return {'ok': True, 'code': 0, 'out': line, 'queued': len(tasks), 'argv': []}
-
-
-ACTIONS['option_queue'] = option_queue
