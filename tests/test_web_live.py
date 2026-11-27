@@ -117,7 +117,7 @@ let dead = false, reloads = 0, said = [], ta = null, rc = {key: 'restart'};
 const store = mk(), tabStore = mk(), HKEY = 'p', HI = {i: null}, TK = {}, DK = {}, OB_KEY = 'ob';
 const DRAFT_KEY = k => 'd:' + k, boxKey = () => 'home', toast = t => said.push(t), esc = t => String(t), render = () => {};
 const document = {title: 't', querySelector: () => ta}, location = {reload() { reloads++ }}, els = {}, $ = k => els[k] = els[k] || {};
-const setHTML = (e, h) => { e.h = h }, controlOf = () => rc, ctlBusy = () => false, ctlSure = () => 'SURE', chatShown = () => false;
+const setHTML = (e, h) => { e.h = h }, controlOf = () => rc, ctlBusy = () => false, ctlSure = () => 'SURE';
 let H, S;
 const fresh = (snap, f) => { H = {add: ''}; S = {snap, f: f || {}, atts: {}, ob: [], setOpen: {}, sure: null}; };
 fresh({});

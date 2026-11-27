@@ -38,12 +38,10 @@ function takeTyped(){
   if(!k||typeof k!=='object')return;
   S.f={...S.f,...k.f};S.atts=Array.isArray(k.atts)?{[boxKey()]:k.atts}:k.atts||{};S.ren=k.ren||null;S.setOpen={...S.setOpen,...k.setOpen};S.setAway=Number(k.setAway)||0;
 }
-const holdNow=()=>refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
-const SCROLL_KEY='ar-scroll:'+(HOME_PAGE?'home:':'')+(HKEY||document.title);  // F207: the place a refresh left
-function newsRefresh(said){
-  said=said===undefined?holdNow():said;
+function newsRefresh(){
+  const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
   if(said){toast(said,true);return false}  // F401: what asked is told that it is held
-  tabStore.set(SCROLL_KEY,JSON.stringify({v:S.view,t:S.thread||'',top:$('body').scrollTop,pin:chatShown()&&!!S.pin}));  // F207: back to the same place
+  if(typeof selfKeep==='function')selfKeep();  // F207: back to the same place
   location.reload();return true;
 }
 function takeSnap(s){
@@ -124,6 +122,9 @@ addEventListener('online',()=>redial('shown'));
 /* F207: a new version loads by itself once nothing would be lost or cut off (selfReload); else the popup stays and it
    looks again. Once per page print in this tab (RELOADED_KEY), so it never loops */
 const RELOADED_KEY='ar-reloaded';
+const holdNow=()=>refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
+const SCROLL_KEY='ar-scroll:'+(HOME_PAGE?'home:':'')+(HKEY||document.title);  // F207: the place a refresh left
+function selfKeep(){tabStore.set(SCROLL_KEY,JSON.stringify({v:S.view,t:S.thread||'',top:$('body').scrollTop,pin:chatShown()&&!!S.pin}))}
 var SELF={down:0,moved:0,back:null,until:0};
 for(const t of ['pointerdown','touchstart'])document.addEventListener(t,()=>{SELF.down++},{capture:true,passive:true});
 for(const t of ['pointerup','pointercancel','touchend','touchcancel'])document.addEventListener(t,()=>{SELF.down=0;SELF.moved=Date.now()},{capture:true,passive:true});
@@ -140,7 +141,7 @@ function selfLook(){
   if(selfReload({news,done,hidden:true})!=='wait')return;  // nothing to load, or done once for this print
   const hold=holdNow(), w=selfReload({news,done,hidden:document.hidden,hold,busy:!hold&&selfBusy()});
   if(w!=='now')return;
-  tabStore.set(RELOADED_KEY,news.key);SELF.gone=true;newsRefresh('');
+  tabStore.set(RELOADED_KEY,news.key);SELF.gone=true;newsRefresh();
 }
 setInterval(selfLook,1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)selfLook()});
