@@ -64,6 +64,7 @@ function rowPress(did,box){const by=c=>(box||[]).find(x=>x.cid===c), saving=[], 
   for(const d of did||[]){const x=by(d.cid);if(!x)continue;
     if(x.state==='sending')saving.push(d.id);
     else if(x.state==='failed')failed.push(d.id)}
+  for(const x of box||[]){const id=x.grip||x.waitset;if(id&&x.state==='sending'&&!saving.includes(id))saving.push(id)}  // a move by its grip, Wait for…
   return{saving,failed}}
 /* F478: a task control's row shows its result itself, so a success needs no toast (a failure still has one) */
 const rowShows=ctl=>/^menu_[a-z]+:./.test(String(ctl||''));

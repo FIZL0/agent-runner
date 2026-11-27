@@ -13,8 +13,8 @@ function menuLive(d){
 }
 /* the Queue's rows with what was pressed */
 function menuRows(rows){
-  const st=rowPress(PM.did,S.ob);  // F478: saving while sent; a refusal goes back (020-live.js toasts it)
   PM.did=PM.did.filter(menuLive);
+  const st=rowPress(PM.did,S.ob);  // F478: saving while sent (a move and Wait for… too); a refusal goes back (020-live.js toasts it)
   let out=rows.slice();
   const put=(r,d)=>{const i=d.down.map(t=>out.findIndex(q=>menuId(q)===t)).find(n=>n>=0);out.splice(i===undefined?out.length:i,0,r)};
   for(const d of PM.did){
@@ -52,8 +52,7 @@ function menuPlace(q){
 function menuDo(k,id,more){
   const d={id,k,cid:'',at:Date.now(),ms:PM_MS,...more};
   PM.did=PM.did.filter(x=>x.id!==id||k!=='menu_remove'&&x.k!==k&&!(x.k.endsWith('hold')&&k.endsWith('hold'))).concat([d]);
-  d.say=`${controlOf(k).label.split(':')[0]}: ${menuName(id)}`;
-  d.cid=outbox('run_control',{key:k,tid:id},{ctl:k+':'+id,say:d.say}).cid;
+  d.cid=outbox('run_control',{key:k,tid:id},{ctl:k+':'+id,say:`${controlOf(k).label.split(':')[0]}: ${menuName(id)}`}).cid;
   return d;
 }
 function menuAct(k,id){
@@ -76,8 +75,7 @@ function menuUndo(id){
   const d=PM.did.find(x=>x.id===id&&x.k==='menu_remove'&&!x.back);
   if(!d||Date.now()-PM.gone<PM_AGAIN)return;  // nor does one on Remove undo it
   d.back=true;d.at=Date.now();d.ms=PM_MS;
-  d.say=`Put back: ${menuName(id)}`;
-  d.cid=outbox('run_control',{key:'menu_restore',tid:id,text:d.place},{ctl:'menu_restore:'+id,say:d.say}).cid;
+  d.cid=outbox('run_control',{key:'menu_restore',tid:id,text:d.place},{ctl:'menu_restore:'+id,say:`Put back: ${menuName(id)}`}).cid;
   render(true);menuFocus(`[data-task="${id}"]`);
 }
 function menuFocus(sel){const b=$('body').querySelector(sel);if(b)b.focus({preventScroll:true})}

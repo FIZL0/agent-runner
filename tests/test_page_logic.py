@@ -28,6 +28,17 @@ def test_held_state():
     eq(r[1], {'saving': [], 'failed': []}, 'settled (gone from the outbox): neither')
     eq(r[2], {'saving': [], 'failed': []}, 'nothing pressed: nothing marked')
     eq(r[3:], [True, True, False, False], 'a task control\'s row shows its result, a run control\'s button has its own rule')
+    # per control: hold, to the top, remove, put back (the row menu's), a move by the grip, Wait for…
+    for k in ['menu_hold', 'menu_unhold', 'menu_top', 'menu_remove', 'menu_restore', 'grip', 'waitset']:
+        menu = k.startswith('menu_')
+        d = [{'id': 'F9', 'cid': 'x', 'k': k}] if menu else []
+        sending = [{'cid': 'x', 'state': 'sending', **({} if menu else {k: 'F9'})}]
+        failed = [{'cid': 'x', 'state': 'failed', 'err': 'no', **({} if menu else {k: 'F9'})}]
+        s, f = logic_js([['rowPress', d, sending], ['rowPress', d, failed]])
+        eq(s['saving'], ['F9'], f'{k}: the row is saving while it is sent')
+        check('F9' not in f['saving'], f'{k}: a refused one is no longer saving')
+        if menu:
+            eq(f['failed'], ['F9'], f'{k}: and is failed, so the row goes back')
 
 
 def test_page():
