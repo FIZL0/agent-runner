@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import audit, inbox_lock, join, no_push, plan as P, plat, pr, pr_feedback, sched, session_theme, shared_tools, stack, task_size
+from agent_runner import audit, inbox_lock, slot_prep, join, no_push, plan as P, plat, pr, pr_feedback, sched, session_theme, shared_tools, stack, task_size
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -42,10 +42,10 @@ def worktree(n, branch: str) -> Path:
     """Slot n's worktree (or the merge worktree), created once and kept: a warm build is worth more than a
     clean one. `[run] links` — git-ignored data the work needs — are symlinked in, never copied."""
     d = SLOTS_DIR / (f's{n}' if isinstance(n, int) else str(n))
-    if not join.own_worktree(d):  # BUG2: a folder from another copy of the repo is added again from this one
-        SLOTS_DIR.mkdir(parents=True, exist_ok=True)
-        git('worktree', 'prune')
-        git('worktree', 'add', '-q', '--detach', str(d), branch)
+    with slot_prep.dir_lock(d):  # F500: a slot prepared in the background is not built twice
+        if not join.own_worktree(d):  # BUG2: a folder from another copy of the repo is added again from this one
+            slot_prep.build(d, branch)  # F500: a spare reused, else registered under a lock, checked out beside others
+    t0 = time.monotonic()
     for pat in C.run['copies']:  # git-ignored files a worktree needs its own copy of (a local config)
         for src in map(Path, glob.glob(str(ROOT / pat))):
             if src.is_file() and not (dst := d / src.relative_to(ROOT)).exists():
@@ -60,7 +60,9 @@ def worktree(n, branch: str) -> Path:
                     plat.link(src, dst)  # a symlink; on Windows without Developer Mode a junction or hard link
                 except OSError:
                     pass
-    backend().trust(d)
+    with slot_prep.REGISTER:  # trust writes one shared settings file
+        backend().trust(d)
+    slot_prep.timed(f'worktree {d.name}', 'its copies, links and trust', t0)
     return d
 
 

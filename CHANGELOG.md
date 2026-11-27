@@ -5,6 +5,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - Added: a queue row in the snapshot carries the task's size (`size: simple`) beside its other fields (F485).
+- Added: slot worktrees are built faster: the missing ones are prepared at once when a run starts, a slot past the count is kept as a spare worktree (with room on the disk) and reused by the next new slot instead of being built again, and each slow step of building one is logged with its time (F500).
 ## 0.79.0 (2026-11-27)
 
 - Fixed: a release card in the Plan queue has Wait for… too: tick the tasks it waits for, in the place of the tasks above it (B870).

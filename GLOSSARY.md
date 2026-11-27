@@ -1061,3 +1061,10 @@ _Avoid_: tip, hint
 
 **Default login**:
 The first login of a provider, used when a model name pins none
+
+**Spare worktree**:
+A slot's worktree kept, unused, after the slot count went down, so the next new slot reuses it instead of building one
+_Said_: keep the worktrees of removed slots
+_On screen_: kept as a spare
+_In code_: slot_prep.spares, .spare-sN
+_Avoid_: cached slot
