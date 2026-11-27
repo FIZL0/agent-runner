@@ -3,6 +3,7 @@
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
 ## Unreleased
+- Changed: the settings area (types, checks, toml edits) moved from config.py to config_settings.py, no behaviour change (C61).
 
 - Changed: a merge is not tested again when the shared branch moved during its gate only by the runner's own gated merges on other files; a hand commit, a shared file or a `runner.toml` change still tests it again (F493).
 - Added: `run login claude --as NAME` adds another Claude login in its own CLAUDE_CONFIG_DIR, kept per machine; the first (Claude Code's own) stays the default login, and `run login` lists them. Each must be a separate real account (F502).
