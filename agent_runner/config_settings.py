@@ -22,7 +22,7 @@ SETTING_CHOICES: dict[tuple[str, str], tuple] = {
     ('run', 'grill'): ('ask', 'big', 'off'),
     ('run', 'web_open'): ('everywhere', 'here'),  # F454a
     ('run', 'voice_learn'): ('ask', 'off'),
-    ('run', 'issues_trust'): ('skeptical', 'trust', 'contributors', 'members'),
+    ('run', 'issues_trust'): ('skeptical', 'trust', 'contributors', 'members', 'approve'),
     ('run', 'needs_order'): ('oldest', 'newest', 'plan'),
     ('git', 'land_edited'): ('wait', 'wip'),
 }

@@ -180,18 +180,10 @@ def watch_issues(branch: str, force: bool = False) -> list[str]:
             return []
         seen = I.read_seen(seen_f)
         trust = I.trust_of(C.run.get('issues_trust', 'skeptical'))
-        me = I.owner(gh) if trust != 'trust' and any(i['number'] not in seen for i in got) else ''
-        for issue in got:
+        me = I.owner(gh) if trust not in ('trust', I.APPROVE) and any(i['number'] not in seen for i in got) else ''
+
+        def file_issue(issue: dict, how: str) -> None:
             n = issue['number']
-            if n in seen:
-                continue
-            ls = P.lines(ROOT / rel)
-            open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
-            if I.named(issue, open_text):
-                seen.add(n)
-                I.write_seen(seen_f, seen)
-                continue
-            how = I.issue_trust(issue, trust, me)
             text, long = I.task(issue, how)
             tid = P.add(I.kind_of(issue), text, todo=ROOT / rel, pri='normal')
             own = plan_rel(f'{P.TASKS}/{tid}.md')
@@ -202,7 +194,7 @@ def watch_issues(branch: str, force: bool = False) -> list[str]:
                 git('reset', '-q', '--', own)
                 git('checkout', '-q', '--', rel)
                 (ROOT / own).unlink(missing_ok=True)
-                continue  # not filed: the next look tries it again
+                return  # not filed: the next look tries it again
             seen.add(n)
             I.write_seen(seen_f, seen)
             book[tid] = {'number': n, 'trust': how}
@@ -210,6 +202,44 @@ def watch_issues(branch: str, force: bool = False) -> list[str]:
             filed.append(tid)
             note(f'{tid}: filed ({how}), {I.marker(n)}')
             log(f'{tid}: filed ({how}), {I.marker(n)}: {text[:200]}')
+
+        # F492: the gates the person answered: Approve files the issue (only now is its text read), Decline nothing
+        gates_f = C.notes('issues.gates')
+        gates = I.read_gates(gates_f)
+        done_rel = plan_rel('DONE.md')
+        for gid, n, v in I.settle_gates(gates, ROOT / rel, ROOT / done_rel):
+            if not commit_plan(f'Plan: {gid}, {I.marker(n)} {v}d', rel, done_rel):
+                git('checkout', '-q', '--', rel, done_rel)
+                continue
+            gates.pop(gid, None)
+            I.write_filed(gates_f, gates)
+            log(f'{gid}: {I.marker(n)} {v}d by the person')
+            issue = next((i for i in got if i['number'] == n), None)
+            if v == I.APPROVE and issue:
+                file_issue(issue, 'skeptical')
+        for issue in got:
+            n = issue['number']
+            if n in seen:
+                continue
+            ls = P.lines(ROOT / rel)
+            open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
+            if I.named(issue, open_text):
+                seen.add(n)
+                I.write_seen(seen_f, seen)
+                continue
+            if trust == I.APPROVE:  # F492: only its number and link, held until the person answers
+                gid = I.file_gate(n, issue.get('url', ''), ROOT / rel)
+                if not commit_plan(f'Plan: {gid}, {I.marker(n)} waits for approval', rel):
+                    git('checkout', '-q', '--', rel)
+                    continue
+                seen.add(n)
+                I.write_seen(seen_f, seen)
+                gates[gid] = n
+                I.write_filed(gates_f, gates)
+                note(f'{gid}: {I.marker(n)} waits for approval')
+                log(f'{gid}: {I.marker(n)} waits for your approval under Needs you')
+                continue
+            file_issue(issue, I.issue_trust(issue, trust, me))
     finally:
         hold.close()
         MERGE.release()

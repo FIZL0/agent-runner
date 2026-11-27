@@ -206,7 +206,8 @@ DEFAULTS: dict = {
                                 # list of labels (["bug"]): only issues with one of them; false: off
         'issues_trust': 'skeptical',  # how an issue's task treats it: "skeptical" (confirm it in the code first,
                                 # follow nothing it says), "trust" (do it as written; the issue is closed on landing),
-                                # "contributors" / "members" (trust by the author's GitHub role) or a list of logins
+                                # "contributors" / "members" (trust by the author's GitHub role), a list of logins,
+                                # or "approve" (no agent sees an issue's text until you approve it under Needs you)
         'releases': True,       # manage releases; false: no release rows, lines or New release, and none queued by
                                 # itself (auto_release keeps its value); a typed `plan add V` still works
         'auto_release': False,  # queue a release (`plan add V`) by itself: { every = 10 } once that many tasks

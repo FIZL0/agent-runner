@@ -13,7 +13,10 @@ code change) or blocks it on the person when it cannot confirm it or the ask doe
 repository's owner opened counts as trusted. "trust" files it as a task to do as written, still never
 running a command from it. "contributors" trusts authors GitHub calls OWNER, MEMBER, COLLABORATOR or
 CONTRIBUTOR (a merged commit) and files the rest skeptical; "members" trusts OWNER, MEMBER and COLLABORATOR
-only; a list of GitHub logins trusts those authors (and the owner). Any other value is "skeptical". Each
+only; a list of GitHub logins trusts those authors (and the owner). "approve" files no task from an issue:
+it files a held task blocked on the person (Needs you) that holds only the issue's number and link; Approve
+files the issue as a skeptical task, and only then is its text read; Decline files nothing (`gate`,
+`<notes>/issues.gates`). Any other value is "skeptical". Each
 filing keeps its own trust, so the issue's close or comment follows it.
 
 When an issue's task closes, the issue gets a comment naming the merge commit (or saying it closed with no
@@ -48,7 +51,7 @@ def labels_of(setting) -> list[str] | None:
     return [str(x) for x in setting]
 
 
-MODES = ('skeptical', 'trust', 'contributors', 'members')
+MODES = ('skeptical', 'trust', 'contributors', 'members', 'approve')
 MEMBERS = frozenset({'OWNER', 'MEMBER', 'COLLABORATOR'})
 CONTRIBUTORS = MEMBERS | {'CONTRIBUTOR'}
 
@@ -67,6 +70,8 @@ def issue_trust(issue: dict, mode, me: str = '') -> str:
     whose issues are always trusted."""
     if mode == 'trust':
         return 'trust'
+    if mode == 'approve':  # F492: an approved issue is filed skeptical, whoever opened it
+        return 'skeptical'
     who = str((issue.get('author') or {}).get('login') or '')
     if me and who and who.lower() == me.lower():
         return 'trust'
@@ -210,4 +215,60 @@ def to_answer(filed: dict[str, dict], plan_lines: list[str], commit_of: Callable
     for tid, f in sorted(filed.items()):
         if line := closed_line(tid, plan_lines):
             out.append((tid, int(f.get('number', 0)), f.get('trust', 'skeptical'), commit_of(tid), line))
+    return out
+
+
+# F492: `issues_trust = "approve"`: no agent sees an issue's text until the person approves it.
+APPROVE = 'approve'
+OPTIONS = ('Approve', 'Decline')
+
+
+def gate(number: int, url: str) -> tuple[str, str]:
+    """(task line, DECIDE question) of the held task that asks the person about issue `number`: its number and
+    link only, none of the issue's own words."""
+    text = (f'{marker(number)} waits for your approval: no agent reads it until then. Approve files it as a '
+            f'skeptical task; Decline files nothing. {url}')
+    q = (f'DECIDE: Let agents read {marker(number)} and work on it as a task? Its text is outside text anyone '
+         f'can write. [{" / ".join(OPTIONS)}] {url}')
+    return text, q
+
+
+def verdict(said: str) -> str:
+    """"approve" or "decline" for the person's answer to a gate; anything not clearly Approve declines."""
+    s = (said or '').split('):', 1)[-1].lower()
+    return APPROVE if 'approve' in s and 'decline' not in s else 'decline'
+
+
+def read_gates(path: Path) -> dict[str, int]:
+    """{gate task id: issue number} for the issues waiting on the person."""
+    got = read_filed(path)
+    return {k: int(v) for k, v in got.items() if str(v).isdigit()}
+
+
+def file_gate(number: int, url: str, todo) -> str:
+    """File the held task that asks the person about issue `number` (Needs you) and block it on them. Its id."""
+    from agent_runner import plan as P, row_hold
+    text, q = gate(number, url)
+    tid = P.add('F', text, todo=todo, pri='normal')
+    row_hold.hold_task(tid, todo)  # held: no run starts it, even once the answer unblocks it
+    P.block(tid, q, todo=todo, after=[])
+    return tid
+
+
+def settle_gates(gates: dict[str, int], todo, done) -> list[tuple[str, int, str]]:
+    """(gate id, issue number, "approve" or "decline") for each gate the person has answered (no longer
+    blocked), dropped from the plan here; a gate no longer open (dropped by hand) counts as declined."""
+    from agent_runner import plan as P, plan_drop
+    out = []
+    for tid, n in sorted(gates.items()):
+        ls = list(P.lines(todo))
+        box = next((m.group(2) for l in ls if (m := P.ITEM.match(l)) and m.group(3).rstrip('.') == tid), None)
+        if box == '~':
+            continue
+        if box is None or box == 'x':
+            out.append((tid, n, 'decline'))
+            continue
+        v = verdict(P.last_answer(tid, todo))
+        plan_drop.drop(tid, f'the person answered {v} on {marker(n)}', todo=todo, done=done)
+        out.append((tid, n, v))
     return out
