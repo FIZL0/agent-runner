@@ -14,9 +14,8 @@ function questionTypingEnd(t){
   if(!k||(t&&t.value||'').trim())return;
   QN.typing='';QN.auto.delete(k);questionDraw();
 }
-document.addEventListener('focusin',e=>{if(questionBox(e.target))questionTyping()});
-document.addEventListener('input',e=>{if(questionBox(e.target))questionTyping()});
-document.addEventListener('focusout',e=>{if(questionBox(e.target))questionTypingEnd(e.target)});
+for(const [k,f] of [['focusin',questionTyping],['input',questionTyping],['focusout',questionTypingEnd]])  // one loop: other tests cut the page at the box's own input listener
+  document.addEventListener(k,e=>{if(questionBox(e.target))f(e.target)});
 document.addEventListener('click',e=>{  // a tap on the line while typing: it stays open until the box is left
   const el=e.target&&e.target.closest&&e.target.closest('[data-qshow],[data-qrowshow]');if(!el||!QN.typing)return;
   QN.typeOpen=QN.typing;QN.typing='';
