@@ -1807,6 +1807,25 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
    range of a file already read counts as a re-read, and a line that printed several files shares its
    result among them evenly.
 
+
+## Filing tasks from a chat
+
+A Claude Code session in your main checkout, beside a run, can feed it: you say what you saw, it finds the files
+and files the task, and a slot picks it up. Put the rule in your `CLAUDE.md` so every session follows it:
+
+```markdown
+## New asks go to the plan
+
+When I report a bug or ask for a feature, don't fix it here. File it with `agent-runner plan add`:
+- the kind letter from `agent-runner plan kinds`, and my words quoted with the date;
+- `--files` naming every file the fix will touch (look them up first), `--after` if it needs another task;
+- what "done" looks like, so the agent can test it. Long context goes in plan/tasks/<ID>.md.
+If `plan add` says it looks like an open task, `plan note` that task instead.
+Only do the work here when I say "do it here".
+```
+
+The run app's chats (control sessions) follow this rule already.
+
 ## Commands
 
 ```
@@ -1819,6 +1838,7 @@ agent-runner control [N]               a new control session in this terminal, b
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --no-wait   the same, returning once it starts ("control N is starting in a hidden terminal"),
                                        without waiting for its claude.ai/code link
+agent-runner wip [show|restore|drop NAME]  your main-checkout edits a merge moved aside (wip/main-checkout-*): look at one, put it in a take worktree, or delete it
 agent-runner pitch [approve|no PITCH]  landed work that waits for a yes to be pushed (### Approve to push): approve
                                        it, or undo it with `no`
 agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck since the last look (or WHEN:
