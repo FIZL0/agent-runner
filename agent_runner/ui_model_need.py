@@ -214,3 +214,21 @@ def need_why(tid: str) -> dict:
     if not TASK_ID.fullmatch(tid or ''):
         return {'ok': False, 'id': tid, 'out': f'a task id (F83), not {tid!r}'}
     return {'ok': True, 'id': tid, 'text': agent_said(tid)}
+
+
+ITEM_KEYS = ('label', 'what', 'age', 'answers', 'acts')
+
+
+def concept_item(row: dict, need: dict | None = None) -> dict:
+    """F197b1: the Needs you item a Concepts row carries, the same shape whether a Needs you entry waits for it
+    (`need`) or not (a past or kept page): {label, what, age, answers, acts, news, news_words}."""
+    if need:
+        item = {k: need.get(k, '') for k in ITEM_KEYS}
+    else:
+        item = {'label': 'CONCEPT', 'what': row.get('title', ''), 'age': '',
+                'answers': [] if row.get('history') or row.get('page') else need_answers(
+                    {'label': 'CONCEPT', 'concept': row.get('concept', ''), 'copy': row.get('copy', '')}),
+                'acts': []}
+    item['acts'] = row_acts('need', need) if need else row_acts('concept', row)
+    item.update(news=row.get('news', ''), news_words=row.get('news_words', ''))
+    return item

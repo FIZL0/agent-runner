@@ -576,6 +576,12 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
             needs[-1]['frame'] = frame  # F463: its card shows the options page framed
     concepts += page_rows({c['concept'] or c['id'] for c in concepts} | {c['id'] for c in concepts},
                           {n['id'] for n in needs})
+    by_id = {n['id']: n for n in needs}
+    for c in concepts:  # F197b1: one item shape in needs and concepts; the news on the Needs you item too
+        need = by_id.get(c['id']) or (by_id.get(c.get('build', '')) if c.get('waits') else None)
+        if need and 'news' in c:
+            need.update(news=c['news'], news_words=c['news_words'])
+        c['item'] = concept_item(c, need)
     return needs, concepts
 
 
