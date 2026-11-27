@@ -373,11 +373,9 @@ def step(f: Path, now: float) -> None:
             why = keep_why(n, sid, fx, ev)
             if why is None:  # a turn under way: looked at again when it ends
                 continue
-            if not why:
-                del ev['to'][sid]
-                save(f, ev)  # before closing: a restarted run closes nothing twice
-                close_chat(n, sid, to['id'], ev)
+            if not why and close_chat(n, sid, to['id'], ev, lambda: (ev['to'].pop(sid), save(f, ev))):
                 continue
+            why = why or 'it could not be closed'
             ev['to'][sid] = to = {**to, 'keep': why}
             save(f, ev)
             state.log(f'control {n}: kept open, {to["id"]} {ev["what"]} but {why}')
@@ -427,19 +425,22 @@ def keep_why(n: int, sid: str, fx: dict, ev: dict) -> str | None:
     return ''
 
 
-def close_chat(n: int, sid: str, tid: str, ev: dict) -> None:
-    """F209b: end chat `n`: its process ends, its transcript stays (Resume brings it back, it is listed as closed)."""
+def close_chat(n: int, sid: str, tid: str, ev: dict, mark) -> bool:
+    """F209b: end chat `n`: its process ends, its transcript stays (Resume brings it back, it is listed as closed).
+    `mark` is run first, so a restarted run closes nothing twice. False when its process is not known: not closed."""
     from agent_runner import control_closed, control_harness, plat, state
     pidf = state.C.notes(f'control{n}.pid')
     try:
         pid = int(pidf.read_text(encoding='utf-8').split()[0])
     except (OSError, ValueError, IndexError):
-        return
+        return False
+    mark()
     plat.terminate(pid)
     pidf.unlink(missing_ok=True)
     control_closed.idle_closed(n, sid, time.time())
     state.log(f'control {n}: closed, {tid} {ev["what"]} by the person (transcript kept: '
               f'{control_harness.resume_hint(sid)})')
+    return True
 
 
 # --- what left Needs you with no event ---------------------------------------------------------------------------

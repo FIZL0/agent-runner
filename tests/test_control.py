@@ -1336,6 +1336,10 @@ def test_settled_closes_f209b():
         w.look(w.base + 400)
         eq(len(w.ended), 2, 'a restarted run closes nothing twice')
     with world() as w:
+        eq(by_person(w, 'confirm', 'R81', 'done'), 0, 'its Yes button')
+        w.look()
+        eq((sorted(w.ended), w.typed), ([44, 45], []), 'an answer button closes them too')
+    with world() as w:
         eq(by_person(w, 'shelve', 'R81'), 0, 'shelved')
         w.look()
         eq((w.ended, [n for n, _ in w.typed]), ([], [4, 5]), 'shelve types the line as now')
