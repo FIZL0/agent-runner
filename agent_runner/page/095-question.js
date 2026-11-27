@@ -102,7 +102,7 @@ async function questionSend(n,h){
   QN.sent.set(n,it);
   moved();
 }
-/* F192d2: an option with stored tasks queues them at once (POST /queue, F192d1), with nothing sent to Claude; the chat
+/* F192d2: an option with stored tasks queues them at once (POST /queue, F192d1), with no message sent to the chat; the chat
    gets the one line of what was queued from the server, and the toast says it now. A failure brings the card back */
 async function questionQueue(n,h,it,moved){
   QN.sent.set(n,{...it,over:true});render(true);moved();
