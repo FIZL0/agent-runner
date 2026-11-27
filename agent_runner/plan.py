@@ -3119,6 +3119,34 @@ def _filed_here(c, *ids):
     control_settled.filed(c, ids)
 
 
+def concept_copy(c, url: str, kid: str) -> bool:
+    """B882: give concept `kid` the local copy of its https page that publish-page kept (concepts/<tid>.html beside
+    a <tid>.url holding the same URL), so the run page finds its options. False when there is none or it has one."""
+    d = c.notes('concepts', 'x').parent
+    if not url.startswith('http') or (d / f'{kid}.html').is_file():
+        return False
+    for u in sorted(d.glob('*.url')):
+        try:
+            same = u.read_text(encoding='utf-8').strip() == url.strip()
+        except OSError:
+            continue
+        if same and u.stem != kid and (src := d / f'{u.stem}.html').is_file():
+            (d / f'{kid}.html').write_bytes(src.read_bytes())
+            (d / f'{kid}.url').write_text(url.strip() + '\n', encoding='utf-8')
+            return True
+    return False
+
+
+def concept_copy_backfill(c, done) -> list[str]:
+    """B882: the concepts already filed with a claude.ai page and no copy get the one publish-page kept."""
+    try:
+        text = Path(done).read_text(encoding='utf-8')
+    except (OSError, TypeError):
+        return []
+    return [m[1] for m in re.finditer(r'^- \[x\] \*\*(K\d+[a-z0-9]*)\*\*.*concept page: (https?://\S+)', text, re.M)
+            if concept_copy(c, m[2], m[1])]
+
+
 def _p_concept(a, x):
     """`plan concept "TITLE" --page URL [--files A,B]` (F108): file a concept page shown inline, waiting for an OK."""
     from agent_runner.plan_concepts import concept_shown  # C52: the module imports this one
@@ -3142,6 +3170,9 @@ def _p_concept(a, x):
         return 2
     files = [f for f in re.split(r'[,\s]+', opts.get('files') or '') if f] or None
     kid, bid = concept_shown(title, page, files, todo=x.todo, done=x.done, local=local)
+    if x.c and not local:
+        concept_copy(x.c, page, kid)  # B882: the copy publish-page kept of this claude.ai page
+        concept_copy_backfill(x.c, x.done)
     page = f'/concept/{kid}' if local else page
     _filed_here(x.c, kid, bid)
     head = f'concept {kid} filed, done' if kid != bid else f'{bid} filed'
