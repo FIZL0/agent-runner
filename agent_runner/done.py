@@ -25,7 +25,7 @@ landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reope
 BLOCKED that waits for an open task or release with no `--after`, or over 200 characters with no ask file, is refused.
 
 `--until CHECK[,CHECK]`, with `--blocked`, is for a wait this machine can check by itself (`version:X.Y.Z`,
-`login:PROVIDER`, `tool:NAME`, `check:NAME`; all must pass), in place of `--after`. A bad check is refused before the
+`login:PROVIDER`, `tool:NAME`, `check:NAME`, `date:YYYY-MM-DD`; all must pass), in place of `--after`. A bad check is refused before the
 gate runs.
 
 F416: before the gate, a diff that deletes or renames a file, test, setting or command is checked for what still names
@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
                     help='with --blocked: the tasks it waits on, comma-separated (default: read off WHY)')
     ap.add_argument('--until', metavar='CHECKS', default=None,
                     help='with --blocked: what it waits on that this machine checks by itself, comma-separated '
-                         '(version:X.Y.Z, login:PROVIDER, tool:NAME, check:NAME); all must pass')
+                         '(version:X.Y.Z, login:PROVIDER, tool:NAME, check:NAME, date:YYYY-MM-DD); all must pass')
     ap.add_argument('--artifact', metavar='URL',
                     help="the page a concept task (K) published; required for one: its build waits for a person's OK")
     ap.add_argument('--page', metavar='FILE',

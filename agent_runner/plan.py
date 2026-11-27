@@ -156,8 +156,8 @@ blocked on "P36 is not merged yet" stays blocked long after P36 lands, because n
 from the open task ids its WHY names, so a session that forgets `--after` still gets one.
 
 **A block that waits on something this machine can check** says which, as `block ID --until CHECK[,CHECK] WHY`
-(`done --blocked WHY --until CHECK`): `version:X.Y.Z`, `login:PROVIDER`, `tool:NAME` or `check:NAME`, and all must
-pass. It reads `BLOCKED: (until version:0.66.0) why`, needs no person, and no run starts it; `unblock` frees it at
+(`done --blocked WHY --until CHECK`): `version:X.Y.Z`, `login:PROVIDER`, `tool:NAME`, `check:NAME` or
+`date:YYYY-MM-DD` (that day has come), and all must pass. It reads `BLOCKED: (until version:0.66.0) why`, needs no person, and no run starts it; `unblock` frees it at
 any time. A check that is none of these, or names what is not here, is refused and nothing is blocked. With a
 CONFIRM or DECIDE the question comes back under Needs you once they pass; any other block reopens for an agent.
 It does not hold an `after: all` or `all above` task: a release must not wait for a task that waits for its version.
@@ -503,7 +503,7 @@ def until_list(given: str, c=None) -> list[str]:
     out = list(dict.fromkeys(x.strip() for x in given.split(',')))
     if '' in out:  # none, or a space after a comma made the next check a word of the why
         raise SystemExit(f'{PROG}: --until takes checks, comma-separated with no space: version:X.Y.Z, login:PROVIDER, '
-                         'tool:NAME or check:NAME. Nothing blocked.')
+                         'tool:NAME, check:NAME or date:YYYY-MM-DD. Nothing blocked.')
     c = c or cfg()
     for t in out:
         if (why := until.problem(t, c)) and until.problem(t, cfg(main_checkout(c.root))):

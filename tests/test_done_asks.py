@@ -129,7 +129,8 @@ def test_prompt(root: Path) -> None:
     for k in ('It starts with what the person does, in words a person who never saw the task understands, and the reason '
               'comes second; it names no task id without that task\'s title.',
               'A wait on a task or a release is `--after <ID>`, and a wait a check can read is `--until <CHECK>` '
-              '(`version:X.Y.Z`, `login:PROVIDER`, `tool:NAME`, `check:NAME`): never `BLOCKED:`',
+              '(`version:X.Y.Z`, `login:PROVIDER`, `tool:NAME`, `check:NAME`, or `date:YYYY-MM-DD` when all it waits '
+              'for is a day, and it reopens by itself then): never `BLOCKED:`',
               f'over {A.LINE_MAX} characters with no ask file', 'names, after what the person does, the exact command'):
         check(k in p, k[:60], p)
 
