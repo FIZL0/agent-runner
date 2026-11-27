@@ -2195,6 +2195,17 @@ Task sessions (`[models] code`, `[models.kinds]`, a task's own `plan add --model
 (`[models] fix`), and `review`, `docs`, `feed`, `audit` and `control` can name another provider. A control session on one runs on the harness
 loop in chat mode (see [Control sessions](#the-harness-loop)).
 
+### Several Claude logins
+
+`run login claude --as NAME` adds a Claude login of its own: its own `CLAUDE_CONFIG_DIR` (beside this machine's logins
+file, `~/.config/agent-runner/claude-logins.json`, or `$AGENT_RUNNER_LOGINS`), signed in by `claude /login`. Logins are
+kept per machine, not per project. The first is the default login: the first time, Claude Code's own login is kept
+first as `default`, so tasks run on it as before. `run login` lists them under claude.
+
+Each login must be a separate real account (a work or Team account beside a personal one, or a pay-as-you-go API key).
+Holding extra subscriptions only to get past usage limits breaks Anthropic's terms (and OpenAI's and GitHub's), and the
+accounts can be banned.
+
 ### Fallback chain
 
 `[models] fallback` is a list of models a task goes on with when its provider hits a cap, in order:
