@@ -1037,3 +1037,10 @@ _Said_: working branch
 _On screen_: Working branch
 _In code_: [git] master_branch, isBranch, branchSays, branchHTML
 _Avoid_: main branch, master branch
+
+**Review page**:
+A pitch's page, where a person reads each waiting change's diff and why, asks about it, asks for a better way, and approves it
+_Said_: review page
+_On screen_: The diff / You asked / Answer it
+_In code_: pitch.page_html, review.diff_html, pitch ask, pitch better
+_Avoid_: code review, PR page

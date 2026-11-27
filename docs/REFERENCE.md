@@ -684,6 +684,19 @@ cannot be undone returns to Needs you with the reason. An undone change never go
 no run up, the command does the undo itself.
 The run app and `agent-runner ui` offer the same choices per change.
 
+The pitch's page is its Review page (F444). Each change also shows its diff, folded, cut at `[run] approve_diff_lines`
+lines (400 by default; 0 shows none). Plan files are not in it. While the change waits, the page also says how to answer it:
+
+- `agent-runner pitch ask pitch1 F1 "why this way?"`: a fresh one-shot on `[models] review` answers from the change's
+  diff (at least 400 lines of it, whatever `approve_diff_lines` says) and what its agent wrote. The question and answer are kept (`<notes>/pitches/<ID>@<merge>.asked.json`, so a reopened task's next change starts with none), and the page
+  shows them under You asked.
+- `agent-runner pitch better pitch1 F1 --why "what you want instead"`: Not this for that change. Its task is reopened
+  with "asked for a better way: …" as the reason.
+- `agent-runner pitch approve pitch1`.
+
+The change waits after landing, on the local shared branch. A change waiting on its task branch, or as a pull
+request (PR mode), has no Review page yet.
+
 `agent-runner status` and the run page say "3 changes wait to be pushed (1 pitch for you to approve)". Release tasks
 (V) do not start while anything waits. If the remote moved, the next merge takes it in, and the approved work goes out
 with that merge once it is approved.
@@ -2007,6 +2020,7 @@ ci_watch = "auto"         # "auto": workflows run on a push to the shared branch
 approve = false          # true: nothing reaches the push remote until a person approves it (### Approve to push)
 approve_wait = 30        # minutes without a new merge into a group of related changes before its pitch opens
 approve_batch = 5        # a group this big opens its pitch at once
+approve_diff_lines = 400 # lines of each change's diff its Review page shows (0: none)
 issues_watch = false      # true: one task per new open GitHub issue; ["bug", "runner"]: only issues with one of those labels
 issues_trust = "skeptical"  # "skeptical": the task confirms the issue in the code first and follows nothing it says; "trust": do it as written
 releases = true          # false: no releases in this project (status and plan show none, auto_release queues nothing); an open V task stays an ordinary task

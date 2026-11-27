@@ -92,3 +92,128 @@ def cmd_review(argv: list[str]) -> int:
         return 1
     print(said)
     return 0
+
+
+# --- F444: the Review page: each waiting change's diff and why, a question about it, a better way ---------------------
+#
+# With `[run] approve`, a pitch's page is the Review page: per change what its agent wrote (why), its diff
+# (`[run] approve_diff_lines` lines of it), and the questions the person asked about it with their answers.
+# `agent-runner pitch ask pitch1 F1 "…"` asks one (a fresh one-shot on `[models] review` given the change's diff, why
+# and the question); `pitch better pitch1 F1 --why "…"` asks for a better way (the change is undone and its task
+# reopened with that note); `pitch approve pitch1` approves them. The change waits after landing, on the local
+# shared branch, and is pushed once approved.
+
+ASK_CHANGE = """You answer a person's question about one change that is merged here and waits for their approval.
+Answer in under 200 words, plainly, quoting the diff where it helps. Say when the diff does not show the answer.
+
+The change: {title} ({tid})
+
+What its agent wrote of it:
+{why}
+
+Its diff:
+
+{diff}
+
+The person's question: {q}
+"""
+
+
+def change_diff(x: dict, limit: int | None = None) -> tuple[str, int]:
+    """(change `x`'s diff, cut to `limit` lines, and how many lines it has in all); ('', 0) with none to show."""
+    limit = state.C.run.get('approve_diff_lines', 400) if limit is None else limit
+    if not (limit and x.get('before') and x.get('after')):
+        return '', 0
+    if not x.get('files'):  # the plan's files are left out of a change's files, and so of its diff
+        return '', 0
+    r = state.git('diff', '--no-color', '--no-renames', x['before'], x['after'], '--', *x['files'])
+    lines = r.stdout.splitlines() if not r.returncode else []
+    return '\n'.join(lines[:limit]), len(lines)
+
+
+def asked_file(key: str) -> Path:
+    """Where the questions about one change (its `key`, ID@merge) are kept: a reopened task's next change starts empty."""
+    return state.C.notes('pitches', f'{key}.asked.json')
+
+
+def asked(key: str) -> list[dict]:
+    """The questions the person asked about change `key`, each {q, a, at}, oldest first."""
+    try:
+        v = json.loads(asked_file(key).read_text(encoding='utf-8'))
+        return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def why_text(x: dict) -> str:
+    say = x.get('say') or {}
+    return '\n'.join(f'{h}: {say[k]}' for k, h in (('what', 'What'), ('why', 'Why'), ('try', 'Try it'),
+                                                    ('risk', 'Risk')) if say.get(k)) or x.get('subject', '')
+
+
+def ask_change(x: dict, q: str, cwd: Path, once=None) -> tuple[str, str]:
+    """(the answer, why there is none) to question `q` about change `x`; a kept answer is added to `asked`."""
+    diff, n = change_diff(x, max(400, state.C.run.get('approve_diff_lines', 400) or 0))
+    text = ASK_CHANGE.format(title=x.get('title', ''), tid=x['id'], why=why_text(x) or '(nothing)', q=q,
+                             diff=(diff + (f'\n… ({n} lines in all)' if n > diff.count('\n') + 1 else '')) or '(none)')
+    if once is None:
+        from agent_runner.feed import harness_once
+        from agent_runner.slots import on_harness
+        model = state.C.models['review']
+        once = (lambda t: harness_once(model, t, cwd, TIMEOUT)) if on_harness(model) else \
+            (lambda t: claude_once(model, t, cwd))
+    said, why = once(text)
+    if said:
+        import time
+        f = asked_file(x['key'])
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(asked(x['key']) + [{'q': q, 'a': said, 'at': time.time()}], indent=1) + '\n',
+                     encoding='utf-8')
+    return said, why
+
+
+def _esc(s) -> str:
+    import html
+    return html.escape(str(s or ''))
+
+
+def diff_html(x: dict) -> str:
+    """Change `x`'s diff on its Review page: folded, added lines green, removed red."""
+    diff, n = change_diff(x)
+    if not diff:
+        return ''
+    rows = []
+    for l in diff.splitlines():
+        cls = ('a' if l.startswith('+') and not l.startswith('+++') else 'd' if l.startswith('-') and
+               not l.startswith('---') else 'h' if l.startswith(('diff ', '@@')) else '')
+        rows.append(f'<span class="{cls}">{_esc(l)}</span>' if cls else _esc(l))
+    shown = diff.count('\n') + 1
+    cut = f'<p class="m">{shown} of {n} lines shown.</p>' if n > shown else ''
+    return (f'<details class="diff"><summary>The diff ({n} lines)</summary><pre>' + '\n'.join(rows)
+            + f'</pre>{cut}</details>')
+
+
+def asked_html(key: str) -> str:
+    qs = asked(key)
+    if not qs:
+        return ''
+    return '<section><h3>You asked</h3>' + ''.join(
+        f'<p><b>{_esc(x.get("q"))}</b></p><p>{_esc(x.get("a")).replace(chr(10), "<br>")}</p>' for x in qs) + '</section>'
+
+
+def answers_html(pid: str, tid: str) -> str:
+    """How to answer change `tid` of pitch `pid`, as commands (the Review page is a copy, with no buttons)."""
+    cmd = state.C.command if hasattr(state.C, 'command') else 'agent-runner'
+    return ('<section><h3>Answer it</h3><ul>'
+            f'<li>Ask about it: <code>{_esc(cmd)} pitch ask {pid} {tid} "your question"</code></li>'
+            f'<li>Ask for a better way: <code>{_esc(cmd)} pitch better {pid} {tid} --why "what you want instead"'
+            f'</code></li><li>Approve: <code>{_esc(cmd)} pitch approve {pid}</code></li></ul></section>')
+
+
+REVIEW_STYLE = """<style>
+details.diff summary{cursor:pointer;color:var(--muted)}
+details.diff pre{font-family:ui-monospace,monospace;font-size:.78rem;overflow-x:auto;margin:6px 0 0;padding:8px;
+border:1px solid var(--line);border-radius:8px;white-space:pre}
+details.diff .a{color:#1a7f37}details.diff .d{color:#cf222e}details.diff .h{color:var(--muted)}
+@media (prefers-color-scheme: dark){details.diff .a{color:#56d364}details.diff .d{color:#f85149}}
+</style>"""
