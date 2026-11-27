@@ -1050,4 +1050,4 @@ The run page's keyboard-first layout: the sidebar as numbered panels on the left
 _Said_: lazyrunner, keyboard mode
 _On screen_: Layout: Lazyrunner
 _In code_: 189-lazy.js, 189-lazy.css, LAZY_PANELS, :root.lazy
-_Avoid_: keyboard mode, TUI mode, lazy view
+_Avoid_: TUI mode, lazy view

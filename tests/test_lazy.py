@@ -43,12 +43,17 @@ def test_panel_sets_match():
     # the layout only places the sidebar's rows: it hides none of them, so both layouts have the same panels
     for rule in re.findall(r'([^{}]+)\{([^{}]*)\}', CSS):
         sel, body = rule
-        if re.search(r'display:none|visibility:hidden', body):
+        if re.search(r'display:none|visibility:hidden|opacity:0(?![.\d])|(max-)?height:0(?![.\d])|clip', body):
             check('sidein' not in sel and '.ni' not in sel and 'data-view' not in sel and 'thread' not in sel,
                   f'F473: lazyrunner hides no panel ({sel.strip()})', body)
     for _, v in panels:
         if v != 'sessions':
             has(CSS, rf'\.ni\[data-view="{v}"\]', f'F473: the layout numbers panel {v}')
+    # the other way: every view of the Standard sidebar stays in Lazyrunner's (the CSS above hides none) and the key
+    # layer opens views only by pressing the sidebar's own [data-view] buttons
+    for v in nav:
+        check(f'.ni[data-view="{v}"]{{display' not in CSS, f'F473: Lazyrunner keeps the Standard sidebar\'s {v}')
+    has(JS, r'querySelector\(`\[data-view="\$\{p\[1\]\}"\]`\)', 'F473: a panel key presses the sidebar\'s own button')
     # no view, panel or renderer of its own: no *HTML function, no new view, no body or sidebar drawn
     check(not re.search(r'function \w*HTML|S\.view=|\$\(\'(body|sidein|side)\'\)\.innerHTML|setHTML\(', JS),
           'F473: lazyrunner draws no view or panel of its own')
