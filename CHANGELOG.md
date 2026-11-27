@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a chat's question in /live carries each option's count of stored tasks, and POST /queue queues the chosen option's tasks once, with one chat line and no message to Claude (F192d1).
 - Added: the Tools page's Add… offers SSH machine, Login (write-only, saved only over https or on the machine) and Custom tool, whose description queues a task that turns it into a tool entry for you to approve (F466b).
 - Added: the option-tasks store: a control session stores the tasks each DECIDE option queues, for one-tap queueing later (F192d).
 - Added: with several questions, the question's minimized line (shrunk while typing or by scrolling) shows the count, e.g. 1 of 3 (F192c1).

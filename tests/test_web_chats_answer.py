@@ -124,5 +124,46 @@ def test_pick_f138(tmp: Path) -> None:
     off.stop()
 
 
+def test_option_queue_f192d1(tmp: Path) -> None:
+    """F192d1: /live gives each option's count of stored tasks; POST /queue adds the chosen option's tasks once, a
+    double tap adds nothing, one chat line says what was queued, and nothing goes to Claude."""
+    from agent_runner import option_tasks, session_now
+    from agent_runner import plan as P
+    fake_repo(tmp)
+    q = 'Which board layout should the run app use?'
+    option_tasks.store(q, {'Wide': [['F', 'wide board', '--files', 'a.py'], ['T', 'wide board tests']], 'Narrow': []}, 'q1')
+    ask = {'id': 'x1', 'question': q, 'options': [{'name': 'Wide', 'rec': True}, {'name': 'Narrow', 'rec': False}]}
+    added = []
+
+    def no_send(text):
+        raise AssertionError(f'a tap reached Claude: {text!r}')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        with mock.patch.object(session_now, 'live', lambda n: {'ok': True, 'ask': ask, 'asks': [ask]}), \
+                mock.patch.object(P, 'main', lambda a: added.append(a) or 0), \
+                mock.patch.object(U, 'SEND', [no_send]):
+            code, live = get(f'{base}/live/c3?t={token}')
+            live = json.loads(live)
+            body = {'chat': 'c3', 'question': q, 'option': 'Wide'}
+            c1, one = post(f'{base}/queue?t={token}', body)
+            c2, two = post(f'{base}/queue?t={token}', body)
+            c3, bad = post(f'{base}/queue?t={token}', {'chat': 'nope', 'question': q, 'option': 'Wide'})
+    finally:
+        srv.stop()
+    eq(code, 200, '/live answers')
+    eq(live['ask']['tasks'], {'Wide': 2}, 'the counts: an option without tasks is left out')
+    eq(live['asks'][0]['tasks'], {'Wide': 2}, 'each of asks too')
+    eq((c1, one['ok'], one['queued']), (200, True, 2), 'a tap queues the tasks')
+    eq(len(added), 2, 'both added')
+    eq((c2, two['ok']), (200, False), 'a double tap adds nothing')
+    eq(len(added), 2, 'still two')
+    eq(bad['ok'], False, 'not a chat: refused')
+    lines = U.queued_lines('c3')
+    eq(len(lines), 1, 'one chat line')
+    check('queued 2 tasks' in lines[0]['text'] and 'wide board' in lines[0]['text'], 'it says what was queued', lines)
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_answer_button_b138), in_tmp(test_pick_f138)]))
+    raise SystemExit(report([in_tmp(test_answer_button_b138), in_tmp(test_pick_f138), in_tmp(test_option_queue_f192d1)]))

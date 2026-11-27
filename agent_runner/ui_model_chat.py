@@ -195,6 +195,7 @@ def feed(name: str, limit: int = FEED_MAX) -> dict:
     kept = rows[-limit:] if limit else rows
     if not any(e['kind'] == 'you' for e in kept):
         kept = ([e for e in rows if e['kind'] == 'you'][-1:] or (prompt_before(path, start) if cut else [])) + kept
+    kept = kept + (queued_lines(name) if name[:1] == 'c' and S.C else [])  # F192d1: what a tap queued
     return {'ok': bool(path), 'name': name, 'entries': kept,
             'more': cut or len(rows) > limit > 0, 'link': _bridge_link(sid) if sid else '',
             **({} if path else {'out': f'{name} has no transcript to read yet.'})}
@@ -465,3 +466,56 @@ def name_new(r: dict, ask: str) -> dict:
     except Exception:  # noqa: BLE001 - no notes dir: the name stays as control gave it
         pass
     return r
+
+
+# --- F192d1: one tap queues an option's stored tasks ------------------------------------------------------------
+
+def with_task_counts(live: dict) -> dict:
+    """F192d1: `live` (`session_now.live`) with each question ('ask', 'asks') carrying 'tasks': {option: how many
+    stored tasks it queues} (`option_tasks.counts`); options without stored tasks are left out."""
+    from agent_runner import option_tasks
+
+    def one(a):
+        if not isinstance(a, dict) or not a.get('question'):
+            return a
+        try:
+            n = option_tasks.counts(a['question'])
+        except Exception:  # noqa: BLE001 - no notes dir: no counts
+            n = {}
+        return {**a, 'tasks': n}
+    return {**live, **({'ask': one(live['ask'])} if live.get('ask') else {}),
+            **({'asks': [one(a) for a in live['asks']]} if live.get('asks') else {})}
+
+
+def queued_lines_file(name: str) -> Path:
+    """F192d1: the run's own chat lines of chat `name` (what a tap queued), never sent to Claude."""
+    return S.C.notes(f'{name}.queued-lines.json')
+
+
+def queued_lines(name: str) -> list[dict]:
+    try:
+        rows = json.loads(queued_lines_file(name).read_text())
+    except (OSError, ValueError):
+        return []
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def option_queue(chat: str, question: str, option: str) -> dict:
+    """F192d1: queue `option`'s stored tasks of `question` in chat `chat` at once (`option_tasks.queue`, once only)
+    and add one chat line saying what was queued; nothing is sent to Claude. Not ok when none were stored or they were
+    queued already (a second tap adds nothing)."""
+    from agent_runner import option_tasks
+    if not re.fullmatch(r'c\d+', chat or '') or not question or not option:
+        return {'ok': False, 'code': 2, 'out': f'option_queue: a chat, a question and an option; not {chat!r}', 'argv': []}
+    tasks = option_tasks.queue(question, option)
+    if not tasks:
+        return {'ok': False, 'code': 1, 'out': 'Nothing to queue (queued already?)', 'argv': []}
+    words = '; '.join(next((a for a in t if not a.startswith('-') and len(a) > 2), t[0]) for t in tasks)
+    line = f'“{option}”: queued {len(tasks)} task{"s" if len(tasks) != 1 else ""}: {words}'
+    rows = queued_lines(chat)
+    rows.append({'kind': 'out', 'text': line, 'id': f'queued:{len(rows)}', 'at': time.time()})
+    try:
+        queued_lines_file(chat).write_text(json.dumps(rows, ensure_ascii=False))
+    except OSError:
+        pass
+    return {'ok': True, 'code': 0, 'out': line, 'queued': len(tasks), 'argv': []}
