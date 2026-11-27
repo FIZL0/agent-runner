@@ -94,13 +94,13 @@ DRIVER = MENU.split('(async () => {\n  const out')[0] \
 const on = {}, window = {addEventListener: (t, f) => (on[t] = on[t] || []).push(f)}, $ = () => root, frames = [], requestAnimationFrame = f => frames.push(f);
 const document = {body: root, get activeElement() { return doc.activeElement }, querySelector: () => null, addEventListener: (t, f) => (on[t] = on[t] || []).push(f)};
 const fire = (t, e) => { let kept = false; const ev = {preventDefault() { kept = true }, stopImmediatePropagation() {}, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, ...e}; for (const f of on[t] || []) f(ev); return kept };
-let noClick = false, scrolled = 0; const getComputedStyle = () => ({rowGap: '10px'}), shiftOf = () => ({m42: 0}), glideTo = () => {}, flying = () => 0, hintHide = () => {}, scrollGlide = () => { scrolled++ }; MO.fly = new Map();
+let noClick = false, scrolled = 0; const getComputedStyle = () => ({rowGap: '10px'}), shiftOf = () => ({m42: 0}), gripGlides = [], glideTo = (el, x, y) => gripGlides.push([el.dataset.k, y]), flying = () => 0, hintHide = () => {}, scrollGlide = () => { scrolled++ }; MO.fly = new Map();
 const els = () => root.querySelectorAll('[data-k]').filter(e => /^(task:|rel:next)/.test(e.dataset.k) && e.parentNode.nodeName === 'div');
 Object.defineProperties(Node.prototype, {style: {get() { return this._s = this._s || {} }}, parentElement: {get() { return this.parentNode }},
   classList: {get() { const s = this._c = this._c || new Set(); return {add: c => s.add(c), remove: c => s.delete(c), contains: c => s.has(c)} }},
   offsetHeight: {get() { return 50 }}, offsetTop: {get() { const i = els().indexOf(this); return i < 0 ? 0 : 100 + 60 * i }}, offsetParent: {get() { return root }}});
 Node.prototype.closest = function (s) { for (let x = this; x; x = x.parentNode) if (x.hasAttribute && x.hasAttribute(s.slice(1, -1))) return x; return null };
-Node.prototype.getBoundingClientRect = function () { const t = this.offsetTop - root.scrollTop; return {top: t, bottom: t + 50, height: 50} };
+Node.prototype.getBoundingClientRect = function () { const t = this.offsetTop - root.scrollTop + (parseFloat(((this._s || {}).transform || '').slice(11)) || 0); return {top: t, bottom: t + 50, height: 50} };
 root.classList = new Set(); root.classList.remove = root.classList.delete; root.getBoundingClientRect = () => ({top: 0, bottom: 2000, height: 2000});
 """).replace("root.querySelector = s =>", "const all0 = root.querySelectorAll.bind(root); root.querySelectorAll = s => s === '.card' ? els() : all0(s); root.querySelector = s =>") \
     .replace('render = () => { root.innerHTML = planHTML() }', 'render = () => { planDraw(root, planHTML()) }') \
@@ -126,6 +126,10 @@ const drop = async (id, by) => { const n = sent.length; noClick = false; const y
   out.twice = [key('F1', 'ArrowDown'), key('F1', 'ArrowDown'), rows(), sent.slice(-2)]; land();
   key('B2', 'ArrowUp'); S.ob[S.ob.length - 1].state = 'failed'; render(); out.failed = [rows(), planHTML().includes('[failed Move B2 before F1]')]; land();
   out.next = [key('next-release', 'ArrowUp'), rows(), last(), !grip('next-release'), sent.length]; land();
+  { const n = sent.length; gripGlides.length = 0; const y = start('F1'); move(y + 5); move(y + 130); fire('pointerup', {clientY: y + 130});
+    out.shown = [rows(), S.ob.map(x => x.state), sent.length - n, gripGlides.filter(g => g[0] === 'task:F1'), els().map(e => e.style.transform || '').join('')]; land() }
+  { const y = start('B2'); move(y - 5); move(y - 60); fire('pointerup', {clientY: y - 60}); out.shownUp = [rows(), S.ob.map(x => x.state)]; land() }
+  { const n = sent.length, y = start('F7'); move(y + 5); move(y + 300); fire('pointerup', {clientY: y + 300}); out.across = [rows(), sent.slice(n)]; land() }
   out.dragDown = await drop('F1', 130); land();
   out.dragUp = await drop('V6', -190); land();
   out.dragNext = await drop('next-release', -190); land();
@@ -185,6 +189,9 @@ def test_page(tmp: Path) -> None:
     eq(o['failed'], [start, True], 'one that failed is taken back, and says so')
     eq(o['next'][1:], [['F1', 'B2', 'F3', 'rel:next', 'V6', 'F7', 'F8'], mv('next-release', 'after', 'F3'), True, o['next'][4]], 'the Next release row by its name')
     eq(o['next'][4], 7, 'moved, it is a release: no second move by that name')
+    eq(o['shown'], [['B2', 'F3', 'F1', *start[3:]], ['sending'], 1, [['task:F1', 10]], ''], 'B877: dropped, the row shows in its new place before the move answers, gliding the last 10px from where it was let go; no drag shift is left')
+    eq(o['shownUp'], [['B2', 'F1', *start[2:]], ['sending']], 'B877: a drag up shows at once too')
+    eq(o['across'], [['F1', 'B2', 'F3', 'V6', 'rel:next', 'F7', 'F8'], []], 'B877: dragged past the Queue into Parked: it stays in the Queue, nothing sent')
     eq(o['dragDown'], [['B2', 'F3', 'F1', *start[3:]], [mv('F1', 'after', 'F3')], [], True, None], 'a drag down; its click opens nothing')
     eq(o['dragUp'], [['V6', 'F1', 'B2', 'F3', *start[4:]], [mv('V6', 'before', 'F1')], [], True, None], 'a release dragged to the top')
     eq(o['dragNext'][:2], [['F1', 'rel:next', 'B2', 'F3', 'V6', 'F7', 'F8'], [mv('next-release', 'after', 'F1')]], 'the Next release row dragged')

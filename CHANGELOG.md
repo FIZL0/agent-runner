@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: on the run page's Plan, a row dragged (mouse or finger) shows in its new place at once and glides only the last bit from where it was let go; before, the drag's shifts stayed on through the redraw and the rows jumped (B877).
+
 ## 0.79.0 (2026-11-27)
 
 - Fixed: a release card in the Plan queue has Wait for… too: tick the tasks it waits for, in the place of the tasks above it (B870).
