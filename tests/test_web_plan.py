@@ -902,5 +902,33 @@ def test_release_height_b825(tmp: Path) -> None:
     eq({k: (v[0], v[1]) for k, v in got.items()}, {k: (got['cV10'][0], 1) for k in got}, "each as high as the row that says 'next'")
 
 
+def test_concept_as_need_f197b(tmp: Path) -> None:
+    """F197b: a concept with a Needs you item draws as that item's Home card (needTap, needBtns: the same buttons and
+    posted actions, no data-pick), with its New/Updated badge; one with no item keeps its old row."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    src = page.split('function conceptNeedCard(c){', 1)[1].split('\n}', 1)[0]
+    check('needTap(' in src and 'needBtns(' in src and 'data-pick' not in src, 'a concept card is drawn by the Needs you code')
+    if not shutil.which('node'):
+        print('  (no node here: skipped)')
+        return
+    js = ('const S={snap:{kinds:{},needs:[{id:"K9",label:"CONCEPT"}]}};const esc=s=>String(s);'
+          'const needTap=n=>"tap:"+n.id;const conceptFrame=n=>"";const needBtns=(n,i)=>`<button data-act="concept_pick" data-id="${n.id}">A</button>${i}`;'
+          'const card=(h,c,a)=>`<div class="card ${c}" ${a}>${h}</div>`;'
+          'const needCard=(n,i)=>card(needTap(n,S.snap.kinds)+conceptFrame(n)+needBtns(n,i),"need","");'
+          'function conceptNeedCard(c){' + src + '\n}'
+          'console.log(JSON.stringify([conceptNeedCard({id:"K9",news_words:"New"}),needCard(S.snap.needs[0],0),conceptNeedCard({id:"K1"})]))')
+    f = tmp / 'c.js'
+    f.write_text(js, encoding='utf-8')
+    r = subprocess.run(['node', str(f)], capture_output=True, text=True, timeout=60)
+    got = json.loads(r.stdout or 'null')
+    check(got, 'node draws it', r.stderr[-800:])
+    if not got:
+        return
+    inner = lambda h: h.split('>', 1)[1]
+    check('tap:K9' in got[0] and 'data-act="concept_pick"' in got[0], 'the Concepts card has the Home card buttons', got[0])
+    eq(inner(got[0]).replace('<span class="small cnews" data-k="cnews:K9">New</span>', ''), inner(got[1]), 'same as the Home card but the badge')
+    eq(got[2], '', 'a concept with no Needs you item keeps its old row')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_no_run_f402c1), in_tmp(test_split_b811b), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b), in_tmp(test_release_waits_b825), in_tmp(test_release_height_b825)]))
+    raise SystemExit(report([in_tmp(test_real_action), in_tmp(test_no_run_f402c1), in_tmp(test_split_b811b), in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_start), in_tmp(test_diff), in_tmp(test_parked), in_tmp(test_shelved_f184), in_tmp(test_concepts_view), in_tmp(test_release_row_f131), in_tmp(test_new_drop_release_f186), in_tmp(test_manage_releases_f193), in_tmp(test_task_text_f85), in_tmp(test_need_heading_b793a), in_tmp(test_run_card_b763a), in_tmp(test_search_f212), in_tmp(test_plan_lists_f426b), in_tmp(test_release_waits_b825), in_tmp(test_release_height_b825), in_tmp(test_concept_as_need_f197b)]))
