@@ -74,6 +74,7 @@ from agent_runner import devices, home_screen, login_hold, need_detail, page_htt
 from agent_runner import state as S
 from agent_runner import ui_model as U
 from agent_runner import web_actions  # noqa: F401  F460a: its actions join U.ACTIONS
+from agent_runner import web_review  # noqa: F401  F444c: pitch_ask and pitch_better join U.ACTIONS
 
 # C45: the code is in files by area, each run in this module's own namespace in this order (the names are one
 # module's, as before the split: a test's `W.X = v` reaches all of it). Put new code in the file of its area, not in this

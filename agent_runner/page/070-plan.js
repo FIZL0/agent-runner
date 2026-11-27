@@ -54,8 +54,8 @@ function pitchNo(n,i){
 /* F162: an item's buttons, the same on its card and in its popup: its answers, Later, Chat, Drop and Open */
 function needBtns(n,i,more=''){
   const open=a=>a?`<a class="btn" href="${esc(a)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:'';
-  if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id];
-    return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?foldIn('pitch:'+n.id,pitchNo(n,i)):''}`}
+  if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id], ask=!!(S.reviewOpen||{})[n.id];  // F444c: Ask…
+    return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button><button class="btn" data-reviewopen="${i}" aria-expanded="${ask}">Ask…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?foldIn('pitch:'+n.id,pitchNo(n,i)):''}${ask?foldIn('review:'+n.id,reviewAskHTML(n,i,S.reviewAns,S.sure)):''}`}
   if(n.label==='PR')return `<div class="btns">${open(n.url)}</div>`;  // F420: a person merges it on GitHub, and then it clears
   if(n.label==='TOOL')return '';  // F168: nothing to answer, it clears once the tool is back
   return `<div class="btns">${needInputs(n).length?'':ansBtns(n)}${more}${restBtns(n)}${open(needPage(n))}${n.devices?needDevices(n):''}</div>${actSure(n.acts,n.id)}`;
