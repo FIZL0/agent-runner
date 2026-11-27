@@ -1308,6 +1308,112 @@ def test_settled_verbs_and_openers():
           'the run app\'s command is the person\'s, not the session\'s that started the run')
 
 
+def test_settled_closes_f209b():
+    print('F209b: what the person settles for good outside a chat closes the chats about it, unless one keeps it')
+    from agent_runner import control_held as H, control_settled as Z, sched, taken_by, ui_model as U
+
+    def by_person(w, *argv):
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_BY': Z.PERSON_BY, 'AGENT_RUNNER_CONTROL': '', 'AGENT_RUNNER_SLOT': ''}):
+            from agent_runner import plan as P
+            with mock.patch.object(P, 'cfg', lambda *a: w.R.C), mock.patch.object(P, 'other_project', lambda *a: ''), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                return P.main(list(argv))
+
+    @contextlib.contextmanager
+    def world():
+        with settled_world() as w:
+            w.ended = []
+            with mock.patch('agent_runner.plat.terminate', lambda p: w.ended.append(p)):
+                yield w
+
+    with world() as w:
+        eq(by_person(w, 'drop', 'R81', 'not needed'), 0, 'dropped on the run page')
+        w.look()
+        eq((sorted(w.ended), w.typed), ([44, 45], []), 'both chats on R81 close, nothing typed; c6 only mentions it')
+        check(not w.notes('control4.pid').exists() and w.notes('control4.closed').exists(), 'listed as closed, resumable')
+        check(any('control 4: closed, R81 was dropped by the person' in x for x in w.logs), 'run.log names the item', w.logs)
+        w.Z._SEEN.clear()
+        w.look(w.base + 400)
+        eq(len(w.ended), 2, 'a restarted run closes nothing twice')
+    with world() as w:
+        eq(by_person(w, 'confirm', 'R81', 'done'), 0, 'its Yes button')
+        w.look()
+        eq((sorted(w.ended), w.typed), ([44, 45], []), 'an answer button closes them too')
+    with world() as w:
+        eq(by_person(w, 'shelve', 'R81'), 0, 'shelved')
+        w.look()
+        eq((w.ended, [n for n, _ in w.typed]), ([], [4, 5]), 'shelve types the line as now')
+    for verb, ended in (('revise', []), ('approve', [46])):
+        with world() as w:
+            K.control_give(6, f'{w.R.ROOT.name} · 6')
+            w.plan('concept', 'the menu', '--page', 'https://claude.ai/code/artifact/aaa', by=6)
+            w.look()
+            eq(by_person(w, verb, 'K1', 'rounder'), 0, verb)
+            w.look()
+            eq((w.ended, [n for n, _ in w.typed]), (ended, [] if ended else [6]), f'{verb} of a concept its chat filed')
+    with world() as w:
+        w.plan('change', 'R81', 'No: the check failed')
+        w.look()
+        eq(w.ended, [], 'by no person: nothing closes')
+    with world() as w:
+        eq(w.plan('drop', 'R81', 'gone', by=6), 0, 'a chat drops it')
+        w.look()
+        eq((w.ended, [n for n, _ in w.typed]), ([], [4, 5]), 'a chat\'s decision types the line')
+    keeps = {
+        'person': lambda w: w.rows['s4'].append(said('wait', w.base - 800)),
+        'decide': lambda w: w.rows['s4'].append(answer('DECIDE: which login next? [a / b]', w.base - 800)),
+        'running': lambda w: w.rows['s4'].append({**answer('started', w.base - 800), 'bg': True}),
+        'renamed': lambda w: w.rows['s4'].append({'type': 'custom-title', 'customTitle': 'my login chat'}),
+        'other': lambda w: (w.plan('block', 'R82', 'CONFIRM: look'),
+                            w.rows['s4'].__setitem__(0, said("This chat is about R82 'probe', which needs me.", w.base - 900)),
+                            w.Z.filed(w.R.C, ['R81'], {'n': 4, 'sid': 's4'})),
+    }
+
+    def bg_state(r, f=K.control_state):  # a background task, as control_state reads one, in the chat marked so
+        rows = list(r)
+        return {**f(rows), 'running': {'b1'} if any(x.get('bg') for x in rows) else set()}
+    for name, make in keeps.items():
+        with world() as w:
+            make(w)
+            with mock.patch.object(K, 'control_state', bg_state):
+                by_person(w, 'drop', 'R81', 'x')
+                w.look()
+            eq((w.ended, sorted(n for n, _ in w.typed)), ([45], [4]), f'{name}: c4 kept and told, c5 closed')
+            check(any('control 4: kept open' in x for x in w.logs), f'{name}: logged', w.logs)
+    for name in ('held', 'dialog', 'take'):
+        with world() as w:
+            pats = [mock.patch.object(H, 'holds', lambda s: s == 's4' and name == 'held'),
+                    mock.patch.object(sched, 'taken', lambda: {'R81': Path('/x')} if name == 'take' else {}),
+                    mock.patch.object(taken_by, 'chat', lambda c, d, live: 4 if live == [4] else 0)]
+            if name == 'dialog':
+                w.rows['s4'].append({'type': 'assistant', 'timestamp': stamp(w.base - 800), 'message': {
+                    'content': [{'type': 'tool_use', 'id': 't1', 'name': 'AskUserQuestion', 'input': {}}]}})
+            with contextlib.ExitStack() as st:
+                for p in pats:
+                    st.enter_context(p)
+                by_person(w, 'drop', 'R81', 'x')
+                w.look()
+            eq(w.ended, [45], f'{name}: c4 kept')
+            check(name == 'dialog' or any('control 4: kept open' in x for x in w.logs), f'{name}: logged', w.logs)
+    with world() as w:
+        w.rows['s4'].append({'type': 'assistant', 'timestamp': stamp(w.base - 800), 'message': {
+            'content': [{'type': 'tool_use', 'id': 't2', 'name': 'Bash', 'input': {'command': 'ls'}}]}})
+        by_person(w, 'drop', 'R81', 'x')
+        w.look()
+        eq(w.ended, [45], 'a turn under way: not yet')
+        w.rows['s4'] += [{'type': 'user', 'timestamp': stamp(w.base - 700), 'message': {
+            'content': [{'type': 'tool_result', 'tool_use_id': 't2', 'content': 'ok'}]}}, answer('Done.', w.base - 690)]
+        w.Z._SEEN.clear()
+        w.look(w.base + 60)
+        eq((sorted(w.ended), w.typed), ([44, 45], []), 'looked at again once it ended: closed')
+    with world() as w:  # the pick link runs `sheet` through the run app's command, which marks it the person's
+        got = []
+        with mock.patch.object(U.sp, 'run', lambda a, **k: got.append(k['env']) or types.SimpleNamespace(
+                returncode=0, stdout='', stderr='')):
+            U._run(['sheet', 'R81', '--go'])
+        eq(got[0]['AGENT_RUNNER_BY'], Z.PERSON_BY, 'a pick link\'s sheet is the person\'s')
+
+
 def test_settled_concept_chat():
     print('B219a1: a chat whose first message the run page made for a concept is told of its pick and its drop')
     from agent_runner import plan as P, ui_model as U
@@ -1684,5 +1790,5 @@ if __name__ == '__main__':
                              test_first_message_typed_after_remote_control, test_takes_input_b158, test_rename_f129, test_held_delivered_once,
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once, test_settled_repeats_b812,
-                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing,
+                             test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_closes_f209b, test_settled_waits_and_skips, test_settled_landing,
                              test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c, test_settings_two_writers_b806, test_idle_close_stays_quiet_b859, test_shell_rule_b880]))
