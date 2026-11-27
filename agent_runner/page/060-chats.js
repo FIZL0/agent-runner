@@ -44,11 +44,18 @@ function chatBar(){
 function finalDelete(){
   const u=S.undo;if(!u)return;S.undo=null;
   if(u.names.includes(S.thread)){S.thread=null;S.ctx=null}
+  const was=S.snap.sessions.filter(s=>u.names.includes(s.name));
   S.snap.sessions=S.snap.sessions.filter(s=>!u.names.includes(s.name));
+  S.delGone=[...new Set([...(S.delGone||[]),...u.names])];  // B876: a snapshot taken before the delete keeps them off
+  const back=()=>{S.delGone=(S.delGone||[]).filter(n=>!u.names.includes(n));
+    const have=new Set(S.snap.sessions.map(s=>s.name));S.snap.sessions=[...S.snap.sessions,...was.filter(s=>!have.has(s.name))];render(true)};
+  const fine=()=>setTimeout(()=>{S.delGone=(S.delGone||[]).filter(n=>!u.names.includes(n))},10000);  // stale snapshots are long past by then
   fetch(tq('act'),{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'delete_chats',args:{names:u.names}})})
-    .then(r=>r.json()).then(j=>{if(!j.ok)actFailed(j,'The delete did not work')}).catch(e=>toast(`Could not reach the run page: ${plainErr(e)}`,true));
+    .then(r=>r.json()).then(j=>{if(j.ok)fine();else{back();actFailed(j,'The delete did not work')}}).catch(e=>{back();toast(`Could not reach the run page: ${plainErr(e)}`,true)});
   render(true);
 }
+/* B876: chats deleted on this page stay off the list, whatever an older snapshot says */
+function delGoneOff(){const g=S.delGone;if(g&&g.length&&Array.isArray(S.snap.sessions))S.snap.sessions=S.snap.sessions.filter(s=>!g.includes(s.name))}
 /* B213, B768: the file picker just closed: the top bar's + Task and + Chat take no press for a second, so a double press in the picker cannot land on one */
 const PLUS_HELD='.plus[data-about="new"],.plus[data-new]';
 let PLUS_HOLD=0;

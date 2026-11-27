@@ -390,5 +390,49 @@ def test_drop_confirm_id_b191(tmp: Path) -> None:
     eq(other, '', 'another item asks nothing')
 
 
+DELETE_DRIVER = r"""
+const fs = require('fs'), src = fs.readFileSync(process.argv[2], 'utf8');
+const fn = name => { const i = src.indexOf('function ' + name + '('); let d = 0, j = src.indexOf('{', i);
+  for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && !--d) return src.slice(i, k + 1) } };
+const rows = () => S.snap.sessions.map(s => s.name), out = {}, toasts = [];
+let S, answer, drawn;
+const toast = (t, bad) => toasts.push([t, !!bad]), actFailed = (j, t) => toast(t, true), plainErr = e => String(e), tq = x => x;
+const render = () => { drawn = rows() };
+const fetch = () => new Promise(r => { answer = r });
+eval(fn('finalDelete') + ';' + fn('delGoneOff') + ';globalThis.finalDelete=finalDelete;globalThis.delGoneOff=delGoneOff');
+const fresh = () => { S = {snap: {sessions: ['c1', 'c2', 'c3', 'c4'].map(name => ({name}))}, undo: {names: ['c2', 'c3'], bar: true}, thread: 'c2'}; globalThis.S = S };
+(async () => {
+  fresh(); finalDelete(); out.sameFrame = [drawn, S.thread];
+  S.snap = {...S.snap, sessions: ['c1', 'c2', 'c3', 'c4'].map(name => ({name}))}; delGoneOff(); out.stale = rows();
+  answer({json: () => ({ok: true})}); await new Promise(r => setTimeout(r, 0)); out.ok = [rows(), toasts.length];
+  fresh(); finalDelete(); answer({json: () => ({ok: false, error: 'no'})}); await new Promise(r => setTimeout(r, 0));
+  out.failed = [rows().sort(), drawn.sort(), toasts.slice()];
+  fresh(); finalDelete(); answer(Promise.reject('down')); await new Promise(r => setTimeout(r, 0));
+  out.down = rows().sort();
+  console.log(JSON.stringify(out)); process.exit(0);
+})();
+"""
+
+
+def test_delete_at_once_b876(tmp: Path) -> None:
+    """B876: deleted chats leave the list in the same frame, before the server answers; a snapshot taken
+    before the delete does not bring them back; a failed delete puts them back with a toast."""
+    if not shutil.which('node'):
+        print('  (no node here: the delete script test is skipped)')
+        return
+    (tmp / 'page.js').write_text(W.page_html().decode(), encoding='utf-8')
+    (tmp / 'driver.js').write_text(DELETE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'page.js')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the delete', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['sameFrame'], [['c1', 'c4'], None], 'both rows go in the first draw, before any answer; the open one closes')
+    eq(o['stale'], ['c1', 'c4'], 'an older snapshot keeps them off')
+    eq(o['ok'], [['c1', 'c4'], 0], 'the server says yes: they stay gone, no toast')
+    eq(o['failed'], [['c1', 'c2', 'c3', 'c4'], ['c1', 'c2', 'c3', 'c4'], [['The delete did not work', True]]], 'a failed delete puts them back, with a toast')
+    eq(o['down'], ['c1', 'c2', 'c3', 'c4'], 'and so does no answer at all')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_card_chat_b139), in_tmp(test_row_buttons_f187), in_tmp(test_rename_cancel_f446), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))
+    raise SystemExit(report([in_tmp(test_delete_at_once_b876), in_tmp(test_delete_chats_f118), in_tmp(test_card_chat_b139), in_tmp(test_row_buttons_f187), in_tmp(test_rename_cancel_f446), in_tmp(test_chats_f128), in_tmp(test_quiet_stays_b193), in_tmp(test_needs_drop_chat_f110), in_tmp(test_drop_confirm_id_b191)]))
