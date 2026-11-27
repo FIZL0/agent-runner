@@ -7,6 +7,7 @@ A check is one of four kinds, written `kind:value`; nothing else is taken, so ne
     login:PROVIDER   that login works, as far as this machine's files say
     tool:NAME        a shared tool or device is free
     check:NAME       [run.checks.NAME] in runner.toml: `cmd` exits 0 passed, 75 not yet, anything else cannot run
+    date:YYYY-MM-DD  that day has come, on this machine's clock (F491: a task that only waits for a date)
 
 `problem` says why a check is refused, `label` what the screens call it, and `run` answers it once: (PASSED, NOT_YET or
 CANNOT, words).
@@ -28,7 +29,14 @@ from agent_runner import state as S
 
 PASSED, NOT_YET, CANNOT = 'passed', 'not yet', 'cannot run'
 EXITS = {0: PASSED, 75: NOT_YET}  # sysexits' TEMPFAIL, as a shared tool's busy
-KINDS = ('version', 'login', 'tool', 'check')
+KINDS = ('version', 'login', 'tool', 'check', 'date')
+DATE = re.compile(r'[0-9]{4}-[0-9]{2}-[0-9]{2}')
+
+
+def today() -> 'datetime.date':
+    """This machine's date; tests replace it."""
+    import datetime
+    return datetime.date.today()
 CLAUDE_KEYS = ('CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN')
 CHECK_TIMEOUT = 10.0  # s a named check may take, as shared_tools.CHECK_TIMEOUT
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
@@ -51,8 +59,12 @@ def read(text: str, c=None) -> tuple[str, str]:
     text = text.strip()
     kind, sep, value = text.partition(':')
     if not sep or kind not in KINDS:
-        raise Refused(f'no such check: {text!r}; use version:X.Y.Z, login:PROVIDER, tool:NAME or check:NAME '
-                      '(a command goes in [run.checks.NAME] in runner.toml)')
+        raise Refused(f'no such check: {text!r}; use version:X.Y.Z, login:PROVIDER, tool:NAME, check:NAME or '
+                      'date:YYYY-MM-DD (a command goes in [run.checks.NAME] in runner.toml)')
+    if kind == 'date':
+        if not DATE.fullmatch(value) or not _day(value):
+            raise Refused(f'{text!r}: a date is a real day written date:2026-12-03')
+        return kind, value
     if kind == 'version':
         if not VERSION.fullmatch(value):
             raise Refused(f'{text!r}: a version is three numbers, version:0.66.0')
@@ -92,7 +104,7 @@ def label(text: str, c=None) -> str:
         return shared_tools.label(value, c)
     if kind == 'check':
         return (checks(c).get(value) or {}).get('label', value)
-    return {'version': f'version {value}', 'login': f'{value} login'}.get(kind, text)
+    return {'version': f'version {value}', 'login': f'{value} login', 'date': value}.get(kind, text)
 
 
 def run(text: str, c=None) -> tuple[str, str]:
@@ -102,7 +114,20 @@ def run(text: str, c=None) -> tuple[str, str]:
         kind, value = read(text, c)
     except Refused as e:
         return CANNOT, str(e)
-    return {'version': _version, 'login': _login, 'tool': _tool, 'check': _named}[kind](value, c)
+    return {'version': _version, 'login': _login, 'tool': _tool, 'check': _named, 'date': _date}[kind](value, c)
+
+
+def _day(value: str):
+    import datetime
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _date(value: str, c) -> tuple[str, str]:
+    now = today()
+    return (PASSED if now >= _day(value) else NOT_YET), f'today is {now.isoformat()}'
 
 
 def serving_version(c) -> str:

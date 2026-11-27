@@ -186,12 +186,40 @@ def test_config(repo: Path):
         has(str(e), r'\[run\.checks\.vm\] needs cmd', 'a config with no cmd is refused')
 
 
+def test_date():
+    import datetime
+    from agent_runner import plan as P
+    print('date: a block that waits for a day stays out of Needs you, and is freed once that day comes')
+    for bad in ('date:2026-13-01', 'date:2026-12-3', 'date:tomorrow', 'date:2026-02-30'):
+        check(U.problem(bad), f'refused: {bad!r}')
+    eq(U.problem('date:2026-12-03'), '', 'a real day is taken')
+    eq(U.label('date:2026-12-03'), '2026-12-03', 'what the screens call it')
+    keep = U.today
+    try:
+        U.today = lambda: datetime.date(2026, 12, 2)
+        eq(U.run('date:2026-12-03'), (U.NOT_YET, 'today is 2026-12-02'), 'the day before: not yet')
+        todo = R.C.todo
+        text = todo.read_text(encoding='utf-8')
+        todo.write_text(text + '- [ ] **T2** later | files: b.py\n', encoding='utf-8')
+        P.block('T2', 'measure a week on', todo=todo, until=['date:2026-12-03'])
+        has(P.section(todo, 'T2')[0], r'BLOCKED: \(until date:2026-12-03\) measure a week on$', 'written as a date block')
+        eq(P.asks(todo, all=True), [], 'not under Needs you')
+        eq(P.until_waits(P.lines(todo)), {'T2': 'waits for 2026-12-03'}, 'it waits for the day')
+        U.today = lambda: datetime.date(2026, 12, 3)
+        eq(U.run('date:2026-12-03')[0], U.PASSED, 'on the day it passes')
+        check(P.until_passed('T2', todo), 'and the task is freed')
+        has(P.section(todo, 'T2')[0], r'^- \[ \] \*\*T2\*\*', 'open again')
+        todo.write_text(text, encoding='utf-8')
+    finally:
+        U.today = keep
+
+
 def main() -> int:
     tmp = Path(tempfile.mkdtemp())
     os.environ['AGENT_RUNNER_DEVICES'] = str(tmp / 'devices')
     repo = make_repo(tmp)
     R.init(repo)
-    return report([test_read, test_version, lambda: test_login(tmp), test_tool, test_named, lambda: test_config(repo)])
+    return report([test_read, test_version, lambda: test_login(tmp), test_tool, test_named, test_date, lambda: test_config(repo)])
 
 
 if __name__ == '__main__':
