@@ -19,6 +19,7 @@ prompt_extra = """
 A task that changes how the run app looks, moves or speaks (agent_runner/page/*, the parts of the run app's page; Runner Home's page): read
 docs/STYLE.md first and follow it; a change that needs a new rule writes the rule there in the same commit."""
 weekly_max = 100
+session_max = 100
 
 # The phone is iFizBox's: its script says who has it, with the same exits (0 free, 75 busy, 69 missing).
 [run.tools.iphone15]
