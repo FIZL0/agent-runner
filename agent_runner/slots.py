@@ -870,7 +870,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     prompt = prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch)  # F132: the harness loop's brief has no subagents
     logfile, since = slot_header(n, f'{tid} session {sid}')
     note_model(sid, model)
-    if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n) + session_env(tid, sid, model, held), logfile)):
+    if not (pid := MUX.open(n, d, prompt, sid, model, idle, [*slot_env(n), *session_env(tid, sid, model, held)], logfile)):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
         shared_tools.not_started(tid, d, wait)
         return None
@@ -985,14 +985,14 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
         prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch) + told
         logfile, since = slot_header(n, f'{tid} session {sid} (fallback: {why})')
         note_model(sid, model)
-        if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n) + session_env(tid, sid, model), logfile)):
+        if not (pid := MUX.open(n, d, prompt, sid, model, idle, [*slot_env(n), *session_env(tid, sid, model)], logfile)):
             log(f'slot {n}: the session for {tid} on {model} did not start in {MUX.where(n)}')
             return None
         log(f'slot {n}: {tid} goes on with {model} ({why})', EV_STARTED, tid)
         return pid, sid, since
     logfile, since = slot_header(n, f'{tid} {"woken" if told else "resume"} {sid} ({why})')  # woken: no cut-off's resume
     if told and not move_transcript(sid, d) or not (pid := MUX.open(
-            n, d, told or RESUME.format(why=why, tid=tid), sid, model, idle, slot_env(n) + session_env(tid, sid, model, login=session_login(sid)), logfile, resume=True)):
+            n, d, told or RESUME.format(why=why, tid=tid), sid, model, idle, [*slot_env(n), *session_env(tid, sid, model, login=session_login(sid))], logfile, resume=True)):
         log(f'slot {n}: the session for {tid} did not resume in {MUX.where(n)}')
         return None
     log(f'slot {n}: {tid} resumed ({why})')
