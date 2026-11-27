@@ -724,12 +724,22 @@ def event_words(tid: str, said: str, kinds: dict) -> str:
     return f'{state}: {task_words(tid, what.removeprefix(tid).strip() if re.match(re.escape(tid) + r"( |$)", what) else what, kinds)}'
 
 
+def cap_held_line(st: dict, now: float) -> str:
+    """F468: the usage caps holding new tasks, with the settings' caps; '' when they do not."""
+    from agent_runner.cap_hold import held_line
+    from agent_runner.state import C
+    caps = C.run if C else {'session_max': 90, 'weekly_max': 90}
+    return held_line(st, caps, now)
+
+
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
                 waiting=None, progress: str = '', wips=None, login: str = '', agent: str = '') -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
     run's state, `progress` (`progress_line`, `release_line`), each slot's task, title and minutes, what is
     merging, the last few merged / blocked / parked, and usage."""
     out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None, wips=wips)
+    if up and (held := cap_held_line(st, now)):  # F468: first, plainly
+        out.insert(0, held)
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     if nogate := no_gate_line():  # up or not: the next run merges untested too
         out.append(nogate)

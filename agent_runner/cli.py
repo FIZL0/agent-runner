@@ -60,7 +60,7 @@ Mostly for agents (you can run these too)
     agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
     agent-runner run once             one task in this terminal, then stop (run 3: three agents)
     agent-runner run --dry-run 3      what 3 agents would start now; starts nothing
-    agent-runner force                start tasks past the usage caps (--off: caps hold)
+    agent-runner force                start tasks past the usage caps (--off: caps hold; force ID: just that task)
     agent-runner help order           what runs when, and how to make one task wait for another
     agent-runner run --help           every runner option
     agent-runner --version
@@ -294,6 +294,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(what)
         return 0
+    if cmd == 'force' and rest and not rest[0].startswith('-'):  # F468: `force ID`, just that task
+        from agent_runner import cap_hold
+        return cap_hold.cmd_force_id(rest[0])
     if cmd in ('pause', 'force', 'slots', 'key'):
         from agent_runner import runner
         return runner.cmd_key(rest, f'{runner.RUNNER} {cmd}')
