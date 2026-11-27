@@ -1681,7 +1681,8 @@ not count as a gate pass: the merge runs `test` (or `test_since`) even on that e
 Docs-only changes skip the gate, decided by the diff and not the task's letter (a D task that touches code is
 tested; a B fix that only edits the README is not). When every file a merge changes on the shared branch (all
 its tasks, the plan's archive commit, a remote's commits taken in) matches `[run] docs_files` (default `*.md`
-and `docs/**`; `!glob` takes one back), the merge runs `[run] docs_check` instead, if one is set (a link or
+and `docs/**`; `!glob` takes one back; a `pyproject.toml`, `package.json` or `Cargo.toml` whose every changed
+line is its `description` counts too, F494), the merge runs `[run] docs_check` instead, if one is set (a link or
 anchor check), and the log says `docs only, gate skipped`; a failing docs check fails the merge. `done` does
 the same with the files its worktree changes since the shared branch (commits, edits and new files): it prints
 `docs only, gate skipped`, so a session that only edited docs or the plan needs no `--no-test`. It records no
