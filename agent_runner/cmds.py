@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, push_left, shared_tools, stack, stop_now, taken_by
+from agent_runner import cap_hold, control_harness, control_held, no_push, page_only, plan as P, plansync, plat, push_left, shared_tools, stack, stop_now, taken_by
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -286,12 +286,9 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
     if not run_up():
         print(f'no run is up in this repository: `{C.command} run` starts one', file=sys.stderr)
         return 1
-    if cmd == 'force' and a.task and not a.off:  # F468: only an open task
-        from agent_runner.sched import open_tasks
-        from agent_runner.state import default_branch
-        if a.task not in open_tasks(default_branch()):
-            print(f'{a.task} is no open task: `{C.command} plan` lists them', file=sys.stderr)
-            return 1
+    if cmd == 'force' and a.task and not a.off and (bad := cap_hold.not_open(a.task)):  # F468
+        print(bad, file=sys.stderr)
+        return 1
     keys = {'slots': lambda: [f'slots {a.count}'], 'key': lambda: a.keys}.get(
         cmd, lambda: [f'{cmd[0]} {a.task if getattr(a, "task", "") and not a.off else "off" if a.off else "on"}'])()
     send_key(*keys)

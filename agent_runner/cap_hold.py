@@ -58,6 +58,13 @@ def force_key(want: str) -> str:
     return f'forced: {tid} may start past the usage caps'
 
 
+def not_open(tid: str) -> str:
+    """Why `force ID` refuses `tid` (it is no open task), '' when it is one."""
+    from agent_runner.sched import open_tasks
+    from agent_runner.state import C, default_branch
+    return '' if tid in open_tasks(default_branch()) else f'{tid} is no open task: `{C.command} plan` lists them'
+
+
 def only_forced(open_ids: set[str], forced: set[str]) -> set[str]:
     """What a pick passes over while the caps hold: every open task but the forced ones."""
     return set(open_ids) - set(forced)
