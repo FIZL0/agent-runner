@@ -518,7 +518,19 @@ async function piAi(sub) {
 // Pi's own logins (`pi` /login): its auth.json, one credential per provider, read and written as Pi does
 function piCredentials() {
   const file = path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent'), 'auth.json');
-  const all = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; } };
+  // F501 (issue #9): a Pi session writes auth.json in place, so a read can catch it empty or half written; that
+  // read seemed to say "no login" and a resumed session failed with "Provider is not configured". A missing file
+  // is no logins; an unreadable one is read again for a few seconds, then said as the error it is.
+  const all = () => {
+    const end = Date.now() + 5000;
+    for (;;) {
+      let text;
+      try { text = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return {}; text = null; }
+      if (text !== null) { try { return JSON.parse(text); } catch {} }
+      if (Date.now() > end) throw new Error(`harness: ${file} cannot be read as JSON; log in again with \`pi\` /login`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  };
   const save = (data) => {
     const tmp = `${file}.harness-${process.pid}`;
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });

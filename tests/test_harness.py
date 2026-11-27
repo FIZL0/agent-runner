@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest import mock
@@ -492,6 +493,14 @@ def test_enterprise(tmp: Path):
     check('hello from corp' in p.stdout, "the session answers on the other session's token", p.stdout + p.stderr)
     eq(seen(), [f'{copilot}/chat/completions'], 'and does not refresh again')
     eq(auth.read_text(encoding='utf-8'), fresh, 'and the login is still there')
+    # F501 (issue #9): a Pi session is half way through writing auth.json as a resumed session reads it
+    auth.write_text(fresh[:len(fresh) // 2], encoding='utf-8')
+    timer = threading.Timer(1.0, lambda: auth.write_text(fresh, encoding='utf-8'))
+    timer.start()
+    p = session(model)
+    timer.join()
+    check('hello from corp' in p.stdout, 'a half-written login is read again, not taken for none', p.stdout + p.stderr)
+    seen()
     login('corp.ghe.com', GHE_PROXY='proxy.corp.ghe.com')
     check('api.corp.ghe.com/models' in seen(), "a token's own address on the domain is kept")
     p = session(other)
