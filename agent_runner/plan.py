@@ -3268,6 +3268,34 @@ def _p_change(a, x):
     return x.say(change(a.id, _text(a)) + big_note(a.id, x))
 
 
+def _p_concept_updated(a, x):
+    """`plan concept-updated K "<what changed>" [--file PAGE]` (F197a): a chat updated concept K's page at the same
+    link; the run shows it as Updated with those words. --file: the updated page, copied over the run's copy."""
+    from agent_runner import concept_news
+    words, page, it = [], '', iter(a.rest)
+    for w in it:
+        if w == '--file':
+            page = next(it, '')
+        else:
+            words.append(w)
+    what = ' '.join(words).strip()
+    if not x.c or not re.fullmatch(r'[A-Za-z]+\d+\w*', a.id) or not what or (page and not Path(page).is_file()):
+        print(f'{PROG} concept-updated <concept id> "<what changed>" [--file <the updated page>]', file=sys.stderr)
+        return 2
+    return x.say(f'concept {a.id} updated (version {concept_news.updated(x.c, a.id, what, page)}): '
+                 'the run shows it as Updated until its details are opened')
+
+
+def _p_concept_opened(a, x):
+    """`plan concept-opened K VERSION` (F197a): concept K's details popup was opened showing VERSION."""
+    from agent_runner import concept_news
+    if not x.c or not re.fullmatch(r'[A-Za-z]+\d+\w*', a.id):
+        print(f'{PROG} concept-opened <concept id> <version>', file=sys.stderr)
+        return 2
+    concept_news.opened(x.c, a.id, a.version)
+    return x.say(f'concept {a.id} opened at version {a.version}')
+
+
 def _p_shelve(a, x):
     return x.say(f'shelved {shelve(a.id)}: still blocked, off {needs_cfg()["heading"]} (`{PROG} unshelve` brings it back)')
 
@@ -3538,6 +3566,8 @@ SUBCOMMANDS = {
     'approve': (('id',), 0, _p_approve),
     'revise': (('id',), 1, _p_revise),
     'concept': ((), 1, _p_concept),
+    'concept-updated': (('id',), 1, _p_concept_updated),
+    'concept-opened': (('id', 'version'), None, _p_concept_opened),
     'restyle': ((), 0, _p_restyle),
     'waiting': ((('all', {'nargs': '?', 'choices': ['--all']}),), None, _p_waiting),
     'confirm': (('id',), 0, _p_confirm),

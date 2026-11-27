@@ -80,7 +80,8 @@ def test_snapshot(tmp: Path) -> None:
                            'url': 'https://claude.ai/artifact/k5', 'copy': '',
                            'lead': U.concept_chat_text({'concept': 'K5', 'title': 'lazy layout',
                                                         'url': 'https://claude.ai/artifact/k5'}),
-                           'acts': ['concept_chat', 'concept_drop']}], 'concept with its page link')
+                           'acts': ['concept_chat', 'concept_drop'], 'version': '0-', 'news': 'new',
+                           'news_words': ''}], 'concept with its page link, New: never opened (F197a)')
     eq(snap['log'], [f'=== 2026-11-21T10:{i:02d}:00 line {i}' for i in range(25, 30)], 'run log tail')
     rel, = snap['releases']
     eq(snap['release'], 'release: ' + rel['text'] + rel['note'], 'release line: the one row (F185)')

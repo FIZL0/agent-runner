@@ -851,6 +851,13 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
 - **Changes or a no**: `plan revise K7 "what to change"` reopens K7 (back from DONE.md) with the request
   noted and drops F12; the next round's `done` files a new build task.
 - `plan waiting` lists what waits for an OK.
+- **New and Updated** (F197a): the run app's concept rows carry `news` (`new`, `updated` or ''),
+  `news_words` and `version`, from `<notes>/concepts/news.json`, one record every device shares. A concept is
+  New until its details popup is opened (the run app's `concept_opened` action, `{concept, version}` with the
+  version the popup shows, or `plan concept-opened K7 <version>`), and
+  Updated when its page changed after that. A page published again at the same link is invisible to the run, so
+  the chat that updated it runs `plan concept-updated K7 "<what changed>" [--file <the page>]`; `--file`
+  replaces the run's local copy. A local copy changed with no command reads as Updated with no words.
 - The build gets `F` where the kinds have it, else their first non-K letter. A repo whose `[plan] kinds`
   lack `K` has no concepts: a K-lettered id there is an ordinary task.
 
