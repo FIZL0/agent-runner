@@ -139,6 +139,7 @@ def question_answer(chat: str, id: str, text: str) -> dict:
 
 
 ACTIONS['question_answer'] = question_answer
+ACTIONS['until_check'] = until_check  # F427d: ui_model_snapshot.py
 
 
 def item_state(tid: str) -> str:

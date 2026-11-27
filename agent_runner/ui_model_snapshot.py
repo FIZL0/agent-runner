@@ -532,7 +532,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
             'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release, tools_line(tools)) if x), login),
-            'tools': tools, 'tool_names': project_tools(),
+            'tools': tools, 'tool_names': project_tools(), 'untils': until_rows(ls, titles),  # F427d
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': queue, 'manage_releases': manage, 'releases': releases,
             'release_acts': [c['key'] for c in RUN_CONTROLS if c['where'] == 'release' and manage],
@@ -589,6 +589,46 @@ def need_tools(needs: list[dict]) -> None:
                 r['devices'] = r.get('devices', []) + rows
     except Exception:  # noqa: BLE001 - costs the links, not the snapshot
         return
+
+
+def until_rows(ls: list[str], titles: dict[str, str], c=None) -> list[dict]:
+    """F427d: each check some blocked task in TODO.md's lines `ls` waits on, for the Tools page: {check, label, state,
+    said, at (the last check's time, '' before the first), tasks: [{id, title}]}. [] when none waits."""
+    from agent_runner import until, until_watch
+    try:
+        waits = until_watch.waiters(ls)
+        seen = until_watch.read(c)
+        out = []
+        for check in sorted({x for cs in waits.values() for x in cs}):
+            r = seen.get(check) or {}
+            at = r.get('at')
+            out.append({'check': check, 'label': until.label(check, c), 'state': str(r.get('state') or ''),
+                        'said': str(r.get('said') or ''),
+                        'at': dt.datetime.fromtimestamp(at).isoformat(timespec='seconds') if at else '',
+                        'tasks': [{'id': t, 'title': titles.get(t, '')} for t in sorted(waits) if check in waits[t]]})
+        return out
+    except Exception:  # noqa: BLE001 - costs the list, not the snapshot
+        return []
+
+
+def until_check(check: str = '') -> dict:
+    """F427d: Check now: one round of the until checks at once (each check a task waits on, `until_watch.round_`), which
+    reopens the tasks whose checks all pass. `check` is the one pressed, named in the answer."""
+    from agent_runner import until, until_watch
+    if not until_watch._BUSY.acquire(blocking=False):
+        return {'ok': False, 'code': 1, 'out': 'The checks are running already; they show the result in a moment.', 'argv': []}
+    try:
+        reopened = until_watch.round_(S.default_branch())
+    except Exception as e:  # noqa: BLE001 - an answer, not a raise
+        return {'ok': False, 'code': 1, 'out': f'Could not run the checks: {e}', 'argv': []}
+    finally:
+        until_watch._BUSY.release()
+    r = until_watch.read().get(check) or {}
+    name = until.label(check) if check else 'The checks'
+    said = f'{name}: {r.get("state") or "checked"}' + (f', {r["said"]}' if r.get('said') else '')
+    if reopened:
+        said += f'. Reopened {", ".join(reopened)}.'
+    return {'ok': True, 'code': 0, 'out': said, 'argv': []}
 
 
 def tools_line(tools: list[dict]) -> str:

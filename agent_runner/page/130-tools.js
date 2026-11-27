@@ -85,12 +85,30 @@ function toolHostKey(t){
   if(h)return `<div class="small tooltext">${h.was?`Accepted before: <span class="setkey">${esc(h.was)}</span><br>It shows now: `:'It shows: '}<span class="setkey">${esc(h.fp)}</span> (${esc(h.type)})</div><div class="btns"><button class="btn pri${toolBusy('accept',t.name)}" data-tool="accept" data-name="${n}" data-fp="${esc(h.fp)}">${h.was?'Accept the new fingerprint':'Accept this fingerprint'}</button></div>`;
   return t.hostkey?`<div class="small tooltext">Host key <span class="setkey">${esc(t.hostkey.fp)}</span>, accepted ${esc(t.hostkey.changed)}</div>`:'<div class="small">Its host key is not accepted yet: test the connection.</div>';
 }
+/* F427d: each check a blocked task waits on (`--until`), from the snapshot: its last result and when, the tasks
+   that wait, and Check now; nothing when none waits. The run adds and drops them, never this page. */
+const UNTIL_STATE={'passed':'v-ok','cannot run':'v-bad'};
+function untilsHTML(rows){
+  if(!rows||!rows.length)return '';
+  return `<div class="sec">Tasks wait on<span class="ln"></span></div>${rows.map(r=>{
+    const busy=S.untilBusy===r.check, ago=r.at?agoWords(r.at,' ago'):'';
+    return card(`<b>${esc(r.label)}</b>
+    <div class="small tooltext" data-k="untilstate:${esc(r.check)}">${r.state?`<span class="${UNTIL_STATE[r.state]||''}">${esc(r.state[0].toUpperCase()+r.state.slice(1))}</span>${ago?` · ${esc(ago)}`:''}${r.said?`: ${esc(r.said)}`:''}`:'Not checked yet'}</div>
+    <ul class="untiltasks small">${r.tasks.map(t=>`<li><b>${esc(t.id)}</b> ${esc(t.title)}</li>`).join('')}</ul>
+    <div class="btns"><button class="btn${busy?' busy':''}" data-tool="untilcheck" data-check="${esc(r.check)}" ${S.untilBusy?'disabled':''}>Check now</button></div>`,'',`data-k="until:${esc(r.check)}"`)}).join('')}`;
+}
+async function untilCheck(check){
+  if(S.untilBusy)return;
+  S.untilBusy=check;render(true);
+  const j=await act('until_check',{check});
+  S.untilBusy='';if(j&&j.ok)toast(j.out);render(true);
+}
 function toolsHTML(){
   const d=S.tools, err=S.toolErr?(S.toolOld?oldRunHTML(S.toolErr):`<div class="small v-bad">${esc(S.toolErr)}</div>`)+'<div class="btns"><button class="btn" data-tool="load">Try again</button></div>':'';
   if(!d)return `<div class="col">${err||emptyCard('Loading…')}</div>`;
   const toml=d.tools.filter(t=>t.source!=='device'), devs=d.tools.filter(t=>t.source==='device');
   return `<div class="col">${d.secure?'':card(`<b>Read only here</b><div class="small">Devices and secrets are saved only over https or on the machine itself.${d.https?'':' There is no https link yet: Tailscale Serve gives one.'}</div>${d.https?`<div class="btns"><a class="btn pri" href="${esc(d.https)}">Open the https link</a></div>`:''}`)}
-    ${err}<div class="sec">Devices<span class="ln"></span></div>${devs.length?devs.map(toolCard).join(''):emptyCard('No device yet. Add a machine or test rig for agents to reach.')}
+    ${err}${untilsHTML((S.snap||{}).untils)}<div class="sec">Devices<span class="ln"></span></div>${devs.length?devs.map(toolCard).join(''):emptyCard('No device yet. Add a machine or test rig for agents to reach.')}
     ${toml.length?`<div class="sec">From runner.toml<span class="ln"></span></div>${toml.map(toolCard).join('')}`:''}
     <div class="small">Devices belong to this machine and its projects share them. Keys and passwords stay out of every chat, but agents run as the same user here, so this is no wall against an agent that goes looking.</div></div>`;
 }
@@ -173,6 +191,7 @@ function btnClick(x){
 async function toolClick(x){
   const {tool,name,what,fp,source}=x.dataset, key=source?toolKey({source,name}):name;
   if(tool==='load')return loadTools();
+  if(tool==='untilcheck')return untilCheck(x.dataset.check);
   if(tool==='show'){if(S.sheet)closeSheet();viewGo(()=>{S.toolGo=key;goView('tools')},S.thread);return}
   if(tool.startsWith('press'))return pressClick(tool,name,source,x.dataset.label);
   if(tool==='btnadd'||tool==='btndel')return btnClick(x);
