@@ -12,7 +12,7 @@ function newsHTML(x){
   const rc=controlOf('restart');
   return `<div>A new version is ready. ${rc?'Restart the run to use it.':'Stop the run and start it again to use it.'}</div>${rc&&S.sure==='restart'?ctlSure(rc):`<div class="btns">${rc?`<button class="btn acc${ctlBusy('restart')?' busy':''}" data-ctl="restart">Restart the run</button>`:''}${later}</div>`}`;
 }
-function newsDraw(){const x=newsNow(), el=$('news');el.hidden=!x;setHTML(el,x?newsHTML(x):'')}
+function newsDraw(){const x=newsNow(), el=$('news');el.hidden=!x;setHTML(el,x?newsHTML(x):'');if(typeof SELF!=='undefined'&&SELF.back)requestAnimationFrame(selfBack)}
 /* F126a: the run's own words on its pages, Home's on Home and All projects */
 function loginDraw(){const t=HOME_PAGE||atAll()?H.login:S.snap.claude_login, el=$('login'), was=!el.hidden;el.hidden=!t;setHTML(el,t?`${I.alert}<span>${esc(t)}</span><button class="btn" data-login>Log in again</button>`:'');if(!t&&was&&S.sheet==='login'){closeSheet();toast('The login is renewed')}}
 /* F402b3b: no run is up and the page-only process serves this page: said on every view, with Start */
@@ -41,6 +41,7 @@ function takeTyped(){
 function newsRefresh(){
   const said=refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
   if(said){toast(said,true);return false}  // F401: what asked is told that it is held
+  if(typeof selfKeep==='function')selfKeep();  // F207: back to the same place
   location.reload();return true;
 }
 function takeSnap(s){
@@ -118,4 +119,38 @@ setInterval(()=>redial('quiet'),5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)redial('shown')});
 addEventListener('pageshow',e=>{if(e.persisted)redial('shown')});
 addEventListener('online',()=>redial('shown'));
-
+/* F207: a new version loads by itself once nothing would be lost or cut off (selfReload); else the popup stays and it
+   looks again. Once per page print in this tab (RELOADED_KEY), so it never loops */
+const RELOADED_KEY='ar-reloaded';
+const holdNow=()=>refreshHold({mic:!!(TK.rec||TK.ear||DK.rec),uploading:Object.values(S.atts).flat().some(a=>!a.path&&!a.err),form:devTyped(),secret:Object.keys(S.f).some(k=>k.startsWith('givesec:')&&S.f[k]),unkept:!keepTyped()});
+const SCROLL_KEY='ar-scroll:'+(HOME_PAGE?'home:':'')+(HKEY||document.title);  // F207: the place a refresh left
+function selfKeep(){tabStore.set(SCROLL_KEY,JSON.stringify({v:S.view,t:S.thread||'',top:$('body').scrollTop,pin:chatShown()&&!!S.pin}))}
+var SELF={down:0,moved:0,back:null,until:0};
+for(const t of ['pointerdown','touchstart'])document.addEventListener(t,()=>{SELF.down++},{capture:true,passive:true});
+for(const t of ['pointerup','pointercancel','touchend','touchcancel'])document.addEventListener(t,()=>{SELF.down=0;SELF.moved=Date.now()},{capture:true,passive:true});
+document.addEventListener('scroll',()=>{SELF.moved=Date.now()},{capture:true,passive:true});
+function selfBusy(){
+  const a=document.activeElement, sel=window.getSelection&&String(getSelection()||'');
+  const anim=document.getAnimations?document.getAnimations().some(x=>x.playState==='running'&&x.effect&&x.effect.getTiming().iterations!==Infinity):false;
+  return SELF.down>0||Date.now()-SELF.moved<1500||MO.scroll.size>0||anim||!!S.sheet||!!S.drawer||!!S.sure||!!sel
+    ||TK.state==='speaking'||!!TK.playing||!!(a&&a!==document.body&&(a.matches('input,textarea,select,[contenteditable]')))||OB.busy;
+}
+function selfLook(){
+  if(SELF.gone)return;
+  const news=newsNow(), done=tabStore.get(RELOADED_KEY);
+  if(selfReload({news,done,hidden:true})!=='wait')return;  // nothing to load, or done once for this print
+  const hold=holdNow(), w=selfReload({news,done,hidden:document.hidden,hold,busy:!hold&&selfBusy()});
+  if(w!=='now')return;
+  tabStore.set(RELOADED_KEY,news.key);SELF.gone=true;newsRefresh();
+}
+setInterval(selfLook,1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)selfLook()});
+/* the place a refresh left: the chat's scroll, once its feed is drawn tall enough, within a few seconds */
+try{SELF.back=JSON.parse(tabStore.get(SCROLL_KEY)||'null')}catch(e){}
+tabStore.set(SCROLL_KEY,'');SELF.until=Date.now()+8000;
+function selfBack(){
+  const p=SELF.back, b=$('body');if(!p)return;
+  if(Date.now()>SELF.until||p.v!==S.view||(p.t||'')!==(S.thread||'')||SELF.down){SELF.back=null;return}
+  if(p.pin){S.pin=true;SELF.back=null;return}
+  if(b.scrollHeight-b.clientHeight>=p.top){S.pin=false;b.scrollTop=p.top;SELF.back=null}
+}
