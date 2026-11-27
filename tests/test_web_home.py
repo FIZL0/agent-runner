@@ -1163,5 +1163,47 @@ def test_home_new_chat_f196f(tmp: Path) -> None:
        {k: (True, 'c7', True, True) for k in got}, "Home's new chats get the name and time + gets, started without waiting")
 
 
+CONCEPT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const posted = [], opened = [];
+const S = {snap: {needs: [{id: 'K14', label: 'CONCEPT'}, {id: 'B1', label: 'CONFIRM'}],
+  concepts: [{id: 'K14', concept: 'K14', news: 'updated', news_words: 'new option', version: '2-ab'}]}};
+const env = {S, tq: p => p, fetch: (p, o) => { posted.push([p, JSON.parse(o.body)]); return Promise.resolve({}) },
+  shotEnd: () => {}, askLoad: () => {}, openSheet: (k, id) => opened.push(id)};
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+const out = new Function('known', 'with (known) {' + logic + slice('const needOf=', '\n') + '\n' + slice('function needOpen(', '\n') + '\n'
+  + slice('function conceptOpened(', '\n/*') + '\nreturn {needOpen, conceptSeen}}')(known);
+const r = {seenOther: out.conceptSeen('B1', S.snap.concepts), seenNone: out.conceptSeen('K14', [{id: 'K14', news: '', version: '1-x'}])};
+out.needOpen('B1'); r.afterOther = posted.length;
+out.needOpen('K14'); r.posted = posted.slice(); r.badge = [S.snap.concepts[0].news, S.snap.concepts[0].news_words];
+out.needOpen('K14'); r.again = posted.length; r.opened = opened;
+console.log(JSON.stringify(r));
+"""
+
+
+def test_concept_popup_f197b3(tmp: Path) -> None:
+    """F197b3: opening a concept's details popup (Home's card or its Concepts row, both `data-needopen`) posts
+    concept_opened with its row's version and clears New/Updated at once; another item and a seen concept post
+    nothing; View is a plain link that opens the page and clears nothing."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    view = re.search(r'<a class="btn" href="\$\{esc\(view\)\}"[^`]*`', page)
+    check(bool(view) and 'needopen' not in view.group(0) and 'conceptOpened' not in view.group(0), 'View opens the page only')
+    if not shutil.which('node'):
+        print('  (no node here: the concept popup script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(CONCEPT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node opens the concept popup', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq((o['seenOther'], o['seenNone'], o['afterOther']), (None, None, 0), 'only a New or Updated concept is told')
+    eq(o['posted'], [['act', {'name': 'concept_opened', 'args': {'concept': 'K14', 'version': '2-ab'}}]], 'the popup posts concept_opened')
+    eq(o['badge'], ['', ''], 'New/Updated clear at once')
+    eq((o['again'], o['opened']), (1, ['B1', 'K14', 'K14']), 'a second open posts nothing more; the popup opens each time')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_home_f426a), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a), in_tmp(test_home_new_chat_f196f)]))
+    raise SystemExit(report([in_tmp(test_login_banner_f126a), in_tmp(test_need_popup_f162), in_tmp(test_sheet_over_sheet_f189b), in_tmp(test_need_picture_moves_f189), in_tmp(test_need_give_page_f175a), in_tmp(test_give_route_f175a), in_tmp(test_need_note_f162), in_tmp(test_pitch_note_f162a), in_tmp(test_shot_f162), in_tmp(test_home_switcher_f134), in_tmp(test_switch_home_f203), in_tmp(test_home_actions_f150), in_tmp(test_home_screen_b179), in_tmp(test_project_name_b153), in_tmp(test_home_f426a), in_tmp(test_status_view_f124), in_tmp(test_pull_refresh_f401), in_tmp(test_page_gzip_b769a), in_tmp(test_home_new_chat_f196f), in_tmp(test_concept_popup_f197b3)]))

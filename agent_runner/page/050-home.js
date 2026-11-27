@@ -258,3 +258,8 @@ chatNeedOn('click',e=>{const x=e.target.closest('[data-cnpick],[data-cnundo]');i
 chatNeedOn('submit',e=>{const n=e.target.dataset&&e.target.dataset.cnform;if(!n)return;e.preventDefault();e.stopImmediatePropagation();
   const f='cnsay:'+n, text=String(S.f[f]||'').trim(), c=chatNeedsShown().find(x=>x.chat===n);if(!text||!c)return;
   delete S.f[f];chatNeedSend(n,text,chatNeedKey(c));render(true)});
+/* F197b3: a concept's details popup opened (from Home's Needs you card or its Concepts row): New and Updated clear here at
+   once and, quietly, for every device; a failure only leaves the badge for the next snapshot */
+function conceptOpened(id){const a=conceptSeen(id,S.snap.concepts);if(!a)return;
+  for(const c of S.snap.concepts||[])if((c.concept||c.id)===a.concept){c.news='';c.news_words=''}
+  fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'concept_opened',args:a})}).catch(()=>{})}

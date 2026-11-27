@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: opening a concept's details popup, from Home's Needs you card or its Concepts row, clears its New or Updated badge on every device; View clears nothing (F197b3).
+
 - Changed: the Concepts view draws a concept waiting in Needs you as its Home Needs you card, same buttons and actions, with its New or Updated badge (F197b).
 - Added: while a run is up, it reads the until checks blocked tasks wait on every 2 min, each check once a round, and reopens a task once all of its checks pass, committed as a merge's reopening; a check that cannot run for 30 min, or has not passed for 3 days, is one Needs you item that says which check, its last words and how to free the task (F427c).
 - Added: a chat that asks several questions shows one question card each in a sideways swipe row above the message box, with a count (1 of 3); answering or dismissing one moves to the next, and an answer names its question so the others stay open (F192b2).
