@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a release card in the Plan queue has Wait for… too: tick the tasks it waits for, in the place of the tasks above it (B870).
+
 - Added: a task's size, `plan add/edit --size simple|complex` (`size: simple` on its line); `[models] sizes` (empty, off, by default; e.g. `{ simple = "sonnet" }`) runs a size on its own model, over its kind's and under its own `--model`; a simple task that fails or blocks on it retries once on its kind's model; on the Settings page as Model for each size (F470).
 - Added: with lessons on, `run done` asks for a lesson (or none) only after a failed gate in the task or a person's change to it in the plan, once per trigger, checks first; a merge repair's session may file one. It never holds up done (F414).
 - Fixed: a release no longer waits on a task that waits for that release (directly or down its chain), so neither is stuck; the task runs after the release lands (B868).
