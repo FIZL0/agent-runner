@@ -586,6 +586,33 @@ def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
             continue
         out.append({'id': tid, 'concept': tid, 'title': P.short_title(tasks[tid][1], 200), 'url': '',
                     'copy': str(f), 'page': True, 'waits': tid in waits})
+    pages = {f.stem: f for f in files}
+    for row in approved_rows(ls, shown | {r['id'] for r in out}):
+        if f := pages.get(row['id']):
+            out.append({**row, 'copy': str(f), 'waits': row['build'] in waits})  # a parked build's Needs you item
+    return out
+
+
+BUILD_OF = re.compile(r'^\s*(?:\([^)]*\)\s*)?Build the option a person approves on concept ([A-Z]+\d+[a-z0-9]*)\'s page: ')
+
+
+def approved_rows(ls: list[str], shown: set[str]) -> list[dict]:
+    """B866: a Concepts row for each approved concept (ticked, so in DONE.md) whose build task in TODO.md's lines
+    `ls` is still open and not waiting for the OK: it stays listed with its page until the build lands. `build`: the
+    build task's id; `building`: 'parked' when the build is blocked or shelved, else 'building'."""
+    out = []
+    for _, box, bid, rest, i in P.iter_tasks(ls):
+        m = BUILD_OF.match(rest.lstrip('* '))
+        if not m or box in 'x-' or (k := m.group(1)) in shown:
+            continue
+        if box == '~' and P.WAIT_OK in ''.join(P._item_block(ls, i)):
+            continue  # not approved yet: the concept row shows it
+        parked = box == '~' or P._shelved(ls, i)
+        title = P.short_title(rest.lstrip('* ')[m.end():], 200)
+        mark = f"approved: {'parked' if parked else 'building'} {bid}"
+        out.append({'id': k, 'concept': k, 'title': f'{title} ({mark})', 'url': '', 'page': True, 'waits': False,
+                    'build': bid, 'building': 'parked' if parked else 'building', 'approved': mark})
+        shown = shown | {k}
     return out
 
 
