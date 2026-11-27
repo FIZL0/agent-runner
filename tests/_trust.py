@@ -56,3 +56,22 @@ def trusted_checks(srv, base: str, trusted, path: str, key: str) -> None:
     eq([ask(lan), ask(ts)], [200, 403], 'a CIDR trusts its own clients only')
     trusted([])
     eq(ask(ts), 403, 'taken off the list: the key is needed again, with no restart')
+
+
+def name_checks() -> None:
+    """F481: 'all', a host name that resolves, one that does not."""
+    import time
+    from agent_runner import trust as T
+    eq(T.network_problem('all'), '', 'all is a network')
+    check_all = [n.with_prefixlen for n in T.networks(['all'])]
+    eq(check_all, ['0.0.0.0/0', '::/0'], 'all: any address')
+    name = 'omarchy-desktop.beetal-ling.ts.net'
+    T._names[name] = (time.monotonic(), ['100.101.1.2'])
+    eq(T.network_problem(name), '', 'a host name that resolves is a network')
+    eq([n.with_prefixlen for n in T.networks([name])], ['100.101.1.2/32'], "that device's address is trusted")
+    T._names[name] = (time.monotonic() - T.NAME_TTL - 1, ['100.101.1.2'])
+    eq(T.name_addresses(name, lambda h, p: [(0, 0, 0, '', ('100.101.9.9', 0))]), ['100.101.9.9'], 'looked up again')
+    T._names['nowhere.invalid'] = (time.monotonic(), [])
+    got = T.network_problem('nowhere.invalid')
+    eq(('does not resolve' in got, 'all' in got, 'tailnet' in got), (True, True, True), 'an unknown name: a clear error')
+    T._names.clear()
