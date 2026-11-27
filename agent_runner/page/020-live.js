@@ -41,7 +41,9 @@ function sentBubbles(n,shown){
 }
 /* take an action: drawn at once by the caller, kept in the outbox, sent behind */
 function outbox(name,args,more){
-  const it={cid:newCid(),name,args:args||{},by:OB.tab,state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
+  const {fx,...rest}=more||{};
+  const it={cid:newCid(),name,args:args||{},by:OB.tab,state:'sending',err:'',at:Date.now(),say:name,...rest};
+  instAdd(it.cid,fx||instFx(name,it.args));
   const ck=String(it.ctl||''), w=ck.endsWith(':')&&ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n);  // B851a: a run control shows its result now
   if(w){const ks=Object.keys(w);S.held=(S.held||[]).filter(p=>!Object.keys(p.want).some(k=>ks.includes(k))).concat([{key:ck.slice(0,-1),cid:it.cid,n:(it.args||{}).n,at:it.at,want:w,say:it.say}]);S.heldErr='';setTimeout(()=>render(true),CTL_HOLD+50)}  // a later press on the same thing takes the place of the earlier
   obChange(b=>obAdd(b,it,OB.at));render(true);drain();return it;
@@ -61,6 +63,7 @@ async function drain(){
       if(j&&j.hold){obChange(b=>obHold(b,it.cid,j,Date.now()));if(S.ob.some(x=>x.cid===it.cid&&x.state==='failed'))obDone(it,j);render(true);continue}  // B158
       obChange(b=>obSettle(b,it.cid,j,S.snap.boot));
       obDone(it,j);render(true);
+      if(typeof ES!=='undefined'&&!ES)fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});  // F508: no stream: the act's snapshot now, not at the next poll
     }
     if(S.ob.some(x=>x.state==='sending'&&x.heldAt&&(!x.by||x.by===OB.tab)))OB.timer=setTimeout(drain,HOLD_STEP+100);  // B158
     else if(S.ob.some(x=>x.state==='sending'&&x.heldAt)||obNext(S.ob))OB.timer=setTimeout(drain,OB_DEAD);  // B161: another tab's: looked at again, should it go away
@@ -93,8 +96,18 @@ function obDone(it,j){
   if(it.res&&FD.n===it.res)feedLoad();  // F114
   if(it.done)toast(it.done);
 }
+/* F508: the changes the person's own acts make, shown at once (instShow): S.inst; S.snapRaw, S.snapAt: the last
+   snapshot as the run sent it, and when, so a refused act's change goes back to it */
+S.inst=[];
+function instAdd(cid,fx){if(typeof fx!=='function')return;S.inst=S.inst.concat([{cid,fx}]);S.snap=instShow(S.snap,[{fx}])}
+function instNow(){
+  const k=instKeep(S.inst,S.ob,S.snapAt||0,Date.now());S.inst=k.keep;
+  if(k.failed.length&&S.snapRaw)S.snap={...S.snapRaw};  // the failure's toast comes from obDone
+  if(S.inst.length)S.snap=instShow(S.snap,S.inst);
+}
 /* the cards an item still sending stands in for stay off the lists */
 function obHide(){
+  instNow();
   const ns=obHidden(S.ob,'need'), cs=obHidden(S.ob,'concept'), sh=obHidden(S.ob,'shelved'), now=Date.now();
   S.snap.needs=(S.snap.needs||[]).filter(n=>!ns.includes(n.id));
   S.snap.shelved=(S.snap.shelved||[]).filter(x=>!sh.includes(x.id));  // F184

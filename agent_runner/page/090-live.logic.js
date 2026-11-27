@@ -66,6 +66,29 @@ function rowPress(did,box){const by=c=>(box||[]).find(x=>x.cid===c), saving=[], 
     else if(x.state==='failed')failed.push(d.id)}
   for(const x of box||[]){const id=x.grip||x.waitset;if(id&&x.state==='sending'&&!saving.includes(id))saving.push(id)}  // a move by its grip, Wait for…
   return{saving,failed}}
+/* F508: a person's own act shows at once. A press gives its change to the snapshot (fx: snap => the snapshot as the act
+   leaves it, a new object, never the one given changed); instShow lays every change still standing over the snapshot,
+   so the page draws it before the run answers and over any snapshot that comes before the act lands */
+function instShow(snap,list){for(const x of list||[]){try{snap=x.fx(snap)||snap}catch(e){}}return snap}
+/* which changes still stand: one whose act is still in the outbox; one that landed until a snapshot taken after it
+   came (snapAt), or INST_MS went by. failed: those whose act was refused, gone at once (the page draws the snapshot again) */
+const INST_MS=10000;
+function instKeep(list,box,snapAt,now){const keep=[], failed=[];
+  for(const x of list||[]){const o=(box||[]).find(y=>y.cid===x.cid);
+    if(o&&o.state==='failed')failed.push(x);
+    else if(o)keep.push(x);
+    else{const landed=x.landed||now;if(!(snapAt>landed)&&now-landed<INST_MS)keep.push({...x,landed})}}
+  return{keep,failed}}
+/* the change of a control that takes a thing off the page (drop, delete, cancel): every list loses the row with its id */
+const INST_GONE=['queue_drop','queue_cancel','task_drop','task_cancel','wip_drop','need_drop','concept_drop','shelved_drop'];
+function instGone(id){return snap=>{const o={...snap};for(const [k,v] of Object.entries(snap||{}))if(Array.isArray(v)&&v.some(r=>r&&r.id===id))o[k]=v.filter(r=>!(r&&r.id===id));return o}}
+/* a chat's new name */
+function instRename(n,title){return snap=>({...snap,sessions:(snap.sessions||[]).map(s=>s.name===n?{...s,title,renamed:true}:s)})}
+/* the change an act makes, by its action's name and args; null when the page has none for it */
+function instFx(name,args){const a=args||{};
+  if(name==='rename_chat'&&a.chat&&a.title)return instRename(a.chat,a.title);
+  if(name==='run_control'&&INST_GONE.includes(a.key)&&a.tid)return instGone(a.tid);
+  return null}
 /* F478: a task control's row shows its result itself, so a success needs no toast (a failure still has one) */
 const rowShows=ctl=>/^menu_[a-z]+:./.test(String(ctl||''));
 function obCounts(box){const l=box||[];return{sending:l.filter(x=>x.state==='sending').length,failed:l.filter(x=>x.state==='failed').length}}
@@ -215,4 +238,4 @@ const runStarts=snap=>!!snap&&snap.up===false&&!!snap.boot&&(snap.shown||[]).inc
 /* F402b3b: does the run-off banner show? o: what is there instead (home: Runner Home's page or All projects, view, thread);
    Status's Run card and Home's Start card (F402c) say it too */
 const runOff=(snap,o)=>runStarts(snap)&&!o.home&&(!!o.thread||!['status','plan','home'].includes(o.view));
-if(typeof module!=='undefined')module.exports={addedWaits,dialWait,streamRedial,STREAM_QUIET,runStarts,runOff,kindChip,mergeRows,idleWhy,iconWords,hintSpot,responseRows,quietRows,pastLines,pastMerge,pastJoin,pastInk,pastMd,pastWrap,keptPut,chatLast,standMsgs,WALK,walkStep,walkParse,walkMove,walkHTML,exampleOffer,giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedGap,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,modelProviders,draftParse,draftSame,draftChanges,draftCount,undoChanges,undoCount,changeWords,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,chatSort,chatPlaces,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,planRows,planReleases,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,rowPress,rowShows,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse,feedOwnJump};
+if(typeof module!=='undefined')module.exports={addedWaits,dialWait,streamRedial,STREAM_QUIET,runStarts,runOff,kindChip,mergeRows,idleWhy,iconWords,hintSpot,responseRows,quietRows,pastLines,pastMerge,pastJoin,pastInk,pastMd,pastWrap,keptPut,chatLast,standMsgs,WALK,walkStep,walkParse,walkMove,walkHTML,exampleOffer,giveHTML,needInputs,stepMore,needTap,needBody,taskParas,needReplies,pageNews,refreshHold,boxEnter,feedFoot,feedHand,feedSpot,feedGap,feedShare,feedBars,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,partsNow,partOptions,partSet,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,modelProviders,draftParse,draftSame,draftChanges,draftCount,undoChanges,undoCount,changeWords,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,projectGroup,projectOrder,projectNow,projectDid,oneProject,needsOf,projectAsks,switcherRows,projectWords,projectMain,projectMore,snapKept,chatMove,chatSort,chatPlaces,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,planRows,planReleases,NO_CONCEPT,newPh,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obAdd,obNext,obName,obSettle,obRetry,obDrop,rowPress,rowShows,instShow,instKeep,instGone,instRename,instFx,INST_MS,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse,feedOwnJump};
