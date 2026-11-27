@@ -18,8 +18,8 @@ DIR = 'option-tasks'
 def _dir(root: Path | None = None) -> Path:
     if root is not None:
         return Path(root)
-    from agent_runner.config import cfg
-    return cfg.notes(DIR, 'x').parent
+    from agent_runner import state  # F192d1: the run's config (config.cfg is a function, it has no notes)
+    return state.C.notes(DIR, 'x').parent
 
 
 def _key(question: str) -> str:
