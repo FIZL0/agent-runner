@@ -44,6 +44,11 @@ def test_folds_and_jump() -> None:
     eq(json.loads(r.stdout), [False, True, True, False, False], 'open by default but Parked and Run log; a fold kept')
     check('data-workjump' in WORK and 'class="workjump"' in WORK, 'a jump bar of buttons')
     check('S.workJump===k' in WORK and 'aria-current' in WORK, 'UX1: the pressed jump pill is marked')
+    css = (Path(__file__).parent.parent / 'agent_runner' / 'page' / '040-plan.css').read_text()
+    bar = re.search(r'\.workjump\{[^}]*\}', css).group(0)
+    chip = re.search(r'\.workjump \.chip\{[^}]*\}', css).group(0)
+    check('background:transparent' in bar and 'padding:0' in bar, 'F517: the jump bar paints no band')
+    check('background:var(--bg)' in chip and 'border:1px solid' in chip, 'F517: each pill has its own solid background')
 
 
 if __name__ == '__main__':
