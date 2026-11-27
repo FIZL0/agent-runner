@@ -482,6 +482,12 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   a select or a sheet has the keyboard (Esc leaves insert mode as it always did).
 - A theme picked in UI settings sets `data-ui` (colours from theme.py's table) and `data-theme` (light or dark) on the
   root; Standard leaves both off and follows the device. UI settings are kept per browser.
+- The numbered panels ([1] Home, [3] Plans, [4] Tools, [5] Settings, [7] Concepts) sit at the top of the sidebar, the
+  [2] Sessions rows below them; a focused or open row keeps its number readable. [6] Needs you opens Home's Needs you rows.
+- Its run keys (`+ - P G S`) are the terminal UI's, read from the run controls list (`ui_model.RUN_CONTROLS` `tui`),
+  and the keys sheet lists them from that list; a key whose button is not drawn presses the same `data-ctl` through
+  the page's one click handler (`lazyPress`).
+- The terminal theme is monospace with square corners.
 
 ## Sound
 
