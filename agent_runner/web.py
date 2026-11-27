@@ -206,7 +206,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/recorded':  # F161a
             return self.send(200, json.dumps(recorded.engine()))
         if path.startswith('/task/'):  # F85
-            return self.send(200, json.dumps(U.task_text(path.split('/')[2]), ensure_ascii=False))
+            got = U.task_text(path.split('/')[2])
+            if got.get('ok'):  # F509: what its agent said it did when it finished, '' for none
+                from agent_runner import done as D
+                got['writeup'] = D.writeup(S.C, got['id'])
+            return self.send(200, json.dumps(got, ensure_ascii=False))
         if path == '/plan-search':  # F212
             words = (parse_qs(urlsplit(self.path).query).get('q') or [''])[0]
             return self.send(200, json.dumps(plan_search.search(words), ensure_ascii=False))
