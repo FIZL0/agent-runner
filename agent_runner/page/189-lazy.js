@@ -73,14 +73,14 @@ function lazyRowAct(word){
   const b=[...row.querySelectorAll('button')].find(x=>x.textContent.trim().toLowerCase().startsWith(word));if(b)b.click();
   return !!b;
 }
-/* F484a: press the page's own button for `sel` (one in view first); none drawn now: the same attributes on a button
-   that is clicked and taken away at once, so it goes through the page's one click handler */
-function lazyPress(sel,attrs){
-  const on=[...document.querySelectorAll(sel)].find(b=>b.offsetParent&&!b.disabled);if(on){on.click();return}
-  const b=document.createElement('button');b.hidden=true;for(const [k,v] of Object.entries(attrs))b.setAttribute(k,v);
-  $('keybar').appendChild(b);try{b.click()}finally{b.remove()}
+/* F484a: press the page's own button for `sel`, one in view; none drawn here: open panel `panel` (Home holds the Run
+   card, Plans the Add a task button) and press it there */
+function lazyPress(sel,panel){
+  const on=()=>[...document.querySelectorAll(sel)].find(b=>b.offsetParent&&!b.disabled);
+  let b=on();if(b){b.click();return}
+  if(!panel)return;lazyPanel(panel);requestAnimationFrame(()=>{b=on();if(b)b.click()});
 }
-const lazyCtl=k=>lazyPress(`[data-ctl="${k}"]:not([data-tid]),[data-ctl="${k}"][data-tid=""]`,{'data-ctl':k});
+const lazyCtl=k=>lazyPress(`[data-ctl="${k}"]:not([data-tid]),[data-ctl="${k}"][data-tid=""]`,k.startsWith('release')?'3':'1');
 function lazyRunKey(k){
   const c=controlsOf('run').find(x=>x.tui===k);
   if(!c||!((S.snap&&S.snap.shown)||[]).includes(c.key))return toast(`${k}: not now`,true);
@@ -109,7 +109,7 @@ document.addEventListener('keydown',e=>{
     l:()=>{if(inSide)document.activeElement.click();else lazyTab(1)},h:()=>{if(!lazyTab(-1)){const r=lazyRows().find(b=>b.classList.contains('on'));if(r)r.focus()}},
     c:()=>{const b=document.querySelector('[data-new]');if(b)b.click()},'?':()=>S.sheet==='lazykeys'?closeSheet():openSheet('lazykeys'),
     a:lazyAnswer,d:()=>lazyRowAct('drop'),p:()=>lazyRowAct('park'),
-    J:()=>lazyGrip(1),K:()=>lazyGrip(-1),e:()=>lazyRowAct('edit'),n:()=>lazyPress('[data-about="new"]',{'data-about':'new'}),
+    J:()=>lazyGrip(1),K:()=>lazyGrip(-1),e:()=>lazyRowAct('edit'),n:()=>lazyPress('[data-about="new"]','3'),
     g:()=>lazyRowAct('changes')||lazyRowAct('diff'),r:lazyRename,o:()=>{const a=document.activeElement;if(a&&a!==document.body)a.click()},
     R:()=>((S.snap&&S.snap.release_acts)||[]).includes('release_wait')?lazyCtl('release_wait'):toast('R: no release to start now',true)}[k]
     ||(/^[1-7]$/.test(k)?()=>lazyPanel(k):LAZY_RUN_KEYS.includes(k)?()=>lazyRunKey(k):null);
