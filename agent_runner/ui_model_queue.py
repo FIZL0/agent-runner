@@ -588,10 +588,34 @@ def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
             continue
         out.append({'id': tid, 'concept': tid, 'title': P.short_title(tasks[tid][1], 200), 'url': '',
                     'copy': str(f), 'page': True, 'waits': tid in waits})
+    out += chat_page_rows(files, shown)
     pages = {f.stem: f for f in files}
     for row in approved_rows(ls, shown | {r['id'] for r in out}):
         if f := pages.get(row['id']):
             out.append({**row, 'copy': str(f), 'waits': row['build'] in waits})  # a parked build's Needs you item
+    return out
+
+
+CHAT_PAGE_DAYS = 7
+
+
+def chat_page_rows(files: list, shown: set[str], now: float | None = None) -> list[dict]:
+    """B875: a Concepts row for each page a chat published (<notes>/concepts/chat<id>.html): it has no task in the
+    plan, so the task check above left it out. Pages from the last CHAT_PAGE_DAYS days only; its title is the page's
+    <title>."""
+    out, now = [], now or time.time()
+    for f in files:
+        if not re.fullmatch(r'chat[0-9a-f]+', f.stem) or f.stem in shown:
+            continue
+        try:
+            if now - f.stat().st_mtime > CHAT_PAGE_DAYS * 86400:
+                continue
+            m = re.search(r'<title>([^<]*)', f.read_text(encoding='utf-8', errors='replace')[:4000], re.I)
+        except OSError:
+            continue
+        title = (m.group(1).strip() if m else '') or 'A page from a chat'
+        out.append({'id': f.stem, 'concept': f.stem, 'title': title[:200], 'url': '', 'copy': str(f),
+                    'page': True, 'waits': False})
     return out
 
 
