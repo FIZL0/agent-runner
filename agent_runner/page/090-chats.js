@@ -561,7 +561,8 @@ function homePlan(snap){
 }
 /* B120: without ttyd, one line says a chat needs it to show its session, with this machine's install command */
 const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>A chat shows the real session with ttyd, which this machine lacks: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
-const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):emptyCard('Nothing needs you.')}`;
+const needsSec=()=>{const cs=chatNeedsShown();  // B832: a chat's question first
+  return `<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${cs.map(chatNeedCard).join('')}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):cs.length?'':emptyCard('Nothing needs you.')}`};
 /* F193: with releases off, only a New release sent before that, until it is settled */
 /* F186: New release: says which release is open already, and then asks before it queues another */
 function newReleaseCard(){
