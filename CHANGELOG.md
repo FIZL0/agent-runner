@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.80.0 (2026-11-28)
+
 - Changed: the run page shows a person's own act (drop, cancel, rename…) at once, before the run answers, through one shared change in the page's act path; a refused act goes back; with no events stream the act's snapshot is fetched at once (F508)
 - Added: `[run] issues_trust` takes `"contributors"` (trust OWNER, MEMBER, COLLABORATOR and CONTRIBUTOR authors), `"members"` (OWNER, MEMBER, COLLABORATOR) or a list of GitHub logins; the rest are filed skeptical, and each issue's close or comment follows its own trust (F510).
 - Fixed: a page a chat published (publish-page from a chat) shows in the run page's Concepts for a week; it has no task, so it was left out (B875).
