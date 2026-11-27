@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: a queue row in the snapshot carries the task's size (`size: simple`) beside its other fields (F485).
 ## 0.79.0 (2026-11-27)
 
 - Fixed: a release card in the Plan queue has Wait for… too: tick the tasks it waits for, in the place of the tasks above it (B870).
