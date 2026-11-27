@@ -535,7 +535,8 @@ def test_chat_echo(env: Env):
                 out += os.read(master, 4096)
             except OSError:
                 break
-        if sent == 0 and b'(waiting for you)' in out:
+        if sent == 0 and b'\x1b[?2004h' in out:
+            time.sleep(1)
             os.write(master, b'hello there\r')
             sent = 1
         elif sent == 1 and b'the answer' in out:
@@ -548,7 +549,9 @@ def test_chat_echo(env: Env):
     os.close(master)
     text = out.decode('utf-8', 'replace')
     check('the answer' in text, 'the chat answered', text)
-    eq(text.count('hello there'), 1, 'the sent message shows once')
+    check('(waiting for you)' not in text, 'no waiting line after a turn', text)
+    eq(text.count('❯ hello there'), 1, 'the sent message shows once, as saidLines')
+    check('\r\x1b[2K' in text, 'the raw echo is erased', text)
 
 
 def test_said_lines(env: Env):
