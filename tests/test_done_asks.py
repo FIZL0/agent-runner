@@ -128,6 +128,8 @@ def test_done(root: Path, env: dict) -> None:
     blocked('R17', r17, '--until', 'version:9.9.9')
     blocked('R17', r17, '--after', 'F4')
     refused('R17', 'BLOCKED: reopen once `make probe` passes', 'no person is needed')
+    refused('R17', 'BLOCKED: lock held; restart when `x` state exits 0', 'no person is needed')
+    blocked('F2', 'BLOCKED: Unlock the phone; the lock is held by the screen saver')
     for why in ('BLOCKED: Plug the iPhone 15 in; the device is busy until then',
                 'BLOCKED: Unlock the phone; the lock is held by the screen saver',
                 'BLOCKED: Sign in to Codex; rerun when `codex login status` exits 0',

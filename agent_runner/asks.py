@@ -440,8 +440,8 @@ def line_refusal(tid: str, why: str, after: str | None, until: str | None, c, pr
 
 
 # B810: a BLOCKED whose wait a machine can read: a rerun on a command's exit, or a held tool
-_PERSON_ACTS = re.compile(r'(?:^|[;:]\s|\.\s)\s*(?i:plug|unplug|unlock|sign|log|connect|turn|press|open|install|charge|insert|reboot|restart|'
-                          r'approve|accept|grant|add|set|enter|give|pair|tap|click|renew|pay|create)\b')
+_PERSON_ACTS = re.compile(r'(?:^|[;:]\s|\.\s)\s*(?i:plug|unplug|unlock|sign|log|connect|press|install|charge|insert|'
+                          r'approve|accept|grant|enter|pair|tap|click|renew|pay)\b')  # person-only verbs
 _MACHINE_WAIT = re.compile(
     r'(?i:\b(?:re-?runs?|reopens?|retr(?:y|ies)|try again|resumes?|goes on)\b[^.;]{0,80}?\b(?:when|once|after|until|if)\b'
     r'|\b(?:exits?|returns?) (?:with )?(?:code |status )?0\b|\b(?:command|check|script|state)\b[^.;]{0,40}?\b(?:passes|succeeds)\b'
