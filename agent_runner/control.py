@@ -971,16 +971,9 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
     after the bracket of options `q` may end with, so its options are buttons: F181d), committed
     as `watch_ci` commits its tasks (MERGE free, TODO.md clean). Its id, or '' when it could not be filed now.
     F192a3: the chat's question card knows its item (`control_settled.filed_question`); a question that still waits
-    there (the chat was resumed and left) is not filed again.
-    F192b1b: an answer that ends on several questions (`chat_question.asks_of`) files each as an item of its own, one
-    with no options too, all in one commit; one already filed is not filed again. Their ids joined by ', '."""
-    from agent_runner import chat_question, control_ask
+    there (the chat was resumed and left) is not filed again. F192b1b: several questions, an item each, ids joined by ', '."""
     rows = list(entries(sid, skip_bad=True))
-    ask = chat_question.ask(rows)
-    asks = control_settled.several_questions(rows, ask or chat_question.ask(rows, bare=True)) or [(ask, q)]
-    waits = chat_question.needs(sid) if any(a for a, _ in asks) else {}
-    have = [t for a, _ in asks if a and (t := waits.get(a['id']))]
-    asks = [(a, x) for a, x in asks if not (a and waits.get(a['id']))]
+    have, asks = control_settled.to_file(rows, sid, q)
     if not asks:
         return ', '.join(have)
     link = ask_link(n, sid, link)  # B874
@@ -1007,12 +1000,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
             if not C.plan_external:
                 git('checkout', '-q', '--', rel)
             return ''
-        waiting = {a[1]: a[3] for a in P.asks(ROOT / rel, all=True)}
-        for tid, a, x in new:
-            control_ask.filed(tid, sid, x, rows, n)  # B809b: after the commit, as a block takes the ask file away
-            control_settled.filed(C, [tid], {'n': n, 'sid': sid})  # F209a: reopened, it is about its question
-            if a and (what := waiting.get(tid, '')):
-                control_settled.filed_question(C, sid, tid, a['id'], what)
+        control_settled.questions_filed(C, ROOT / rel, new, sid, n, rows)
         return ', '.join([*have, *ids])
     finally:
         hold.close()
