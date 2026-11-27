@@ -399,7 +399,9 @@ let S, answer, drawn;
 const toast = (t, bad) => toasts.push([t, !!bad]), actFailed = (j, t) => toast(t, true), plainErr = e => String(e), tq = x => x;
 const render = () => { drawn = rows() };
 const fetch = () => new Promise(r => { answer = r });
-eval(fn('finalDelete') + ';' + fn('delGoneOff') + ';globalThis.finalDelete=finalDelete;globalThis.delGoneOff=delGoneOff');
+const snapLine = src.split('\n').find(l => l.includes('// B876: chats deleted here stay off')).split('//')[0];
+eval(fn('finalDelete') + ';globalThis.finalDelete=finalDelete');
+const delGoneOff = () => { const s = {}; eval(snapLine) };  // takeSnap's own line
 const fresh = () => { S = {snap: {sessions: ['c1', 'c2', 'c3', 'c4'].map(name => ({name}))}, undo: {names: ['c2', 'c3'], bar: true}, thread: 'c2'}; globalThis.S = S };
 (async () => {
   fresh(); finalDelete(); out.sameFrame = [drawn, S.thread];

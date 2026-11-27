@@ -57,8 +57,6 @@ function finalDelete(){
     .then(r=>r.json()).then(j=>{if(j.ok)fine();else{back();actFailed(j,'The delete did not work')}}).catch(e=>{back();toast(`Could not reach the run page: ${plainErr(e)}`,true)});
   render(true);
 }
-/* B876: chats deleted on this page stay off the list, whatever an older snapshot says */
-function delGoneOff(){const g=S.delGone;if(g&&g.length&&Array.isArray(S.snap.sessions))S.snap.sessions=S.snap.sessions.filter(s=>!g.includes(s.name))}
 /* B213, B768: the file picker just closed: the top bar's + Task and + Chat take no press for a second, so a double press in the picker cannot land on one */
 const PLUS_HELD='.plus[data-about="new"],.plus[data-new]';
 let PLUS_HOLD=0;
