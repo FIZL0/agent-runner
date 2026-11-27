@@ -203,13 +203,35 @@ def test_claude_logins(e: Env):
         has(out, 'separate real account', '--as says each login must be a real account of its own')
 
 
+def test_named_logins(e: Env):
+    """F506: two Codex logins, the default and one --as NAME, both kept in Pi's auth.json and listed."""
+    rc, out = run_login(['codex', '--as', 'work'], e, secret=lambda q='': 'k-work')
+    eq(rc, 0, f'codex --as work logs in: {out}')
+    rc, out = run_login(['codex', '--as', 'home'], e, secret=lambda q='': 'k-home')
+    a = e.auth()
+    eq((a.get('openai-codex@work') or {}).get('key'), 'k-work', 'the named login is kept under <id>@NAME')
+    eq((a.get('openai-codex@home') or {}).get('key'), 'k-home', 'and a second one beside it')
+    check('openai-codex' not in a, 'a named login is not the default one')
+    eq(L.harness_names('codex', {}, a), ['work', 'home'], 'both are found')
+    e.c.models['kinds']['C'] = 'codex:gpt-5'
+    with mock.patch.dict(os.environ, env_vars(e)):
+        lines = '\n'.join(L.list_lines(e.c))
+    has(lines, r'codex --as work', 'run login lists the first')
+    has(lines, r'codex --as home', 'and the second')
+    eq(L.harness_env('work'), {'AGENT_RUNNER_LOGIN_AS': 'work'}, 'a session on a named login is told its name')
+    eq(L.harness_env(), {}, 'the default login needs nothing')
+    rc, _ = run_login(['codex', '--as', 'bad name'], e)
+    eq(rc, 2, 'a name with a space is refused')
+
+
 def main() -> int:
     here = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
         e = Env(Path(tmp))
         try:
             return report([lambda: test_list(e), lambda: test_copilot(e), lambda: test_keys(e),
-                           lambda: test_needs_you(e), lambda: test_claude_logins(e)])
+                           lambda: test_needs_you(e), lambda: test_claude_logins(e),
+                           lambda: test_named_logins(e)])
         finally:
             os.chdir(here)
 

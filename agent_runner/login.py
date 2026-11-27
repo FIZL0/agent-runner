@@ -221,13 +221,15 @@ def reopen_for(provider: str) -> list[str]:
 
 
 def harness_login(provider: str, custom: dict | None, enterprise: str | None,
-                  ask=None, secret=None, say=print) -> tuple[bool, str]:
+                  ask=None, secret=None, say=print, as_name: str = '') -> tuple[bool, str]:
     """Run harness.mjs --login for `provider`, answering its questions here; (saved, where or why not)."""
     argv = [shutil.which('node') or 'node', str(HARNESS_JS), '--login', provider]
     if custom:
         argv += ['--provider', json.dumps(custom)]
     if enterprise is not None:
         argv += ['--enterprise', enterprise]
+    if as_name:
+        argv += ['--as', as_name]
     try:
         p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
     except OSError as e:
@@ -316,6 +318,26 @@ def claude_lines() -> list[str]:
             for i, r in enumerate(rows)]
 
 
+AS_ENV = 'AGENT_RUNNER_LOGIN_AS'
+
+
+def ok_name(name: str) -> bool:
+    return bool(name) and name.replace('-', '').replace('_', '').isalnum()
+
+
+def harness_env(name: str = '') -> dict[str, str]:
+    """F506: the env a harness session on login `name` ('' the default) gets: it reads `<id>@<name>` in Pi's
+    auth.json then, instead of the provider's default login."""
+    return {AS_ENV: name} if name else {}
+
+
+def harness_names(provider: str, providers: dict, creds: dict | None = None) -> list[str]:
+    """F506: the names of `provider`'s logins added with --as, in auth.json order."""
+    creds = stored() if creds is None else creds
+    pid = provider if provider in providers else PI_IDS.get(provider, provider)
+    return [k.partition('@')[2] for k in creds if k.startswith(pid + '@') and k.partition('@')[2]]
+
+
 def list_lines(c) -> list[str]:
     names = named(c)
     if not names:
@@ -327,6 +349,8 @@ def list_lines(c) -> list[str]:
         out.append(f'{n.ljust(width)}  {"✓" if ok else "✗"} {where}')
         if n == 'claude':
             out += claude_lines()
+        else:
+            out += [f'  {n} --as {a}' for a in harness_names(n, c.providers, creds)]
     return out
 
 
@@ -358,7 +382,8 @@ def main(argv: list[str]) -> int:
                     help='copilot: your GitHub Enterprise domain (company.ghe.com); "" for github.com. Asked when left out')
     ap.add_argument('--reopen', action='store_true', help=argparse.SUPPRESS)  # F406a: logged in elsewhere, by Home
     ap.add_argument('--as', dest='as_name', metavar='NAME', default=None,
-                    help='claude: add another Claude login NAME, in its own CLAUDE_CONFIG_DIR; the first stays the default')
+                    help='add another login NAME (claude: in its own CLAUDE_CONFIG_DIR; others: in Pi\'s auth.json as '
+                         '<id>@NAME); the first stays the default')
     a = ap.parse_args(argv)
     from agent_runner.config import cfg, toplevel
     try:
@@ -381,8 +406,8 @@ def main(argv: list[str]) -> int:
             return 1
         print(f'claude --as {a.as_name}: logged in; kept in {where}')
         return 0
-    if a.as_name:
-        print(f'{RUNNER} login: --as is for claude only', file=sys.stderr)
+    if a.as_name and not ok_name(a.as_name):
+        print(f'{RUNNER} login: a login name is letters, digits, - and _: {a.as_name!r}', file=sys.stderr)
         return 2
     if name == 'claude':
         print("claude runs as Claude Code, on Claude Code's own login: `claude /login`. "
@@ -415,12 +440,14 @@ def main(argv: list[str]) -> int:
     print(f'{name}: {HOW.get(name, "API key, kept for " + (custom or {}).get("key_env", name))}')
     if enterprise:
         enterprise = enterprise_host(enterprise)
-    ok, where = harness_login(name, custom, enterprise)
+    if a.as_name:
+        print(TERMS)
+    ok, where = harness_login(name, custom, enterprise, as_name=a.as_name or '')
     if not ok:
         told(result, False, where)
         print(f'{RUNNER} login {name}: {where}', file=sys.stderr)
         return 1
-    print(f'{name}: logged in; kept in {where}')
+    print(f'{name}{" --as " + a.as_name if a.as_name else ""}: logged in; kept in {where}')
     told(result, True, f'{name} is logged in')  # before the plan is touched, which may fail
     if back := reopen_here(name, c):
         told(result, True, f'{name} is logged in', back)
