@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: the run page's UI settings (Settings → Look and layout): a theme (ryha, light, terminal, omarchy, from theme.py) or Standard, the Lazyrunner layout (from 760px: the sidebar as numbered panels Status, Sessions, Plans, Tools, Settings on the left, the view on the right, keys 1-5, j/k, Enter/l, h, i, Esc, a/d/p, c, ?) and a key bar; only a layout and keys over the page's own panels (F473).
 - Changed: Hold on a running task (`plan hold`) stops its slot as Cancel does and holds it in its place; Cancel (the page's and `plan cancel`) now holds the task too instead of parking it, so no run restarts it until Unhold. Still refused while it merges, waits to merge, is taken by hand, or is claimed by another machine's run, which it names (F480).
 ## 0.77.0 (2026-11-26)
 

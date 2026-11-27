@@ -470,6 +470,16 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - The viewport meta has `interactive-widget=resizes-content` for browsers that have it.
 - The session and the message box never both hold focus (see The session).
 
+### Lazyrunner
+
+- Lazyrunner (UI settings: Layout) is only a CSS layout (`189-lazy.css`) and a key layer (`189-lazy.js`) over the
+  page's own sidebar and views: it draws no view, panel or renderer of its own and hides no sidebar row, so both
+  layouts have the same panels (`tests/test_lazy.py`). Its keys press the buttons the page already has.
+- It applies from 760px of width; a phone stays Standard. Its keys act only in normal mode: never while a text field,
+  a select or a sheet has the keyboard (Esc leaves insert mode as it always did).
+- A theme picked in UI settings sets `data-ui` (colours from theme.py's table) and `data-theme` (light or dark) on the
+  root; Standard leaves both off and follows the device. UI settings are kept per browser.
+
 ## Sound
 
 - Run speech plays only in the one audio element (`AU.el`), only after the person's tap has allowed it, never while the mic listens.

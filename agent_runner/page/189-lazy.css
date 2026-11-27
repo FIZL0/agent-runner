@@ -1,0 +1,24 @@
+/* F473: lazyrunner (189-lazy.js): the sidebar stays on the left as five numbered panels, the view is the main pane on
+   the right, a key bar below. Only a layout of the page's own parts: it hides none of the sidebar's rows. A phone keeps
+   Standard (the container query). */
+.keybar{position:fixed;left:0;right:0;bottom:0;z-index:4;height:24px;padding:3px var(--s3) 0;border-top:1px solid var(--line);background:var(--side);color:var(--muted);font:var(--fs-s)/1.5 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.keybar b{color:var(--fg);font-weight:600} .keybar .mode{background:var(--accent);color:var(--onaccent);padding:0 var(--s1);border-radius:var(--r-xs)} .keybar .mode.ins{background:var(--ok)}
+:root.lazybar .app{padding-bottom:24px}
+@container (min-width:760px){
+  :root.lazy .shell{grid-template-columns:300px minmax(0,1fr)}
+  :root.lazy .side{position:relative;inset:auto;grid-row:1;grid-column:1;width:auto;max-width:none;transform:none;visibility:visible;box-shadow:none;transition:none}
+  :root.lazy .main{grid-row:1;grid-column:2}
+  :root.lazy #scrim,:root.lazy .top [data-menu]{display:none}
+  :root.lazy .sidein{font-family:var(--mono);font-size:var(--fs-m);gap:2px}
+  :root.lazy .sidein .nav{display:contents}
+  :root.lazy .sidein>*{order:2} :root.lazy .sidein>:first-child{order:0} :root.lazy .sidein .ni{order:6} :root.lazy .sidein>.me{order:7}
+  :root.lazy .sidein .ni[data-view="status"]{order:1} :root.lazy .sidein .ni[data-view="plan"]{order:3}
+  :root.lazy .sidein .ni[data-view="tools"]{order:4} :root.lazy .sidein .ni[data-view="settings"]{order:5}
+  :root.lazy .sidein .ni[data-view="status"]::before{content:'[1]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .shead.row>span:first-child::before{content:'[2] Sessions · ';color:var(--muted)}
+  :root.lazy .sidein .ni[data-view="plan"]::before{content:'[3]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .ni[data-view="tools"]::before{content:'[4]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .ni[data-view="settings"]::before{content:'[5]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .ni[data-view="status"],:root.lazy .sidein .ni[data-view="plan"],:root.lazy .sidein .ni[data-view="tools"],:root.lazy .sidein .ni[data-view="settings"]{border:1px solid var(--line)}
+  :root.lazy .sidein .ni.on{border-color:var(--accent)}
+}
