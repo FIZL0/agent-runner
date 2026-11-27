@@ -88,16 +88,22 @@ function runPill(snap){
 function cardControls(snap){return(snap&&snap.card)||[]}  // C33: ui_model.controls_shown decides
 /* F124: the More… sheet: [{group, items: [{c, label, choices}]}] from the snapshot's controls, in the list's order of
    groups; a Fix up control only while there is something to fix, with a count */
+/* B763b: the group of the everyday controls that have none, and each run control's icon (a name in I) */
+const SHEET_GROUP={stop:'Stop',stop_undo:'Stop',start:'Run',pause:'Run',go_on:'Run',slot_add:'Run',slot_remove:'Run'};
+const SHEET_ICON={stop:'stop',stop_now:'x',stop_undo:'undo',suspend:'clock',shutdown:'alert',start:'play',pause:'pause',go_on:'play',
+  slot_add:'plus',slot_remove:'minus',slots_set:'edit',force:'up',caps_on:'check',upgrade:'down',restart:'history',resume:'play',
+  unclaim:'x',wip_show:'file',wip_restore:'undo',wip_drop:'trash'};
 function controlGroups(snap){
-  const run=(snap&&snap.run)||{}, up=!(snap&&snap.up===false), out=[], shown=(snap&&snap.shown)||[];
+  const run=(snap&&snap.run)||{}, out=[], shown=(snap&&snap.shown)||[];
+  // B763b: of the pairs, the one that fits the run's state, as on the Run card
+  const off=new Set([run.paused?'pause':'go_on',run.stopping?'stop':'stop_undo']);
   for(const g of ['Stop','Run','Fix up']){
     const items=[];
     for(const c of (snap&&snap.controls)||[]){
-      if(c.where!=='run'||c.group!==g||!shown.includes(c.key))continue;
+      if(c.where!=='run'||(c.group||SHEET_GROUP[c.key])!==g||!shown.includes(c.key)||off.has(c.key))continue;
       const choices=c.fix?((snap.fixups||{})[c.fix]||[]):[];
-      items.push({c,label:c.fix?`${c.label} (${choices.length})`:c.key==='suspend'&&run.power==='suspend'?'Take the suspend back':c.key==='shutdown'&&run.power==='shutdown'?'Take the shutdown back':c.label,choices});
+      items.push({c,icon:SHEET_ICON[c.key]||'dot',label:c.fix?`${c.label} (${choices.length})`:c.key==='suspend'&&run.power==='suspend'?'Take the suspend back':c.key==='shutdown'&&run.power==='shutdown'?'Take the shutdown back':c.label,choices});
     }
-    if(g==='Stop'&&up&&!run.stopping){const c=((snap&&snap.controls)||[]).find(x=>x.key==='stop');if(c)items.unshift({c,label:c.label,choices:[]})}
     if(items.length)out.push({group:g,items});
   }
   return out;

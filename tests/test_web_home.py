@@ -927,11 +927,11 @@ def test_status_view_f124(tmp: Path) -> None:
     eq(got[7], ['start'], 'no run: Start the run')
     for groups, more, on in ((got[8], ['restart'], ''), (got[23], [], ' (Windows)')):
         keys = [(g['group'], [i['c']['key'] for i in g['items']]) for g in groups]
-        eq(keys, [('Stop', ['stop', 'stop_now', 'suspend', 'shutdown']), ('Run', ['slots_set', 'force', 'upgrade', *more]),
+        eq(keys, [('Stop', ['stop', 'stop_now', 'suspend', 'shutdown']), ('Run', ['slot_add', 'slot_remove', 'slots_set', 'pause', 'force', 'upgrade', *more]),  # B763b
                   ('Fix up', ['unclaim'])], f'the sheet: Stop, Run and Fix up, what there is to fix only{on}')
     eq(got[8][2]['items'][0]['label'], 'Release stale claims (2)', 'with its count')
     eq([g['group'] for g in got[9]], ['Stop', 'Run'], 'nothing to fix: no Fix up')
-    eq([i['c']['key'] for i in got[10][0]['items']], ['stop_now', 'suspend', 'shutdown'], 'stopping already: no Stop')
+    eq([i['c']['key'] for i in got[10][0]['items']], ['stop_now', 'stop_undo', 'suspend', 'shutdown'], 'stopping already: no Stop, Take the stop back')  # B763b
     check('caps_on' in [i['c']['key'] for i in got[10][1]['items']], 'caps forced: Caps back on')
     eq(got[11:16], ['wait', 'drag', '', 'drag', ''], 'right opens, left closes, a mostly vertical move does neither')
     eq(got[16:21], [False, True, True, False, True], 'it settles by how far and how fast')
