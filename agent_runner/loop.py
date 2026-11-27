@@ -234,7 +234,8 @@ def write_state(running: dict, held=()) -> None:
                                    'forced': FORCED[0], 'power': POWER, 'version': run_version(),
                                    'agent_problem': agent_problem(C), 'no_settings': bool(no_settings(C))}),  # B764b, F178
                        encoding='utf-8')
-        os.replace(tmp, C.notes('STATE'))
+        from agent_runner.state_file import put_in_place
+        put_in_place(tmp, C.notes('STATE'))  # F497: retries while a reader has STATE open (Windows)
     except OSError:  # Windows: `status` has STATE open this instant; the next pass writes it
         pass
 
@@ -877,6 +878,7 @@ class Run:
         self.tagged = None
         for n in list(self.free_at):
             self.slot(n)
+        write_state(self.running, [m[0] for m in self.held_merges])  # F497: a slot's start shows at once
         self.after()
         return self.end()
 
