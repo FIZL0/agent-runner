@@ -47,8 +47,10 @@ def taken_row(row: dict) -> bool:
 
 ANSWER_MAX, ANSWER_KEYS = 12, 'abcdefg'  # F180: the most fixed answers a row draws, and the TUI keys of the first ones
 RUN_CONTROLS = (
-    {'key': 'slot_add', 'label': 'Slot +1', 'argv': ('slots', '+1'), 'tui': '+', 'where': 'run'},
-    {'key': 'slot_remove', 'label': 'Slot -1', 'argv': ('slots', '-1'), 'tui': '-', 'where': 'run'},
+    {'key': 'slot_add', 'label': 'Slot +1', 'argv': ('slots', '+1'), 'tui': '+', 'where': 'run',
+     'card_label': 'Slot'},  # F472: on the page's Run card the + icon says which
+    {'key': 'slot_remove', 'label': 'Slot -1', 'argv': ('slots', '-1'), 'tui': '-', 'where': 'run',
+     'card_label': 'Slot'},
     {'key': 'slots_set', 'label': 'Set slots', 'argv': ('slots', '{n}'), 'tui': '=', 'where': 'run', 'group': 'Run'},
     {'key': 'pause', 'label': 'Pause', 'argv': ('pause',), 'tui': 'P', 'where': 'run'},
     {'key': 'go_on', 'label': 'Go on', 'argv': ('pause', '--off'), 'tui': 'G', 'where': 'run'},
@@ -187,7 +189,9 @@ def controls_shown(up: bool, run: dict, fixups: dict) -> dict:
         if c.get('up', True) == up or (not up and c.get('fix')):
             shown.append(c['key'])
     card = ['start'] if not up else ['slot_remove', 'slot_add', 'go_on' if run.get('paused') else 'pause',
-                                      'stop_undo' if run.get('stopping') else 'stop']
+                                      'stop']
+    if up and run.get('stopping'):  # F472: Stop now beside Take the stop back, not only under More
+        card[-1:] = ['stop_now', 'stop_undo']
     return {'shown': shown, 'card': card}
 
 
@@ -332,7 +336,7 @@ def controls(rel_ask: dict | None = None) -> list[dict]:
              'each': bool(c.get('each')), 'up': c.get('up', True), 'tui_also': c.get('tui_also', ''),
              'tui_sure': c.get('tui_sure', True), 'chat': bool(c.get('ask') or c.get('chat')), 'fn': bool(c.get('fn')),
              'tui_main': c.get('tui_main', True), 'answer': bool(c.get('answer')),
-             'tab': c.get('tab', '')} for c in RUN_CONTROLS
+             'tab': c.get('tab', ''), 'card_label': c.get('card_label', c['label'])} for c in RUN_CONTROLS
             if not (plat.WINDOWS and c['key'] == 'restart')]  # no re-exec there
 
 

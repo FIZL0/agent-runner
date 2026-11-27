@@ -923,7 +923,7 @@ def test_status_view_f124(tmp: Path) -> None:
     eq(got[:3], ['plan', 'plan', 'plan'], 'the old views land on Work (F476)')
     eq(got[3:5], [{'text': 'Caps forced', 'cls': 'warn'}, {'text': 'Not up', 'cls': ''}], "the pill's words")
     eq(got[5], ['slot_remove', 'slot_add', 'pause', 'stop'], "the card's everyday buttons")
-    eq(got[6], ['slot_remove', 'slot_add', 'go_on', 'stop_undo'], 'paused and stopping: what undoes it')
+    eq(got[6], ['slot_remove', 'slot_add', 'go_on', 'stop_now', 'stop_undo'], 'paused and stopping: what undoes it')
     eq(got[7], ['start'], 'no run: Start the run')
     for groups, more, on in ((got[8], ['restart'], ''), (got[23], [], ' (Windows)')):
         keys = [(g['group'], [i['c']['key'] for i in g['items']]) for g in groups]

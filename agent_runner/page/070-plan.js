@@ -29,12 +29,12 @@ const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+
 /* F168: the shared tools in words, the same as status says */
 const toolsWords=ts=>'Tools: '+ts.map(t=>`${t.label}: ${t.words}`).join(' · ');
 /* Run controls: the Run card; B763a: each with its icon; F426e: the slots' rows are in Working (076-status.js) (docs/STYLE.md, Run card) */
-const CTL_ICON={start:'play',go_on:'play',pause:'pause',stop:'stop',stop_undo:'undo',slot_add:'plus',slot_remove:'minus'};
+const CTL_ICON={start:'play',go_on:'play',pause:'pause',stop:'stop',stop_now:'stop',stop_undo:'undo',slot_add:'plus',slot_remove:'minus'};
 function controlsCard(){
   const run=S.snap.run||{}, up=S.snap.up!==false;
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
   const mark=up&&run.mark?`<span class="small" data-k="heldmark"> · ${esc(run.mark)}</span>`:'', herr=S.heldErr?`<div class="small v-bad" data-k="heldErr">${esc(S.heldErr)}</div>`:'';  // B851a
-  const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${I[CTL_ICON[k]]||''}${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
+  const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${I[CTL_ICON[k]]||''}${esc(k==='stop'?'Stop':c.card_label||c.label)}</button>`:''}).join('');
   return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-roll data-v="${esc(said)}">${esc(said)}${mark}</div></div>${up?(w=>`<span class="small" data-k="slotsof" data-roll data-v="${w}">${w}</span>`)(`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`):''}</div>
     ${S.snap.no_settings?`<div class="small" data-k="nosettings"><span class="v-warn">${esc(S.snap.no_settings)}</span></div>`:''}
     ${S.snap.usage_held?`<div class="small" data-k="usageheld"><span class="v-warn">${esc(S.snap.usage_held)}</span></div>`:''}

@@ -612,7 +612,7 @@ def test_run_card_b763a(tmp: Path) -> None:
                        capture_output=True, text=True, encoding='utf-8', timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     cards, icons = json.loads(r.stdout)
-    icon = {'start': 'play', 'go_on': 'play', 'pause': 'pause', 'stop': 'stop', 'stop_undo': 'undo',
+    icon = {'start': 'play', 'go_on': 'play', 'pause': 'pause', 'stop': 'stop', 'stop_now': 'stop', 'stop_undo': 'undo',
             'slot_add': 'plus', 'slot_remove': 'minus'}
     for (s, _), html in zip(cases, cards):
         row = html.split('aria-label="Run controls">', 1)[1].split('</div>', 1)[0]
