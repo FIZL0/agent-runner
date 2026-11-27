@@ -372,6 +372,9 @@ def reopen_here(provider: str, c) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
+    from agent_runner import secret_logins
+    if argv[:1] and argv[0] in secret_logins.SUBCOMMANDS:  # F466a: website and account logins
+        return secret_logins.main(argv)
     result = os.environ.pop(RESULT_ENV, '')
     ap = argparse.ArgumentParser(prog=f'{RUNNER} login', description=(
         'The provider logins the harness loop runs on. With no provider: each provider [models] names and '
