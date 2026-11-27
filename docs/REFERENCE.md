@@ -1743,6 +1743,9 @@ to load 15 and one-hour merges:
   cannot reach. When the shared branch gets code commits during a merge's gate, they are merged into the
   tested merge and only what they change is tested, from that merge: an hour's batch gate is not run again
   for a commit that landed in its last minutes. A conflict there, or a failure, builds the merge again.
+  When those commits are all the runner's own merges (each passed its gate) and touch none of the merge's
+  files nor `runner.toml`, nothing is tested again ("moved only by gated work on other files"); a hand
+  commit on the shared branch is always tested.
 - **One push per batch.** Each push to the shared branch is a CI run, so the runner pushes a batch once,
   when its last task lands.
 

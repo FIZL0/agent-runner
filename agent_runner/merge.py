@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from contextlib import ExitStack
 
-from agent_runner import audit_fix, autorelease, freeze, lessons_ask, pitch, plan as P, plat, plansync, pr, sched, stack
+from agent_runner import audit_fix, autorelease, freeze, gated_moves as GM, lessons_ask, pitch, plan as P, plat, plansync, pr, sched, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -1196,9 +1196,9 @@ def caught_up(tid: str, branch: str, d: Path, base: str, merged: str, tids: list
     Commits in `[run] untested` files only are not tested; a conflict or a failure builds it all again."""
     for _ in range(3):
         moved = git('diff', '--name-only', base, branch).stdout.split()
-        if all(map(untestable, moved)):
-            return base, merged
         new = git('rev-parse', branch).stdout.strip()
+        if all(map(untestable, moved)) or GM.moved_by_gated_only(base, new, merged, moved) and not log(f'{tid}: {branch} moved only by gated work on other files; not tested again'):
+            return base, merged
         if not C.run['test_since']:
             log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
             return None
