@@ -406,9 +406,9 @@ const fresh = () => { S = {snap: {sessions: ['c1', 'c2', 'c3', 'c4'].map(name =>
   S.snap = {...S.snap, sessions: ['c1', 'c2', 'c3', 'c4'].map(name => ({name}))}; delGoneOff(); out.stale = rows();
   answer({json: () => ({ok: true})}); await new Promise(r => setTimeout(r, 0)); out.ok = [rows(), toasts.length];
   fresh(); finalDelete(); answer({json: () => ({ok: false, error: 'no'})}); await new Promise(r => setTimeout(r, 0));
-  out.failed = [rows().sort(), drawn.sort(), toasts.slice()];
+  out.failed = [rows(), drawn, toasts.slice(), S.thread];
   fresh(); finalDelete(); answer(Promise.reject('down')); await new Promise(r => setTimeout(r, 0));
-  out.down = rows().sort();
+  out.down = rows();
   console.log(JSON.stringify(out)); process.exit(0);
 })();
 """
@@ -430,7 +430,8 @@ def test_delete_at_once_b876(tmp: Path) -> None:
     eq(o['sameFrame'], [['c1', 'c4'], None], 'both rows go in the first draw, before any answer; the open one closes')
     eq(o['stale'], ['c1', 'c4'], 'an older snapshot keeps them off')
     eq(o['ok'], [['c1', 'c4'], 0], 'the server says yes: they stay gone, no toast')
-    eq(o['failed'], [['c1', 'c2', 'c3', 'c4'], ['c1', 'c2', 'c3', 'c4'], [['The delete did not work', True]]], 'a failed delete puts them back, with a toast')
+    eq(o['failed'], [['c1', 'c2', 'c3', 'c4'], ['c1', 'c2', 'c3', 'c4'], [['The delete did not work', True]], 'c2'],
+       'a failed delete puts them back in their places, the open chat open again, with a toast')
     eq(o['down'], ['c1', 'c2', 'c3', 'c4'], 'and so does no answer at all')
 
 
