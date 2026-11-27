@@ -287,6 +287,7 @@ class Held(NamedTuple):
     on: frozenset = frozenset()  # F420: with `prs`, the tasks that are not new
     waits: dict = {}  # F168: {task that gave up its slot: (its tool, since when)}, longest first
     high: frozenset = frozenset()  # F438: open tasks tagged `(follow-up, high)`
+    unchecked: dict = {}  # F415: {open bug task: the CONFIRM task under Needs you whose files it meets}
 
 
 def held(running: dict, branch: str) -> Held:
@@ -323,6 +324,7 @@ def held(running: dict, branch: str) -> Held:
                 holding=frozenset(row_hold.held_ids(plan_text(branch))) if todo else frozenset(),
                 **({'prs': n, 'on': pr_rows.started()} if todo and (n := pr_rows.full()) else {}),
                 high=high_tasks(branch) if todo else frozenset(),
+                unchecked=unchecked_holds(plan_text(branch), todo, shared) if todo else {},
                 splits=split_holds(branch) if todo else {}, **tool_fields(todo, live, branch))
 
 
@@ -378,6 +380,29 @@ def critical_tasks(branch: str) -> frozenset:
                                         (m := P.PRI_TAG.search(rest)) and m.group(1) == 'critical'))
 
 
+CONFIRM_ASK = re.compile(r'(?:^|\s)BLOCKED: CONFIRM:')  # F415: not `BLOCKED: shelved: CONFIRM:`
+
+
+def unchecked_holds(ls: list[str], todo: list, shared: set = frozenset()) -> dict[str, str]:
+    """F415: {open bug (B) task: the task under Needs you with CONFIRM whose files meet its own}. A fix waits while
+    an earlier one on the same files awaits the person's check, so fixes do not pile up on unverified ones. A
+    shelved CONFIRM holds nothing; critical and high tasks (a person's plan) pass; `holds` reads those."""
+    confirms = []
+    for _, box, tid, _, i in P.iter_tasks(ls):
+        if box == '~' and CONFIRM_ASK.search(' '.join(P._item_block(ls, i))):
+            if files := set(P.fields(ls[i]).get('files', [])):
+                confirms.append((tid, files))
+    out = {}
+    for t in todo:
+        if not t[0].startswith('B') or not t[2]:
+            continue
+        for cid, files in confirms:
+            if cid != t[0] and file_overlap(t[2], (cid, '', files, set()), set(shared)):
+                out[t[0]] = cid
+                break
+    return out
+
+
 def high_tasks(branch: str) -> frozenset:
     """F438: ids of the open tasks tagged `(follow-up, high)` in `branch`'s TODO.md."""
     return frozenset(tid for _, box, tid, rest, _ in P.iter_tasks(plan_text(branch))
@@ -386,7 +411,8 @@ def high_tasks(branch: str) -> frozenset:
 
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
-    ('busy', None), ('parked', None), ('no commits', None), ('held', None) (`plan hold`: F429), ('split', None) (its author is splitting it: B196), ('merging', None) (a release, while a merge holds the turn: F99),
+    ('busy', None), ('parked', None), ('no commits', None), ('held', None) (`plan hold`: F429), ('split', None) (its author is splitting it: B196),
+    ('unchecked', the CONFIRM task it waits for) (F415), ('merging', None) (a release, while a merge holds the turn: F99),
     ('unpushed', None) (a release, while landed changes wait for a person's approval: F98),
     ('prs', None) (a new task, while too many pull requests are open: F420),
     ('clash', the busy task it clashes with), or ('tool', (the shared tool it waits for, why)) (F168); None when it is free. A critical task never holds a slot
@@ -406,6 +432,8 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'no commits', None
     if tid in h.splits:  # B196
         return 'split', None
+    if tid in h.unchecked and tid not in h.critical and tid not in h.high:  # F415
+        return 'unchecked', h.unchecked[tid]
     if P.release(tid) and MERGE.locked():  # F99: a merge under way lands first, so the release starts from it
         return 'merging', None
     return holds_after_merge(t, tried, h)
@@ -544,6 +572,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = ('held', f'`plan unhold {tid}` ends it')
         elif kind == 'split':
             why[tid] = ('waiting to be split', P.split_in(h.splits[tid]))
+        elif kind == 'unchecked':
+            why[tid] = ('waiting for your check', f'{b} awaits CONFIRM under Needs you, on the same files')
         elif kind == 'merging':
             why[tid] = ('waiting for a merge to land', 'a release starts from what has landed')
         elif kind == 'unpushed':
