@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a release ready to start but for the merge under way now starts before the merges waiting behind it; they go on as before when the release is held for anything else or cannot start (run paused, usage caps, no free slot) (B849b).
 - Added: lessons, what a project's agents learned, one line per lesson in plan/LESSONS.md with the files it applies to; a brief shows those whose files meet the task's (most specific first, at most 8); `plan lesson add/list/drop`; a lesson whose files are all gone drops itself. `[plan] lessons`, off by default, on in this repo (F413).
 - Changed: the run page's Status, Plan and History are one page, Work: the run bar and usage on top, then Now (what the agents work on and what merges), Up next (the queue, without what Now shows), Landed and Releases, with Parked and the Run log folded at the bottom; one search; old Status and History links open Work (F476).
 - Added: the run page's UI settings (Settings → Look and layout): a theme (ryha, light, terminal, omarchy, from theme.py) or Standard, the Lazyrunner layout (from 760px: the sidebar as numbered panels Status, Sessions, Plans, Tools, Settings on the left, the view on the right, keys 1-5, j/k, Enter/l, h, i, Esc, a/d/p, c, ?) and a key bar; only a layout and keys over the page's own panels (F473).

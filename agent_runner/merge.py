@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from contextlib import ExitStack
 
-from agent_runner import audit_fix, autorelease, freeze, pitch, plan as P, plat, plansync, pr, stack
+from agent_runner import audit_fix, autorelease, freeze, pitch, plan as P, plat, plansync, pr, sched, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -797,7 +797,7 @@ def merge_tries(tid: str, branch: str) -> str | None:
         crit = critical(tid, branch)
         with MERGE.turn(lambda: merge_rank(tid, crit)):
             WAITING.discard(tid)
-            if tid not in LANDED and releasing(tid, branch):  # F99: a release started while it waited
+            if tid not in LANDED and release_first(tid, branch):  # F99: a release started (B849b: or is about to) while it waited
                 tries -= 1  # not a try: it waits for the release, then queues again
                 continue
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
@@ -850,16 +850,24 @@ def releasing(tid: str, branch: str) -> str:
     return next((v for v in vs if v in live and v not in away), '')
 
 
+def release_first(tid: str, branch: str) -> str:
+    """The release `tid`'s merge waits for: one busy (`releasing`), or (B849b) one a recent pick found held by the
+    merge under way alone (`sched.ready_release`); '' for none, or for a release's own merge."""
+    return '' if P.release(tid) else releasing(tid, branch) or sched.ready_release(branch)
+
+
 def hold_for_release(tid: str, branch: str) -> None:
-    """While a release is busy (`releasing`), `tid`'s merge waits, and so does its push: the release then holds
-    exactly what was on the shared branch when it started (F99). The task's work is kept; it merges once the
-    release has landed (or was parked)."""
+    """While a release is busy or about to start (`release_first`), `tid`'s merge waits, and so does its push: the
+    release then holds exactly what was on the shared branch when it started (F99). The task's work is kept; it
+    merges once the release has landed (or was parked)."""
     said = ''
-    while v := releasing(tid, branch):
+    while v := release_first(tid, branch):
         if v != said:
             said = v
-            note(f'{tid}: waits to merge: {v} is releasing')
-            log(f'{tid}: waits to merge: {v} is releasing; it merges once {v} has landed')
+            busy = releasing(tid, branch)
+            note(f'{tid}: waits to merge: {v} ' + ('is releasing' if busy else 'starts first'))
+            log(f'{tid}: waits to merge: {v} ' + (f'is releasing; it merges once {v} has landed' if busy else
+                                                  'starts first; it merges once it has landed, or cannot start'))
         time.sleep(RELEASE_POLL)
     if said:
         log(f'{tid}: {said} is no longer releasing; merging task/{tid} now')
