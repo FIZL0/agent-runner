@@ -29,7 +29,7 @@ const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+
 /* F168: the shared tools in words, the same as status says */
 const toolsWords=ts=>'Tools: '+ts.map(t=>`${t.label}: ${t.words}`).join(' · ');
 /* Run controls: the Run card; B763a: each with its icon; F426e: the slots' rows are in Working (076-status.js) (docs/STYLE.md, Run card) */
-const CTL_ICON={start:'play',go_on:'play',pause:'pause',stop:'stop',stop_undo:'undo',slot_add:'plus',slot_remove:'minus'};
+const CTL_ICON={start:'play',go_on:'play',pause:'pause',stop:'stop',stop_now:'stop',stop_undo:'undo',slot_add:'plus',slot_remove:'minus'};
 function controlsCard(){
   const run=S.snap.run||{}, up=S.snap.up!==false;
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
