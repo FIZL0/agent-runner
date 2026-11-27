@@ -76,6 +76,9 @@ def test_snapshot(tmp: Path) -> None:
     eq(sorted(needs), ['D3', 'F4'], 'Needs you: the decide and the concept')
     eq((needs['D3']['label'], needs['D3']['url']), ('DECIDE', 'https://claude.ai/artifact/abc'), 'decide with link')
     check(needs['D3']['ask'], 'an ask in plain words', needs['D3'])
+    item = snap['concepts'][0].pop('item', {})
+    eq((item.get('label'), item.get('news'), needs['F4'].get('news')), ('CONCEPT', 'new', 'new'),
+       'F197b1: the concept carries its Needs you item, New on both')
     eq(snap['concepts'], [{'id': 'F4', 'concept': 'K5', 'title': 'lazy layout',
                            'url': 'https://claude.ai/artifact/k5', 'copy': '',
                            'lead': U.concept_chat_text({'concept': 'K5', 'title': 'lazy layout',
