@@ -275,7 +275,9 @@ class Tells {
     if (c === '\x03' || c === '\x1b') {
       if (!this.chat.interrupt() && c === '\x03') this.chat.end();
     } else if (c === '\x0f') { // Ctrl+O (F489): the calls behind the tally line
+      this.unshow(); // the calls go above the message being typed, which is drawn again under them
       this.chat.expand?.();
+      this.show(this.buf.replace(/\n/g, '\r\n'));
     } else if (c === '\x04') {
       if (!this.buf) this.chat.end();
     } else if (c === '\x7f' || c === '\b') {
@@ -959,7 +961,7 @@ export class Tally {
     const calls = this.calls.length ? this.calls : this.last;
     if (!calls.length) return;
     const live = this.calls.length && this.tty;
-    this.out.write(`${live ? '\r\x1b[2K' : ''}${callLines(calls)}\n`);
+    this.out.write(`${this.tty ? '\r\x1b[2K' : ''}${callLines(calls)}\n`);
     if (live) this.out.write(`\x1b[2m${tallyLine(this.counts)}\x1b[0m`);
   }
 }

@@ -218,7 +218,7 @@ function pastLines(entries,cols,open){
     if(e.kind==='you')part=pastYou(e,cols);
     else if(e.kind==='say')part=pastMd(e.text,cols-2).map((l,j)=>({t:j?l.t&&'  '+l.t:'● '+l.t,h:(j?l.t?'  ':'':'● ')&&(j?'  ':pastCellsHTML('● '))+l.h}));
     else if(e.kind==='tool'&&pastFold(e)){const g=[];for(;i<entries.length&&pastFold(entries[i]);i++)g.push([entries[i],pastFold(entries[i])]);i--;
-      const k=pastFoldKey(g[0][0]), at=`<span class="hfold" data-fold="${pastEsc(k).replace(/"/g,'&quot;')}">`;
+      const k=pastFoldKey(g[0][0])||`at${i-g.length+1}`, at=`<span class="hfold" data-fold="${pastEsc(k).replace(/"/g,'&quot;')}">`;
       part=pastFoldLine(g,cols).map(l=>({t:l.t,h:at+l.h+'</span>'}));
       if(open&&open.has(k))for(const [x] of g)part.push(...pastTool(x,cols))}
     else if(e.kind==='tool')part=pastTool(e,cols);
