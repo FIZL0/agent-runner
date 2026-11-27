@@ -61,12 +61,24 @@ function waitHTML(qs){
     const none=PQ.err?card(`<div class="small v-bad">${esc(PQ.err)}</div><div class="btns"><button class="btn" data-planqload>Try again</button></div>`):emptyCard(g&&g.q===planWant()?'No open task matches.':'Loading…');
     return `${planField()}<div class="col">${sec('Open',open)}${sec('Parked',parked)}${open.length||parked.length?'':none}</div>`;
   }
-  return `${planField()}<div class="col">${newReleaseCard()}${sec('Queue',qs)}${sec('Parked',pk)}</div>`;
+  return `${planField()}<div class="col">${S.waitPad?`<div class="waitpad" style="height:${S.waitPad}px"></div>`:''}${newReleaseCard()}${sec('Queue',qs)}${sec('Parked',pk)}</div>`;
+}
+/* F476: the Work page's sections above the Queue go in the pick mode and come back after: the task's row stays where it stood */
+function workKeepRow(id,draw){
+  const at=()=>{const r=id&&document.querySelector(`[data-k="task:${id}"]`), b=$('body');if(!r||!b)return null;let y=0;for(let x=r;x&&x!==b&&b.contains(x);x=x.offsetParent)y+=x.offsetTop;return y-b.scrollTop+b.getBoundingClientRect().top};  // where it stands once its glide ends
+  const was=at();S.waitPad=0;draw();const b=$('body');let now=at();
+  if(was==null||now==null||!b||now===was)return;
+  b.scrollTop+=now-was;now=at();
+  if(S.planWait&&now<was){S.waitPad=was-now;draw()}  // what scrolling cannot make up, room above the list does
+  requestAnimationFrame(()=>{const n=at();if(n==null||Math.abs(n-was)<1)return;  // the bar over the list came after
+    const d=n-was, p=S.planWait?Math.max(0,(S.waitPad||0)-d):0, left=d-((S.waitPad||0)-p);
+    if(p!==(S.waitPad||0)){S.waitPad=p;draw()}
+    if(left)b.scrollTop+=left});
 }
 function waitStart(id){
   const q=waitRows(S.snap.queue||[]).find(x=>x.id===id);if(!q||!waitMay(q))return;
   S.planMenu='';S.planWait=id;S.waitPicks=waitNow(q);
-  render(true);menuFocus(`[data-waitme="${id}"]`);
+  workKeepRow(id,()=>render(true));menuFocus(`[data-waitme="${id}"]`);
 }
 function waitPick(id){
   if(!S.planWait||!waitKnown().some(q=>q.id===id))return;
@@ -77,7 +89,7 @@ function waitPick(id){
 }
 function waitEnd(){
   const id=S.planWait;S.planWait='';S.waitPicks=[];
-  render(true);if(id)menuFocus(`[data-planmenu="${id}"]`);
+  workKeepRow(id,()=>render(true));if(id)menuFocus(`[data-planmenu="${id}"]`);
 }
 function waitDone(){
   const id=S.planWait, q=waitRows(S.snap.queue||[]).find(x=>x.id===id);if(!q)return;

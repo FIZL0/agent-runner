@@ -62,7 +62,7 @@ DRIVER = r"""<script>
     out.noDots = ['F3', 'P8'].map(id => !one(`[data-planmenu="${id}"]`));
     still(); const y0 = one('[data-k="task:F1"]').getBoundingClientRect().top;
     start('F1'); await wait(400); still();
-    out.start = [bar(), ticks(), !!one('.card.waitset [data-waitme="F1"]'), document.activeElement.dataset.waitme, $$(':is(.grip,.qmenu,.qacts,[data-task])').length, Math.round(one('[data-k="task:F1"]').getBoundingClientRect().top - y0)];
+    out.start = [bar(), ticks(), !!one('.card.waitset [data-waitme="F1"]'), document.activeElement.dataset.waitme, $$(':is(.grip,.qmenu,.qacts,[data-task])').length, Math.abs(one('[data-k="task:F1"]').getBoundingClientRect().top - y0) <= 1 ? 0 : one('[data-k="task:F1"]').getBoundingClientRect().top - y0];  // F476: within a pixel (the Work page's sections above have fractional heights)
     out.off = $$('[aria-disabled]').map(e => [e.dataset.waitpick, words(e.dataset.waitpick)]);
     out.ph = one('[data-k="rel:next"]').querySelectorAll('button').length;
     out.roles = [...new Set($$('[data-waitpick]').map(e => e.nodeName + e.getAttribute('role')))];
@@ -74,7 +74,7 @@ DRIVER = r"""<script>
     pick('F3').focus(); tap('F3'); out.picked = [ticks(), document.activeElement.dataset.waitpick, $$('[aria-expanded="true"]').length];
     tap('X1'); FAKE.queue[1].title = 'Changed'; FAKE.queue = FAKE.queue.filter(q => q.id !== 'X1'); fresh(); await wait(); out.redrawn = [ticks(), bar(), document.activeElement.dataset.waitpick, document.body.innerText.includes('Changed')];
     S.f.planq = 'P8'; PQ.got = {q: 'P8', open: [], parked: [{id: 'P8'}], done: [{id: 'Z'}], more: 0}; render(true); out.found = $$('[data-waitpick]').map(e => e.dataset.waitpick); tap('P8'); S.f.planq = ''; render(true);
-    goView('status'); out.away = bar(); goView('plan'); out.backHere = bar() !== '';
+    goView('home'); out.away = bar(); goView('plan'); out.backHere = bar() !== '';  // F476: Status is the Work page now, so away is Home
     const n = posts.length; esc(); out.esc = [bar(), posts.length - n, $$('[data-waitpick]').length, document.activeElement.dataset.planmenu, words('F1')];
     start('F1'); tap('B2'); one('[data-waitcancel]').click(); out.cancel = [posts.length - n, words('F1'), bar()];
     start('F1'); done(); out.same = posts.length - n;

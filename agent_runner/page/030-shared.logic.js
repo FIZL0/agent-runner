@@ -60,9 +60,9 @@ function conceptButtons(c){
 const NO_CONCEPT='No concept waits for a pick.';
 /* F93: Talk. The sidebar's views, Talk first; its control session: the one this browser remembers while it is
    live, else a live chat titled Talk, else '' (the next send opens one) */
-const NAV=[['talk','Talk'],['home','Home'],['status','Status'],['plan','Plan'],['history','History'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']];
+const NAV=[['talk','Talk'],['home','Home'],['plan','Work'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']];
 /* F124: Agents and Activity are one view now, Status */
-const viewOf=v=>v==='agents'||v==='activity'?'status':v;
+const viewOf=v=>['agents','activity','status','history'].includes(v)?'plan':v;  // F476: Status and History are the Work page
 /* B177: what a reload opens: {v: the view, t: the chat ('' for none), link: the link named it}. hash: the link's #,
    a view (#plan) or a chat or slot (#c3, #s1), which wins over text, the place this tab kept; projects: there is an
    All projects view; starting: the stand-ins ('@cid') of chats still starting. Anything else is Home */
