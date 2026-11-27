@@ -937,7 +937,8 @@ NOT_CLAUDE = ('copilot', 'gh', 'codex', 'gemini', 'opencode', 'aider', 'pi')  # 
 def claude_chat(sid: str = '') -> bool:
     """B874: control session `sid` runs on Claude Code (its claude.ai/code link reaches it): not the harness loop,
     and `[run] agent` names no other agent's program."""
-    return Path(str(C.run.get('agent') or 'claude')).stem.lower() not in NOT_CLAUDE and not control_harness.harness_session(sid)
+    return Path((str(C.run.get('agent') or 'claude').split() or ['claude'])[0]).stem.lower() not in NOT_CLAUDE and \
+        not control_harness.harness_session(sid)
 
 
 def chat_page_link(n: int) -> str:
