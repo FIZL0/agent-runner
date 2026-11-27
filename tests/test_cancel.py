@@ -25,6 +25,9 @@ from agent_runner import plan as P
 from agent_runner import runner as R
 
 
+HELD = r'- \[ \] \*\*H1\*\* one thing[^\n]*held: yes'  # F480: a cancel holds the task in its place
+
+
 class Proj:
     """A repo with a remote, whose run this test stands in for (it holds run.lock while in use)."""
 
@@ -136,15 +139,16 @@ def test_kept_parked_unparked(p: Proj):
     eq(git(p.origin, 'for-each-ref', '--format=%(refname:short)').split(), ['main', 'wip/H1'], 'pushed too')
     eq(git(d, 'status', '--porcelain'), '', 'the slot is clean')
     todo = p.todo()
-    has(todo, r'### Parked\n+- \[ \] \*\*H1\*\* \(follow-up, later\) one thing.*cancelled after 14 min: its work is on '
-        r'wip/H1', 'the task is parked, with a note')
-    eq([t[0] for t in sched.tasks('main')], ['H2'], 'so no run takes it')
+    has(todo, HELD + r'.*cancelled after 14 min: its work is on wip/H1', 'the task is held in its place, with a note')
+    check('### Parked\n- [ ] **H1**' not in todo, 'not parked (F480)')
+    h = sched.held({}, 'main')
+    eq(sched.holds(next(t for t in sched.tasks('main') if t[0] == 'H1'), set(), h), ('held', None), 'so no run takes it')
     eq(sched.parked_attempts(), {}, 'it counts as no failed merge')
     p.tick()
     eq(list(loop_requests.cancelled_marks().iterdir()), [], 'no mark is left')
-    check('H1' not in p.tried, 'parked, it is no longer a tried task')
-    rc, out, err = p.cmd('edit', 'H1', '--pri', 'normal')
-    eq(rc, 0, f'it is unparked ({err})')
+    check('H1' not in p.tried, 'held, it is no longer a tried task')
+    rc, out, err = p.cmd('unhold', 'H1')
+    eq(rc, 0, f'it is unheld ({err})')
     eq({t[0] for t in sched.tasks('main')}, {'H1', 'H2'}, 'a run takes it again')
     h = sched.held({}, 'main')
     eq(sched.holds(next(t for t in sched.tasks('main') if t[0] == 'H1'), p.tried, h), None, 'in this run too')
@@ -157,7 +161,7 @@ def test_again(p: Proj):
     """cancelled twice: the second attempt's work has a branch of its own, and the note names it"""
     p.start(edits=False)
     p.cmd('cancel', 'H1', '--yes')
-    p.cmd('edit', 'H1', '--pri', 'normal')
+    p.cmd('unhold', 'H1')
     p.start(commits=2, edits=False)
     rc, out, err = p.cmd('cancel', 'H1', '--yes')
     eq((rc, p.branches()), (0, ['wip/H1', 'wip/H1-2']), 'both are kept')
@@ -170,7 +174,7 @@ def test_nothing_done(p: Proj):
     p.start(commits=0, edits=False)
     rc, out, err = p.cmd('cancel', 'H1', '--yes')
     eq((rc, p.branches()), (0, []), 'no branch')
-    has(p.todo(), r'### Parked\n+- \[ \] \*\*H1\*\*.*nothing had been done yet', 'parked')
+    has(p.todo(), HELD + r'.*nothing had been done yet', 'held')
 
 
 def test_uncommittable(p: Proj):
@@ -215,7 +219,7 @@ def test_queued_resume(p: Proj):
     R.queue_resume('H1', 1, 'sid', 'cut off')
     rc, out, err = p.cmd('cancel', 'H1', '--yes')
     eq((rc, state.queued(), p.branches()), (0, {}, ['wip/H1']), f'kept, and no resume ({err})')
-    has(p.todo(), r'### Parked\n+- \[ \] \*\*H1\*\*', 'parked')
+    has(p.todo(), HELD, 'held')
 
 
 def test_refused(p: Proj):
@@ -262,7 +266,7 @@ def test_unanswered(p: Proj):
                        capture_output=True, text=True, encoding='utf-8', timeout=60)
     eq(r.returncode, 0, r.stderr)
     has(r.stdout, r'asked the run to stop s1', 'said')
-    has(p.todo(), r'### Parked\n+- \[ \] \*\*H1\*\*', 'parked')
+    has(p.todo(), HELD, 'held')
     p.tick()
     eq((p.running, p.branches()), ({}, ['wip/H1']), 'then stopped, its work kept')
     eq(P.requests(R.C, cancel.KIND), {}, 'and the request is gone')
@@ -294,7 +298,7 @@ def test_taken(p: Proj):
     eq(git(p.repo, 'show', 'wip/H1:a.py').strip(), 'edited', 'the edit is kept')
     eq(git(p.repo, 'show', 'wip/H1:new.py').strip(), 'new', 'the untracked file is kept')
     has(git(p.repo, 'log', '--format=%s', 'wip/H1'), 'H1 part', 'the commit is kept')
-    has(p.todo(), r'### Parked\n+- \[ \] \*\*H1\*\*.*taken by hand: its work is on wip/H1', 'parked, with a note')
+    has(p.todo(), HELD + r'.*taken by hand: its work is on wip/H1', 'held, with a note')
     p.lock = R.plat.lock(R.C.notes('run.lock'))
 
 

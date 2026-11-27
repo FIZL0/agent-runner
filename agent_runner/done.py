@@ -25,7 +25,7 @@ landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reope
 BLOCKED that waits for an open task or release with no `--after`, or over 200 characters with no ask file, is refused.
 
 `--until CHECK[,CHECK]`, with `--blocked`, is for a wait this machine can check by itself (`version:X.Y.Z`,
-`login:PROVIDER`, `tool:NAME`, `check:NAME`; all must pass), in place of `--after`. A bad check is refused before the
+`login:PROVIDER`, `tool:NAME`, `check:NAME`, `date:YYYY-MM-DD`; all must pass), in place of `--after`. A bad check is refused before the
 gate runs.
 
 F416: before the gate, a diff that deletes or renames a file, test, setting or command is checked for what still names
@@ -43,8 +43,6 @@ the worktree changed.
 from __future__ import annotations
 
 import argparse
-import datetime as dt
-import fnmatch
 import os
 import re
 import shutil
@@ -54,8 +52,12 @@ import tempfile
 from functools import partial
 from pathlib import Path
 
-from agent_runner import asks, audit_fix, plan, plansync, shared_tools, stale
+from agent_runner import asks, audit_fix, lessons_ask, plan, plansync, shared_tools, stale
 from agent_runner.config import cfg, finished_mark
+from agent_runner.done_docs import DOCS_SKIP, changed, docs_only  # noqa: F401  (moved; kept importable here)
+from agent_runner.done_refusals import artifact_refusal, concept_link_refusal, until_refusal  # noqa: F401
+from agent_runner.done_writeup import (journal_entry, journal_link, keep_page, keep_writeup,  # noqa: F401
+                                       logged_writeup, writeup, writeup_file)
 from agent_runner.gitops import git, missing_remote, push, shared_branch, shared_name, shell
 
 
@@ -78,31 +80,6 @@ def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = No
     return rc, out if full else '\n'.join(out.splitlines()[-15:])
 
 
-DOCS_SKIP = 'docs only, gate skipped'  # what `done` and the merge say when a diff is all `[run] docs_files`
-
-
-def docs_only(files: list[str], globs: list[str]) -> bool:
-    """Every one of `files` (at least one) matches `[run] docs_files` (the last glob that matches decides,
-    `!glob` takes a file back): a diff the test gate need not run on."""
-    def doc(f: str) -> bool:
-        hit = False
-        for g in globs:
-            if fnmatch.fnmatch(f, g.lstrip('!')):
-                hit = not g.startswith('!')
-        return hit
-    return bool(files) and all(map(doc, files))
-
-
-def changed(cwd: Path) -> list[str]:
-    """The files this worktree's work changes: commits since the shared branch, staged, unstaged and untracked
-    (renames as both names, so a code file moved into docs/ still counts as code)."""
-    shared = shared_name(cwd, cfg(cwd).push_remote or 'origin', default=None)
-    base = shared and git('merge-base', 'HEAD', shared, cwd=cwd).stdout.strip() or 'HEAD'
-    files = git('diff', '--name-only', '--no-renames', base, cwd=cwd).stdout.splitlines()
-    files += git('ls-files', '--others', '--exclude-standard', cwd=cwd).stdout.splitlines()
-    return sorted({f for f in files if f})
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog=PROG, description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -113,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
                     help='with --blocked: the tasks it waits on, comma-separated (default: read off WHY)')
     ap.add_argument('--until', metavar='CHECKS', default=None,
                     help='with --blocked: what it waits on that this machine checks by itself, comma-separated '
-                         '(version:X.Y.Z, login:PROVIDER, tool:NAME, check:NAME); all must pass')
+                         '(version:X.Y.Z, login:PROVIDER, tool:NAME, check:NAME, date:YYYY-MM-DD); all must pass')
     ap.add_argument('--artifact', metavar='URL',
                     help="the page a concept task (K) published; required for one: its build waits for a person's OK")
     ap.add_argument('--page', metavar='FILE',
@@ -189,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             merge_rows.clear_slot_gate(c, a.id)
         if rc:
             print(tail)
+            lessons_ask.mark_failed_gate(cwd, a.id)  # F414
             if a.blocked:
                 last = 'Commit only what is solid, and'
             elif (n := fails(cwd, a.id, add=True, content=content)) > MAX_FAILS:
@@ -212,11 +190,24 @@ def main(argv: list[str] | None = None) -> int:
     if a.blocked or not a.no_test:  # a pass, or a block: the next session on it starts its count afresh
         fails(cwd, a.id, reset=True)
 
+    if not a.blocked:
+        lesson_ask(a.id, c)
     if not c.plan_external:
         return record(a, c)
     with plansync.locked(c):  # after the gate: a gate can take an hour, and the lock holds every plan edit
         plansync.pull(c, force=True)
         return record(a, c)
+
+
+def lesson_ask(tid: str, c) -> None:
+    """F414: print the lesson question when something went wrong in `tid`; never stops `done`."""
+    try:
+        ls = plan.lines(c.todo)
+        item = '\n'.join(plan._item_block(ls, plan._find(ls, tid)))
+    except (OSError, SystemExit, ValueError, IndexError):
+        item = ''
+    if q := lessons_ask.ask(c.root, tid, item, c):
+        print(q, file=sys.stderr)
 
 
 def record(a, c) -> int:
@@ -442,75 +433,6 @@ def gate_limit(a, cwd: Path) -> str | None:
             f'    {PROG} {a.id} "<msg>" --blocked "{BLOCK_WHY}"\nNothing ticked.')
 
 
-def until_refusal(a, c) -> str | None:
-    """F427b: why `done` refuses its `--until`, or None."""
-    if a.until is None:
-        return None
-    if not a.blocked:
-        return f'{PROG}: --until goes with --blocked WHY. Nothing ticked.'
-    if a.after:
-        return plan.UNTIL_AFTER.format(prog=PROG)
-    try:
-        plan.until_list(a.until, c)
-    except SystemExit as e:
-        return str(e).replace(plan.PROG, PROG, 1)
-    return None
-
-
-def artifact_refusal(a) -> str | None:
-    """Why `done` refuses these arguments, or None: a concept task finishes only with the page it published."""
-    if a.artifact and not re.match(r'https?://\S+$', a.artifact) and a.artifact != f'/concept/{a.id}':  # F406e: local page
-        return f'{PROG}: --artifact takes the page\'s URL (https://…), not {a.artifact!r}'
-    if plan.concept(a.id) and not a.artifact and not a.blocked:
-        return (f'{PROG}: {a.id} is a concept task: it builds nothing, it publishes a page of options. Publish it '
-                f'(the Artifact tool), then\n    {PROG} {a.id} "<msg>" --artifact <its url>\nNothing ticked.')
-    return None
-
-
-def journal_link(c, tid: str, url: str) -> Path | None:
-    """Write the page's link into the task's journal, when the repo keeps one (`[plan] journal`): the newest
-    folder named for the task, else a new one in the repo's layout. The file it wrote to, or None."""
-    if not (j := c.journal):
-        return None
-    try:
-        dirs = sorted(d for d in j.iterdir() if d.is_dir() and
-                      (d.name == tid or re.search(rf'-{re.escape(tid.lower())}(-|$)', d.name.lower())))
-    except OSError:
-        dirs = []
-    d = dirs[-1] if dirs else j / (tid if c.raw['plan']['journal_layout'] == 'id'
-                                   else f'{dt.date.today().isoformat()}-{tid.lower()}-concept')
-    f = d / 'notes.md'
-    try:
-        d.mkdir(parents=True, exist_ok=True)
-        with f.open('a', encoding='utf-8') as fh:
-            fh.write(f'\n**Page:** {url}\n')
-    except OSError:
-        return None
-    return f
-
-
-def keep_page(c, tid: str, page: str | None = None) -> Path | None:
-    """F74: keep a local copy of the page a concept task published, at <notes>/concepts/<ID>.html, so the run
-    page shows it inline: `page` (`--page FILE`), else the newest .html file this worktree changed. The copy,
-    or None when there is no such file."""
-    src = Path(page) if page else None
-    if src is None:
-        found = [p for p in (c.root / f for f in changed(c.root) if f.lower().endswith(('.html', '.htm')))
-                 if p.is_file()]
-        src = max(found, key=lambda p: p.stat().st_mtime) if found else None
-    if src is None or not src.is_file():
-        if page:
-            print(f'{PROG}: --page {page} is not a file: no local copy kept', file=sys.stderr)
-        return None
-    try:
-        dest = c.notes('concepts', f'{tid}.html')
-        dest.write_bytes(src.read_bytes())
-    except OSError as e:
-        print(f'{PROG}: could not keep a copy of the page ({e})', file=sys.stderr)
-        return None
-    return dest
-
-
 def finished(c=None, a=None) -> int:
     """Publish a plan kept outside the repo; tell the slot's stop waiter this task is done, so a leftover
     background command can't hold the slot."""
@@ -524,22 +446,3 @@ def finished(c=None, a=None) -> int:
     return 0
 
 
-def concept_link_refusal(tid: str, why: str | None, c) -> str | None:
-    """B839: why `done --blocked` refuses a CONFIRM whose line or ask file names /concept/<ID> of a task that is no
-    concept: no concept is filed for it, so that page is in no Concepts list and the person cannot open it."""
-    if not re.match(r'\s*CONFIRM:', why or ''):
-        return None
-    text = why or ''
-    try:
-        f = asks.ask_file(tid, c)
-        if f.is_file():
-            text += '\n' + f.read_text(encoding='utf-8')
-    except OSError:
-        pass
-    bad = sorted({i for i in re.findall(r'/concepts?/([A-Za-z]+\d+[a-z]*)', text) if not plan.concept(i)})
-    if not bad:
-        return None
-    return (f'{PROG}: the CONFIRM names /concept/{bad[0]}, but no concept is filed for {", ".join(bad)}: the person '
-            f'has no such page to open. Put what they watch or look at in the ask file\'s "shots" (pictures, or .mp4 '
-            f'and .webm videos under {asks.ask_file(tid, c).with_suffix("")}/, 50 MB each), or give a link they can '
-            f'open. Nothing blocked.')

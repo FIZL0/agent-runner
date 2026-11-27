@@ -221,13 +221,15 @@ def reopen_for(provider: str) -> list[str]:
 
 
 def harness_login(provider: str, custom: dict | None, enterprise: str | None,
-                  ask=None, secret=None, say=print) -> tuple[bool, str]:
+                  ask=None, secret=None, say=print, as_name: str = '') -> tuple[bool, str]:
     """Run harness.mjs --login for `provider`, answering its questions here; (saved, where or why not)."""
     argv = [shutil.which('node') or 'node', str(HARNESS_JS), '--login', provider]
     if custom:
         argv += ['--provider', json.dumps(custom)]
     if enterprise is not None:
         argv += ['--enterprise', enterprise]
+    if as_name:
+        argv += ['--as', as_name]
     try:
         p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
     except OSError as e:
@@ -275,6 +277,67 @@ def answer_prompt(q: dict, ask, secret, say) -> str | None:
         return None
 
 
+TERMS = ('Each Claude login must be a separate real account (a work or Team one beside a personal one, or a '
+         'pay-as-you-go API key): holding extra subscriptions only to get past usage limits breaks Anthropic\'s terms '
+         '(and OpenAI\'s, GitHub\'s) and risks a ban.')
+
+
+def claude_add(name: str, run_login=None) -> tuple[bool, str]:
+    """F502: add the Claude login `name` in a CLAUDE_CONFIG_DIR of its own, beside the logins file, and sign it in
+    with `claude /login`. The first time, Claude Code's own login is kept first, as 'default', so it stays the
+    default login."""
+    from agent_runner.claude_use import logins
+    from agent_runner.config import claude_logins_file
+    if not name or not name.replace('-', '').replace('_', '').isalnum():
+        return False, f'a login name is letters, digits, - and _: {name!r}'
+    rows = logins() or [{'name': 'default', 'dir': ''}]
+    row = next((r for r in rows if r['name'] == name), None)
+    if row is None:
+        row = {'name': name, 'dir': str(claude_logins_file().parent / 'claude' / name)}
+        rows.append(row)
+    if row.get('dir'):
+        Path(row['dir']).mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, **({'CLAUDE_CONFIG_DIR': row['dir']} if row.get('dir') else {})}
+    if run_login is None:
+        if not shutil.which('claude'):
+            return False, 'Claude Code (claude) is not on this machine'
+        run_login = lambda e: subprocess.run(['claude', '/login'], env=e).returncode == 0  # noqa: E731
+    if not run_login(env):
+        return False, 'claude /login did not finish'
+    f = claude_logins_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({'logins': rows}, indent=1) + '\n', encoding='utf-8')
+    return True, row.get('dir') or "Claude Code's own login"
+
+
+def claude_lines() -> list[str]:
+    """F502: one line per Claude login, the default first; none with only Claude Code's own."""
+    from agent_runner.claude_use import logins
+    rows = logins()
+    return [f'  claude --as {r["name"]}{" (default)" if i == 0 else ""}: {r.get("dir") or "Claude Code" + chr(39) + "s own login"}'
+            for i, r in enumerate(rows)]
+
+
+AS_ENV = 'AGENT_RUNNER_LOGIN_AS'
+
+
+def ok_name(name: str) -> bool:
+    return bool(name) and name.replace('-', '').replace('_', '').isalnum()
+
+
+def harness_env(name: str = '') -> dict[str, str]:
+    """F506: the env a harness session on login `name` ('' the default) gets: it reads `<id>@<name>` in Pi's
+    auth.json then, instead of the provider's default login."""
+    return {AS_ENV: name} if name else {}
+
+
+def harness_names(provider: str, providers: dict, creds: dict | None = None) -> list[str]:
+    """F506: the names of `provider`'s logins added with --as, in auth.json order."""
+    creds = stored() if creds is None else creds
+    pid = provider if provider in providers else PI_IDS.get(provider, provider)
+    return [k.partition('@')[2] for k in creds if k.startswith(pid + '@') and k.partition('@')[2]]
+
+
 def list_lines(c) -> list[str]:
     names = named(c)
     if not names:
@@ -284,6 +347,10 @@ def list_lines(c) -> list[str]:
     for n in names:
         ok, where = login_of(n, c.providers, creds)
         out.append(f'{n.ljust(width)}  {"✓" if ok else "✗"} {where}')
+        if n == 'claude':
+            out += claude_lines()
+        else:
+            out += [f'  {n} --as {a}' for a in harness_names(n, c.providers, creds)]
     return out
 
 
@@ -314,6 +381,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument('--enterprise', metavar='DOMAIN', default=None,
                     help='copilot: your GitHub Enterprise domain (company.ghe.com); "" for github.com. Asked when left out')
     ap.add_argument('--reopen', action='store_true', help=argparse.SUPPRESS)  # F406a: logged in elsewhere, by Home
+    ap.add_argument('--as', dest='as_name', metavar='NAME', default=None,
+                    help='add another login NAME (claude: in its own CLAUDE_CONFIG_DIR; others: in Pi\'s auth.json as '
+                         '<id>@NAME); the first stays the default')
     a = ap.parse_args(argv)
     from agent_runner.config import cfg, toplevel
     try:
@@ -328,8 +398,20 @@ def main(argv: list[str]) -> int:
         print('\n'.join(list_lines(c)))
         return 0
     name = a.provider
+    if name == 'claude' and a.as_name:
+        print(TERMS)
+        ok, where = claude_add(a.as_name)
+        if not ok:
+            print(f'{RUNNER} login claude --as {a.as_name}: {where}', file=sys.stderr)
+            return 1
+        print(f'claude --as {a.as_name}: logged in; kept in {where}')
+        return 0
+    if a.as_name and not ok_name(a.as_name):
+        print(f'{RUNNER} login: a login name is letters, digits, - and _: {a.as_name!r}', file=sys.stderr)
+        return 2
     if name == 'claude':
-        print("claude runs as Claude Code, on Claude Code's own login: `claude /login`.")
+        print("claude runs as Claude Code, on Claude Code's own login: `claude /login`. "
+              f"Another account: `{RUNNER} login claude --as NAME`.")
         return 0
     providers = c.providers if c else {}
     custom = providers.get(name)
@@ -358,12 +440,14 @@ def main(argv: list[str]) -> int:
     print(f'{name}: {HOW.get(name, "API key, kept for " + (custom or {}).get("key_env", name))}')
     if enterprise:
         enterprise = enterprise_host(enterprise)
-    ok, where = harness_login(name, custom, enterprise)
+    if a.as_name:
+        print(TERMS)
+    ok, where = harness_login(name, custom, enterprise, as_name=a.as_name or '')
     if not ok:
         told(result, False, where)
         print(f'{RUNNER} login {name}: {where}', file=sys.stderr)
         return 1
-    print(f'{name}: logged in; kept in {where}')
+    print(f'{name}{" --as " + a.as_name if a.as_name else ""}: logged in; kept in {where}')
     told(result, True, f'{name} is logged in')  # before the plan is touched, which may fail
     if back := reopen_here(name, c):
         told(result, True, f'{name} is logged in', back)

@@ -41,8 +41,12 @@ def chat_state(n: int, sid: str) -> dict:
             f = Path(path).stat()
             mark = (f.st_size, f.st_mtime_ns)
             if _CHAT_STATE.get(path, (None,))[0] != mark:
-                _CHAT_STATE[path] = (mark, K.control_state(entries(sid, skip_bad=True)))
+                from agent_runner import chat_question
+                rows = list(entries(sid, skip_bad=True))
+                _CHAT_STATE[path] = (mark, K.control_state(rows), chat_question.ask(rows, bare=True))  # B832: one read
             st = _CHAT_STATE[path][1]
+            if q := _CHAT_STATE[path][2]:  # B832: the DECIDE it ends on, for Home's Needs you (`chat_question.chat_needs`)
+                out.update(question=q, sid=sid)
         name, renamed = person_name(n, st.get('title') or ''), K.control_renamed(st, n)
         out.update(link=K.control_link(st.get('bridge') or ''), last=st.get('last') or '', at=int(st.get('at') or 0),
                    renamed=renamed, title=name or (st.get('title') or '' if renamed else ''))
@@ -165,6 +169,28 @@ def control_rows(windows: dict[int, str], links=None) -> list[dict]:
     return out
 
 
+def closed_rows(listed: set[str] = frozenset()) -> list[dict]:
+    """B859: each control session closed for being idle (`control_closed.idle_closed_chats`) as a cN row with state
+    'closed' and 'closed': True, so the page lists it in Quiet until chat_quiet passes; not those in `listed`."""
+    try:
+        from agent_runner.control import control_given
+        from agent_runner.control_closed import idle_closed_chats
+        gone = idle_closed_chats(chat_quiet())
+    except Exception:  # noqa: BLE001 - no notes dir yet
+        return []
+    out = []
+    for n in sorted(gone):
+        if f'c{n}' in listed:
+            continue
+        at, sid = gone[n]
+        row = {'name': f'c{n}', 'task': '', 'title': given_title(control_given(n), n), 'minutes': None,
+               'state': 'closed', 'files': [], 'terminal': '', **chat_row(n, sid), 'closed': True}
+        row['at'] = row.get('at') or int(at)
+        row['needs_reply'] = False
+        out.append(row)
+    return out
+
+
 def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, links=None,
                  terminal_base: str = '', slots: int = 0, windows: dict[int, str] | None = None) -> list[dict]:
     """The control sessions (B113: `control_rows`; `windows` as `control_titles`, None: read from
@@ -173,6 +199,8 @@ def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, li
     `terminal_base` is where the run page serves terminals ('' none yet: each row's `terminal` stays '')."""
     files = {tid: P.fields(ls[i]).get('files', []) for _, _, tid, _, i in P.iter_tasks(ls)}
     out = control_rows(control_titles() if windows is None else windows, links)
+    if windows is None:
+        out += closed_rows({r['name'] for r in out})
     merging = set(st.get('merging') or [])
     running = dict(st.get('running') or {})
     for n in range(1, slots + 1):
@@ -508,7 +536,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': queue, 'manage_releases': manage, 'releases': releases,
             'release_acts': [c['key'] for c in RUN_CONTROLS if c['where'] == 'release' and manage],
-            'shelved': shelved, 'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release if manage else '',
+            'shelved': shelved, 'needs': needs, 'chat_needs': chat_needs(sessions),  # B832
+            'concepts': concepts, 'log': log_tail(log_n), 'release': release if manage else '',
             'release_said': rel_ask['said'] if rel_ask else '',
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(rel_ask),
             'no_settings': no_settings(st=st if up else None),  # F178
@@ -520,8 +549,16 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'kinds': theme.kind_table(_kind_names()),  # F195b
             'merging': merge_rows.rows(st, titles, _bridge_link, links) if up else [],  # F426e
             'usage_max': {'session': S.C.run.get('session_max'), 'week': S.C.run.get('weekly_max')},  # F426e
+            'usage_held': _usage_held(st) if up else '',  # F468
             'usage': usage_rows(st), 'lately': lately(titles), 'past_releases': past_releases(titles), 'chat_quiet': chat_quiet(), 'chat_model': new_chat_model(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
+
+
+def _usage_held(st: dict) -> str:
+    """F468: the line saying the usage caps hold new tasks, '' when they do not."""
+    import time
+    from agent_runner.cap_hold import held_line
+    return held_line(st, S.C.run, time.time())
 
 
 def kept_responses() -> list[dict]:
@@ -561,3 +598,12 @@ def tools_line(tools: list[dict]) -> str:
 
 def snapshot_json(**kw) -> str:
     return json.dumps(snapshot(**kw), ensure_ascii=False)
+
+
+def chat_needs(sessions: list[dict]) -> list[dict]:
+    """B832: `chat_question.chat_needs`; [] when it cannot be read (a nicety of Home, not the snapshot's)."""
+    try:
+        from agent_runner import chat_question
+        return chat_question.chat_needs(sessions)
+    except Exception:  # noqa: BLE001
+        return []

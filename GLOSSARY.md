@@ -327,8 +327,8 @@ _Avoid_: archived chat, old chat, stale chat
 **Device override**:
 A setting this machine's runner.local.toml sets over the project's runner.toml
 _Said_: This device
-_On screen_: Saved on this device only, Reset on this device, This device overrides everyone's
-_In code_: save_local_setting, setting_device, setting_reset
+_On screen_: This device (the Settings tab), This device: 5 (its marker on Project), Reset
+_In code_: save_local_setting, setting_device, setting_reset, overSays, overNote
 _Avoid_: local config, user setting
 
 **Run app**:
@@ -1023,3 +1023,48 @@ _Said_: subtasks in a dropdown
 _On screen_: Parts, in the order they run
 _In code_: split.list, partRows, partsBar, partCard, 079-plan-parts
 _Avoid_: subtasks dropdown
+
+**Settings tab**:
+One of the two views of Settings, Project (runner.toml, for everyone) or This device (runner.local.toml); every row edits the file of the tab in view
+_Said_: Project and This device tabs
+_On screen_: Project, This device
+_In code_: setTab, settingsTab, SET_TABS, .settabs
+_Avoid_: scope switch, home picker
+
+**Working branch**:
+The branch finished work is applied to and tasks start from; found by itself when not set.
+_Said_: working branch
+_On screen_: Working branch
+_In code_: [git] master_branch, isBranch, branchSays, branchHTML
+_Avoid_: main branch, master branch
+
+**Review page**:
+A pitch's page, where a person reads each waiting change's diff and why, asks about it, asks for a better way, and approves it
+_Said_: review page
+_On screen_: The diff / You asked / Answer it
+_In code_: pitch.page_html, review.diff_html, pitch ask, pitch better
+_Avoid_: code review, PR page
+
+**Lazyrunner**:
+The run page's keyboard-first layout: the sidebar as numbered panels on the left, the view on the right, keys to move; the same panels as the Standard layout
+_Said_: lazyrunner, keyboard mode
+_On screen_: Layout: Lazyrunner
+_In code_: 189-lazy.js, 189-lazy.css, LAZY_PANELS, :root.lazy
+_Avoid_: TUI mode, lazy view
+
+**Lesson**:
+Something a project's agents learned about some files, shown to the next task that works on them
+_Said_: lesson
+_On screen_: Lessons on these files
+_In code_: lessons.py, plan lesson
+_Avoid_: tip, hint
+
+**Default login**:
+The first login of a provider, used when a model name pins none
+
+**Spare worktree**:
+A slot's worktree kept, unused, after the slot count went down, so the next new slot reuses it instead of building one
+_Said_: keep the worktrees of removed slots
+_On screen_: kept as a spare
+_In code_: slot_prep.spares, .spare-sN
+_Avoid_: cached slot

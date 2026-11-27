@@ -492,12 +492,34 @@ def test_no_conpty(repo: Path, tmp: Path):
     check(os.name == 'nt' or not conpty.pipe_send(tmp / 'none.in', [b'x']), 'nothing to send to')
 
 
+def test_link_junction(tmp: Path):
+    """F498 (issue #6): on Windows a linked directory is a junction, even where a symlink would do."""
+    src = tmp / 'link-src'
+    src.mkdir()
+    made = []
+    with mock.patch.object(plat, 'WINDOWS', True), \
+            mock.patch.object(plat, 'junction', lambda s, d: made.append((s, d)) or d.mkdir() or True):
+        check(plat.link(src, tmp / 'link-dst'), 'linked')
+        eq(made, [(src, tmp / 'link-dst')], 'a junction, no symlink first')
+        old = tmp / 'link-old'
+        try:
+            old.symlink_to(src, target_is_directory=True)
+        except OSError:  # Windows with no symlink privilege: nothing old to turn over
+            return
+        check(plat.relink_dir(src, old), 'an old directory symlink becomes a junction')
+        check(not old.is_symlink() and old.is_dir() and src.is_dir(), 'link replaced, target kept')
+    if os.name != 'nt':
+        other = tmp / 'link-other'
+        other.symlink_to(src, target_is_directory=True)
+        check(not plat.relink_dir(src, other) and other.is_symlink(), 'off Windows a symlink stays')
+
+
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix='agent-runner-windows-'))
     repo = make_repo(tmp)
     return report([lambda: test_shim_once(repo, tmp), lambda: test_utf8_merge(tmp), lambda: test_run_log_utf8(repo),
                    lambda: test_ci_workflow(tmp), lambda: test_bash_beside_git(tmp),
-                   lambda: test_attach_logged(repo),
+                   lambda: test_attach_logged(repo), lambda: test_link_junction(tmp),
                    lambda: test_no_conpty(repo, tmp), lambda: test_conpty(tmp), lambda: test_conpty_attach(tmp),
                    lambda: test_attach_console(tmp), lambda: test_conpty_slot(repo, tmp)])
 

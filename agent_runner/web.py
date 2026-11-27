@@ -74,6 +74,7 @@ from agent_runner import devices, home_screen, login_hold, need_detail, page_htt
 from agent_runner import state as S
 from agent_runner import ui_model as U
 from agent_runner import web_actions  # noqa: F401  F460a: its actions join U.ACTIONS
+from agent_runner import web_review  # noqa: F401  F444c: pitch_ask and pitch_better join U.ACTIONS
 
 # C45: the code is in files by area, each run in this module's own namespace in this order (the names are one
 # module's, as before the split: a test's `W.X = v` reaches all of it). Put new code in the file of its area, not in this
@@ -205,7 +206,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/recorded':  # F161a
             return self.send(200, json.dumps(recorded.engine()))
         if path.startswith('/task/'):  # F85
-            return self.send(200, json.dumps(U.task_text(path.split('/')[2]), ensure_ascii=False))
+            got = U.task_text(path.split('/')[2])
+            if got.get('ok'):  # F509: what its agent said it did when it finished, '' for none
+                from agent_runner import done as D
+                got['writeup'] = D.writeup(S.C, got['id'])
+            return self.send(200, json.dumps(got, ensure_ascii=False))
         if path == '/plan-search':  # F212
             words = (parse_qs(urlsplit(self.path).query).get('q') or [''])[0]
             return self.send(200, json.dumps(plan_search.search(words), ensure_ascii=False))
@@ -463,6 +468,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.flush()
         except OSError:  # the page went away
             pass
+
+
+def ui_themes_css() -> str:
+    """F473: the themes the page's UI settings offer, as CSS (theme.py's table; omarchy read now, from this machine)."""
+    from agent_runner import theme
+    try:
+        return theme.page_css()
+    except Exception:  # noqa: BLE001 - an unreadable colors.toml: the page keeps its own look
+        return ''
 
 
 class WebServer(ThreadingHTTPServer):

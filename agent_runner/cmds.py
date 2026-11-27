@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_harness, control_held, no_push, page_only, plan as P, plansync, plat, push_left, shared_tools, stack, stop_now, taken_by
+from agent_runner import chat_question, control_harness, control_held, no_push, page_only, plan as P, plansync, plat, push_left, shared_tools, stack, stop_now, taken_by
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -385,7 +385,7 @@ def cmd_needs(argv: list[str], prog: str = f'{RUNNER} needs') -> int:
     init()
     w = waiting_ok()
     stamps = {a[1]: a[7] for a in w if len(a) > 7 and a[7]}
-    print('\n'.join(P.needs_lines(P.in_order(w, stamps, P.needs_cfg()['order']), has_sheet)))
+    print('\n'.join(chat_question.with_chats(P.needs_lines(P.in_order(w, stamps, P.needs_cfg()['order']), has_sheet))))  # F486
     if run_up():  # F168: they wait for a shared tool, not for the person
         print(*(f'{t} {said}\n' for t, said in shared_tools.wait_words().items()), sep='', end='')
     return 0

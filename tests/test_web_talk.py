@@ -368,7 +368,12 @@ eval(logic + 'const DK={rec:null,key:\'\',base:\'\'};const dictWhy=()=>\'\';' + 
   const interim = ta.value;
   rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'merge conflict'}], {isFinal: true})]});
   dictate();
-  console.log(JSON.stringify({listening, interim, after: ta.value, draft: drafts['draft:c3'], stopped: DK.rec === null, sent, toasts}));`);
+  const after = ta.value;
+  ta.value = 'fix the'; dictate();  // B217: final, then interim, then end
+  rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'merge'}], {isFinal: true})]});
+  rec.onresult({resultIndex: 1, results: [Object.assign([{transcript: 'merge'}], {isFinal: true}), Object.assign([{transcript: ' conflict'}], {isFinal: false})]});
+  rec.onend();
+  console.log(JSON.stringify({listening, interim, after, kept: ta.value, draft: drafts['draft:c3'], stopped: DK.rec === null, sent, toasts}));`);
 """
 
 
@@ -413,6 +418,7 @@ def test_chat_box_f115(tmp: Path) -> None:
     eq((d.get('listening'), d.get('interim'), d.get('after'), d.get('draft'), d.get('stopped')),
        (True, 'fix the merge', 'fix the merge conflict', 'fix the merge conflict', True),
        'dictation fills the box as it hears, keeps it as the draft, and a second tap stops it')
+    eq(d.get('kept'), 'fix the merge conflict', 'B217: words heard after a final piece stay when the mic ends')
     eq((d.get('sent'), d.get('toasts')), ([], []), 'nothing is sent: the words wait in the box to edit')
 
 

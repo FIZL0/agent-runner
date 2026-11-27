@@ -108,12 +108,19 @@ function gripEnd(drop){
   const d=GR.d, b=$('body');if(!d)return;
   GR.d=null;if(!d.on)return;
   noClick=true;setTimeout(()=>noClick=false,0);  // the click that ends a drag opens nothing
-  const moved=drop&&gripMove(d.id,d.g);  // drawn from where each is seen
+  /* B877: where each row is seen now; the drag's shifts come off before the redraw, so the new order is laid out
+     clean, and then each row glides from where it was seen: the dropped one lands where it was let go, at once */
+  const seen=new Map();
+  for(const c of b.querySelectorAll('.card'))if(c.dataset&&c.dataset.k)seen.set(c.dataset.k,c.getBoundingClientRect().top);
   b.classList.remove('gripping');
+  for(const c of b.querySelectorAll('.card')){c.classList.remove('gripped');if(c.style.transform)c.style.transform=''}
+  const moved=drop&&gripMove(d.id,d.g);  // drawn at once, before the run answers
+  if(!moved)render(true);
   for(const c of b.querySelectorAll('.card')){
-    if(!c.style.transform&&!c.classList.contains('gripped'))continue;
-    const y=shiftOf(c).m42;c.classList.remove('gripped');c.style.transform='';if(!moved&&y)glideTo(c,0,y)}
-  if(!moved)render();
+    const k=c.dataset&&c.dataset.k;if(!k||!seen.has(k))continue;
+    const y=seen.get(k)-(c.getBoundingClientRect().top-flying(c)), a=MO.fly.get(c);
+    if(Math.abs(y)>=1)glideTo(c,0,y);else if(a)a.cancel();
+  }
   gripFocus(d.id);
 }
 document.addEventListener('pointerdown',e=>{
@@ -123,6 +130,37 @@ document.addEventListener('pointerdown',e=>{
   g.focus({preventScroll:true});
   GR.d={id:g.dataset.grip,pid:e.pointerId,y0:e.clientY,y:e.clientY,grab:e.clientY-card.getBoundingClientRect().top,on:false,g:0,sc:$('body').scrollTop};
 });
+/* F477: a mouse held still on a row's body for GRIP_HOLD_MS picks the row up, as its grip does (a finger: 076-plan-lift).
+   Moved before that, or let go, it is a click or a selection as before. Not from the opened row's details nor a control.
+   GR.hold: that press {pid,id,x,y,wait} */
+const GRIP_HOLD_MS=350, GRIP_HOLD_PX=8;
+function gripHoldRow(el){
+  for(let x=el;x&&x!==document.body;x=x.parentNode){
+    const c=x.getAttribute&&(x.getAttribute('class')||'').split(' ');
+    if(c&&c.includes('foldin'))return '';
+    const n=x.nodeName&&x.nodeName.toLowerCase(), k=x.dataset&&x.dataset.k;
+    if(['button','a','input','textarea','select'].includes(n)&&!(c&&c.includes('fold')))return '';
+    if(k&&/^(task:|rel:next$)/.test(k)){const g=[...(x.childNodes||[])].find(y=>y.dataset&&y.dataset.grip);return g?g.dataset.grip:''}
+  }
+  return '';
+}
+function gripHoldOff(){const h=GR.hold;GR.hold=null;if(h)clearTimeout(h.wait)}
+document.addEventListener('pointerdown',e=>{
+  gripHoldOff();
+  if(e.pointerType!=='mouse'||e.button||GR.d||S.sheet||!e.target||e.target.closest&&e.target.closest('[data-grip]'))return;
+  const id=gripHoldRow(e.target);if(!id||!GR.rows.some(q=>menuId(q)===id&&gripOn(q)))return;
+  const h=GR.hold={pid:e.pointerId,id,x:e.clientX||0,y:e.clientY,wait:0};
+  h.wait=setTimeout(()=>{
+    if(GR.hold!==h||GR.d)return;GR.hold=null;
+    const card=gripCard(id);if(!card)return;
+    if(window.getSelection)window.getSelection().removeAllRanges();
+    GR.d={id,pid:h.pid,y0:h.y,y:h.y,grab:h.y-card.getBoundingClientRect().top,on:true,g:0,sc:$('body').scrollTop};
+    gripDraw();requestAnimationFrame(gripTick);
+  },GRIP_HOLD_MS);
+});
+document.addEventListener('pointermove',e=>{const h=GR.hold;if(h&&e.pointerId===h.pid&&Math.hypot((e.clientX||0)-h.x,e.clientY-h.y)>=GRIP_HOLD_PX)gripHoldOff()});
+document.addEventListener('pointerup',gripHoldOff);
+document.addEventListener('pointercancel',gripHoldOff);
 document.addEventListener('mousedown',e=>{if(e.target.closest&&e.target.closest('[data-grip]'))e.preventDefault()});  // selects no words
 document.addEventListener('pointermove',e=>{
   const d=GR.d;if(!d||e.pointerId!==d.pid)return;

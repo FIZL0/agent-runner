@@ -276,8 +276,11 @@ last address in `X-Forwarded-For`, read from a loopback peer only, so another pr
 Home's links put the https address first, and only while `tailscale status --json` says BackendState Running; otherwise the plain http links are given, with no error. `home status`, `home install` (and its QR code, which holds the https
 link when there is one) and a run's link through Home (`/p/<project>/`) list a Tailscale Serve https address for
 Home's port first, then http by hostname and LAN address; Talk's mic and dictation need https. With no Tailscale
-Serve for Home (and Tailscale connected), `home install` offers (in a terminal, y/n) to run `tailscale serve --bg --https=8771
-http://127.0.0.1:8770` (Home's port plus one), or prints that command. Home's page
+Serve for Home, `home install` runs `tailscale serve --bg --https=8771 http://127.0.0.1:8770` (Home's port plus
+one) without asking, as runs do, when Tailscale is connected and port 8771 is free; otherwise it prints
+`http only (<why>)` (F461). Then, in a terminal only (skipped when stdin is no tty, or `tailnet` is trusted
+already), it asks once, y/N, default No, whether devices on the tailnet may open Home and run pages without the key
+(`home trust add tailnet`), warning that anyone on the tailnet can then do everything the page does. Home's page
 is now the run app itself: at `/` it is the Overview, Needs you over all projects, then a card per project with one
 main button (Start run or Open) and a … sheet for the rest (Pause or Go on, Slots, Stop and Unlist; the last two ask first), plus
 a + Project button and Devices. Projects with a run up (running, idle or paused) come first, then
@@ -397,9 +400,14 @@ The run's printed addresses (the run log and `agent-runner status`) end with a l
   Start the run and Fix up, Force and Caps back on by run state, Fix up only with something to fix) and `card` (the Run
   card's everyday keys). Each session row has `task_controls` (`ui_model.task_controls_on`, off while merging or in a
   control session). The TUI's control rows are `ui_model.CONTROL_ROWS`.
-- **Settings.** The run app's Settings page: about 24 everyday settings in Speed and limits, Landing work, Models and Chats, each with its control on its row. The rest sit behind Advanced, and commands, paths, patterns and rules behind Project file, read only ("Ask a chat to change it"). Each setting has a home: this device saves to `runner.local.toml`, or everyone saves to `runner.toml`, when Save is pressed. The changes for everyone are committed alone on the shared branch and pushed as a plan edit is; it never queues a task. It waits up to 60 s for a merge landing in the main checkout (not one still in its test gate). Saves that come together are one commit. Nothing is changed, and it says so, when runner.toml has uncommitted edits, another branch is out in the main checkout, or a merge or rebase is under way there. A failed push says `saved here, not pushed: why`. With `[run] approve` it is pushed with the next approved change. A runner.toml that git ignores, or one outside the repo (`AGENT_RUNNER_CONFIG`), is written without a commit; with no runner.toml, one is made. Changes do not save as they are made: each changed row says "Not saved yet", and the Settings bar at the foot of the page says "N changes not saved" with Undo (drops them) and Save (writes them all). After a Save it says "N changes saved" with Undo (puts the earlier values back, unset ones included; one changed since by something else is left and said) and a close x. Unsaved changes are kept per browser when the page is left or reloaded. Typed text counts as it is typed. When this device's runner.local.toml overrides the key, the row says "This device overrides everyone's (value)" and the run is not told. The other home is in the row's More…. A value set on this device wins and is what the row edits. Changed lists what differs from its default, with Reset, and the lines the run ignores or moved. Dependent rows show with their parent (`approve_wait` and `approve_batch` with `approve` on). Release by itself has two controls on a line under its description: Every (Off, 5, 10, 20 tasks; a count of your own already set is kept and shown) and When idle (a switch). Changing one keeps the other, and both off writes `false`. Audit by itself has an On switch, and while it is on, Every (25, 50, 100 tasks; a count of your own is kept and shown; `true` shows as 50); off writes `false`. Search finds names, descriptions and code names. Find a setting is cleared when Settings is left for 5 minutes or more (another view, a thread, or the page hidden; the time away goes on over a Refresh of the page), and a shorter trip keeps it; the Changed filter and unsaved words in other fields stay (F204b). A "N changes wait for a restart" card counts only the settings that apply on the next run (`[run] web`, `web_port`, `web_https`, `home`, `notes`; `[plan] dir`, `repo`; `[git] master_branch`, `no_push`, `pr`) and has Restart the run; the others apply now. `agent-runner settings` still prints the developer notes. The words the page shows are in `agent_runner/setting_words.py`. Under Advanced > This machine, Claude Code program (`[run] agent`) is a picker of the Claude Code programs found on this machine (PATH, then ~/.local/bin, ~/.claude/local, /opt/homebrew/bin, /usr/local/bin; a link to the same file is listed once), each with its name, version and path, and a pick waits in the Settings bar until Save. A kept value that is wrong stays listed, marked not found, with the reason; Other path… takes a wrapper, checked by the save as before (a wrapper is not started to ask its version). Below it, Providers lists claude, copilot, codex, gemini, ollama and those in `[models.providers]`, each with its login (logged in and where it is kept, or the `run login` command; claude's own login is not checked; never a secret) and a Log in or Log in again button (claude's opens the existing Log in again sheet; ollama and local ones have none), and says Provider in Models picks one for every model, and a model set as provider:model keeps its own; "Show the model settings" lists those settings.
+- **Settings.** The run app's Settings page: about 24 everyday settings in Speed and limits, Landing work, Models and Chats, each with its control on its row. The rest sit behind Advanced, and commands, paths, patterns and rules behind Project file, under Project only, each edited on its row too (F448b): a list or table is a text box as wide as the row, one item per line; a risky key says what a change does once changed, and a key that cannot change now (F448a's checks) shows its value and the reason instead of a control. Every open row has More… and "Ask a chat to change it". Each setting has a home: this device saves to `runner.local.toml`, or everyone saves to `runner.toml`, when Save is pressed. The changes for everyone are committed alone on the shared branch and pushed as a plan edit is; it never queues a task. It waits up to 60 s for a merge landing in the main checkout (not one still in its test gate). Saves that come together are one commit. Nothing is changed, and it says so, when runner.toml has uncommitted edits, another branch is out in the main checkout, or a merge or rebase is under way there. A failed push says `saved here, not pushed: why`. With `[run] approve` it is pushed with the next approved change. A runner.toml that git ignores, or one outside the repo (`AGENT_RUNNER_CONFIG`), is written without a commit; with no runner.toml, one is made. Changes do not save as they are made: each changed row says "Not saved yet", and the Settings bar at the foot of the page says "N changes not saved" with Undo (drops them) and Save (writes them all). After a Save it says "N changes saved" with Undo (puts the earlier values back, unset ones included; one changed since by something else is left and said) and a close x. Unsaved changes are kept per browser when the page is left or reloaded. Typed text counts as it is typed. When this device's runner.local.toml overrides the key, the row says "This device overrides everyone's (value)" and the run is not told. The other home is in the row's More…. A value set on this device wins and is what the row edits. Changed lists what differs from its default, with Reset, and the lines the run ignores or moved. Dependent rows show with their parent (`approve_wait` and `approve_batch` with `approve` on). Release by itself has two controls on a line under its description: Every (Off, 5, 10, 20 tasks; a count of your own already set is kept and shown) and When idle (a switch). Changing one keeps the other, and both off writes `false`. Audit by itself has an On switch, and while it is on, Every (25, 50, 100 tasks; a count of your own is kept and shown; `true` shows as 50); off writes `false`. Search finds names, descriptions and code names. Find a setting is cleared when Settings is left for 5 minutes or more (another view, a thread, or the page hidden; the time away goes on over a Refresh of the page), and a shorter trip keeps it; the Changed filter and unsaved words in other fields stay (F204b). A "N changes wait for a restart" card counts only the settings that apply on the next run (`[run] web`, `web_port`, `web_https`, `home`, `notes`; `[plan] dir`, `repo`; `[git] master_branch`, `no_push`, `pr`) and has Restart the run; the others apply now. `agent-runner settings` still prints the developer notes. The words the page shows are in `agent_runner/setting_words.py`. Under Advanced > This machine, Claude Code program (`[run] agent`) is a picker of the Claude Code programs found on this machine (PATH, then ~/.local/bin, ~/.claude/local, /opt/homebrew/bin, /usr/local/bin; a link to the same file is listed once), each with its name, version and path, and a pick waits in the Settings bar until Save. A kept value that is wrong stays listed, marked not found, with the reason; Other path… takes a wrapper, checked by the save as before (a wrapper is not started to ask its version). Below it, Providers lists claude, copilot, codex, gemini, ollama and those in `[models.providers]`, each with its login (logged in and where it is kept, or the `run login` command; claude's own login is not checked; never a secret) and a Log in or Log in again button (claude's opens the existing Log in again sheet; ollama and local ones have none), and says Provider in Models picks one for every model, and a model set as provider:model keeps its own; "Show the model settings" lists those settings. In Landing work, Working branch (`[git] master_branch`, the branch finished work is applied to and tasks start from) is a pick of the local branches, with Found by itself (the branch it finds) first; a pick that cannot be saved says why under it, a changed pick says what Save does and that it applies once the run restarts (F447a).
 - **Home.** The person's view, in this order: a greeting; Talk, one full-width accent button (at least 56px) that opens Talk in the page without a reload and never starts the mic; the message box, with no dictation button (open chats and new chat views keep theirs); a ttyd notice when there is one; shortcut chips: Last chat (the chat with the newest activity, pinned or not; absent with no chat), Add a task, Pause or Go on (the one that fits; none with no run up; while being sent it shows busy, with its outbox stand-in under the chips) and Since my last look; then
-  Needs you (each item is one short card: what is wanted and where, in everyday words, its title, at most two lines of
+  Needs you (B832: first, each live chat whose last answer ends on a DECIDE line, at once, before the run files it:
+  its question, the chat's name and how long ago, its option buttons (none for a question without a bracket), an answer box
+  and Chat, which opens the chat; an option waits 5 s with Undo and goes to the chat as its question card sends it, typed
+  words go as a message; the row goes once answered or the chat moves on, a message about the question keeps it, and once
+  the run files it only the filed item shows. Counted in Home's count; snapshot `chat_needs`, read from the transcript read
+  each chat's row makes. Nothing is written to the plan. Then each item is one short card: what is wanted and where, in everyday words, its title, at most two lines of
   what to do, and Press for details; a DECIDE's heading is its question, its task's title small under it, then its
   background: two lines on the card, whole paragraphs in the sheet and `agent-runner ui`; its answer buttons sit below
   it, Later to shelve it, Chat to open a new chat that shows the
@@ -681,6 +689,19 @@ cannot be undone returns to Needs you with the reason. An undone change never go
 no run up, the command does the undo itself.
 The run app and `agent-runner ui` offer the same choices per change.
 
+The pitch's page is its Review page (F444). Each change also shows its diff, folded, cut at `[run] approve_diff_lines`
+lines (400 by default; 0 shows none). Plan files are not in it. While the change waits, the page also says how to answer it:
+
+- `agent-runner pitch ask pitch1 F1 "why this way?"`: a fresh one-shot on `[models] review` answers from the change's
+  diff (at least 400 lines of it, whatever `approve_diff_lines` says) and what its agent wrote. The question and answer are kept (`<notes>/pitches/<ID>@<merge>.asked.json`, so a reopened task's next change starts with none), and the page
+  shows them under You asked.
+- `agent-runner pitch better pitch1 F1 --why "what you want instead"`: Not this for that change. Its task is reopened
+  with "asked for a better way: …" as the reason.
+- `agent-runner pitch approve pitch1`.
+
+The change waits after landing, on the local shared branch. A change waiting on its task branch, or as a pull
+request (PR mode), has no Review page yet.
+
 `agent-runner status` and the run page say "3 changes wait to be pushed (1 pitch for you to approve)". Release tasks
 (V) do not start while anything waits. If the remote moved, the next merge takes it in, and the approved work goes out
 with that merge once it is approved.
@@ -934,7 +955,7 @@ still code. Tasks that are not research are unchanged.
 - **Auto release** (F63, off by default): `[run] auto_release` has the run queue a release by itself. `auto_release = { every = 10 }` cuts one once 10 tasks have landed since the last release (the later of a release task's landing and the newest version tag): it starts at once with what has landed (critical, at the top, no `after:`, as `plan add V --now`), not after the queue. A release that only waits in the queue for open tasks (`after: all` alone, with the default brief or queued by auto release) is cut instead of a new one queued; any other waiting release (a person's own text or explicit `after:` ids) is left as it is and a new one is queued. Such a waiting release does not stop the count, and the dimmed count shows beside it (F195c, see Release row). No cut while a release may start, is releasing, is taken by hand or by another runner, is blocked, shelved or in Parked/Stretch, and no second cut until 10 more land after the cut release landed. `{ idle = true }` queues one as `plan add V` with no text does when the run goes idle with nothing left it may start (tasks blocked on the person don't count), at most once per idle spell, never while a release is open. The release it queues has `| ahead: T1, T2` on its line (`none` for none), written by auto release alone; its `after: all` counts only those tasks and their parts (T1's T1a), still skipping what `after: all` skips (needs you, held, shelved, taken by hand); a move, or an edit of its `after:`, removes the list, and a count cut removes both fields. `plan ID` says `V7 waits for what was ahead when it was queued (2 open)`. Both may be set, and either fires; with both on they never queue two for the same landed work (a release dropped before it lands may be queued again), and Settings' row sets both. Nothing is cut or queued with nothing landed since the last release: release tasks are not counted, and nothing counts when only the plan changed since the version tag. `[run] releases = false` queues and cuts none. The run log and `status`'s lately say `queued V7 (auto_release: 10 landed)` or `(auto_release: idle)`.
 - **Moved and removed releases** (F429a): `plan move` of a release task makes it wait for the tasks above its new place (`after: all`, and any critical or high tag is removed). That changes that cut only: the setting and the next cuts are unchanged. When the moved release is the next cut (it had no `after:`, has the default brief, or auto release queued it) its line gets `| moved: yes`, which only `move` writes; the automatic count neither cuts it early nor queues another beside it until it lands. A task that is running, taken, claimed, or waiting to resume or to merge can be moved before or after another (its slot, work and `after:` stay); `top`, `bottom`, `in` and a place under Parked are refused, and a started release cannot be moved (`V8 cannot be moved: s2 is on it`). `plan drop` of a release that auto release queued skips that cut: only tasks landed after the removal count toward the next one, and `plan restore` undoes it so the count is as before. A release a person filed does not change the count when dropped. The Next release row is named `next-release` in `plan hold|unhold|move|drop|restore`: held, no release is cut by count or on idle; `drop next-release WHY` skips that cut, `restore next-release` undoes it, and `move next-release after T2` makes it a release task at that place. Refused when auto release is off or an open release already is the next cut. Its hold and the removals are run events in `events.jsonl` (kinds `cut held`, `cut unheld`, `cut removed`, `cut restored`), local to the machine's run log, as the count is.
 - **File split** (F200b, on by default): when a free slot could start no task (no usage limit in effect) and at least 3 ready tasks wait only for files, with one tracked file among them holding 3 or more, the run queues a file split by itself: one critical (alone) C task, or the kinds' first when there is no C, naming that file and its test files. The task splits the file by area with no behaviour change, then runs `plan edit <ID> --files` on each open task that names it. It queues none while a split of that file is open or blocked, nor within 7 days of the last one queued; that is read off the plan, so every machine's run sees it. Never for `shared_files`, lock files, docs (`docs_files`, `.md`, `.rst`, `.adoc`, `docs/`), the plan, generated files (linguist-generated, a generated header in the first 5 lines, names such as `*.min.js`), or files that are not text. It looks at most once a minute, not in `run once`, and waits while the plan has uncommitted edits or a merge holds the turn. The run log and `status`'s lately say `queued C9 to split a.py: 3 ready tasks wait for it (T2, T3, T4)`. Off: `[run] split_files = false`, or Settings "Split busy files".
-- **Auto audit** (F417, off by default): `[run] auto_audit = { every = 50 }` queues an audit task once 50 tasks have landed since the last audit landed or was queued (audits are not counted). It is turned on by `agent-runner setup`'s question at a terminal (see [A new repo from scratch](SETUP.md#a-new-repo-from-scratch)), or in Settings > Advanced > Tasks and sessions (Audit by itself, Audit model, Token cap per audit); either is saved for everyone in runner.toml, and a run that is up takes it live. It queues only when the run is idle: nothing running, waiting to resume, merging or startable, and not paused, stopping or `run once`. At most one audit is open at a time (a blocked one counts). It looks once a minute, and a dropped audit is not queued again for the same work. The run log and `status`'s lately say `queued R5 (auto_audit: 50 landed)`. The task is a research-kind one at normal level, tagged `(audit)`. One can be added by hand, with or without the setting: `plan add R "(audit) what to look at most" --files 'plan/audits/**'`. It looks for stale and duplicate tasks (also about something a done task removed, or whose runs keep ending with no commits), asks unanswered over 7 days, dead docs, lessons, unused code and tests, and waste in run cost, only in what changed since the last audit: from the commit the last findings file's `Audited: A..B` line names (else the commit before the one that added the file) up to the branch point. The first audit looks at everything, newest first. Its findings go to `plan/audits/<ID>.md`, or `docs/audits/<ID>.md` when the plan is outside the repository or is its root; that folder counts as findings at the merge. By itself an audit changes only its findings file and dead references in docs, the glossary and lessons; `done` refuses a diff past that fix limit, and the merge puts one to a person. Anything else it finds goes on one pick sheet of at most 10 questions (`audit.ASKED`), each with a recommendation, why and a keep answer; findings past 10 go under `## Not asked` in the findings file. The audit blocks on that sheet, and the answer reopens the task so its next session carries out the answers (`plan drop`, `plan edit`, `plan note`, `plan add`) and writes what it did under `## Answered`. With `[run] questionnaires = false` it asks nothing and the recommendations stay in the file. Its cap is `[run] audit_tokens`: at the cap it is told to stop and run `done` with what it has; one that goes on to 1.25 times the cap is ended and parked as `wip/<ID>`. `task_tokens` holds too when it is smaller.
+- **Auto audit** (F417, off by default): `[run] auto_audit = { every = 50 }` queues an audit task once 50 tasks have landed since the last audit landed or was queued (audits are not counted). It is turned on in Settings > Advanced > Tasks and sessions (Audit by itself, Audit model, Token cap per audit); it is saved for everyone in runner.toml, and a run that is up takes it live. It queues only when the run is idle: nothing running, waiting to resume, merging or startable, and not paused, stopping or `run once`. At most one audit is open at a time (a blocked one counts). It looks once a minute, and a dropped audit is not queued again for the same work. The run log and `status`'s lately say `queued R5 (auto_audit: 50 landed)`. The task is a research-kind one at normal level, tagged `(audit)`. One can be added by hand, with or without the setting: `plan add R "(audit) what to look at most" --files 'plan/audits/**'`. It looks for stale and duplicate tasks (also about something a done task removed, or whose runs keep ending with no commits), asks unanswered over 7 days, dead docs, lessons, unused code and tests, and waste in run cost, only in what changed since the last audit: from the commit the last findings file's `Audited: A..B` line names (else the commit before the one that added the file) up to the branch point. The first audit looks at everything, newest first. Its findings go to `plan/audits/<ID>.md`, or `docs/audits/<ID>.md` when the plan is outside the repository or is its root; that folder counts as findings at the merge. By itself an audit changes only its findings file and dead references in docs, the glossary and lessons; `done` refuses a diff past that fix limit, and the merge puts one to a person. Anything else it finds goes on one pick sheet of at most 10 questions (`audit.ASKED`), each with a recommendation, why and a keep answer; findings past 10 go under `## Not asked` in the findings file. The audit blocks on that sheet, and the answer reopens the task so its next session carries out the answers (`plan drop`, `plan edit`, `plan note`, `plan add`) and writes what it did under `## Answered`. With `[run] questionnaires = false` it asks nothing and the recommendations stay in the file. Its cap is `[run] audit_tokens`: at the cap it is told to stop and run `done` with what it has; one that goes on to 1.25 times the cap is ended and parked as `wip/<ID>`. `task_tokens` holds too when it is smaller.
 - **Release row** (F131, F185, F195c): each open release is its own row, shown once, in the Queue at its place in the plan order (`queue` carries `release`, and `ui_model.pin_releases` no longer moves it last); there is no Releases group or heading. The run page's Plan view draws it with `queueCard()`, the TUI's queue panel with `queue_with_releases`. `agent-runner plan` keeps its `## Releases` group (its id not listed again below), and the claude.ai copy's queue box is unchanged. A release row is in the Queue's list, so opening one closes an open task there and the other way round; J and K do not move a release, it stays at its place, and no task moves past one. A row reads `V17 Release · waits for 2: F1 one, F2 two` in status, `agent-runner plan` and the TUI (the first 5 named, then `, and 3 more`; all of them in `agent-runner plan` and on an opened or selected row, which also says what it is not waiting on; the run page's shut row never names them, see below), `next` when nothing is left before it, `releasing now` when a slot has it or it is merging (listed first), or `blocked` when it waits on a person. No start time is shown. On the run page New release is its own card above the Queue (`newReleaseCard()`, `release_wait`, `release_now`) that says what is open (the snapshot's `release_said`). With any release open, New release asks first: `ui_model.new_release` returns `confirm` ("V17 is already queued. Queue another release?") and `seen` (the ids open then) instead of queuing, and the Yes sends `seen` back as `text`. A queue row carries `started` (a slot runs it, it merges or a person took it) and, when it can be dropped, `asks` (`{key: question}`, from `confirm_of` on `queue_drop`: "Drop V17? It leaves the plan, and nothing is released."); a started release has no Drop. After the open ones comes the newest landed release, `V16 Release 0.62.0 · released 17:06` (the date too on another day), on status, `agent-runner plan` and the claude.ai copy; the TUI's queue panel and the run page's Plan view have no landed release row (the TUI's release tab and status still say it). On the run page's Plan view an open release folds to its row, which says `Waits for everything above` (`after: all` or `all above`, and at once for one just moved by its grip, the Next release row too), `Waits for 3 tasks` / `Waits for 1 task` (one whose `after:` names tasks, or that lists what was ahead when queued, `| ahead:`, F435), or `next` when dragged where nothing it would wait for is above; the row never names its tasks. Opened, it says `waits for 2` with its not-waiting-on note and lists the tasks it waits for, each opening in place, and one that waits for none opens to its text. With `auto_release` on, the dimmed `Next release · auto at 10 landed: 6/10` is there (` · when the run goes idle` added for `idle = true`, both when both are set). It stands before the task its `before` names: after as many open tasks (not blocked or parked) as it still needs to land, or at the end of the queue when that is past them or not counted. It shows also while open releases only wait for open tasks (F195a; then without the idle words, as idle queues none while one is open), and it is hidden while a release is next, releasing, blocked, taken by a person, shelved or in Parked. On the run page it is a dimmed dashed card (`.card.relph`); in the TUI a dimmed row. With `auto_release` off and no V open, the only row is the newest landed release, if any (none on the run page's Plan view, where New release alone is left). Enter on the dimmed row opens the release tab. `agent-runner status` has one `release:` line per release, the same words, in place of `last: V5 waits for everything before it`, keeping its `not waiting on` notes; once the release lands, `lately` reads `landed: Release 1.2.0 [V5]` and the count starts again at 0/N.
 - `plan add` also refuses (exit 3, nothing written, the task named, even with `--force`) an add whose text and
   fields equal an open or blocked task's (B817). Whitespace, id and kind letter, level, the `(alone)` tag, order
@@ -943,7 +964,7 @@ still code. Tasks that are not research are unchanged.
   Done tasks are no obstacle, and releases (kind V) are exempt. Text that merely looks like an open task's work
   is refused too, naming it: `plan note` that task instead, or `--force` for different work. A task's own split
   (`plan add P13 …`) is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,
-  overtaken): archived with `dropped: WHY`, so its id stays used and what waits on it reopens. Dropping every part of a `(split into …)` task does not tick it: see A12 below.
+  overtaken): archived with `dropped: WHY`, so its id stays used. What waits on it (`BLOCKED: (after ID)`) depends on why (B772): dropped as not wanted (the default, and the run page's and the TUI's Drop) each such task is held under Needs you with one question, `DECIDE: Still wanted, now that ID (title) it waited on was dropped as not wanted? [Keep / Drop]`; one that also waits on other open tasks asks now and says so (on Keep, block it `--after` them). `plan drop ID --duplicate-of X WHY` or `--overtaken-by X` (or a WHY that says `duplicate of X` / `overtaken by X`) lets them go on: they wait on X in ID's place while X is open, else reopen as before. A task waiting `(after all)` and a release are never held: the drop frees them as before. `plan restore ID` puts the held tasks back as they were. Dropping every part of a `(split into …)` task does not tick it: see A12 below.
 - Reaching a running agent: `plan tell ID TEXT` types `A note on your task, from the person running this run: TEXT` into
   the session of the slot running ID, through its shim's FIFO, or on Windows its named pipe (Claude Code queues it for
   its next turn while busy), and edits no plan. It fails when no slot of a run here runs ID, and then drops nothing: if the task asks the person (its `run ask` parked in `<notes>/ID.ask`, the block committed or not, or any block waiting on a person) it prints the question and the exact `plan confirm ID "TEXT"` or `plan change ID "TEXT"` to run if the text answers it; otherwise the `plan note ID` to run. A tell never answers by itself, and one the run found no slot for is kept in the run log (`ID: not told: TEXT`). While a slot's agent has just run `run ask` (its end mark `<notes>/slotN.end` is written), nothing is typed: a tell waits until the ask is parked, then fails (exit 1) with the question and the commands above, or after 30 s, if the session has not ended, says to run the command once it has. `plan change` then notes the change, prints the same, and does not stop the slot, so the parked work is kept. `plan change ID TEXT` on a
@@ -1021,7 +1042,11 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
 - **Who has what.** `plan` marks each claimed task, `[ ] B12  [alex@laptop 14:02 v0.14.0]`; `plan claims`
   lists them all. A live run re-stamps its claims every 15 min, so a claim not refreshed in 90 min shows
   `STALE` and holds only its own task, not its files, and every other run logs it once: a crashed run's
-  claims would otherwise hold those tasks for good. A claim from a runner older than 0.14 shows `pre-0.14`,
+  claims would otherwise hold those tasks for good. A claim not refreshed in 2 h (`plansync.TAKEOVER`) is a gone
+  run's: it holds nothing, and the next run to pick its task takes it over, re-claiming it as its own (a push
+  race as with any claim) and logging `took over <ID> from <who> (claim not refreshed since <time>)`. The old run,
+  when it comes back, sees the claim is no longer its own, logs it and gives the task up; a `task/<ID>` branch it
+  pushed is kept, not deleted. A claim from a runner older than 0.14 shows `pre-0.14`,
   and every other run warns once: that runner does not keep off their files, so upgrade every machine. The same
   checkout takes its own back on its next run; for anyone else's, `plan unclaim <ID>`.
 - **Tick on landing.** `done` in a slot leaves the task open and the run ticks it once the merge lands,
@@ -1060,7 +1085,7 @@ lines is the order of the work. `plan add` puts a person's new task at the top; 
 
 `plan edit ID --wait-for X,Y` (the flag alone, with nothing else on the command) sets what a queued task waits for to exactly those tasks, replacing its `after:`; for a task blocked on `(after …)` it replaces that list and drops a separate `after:`. `--wait-for none` clears the waits; a blocked task reopens with its notes kept, and a person's check (CONFIRM and the like) that waited goes back to Needs you. Other fields, place, notes and hold stay. It is refused (exit 1, nothing changed, the reason printed) for an unknown or done task (itself or one of the waits), itself, its own parent or subtask, a wait that makes a circle (the chain is named), a release, a task that has started (running, taken by hand, merging, waiting to merge or resume, claimed by another run), one that asks the person, a shelved one, one that waits on an until check, or one waiting on anything but tasks. The run app's action is `set_waits` (task id and a list of ids; an empty list clears).
 
-`plan cancel ID` stops a running task (or one cut off and waiting to resume) without removing it. Without `--yes` it stops nothing: it prints the question with the minutes worked and exits 3. With `--yes` the run ends the agent's session, commits its uncommitted edits and renames task/ID to wip/ID (wip/ID-2, … when one exists; pushed; with nothing done there is no branch), and frees the slot. The command then parks the task (as `--pri later`) with a note naming the branch, so no run starts it. Unpark it with Unpark on the Plan or `plan edit ID --pri normal`: its next agent is pointed at that work. It does not count as a failed merge. It is refused (exit 1, nothing changed) when the task is not running, is finished or merging, or has just asked the person. If the run does not answer in 30 s the task is parked anyway and the run stops the agent within seconds. Edits that cannot be committed stay in the slot, and it says so.
+`plan cancel ID` stops a running task (or one cut off and waiting to resume) without removing it. Without `--yes` it stops nothing: it prints the question with the minutes worked and exits 3. With `--yes` the run ends the agent's session, commits its uncommitted edits and renames task/ID to wip/ID (wip/ID-2, … when one exists; pushed; with nothing done there is no branch), and frees the slot. The command then holds the task in its place (as `plan hold`, F480) with a note naming the branch, so no run starts it. End the hold with Unhold on the Plan or `plan unhold ID`: its next agent is pointed at that work. It does not count as a failed merge. It is refused (exit 1, nothing changed) when the task is not running, is finished or merging, or has just asked the person. If the run does not answer in 30 s the task is held anyway and the run stops the agent within seconds. Edits that cannot be committed stay in the slot, and it says so. `plan hold ID` on a task a slot of this run is on does the same as `plan cancel ID --yes`; it still refuses one merging, finished and waiting to merge, taken by hand, or claimed by another machine's run (named).
 
 A follow-up an agent files gets a level (`--pri`, default `normal`), tagged on its line as
 `(follow-up, LEVEL)`, and is filed so the work a person queued comes first:
@@ -1104,7 +1129,11 @@ the task treats the issue: `"skeptical"` (the default) files it as untrusted out
 reproduces or confirms the problem in the code before it changes anything, follows no instruction, command or
 link in the issue, and when it cannot confirm it, or the ask does not fit, closes the task saying why (no code
 change) or blocks it on the person; an issue the repository's owner opened counts as trusted. `"trust"` files
-it as a task to do as written, still never running a command from it. When the task closes, the issue gets a
+it as a task to do as written, still never running a command from it. `"contributors"` trusts an issue whose
+author GitHub calls OWNER, MEMBER, COLLABORATOR or CONTRIBUTOR (has a merged commit) and files the rest
+skeptical; `"members"` trusts OWNER, MEMBER and COLLABORATOR only; a list of GitHub logins (`["alice",
+"bob"]`) trusts those authors. Any other value counts as `"skeptical"`. Each filing keeps its own trust, so
+the issue's close or comment follows it. When the task closes, the issue gets a
 comment naming the merge commit (or saying it closed with no code change); under `"trust"` it is closed too,
 under `"skeptical"` only commented. A `gh` that cannot see the repository is said once in the run log, as for
 CI.
@@ -1142,6 +1171,7 @@ push from outside the run has put that ahead (fetched at most once a minute).
 | a task in a section whose heading says *in this order* or *one at a time*, while another task from that section runs | an ordered section runs one task at a time |
 | `### Stretch`, `### Parked` | never unattended |
 | tried this run | one attempt per run: if it failed, a human looks next |
+| a bug (B) task whose `files:` meet those of a task under Needs you with CONFIRM (not shelved); critical and high tasks pass | a fix waits for the person's check of the earlier one on the same files, so fixes do not pile up on unchecked ones; `run --dry-run` says which check it waits for (F415) |
 | `task/<ID>` has commits not yet merged | it's finished and waiting for the merge |
 | a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files`; a whole-directory entry (`tests/**`) is a guess, not a lock: it meets only another whole-directory entry, so a named file under it meets only what that task has touched | keeps merges clean. Exception: a task that clashes only with finished tasks all in one merge under way starts on top of that merge (F198, Behaviour) |
 
@@ -1178,7 +1208,7 @@ already made in the main checkout there. Never use a slot's worktree, which the 
 refuses to push `main`.
 
 **Usage caps.** Past `[run] session_max`% of the 5-hour session usage, or `[run] weekly_max`% of
-the 7-day usage, no new task starts unless `--force` is given (or `f` typed in the run view); hitting one raises the STOPPED alarm with that hint. With `[models] fallback` set, a new task whose model is claude's starts on the chain's first free provider instead, until the reset (see Fallback chain); a task with no free provider waits.
+the 7-day usage, no new task starts unless `--force` is given (or `f` typed in the run view); hitting one raises the STOPPED alarm with that hint. With `[models] fallback` set, a new task whose model is claude's starts on the chain's first free provider instead, until the reset (see Fallback chain); a task with no free provider waits. `[run] usage_limits = false` switches both caps off: the runner never reads the account's usage, never holds or falls back a task on them, and status hides them.
 
 **A cut-off session resumes.** A session whose turn ended on an API error (the network dropped, the
 API was down, the account hit its usage limit) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
@@ -1651,7 +1681,8 @@ not count as a gate pass: the merge runs `test` (or `test_since`) even on that e
 Docs-only changes skip the gate, decided by the diff and not the task's letter (a D task that touches code is
 tested; a B fix that only edits the README is not). When every file a merge changes on the shared branch (all
 its tasks, the plan's archive commit, a remote's commits taken in) matches `[run] docs_files` (default `*.md`
-and `docs/**`; `!glob` takes one back), the merge runs `[run] docs_check` instead, if one is set (a link or
+and `docs/**`; `!glob` takes one back; a `pyproject.toml`, `package.json` or `Cargo.toml` whose every changed
+line is its `description` counts too, F494), the merge runs `[run] docs_check` instead, if one is set (a link or
 anchor check), and the log says `docs only, gate skipped`; a failing docs check fails the merge. `done` does
 the same with the files its worktree changes since the shared branch (commits, edits and new files): it prints
 `docs only, gate skipped`, so a session that only edited docs or the plan needs no `--no-test`. It records no
@@ -1669,6 +1700,17 @@ code map each task appended a line to). Leave the rules there; put code maps, ho
 `agent-runner context` shows what every session loads, biggest sections first, against `[plan] context_kb` (12 KB);
 `run` warns at start when it's over, and the prompt tells agents where new reference material goes.
 Big files get a map too: `[plan] outline` runs only for files on the task line that are over 300 lines, and all the outlines in one brief stay within 2 KB. When they don't fit, each file gets an even share and shows lines picked evenly through the file, labelled `outline (trimmed evenly: N of M lines)`; a note after the files gives the command for a whole one and how many have none. `tools/outline.py` (stdlib only) lists functions, classes, methods, section comments and headings, with line numbers, for Python, .js, .mjs and Markdown.
+
+### Lessons
+
+With `[plan] lessons = true`, `<plan dir>/LESSONS.md` holds what a project's agents learned, one line each: an id
+taken from the text, at most 200 characters, and the files or globs it applies to. `plan lesson add "TEXT" --files
+a,dir/**` adds one, `plan lesson list` lists them, and `plan lesson drop ID "why"` drops one: any agent shown a
+wrong lesson may, with a reason. A brief shows the lessons whose files meet the task's `files:`, a plain path
+before a glob and a longer one before a shorter, at most 8. A lesson whose files are all gone from the tree drops
+itself when a brief is made, and says so. Dropped lessons move under `## Dropped` with the date and the reason.
+Two branches that each add a lesson get different ids, so list the file in `[run] joinable` and their adds join
+by line, as this repo does.
 
 ## Making it fast
 
@@ -1703,6 +1745,9 @@ to load 15 and one-hour merges:
   cannot reach. When the shared branch gets code commits during a merge's gate, they are merged into the
   tested merge and only what they change is tested, from that merge: an hour's batch gate is not run again
   for a commit that landed in its last minutes. A conflict there, or a failure, builds the merge again.
+  When those commits are all the runner's own merges (each passed its gate) and touch none of the merge's
+  files nor `runner.toml`, nothing is tested again ("moved only by gated work on other files"); a hand
+  commit on the shared branch is always tested.
 - **One push per batch.** Each push to the shared branch is a CI run, so the runner pushes a batch once,
   when its last task lands.
 
@@ -1776,6 +1821,25 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
    range of a file already read counts as a re-read, and a line that printed several files shares its
    result among them evenly.
 
+
+## Filing tasks from a chat
+
+A Claude Code session in your main checkout, beside a run, can feed it: you say what you saw, it finds the files
+and files the task, and a slot picks it up. Put the rule in your `CLAUDE.md` so every session follows it:
+
+```markdown
+## New asks go to the plan
+
+When I report a bug or ask for a feature, don't fix it here. File it with `agent-runner plan add`:
+- the kind letter from `agent-runner plan kinds`, and my words quoted with the date;
+- `--files` naming every file the fix will touch (look them up first), `--after` if it needs another task;
+- what "done" looks like, so the agent can test it. Long context goes in plan/tasks/<ID>.md.
+If `plan add` says it looks like an open task, `plan note` that task instead.
+Only do the work here when I say "do it here".
+```
+
+The run app's chats (control sessions) follow this rule already.
+
 ## Commands
 
 ```
@@ -1788,6 +1852,7 @@ agent-runner control [N]               a new control session in this terminal, b
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --no-wait   the same, returning once it starts ("control N is starting in a hidden terminal"),
                                        without waiting for its claude.ai/code link
+agent-runner wip [show|restore|drop NAME]  your main-checkout edits a merge moved aside (wip/main-checkout-*): look at one, put it in a take worktree, or delete it
 agent-runner pitch [approve|no PITCH]  landed work that waits for a yes to be pushed (### Approve to push): approve
                                        it, or undo it with `no`
 agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck since the last look (or WHEN:
@@ -1887,6 +1952,7 @@ journal_layout = "dated"  # or "id": one folder per task, journal/<ID>/, a retry
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id
 outline = ""              # a command printing one file's outline; {file} is the path, e.g.
                           # "python3 tools/outline.py {file}": the brief shows it under each file the line names over 300 lines
+lessons = false           # plan/LESSONS.md: what agents learned per file, shown in briefs (`plan lesson`; see "Lessons")
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
 lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]
@@ -1927,6 +1993,7 @@ feed = "haiku"            # the run page's claude.ai copy (the one-shot that pub
 audit = "opus"            # an audit task's session ([run] auto_audit, or one added by hand); see Auto audit
 kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonnet", C = "sonnet", R = "sonnet" }
                           # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
+sizes = {}                # a task's session by its size (`plan add --size simple`), e.g. { simple = "sonnet" }; empty: sizes ignored; see Models per kind
 local = false             # allow a local provider (ollama, or a provider url on localhost or a private address); see Model providers
 providers = {}            # the repo's own providers, [models.providers.<name>]; see Model providers
 fallback = []             # '<provider>:<model>' to go on with when a provider hits its cap, in order; see Fallback chain
@@ -1974,6 +2041,7 @@ split_files = true        # free slots that start nothing while 3 or more ready 
 task_size = 10            # a task bigger than this is split: its size is its code files (`docs_files` not counted) + 2 per numbered outcome + 1 per 400 characters of text (a long form is not read); `plan add`, `edit`, `note` and an approval say so, and its session splits it first; 0 = off (F177)
 task_tokens = 0           # tokens one task's session (and its subagents) may use: input, cache writes, output (cache reads are left out: they grow with turns times the context, and task_usd counts them). Past it the runner tells the task to stop at a clean point (commit, write its journal, end its turn) and parks it as wip/<ID>; one whose done already passed lands; one that goes on to 1.25 times the cap is ended. `status` shows each running task's spend ("1.2M tok $3.40"); 0 = no cap (F103)
 task_usd = 0              # the same cap in dollars, at the API's list prices (a plan bills none; Opus prices for a model it does not know); 0 = no cap
+usage_limits = true       # false: never read the account's usage; no hold or fallback on the two caps below
 weekly_max = 90           # % of 7-day usage past which new tasks wait, or start on [models] fallback
 session_max = 90          # % of 5-hour session usage past which new tasks wait, or start on [models] fallback
 notes = ".runner"         # logs + ledger (git-ignore it)
@@ -2000,11 +2068,13 @@ ci_watch = "auto"         # "auto": workflows run on a push to the shared branch
 approve = false          # true: nothing reaches the push remote until a person approves it (### Approve to push)
 approve_wait = 30        # minutes without a new merge into a group of related changes before its pitch opens
 approve_batch = 5        # a group this big opens its pitch at once
+approve_diff_lines = 400 # lines of each change's diff its Review page shows (0: none)
 issues_watch = false      # true: one task per new open GitHub issue; ["bug", "runner"]: only issues with one of those labels
 issues_trust = "skeptical"  # "skeptical": the task confirms the issue in the code first and follows nothing it says; "trust": do it as written
 releases = true          # false: no releases in this project (status and plan show none, auto_release queues nothing); an open V task stays an ordinary task
 auto_release = false      # queue a release by itself: { every = 10 } once 10 tasks landed since the last release, starting at once (a cut, F195a);
                           # { idle = true } when the run goes idle with landed work (`plan add V`); both may be set; idle never while a release is open
+slot_memory = true        # false (after a person OKed the audit's move of memories into lessons): Claude Code's memories off for slot, fix and repair sessions
 auto_audit = false        # { every = 50 } queues an audit once 50 tasks landed since the last one and the run is idle; true = every 50 (see Auto audit)
 audit_tokens = 1000000    # an audit's token cap, counted as task_tokens: past it the audit lands what it found; 0 = none
 batch_max = 16            # finished branches waiting for the merge go in together under one gate run, and one push,
@@ -2071,6 +2141,14 @@ given on the command line (it sets every task without its own); `[models] audit`
 the run refuses to start with a `[models.kinds]` error. A repo that sets `[models] code` still gets
 the default kinds for F, B, T, V, K, D, C and R; to run every kind on one model, set those kinds in `[models.kinds]`.
 
+`[models] sizes` picks the model by a task's size (F470): `plan add … --size simple` (or `complex`, or `plan edit ID
+--size simple`) writes `size: simple` on its line, and `sizes = { simple = "sonnet" }` runs simple tasks on that
+model. Empty, the default, sizes are ignored; a size with no entry (complex, above) keeps its kind's model. The order
+is then: the task's own `model:`; `run --model`; `[models] audit`; its size's in `[models] sizes`; its kind's;
+`[models] code`. Guard: a simple task that ran on its size's model and whose `done` did not pass (it failed, or
+blocked) is tried once more on its kind's model; a block it left is opened again for that attempt. Settings shows
+it under Models, as Model for each size.
+
 ### Model providers
 
 Any `[models]` role value, and any `[models.kinds]` value, may be `<provider>:<model>`. A bare name like `opus`
@@ -2122,6 +2200,24 @@ in the [harness loop](#the-harness-loop).
 Task sessions (`[models] code`, `[models.kinds]`, a task's own `plan add --model`, `run --model`), fix sessions
 (`[models] fix`), and `review`, `docs`, `feed`, `audit` and `control` can name another provider. A control session on one runs on the harness
 loop in chat mode (see [Control sessions](#the-harness-loop)).
+
+### Several Claude logins
+
+`run login claude --as NAME` adds a Claude login of its own: its own `CLAUDE_CONFIG_DIR` (beside this machine's logins
+file, `~/.config/agent-runner/claude-logins.json`, or `$AGENT_RUNNER_LOGINS`), signed in by `claude /login`. Logins are
+kept per machine, not per project. The first is the default login: the first time, Claude Code's own login is kept
+first as `default`, so tasks run on it as before. `run login` lists them under claude.
+
+Each login must be a separate real account (a work or Team account beside a personal one, or a pay-as-you-go API key).
+Holding extra subscriptions only to get past usage limits breaks Anthropic's terms (and OpenAI's and GitHub's), and the
+accounts can be banned.
+
+Caps are kept per login (F503): `<notes>/capped.json` keys the default login as `claude` and another as
+`claude@NAME`. A task whose login hits a cap goes on in its worktree on the next free login of the same provider
+(same model, a new session told to read the work), then down `[models] fallback`; claude counts as capped only when
+every login is. A local model (ollama) is a chain entry like any other, normally the last. `[run] session_max` /
+`weekly_max` hold the login whose usage they read (the default login's), so new tasks start on another login. With
+every login and provider capped and no local model, the task waits for the earliest reset.
 
 ### Fallback chain
 

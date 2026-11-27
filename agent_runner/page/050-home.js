@@ -107,7 +107,7 @@ function goDown(stay,keys){
   const p=!HOME_PAGE&&!stay&&projectOf(HKEY);if(p&&projectGroup(p)==='off'&&!p.starting&&!p.page){openProject(HKEY,projectLink(HB,HKEY,T));return}  // its run ended meanwhile and nothing serves its page (F402b2): its page as it is off
   const b=S.below||{v:lastTab()||'home',t:null,c:null};S.below=null;
   if(!stay)try{history.pushState({level:'in'},'')}catch(e){}
-  if(b.t){S.view=b.v;S.ctx=b.c;open(b.t)}else goView(b.v==='projects'?'home':b.v);
+  if(b.t){S.view=viewOf(b.v);S.ctx=b.c;open(b.t)}else goView(b.v==='projects'?'home':b.v);
   if(keys)focusSide('[data-up]');
 }
 function focusSide(s){const el=$('sidein').querySelector(s);if(el)el.focus({preventScroll:true})}
@@ -219,3 +219,42 @@ async function addProject(){
   if(d.ok){delete S.f.padd;if(S.sheet==='addproject')closeSheet();toast(d.out||'Added')}else{H.said=d.out||'It was not added';render(true)}
 }
 /* F118: a chat row: its delete button, dimmed with Undo in that spot once deleted; the Delete N bar */
+/* --- B832: a live chat's DECIDE question under Home's Needs you, at once, before the run files it (snapshot `chat_needs`).
+   An option waits out QUESTION_HOLD with Undo, then goes to the chat as the question card sends it; typed words go as a
+   message; Chat opens the chat. CN.held: chat -> {id, name, timer}; CN.sent: question key -> {cid, out (when it left the
+   outbox)}: kept off while its message is in the outbox and QUESTION_LAND after, by when the snapshot knows; one that failed
+   there is back at once */
+const CN={held:new Map(),sent:new Map()};
+const chatNeedKey=c=>c.chat+' '+c.id;
+function chatNeedOff(s){
+  const it=(S.ob||[]).find(x=>x.cid===s.cid);if(it)return it.state!=='failed';
+  s.out=s.out||Date.now();return Date.now()-s.out<QUESTION_LAND;
+}
+function chatNeedsShown(){
+  const all=(S.snap&&S.snap.chat_needs)||[], keys=new Set(all.map(chatNeedKey));
+  for(const k of CN.sent.keys())if(!keys.has(k))CN.sent.delete(k);
+  return all.filter(c=>{const s=CN.sent.get(chatNeedKey(c));return !(s&&chatNeedOff(s))});
+}
+function chatNeedCard(c){
+  const k=chatNeedKey(c), h=CN.held.get(c.chat), held=h&&h.id===c.id, f='cnsay:'+c.chat;
+  const top=`<div class="row"><div class="grow"><b class="ell2">${esc(c.question)}</b><div class="small">${esc(c.title)}${c.at?` · ${esc(agoWords(c.at*1000,' ago'))}`:''}</div></div><button class="btn" data-thread="${esc(c.chat)}">Chat</button></div>`;
+  const body=held?`<div class="row" role="status"><span class="grow">Sending “${esc(h.name)}”</span><button type="button" class="btn" data-cnundo="${esc(c.chat)}">Undo</button></div>`
+    :`${c.options.length?`<div class="btns">${c.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-cnpick="${i}" data-cnchat="${esc(c.chat)}" data-cnid="${esc(c.id)}">${esc(questionLabel(o))}</button>`).join('')}</div>`:''}<form class="row" data-cnform="${esc(c.chat)}"><input class="fld grow" data-f="${esc(f)}" value="${esc(S.f[f]||'')}" placeholder="Answer in your words" aria-label="Answer in your words" enterkeyhint="send"><button class="btn">Send</button></form>`;
+  return card(top+body,'need',`data-k="chatneed:${esc(k)}" data-v="${held?'held':''}"`);
+}
+function chatNeedSend(n,text,say){
+  const it=outbox('chat_to',{text,to:n},{text,key:n,say:`To ${threadTitle(n)}: ${text}`});
+  CN.sent.set(say,{cid:it&&it.cid,out:0});
+}
+function chatNeedPick(n,id,i){
+  const c=chatNeedsShown().find(x=>x.chat===n&&x.id===id), o=c&&c.options[i];if(!o||CN.held.has(n))return;
+  const h={id,name:o.name};h.timer=setTimeout(()=>{if(CN.held.get(n)!==h)return;CN.held.delete(n);chatNeedSend(n,h.name,chatNeedKey(c));render(true)},QUESTION_HOLD);
+  CN.held.set(n,h);render(true);
+}
+function chatNeedUndo(n){const h=CN.held.get(n);if(!h)return;clearTimeout(h.timer);CN.held.delete(n);render(true)}
+const chatNeedOn=(k,f)=>document.addEventListener(k,f);  // before 183-click.js's, so it can stop them
+chatNeedOn('click',e=>{const x=e.target.closest('[data-cnpick],[data-cnundo]');if(!x)return;e.stopImmediatePropagation();
+  if(x.dataset.cnundo)chatNeedUndo(x.dataset.cnundo);else chatNeedPick(x.dataset.cnchat,x.dataset.cnid,+x.dataset.cnpick)});
+chatNeedOn('submit',e=>{const n=e.target.dataset&&e.target.dataset.cnform;if(!n)return;e.preventDefault();e.stopImmediatePropagation();
+  const f='cnsay:'+n, text=String(S.f[f]||'').trim(), c=chatNeedsShown().find(x=>x.chat===n);if(!text||!c)return;
+  delete S.f[f];chatNeedSend(n,text,chatNeedKey(c));render(true)});

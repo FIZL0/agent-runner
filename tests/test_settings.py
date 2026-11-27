@@ -165,7 +165,7 @@ for at, words in W._CHOICES.items():
         val = int(v) if v.isdigit() else __import__('json').loads(v) if v.startswith('{') else val
         eq(config.setting_problem(t, k, val), '', f'{at}: {v} is a value it takes')
 page = [at for at, w in W.WORDS.items() if W._WHERE[w[0]] == 'page']
-check(20 <= len(page) <= 28, 'about 24 everyday settings', len(page))
+check(20 <= len(page) <= 29, 'about 24 everyday settings', len(page))
 
 print('F193: Release by itself shows only while Manage releases is on, and its value is kept while it is off')
 eq((W.parent('run', 'auto_release'), W.parent('run', 'releases')), ('run.releases', ''), 'it hangs on Manage releases, which always shows')

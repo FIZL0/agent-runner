@@ -117,6 +117,8 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
             out[-1]['tool_wait'] = tool_waits[tid]
         if tid in untils and tid not in where:  # F427b: neither the person nor a slot: it says what it waits for
             out[-1].update(state='tool', tool_wait=untils[tid])
+        if size := ' '.join(f.get('size') or []).strip():  # F485: size: simple|complex, beside its other fields
+            out[-1]['size'] = size
         if tid in busy:
             out[-1].update(under_way=True, way=busy[tid])
         if row_hold._not_queued(ls, i):  # F429b: `plan hold` refuses it
@@ -586,6 +588,57 @@ def page_rows(shown: set[str], waits: set[str]) -> list[dict]:
             continue
         out.append({'id': tid, 'concept': tid, 'title': P.short_title(tasks[tid][1], 200), 'url': '',
                     'copy': str(f), 'page': True, 'waits': tid in waits})
+    out += chat_page_rows(files, shown)
+    pages = {f.stem: f for f in files}
+    for row in approved_rows(ls, shown | {r['id'] for r in out}):
+        if f := pages.get(row['id']):
+            out.append({**row, 'copy': str(f), 'waits': row['build'] in waits})  # a parked build's Needs you item
+    return out
+
+
+CHAT_PAGE_DAYS = 7
+
+
+def chat_page_rows(files: list, shown: set[str], now: float | None = None) -> list[dict]:
+    """B875: a Concepts row for each page a chat published (<notes>/concepts/chat<id>.html): it has no task in the
+    plan, so the task check above left it out. Pages from the last CHAT_PAGE_DAYS days only; its title is the page's
+    <title>."""
+    out, now = [], now or time.time()
+    for f in files:
+        if not re.fullmatch(r'chat[0-9a-f]+', f.stem) or f.stem in shown:
+            continue
+        try:
+            if now - f.stat().st_mtime > CHAT_PAGE_DAYS * 86400:
+                continue
+            m = re.search(r'<title>([^<]*)', f.read_text(encoding='utf-8', errors='replace')[:4000], re.I)
+        except OSError:
+            continue
+        title = (m.group(1).strip() if m else '') or 'A page from a chat'
+        out.append({'id': f.stem, 'concept': f.stem, 'title': title[:200], 'url': '', 'copy': str(f),
+                    'page': True, 'waits': False})
+    return out
+
+
+BUILD_OF = re.compile(r'^\s*(?:\([^)]*\)\s*)?Build the option a person approves on concept ([A-Z]+\d+[a-z0-9]*)\'s page: ')
+
+
+def approved_rows(ls: list[str], shown: set[str]) -> list[dict]:
+    """B866: a Concepts row for each approved concept (ticked, so in DONE.md) whose build task in TODO.md's lines
+    `ls` is still open and not waiting for the OK: it stays listed with its page until the build lands. `build`: the
+    build task's id; `building`: 'parked' when the build is blocked or shelved, else 'building'."""
+    out = []
+    for _, box, bid, rest, i in P.iter_tasks(ls):
+        m = BUILD_OF.match(rest.lstrip('* '))
+        if not m or box in 'x-' or (k := m.group(1)) in shown:
+            continue
+        if box == '~' and P.WAIT_OK in ''.join(P._item_block(ls, i)):
+            continue  # not approved yet: the concept row shows it
+        parked = box == '~' or P._shelved(ls, i)
+        title = P.short_title(rest.lstrip('* ')[m.end():], 200)
+        mark = f"approved: {'parked' if parked else 'building'} {bid}"
+        out.append({'id': k, 'concept': k, 'title': f'{title} ({mark})', 'url': '', 'page': True, 'waits': False,
+                    'build': bid, 'building': 'parked' if parked else 'building', 'approved': mark})
+        shown = shown | {k}
     return out
 
 

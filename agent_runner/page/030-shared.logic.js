@@ -60,9 +60,9 @@ function conceptButtons(c){
 const NO_CONCEPT='No concept waits for a pick.';
 /* F93: Talk. The sidebar's views, Talk first; its control session: the one this browser remembers while it is
    live, else a live chat titled Talk, else '' (the next send opens one) */
-const NAV=[['talk','Talk'],['home','Home'],['status','Status'],['plan','Plan'],['history','History'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']];
+const NAV=[['talk','Talk'],['home','Home'],['plan','Work'],['concepts','Concepts'],['tools','Tools'],['settings','Settings']];
 /* F124: Agents and Activity are one view now, Status */
-const viewOf=v=>v==='agents'||v==='activity'?'status':v;
+const viewOf=v=>['agents','activity','status','history'].includes(v)?'plan':v;  // F476: Status and History are the Work page
 /* B177: what a reload opens: {v: the view, t: the chat ('' for none), link: the link named it}. hash: the link's #,
    a view (#plan) or a chat or slot (#c3, #s1), which wins over text, the place this tab kept; projects: there is an
    All projects view; starting: the stand-ins ('@cid') of chats still starting. Anything else is Home */
@@ -71,6 +71,7 @@ function placeOf(text,hash,projects,starting){
   if(known(hv))return{v:hv,t:'',link:true};
   const nd=h.match(/^need-([A-Za-z0-9][\w.-]*)$/);if(nd)return{v:'home',t:'',link:true,need:nd[1]};  // F150: an item of Needs you
   if(/^[cs]\d+$/.test(h))return{v:'home',t:h,link:true};
+  const tk=h.match(/^task-([A-Z]\d+[a-z0-9]*)$/);if(tk)return{v:'plan',t:'',link:true,task:tk[1]};  // F482: a task, its sheet open in Work
   let o;try{o=JSON.parse(text||'{}')}catch(e){}
   if(!o||typeof o!=='object')o={};
   const v=viewOf(o.v), t=typeof o.t==='string'?o.t:'';
@@ -109,8 +110,8 @@ const needsReply=(s,seen)=>!!s.needs_reply||(s.last==='claude'&&(s.at||0)>(seen|
 function chatGroups(rows,o){
   const top=[],quiet=[];
   for(const s of rows||[]){
-    const q=o.quiet>0&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.up&&s.at>0
-      &&o.now-s.at>o.quiet&&!needsReply(s,(o.seen||{})[s.name]);
+    const q=s.closed||o.quiet>0&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.up&&s.at>0
+      &&o.now-s.at>o.quiet&&!needsReply(s,(o.seen||{})[s.name]);  // B859: one closed for being idle rests in Quiet
     (q?quiet:top).push(s);
   }
   return{top,quiet};

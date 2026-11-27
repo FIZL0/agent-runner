@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import io
 import json
 from contextlib import ExitStack
 from pathlib import Path
@@ -203,6 +204,110 @@ def test_page_needs_you(tmp: Path) -> None:
     eq(out[6:], [[''], ['']], 'answered there, the card and a mark go too')
 
 
+def home(w: World) -> list[dict]:
+    """B832: Home's Needs you rows of chat c6, read as the snapshot reads them."""
+    from agent_runner import slots
+    with mock.patch.object(slots, 'transcript', lambda sid: w.path), \
+            mock.patch.object(slots, 'entries', lambda sid, skip_bad=False: list(w.rows)):
+        return U.chat_needs(U.control_rows({6: 'six'}))
+
+
+def test_home_b832(w: World) -> None:
+    rows = home(w)
+    eq([(r['chat'], r['id'], r['title'], r['question']) for r in rows], [('c6', 'u1', 'six', 'Which look?')],
+       'a fresh DECIDE is a row at once, with its chat, question and name')
+    eq([o['name'] for o in rows[0]['options']], ['Full', 'Small', 'No change'], 'and its options, the recommended first')
+    check(rows[0]['at'] > 0, 'and when it was asked', rows[0])
+    w.rows[:] = []
+    w.add(say('Done.\n\nDECIDE: Ship it now, or wait for the review?', 'u2'))
+    eq([(r['id'], r['options']) for r in home(w)], [('u2', [])], 'one with no options is a row too')
+    w.add(you('wait'))
+    eq(home(w), [], 'answered, it goes')
+    w.add(say('Waiting. Anything else?', 'u3'))
+    eq(home(w), [], 'an offer without a DECIDE line is no row')
+    w.add(you('no'), say(ASK, 'u4'), you('About your question “Which look?” (not my answer): why?'), say('Because.', 'u5'))
+    eq([r['id'] for r in home(w)], ['u4'], 'a message about the question (F430) keeps it')
+    S.C.notes('control6.name').write_text(json.dumps({'name': 'Re-sign', 'was': ''}), encoding='utf-8')
+    eq([r['title'] for r in home(w)], ['Re-sign'], 'a renamed chat: its name')
+
+
+def test_home_filed_once_b832(w: World) -> None:
+    eq(len(home(w)), 1, 'before it is filed, the chat row')
+    w.file()
+    eq(home(w), [], 'once filed, only the filed item shows')
+
+
+def test_page_b832(tmp: Path) -> None:
+    import shutil
+    import subprocess
+    if not shutil.which('node'):
+        print('  (no node here: skipped)')
+        return
+    from agent_runner import web as W
+    js = (W.PAGE_DIR / '023-question.logic.js').read_text(encoding='utf-8')
+    home_js = (W.PAGE_DIR / '050-home.js').read_text(encoding='utf-8')
+    js += home_js[home_js.index('/* --- B832'):]
+    count = (W.PAGE_DIR / '040-chats.js').read_text(encoding='utf-8')
+    check('S.snap.needs.length+(S.snap.chat_needs||[]).length' in count, "the side's Home count has them")
+    drv = r"""
+let now = 1e6, timers = [], on = {click: [], submit: []};
+setTimeout = (fn, ms) => { const t = {fn, at: now + ms}; timers.push(t); return t };
+clearTimeout = t => { timers = timers.filter(x => x !== t) };
+const pass = ms => { now += ms; for (const t of timers.filter(x => x.at <= now)) { clearTimeout(t); t.fn() } };
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const document = {addEventListener: (k, f) => on[k] && on[k].push(f)};
+const card = (h, cls, attr) => `<div class="card ${cls}" ${attr}>${h}</div>`, agoWords = () => '5 min ago', threadTitle = n => n;
+const S = {f: {}, ob: [], snap: {chat_needs: [{chat: 'c9', id: 'u1', title: 'Re-sign', question: 'Ship it?', at: 1,
+  options: [{name: 'Yes', rec: true}, {name: 'No', rec: false}]}]}}, sent = [];
+const outbox = (name, args, more) => { sent.push([name, args]); const it = {cid: 'k' + sent.length, state: 'sending'}; S.ob.push(it); return it }, render = () => {};
+const ev = (k, ds) => ({target: {dataset: ds, closest: s => s.split(',').some(x => Object.keys(ds).some(d => x === `[data-${d}]`)) ? {dataset: ds} : null},
+  preventDefault() {}, stopImmediatePropagation() {}});
+const out = [], say = (...a) => out.push(a), draw = () => chatNeedsShown().map(chatNeedCard).join('');
+PAGE
+say(draw(), chatNeedsShown().length);
+on.click.forEach(f => f(ev('click', {cnpick: '1', cnchat: 'c9', cnid: 'u1'}))); say(draw().includes('data-cnundo'), sent.length);
+on.click.forEach(f => f(ev('click', {cnundo: 'c9'}))); pass(6000); say(draw().includes('data-cnpick'), sent.length);
+on.click.forEach(f => f(ev('click', {cnpick: '0', cnchat: 'c9', cnid: 'u1'}))); pass(5100); say(sent.slice(), chatNeedsShown().length);
+S.ob[0].state = 'failed'; say(chatNeedsShown().length); S.ob = [];
+S.snap.chat_needs = []; chatNeedsShown(); S.snap.chat_needs = [{chat: 'c9', id: 'u2', title: 'x', question: 'Why?', at: 0, options: []}];
+S.f['cnsay:c9'] = ' because '; on.submit.forEach(f => f(ev('submit', {cnform: 'c9'}))); say(sent[1], chatNeedsShown().length);
+console.log(JSON.stringify(out));
+"""
+    f = tmp / 'chatneed.js'
+    f.write_text(drv.replace('PAGE', js), encoding='utf-8')
+    r = subprocess.run(['node', str(f)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the row', r.stderr[-800:])
+    out = json.loads(r.stdout or '[]')
+    if not out:
+        return
+    html, n = out[0]
+    eq(n, 1, 'the row counts')
+    check('Ship it?' in html and 'Re-sign' in html and 'data-thread="c9">Chat<' in html, 'question, chat name, and Chat opens it', html)
+    check('class="btn pri" data-cnpick="0"' in html and 'Yes (recommended)' in html, 'option buttons, the recommended marked', html)
+    eq(out[1], [True, 0], 'an option waits with Undo')
+    eq(out[2], [True, 0], 'Undo sends nothing')
+    eq(out[3], [[['chat_to', {'text': 'Yes', 'to': 'c9'}]], 0], 'after the hold it goes to the chat, and the row goes')
+    eq(out[4], [1], 'one that failed in the outbox brings the row back')
+    eq(out[5], [['chat_to', {'text': 'because', 'to': 'c9'}], 0], 'typed words go to the chat as a message')
+
+
+
+def test_cli_f486(w: World) -> None:
+    """F486: the `needs` command and status's Needs you list the chat's DECIDE too, until the run files it."""
+    from agent_runner import chat_question as CQ, slots, status
+    with mock.patch.object(slots, 'transcript', lambda sid: w.path), \
+            mock.patch.object(slots, 'entries', lambda sid, skip_bad=False: list(w.rows)), \
+            mock.patch.object(U, 'control_titles', lambda: {6: 'six'}):
+        eq(CQ.need_lines(CQ.live_needs()), ['c6 - Which look? [Full (recommended) / Small / No change]'], 'one line, its options')
+        check('  c6 - Which look?' in status.status_text(False, {}, [], {}, 0), 'status lists it under Needs you')
+        from agent_runner import cmds
+        with mock.patch('sys.stdout', new_callable=io.StringIO) as o, mock.patch.object(cmds, 'init', lambda: None):
+            cmds.cmd_needs([])
+        check('c6 - Which look?' in o.getvalue() and o.getvalue().rstrip().endswith(f'{len(o.getvalue().splitlines()) - 1} things need you'), 'the needs command lists and counts it', o.getvalue())
+        w.file()
+        eq(CQ.live_needs(), [], 'once filed, only the filed item')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([*(world(f) for f in (test_card_settles, test_needs_you_closes, test_closed_chat, test_dropped_and_shelved, test_only_its_own,
-                                                  test_filed_once, test_long_b840, test_marks_b840, test_filed_cut_b840)), in_tmp(test_page_sends), in_tmp(test_page_needs_you)]))
+                                                  test_filed_once, test_long_b840, test_marks_b840, test_filed_cut_b840, test_home_b832, test_home_filed_once_b832, test_cli_f486)), in_tmp(test_page_sends), in_tmp(test_page_needs_you), in_tmp(test_page_b832)]))

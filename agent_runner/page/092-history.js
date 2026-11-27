@@ -6,7 +6,7 @@
    HX: n its chat, st ('', 'armed', 'up'), none (it has no transcript), pages (entries, oldest page first), before and since
    (the marks), hist (their lines), L (the lines drawn), at (the screen's first line in L), pad, cell, y0 (where the
    screen's first line stands in the session), high (the content's height), y (the scroll last seen), touch, news (there are new words) */
-const HX={n:'',st:'',none:false,pages:[],before:'',since:'',cols:0,hist:[],L:[],at:0,pad:0,cell:17,y0:0,high:0,y:0,touch:false,news:false,busy:false,asked:0,late:[],lateT:0,warmT:0,newT:0,above:0,gap:false,chunks:new Map(),look:''};
+const HX={open:new Set(),n:'',st:'',none:false,pages:[],before:'',since:'',cols:0,hist:[],L:[],at:0,pad:0,cell:17,y0:0,high:0,y:0,touch:false,news:false,busy:false,asked:0,late:[],lateT:0,warmT:0,newT:0,above:0,gap:false,chunks:new Map(),look:''};
 const PAST_CHUNK=40, PAST_OVER=2000, PAST_IDLE=160, PAST_WARM=700, PAST_NEW=2500, PAST_BAND=56, PAST_AGAIN=5000, PAST_HOLD=450, PAST_LIFT=350;
 const pastUp=()=>HX.st==='up';
 /* may the history stand in for the session? Not over a menu or a question, nor one scrolled by someone else */
@@ -41,7 +41,7 @@ async function pastLoad(){
   if(j.ok){HX.pages=[j.entries];HX.before=j.before;HX.since=j.since;pastRows();if(HX.st&&pastPicked())pastSlide();else if(HX.st==='armed')pastReady();else pastWarm()}
   pastClass();
 }
-function pastRows(){HX.cols=(feedTerm()||{}).cols||HX.cols||80;HX.hist=HX.pages.flatMap(p=>pastLines(p,HX.cols))}
+function pastRows(){HX.cols=(feedTerm()||{}).cols||HX.cols||80;HX.hist=HX.pages.flatMap(p=>pastLines(p,HX.cols,HX.open))}
 /* what was written since; once the screen has changed, and at rest */
 async function pastNew(){
   if(HX.busy||HX.none||!HX.n)return;
@@ -66,7 +66,7 @@ async function pastOlder(){
   HX.busy=true;const j=await pastGet(`?before=${encodeURIComponent(HX.before)}&n=200`);if(j===undefined)return;
   HX.busy=false;if(!j||!j.ok||j.reset){if(j)HX.before='';return}
   HX.before=j.before;HX.pages=[j.entries,...HX.pages];
-  const ls=pastLines(j.entries,HX.cols);HX.hist=[...ls,...HX.hist];
+  const ls=pastLines(j.entries,HX.cols,HX.open);HX.hist=[...ls,...HX.hist];
   if(HX.st){HX.late=ls;pastIdle()}else pastWarm();
 }
 const pastPicked=()=>{const g=getSelection();return !!(g&&!g.isCollapsed&&$('pastrows').contains(g.anchorNode))};
@@ -76,6 +76,12 @@ function pastPut(){
   const k=HX.late.length, el=$('feedpast');HX.L=[...HX.late,...HX.L];HX.at+=k;HX.late=[];
   const was=pastEnd();pastClear();pastSize(true);el.scrollTop+=pastEnd()-was;HX.y=el.scrollTop;pastDraw();
   if(el.scrollTop<el.clientHeight*3)pastOlder();
+}
+/* F489: a fold line was opened or folded: the history's lines again, the screen's after them, the view where it was */
+function pastFoldDraw(){
+  const el=$('feedpast'), y=el.scrollTop, scr=HX.L.slice(HX.at);pastRows();
+  const j=pastJoin(HX.hist,scr), pre=j<0?HX.hist:HX.hist.slice(0,j);
+  pastSet([...pre,...scr],pre.length,false);pastSize(true);el.scrollTop=y;HX.y=el.scrollTop;pastDraw();
 }
 /* the screen's own lines, over its prompt, as the terminal draws them */
 function pastScreen(){
@@ -336,7 +342,7 @@ const end=e=>{
   if(HX.late.length)pastIdle();
 };
 el.addEventListener('touchend',end,{passive:false});el.addEventListener('touchcancel',end,{passive:true});
-el.addEventListener('click',e=>{if(!HX.st&&e.detail&&e.pointerType==='mouse')feedClick(...at(e))});
+el.addEventListener('click',e=>{if(HX.st&&pastFoldTap(HX.open,e.target)){pastFoldDraw();return}if(!HX.st&&e.detail&&e.pointerType==='mouse')feedClick(...at(e))});
 el.addEventListener('wheel',e=>{if(!HX.st&&e.deltaY<0)pastArm()},{passive:true});
 el.addEventListener('scroll',()=>{pastScrolled();if(pastUp())drop()},{passive:true});
 /* a browser gives no click for a tap that ends a fling: the touch's end makes it, as on the slim message box (B218b1) */

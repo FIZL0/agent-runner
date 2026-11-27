@@ -188,6 +188,25 @@ def all_resolved(colors: Path | None = None) -> dict[str, dict]:
     return {n: resolve(n, colors) for n in NAMES}
 
 
+# F473: the run page's own colour names (page/010-shared.css) from a theme's tokens; a string is a token, a tuple mixes two
+PAGE_VARS = {
+    'bg': 'bg', 'side': 'raise', 'surface': 'raise', 'bubble': 'cur', 'fg': 'fg', 'muted': 'dim', 'faint': 'dim',
+    'line': 'line', 'line2': 'line', 'accent': 'accent', 'accent2': 'red', 'onaccent': 'selfg', 'ok': 'green',
+    'warn': 'yellow', 'bad': 'red', 'onbad': 'bg', 'kred': 'red', 'kblue': 'blue', 'kpurple': 'magenta',
+    'kteal': 'cyan', 'kgreen': 'green', 'kgold': 'yellow', 'kindigo': 'bblue', 'kgray': 'dim',
+}
+
+
+def page_css(colors: Path | None = None) -> str:
+    """F473: every theme as the run page's colours, one `:root[data-ui="<name>"]` rule each (its UI settings pick one)."""
+    rules = []
+    for name, t in all_resolved(colors).items():
+        mode = t.get('mode', 'dark')
+        vs = ';'.join(f'--{k}:{t[v]}' for k, v in PAGE_VARS.items())
+        rules.append(f':root[data-ui="{name}"]{{{vs};color-scheme:{mode}}}')
+    return '\n'.join(rules)
+
+
 # --- terminal colours ----------------------------------------------------------------------------------------
 
 CUBE = (0, 95, 135, 175, 215, 255)

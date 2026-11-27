@@ -186,8 +186,10 @@ def cancels(procs: dict, running: dict, free_at: dict, tried: set, branch: str) 
     """F426d: act on `plan cancel`: the task's session is ended, its work kept (`keep_work`) and its slot freed; the
     command then parks the task. One that is finished or merging is refused, and nothing of it changes."""
     if marks := list(cancelled_marks().iterdir()):
-        waiting = {tid for section, box, tid, _, _ in P.iter_tasks(plan_text(branch))
-                   if box != 'x' and not section.startswith(P.PARKED)}
+        from agent_runner import row_hold  # F480: held is what a cancel now does; once held, the hold keeps it
+        ls = plan_text(branch)
+        waiting = {tid for section, box, tid, _, i in P.iter_tasks(ls)
+                   if box != 'x' and not section.startswith(P.PARKED) and not row_hold.is_held(ls[i])}
         for m in marks:
             if m.name in waiting:
                 tried.add(m.name)

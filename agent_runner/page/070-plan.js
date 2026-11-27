@@ -29,14 +29,15 @@ const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+
 /* F168: the shared tools in words, the same as status says */
 const toolsWords=ts=>'Tools: '+ts.map(t=>`${t.label}: ${t.words}`).join(' · ');
 /* Run controls: the Run card; B763a: each with its icon; F426e: the slots' rows are in Working (076-status.js) (docs/STYLE.md, Run card) */
-const CTL_ICON={start:'play',go_on:'play',pause:'pause',stop:'stop',stop_undo:'undo',slot_add:'plus',slot_remove:'minus'};
+const CTL_ICON={start:'play',go_on:'play',pause:'pause',stop:'stop',stop_now:'stop',stop_undo:'undo',slot_add:'plus',slot_remove:'minus'};
 function controlsCard(){
   const run=S.snap.run||{}, up=S.snap.up!==false;
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
   const mark=up&&run.mark?`<span class="small" data-k="heldmark"> · ${esc(run.mark)}</span>`:'', herr=S.heldErr?`<div class="small v-bad" data-k="heldErr">${esc(S.heldErr)}</div>`:'';  // B851a
-  const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${I[CTL_ICON[k]]||''}${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
+  const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${I[CTL_ICON[k]]||''}${esc(k==='stop'?'Stop':c.card_label||c.label)}</button>`:''}).join('');
   return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-roll data-v="${esc(said)}">${esc(said)}${mark}</div></div>${up?(w=>`<span class="small" data-k="slotsof" data-roll data-v="${w}">${w}</span>`)(`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`):''}</div>
     ${S.snap.no_settings?`<div class="small" data-k="nosettings"><span class="v-warn">${esc(S.snap.no_settings)}</span></div>`:''}
+    ${S.snap.usage_held?`<div class="small" data-k="usageheld"><span class="v-warn">${esc(S.snap.usage_held)}</span></div>`:''}
     ${S.snap.agent_problem?`<div class="small" data-k="agentproblem"><span class="v-warn">${esc(S.snap.agent_problem)}</span></div>`:''}
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
     ${S.snap.pr_limit?`<div class="small" data-k="prlimit" data-v="${esc(S.snap.pr_limit)}">${esc(S.snap.pr_limit)}</div>`:''}
@@ -53,8 +54,8 @@ function pitchNo(n,i){
 /* F162: an item's buttons, the same on its card and in its popup: its answers, Later, Chat, Drop and Open */
 function needBtns(n,i,more=''){
   const open=a=>a?`<a class="btn" href="${esc(a)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:'';
-  if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id];
-    return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?foldIn('pitch:'+n.id,pitchNo(n,i)):''}`}
+  if(n.label==='PITCH'){const on=!!(S.pitchOpen||{})[n.id], ask=!!(S.reviewOpen||{})[n.id];  // F444c: Ask…
+    return `<div class="btns">${ansBtns(n)}<button class="btn" data-pitchopen="${i}" aria-expanded="${on}">Not this…</button><button class="btn" data-reviewopen="${i}" aria-expanded="${ask}">Ask…</button>${more}${restBtns(n)}${open(n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):''))}</div>${on?foldIn('pitch:'+n.id,pitchNo(n,i)):''}${ask?foldIn('review:'+n.id,reviewAskHTML(n,i,S.reviewAns,S.sure)):''}`}
   if(n.label==='PR')return `<div class="btns">${open(n.url)}</div>`;  // F420: a person merges it on GitHub, and then it clears
   if(n.label==='TOOL')return '';  // F168: nothing to answer, it clears once the tool is back
   return `<div class="btns">${needInputs(n).length?'':ansBtns(n)}${more}${restBtns(n)}${open(needPage(n))}${n.devices?needDevices(n):''}</div>${actSure(n.acts,n.id)}`;
@@ -234,7 +235,7 @@ async function openTask(id,list='queue'){
   if(!on)return;
   taskInView(id,list);
   if(/^s\d+$/.test(id))return;  // F426e: an idle slot's row, which is no task
-  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read'),old:oldRun(j)}}
+  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text,writeup:j.writeup||''}:{err:plainOut(j,'It could not be read'),old:oldRun(j)}}
   catch(e){if(!S.tasks[id])S.tasks[id]={err:'Could not reach the run page: fold it and open it again'}}
   if(taskIsOpen(list,id))MO.folded=Date.now();  // what the press opened goes on to its words
   render(true);

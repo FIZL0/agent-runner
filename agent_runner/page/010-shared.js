@@ -100,7 +100,24 @@ function histKey(e,ta){
 }
 
 /* F83: a refresh draws a part again only when its markup changed */
-function setHTML(el,h){if(!el||el._h===h)return false;el._h=h;el.innerHTML=h;return true}
+/* B860: an iframe[data-keep] with the same key and src stays the same node over a redraw: it does not reload
+   (an iframe that leaves the document unloads, so the box is changed in place, not written over, while one is there) */
+function setHTML(el,h){if(!el||el._h===h)return false;el._h=h;if(!el.querySelector||!el.querySelector('iframe[data-keep]'))el.innerHTML=h;else{const t=document.createElement('template');t.innerHTML=h;morphKids(el,t.content)}return true}
+/* B860: make old's children match neu's, reusing nodes of the same kind where they stand */
+function morphKids(old,neu){
+  const a=[...old.childNodes], b=[...neu.childNodes];
+  b.forEach((n,i)=>{const o=a[i];
+    if(o&&o.nodeType===n.nodeType&&o.nodeName===n.nodeName&&(o.nodeType!==1||(o.dataset.k||'')===(n.dataset.k||''))){
+      if(o.nodeType!==1){if(o.nodeValue!==n.nodeValue)o.nodeValue=n.nodeValue;return}
+      if(o.nodeName==='IFRAME'&&o.dataset.keep&&o.dataset.keep===n.dataset.keep&&o.getAttribute('src')===n.getAttribute('src')){if(o.title!==n.title)o.title=n.title;return}
+      for(const at of [...o.attributes])if(!n.hasAttribute(at.name))o.removeAttribute(at.name);
+      for(const at of n.attributes)if(o.getAttribute(at.name)!==at.value)o.setAttribute(at.name,at.value);
+      if(o.nodeName==='INPUT'||o.nodeName==='TEXTAREA'||o.nodeName==='SELECT'){o.replaceWith(n);return}
+      morphKids(o,n);
+    }else if(o)o.replaceWith(n);else old.appendChild(n);
+  });
+  for(let i=a.length-1;i>=b.length;i--)a[i].remove();
+}
 /* F83: the reading position over a redraw of box: call before, then call what it returns after. The first keyed thing
    on screen stays where it was (at the very top, new things show); a code block keeps its sideways scroll. */
 function keepScroll(box){

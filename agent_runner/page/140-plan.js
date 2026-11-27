@@ -45,6 +45,7 @@ function planHTML(){
   const pk=queueGroups(S.snap.queue)[1], sh=S.snap.shelved||[], shOb=obCards(x=>x.shelved), qs=gripRows(menuRows(waitRows(planRows(S.snap))));
   if(S.planWait)return waitHTML(qs);  // F442
   if(planWant())return `${planField()}<div class="col">${planFound(planWant())}</div>`;
+  if(typeof workHTML==='function')return `${planField()}<div class="col">${workHTML(qs,pk,sh,shOb)}</div>`;  // F476: the Work page (a test's page without it draws the Queue alone)
   return `${planField()}<div class="col">${newReleaseCard()}<div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(queueCard).join(''):emptyCard('The queue is empty.')}
     ${obCards(x=>obActs(x,'queue')||(x.grip||x.waitset)&&x.state==='failed')}${pk.length||sh.length||shOb?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(q=>parkedCard(q)).join('')}${shOb}${sh.map(q=>shelvedCard(q)).join('')}`:''}</div>`;
 }
@@ -61,5 +62,5 @@ function conceptFrame(n){
   if(!n.frame)return '';
   const full=!!(S.frameFull||{})[n.id], id=esc(n.id);
   const cl=n.url&&/^https?:/.test(n.url)?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open in claude.ai ${I.ext}</a>`:'';
-  return `<div class="cframe${full?' full':''}" data-k="cframe:${id}"><iframe src="${esc(tq(n.frame))}" sandbox="allow-scripts" loading="lazy" referrerpolicy="no-referrer" title="${esc(n.title||n.id)}: its options"></iframe>
+  return `<div class="cframe${full?' full':''}" data-k="cframe:${id}"><iframe src="${esc(tq(n.frame))}" data-keep="cframe:${id}" sandbox="allow-scripts" loading="lazy" referrerpolicy="no-referrer" title="${esc(n.title||n.id)}: its options"></iframe>
     <div class="btns tight"><button class="btn" data-framefull="${id}" aria-expanded="${full}">${full?'Shrink':'Expand'}</button>${cl}</div></div>`}

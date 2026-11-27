@@ -724,12 +724,49 @@ def event_words(tid: str, said: str, kinds: dict) -> str:
     return f'{state}: {task_words(tid, what.removeprefix(tid).strip() if re.match(re.escape(tid) + r"( |$)", what) else what, kinds)}'
 
 
+def cap_held_line(st: dict, now: float) -> str:
+    """F468: the usage caps holding new tasks, with the settings' caps; '' when they do not."""
+    from agent_runner.cap_hold import held_line, limits_on
+    from agent_runner.state import C
+    caps = C.run if C else {'session_max': 90, 'weekly_max': 90}
+    if not limits_on(caps):
+        return ''
+    return held_line(st, caps, now)
+
+
+def chat_need_lines() -> list[str]:
+    """F486: Needs you's lines of the live chats' DECIDE questions the run has not filed yet (`chat_question.live_needs`)."""
+    from agent_runner import chat_question
+    return chat_question.need_lines(chat_question.live_needs(), '  ')
+
+
+def slot_login(n: str) -> str:
+    """F505: the Claude login slot `n`'s session runs on ('default' for the first), only when claude has more than
+    one login; '' otherwise, or when it cannot be read."""
+    try:
+        from agent_runner import fallback
+        if not fallback.multi():
+            return ''
+        from agent_runner.slots import MUX
+        pane = MUX.panes().get(f's{n}')
+        sid = pane and MUX.session_id(pane[1])
+        if not sid:
+            return ''
+        return 'login ' + (fallback.session_login(sid) or fallback.login_names('claude')[0] or 'default')
+    except Exception:  # noqa: BLE001 - status never fails on a login it cannot read
+        return ''
+
+
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
                 waiting=None, progress: str = '', wips=None, login: str = '', agent: str = '') -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
     run's state, `progress` (`progress_line`, `release_line`), each slot's task, title and minutes, what is
     merging, the last few merged / blocked / parked, and usage."""
     out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None, wips=wips)
+    if chats := chat_need_lines():  # F486: a live chat's DECIDE, before the run files it
+        out = (out or [needs_heading(P.needs_cfg()['heading'])]) + chats
+    if up and (held := cap_held_line(st, now)):  # F468: first, plainly
+        out.insert(0, held)
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     if nogate := no_gate_line():  # up or not: the next run merges untested too
         out.append(nogate)
@@ -749,7 +786,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
         mins = f'{int((now - st["since"][n]) // 60)} min' if n in st.get('since', {}) else ''
         out.append('  ' + '  '.join(x for x in (f's{n}' if n.isdigit() else n, task_words(tid, title, kinds),
-                                                 mins, spend_shown(st, n)) if x))
+                                                 mins, spend_shown(st, n), slot_login(n)) if x))
     if up and not st.get('running'):
         out.append('  no task running')
     if up:

@@ -919,28 +919,18 @@ def test_https_links(tmp: Path) -> None:
             check(text.index('https://box.tail1.ts.net:8771/') < text.index('http://192.168.1.5:8770/'),
                   'install prints the https link first', text)
             has(text, rf'QR\[https://box\.tail1\.ts\.net:8771/\?t={token}\]', 'and the QR code is of it')
-            said, asked = [], []
-            with mock.patch.object(H.shutil, 'which', lambda t: '/usr/bin/' + t):
-                H.install('linux', call=lambda c: (0, ''), out=said.append, check=lambda p: True,
-                          https=fake_tailscale({}), ask=lambda q: asked.append(q) or False)
-            check(asked and 'tailscale serve --bg --https=8771' in asked[0], 'no serve: install offers to set one up', asked)
-            has('\n'.join(said), r'run: tailscale serve --bg --https=8771 http://127\.0\.0\.1:8770',
-                'a no: install says the command')
+            said, ran = [], []
+            from agent_runner import page_https as PH
+            with mock.patch.object(H.shutil, 'which', lambda t: '/usr/bin/' + t), \
+                    mock.patch.object(PH, 'not_connected', lambda: False), \
+                    mock.patch.object(PH, 'tailscale', lambda *a, **k: (True, '{}')):
+                H.install('linux', call=lambda c: ran.append(c) or (0, ''), out=said.append, check=lambda p: True,
+                          https=fake_tailscale({}), ask=lambda q: False)
+            check(['tailscale', 'serve', '--bg', '--https=8771', 'http://127.0.0.1:8770'] in ran,
+                  'F461: no serve: install sets one up without asking', ran)
 
-    print('install with no serve: offers to set one up, or says the command')
+    print('install with no serve: offer_https (F461: no prompt; test_home has the rest)')
     plain = ['http://box:8770/?t=x']
-    ran, said = [], []
-    with mock.patch.object(H, 'home_urls', lambda port, https=None: ['https://box.ts.net:8771/?t=x'] + plain):
-        got = H.offer_https(8770, plain, call=lambda c: ran.append(c) or (0, ''), out=said.append,
-                            ask=lambda q: True, which=lambda t: '/usr/bin/tailscale')
-    eq(ran, [['tailscale', 'serve', '--bg', '--https=8771', 'http://127.0.0.1:8770']], 'a yes runs tailscale serve')
-    eq(got[0], 'https://box.ts.net:8771/?t=x', 'and the links are read again, https first')
-    ran, said = [], []
-    got = H.offer_https(8770, plain, call=lambda c: ran.append(c) or (0, ''), out=said.append,
-                        ask=lambda q: False, which=lambda t: '/usr/bin/tailscale')
-    eq((ran, got), ([], plain), 'a no runs nothing')
-    has(said[-1], r'run: tailscale serve --bg --https=8771 http://127\.0\.0\.1:8770', 'and says the command')
-    said = []
     H.offer_https(8770, plain, out=said.append, ask=lambda q: True, which=lambda t: None)
     has(said[-1], 'With Tailscale installed', 'no tailscale: says what https needs')
     said = []

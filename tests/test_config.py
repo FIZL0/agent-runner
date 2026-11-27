@@ -245,6 +245,14 @@ def test_trusted_networks(tmp: Path) -> None:
         check('[ui] trusted_networks' in got and repr(bad) in got, f'{bad} is an error that names it', got)
     for bad in ('"tailnet"', 'true', '[1]'):
         check('[ui] trusted_networks must be' in said(bad), f'{bad} is no list of networks', said(bad))
+    from _trust import name_checks  # F481
+    name_checks()
+    import time
+    from agent_runner import trust
+    trust._names['omarchy-desktop.beetal-ling.ts.net'] = (time.monotonic(), ['100.101.1.2'])
+    eq(CF.setting_problem('ui', 'trusted_networks', ['omarchy-desktop.beetal-ling.ts.net', 'all']), '',
+       'the Settings page saves a host name and all')
+    trust._names.clear()
 
 
 def test_releases_f193(tmp: Path) -> None:
@@ -348,6 +356,49 @@ def test_global_provider_f443(tmp: Path) -> None:
     eq(CF.setting_type('models', 'provider'), 'text', 'a pick of named providers, a custom one typed in the file')
 
 
+def test_sizes_f470(tmp: Path) -> None:
+    """F470: [models] sizes picks a task's model by its size: off by default, own model > size > kind > code, and a
+    simple task that did not pass on its size's model retries once on its kind's."""
+    from agent_runner import task_size
+    repo = project(tmp)
+    c = CF.Config(repo)
+    eq((c.sizes, c.task_model('F9', '', 'simple')), ({}, 'opus'), 'off by default: the size is ignored')
+    (repo / 'runner.local.toml').write_text('[models]\ncode = "haiku"\nsizes = { simple = "sonnet" }\n[models.kinds]\nX = "opus"\n',
+                                            encoding='utf-8')
+    c = CF.Config(repo)
+    eq((c.task_model('F9', 'haiku', 'simple'), c.task_model('F9', '', 'simple'), c.task_model('F9', '', 'complex'),
+        c.task_model('Q9', '', 'complex'), c.task_model('F9')),
+       ('haiku', 'sonnet', 'opus', 'haiku', 'opus'), 'own model > size > kind > code; complex keeps its kind')
+    eq(CF.setting_check(repo, 'models', 'sizes', {'simple': 'haiku'}), '', 'the Settings page saves it')
+    (repo / 'runner.local.toml').write_text('[models]\nsizes = { tiny = "sonnet" }\n', encoding='utf-8')
+    try:
+        CF.Config(repo)
+        check(False, 'a size other than simple or complex is refused')
+    except SystemExit as e:
+        check('[models] sizes' in str(e), 'a size other than simple or complex is refused', e)
+    (repo / 'runner.local.toml').write_text('[models]\nsizes = { simple = "sonnet" }\n', encoding='utf-8')
+    c = CF.Config(repo)
+    c.notes = lambda *p: tmp.joinpath('notes', *p)  # noqa: E731
+    (tmp / 'notes').mkdir()
+    todo = tmp / 'TODO.md'
+    todo.write_text('# TODO\n\n### Next\n- [~] **D3** Reword | files: r.md | size: simple BLOCKED: x\n'
+                    '- [ ] **D4** Other | files: s.md | size: simple | model: haiku\n', encoding='utf-8')
+    ls = P.lines(todo)
+    eq(task_size.retry_due(c, 'D3', ls, passed=True), False, 'passed: no retry')
+    eq(task_size.retry_due(c, 'D4', ls, passed=False), False, 'its own model: no retry')
+    eq(task_size.size_for(c, 'D3', 'simple'), 'simple', 'before a retry, the size picks the model')
+    eq(task_size.retry_due(c, 'D3', ls, passed=False), False, 'its size model is its kind’s (D is sonnet): no retry')
+    (repo / 'runner.local.toml').write_text('[models]\nsizes = { simple = "haiku" }\n', encoding='utf-8')
+    c2 = CF.Config(repo)
+    c2.notes = c.notes
+    eq(task_size.retry_due(c2, 'D3', ls, passed=False), True, 'failed or blocked on its size’s model: retries')
+    eq(task_size.size_for(c2, 'D3', 'simple'), '', 'the retry goes by its kind')
+    eq(task_size.reopen_blocked(c2, 'D3', todo), True, 'its block is opened for the retry')
+    check('- [ ] **D3**' in todo.read_text(), 'D3 open again', todo.read_text())
+    eq(task_size.retry_due(c2, 'D3', P.lines(todo), passed=False), False, 'only once')
+    eq(task_size.reopen_blocked(c2, 'D3', todo), False, 'and opened once')
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -359,4 +410,4 @@ def in_tmp(f):
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(f) for f in (test_one_key, test_line_ends, test_waits_for_a_merge, test_refused, test_push_fails,
                                                  test_device_over_it, test_other_files, test_external_plan, test_trusted_networks,
-                                                 test_releases_f193, test_wrong_agent_b764b, test_global_provider_f443)]))
+                                                 test_releases_f193, test_wrong_agent_b764b, test_global_provider_f443, test_sizes_f470)]))

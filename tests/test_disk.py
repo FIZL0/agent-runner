@@ -91,10 +91,33 @@ def test_disk(tmp: Path):
     s2, s3 = R.worktree(2, 'main'), R.worktree(3, 'main')
     build(s2, 1)
     (s3 / 'notes.txt').write_text('uncommitted\n')
+    R.free_gb = lambda: 100.0  # F500: room enough to keep an unused slot as a spare
     R.drop_extra_slots(1, set())
     time.sleep(0.5)
-    check(not s2.exists(), 'an unused slot past the count is removed')
+    check(not s2.exists(), 'an unused slot past the count leaves its place')
+    spare = [p for p in s2.parent.glob('.spare-s2-*')]
+    check(len(spare) == 1 and (spare[0] / 'build/out.o').exists(), 'kept as a spare, its build warm')
+    has('\n'.join(said), r'slot 2: past the 1 slots and unused: kept as a spare', 'and says so')
+    s5 = R.worktree(5, 'main')
+    check((s5 / 'build/out.o').exists() and not spare[0].exists(), 'the next new slot reuses the spare')
+    eq(git(s5, 'rev-parse', 'HEAD'), git(repo, 'rev-parse', 'main'), 'on the branch asked for')
+    has('\n'.join(said), r'worktree s5: reusing the spare', 'and logs the step')
+    s6 = R.worktree(6, 'main')
+    check((s6 / 'a.py').exists(), 'with no spare a new worktree is checked out')
+    has('\n'.join(said), r'worktree s6: building it took', 'and its time is logged')
+    git(s5, 'checkout', '-q', '--detach')
+    R.free_gb = lambda: 30.0  # under twice min_free_gb: no spare kept
+    R.drop_extra_slots(1, {6})
+    time.sleep(0.5)
+    check(not s5.exists() and not list(s5.parent.glob('.spare-*')), 'short of disk, an unused slot is removed')
+    R.free_gb = real
     check(str(s2) not in git(repo, 'worktree', 'list'), 'and git forgets the worktree')
+    print('worktrees prepared at once')
+    ts = R.slot_prep.prepare([7, 8, 1], 'main', R.worktree)
+    for t in ts:
+        t.join(30)
+    check(len(ts) == 2 and (s2.parent / 's7/a.py').exists() and (s2.parent / 's8/a.py').exists(),
+          'the missing slots are built in parallel')
     check(s3.exists(), 'one with uncommitted work is kept')
     has('\n'.join(said), r'slot 3: past the 1 slots, but it has uncommitted work', 'and says why')
     check(d.exists(), 'a slot within the count is never touched')

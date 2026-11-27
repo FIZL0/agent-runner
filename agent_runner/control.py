@@ -931,6 +931,31 @@ def control_link(bridge: str) -> str:
     return f'{REMOTE_URL}/session_{bridge[4:]}' if bridge.startswith('cse_') else ''
 
 
+NOT_CLAUDE = ('copilot', 'gh', 'codex', 'gemini', 'opencode', 'aider', 'pi')  # B874: [run] agent stems that are no Claude Code
+
+
+def claude_chat(sid: str = '') -> bool:
+    """B874: control session `sid` runs on Claude Code (its claude.ai/code link reaches it): not the harness loop,
+    and `[run] agent` names no other agent's program."""
+    return Path((str(C.run.get('agent') or 'claude').split() or ['claude'])[0]).stem.lower() not in NOT_CLAUDE and \
+        not control_harness.harness_session(sid)
+
+
+def chat_page_link(n: int) -> str:
+    """B874: the run page's link to control session `n` (its #c<n>), '' while no run serves the page."""
+    from agent_runner import web
+    m = re.match(r'run page: (\S+://\S+)', web.page_line())
+    return f'{m[1].split("#")[0]}#c{n}' if m else ''
+
+
+def ask_link(n: int, sid: str, link: str) -> str:
+    """B874: the link a filed question of control session `n` gives: its claude.ai/code `link` on Claude Code, else
+    the run page's link to that chat (never a claude.ai/code address for a chat that is not there)."""
+    if claude_chat(sid):
+        return link
+    return chat_page_link(n)
+
+
 def control_live_numbers() -> list[int]:
     """The numbers of the control sessions with a pid file and a live process (F176: none is special, so one an
     older runner started as c1 counts too)."""
@@ -952,6 +977,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
     ask = chat_question.ask(rows)
     if ask and (tid := chat_question.needs(sid).get(ask['id'])):
         return tid
+    link = ask_link(n, sid, link)  # B874
     if not MERGE.acquire(blocking=False):
         return ''
     hold = ExitStack()
@@ -983,7 +1009,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
 
 def close_controls(branch: str = '', force: bool = False, now: float | None = None) -> list[tuple[int, str, str]]:
     """B26: close the idle ones (see above) every CONTROL_CLOSE_EVERY s: [(n, 'closed' | 'asked', why or task id)]."""
-    from agent_runner import control_ask, control_held
+    from agent_runner import control_closed, control_ask, control_held
     control_ask.fill()  # B809b
     cf = control_cfg()
     if not (cf['idle'] or cf['ask_idle']) or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
@@ -1013,6 +1039,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
             why = tid
         plat.terminate(pid)
         pidf.unlink(missing_ok=True)
+        control_closed.idle_closed(n, sid, st['at'] or now)  # B859: listed in Quiet until chat_quiet passes
         log(f'control {n}: closed, ' + (f'its question filed as {why}' if verdict == 'ask' else why) + f' (transcript kept: {control_harness.resume_hint(sid)})')
         out.append((n, 'asked' if verdict == 'ask' else 'closed', why))
     return out
@@ -1142,7 +1169,14 @@ def end_control(n: int, why: str) -> bool:
     try:
         pid_s, _, sid = pidf.read_text(encoding='utf-8').strip().partition(' ')
     except OSError:
-        return False
+        closed = C.notes(f'control{n}.closed')  # B859: one closed for being idle goes from the list at once
+        if not closed.exists():
+            return False
+        closed.unlink(missing_ok=True)
+        C.notes(f'control{n}.title').unlink(missing_ok=True)
+        C.notes(f'control{n}.name').unlink(missing_ok=True)
+        log(f'control {n}: removed from the chat list, {why}')
+        return True
     if control_live(n):
         try:
             plat.terminate(int(pid_s))  # its hidden shim ends with it
@@ -1153,6 +1187,7 @@ def end_control(n: int, why: str) -> bool:
     pidf.unlink(missing_ok=True)
     C.notes(f'control{n}.title').unlink(missing_ok=True)
     C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129
+    C.notes(f'control{n}.closed').unlink(missing_ok=True)  # B859
     log(f'control {n}: ended, {why}' + (f' (transcript kept: {control_harness.resume_hint(sid)})' if sid else ''))
     return True
 

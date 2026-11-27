@@ -287,6 +287,7 @@ class Held(NamedTuple):
     on: frozenset = frozenset()  # F420: with `prs`, the tasks that are not new
     waits: dict = {}  # F168: {task that gave up its slot: (its tool, since when)}, longest first
     high: frozenset = frozenset()  # F438: open tasks tagged `(follow-up, high)`
+    unchecked: dict = {}  # F415: {open bug task: the CONFIRM task under Needs you whose files it meets}
 
 
 def held(running: dict, branch: str) -> Held:
@@ -323,6 +324,7 @@ def held(running: dict, branch: str) -> Held:
                 holding=frozenset(row_hold.held_ids(plan_text(branch))) if todo else frozenset(),
                 **({'prs': n, 'on': pr_rows.started()} if todo and (n := pr_rows.full()) else {}),
                 high=high_tasks(branch) if todo else frozenset(),
+                unchecked=unchecked_holds(plan_text(branch), todo, shared) if todo else {},
                 splits=split_holds(branch) if todo else {}, **tool_fields(todo, live, branch))
 
 
@@ -378,6 +380,29 @@ def critical_tasks(branch: str) -> frozenset:
                                         (m := P.PRI_TAG.search(rest)) and m.group(1) == 'critical'))
 
 
+CONFIRM_ASK = re.compile(r'(?:^|\s)BLOCKED: CONFIRM:')  # F415: not `BLOCKED: shelved: CONFIRM:`
+
+
+def unchecked_holds(ls: list[str], todo: list, shared: set = frozenset()) -> dict[str, str]:
+    """F415: {open bug (B) task: the task under Needs you with CONFIRM whose files meet its own}. A fix waits while
+    an earlier one on the same files awaits the person's check, so fixes do not pile up on unverified ones. A
+    shelved CONFIRM holds nothing; critical and high tasks (a person's plan) pass; `holds` reads those."""
+    confirms = []
+    for _, box, tid, _, i in P.iter_tasks(ls):
+        if box == '~' and CONFIRM_ASK.search(' '.join(P._item_block(ls, i))):
+            if files := set(P.fields(ls[i]).get('files', [])):
+                confirms.append((tid, files))
+    out = {}
+    for t in todo:
+        if not t[0].startswith('B') or not t[2]:
+            continue
+        for cid, files in confirms:
+            if cid != t[0] and file_overlap(t[2], (cid, '', files, set()), set(shared)):
+                out[t[0]] = cid
+                break
+    return out
+
+
 def high_tasks(branch: str) -> frozenset:
     """F438: ids of the open tasks tagged `(follow-up, high)` in `branch`'s TODO.md."""
     return frozenset(tid for _, box, tid, rest, _ in P.iter_tasks(plan_text(branch))
@@ -386,7 +411,8 @@ def high_tasks(branch: str) -> frozenset:
 
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
-    ('busy', None), ('parked', None), ('no commits', None), ('held', None) (`plan hold`: F429), ('split', None) (its author is splitting it: B196), ('merging', None) (a release, while a merge holds the turn: F99),
+    ('busy', None), ('parked', None), ('no commits', None), ('held', None) (`plan hold`: F429), ('split', None) (its author is splitting it: B196),
+    ('unchecked', the CONFIRM task it waits for) (F415), ('merging', None) (a release, while a merge holds the turn: F99),
     ('unpushed', None) (a release, while landed changes wait for a person's approval: F98),
     ('prs', None) (a new task, while too many pull requests are open: F420),
     ('clash', the busy task it clashes with), or ('tool', (the shared tool it waits for, why)) (F168); None when it is free. A critical task never holds a slot
@@ -406,8 +432,16 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'no commits', None
     if tid in h.splits:  # B196
         return 'split', None
+    if tid in h.unchecked and tid not in h.critical and tid not in h.high:  # F415
+        return 'unchecked', h.unchecked[tid]
     if P.release(tid) and MERGE.locked():  # F99: a merge under way lands first, so the release starts from it
         return 'merging', None
+    return holds_after_merge(t, tried, h)
+
+
+def holds_after_merge(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
+    """`holds`' reasons after the merge under way ('unpushed' on): B849b reads them for a release the merge holds."""
+    tid = t[0]
     if P.release(tid) and unpushed():  # F98: a release waits until everything before it is approved and pushed
         return 'unpushed', None
     if h.prs and tid not in h.on and tid not in h.waits:  # F420
@@ -538,6 +572,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = ('held', f'`plan unhold {tid}` ends it')
         elif kind == 'split':
             why[tid] = ('waiting to be split', P.split_in(h.splits[tid]))
+        elif kind == 'unchecked':
+            why[tid] = ('waiting for your check', f'{b} awaits CONFIRM under Needs you, on the same files')
         elif kind == 'merging':
             why[tid] = ('waiting for a merge to land', 'a release starts from what has landed')
         elif kind == 'unpushed':
@@ -581,6 +617,8 @@ def choose(h: Held, tried: set, branch: str, claim: bool = False):
     its slot for a shared tool goes ahead of them all, the longest wait first (F168), but for this: while a critical `(alone)` task
     waits for its turn, only critical tasks start (F208, `turn_of`)."""
     turn = turn_of(tried, h, branch)
+    if claim:
+        mark_ready_releases(h, tried, turn)
     for t in sorted(h.todo, key=lambda t: (h.waits[t[0]][1] if t[0] in h.waits else float('inf'),
                                            t[0] not in h.critical, t[0] not in h.high)):
         if turn and t[0] not in h.critical or holds(t, tried, h):
@@ -612,6 +650,9 @@ def claim_task(t: tuple, h: Held, branch: str):
         return t
     if not plansync.claim(C, t[0], t[2]):
         return None
+    if over := plansync.TOOK.pop(t[0], ''):
+        log(over)  # B857: a gone run's claim, not refreshed for plansync.TAKEOVER
+        fetch_taken(t[0])  # F467: it starts from the task/<ID> branch the gone run pushed
     FETCHED[0] = 0.0  # in-repo: the merge that closed it may have landed since the last fetch
     if t[0] not in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
         plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
@@ -630,11 +671,61 @@ def claim_task(t: tuple, h: Held, branch: str):
     return t
 
 
+def fetch_taken(tid: str) -> bool:
+    """F467: fetch the task/<tid> branch a gone run pushed into local took/<tid>, which `slots.start` checks out
+    instead of a fresh fork. False when there is none (it never pushed) or no remote to fetch from."""
+    from agent_runner.gitops import _net
+    remote = C.push_remote
+    if not remote or git('remote', 'get-url', remote).returncode:
+        return False
+    got = _net(ROOT)('fetch', '-q', remote, f'+refs/heads/task/{tid}:refs/heads/took/{tid}').returncode == 0
+    if got:
+        log(f'{tid}: starts from the task/{tid} branch the gone run pushed')
+    return got
+
+
+def took_base(tid: str) -> str:
+    """F467: the commit of took/<tid> (what `fetch_taken` fetched), the branch dropped, or '' when there is none."""
+    sha = git('rev-parse', '-q', '--verify', f'refs/heads/took/{tid}').stdout.strip()
+    if sha:
+        git('branch', '-D', f'took/{tid}')
+    return sha
+
+
 PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
+RELEASE_READY: dict[str, float] = {}  # B849b: {release: time.monotonic() of the last pick that found the merge alone holds it}
+READY_FOR = 45.0  # s: a mark no pick has renewed since (run paused, usage cap, no free slot) holds no merge
+
+
+def mark_ready_releases(h: Held, tried: set, turn: str) -> None:
+    """B849b: a pick that may start a task (`choose` with claim: the run is not paused, the caps let it, a slot is free)
+    marks each release that waits on the merge under way alone, so the merges waiting behind it hold for it; every
+    other release is unmarked, so one held, dropped or blocked holds nothing."""
+    RELEASE_READY.clear()
+    if not MERGE.locked():
+        return
+    now = time.monotonic()
+    for t in h.todo:
+        if P.release(t[0]) and not (turn and t[0] not in h.critical) and \
+                (holds(t, tried, h) or ('',))[0] == 'merging' and holds_after_merge(t, tried, h) is None:
+            RELEASE_READY[t[0]] = now
+
+
+def ready_release(branch: str = '') -> str:
+    """B849b: the release a recent pick found ready to start but for the merge under way, else ''. One since held
+    (`plan hold`), blocked or dropped in `branch`'s plan holds nothing, even before the next pick unmarks it."""
+    now = time.monotonic()
+    if not (marked := [v for v, at in sorted(RELEASE_READY.items()) if now - at < READY_FOR]):
+        return ''
+    text = plan_text(branch)
+    held_ = row_hold.held_ids(text)
+    ready_ = {tid for _, box, tid, _, _ in P.iter_tasks(text) if box == ' '}
+    return next((v for v in marked if v in ready_ and v not in held_), '')
 
 
 CLAIMS_AT = [0.0]
 STALE_SAID: set[str] = set()
+LOST_SAID: set[str] = set()  # B857: this run's tasks whose claim another run took over, said once each
 
 
 def touched(tid: str, branch: str, slot: Path | None) -> set[str]:
@@ -661,6 +752,11 @@ def keep_claims(running: dict, branch: str) -> None:
     lines = {t[0]: t[2] for t in tasks(branch)}
     files = {t: set(slots.get(t, (None, lines.get(t, set())))[1]) | touched(t, branch, slots.get(t, (None,))[0])
              for t in keep}
+    for t, cl in plansync.lost(C, keep).items():  # B857: taken over while this run was away: given up
+        if t not in LOST_SAID:
+            LOST_SAID.add(t)
+            log(f'{t}: claim taken over by {cl.who}; given up here (its pushed task/{t} branch is kept)')
+        keep.discard(t)
     plansync.refresh(C, keep, files)
     me = plansync.owner(C)
     for t, cl in plansync.claims(C).items():

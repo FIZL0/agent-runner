@@ -40,10 +40,17 @@ def _answer_action(key: str, label: str, tui: str, **more) -> dict:
             'fits': lambda r: bool(answer_of(r, key)), 'label_of': lambda r: answer_of(r, key), **more}
 
 
+def taken_row(row: dict) -> bool:
+    """F455b: is queue row `row` a task taken by hand (`under_way_rows`' words), not one that merges or waits to resume."""
+    return bool(row.get('under_way')) and str((row.get('way') or {}).get('words', '')).startswith('Taken')
+
+
 ANSWER_MAX, ANSWER_KEYS = 12, 'abcdefg'  # F180: the most fixed answers a row draws, and the TUI keys of the first ones
 RUN_CONTROLS = (
-    {'key': 'slot_add', 'label': 'Slot +1', 'argv': ('slots', '+1'), 'tui': '+', 'where': 'run'},
-    {'key': 'slot_remove', 'label': 'Slot -1', 'argv': ('slots', '-1'), 'tui': '-', 'where': 'run'},
+    {'key': 'slot_add', 'label': 'Slot +1', 'argv': ('slots', '+1'), 'tui': '+', 'where': 'run',
+     'card_label': 'Slot'},  # F472: on the page's Run card the + icon says which
+    {'key': 'slot_remove', 'label': 'Slot -1', 'argv': ('slots', '-1'), 'tui': '-', 'where': 'run',
+     'card_label': 'Slot'},
     {'key': 'slots_set', 'label': 'Set slots', 'argv': ('slots', '{n}'), 'tui': '=', 'where': 'run', 'group': 'Run'},
     {'key': 'pause', 'label': 'Pause', 'argv': ('pause',), 'tui': 'P', 'where': 'run'},
     {'key': 'go_on', 'label': 'Go on', 'argv': ('pause', '--off'), 'tui': 'G', 'where': 'run'},
@@ -77,7 +84,7 @@ RUN_CONTROLS = (
      'where': 'run', 'group': 'Fix up', 'fix': 'wip', 'confirm': WIP_DROP_ASK},
     # F426d: what it asks names the minutes worked (`confirm_of`; the page adds them itself, `cutsOff`)
     {'key': 'task_cancel', 'label': 'Cancel', 'argv': ('plan', 'cancel', '{id}', '--yes'), 'tui': 'C', 'where': 'task',
-     'help': 'cancel: stop it, keep its work and park it', 'confirm': cancel.ASK + ' Cancel {id}?',
+     'help': 'cancel: stop it, keep its work and hold it', 'confirm': cancel.ASK + ' Cancel {id}?',
      'confirm_of': lambda r: cancel.question(r['task'], r.get('name', ''), r.get('minutes'))},
     {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'task'},
@@ -86,10 +93,15 @@ RUN_CONTROLS = (
     # tab's ('where' 'release'). 'tui_sure' False: the terminal UI runs it without asking (the page asks).
     # 'confirm_of' (F186): a row's own confirm ('' the entry's), asked by both; the snapshot row's `asks` carries it.
     {'key': 'queue_priority', 'label': 'Priority', 'argv': ('plan', 'edit', '{id}', '--pri', '{pri}'), 'tui': 'p',
-     'where': 'queue', 'fits': lambda r: r.get('state') != 'parked'},
+     'where': 'queue', 'fits': lambda r: r.get('state') != 'parked' and not taken_row(r)},
     {'key': 'queue_unpark', 'label': 'Unpark', 'argv': ('plan', 'edit', '{id}', '--pri', 'normal'), 'tui': 'U',
      'where': 'queue', 'help': 'unpark (a parked task: no J/K or p)', 'fits': lambda r: r.get('state') == 'parked'},
-    {'key': 'queue_take', 'label': 'Do it here', 'ask': 'do {id} here', 'tui': 'H', 'where': 'queue'},
+    {'key': 'queue_take', 'label': 'Do it here', 'ask': 'do {id} here', 'tui': 'H', 'where': 'queue',
+     'fits': lambda r: not taken_row(r)},
+    # F455b: a task taken by hand is cancelled from its queue row (cancel keeps its work and parks it); not one merging
+    {'key': 'queue_cancel', 'label': 'Cancel', 'argv': ('plan', 'cancel', '{id}', '--yes'), 'tui': 'C', 'where': 'queue',
+     'help': 'cancel (a task taken by hand): keep its work and hold it', 'confirm': cancel.ASK + ' Cancel {id}?',
+     'fits': taken_row, 'confirm_of': lambda r: cancel.question(r['id'])},
     {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
      'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
      'fits': lambda r: not r.get('started'),
@@ -177,7 +189,9 @@ def controls_shown(up: bool, run: dict, fixups: dict) -> dict:
         if c.get('up', True) == up or (not up and c.get('fix')):
             shown.append(c['key'])
     card = ['start'] if not up else ['slot_remove', 'slot_add', 'go_on' if run.get('paused') else 'pause',
-                                      'stop_undo' if run.get('stopping') else 'stop']
+                                      'stop']
+    if up and run.get('stopping'):  # F472: Stop now beside Take the stop back, not only under More
+        card[-1:] = ['stop_now', 'stop_undo']
     return {'shown': shown, 'card': card}
 
 
@@ -322,7 +336,7 @@ def controls(rel_ask: dict | None = None) -> list[dict]:
              'each': bool(c.get('each')), 'up': c.get('up', True), 'tui_also': c.get('tui_also', ''),
              'tui_sure': c.get('tui_sure', True), 'chat': bool(c.get('ask') or c.get('chat')), 'fn': bool(c.get('fn')),
              'tui_main': c.get('tui_main', True), 'answer': bool(c.get('answer')),
-             'tab': c.get('tab', '')} for c in RUN_CONTROLS
+             'tab': c.get('tab', ''), 'card_label': c.get('card_label', c['label'])} for c in RUN_CONTROLS
             if not (plat.WINDOWS and c['key'] == 'restart')]  # no re-exec there
 
 
@@ -352,6 +366,15 @@ def control_argv(key: str, n='', tid: str = '', why: str = '', pri: str = '') ->
 
 def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True,
                 text: str = '', note: str = '') -> dict:
+    """F479: _run_control, its whole time (checks, plan lock, subprocess) logged when slow."""
+    t0 = time.monotonic()
+    r = _run_control(key, n, tid, why, confirm, wait, text, note)
+    slow_log('control', [key, tid], time.monotonic() - t0)
+    return r
+
+
+def _run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True,
+                 text: str = '', note: str = '') -> dict:
     """F82: run one run control (RUN_CONTROLS) for the web page or agent-runner ui. One with a confirm question
     runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'. B139:
     one with an 'ask' starts a new control session with it (`new_control`, `wait` as there). F180: an answer takes `text`, the label the

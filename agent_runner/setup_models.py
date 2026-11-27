@@ -182,6 +182,9 @@ def offer(root: Path, terminal: bool) -> list[str]:
     said: list[str] = []
     try:
         table = rows(root, providers)
+        use = login.provider_of(models.get('code') or CF.DEFAULTS['models']['code'], providers)
+        if use in NAMES and {p: ok for p, ok, _ in table}.get(use) and (use != 'claude' or claude_program(root)):
+            return [f'{NAMES[use]} is used and ready: Settings on the run page changes the provider']
         print('\nWhich providers should tasks run on?')
         for n, (p, _, what) in enumerate(table, 1):
             print(f'  {n}  {NAMES[p].ljust(14)}  {what}')

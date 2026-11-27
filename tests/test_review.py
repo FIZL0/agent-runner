@@ -171,6 +171,42 @@ def test_one_shot():
         check('the new thing' in got['said'], 'and the diff on stdin')
 
 
+def test_review_page():
+    """F444: a waiting change's Review page shows its diff (cut to approve_diff_lines), the questions asked about it
+    and their answers, and how to ask, ask for a better way, or approve."""
+    from agent_runner import pitch, review as RV, state as S
+    with tempfile.TemporaryDirectory() as t:
+        root, _ = make(Path(t), 'approve_diff_lines = 3\n')
+        R.init(root)
+        before = git(root, 'rev-parse', 'HEAD')
+        (root / 'a.py').write_text('one\ntwo <b>\nthree\nfour\n', encoding='utf-8')
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'F1 a thing')
+        after = git(root, 'rev-parse', 'HEAD')
+        x = {'id': 'F1', 'title': 'add a thing', 'before': before, 'after': after, 'files': ['a.py'], 'state': 'waiting',
+             'pitch': 'pitch1', 'say': {'what': 'a thing', 'why': 'you asked'}, 'subject': 'F1 a thing', 'merged': after, 'undo': '', 'key': 'F1@x', 'err': ''}
+        diff, n = RV.change_diff(x)
+        eq(len(diff.splitlines()), 3, 'cut to approve_diff_lines')
+        check(n > 3, 'and it knows the whole length', n)
+        page = pitch.page_html('pitch1', {'changes': [x], 'pitches': []})
+        has(page, '3 of ', 'the page says the diff is cut')
+        has(page, 'pitch ask pitch1 F1', 'how to ask about it')
+        has(page, 'pitch better pitch1 F1 --why', 'how to ask for a better way')
+        x['after'], x['before'] = x['before'], x['after']
+        S.C.run['approve_diff_lines'] = 50
+        has(pitch.page_html('pitch1', {'changes': [x], 'pitches': []}), '-two &lt;b&gt;', 'the diff, escaped')
+        seen = []
+        said, why = RV.ask_change(x, 'why four?', root, once=lambda text: (seen.append(text) or 'because', ''))
+        eq((said, why), ('because', ''), 'the one-shot answers')
+        check('why four?' in seen[0] and 'you asked' in seen[0] and 'two <b>' in seen[0],
+              'handed the question, the why and the diff', seen[0])
+        page = pitch.page_html('pitch1', {'changes': [x], 'pitches': []})
+        has(page, 'why four?', 'the question is on the page')
+        has(page, 'because', 'and its answer')
+        S.C.run['approve_diff_lines'] = 0
+        check('The diff' not in pitch.page_html('pitch1', {'changes': [x], 'pitches': []}), '0: no diff')
+
+
 if __name__ == '__main__':
     tests = [test_prompt_provider] + ([] if os.name == 'nt' else [test_one_shot])  # its fake programs are POSIX
-    raise SystemExit(report(tests + [test_prompt_on, test_prompt_off]))
+    raise SystemExit(report(tests + [test_prompt_on, test_prompt_off, test_review_page]))

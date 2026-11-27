@@ -145,6 +145,13 @@ def brief_for(tid: str, cwd: Path) -> str:
     try:
         return '\n'.join(P.brief(tid, root=cwd, plan_dir=plan_at(cwd)))
     except SystemExit as e:
+        # B869: a worktree started on a base older than the task (a merge ahead, a task filed on main since) has no
+        # line for it in its own plan; the main checkout's plan has, so the session still gets its brief.
+        if not C.plan_external and Path(cwd).resolve() != Path(C.root).resolve():
+            try:
+                return '\n'.join(P.brief(tid, root=cwd, plan_dir=C.plan_dir))
+            except SystemExit:
+                pass
         return f'({C.command} plan brief {tid} produced nothing: {e})'
 
 
@@ -334,7 +341,8 @@ What you ask of a person (a CONFIRM, DECIDE or BLOCKED, or `ask`) is read in Nee
 one short sentence, at most about 100 characters. It starts with what the person does, in words a person who never saw \
 the task understands, and the reason comes second; it names no task id without that task's title. \
 A wait on a task or a release is `--after <ID>`, and a wait a check can read is `--until <CHECK>` (`version:X.Y.Z`, \
-`login:PROVIDER`, `tool:NAME`, `check:NAME`): never `BLOCKED:`, as no person is needed. `done --blocked` refuses a \
+`login:PROVIDER`, `tool:NAME`, `check:NAME`, or `date:YYYY-MM-DD` when all it waits for is a day, and it reopens by \
+itself then): never `BLOCKED:`, as no person is needed. `done --blocked` refuses a \
 CONFIRM or BLOCKED line over 200 characters with no ask file, or one that waits on an open task or release with no \
 `--after`. When there is more to say, write it first to the ask file {path}, as \
 JSON: {{"summary": <what is wanted, one sentence>, "where": <the device or place>, "steps": [<what to do>, …], \

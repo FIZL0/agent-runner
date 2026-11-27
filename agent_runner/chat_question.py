@@ -13,13 +13,14 @@ from agent_runner import need_detail
 from agent_runner.plan import cut_question, decide_question
 
 
-def ask_of(text: str, uuid: str = '') -> dict | None:
+def ask_of(text: str, uuid: str = '', bare: bool = False) -> dict | None:
     """The question Claude's message `text` ends on: {'id' (its transcript entry's `uuid`, else one made of its
     words, as cut before B840: one filed then keeps its id), 'question', 'options': [{'name', 'rec'}], the recommended first}.
-    None when it ends on no DECIDE line, or on one with no options (a malformed bracket is part of the question, as in Needs you)."""
+    None when it ends on no DECIDE line, or on one with no options (a malformed bracket is part of the question, as in Needs you);
+    B832: `bare`, one with no options is that question with `options` [] (Home's Needs you lists it)."""
     q = decide_question(text)
     options, question = need_detail.decide_options('', q, f'DECIDE: {q}') if q else ([], '')
-    if not options:
+    if not options and not (bare and q):
         return None
     question = re.sub(r'(?:\s+https?://\S+)+\s*$', '', question)  # the links after the bracket
     return {'id': uuid or hashlib.sha256(cut_question(q).encode('utf-8')).hexdigest()[:16], 'question': question, 'options': options}
@@ -88,10 +89,10 @@ def _about(d: dict) -> bool:
     return bool(texts) and all(map(is_about, texts))
 
 
-def ask(rows) -> dict | None:
+def ask(rows, bare: bool = False) -> dict | None:
     """The question transcript entries `rows` leave open; None when the person has spoken since, or Claude's turn goes on
     after it (a tool call). F430: messages about it (`is_about`) and Claude's replies to them leave it open, until a reply
-    ends on another DECIDE line."""
+    ends on another DECIDE line. `bare` as `ask_of`."""
     from agent_runner.control import message_text, person_turn
     from agent_runner.feed import queued_message
     parts: list[list] = [[]]  # what the person's last other words began, and then each message about the question
@@ -105,14 +106,14 @@ def ask(rows) -> dict | None:
             elif not (len(parts) > 1 and message_text(d).startswith('[Request interrupted')):  # a reply cut short answers nothing
                 parts = [[]]
         parts[-1].append(d)
-    out = _ends_on(parts[0])[1]
+    out = _ends_on(parts[0], bare)[1]
     for part in parts[1:]:
-        asks, new = _ends_on(part)
+        asks, new = _ends_on(part, bare)
         out = new if asks else out
     return out
 
 
-def _ends_on(rows: list[dict]) -> tuple[bool, dict | None]:
+def _ends_on(rows: list[dict], bare: bool = False) -> tuple[bool, dict | None]:
     """Whether the last answer in `rows` ends on a DECIDE line, and its `ask_of`."""
     from agent_runner.control import control_state, message_text
     st = control_state(rows)
@@ -122,4 +123,49 @@ def _ends_on(rows: list[dict]) -> tuple[bool, dict | None]:
     items = (said.get('message') or {}).get('content')
     if any(isinstance(x, dict) and x.get('type') == 'tool_use' for x in (items if isinstance(items, list) else ())):
         return False, None  # a call in the same entry; one after it is `control_state`'s to see
-    return bool(decide_question(st['text'])), ask_of(st['text'], str(said.get('uuid') or ''))
+    return bool(decide_question(st['text'])), ask_of(st['text'], str(said.get('uuid') or ''), bare)
+
+
+def chat_needs(sessions: list[dict]) -> list[dict]:
+    """B832: Home's Needs you rows of the live chats in session rows `sessions` (`ui_model.session_rows`) whose answer
+    ends on a DECIDE line, at once, before the run files it: {'chat' (cN), 'id' (the question's), 'title' (the chat's
+    name), 'question', 'options' (maybe []), 'at' (epoch s)}. Each row's 'question' is `ask(rows, bare=True)` of its
+    cached transcript read (`ui_model.chat_state`); one the run filed shows only as its item, so is left out here."""
+    out = []
+    for r in sessions:
+        q, sid = r.get('question'), r.get('sid') or ''
+        if not (q and str(r.get('name', '')).startswith('c')):
+            continue
+        if q['id'] in needs(sid):  # filed: its item asks it (or asked it, and it was answered there)
+            continue
+        out.append({'chat': r['name'], 'id': q['id'], 'title': r.get('title') or r['name'], 'question': q['question'],
+                    'options': q['options'], 'at': int(r.get('at') or 0)})
+    return out
+
+
+def live_needs() -> list[dict]:
+    """F486: `chat_needs` of this repository's live chats, for the `needs` command and status's Needs you, which run in
+    a process of their own with no cached transcript read: one read per live chat. [] when they cannot be read."""
+    try:
+        from agent_runner import ui_model as U
+        return chat_needs(U.control_rows(U.control_titles()))
+    except Exception:  # noqa: BLE001 - a nicety of Needs you: the filed items still show
+        return []
+
+
+def need_lines(rows: list[dict], indent: str = '') -> list[str]:
+    """F486: one 'cN - question [A (recommended) / B]' line per `chat_needs` row."""
+    out = []
+    for r in rows:
+        opts = ' / '.join(o['name'] + (' (recommended)' if o.get('rec') else '') for o in r.get('options') or [])
+        out.append(f'{indent}{r["chat"]} - {r["question"]}' + (f' [{opts}]' if opts else ''))
+    return out
+
+
+def with_chats(lines: list[str]) -> list[str]:
+    """F486: the `needs` command's lines (`plan.needs_lines`, its count last) with the live chats' DECIDE questions
+    before the count, counted too."""
+    if not (chats := need_lines(live_needs())):
+        return lines
+    n = len(lines) - 1 + len(chats)
+    return lines[:-1] + chats + ['1 thing needs you' if n == 1 else f'{n} things need you']

@@ -62,7 +62,7 @@ DRIVER = r"""<script>
     out.noDots = ['F3', 'P8'].map(id => !one(`[data-planmenu="${id}"]`));
     still(); const y0 = one('[data-k="task:F1"]').getBoundingClientRect().top;
     start('F1'); await wait(400); still();
-    out.start = [bar(), ticks(), !!one('.card.waitset [data-waitme="F1"]'), document.activeElement.dataset.waitme, $$(':is(.grip,.qmenu,.qacts,[data-task])').length, Math.round(one('[data-k="task:F1"]').getBoundingClientRect().top - y0)];
+    out.start = [bar(), ticks(), !!one('.card.waitset [data-waitme="F1"]'), document.activeElement.dataset.waitme, $$(':is(.grip,.qmenu,.qacts,[data-task])').length, Math.abs(one('[data-k="task:F1"]').getBoundingClientRect().top - y0) <= 1 ? 0 : one('[data-k="task:F1"]').getBoundingClientRect().top - y0];  // F476: within a pixel (the Work page's sections above have fractional heights)
     out.off = $$('[aria-disabled]').map(e => [e.dataset.waitpick, words(e.dataset.waitpick)]);
     out.ph = one('[data-k="rel:next"]').querySelectorAll('button').length;
     out.roles = [...new Set($$('[data-waitpick]').map(e => e.nodeName + e.getAttribute('role')))];
@@ -74,7 +74,7 @@ DRIVER = r"""<script>
     pick('F3').focus(); tap('F3'); out.picked = [ticks(), document.activeElement.dataset.waitpick, $$('[aria-expanded="true"]').length];
     tap('X1'); FAKE.queue[1].title = 'Changed'; FAKE.queue = FAKE.queue.filter(q => q.id !== 'X1'); fresh(); await wait(); out.redrawn = [ticks(), bar(), document.activeElement.dataset.waitpick, document.body.innerText.includes('Changed')];
     S.f.planq = 'P8'; PQ.got = {q: 'P8', open: [], parked: [{id: 'P8'}], done: [{id: 'Z'}], more: 0}; render(true); out.found = $$('[data-waitpick]').map(e => e.dataset.waitpick); tap('P8'); S.f.planq = ''; render(true);
-    goView('status'); out.away = bar(); goView('plan'); out.backHere = bar() !== '';
+    goView('home'); out.away = bar(); goView('plan'); out.backHere = bar() !== '';  // F476: Status is the Work page now, so away is Home
     const n = posts.length; esc(); out.esc = [bar(), posts.length - n, $$('[data-waitpick]').length, document.activeElement.dataset.planmenu, words('F1')];
     start('F1'); tap('B2'); one('[data-waitcancel]').click(); out.cancel = [posts.length - n, words('F1'), bar()];
     start('F1'); done(); out.same = posts.length - n;
@@ -87,6 +87,9 @@ DRIVER = r"""<script>
     const card = () => $$('.obstand.failed')[0]; out.refused = [words('F1'), card() && card().innerText.includes('F1 has started: it runs'), !!card() && !!card().querySelector('[data-obretry]')];
     refuse = ''; card().querySelector('[data-obretry]').click(); out.again = words('F1'); await wait(100); out.retried = [sets().pop(), !card()];
     Object.assign(FAKE.queue[1], {after: [], after_title: 'all: everything above it'}); fresh(); start('B2'); done(); await wait(); out.all = sets().pop();
+    const V = () => FAKE.queue.find(q => q.id === 'V9'), rq = FAKE.queue.filter(q => q.id !== 'V9');
+    out.drag = [gripWaits(V(), rq.slice(0, 1)).release.waits.map(w => w.id), gripWaits(V(), rq.slice(0, 2)).release.waits.map(w => w.id)];
+    out.rel = start('V9') ? [ticks(), bar()] : []; tap('B2'); done(); out.relNow = words('V9'); await wait(); out.relSent = sets().pop();
     start('F1'); FAKE.queue[0].menu = []; fresh(); await wait(); out.started = [bar(), $$('[data-waitpick]').length, one('#toast').textContent];
   } catch (e) { out.error = String(e.stack || e) }
   const pre = document.createElement('pre'); pre.id = 'out'; pre.textContent = JSON.stringify(out); document.body.appendChild(pre);
@@ -125,7 +128,7 @@ def test_page(tmp: Path) -> None:
     if 'error' in o:
         return
     hold, top, rm = "Hold: a run won't start it", 'To the top', 'Remove'
-    eq(o['menus'], [[hold, 'Wait for…', top, rm], [hold, top, rm], [hold, top, rm], [hold, top, rm]], 'a task has it; one on the person, a release and the Next release row do not')
+    eq(o['menus'], [[hold, 'Wait for…', top, rm], [hold, top, rm], [hold, 'Wait for…', top, rm], [hold, top, rm]], 'a task and a release have it (B870); one on the person and the Next release row do not')
     eq(o['noDots'], [True, True], 'a running row and a parked one have no menu')
     eq(o['start'], ['What should F1 wait for? Cancel Done', ['B2'], True, 'F1', 0, 0], 'the bar, its waits ticked (a landed one is none), the row marked where it was; no drag, no menu, nothing to open')
     eq(o['off'], [['F1a', 'A part of F1'], ['F4', 'Waits for F1 itself'], ['F5', 'Waits for F1 itself'], ['V9', 'Waits for F1 itself']], 'what it cannot wait for is dimmed, through other tasks too')
@@ -145,6 +148,9 @@ def test_page(tmp: Path) -> None:
     eq((o['hope'], o['refused']), ('Waits for B2 Changed', ['Ready to start when a slot is free', True, True]), 'refused: taken back, the reason and Retry')
     eq((o['again'], o['retried']), ('Waits for B2 Changed', [{'tid': 'F1', 'ids': ['B2']}, True]), 'Retry sends it again')
     eq(o['all'], {'tid': 'B2', 'ids': []}, 'a wait for all with nothing to tick is cleared')
+    eq(o['drag'], [['F1'], ['F1', 'B2']], 'B870: a release moved below a task waits for it, moved above it no more')
+    eq(o['rel'], [['F1'], 'What should V9 wait for? Cancel Done'], 'B870: a release card has Wait for…, its waits ticked')
+    eq((o['relNow'], o['relSent']), ('Waits for 2 tasks', {'tid': 'V9', 'ids': ['F1', 'B2']}), 'B870: Done sets the release\'s list')
     eq(o['started'][:2], ['', 0], 'a task that started meanwhile is set no more')
     check('F1 has started' in o['started'][2], 'and it says so', o['started'][2])
 

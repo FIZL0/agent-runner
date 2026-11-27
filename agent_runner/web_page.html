@@ -19,7 +19,14 @@ const PAGE_PRINT='/*PAGE_PRINT*/';
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap">
 <style>
 /*PAGE_PARTS:css*/
+/* F474: a chat's history shows a thin grey scrollbar, so a person sees where they are in a long chat and can drag it */
+.feed .feedpast.armed{scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+.feed .feedpast.armed::-webkit-scrollbar{display:block;width:8px}
+.feed .feedpast.armed::-webkit-scrollbar-track{background:transparent}
+.feed .feedpast.armed::-webkit-scrollbar-thumb{background:var(--line2);border-radius:var(--r-xs)}
+.feed .feedpast.armed::-webkit-scrollbar-thumb:hover{background:var(--faint)}
 </style>
+<style id="uithemes">/*UI_THEMES*/</style>
 </head>
 <body>
 <div class="app" id="app">
@@ -43,6 +50,7 @@ const PAGE_PRINT='/*PAGE_PRINT*/';
   </div>
   <input type="file" multiple hidden id="file">
 </div>
+<div class="keybar" id="keybar" aria-label="Keys" hidden></div>
 <div class="toast" id="toast" role="status" hidden></div>
 <div class="obpop" id="obpop" hidden></div>
 <div class="cview" id="cview" role="dialog" aria-label="Concept" hidden></div>

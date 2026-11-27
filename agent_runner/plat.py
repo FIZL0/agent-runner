@@ -411,23 +411,51 @@ def link(src: Path, dst: Path) -> bool:
     A symlink where the OS allows one. On Windows that takes Developer Mode or an elevated process, which
     an unattended run cannot assume, so a directory gets a junction (`mklink /J`, no privilege needed) and
     a file a hard link (same volume, which a worktree beside the repo is).
+
+    On Windows a directory is always a junction, even where a symlink would do: tools such as esbuild
+    resolve a directory symlink to another drive wrong (the target's `D:\\...` glued onto the link's
+    path, issue #6), while a junction reads as a plain directory.
     """
+    if WINDOWS and src.is_dir() and junction(src, dst):
+        return True
     try:
         dst.symlink_to(src)
         return True
     except OSError:
         pass
     if WINDOWS:
-        if src.is_dir():
-            if not sp.run(['cmd', '/c', 'mklink', '/J', str(dst), str(src)], capture_output=True).returncode:
-                return True
-        else:
+        if not src.is_dir():
             try:
                 os.link(src, dst)
                 return True
             except OSError:
                 pass
     return dst.exists()
+
+
+def junction(src: Path, dst: Path) -> bool:
+    """A Windows directory junction at `dst` for `src` (`mklink /J`); True if made."""
+    return not sp.run(['cmd', '/c', 'mklink', '/J', str(dst), str(src)], capture_output=True).returncode
+
+
+def relink_dir(src: Path, dst: Path) -> bool:
+    """On Windows, turn a directory symlink `dst` (a slot kept warm from before) into a junction; True if done."""
+    if not (WINDOWS and dst.is_symlink() and src.is_dir()):
+        return False
+    try:
+        try:
+            os.rmdir(dst)  # removes the link only, never its target (a directory symlink on Windows)
+        except OSError:
+            os.unlink(dst)
+    except OSError:
+        return False
+    if junction(src, dst):
+        return True
+    try:
+        dst.symlink_to(src, target_is_directory=True)
+    except OSError:
+        pass  # link() makes it again next
+    return False
 
 
 # --- command lines -----------------------------------------------------------

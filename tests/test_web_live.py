@@ -677,7 +677,7 @@ const snap = (...l) => ({at: 'now', sessions: [c('c1'), ...l], needs: []});
 (async () => {
   const out = {views: {}}, talk = {ok: true, name: 'c4', entries: [{kind: 'you', text: 'hi'}, {kind: 'say', text: 'An old reply.'}]};
   let tab = map(), p;
-  for (const v of ['home', 'talk', 'status', 'plan', 'concepts', 'settings', 'projects']) {
+  for (const v of ['home', 'talk', 'tools', 'plan', 'concepts', 'settings', 'projects']) {  // F476: Status is Work ('plan')
     load({tab}).goView(v); p = load({tab}); out.views[v] = [p.log.draws[0][0], p.log.draws.length];
     p.takeSnap(snap()); out.views[v].push(p.at()[0]);
     if (v === 'settings') out.settings = p.log.settings;
@@ -760,10 +760,10 @@ def test_reload_b177(tmp: Path) -> None:
     eq(o['talkEnded'], [True, True, True, '', 0], "Talk's chat that has ended: its words and that it ended; the next message opens a new one")
     eq((o['talkGone'], o['talkNone'], o['talkOwn']), (True, '', ['', 'c4']), 'a gone one greets; another tab, or another project on the same address, does not set it')
     eq(o['other'], [home, ['plan', None], home], 'two projects, or two tabs, do not share')
-    eq(o['own'], [home, ['status', None]], "nor two projects on a run's own address")
-    eq(o['junk'], [home] * 4 + [['status', None]], 'what is no place is Home; an old view name is its new one')
+    eq(o['own'], [home, ['plan', None]], "nor two projects on a run's own address")
+    eq(o['junk'], [home] * 4 + [['plan', None]], 'what is no place is Home; an old view name is its new one')
     eq(o['boom'], ['talk', None], 'storage that throws: the page loads and works')
-    eq(o['link'], [['plan', None], '/p/a/?t=x', ['status', None], ['home', 'c5'], ['home', 'c5'], ['settings', None, 1]],
+    eq(o['link'], [['plan', None], '/p/a/?t=x', ['plan', None], ['home', 'c5'], ['home', 'c5'], ['settings', None, 1]],
        "a link's view or chat wins and leaves the address; one that names nothing does not; one followed in the open page")
     eq(o['talkFirst'], [True, False], 'Talk waits for its chat without a greeting')
     eq(o['talk'], [['talk', None], 'c4', True, [], 0, ''], "Talk's own chat, with no reply read aloud and no mic")
@@ -1539,7 +1539,7 @@ def test_banner_f402c(tmp: Path) -> None:
     s = {'up': False, 'boot': 'b', 'shown': U.controls_shown(False, {}, {})['shown']}
     got = logic_js([['runOff', s, {'view': v}] for v in ('home', 'status', 'plan', 'talk')]
                    + [['runOff', s, {'view': 'home', 'thread': 'c1'}], ['runStarts', s], ['runStarts', {**s, 'up': True}]])
-    eq(got, [False, False, True, True, True, True, False], 'where the banner shows')
+    eq(got, [False, False, False, True, True, True, False], 'where the banner shows (F476: Work has the run controls, as Status had)')
 
 
 def test_copilot_jump_b863(tmp: Path) -> None:
@@ -1569,5 +1569,34 @@ console.log(JSON.stringify([one,[ends,downs]]));
         eq(json.loads(r.stdout), [[1, 0, False, 1], [1, 1]], 'a press takes the terminal to its end; the history still goes back its own way')
 
 
+def test_task_links_f482(tmp: Path) -> None:
+    """F482: a known task id in a reply is a link that opens its sheet in Work; #task-ID opens it on load and on hashchange."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("q('[data-taskgo]')){e.preventDefault();taskGo(" in page, 'a press on a task link opens the task')
+    check("takePlace();if(S.ren)renameLeave(S.thread);S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();" in page, 'a hashchange takes the place and loads it, so #task-ID opens the task')
+    check('return taskLinks(h,taskIds())' in page, 'replies link the ids of known tasks')
+    if not shutil.which('node'):
+        return
+    got = logic_js([['taskLinks', '<p>B493 and F453, not X1 or <a href="u">B493</a> <code>B493</code></p>', ['B493', 'F453']],
+                    ['placeOf', '{}', '#task-B493', False, []], ['placeOf', '{}', '#task-', False, []]])
+    eq(got[0], '<p><a href="#task-B493" class="tasklink" data-taskgo="B493">B493</a> and '
+       '<a href="#task-F453" class="tasklink" data-taskgo="F453">F453</a>, not X1 or <a href="u">B493</a> <code>B493</code></p>', 'known ids become links')
+    eq(got[1], {'v': 'plan', 't': '', 'link': True, 'task': 'B493'}, '#task-B493 opens Work with the task')
+    eq(got[2]['link'], False, 'a #task- with no id is no link')
+    src = ''.join(page[page.index(f'function {f}('):].split('\n', 1)[0] + '\n' for f in ('taskGo', 'placeLoad'))
+    (tmp / 'driver.js').write_text(src + r"""
+const S={taskGo:'B493',view:'home',thread:'c1',taskOpen:{}}, opened=[];
+const taskIsOpen=(l,id)=>S.taskOpen[l]===id, openTask=id=>{opened.push(id);S.taskOpen.queue=id}, render=()=>{}, loadFeed=()=>{};
+placeLoad();
+const one=[S.view,S.thread,S.taskGo,opened.slice()];
+taskGo('B493');
+console.log(JSON.stringify([one,opened]));
+""", encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the task link', r.stderr[-900:])
+    if r.returncode == 0:
+        eq(json.loads(r.stdout), [['plan', None, '', ['B493']], ['B493']], 'the link opens its sheet once; again keeps it open')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c), in_tmp(test_copilot_jump_b863)]))
+    raise SystemExit(report([in_tmp(test_feed_pane_concept), in_tmp(test_control_rows), in_tmp(test_news_f149), in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_keyboard_feed_b214), in_tmp(test_reload_b177), in_tmp(test_older_run_b164), in_tmp(test_session_feed_f114), in_tmp(test_switcher_f206), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_bars_over_text_b192), in_tmp(test_phone_screen_b194), in_tmp(test_frame_typing_b190), in_tmp(test_frame_copy_b845), in_tmp(test_session_run_side_f170), in_tmp(test_send_waits_f205), in_tmp(test_banner_f402c), in_tmp(test_copilot_jump_b863), in_tmp(test_task_links_f482)]))

@@ -9,7 +9,7 @@ from __future__ import annotations
 DEVICE, EVERYONE = 'device', 'everyone'  # a home: saved in runner.local.toml at once, or in runner.toml, committed at once
 
 # (group, heading, where it is drawn, what the heading says of its home): 'page' on the page itself, 'advanced' behind
-# Advanced, 'file' behind Project file (read only)
+# Advanced, 'file' behind Project file (F448b: edited there too)
 GROUPS: tuple[tuple[str, str, str, str], ...] = (
     ('speed', 'Speed and limits', 'page', DEVICE),
     ('landing', 'Landing work', 'page', EVERYONE),
@@ -32,11 +32,14 @@ _HOME = {g: home for g, _, _, home in GROUPS}
 WORDS: dict[str, tuple[str, str, str]] = {
     # on the page
     'run.slots': ('speed', 'Tasks at once', 'How many tasks are worked on together. More finishes sooner and uses your limit faster.'),
+    'run.usage_limits': ('speed', 'Usage limits', 'Hold new tasks at the 5-hour and weekly limits below. Off: usage is never read or shown.'),
     'run.weekly_max': ('speed', 'Weekly limit', 'New tasks wait once your 7-day Claude usage passes this. Running tasks finish.'),
     'run.session_max': ('speed', '5-hour limit', 'New tasks wait once your 5-hour Claude usage passes this. Running tasks finish.'),
+    'git.master_branch': ('landing', 'Working branch', 'The branch finished work is applied to; tasks start from it. Empty: found by itself.'),
     'run.approve': ('landing', 'Ask me before publishing', 'Finished work waits in Needs you until you approve it. Off: it is pushed once its tests pass.'),
     'run.approve_wait': ('landing', 'Wait before asking', 'Minutes with no new related change before you are asked. Longer groups more work into one question.'),
     'run.approve_batch': ('landing', 'Ask at once at', 'This many related changes are put to you at once, without the wait. Lower asks sooner.'),
+    'run.approve_diff_lines': ('merge', 'Diff lines shown', 'How many lines of each change\'s diff its Review page shows before it is cut. 0: no diff.'),
     'run.review': ('landing', 'Review each task', 'A second agent checks the work against what you asked. Off: faster, but nothing catches what was missed.'),
     'run.releases': ('landing', 'Manage releases', 'Releases are shown, and you can queue one. Off: nothing about releases shows, and none is queued by itself.'),
     'run.auto_release': ('landing', 'Release by itself', 'A release is queued every so many tasks, when the run goes idle, or both. Both off: you ask for each one.'),
@@ -67,7 +70,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.web_port': ('look', 'Run page port', 'The port this page is on. With Runner Home, setting one keeps it open beside Home.'),
     'run.web_open': ('look', 'Run page opens on', 'Everywhere: your other devices open this page too. Here: only this computer, by its localhost link. Applies from the next run.'),
     'run.web_https': ('look', 'Run page over https', 'An https address for this page on your tailnet, by Tailscale Serve on the next port. Talk needs https for the mic.'),
-    'ui.trusted_networks': ('look', 'Networks with no key', 'A device on one of these networks opens this page without its key. Empty: the key is always needed.'),
+    'ui.trusted_networks': ('look', 'Networks with no key', 'Open this page without its key from: a CIDR, tailnet, a host name, or all (careful: no key anywhere). Empty: the key is needed.'),
     'ui.theme': ('look', 'Terminal colors', 'The colors of the terminal page and of a session on this page. Light suits a bright terminal.'),
     'run.auto_upgrade': ('look', 'Update by itself', 'A newer agent-runner is installed, and the run restarts on new code, between merges. Off: only when you press upgrade or restart.'),
     'run.install_skill': ('look', 'Guide for your own sessions', 'Keeps the agent-runner guide where sessions you start find it. Off: they do not know the run.'),
@@ -89,6 +92,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.auto_audit': ('work', 'Audit by itself', 'When the run is idle and so many tasks have landed, one looks for what is stale, unused or wasted. Off: none.'),
     'models.audit': ('work', 'Audit model', 'The model that audits what changed, also in an audit you add. A cheaper one finds less.'),
     'run.audit_tokens': ('work', 'Token cap per audit', 'An audit that uses more tokens than this stops and keeps what it found. 0: no cap.'),
+    'run.slot_memory': ('work', 'Slots keep memories', 'Slot sessions keep Claude Code\'s memories. Off: they start with none (after memories moved into lessons).'),
     'run.task_tokens': ('work', 'Token cap per task', 'A task that uses more tokens than this stops and is parked. 0: no cap.'),
     'run.task_usd': ('work', 'Dollar cap per task', 'A task that costs more than this at list price stops and is parked. 0: no cap.'),
     'run.context_warn': ('work', 'Warn about a full session', 'A session larger than this many thousand tokens is named in the log and told once to finish. Nothing stops. 0: never.'),
@@ -98,7 +102,9 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.rules_pointer': ('work', 'Guide line in the rules file', 'A run adds one line to the rules file that points at its guide. Off: the file is left alone.'),
     'plan.need_files': ('work', 'Tasks must name files', 'A new task without files or a test is refused. Off: it is taken, but may clash with others.'),
     'plan.context_kb': ('work', 'Warn about long rules', 'Kilobytes of rules every session loads before the run warns you. 0: never.'),
+    'plan.lessons': ('work', 'Lessons', "What agents learned about some files, shown to the next task on them. Off: none kept or shown."),
     'models.kinds': ('roles', 'Model for each kind', 'The model a task runs on, by the letter of its id. It wins over Other tasks.'),
+    'models.sizes': ('roles', 'Model for each size', 'The model for a task marked simple or complex, like { simple = "sonnet" }. It wins over its kind. Empty: sizes are ignored.'),
     'models.code': ('roles', 'Other tasks', 'The model for a task whose kind has none. Every kind has one, so this rarely changes anything.'),
     'models.fix': ('roles', 'Conflict fixes', 'The model that resolves conflicts and repairs merges. A cheaper one fails more often.'),
     'models.docs': ('roles', 'Docs helper', 'The model that writes docs and changelog lines for a task. Off: the task writes them itself.'),
@@ -130,7 +136,6 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.pass_env': ('files', 'Passed variables', "Names of the runner's own variables that slots also get. One not named here does not reach a slot."),
     'run.shared_files': ('files', 'Shared files', 'Files nearly every task changes. Two tasks may name one and still run together.'),
     'run.joinable': ('files', 'Files joined by line', 'Files with one record a line, where a conflict keeps both sides. Other files need a fix session.'),
-    'git.master_branch': ('files', 'Main branch', 'The branch tasks start from and land on. Empty: found by itself.'),
     'git.push': ('files', 'Push to', 'Where finished work is pushed. Off: nothing is pushed.'),
     'plan.dir': ('files', 'Plan folder', 'Where the task list is kept. Outside the project, every checkout shares it.'),
     'plan.repo': ('files', 'Plan repository', 'A git repository of its own for the task list. Empty: it is in this one.'),
@@ -157,7 +162,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
 _HOMES: dict[str, str] = {'git.land_edited': DEVICE, 'run.questionnaires': EVERYONE, 'run.grill': EVERYONE, 'run.web_open': DEVICE}
 # shown only while its parent is on
 _PARENTS: dict[str, str] = {
-    'run.approve_wait': 'run.approve', 'run.approve_batch': 'run.approve', 'run.issues_trust': 'run.issues_watch',
+    'run.approve_wait': 'run.approve', 'run.approve_batch': 'run.approve', 'run.approve_diff_lines': 'run.approve', 'run.issues_trust': 'run.issues_watch',
     'git.pr_max': 'git.pr',
     'run.review_min_lines': 'run.review', 'run.web_port': 'run.web', 'run.web_https': 'run.web', 'run.web_open': 'run.web',
     'run.fix_ahead_max': 'run.fix_merges', 'models.review': 'run.review', 'run.auto_release': 'run.releases',
@@ -165,7 +170,7 @@ _PARENTS: dict[str, str] = {
 # a choice in words: value -> what its control says
 _CHOICES: dict[str, dict[str, str]] = {
     'git.land_edited': {'wait': 'Wait', 'wip': 'Set aside'},
-    'run.issues_trust': {'skeptical': 'Check first', 'trust': 'Do as written'},
+    'run.issues_trust': {'skeptical': 'Check first', 'trust': 'Do as written', 'contributors': 'Trust contributors', 'members': 'Trust members'},
     'run.remote': {'auto': 'Auto', 'true': 'On', 'false': 'Off'},
     'run.remote_slots': {'open': 'When I open one', 'always': 'Always'},
     'run.grill': {'ask': 'When I ask', 'big': 'Also big asks', 'off': 'Off'},
@@ -174,8 +179,6 @@ _CHOICES: dict[str, dict[str, str]] = {
     'run.engine': {'terminal': 'Terminal', 'stream': 'Stream'},
     'run.ci_watch': {'auto': 'On', 'false': 'Off'},
     'run.issues_watch': {'true': 'On', 'false': 'Off'},
-    'run.weekly_max': {'50': '50%', '60': '60%', '70': '70%', '80': '80%', '90': '90%', '95': '95%', '100': '100%'},
-    'run.session_max': {'50': '50%', '60': '60%', '70': '70%', '80': '80%', '90': '90%', '95': '95%', '100': '100%'},
     'run.control_idle': {'1h': '1 hour', '3h': '3 hours', '6h': '6 hours', '12h': '12 hours', 'false': 'Never'},
     'run.control_ask': {'1h': '1 hour', '2h': '2 hours', '6h': '6 hours', '12h': '12 hours', 'false': 'Off'},
     'ui.chat_quiet': {'1h': '1 hour', '3h': '3 hours', '6h': '6 hours', '12h': '12 hours', '1d': '1 day', 'false': 'Off'},
@@ -220,7 +223,6 @@ _WARNS: dict[str, str] = {
     'run.pass_env': 'A variable that tests need and that goes away here fails them in every slot.',
     'run.shared_files': 'Tasks that change a file named here run together, and their merges may conflict.',
     'run.joinable': 'Both sides of a conflict are kept and nobody looks, which breaks code and prose.',
-    'git.master_branch': 'Tasks start from it and land on it after the next start of the run.',
     'git.push': 'Off, finished work stays on this machine.',
     'plan.dir': 'Chats use the task list there at once, and the run from its next start.',
     'plan.repo': 'Chats use the task list there at once, and the run from its next start.',

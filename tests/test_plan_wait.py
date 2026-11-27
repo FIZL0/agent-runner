@@ -85,8 +85,7 @@ def test_refused():
     refused('P5a', ['P5'], 'P5a is a subtask of P5')
     refused('P6', ['T7'], 'T7 is a subtask of P6')
     refused('T7', ['P6'], 'T7 is a subtask of P6')
-    refused('V1', ['T1'], 'V1 is a release: move it to change what it waits for')
-    refused('V1', [], 'V1 is a release: move it to change what it waits for')
+    refused('V1', ['V1'], 'V1 cannot wait for itself')
     for ids in (['T2'], []):
         refused('B2', ids, 'B2 is waiting for you')
         refused('B4', ids, 'B4 is shelved')
@@ -103,10 +102,15 @@ def test_circles():
     refused('T4', ['T1'], 'that makes a circle: T4 would wait for T1, which waits for T2, which waits for T3, which waits for T4')
     fresh()
     refused('T2', ['B1'], 'that makes a circle: T2 would wait for B1, which waits for T2')
-    refused('T2', ['V1'], 'that makes a circle: T2 would wait for V1, which waits for T2')
-    refused('T1', ['V1'], 'that makes a circle: T1 would wait for V1, which waits for T1')  # held: skipped only for now
+    # B868: a task that waits for a release is no longer one the release waits for: no circle
+    put('T2', 'V1')
+    ls = P.lines(R.C.todo)
+    v1 = next(i for i, l in enumerate(ls) if '**V1**' in l)
+    eq('T2' in P.before_all(ls, v1), False, 'V1 leaves out T2, which waits for it')
     put('T8', 'V1')
-    refused('T2', ['T8'], 'that makes a circle: T2 would wait for T8, which waits for V1, which waits for T2')
+    put('T1', 'T8')
+    ls = P.lines(R.C.todo)
+    eq('T1' in P.before_all(ls, v1), False, 'and T1, which waits for it down the chain')
     put('T4', 'P5')  # a parent is done once its parts are
     refused('P5a', ['T4'], 'that makes a circle: P5a would wait for T4, which waits for P5, which waits for P5a')
     put('T3', 'T2')  # its own old wait makes none
@@ -145,6 +149,8 @@ def test_clear():
     eq(line('T1'), '- [ ] **T1** (follow-up, low) first | files: a.py | test: t | held: yes — a note', 'T1')
     put('T2')
     eq(line('T2'), '- [ ] **T2** second | files: b.py', 'none before')
+    put('V1', 'T1')
+    eq(line('V1'), '- [ ] **V1** Release | after: T1', 'B870: a release waits for the list, its all replaced')
 
 
 def test_blocked():

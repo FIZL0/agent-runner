@@ -41,6 +41,11 @@ const draftCount=(draft,all)=>Object.values(draft).reduce((n,d)=>{const k=all.fi
 /* what puts the earlier values back, each only while the saved one is still there */
 const undoChanges=undo=>undo.map(x=>({table:x.table,key:x.key,side:x.side,...(x.was.has?{value:x.was.value}:{unset:true}),expect:x.now}));
 const undoCount=undo=>undo.reduce((n,x)=>n+(x.key==='kinds'&&x.table==='models'?Math.max(1,KINDS_ROWS.filter(g=>kindsModel(g.kinds,x.was.value)!==kindsModel(g.kinds,x.now.value)).length):1),0);
+/* F462: the draft's changes by file, in words when both files have some ("1 project, 1 this device"); '' else */
+function draftSides(draft){
+  const n={project:0,device:0};for(const d of Object.values(draft||{}))if(d&&n[d.side]!==undefined)n[d.side]++;
+  return n.project&&n.device?`${n.project} project, ${n.device} this device`:'';
+}
 const changeWords=n=>n===1?'1 change':`${n} changes`;
 /* F460a: Settings > Plan's "Share the plan between machines": what `plan_share` answered as {lines, cmd, err}: the lines it says
    and, when it worked, its last one apart: what the other machine runs */

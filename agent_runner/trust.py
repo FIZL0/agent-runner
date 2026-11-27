@@ -1,6 +1,7 @@
 """F136: trusted networks: where a page (Runner Home's, a run's own) opens without its key (`?t=`).
 
-Off by default. The networks are CIDRs, or `tailnet` for Tailscale's own two. A request is let in by its client's
+Off by default. The networks are CIDRs, `tailnet` for Tailscale's own two,
+F481: a host name (its device's addresses, looked up again after NAME_TTL), or `all` (no key anywhere). A request is let in by its client's
 address: the connection's, or, behind a proxy on this machine (Tailscale Serve), the address that proxy puts last in
 X-Forwarded-For; the header counts from a loopback peer only. A loopback client is never trusted.
 
@@ -19,17 +20,47 @@ TAILNET_CIDRS = ('100.64.0.0/10', 'fd7a:115c:a1e0::/48')
 LOCAL_ENDS = ('.local', '.lan', '.home', '.home.arpa', '.internal', '.localdomain')  # names no public DNS gives out
 
 
+ALL = 'all'  # F481: any network: no key anywhere
+ALL_CIDRS = ('0.0.0.0/0', '::/0')
+HOST_NAME = re.compile(r'(?=.*[a-zA-Z])[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.?')
+NAME_TTL = 60.0  # F481: a host name is looked up again after this long, so a changed Tailscale address still works
+_names: dict = {}  # name -> (when, [addresses])
+KINDS = f'write a CIDR like 192.168.1.0/24, {TAILNET}, a host name like box.tail1.ts.net, or {ALL}'
+
+
+def _host_name(name: str) -> bool:
+    return '/' not in name and bool(HOST_NAME.fullmatch(name))
+
+
+def name_addresses(name: str, look=None) -> list:
+    """F481: the addresses host name `name` resolves to, from a short cache ([] when it does not resolve)."""
+    import time
+    now = time.monotonic()
+    got = _names.get(name)
+    if look is None and got and now - got[0] < NAME_TTL:
+        return got[1]
+    try:
+        ips = sorted({str(a[4][0]).split('%')[0] for a in (look or socket.getaddrinfo)(name, None)})
+    except (OSError, UnicodeError):
+        ips = []
+    if look is None:
+        _names[name] = (now, ips)
+    return ips
+
+
 def network_problem(name) -> str:
     """Why `name` is no network ('' when it is one)."""
     if not isinstance(name, str):
         return f'{name!r} is not a network'
-    if name == TAILNET:
+    if name in (TAILNET, ALL):
         return ''
+    if _host_name(name):
+        return '' if name_addresses(name) else f'{name!r} does not resolve: no device has that name here; {KINDS}'
     try:
         ipaddress.ip_network(name)
         return ''
     except ValueError as e:
-        return f'{name!r} is not a network ({e}): write a CIDR like 192.168.1.0/24, or {TAILNET}'
+        return f'{name!r} is not a network ({e}): {KINDS}'
 
 
 def networks(names) -> list:
@@ -37,7 +68,9 @@ def networks(names) -> list:
     out = []
     for n in names if isinstance(names, (list, tuple)) else ():
         if not network_problem(n):
-            out += [ipaddress.ip_network(c) for c in (TAILNET_CIDRS if n == TAILNET else (n,))]
+            cidrs = TAILNET_CIDRS if n == TAILNET else ALL_CIDRS if n == ALL else (
+                name_addresses(n) if _host_name(n) else (n,))
+            out += [ipaddress.ip_network(c) for c in cidrs]
     return out
 
 

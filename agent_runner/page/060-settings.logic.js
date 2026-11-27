@@ -2,7 +2,12 @@ function settingValue(k,text){
   const t=String(text==null?'':text).trim(), also=k.also||[];
   if(k.type==='choice'||k.type==='switch'||typeof k.default==='boolean'||k.off){if(t==='true'&&k.type!=='text'||t==='true'&&typeof k.default==='boolean')return{v:true};if(t==='false')return{v:false}}
   if(k.type==='choice')return{v:t};
-  if(k.type==='number'||(also.includes('number')&&/^\d/.test(t)))return /^-?\d+(\.\d+)?$/.test(t)?{v:Number(t)}:{err:`${k.key} takes a number`};
+  if(k.type==='number'||(also.includes('number')&&/^\d/.test(t))){
+    if(!/^-?\d+(\.\d+)?$/.test(t))return{err:`${k.key} takes a number`};
+    const n=Number(t);  // F469: a % is 1-100, a size or time not below 0
+    if(k.unit==='%'&&(n<1||n>100))return{err:`${k.key} takes 1 to 100`};
+    if(k.unit&&k.unit!=='%'&&n<0)return{err:`${k.key} takes 0 or more`};
+    return{v:n}}
   const list=()=>t.split(/\n/).map(x=>x.trim()).filter(Boolean);
   if(k.type==='list')return{v:list()};
   if(k.type==='table'||/^\{/.test(t)){
@@ -23,6 +28,7 @@ function pickValue(k,t){
 }
 /* its options as [value, words], the one it has now among them; null when it is typed */
 function pickOptions(k,now){
+  if(isBranch(k)){const o=k.picks.map(p=>[p.value,branchWords(p)]);if(now!=null&&!o.some(x=>x[0]===now))o.push([now,now===''?'Found by itself':String(now)]);return o}
   const w=k.words||{}, o=(k.choices&&k.choices.length?k.choices.map(c=>[String(c),w[String(c)]||String(c)]):Object.keys(w).map(x=>[x,w[x]]));
   if(!o.length)return null;
   if(now!==''&&now!=null&&!o.some(x=>x[0]===now))o.push([now,settingSays(k,now)]);
@@ -51,7 +57,18 @@ function partSet(t,part,x,k){
 }
 /* F405: [run] agent is picked from the programs found on this machine (`picks`, agents_here.py): its options as [value, words], the kept
    one among them, then Other path; and what the one picked is */
-const AGENT_OTHER='other path', hasPicks=k=>Array.isArray(k.picks);
+/* F447a: [git] master_branch, the working branch, is picked from the branches the snapshot gives (`picks`,
+   working_branch.py): a plain pick of the row, not the agent's picker */
+const isBranch=k=>!!k&&k.table==='git'&&k.key==='master_branch'&&Array.isArray(k.picks);
+const branchWords=p=>`${p.auto?`Found by itself (${p.branch})`:p.branch}${p.bad?` (${p.bad})`:''}`;
+/* what Save of `v` does, said before Save: {text, bad}; no text when `v` is the branch it has */
+function branchSays(k,v,saved){
+  if(v===saved)return{text:'',bad:false};
+  const p=k.picks.find(x=>x.value===v), b=p?p.branch:v;
+  if(p&&p.bad)return{text:`It cannot be saved: ${p.bad}.`,bad:true};
+  return{text:`Save: finished work is applied to ${b}, and tasks start from it, once the run restarts.`,bad:false};
+}
+const AGENT_OTHER='other path', hasPicks=k=>Array.isArray(k.picks)&&!isBranch(k);
 const agentSaved=(k,v)=>['value','device','project'].some(x=>k[x]!==undefined&&settingText(k[x])===v);
 const agentWords=p=>`${p.value}${p.version?` ${p.version}`:''}${p.found?p.path&&p.path!==p.value?` · ${p.path}`:'':' (not found)'}`;
 const agentPick=(k,v)=>k.picks.find(p=>p.value===v)||{value:v,path:'',version:'',found:!agentSaved(k,v),bad:agentSaved(k,v)?'It is not the name of a program.':''};
@@ -103,6 +120,11 @@ function settingSays(k,t){
 /* where a row's control saves: this device when it has its own value (it wins), else the setting's home */
 const settingSide=k=>k.has_device||k.home==='device'?'device':'project';
 const settingChanged=k=>k.source!=='default'&&JSON.stringify(k.value)!==JSON.stringify(k.default);
+/* F462: Settings' two tabs, Project (runner.toml, everyone) and This device (runner.local.toml): a row edits the file of the
+   tab in view. Changed per tab: what that file sets apart from the default; on This device, every value of its own */
+const SET_TABS=[['project','Project'],['device','This device']];
+const tabChanged=(k,tab)=>tab==='device'?!!k.has_device:k.source==='project'?settingChanged(k):!!k.has_project&&JSON.stringify(k.project)!==JSON.stringify(k.default);
+const overCount=all=>all.filter(k=>k.has_device).length;
 const settingHit=(k,q)=>!q||`${k.name} ${k.desc} ${k.table}.${k.key} [${k.table}] ${k.key}`.toLowerCase().includes(q);
 /* shown only while its parent is on */
 function settingShows(k,all){
@@ -132,3 +154,9 @@ function talkSession(sessions,remembered,old){
   const r=live.find(s=>s.name===remembered);if(r)return r.name;
   const t=live.find(s=>s.title==='Talk'&&!(old||[]).includes(s.name));return t?t.name:'';
 }
+/* C55b: settings asked about as a question while neither the project nor this device sets them (listed by key); the answer is
+   saved by the usual Save. `drafted(k)`: an answer on its way (drafted or saved but not read back yet) */
+const SETTING_ASKS=['run.auto_audit'];
+const settingAsks=(all,drafted)=>all.filter(k=>SETTING_ASKS.includes(`${k.table}.${k.key}`)&&!k.has_project&&!k.has_device&&!(drafted&&drafted(k)));
+/* its two answers as the text a Save writes: On is the count `on` gives, Off is false */
+const askAnswers=k=>[['on','On',settingText(k.parts&&k.parts.on?{every:k.parts.on.every}:true)],['off','Off',settingText(false)]];

@@ -18,7 +18,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import agent_hold, brief_arrives, claude_use, exit_hook, fallback as FB, freeze, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, stop_now, undo, working_branch
+from agent_runner import agent_hold, brief_arrives, cap_hold, claude_use, exit_hook, fallback as FB, freeze, settings_live, ci, file_split, gitops, loop_upgrade, no_commits, no_push, plan as P, plansync, plat, pr, shared_tools, stack, stop_now, undo, working_branch
 from agent_runner.config import RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -28,15 +28,17 @@ from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_pl
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED, EV_CONTEXT)
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
 from agent_runner.brief import no_remote_line
-from agent_runner.sched import agent_held, blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, splitting, tasks
+from agent_runner.sched import agent_held, blocked_by_edits, forgive_park, keep_claims, note_committed, open_tasks, PARK_LIMIT, parked_attempts, pick, splitting, tasks
 from agent_runner.tools import take_end
 from agent_runner.login import retry_held, unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, no_slot, park_asked, unblocked_asks
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged, budget_mark, budgets, SPENT)
+from agent_runner import slot_prep  # noqa: E402  (F500)
+from agent_runner.slots import worktree  # noqa: E402  (F500)
 from agent_runner.teardown import close_page, end_own, PAGE, RUN_LOCK, wait_last_run
-from agent_runner.watch import (_account, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
+from agent_runner.watch import (_account, known_usage, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
     START_TRIES, state_line, stats, stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, watch_code, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
@@ -147,6 +149,8 @@ def take_keys() -> None:
                 PAUSED[0] = not PAUSED[0]
                 log('paused: no new tasks; the run stays up (p again: go on)' if PAUSED[0] else
                     'pause taken back: starting tasks again')
+            elif k == 'f' and (said := cap_hold.force_key(want)):  # F468: `force ID`, just that task
+                log(said)
             elif k == 'f':
                 FORCED[0] = not FORCED[0]
                 log('forced: starting tasks past the usage caps (f again: undo)' if FORCED[0] else
@@ -217,20 +221,23 @@ def write_state(running: dict, held=()) -> None:
     merging = sorted({t.name[6:] for t in threading.enumerate()
                       if t.name.startswith('merge:') and t.name != 'merge:ahead' and t.is_alive()} | set(held))
     # what the cap last read (`capped`, the start line); never a fetch of its own from here
-    got = _account[1] if isinstance(_account[1], dict) and claude_use.account(C) else {}
+    got = (known_usage() or {}) if claude_use.account(C) and cap_hold.limits_on(C.run) else {}
     use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
+    resets = {k: got[k].get('resets_at') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict) and got[k].get('resets_at')}
     tmp = C.notes('STATE.tmp')
     from agent_runner.ui_model import agent_problem, no_settings
     try:
       with STATE_LOCK:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
+                                   'resets': resets, 'force_ids': sorted(cap_hold.FORCE_IDS),  # F468
                                    'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
                                    'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping(),
                                    'forced': FORCED[0], 'power': POWER, 'version': run_version(),
                                    'agent_problem': agent_problem(C), 'no_settings': bool(no_settings(C))}),  # B764b, F178
                        encoding='utf-8')
-        os.replace(tmp, C.notes('STATE'))
+        from agent_runner.state_file import put_in_place
+        put_in_place(tmp, C.notes('STATE'))  # F497: retries while a reader has STATE open (Windows)
     except OSError:  # Windows: `status` has STATE open this instant; the next pass writes it
         pass
 
@@ -325,6 +332,11 @@ def drop_extra_slots(slots: int, busy) -> None:
                                     daemon=True).start()
     for t in SLOTS_DIR.glob('.removed-*'):  # what a run that was stopped mid-delete left
         rm(t)
+    if free_gb() < 2 * C.run['min_free_gb']:  # F500: spares give their room back when the disk runs short
+        for s in slot_prep.spares():
+            with slot_prep.REGISTER:
+                git('worktree', 'remove', '--force', str(s))
+            log(f'{s.name}: a spare slot worktree, removed for disk room')
     for d in SLOTS_DIR.glob('s*'):
         if not re.fullmatch(r's\d+', d.name) or int(d.name[1:]) <= slots or int(d.name[1:]) in busy:
             continue
@@ -332,6 +344,10 @@ def drop_extra_slots(slots: int, busy) -> None:
             log(f'slot {d.name[1:]}: past the {slots} slots, but it has uncommitted work (or is not a worktree): kept')
             continue
         size = du(d)
+        if free_gb() - size / GB >= 2 * C.run['min_free_gb'] and slot_prep.keep_spare(d):  # F500: built once, kept
+            log(f'slot {d.name[1:]}: past the {slots} slots and unused: kept as a spare for the next slot '
+                f'({size / GB:.1f} GB)')
+            continue
         trash = SLOTS_DIR / f'.removed-{d.name}-{int(time.time())}'
         d.rename(trash)
         git('worktree', 'prune')
@@ -353,6 +369,22 @@ def not_attempt(tid: str, branch: str) -> bool:
     return bool(rx and last and re.search(rx.replace('{id}', re.escape(tid)), last))
 
 
+def size_retry(tid: str, branch: str) -> bool:
+    """F470: a simple task that ran on its size's model and whose `done` did not pass is tried once more, on its
+    kind's model (`task_size`); False when it is not."""
+    from agent_runner import task_size
+    from agent_runner.state import plan_text
+    try:
+        passed = (plansync.ticks(C) / tid).exists() or \
+            any(t == tid and box == 'x' for _, box, t, _, _ in P.iter_tasks(plan_text(branch)))
+        due = task_size.retry_due(C, tid, plan_text(branch), passed)
+    except OSError:
+        return False
+    if due:
+        log(f'{tid}: a simple task that did not pass on its size\'s model; it tries once more on its kind\'s model')
+    return due
+
+
 ON_EDITS: set[str] = set()  # B227: tasks whose merge waits for a person's edits in the main checkout
 
 
@@ -362,6 +394,9 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         if _finish(tid, n, sid, branch):
             (plansync.ticks(C) / tid).unlink(missing_ok=True)
             plansync.release(C, tid)
+            from agent_runner import task_size
+            if task_size.reopen_blocked(C, tid):  # F470: blocked on its size's model: open for the retry
+                log(f'{tid}: opened again, to try once more on its kind\'s model')
             try:
                 prune_wips(branch, force=True)  # F23: ticked by this merge: its wip/<ID> go with it
             except Exception as e:  # never reads as a crashed merge
@@ -466,7 +501,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
 def capped(force: bool, own: bool = False) -> str | None:
     """Why no new task may start: the 5-hour session usage at or past `[run] session_max`, or the 7-day usage
     at or past `[run] weekly_max` (and not --force). None when neither is. `own`: there are tasks it holds alone (claude_use.own_tasks)."""
-    if force or not (own or claude_use.account(C)):
+    if force or not cap_hold.limits_on(C.run) or not (own or claude_use.account(C)):
         return None
     for name, what, key in (('five_hour', 'session', 'session_max'), ('seven_day', 'weekly', 'weekly_max')):
         w = usage_pct(name)
@@ -806,7 +841,8 @@ class Run:
         procs, running, free_at = self.procs, self.running, self.free_at
         reserve_branch_ids()
         log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
-            (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and claude_use.account(C) else ''),
+            (''.join(f', {what} usage {p}%' for what, p in (('session', usage_pct('five_hour')), ('weekly', weekly()))
+                     if p is not None) if not a.force and claude_use.account(C) and cap_hold.limits_on(C.run) else ''),
             EV_RUN_UP, slots=slots)
         if nogate := no_gate_line():
             log(nogate)
@@ -827,6 +863,8 @@ class Run:
         foreign = self.foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
         sweep_tmp(force=True)
         drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
+        for t in slot_prep.prepare([n for n in range(1, slots + 1) if n not in procs], branch, worktree):  # F500
+            t.join(1800)  # built at once, and whole before anything reads them
         left = left_merging()
         finished = unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign])
         # the riders of a merge an earlier run gated wait from the start, so its turn finds them and reuses it
@@ -853,6 +891,7 @@ class Run:
         self.tagged = None
         for n in list(self.free_at):
             self.slot(n)
+        write_state(self.running, [m[0] for m in self.held_merges])  # F497: a slot's start shows at once
         self.after()
         return self.end()
 
@@ -941,7 +980,7 @@ class Run:
             drop_session_tmp(sid)  # ended for good: a resume (above) keeps its scratchpad
             if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
                 clean(d)  # saved: the next start finds the slot clean
-            if not not_attempt(task[0], branch):
+            if not not_attempt(task[0], branch) and not size_retry(task[0], branch):
                 self.tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
             git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
             self.merge_in(task[0], n, sid)
@@ -1020,10 +1059,13 @@ class Run:
         self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
         own = claude_use.own_waiting(self)  # B791: these alone are held
         w, held = capped(self.a.force or FORCED[0], bool(own)), frozenset()
+        skip = set()  # F468: while the caps hold, every task but those `force ID` lets through
         if w is None:
             self.cap_said = self.cap_fell = False
-        elif C.fallback or own:
+        elif C.fallback or own or FB.multi():  # F503: another login takes them
             held = FB.USAGE_HELD  # F142: new tasks start down the chain instead
+        elif cap_hold.FORCE_IDS:
+            skip = cap_hold.only_forced(open_tasks(self.branch), cap_hold.FORCE_IDS)
         else:
             self.say_cap(w)
             return
@@ -1047,7 +1089,10 @@ class Run:
             return
         self.stall_said.discard('before_start')
         passed, no_api = claude_use.passed_over(self, own, held)
-        task = pick(running, self.tried | passed | no_api, self.branch, claim=True) or file_split.no_task(self, held and not own)  # F200b
+        task = pick(running, self.tried | passed | no_api | skip, self.branch, claim=True) or (None if skip else file_split.no_task(self, held and not own))  # F200b
+        if skip and not task:  # F468: no forced task may start now: the caps hold the rest
+            self.say_cap(w)
+            return
         if not task and passed and not self.cap_said and \
                 (t := pick(running, self.tried, self.branch)) and t[0] in passed:
             self.say_cap(w, t[0] if own else '')  # F142: only the cap holds it: no provider in the chain is free for it
@@ -1061,6 +1106,7 @@ class Run:
                 self.cap_fell = True
             if p := start(n, task, self.branch, self.model, self.idle, slots, held=held):
                 procs[n], running[n] = p, task
+                cap_hold.FORCE_IDS.discard(task[0])  # F468: forced once, for this start
                 if self.once:  # one task: nothing new starts, and the run exits once it has merged
                     ask_stop('once')
                 if self.idle_said:

@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from contextlib import ExitStack
 
-from agent_runner import audit_fix, freeze, pitch, plan as P, plat, plansync, pr, stack
+from agent_runner import audit_fix, autorelease, done_docs as DD, freeze, gated_moves as GM, lessons_ask, pitch, plan as P, plat, plansync, pr, sched, stack
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
@@ -123,7 +123,7 @@ you used before are under another folder.
 
 def repair_prompt(batch: bool, **vals) -> str:
     text = re.sub(r'\[\[(.*?)\|(.*?)\]\]', lambda m: m.group(2 if batch else 1), REPAIR, flags=re.S)
-    return text.format(**vals)
+    return text.format(**vals) + lessons_ask.repair_line(C)  # F414: a repair session may file a lesson
 
 
 def last_words(sid: str) -> str:
@@ -797,7 +797,7 @@ def merge_tries(tid: str, branch: str) -> str | None:
         crit = critical(tid, branch)
         with MERGE.turn(lambda: merge_rank(tid, crit)):
             WAITING.discard(tid)
-            if tid not in LANDED and releasing(tid, branch):  # F99: a release started while it waited
+            if tid not in LANDED and release_first(tid, branch):  # F99: a release started (B849b: or is about to) while it waited
                 tries -= 1  # not a try: it waits for the release, then queues again
                 continue
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
@@ -818,6 +818,7 @@ def merge_tries(tid: str, branch: str) -> str | None:
             with freeze.held():  # B827: a stop now lets it be recorded
                 base, merged = LANDED.pop(tid)
                 record_landed(tid, branch, base, merged, sys.modules[__name__])
+            autorelease.auto_release_landed(branch)  # B849a
             published(tid, branch)
             announce_release(base, merged)
             return None
@@ -849,16 +850,24 @@ def releasing(tid: str, branch: str) -> str:
     return next((v for v in vs if v in live and v not in away), '')
 
 
+def release_first(tid: str, branch: str) -> str:
+    """The release `tid`'s merge waits for: one busy (`releasing`), or (B849b) one a recent pick found held by the
+    merge under way alone (`sched.ready_release`); '' for none, or for a release's own merge."""
+    return '' if P.release(tid) else releasing(tid, branch) or sched.ready_release(branch)
+
+
 def hold_for_release(tid: str, branch: str) -> None:
-    """While a release is busy (`releasing`), `tid`'s merge waits, and so does its push: the release then holds
-    exactly what was on the shared branch when it started (F99). The task's work is kept; it merges once the
-    release has landed (or was parked)."""
+    """While a release is busy or about to start (`release_first`), `tid`'s merge waits, and so does its push: the
+    release then holds exactly what was on the shared branch when it started (F99). The task's work is kept; it
+    merges once the release has landed (or was parked)."""
     said = ''
-    while v := releasing(tid, branch):
+    while v := release_first(tid, branch):
         if v != said:
             said = v
-            note(f'{tid}: waits to merge: {v} is releasing')
-            log(f'{tid}: waits to merge: {v} is releasing; it merges once {v} has landed')
+            busy = releasing(tid, branch)
+            note(f'{tid}: waits to merge: {v} ' + ('is releasing' if busy else 'starts first'))
+            log(f'{tid}: waits to merge: {v} ' + (f'is releasing; it merges once {v} has landed' if busy else
+                                                  'starts first; it merges once it has landed, or cannot start'))
         time.sleep(RELEASE_POLL)
     if said:
         log(f'{tid}: {said} is no longer releasing; merging task/{tid} now')
@@ -1187,9 +1196,9 @@ def caught_up(tid: str, branch: str, d: Path, base: str, merged: str, tids: list
     Commits in `[run] untested` files only are not tested; a conflict or a failure builds it all again."""
     for _ in range(3):
         moved = git('diff', '--name-only', base, branch).stdout.split()
-        if all(map(untestable, moved)):
-            return base, merged
         new = git('rev-parse', branch).stdout.strip()
+        if all(map(untestable, moved)) or GM.moved_by_gated_only(base, new, merged, moved) and not log(f'{tid}: {branch} moved only by gated work on other files; not tested again'):
+            return base, merged
         if not C.run['test_since']:
             log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
             return None
@@ -1334,7 +1343,7 @@ def batch_build(t: BatchTurn):
 def docs_merge(t) -> bool:
     """The merge t.merged changes only `[run] docs_files` on its base (every task in it, the plan's archive
     commit and a remote's commits taken in too): the slow gate need not run on it."""
-    files = git('diff', '--name-only', '--no-renames', t.base, t.merged, cwd=t.d).stdout.split()
+    files = DD.merge_files(t.base, t.merged, t.d)  # F494: a manifest's description-only change is docs
     return bool(C.run['test']) and docs_only(files, C.run['docs_files'])
 
 

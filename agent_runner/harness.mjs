@@ -261,10 +261,23 @@ class Tells {
 
   show(s) { if (this.echo) process.stdout.write(s); }
 
+  // B865: erase the line(s) the typed message was echoed on; it is printed again as saidLines once sent
+  unshow() {
+    if (!this.echo) return;
+    const cols = process.stdout.columns || 100;
+    let rows = 0;
+    for (const line of this.buf.split('\n')) rows += Math.max(1, Math.ceil([...line].length / cols));
+    this.show('\r\x1b[2K' + '\x1b[1A\x1b[2K'.repeat(rows - 1));
+  }
+
   // a key of a chat's line editor; whether it was one
   key(c) {
     if (c === '\x03' || c === '\x1b') {
       if (!this.chat.interrupt() && c === '\x03') this.chat.end();
+    } else if (c === '\x0f') { // Ctrl+O (F489): the calls behind the tally line
+      this.unshow(); // the calls go above the message being typed, which is drawn again under them
+      this.chat.expand?.();
+      this.show(this.buf.replace(/\n/g, '\r\n'));
     } else if (c === '\x04') {
       if (!this.buf) this.chat.end();
     } else if (c === '\x7f' || c === '\b') {
@@ -302,7 +315,7 @@ class Tells {
       const crlf = this.cr && c === '\n';
       this.cr = c === '\r';
       if (crlf) continue;
-      if ((c === '\r' || c === '\n') && !this.paste) { this.show('\r\n'); this.push(this.buf); this.buf = ''; continue; }
+      if ((c === '\r' || c === '\n') && !this.paste) { this.unshow(); this.push(this.buf); this.buf = ''; continue; }
       if (this.chat && !this.paste && this.key(c)) continue;
       if (c === '\x03') process.exit(130); // Ctrl-C in its terminal
       if (c === '\x1b' && !this.paste) continue; // a lone Escape (an interrupt to Claude Code): nothing here
@@ -380,6 +393,57 @@ export function saidLines(text, cols = (process.stdout.columns || 100)) {
   return '\n' + rows.map((r, i) => `\x1b[48;5;237m${i ? '  ' : '❯ '}${r}${' '.repeat(Math.max(0, w - [...r].length))}\x1b[0m`).join('\n');
 }
 
+// F483: the model's reply as Claude Code draws it: '● ' then the markdown rendered (bold, italics, inline code,
+// lists, headings), word-wrapped to the terminal with a hanging indent under the marker and under each list item
+const visible = (s) => [...s.replace(/\x1b\[[0-9;]*m/g, '')].length;
+function inlineMd(s) {
+  const code = [];
+  return s
+    .replace(/`([^`]+)`/g, (_, x) => `\x00${code.push(x) - 1}\x00`)
+    .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (_, x, y) => `\x1b[1m${x ?? y}\x1b[22m`)
+    .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)|(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g,
+      (_, p, x, q, y) => `${p ?? q}\x1b[3m${x ?? y}\x1b[23m`)
+    .replace(/\x00(\d+)\x00/g, (_, i) => `\x1b[36m${code[i]}\x1b[39m`);
+}
+function wrapped(text, first, rest, w) {
+  const out = [];
+  let line = first, len = visible(first), empty = true;
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const n = visible(word);
+    if (!empty && len + 1 + n > w) { out.push(line); line = rest; len = visible(rest); empty = true; }
+    line += (empty ? '' : ' ') + word; len += (empty ? 0 : 1) + n; empty = false;
+  }
+  out.push(line);
+  return out;
+}
+export function replyLines(text, cols = (process.stdout.columns || 100)) {
+  const w = Math.max(20, cols), out = [];
+  let fence = false;
+  for (const raw of String(text).trim().replace(/\r/g, '').split('\n')) {
+    const lead = out.length ? '  ' : '● ';
+    if (/^\s*```/.test(raw)) { fence = !fence; if (!out.length) out.push('●'); continue; }
+    if (fence) { out.push(lead + raw); continue; }
+    if (!raw.trim()) { out.push(''); continue; }
+    const h = raw.match(/^#{1,6}\s+(.*)$/);
+    if (h) { out.push(...wrapped(`\x1b[1m${inlineMd(h[1])}\x1b[22m`, lead, '  ', w)); continue; }
+    const li = raw.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (li) {
+      const mark = `${lead}${li[1]}${/\d/.test(li[2]) ? li[2] : '-'} `;
+      out.push(...wrapped(inlineMd(li[3]), mark, ' '.repeat(visible(mark)), w));
+      continue;
+    }
+    out.push(...wrapped(inlineMd(raw), lead, '  ', w));
+  }
+  return out.join('\n');
+}
+// F483: the dim line after a chat turn, as Claude Code words it: '✻ Worked for 12s · done 14:03'
+export function doneLine(ms, at = new Date()) {
+  const s = Math.max(1, Math.round(ms / 1000));
+  const took = s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+  const hm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return `\x1b[2m✻ Worked for ${took} · done ${hm}\x1b[22m`;
+}
+
 function redrawn(out) {
   let kept = '', due = null;
   const write = out.write.bind(out);
@@ -401,7 +465,7 @@ function recap(messages) {
   for (const m of messages.slice(-60)) {
     const said = m.role === 'toolResult' ? '' : textOf(m.content).trim();
     if (said.startsWith('[Request interrupted')) console.log('harness: interrupted');
-    else if (said) console.log(m.role === 'user' ? saidLines(said) : said);
+    else if (said) console.log(m.role === 'user' ? saidLines(said) : replyLines(said));
   }
 }
 
@@ -454,7 +518,19 @@ async function piAi(sub) {
 // Pi's own logins (`pi` /login): its auth.json, one credential per provider, read and written as Pi does
 function piCredentials() {
   const file = path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent'), 'auth.json');
-  const all = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; } };
+  // F501 (issue #9): a Pi session writes auth.json in place, so a read can catch it empty or half written; that
+  // read seemed to say "no login" and a resumed session failed with "Provider is not configured". A missing file
+  // is no logins; an unreadable one is read again for a few seconds, then said as the error it is.
+  const all = () => {
+    const end = Date.now() + 5000;
+    for (;;) {
+      let text;
+      try { text = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return {}; text = null; }
+      if (text !== null) { try { return JSON.parse(text); } catch {} }
+      if (Date.now() > end) throw new Error(`harness: ${file} cannot be read as JSON; log in again with \`pi\` /login`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  };
   const save = (data) => {
     const tmp = `${file}.harness-${process.pid}`;
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
@@ -474,10 +550,19 @@ function piCredentials() {
     }
   };
   let chain = Promise.resolve();
+  // F506: a named login (`run login <provider> --as NAME`) is kept beside the default one, under `<id>@<NAME>`;
+  // AGENT_RUNNER_LOGIN_AS names the login this session (or login) uses, none the default
+  const as = process.env.AGENT_RUNNER_LOGIN_AS || '';
+  const key = (id) => (as ? `${id}@${as}` : id);
+  const own = (k) => (as ? k.endsWith(`@${as}`) : !k.includes('@'));
   return {
-    async read(id) { return all()[id]; },
-    async list() { return Object.entries(all()).map(([providerId, c]) => ({ providerId, type: c?.type })); },
-    modify(id, fn) {
+    async read(id) { return all()[key(id)]; },
+    async list() {
+      return Object.entries(all()).filter(([k]) => own(k))
+        .map(([k, c]) => ({ providerId: as ? k.slice(0, -as.length - 1) : k, type: c?.type }));
+    },
+    modify(id0, fn) {
+      const id = key(id0);
       const run = chain.then(async () => {
         const unlock = await lock();
         try {
@@ -493,7 +578,7 @@ function piCredentials() {
       chain = run.catch(() => {});
       return run;
     },
-    async delete(id) { const data = all(); delete data[id]; save(data); },
+    async delete(id) { const data = all(); delete data[key(id)]; save(data); },
   };
 }
 
@@ -599,9 +684,16 @@ async function realProvider(name, modelId, custom) {
   return { call: (context, signal) => models.completeSimple(model, context, { signal }) };
 }
 
+// F506: the login the runner named for this session (login.harness_env), kept as a fallback model names none
+const LOGIN_GIVEN = process.env.AGENT_RUNNER_LOGIN_AS || '';
+
 async function loadProvider(spec, custom) {
   const at = spec.indexOf(':');
-  const provider = at < 0 ? spec : spec.slice(0, at), model = at < 0 ? '' : spec.slice(at + 1);
+  let provider = at < 0 ? spec : spec.slice(0, at), model = at < 0 ? '' : spec.slice(at + 1);
+  // F506: `<provider>@<login>:<model>` runs on that login (`run login <provider> --as <login>`), else the default one
+  const login = provider.includes('@') ? provider.slice(provider.indexOf('@') + 1) : LOGIN_GIVEN;
+  if (provider.includes('@')) provider = provider.slice(0, provider.indexOf('@'));
+  if (login) process.env.AGENT_RUNNER_LOGIN_AS = login; else delete process.env.AGENT_RUNNER_LOGIN_AS;
   if (!model) throw new Error(`harness: --model ${spec} names no model after the provider`);
   if (process.env.AGENT_RUNNER_HARNESS_PROVIDER) {
     const mod = await import(pathToFileURL(path.resolve(process.env.AGENT_RUNNER_HARNESS_PROVIDER)).href);
@@ -874,16 +966,51 @@ export function tallyLine(counts) {
 
 // the tally of the run of tool calls going on now: counted up live on a terminal, said once off one
 export class Tally {
-  constructor(out, tty) { this.out = out; this.tty = tty; this.counts = {}; }
-  add(name) {
+  constructor(out, tty) { this.out = out; this.tty = tty; this.counts = {}; this.calls = []; this.last = []; }
+  // F489: each call is kept, {tool, arg, ok, out}: ok and out once done() has its result
+  add(name, args = {}) {
     this.counts[name] = (this.counts[name] || 0) + 1;
+    const call = { tool: name, arg: callArg(args), ok: null, out: '' };
+    this.calls.push(call);
     if (this.tty) this.out.write(`\r\x1b[2K\x1b[2m${tallyLine(this.counts)}\x1b[0m`);
+    return call;
+  }
+  done(call, text, isError) {
+    call.ok = !isError;
+    call.out = String(text || '').split('\n').slice(0, CALL_LINES).join('\n');
   }
   end() {
     if (!Object.keys(this.counts).length) return;
     this.out.write(this.tty ? '\n' : `${tallyLine(this.counts)}\n`);
     this.counts = {};
+    this.last = this.calls;
+    this.calls = [];
   }
+  // Ctrl+O: the calls of the tally going on now, or else of the last one, a line each and their output under it
+  expand() {
+    const calls = this.calls.length ? this.calls : this.last;
+    if (!calls.length) return;
+    const live = this.calls.length && this.tty;
+    this.out.write(`${this.tty ? '\r\x1b[2K' : ''}${callLines(calls)}\n`);
+    if (live) this.out.write(`\x1b[2m${tallyLine(this.counts)}\x1b[0m`);
+  }
+}
+
+const CALL_LINES = 5; // the lines of a call's output it keeps
+// a call's argument as Claude Code words it: the command, the path
+export function callArg(args) {
+  const a = args && typeof args === 'object' ? args : {};
+  const v = ['command', 'path', 'file_path', 'name', 'title'].map((k) => a[k]).find((x) => typeof x === 'string' && x.trim())
+    ?? Object.values(a).find((x) => typeof x === 'string' && x.trim()) ?? '';
+  return v.trim();
+}
+export function callLines(calls) {
+  return calls.map((c) => {
+    const name = c.tool.charAt(0).toUpperCase() + c.tool.slice(1);
+    const mark = c.ok === false ? '\x1b[31m●\x1b[0m' : c.ok ? '\x1b[32m●\x1b[0m' : '●';
+    const out = c.out ? `\n${c.out.split('\n').map((l, i) => `${i ? '     ' : '  ⎿  '}${l}`).join('\n')}` : '';
+    return `${mark} ${name}(${c.arg.split('\n')[0]})${c.ok === false ? ' failed' : ''}${out}`;
+  }).join('\n');
 }
 
 function overBudget(a, tokens, usd) {
@@ -925,7 +1052,7 @@ async function main() {
     process.exit(code);
   };
   if (a.chat && process.stdout.isTTY) redrawn(process.stdout); // F406g
-  const tells = new Tells(process.stdin, a.chat ? { end: () => quit(0),
+  const tells = new Tells(process.stdin, a.chat ? { end: () => quit(0), expand: () => tally.expand(),
     interrupt: () => { const going = Boolean(s.ctl && !s.ctl.signal.aborted); s.ctl?.abort(); return going; } } : null);
   if (a.chat) for (const sig of ['SIGTERM', 'SIGHUP']) process.on(sig, () => quit(0));
   const now = a.chat ? new Now(a) : null; // F406g
@@ -940,25 +1067,25 @@ async function main() {
     messages.push(t.user('[Request interrupted by user]'));
     console.log('harness: interrupted');
   };
-  let failures = 0, peak = t.peak(), over = a.chat; // over: a chat's turn is done (or none has begun)
+  let failures = 0, peak = t.peak(), over = a.chat, turnStart = Date.now(); // over: a chat's turn is done (or none has begun)
   for (;;) {
     if (over && !pending.length) {
       s.ctl = null;
-      console.log('\n(waiting for you)');
       if (!tells.queue.length) is('idle');
       if (!(await tells.wait(Infinity))) return 0;
       if (tells.queue.some((x) => x === '/exit' || x === '/quit')) return 0;
     }
     if (a.chat && (over || !s.ctl)) s.ctl = new AbortController();
+    if (over) turnStart = Date.now();
     over = false;
     is('busy');
     for (const text of pending.splice(0)) {
       messages.push(t.user(text));
       console.log(saidLines(text));
     }
-    for (const text of tells.take()) { // B855: a chat's terminal already showed a typed tell as it came
+    for (const text of tells.take()) { // B865: the raw echo was erased at Enter; the tell shows as saidLines
       messages.push(t.user(text));
-      if (!tells.echo) console.log(saidLines(text));
+      console.log(saidLines(text));
     }
     const why = overBudget(a, tokens, usd);
     if (why) {
@@ -1028,11 +1155,12 @@ async function main() {
     }
     messages.push(m);
     const said = textOf(m.content.filter((b) => b.type === 'text'));
-    if (said) console.log(a.chat ? `● ${said}` : said);
+    if (said) console.log(a.chat ? replyLines(said) : said);
     const calls = m.content.filter((b) => b.type === 'toolCall');
     for (const c of calls) {
-      tally.add(c.name);
+      const kept = tally.add(c.name, c.arguments);
       const [text, isError, image] = s.ctl?.signal.aborted ? ['The person interrupted before this tool call ran; it did not run.', true] : c.argumentsError ? [c.argumentsError, true] : await s.call(c.name, c.arguments);
+      tally.done(kept, text, isError);
       messages.push(t.toolResult(c, text, isError, image));
       if (!s.ended) s.ended = s.endedNow();
     }
@@ -1048,6 +1176,7 @@ async function main() {
     if (calls.length) continue;
     if (a.once) return 0;
     if (a.chat) {
+      console.log(doneLine(Date.now() - turnStart));
       over = true;
       continue;
     }
@@ -1092,6 +1221,8 @@ async function login(argv) {
   for (let i = 1; i < argv.length; i++) {
     if (argv[i] === '--provider') custom = JSON.parse(argv[++i]);
     else if (argv[i] === '--enterprise') enterprise = argv[++i] ?? '';
+    else if (argv[i] === '--as') process.env.AGENT_RUNNER_LOGIN_AS = argv[++i] || ''; // F506: a named login
+
     else throw new Error(`harness: --login: unknown argument ${argv[i]}`);
   }
   if (!name) throw new Error('harness: --login names no provider');
@@ -1136,7 +1267,8 @@ async function login(argv) {
   const dir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   await piCredentials().modify(id, async () => credential);
-  out({ saved: id, file: path.join(dir, 'auth.json') });
+  const as = process.env.AGENT_RUNNER_LOGIN_AS;
+  out({ saved: as ? `${id}@${as}` : id, file: path.join(dir, 'auth.json') });
   process.stdin.pause();
   return 0;
 }

@@ -18,10 +18,10 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import audit, inbox_lock, join, no_push, plan as P, plat, pr, pr_feedback, session_theme, shared_tools, stack
+from agent_runner import audit, inbox_lock, slot_prep, join, no_push, plan as P, plat, pr, pr_feedback, sched, session_theme, shared_tools, stack, task_size
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
-from agent_runner.config import finished_mark, runner_cmd, shown_cmd
+from agent_runner.config import finished_mark, pinned_login, runner_cmd, shown_cmd
 from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, hook, log, note, ROOT, SLOTS_DIR
 from agent_runner.state import EV_STARTED
@@ -42,10 +42,7 @@ def worktree(n, branch: str) -> Path:
     """Slot n's worktree (or the merge worktree), created once and kept: a warm build is worth more than a
     clean one. `[run] links` — git-ignored data the work needs — are symlinked in, never copied."""
     d = SLOTS_DIR / (f's{n}' if isinstance(n, int) else str(n))
-    if not join.own_worktree(d):  # BUG2: a folder from another copy of the repo is added again from this one
-        SLOTS_DIR.mkdir(parents=True, exist_ok=True)
-        git('worktree', 'prune')
-        git('worktree', 'add', '-q', '--detach', str(d), branch)
+    t0 = slot_prep.ensure(d, branch, join.own_worktree)  # BUG2: another copy's folder is added again; F500: built at once
     for pat in C.run['copies']:  # git-ignored files a worktree needs its own copy of (a local config)
         for src in map(Path, glob.glob(str(ROOT / pat))):
             if src.is_file() and not (dst := d / src.relative_to(ROOT)).exists():
@@ -54,13 +51,14 @@ def worktree(n, branch: str) -> Path:
     for pat in [*C.run['links'], 'runner.toml']:
         for src in map(Path, glob.glob(str(ROOT / pat))):
             dst = d / src.relative_to(ROOT)
+            plat.relink_dir(src, dst)  # Windows: an old directory symlink becomes a junction (issue #6)
             if src.exists() and not dst.is_symlink() and not dst.exists():
                 try:
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     plat.link(src, dst)  # a symlink; on Windows without Developer Mode a junction or hard link
                 except OSError:
                     pass
-    backend().trust(d)
+    slot_prep.trust(d, backend(), t0)
     return d
 
 
@@ -179,7 +177,7 @@ class Claude:
         ends = {'Stop': stop} if stream_engine() else {'Stop': stop, 'StopFailure': stop}
         return [*(STREAM_FLAGS if stream_engine() else []),
                 '--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
-                '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(artifact),
+                '--disallowedTools', 'AskUserQuestion', '--model', pinned_login(model)[0], *lean(artifact),
                 # F101: the review and docs subagents, each on its [models] role, so all of it is plan usage
                 *(['--agents', json.dumps(agents)] if (agents := subagents()) else []),
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
@@ -587,7 +585,7 @@ def slot_env(n: int | None) -> list[str]:
     # `finished_mark`; C14: AGENT_SLOT whatever `slot_env` says, which only adds to it
     env = ['AGENT_RUNNER=1'] + ([] if n is None else [f'AGENT_RUNNER_SLOT={n}', f'AGENT_SLOT={n}',
                                                       f'AGENT_RUNNER_WORKTREE={SLOTS_DIR / f"s{n}"}'])  # B103
-    env.append(f'CLAUDE_CODE_TMPDIR={session_tmp()}')
+    env += [f'CLAUDE_CODE_TMPDIR={session_tmp()}'] + ([] if C.run['slot_memory'] else ['CLAUDE_CODE_DISABLE_AUTO_MEMORY=1'])  # C49
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
@@ -823,27 +821,29 @@ def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None, k
         own = ''
     if not own and (flag := kept or C.run.get('model_flag')):
         return flag
-    return not own and audit.model(tid, ls or []) or C.task_model(tid, own) or model
+    return not own and audit.model(tid, ls or []) or C.task_model(tid, own, task_size.size_of(C, tid, ls or [])) or model  # F470
 
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: frozenset = frozenset()):
     """Start `task` in slot n. `held` (F142): the providers past a usage cap, not to start it on."""
-    from agent_runner.fallback import note_model, start_model
+    from agent_runner.fallback import note_model, session_env, start_model
     tid = task[0]
     model = start_model(task_model(tid, model, branch), held)  # F106g: a capped provider's task starts on the chain
     finished_mark(n, C).unlink(missing_ok=True)  # the last task's `done`, not this one's
     C.notes(f'{tid}.budget').unlink(missing_ok=True)  # F103: an earlier attempt's budget stop, not this one's
     C.notes(f'{tid}.fallback').unlink(missing_ok=True)  # F106g: an earlier attempt's cap stop
+    t0 = time.monotonic()
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if not vacate(n, d, head, branch, f'for {tid}'):
         return None
     if trim(d, f'slot {n}'):
         worktree(n, branch)  # the `links` the clean took
+    slot_prep.timed(f'slot {n}', f'getting its worktree ready for {tid}', t0)  # F500
     end_mark(n, C).unlink(missing_ok=True)  # F102: the last session's finish or ask, read when it ended
     ask = asked(tid)  # F102: it asked the person, and the answer is in: its own session goes on
     wait = {} if ask else shared_tools.waited(tid)  # F168: it gave up its slot for a shared tool, free now
-    base = f'asked/{tid}' if ask else f'waiting/{tid}' if wait else stack.begin(tid, branch)
+    base = f'asked/{tid}' if ask else f'waiting/{tid}' if wait else sched.took_base(tid) or stack.begin(tid, branch)
     if not wait:
         shared_tools.forget(tid)
     co = git('checkout', '-q', '-B', f'task/{tid}', base, cwd=d)
@@ -870,7 +870,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     prompt = prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch)  # F132: the harness loop's brief has no subagents
     logfile, since = slot_header(n, f'{tid} session {sid}')
     note_model(sid, model)
-    if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
+    if not (pid := MUX.open(n, d, prompt, sid, model, idle, [*slot_env(n), *session_env(tid, sid, model, held)], logfile)):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
         shared_tools.not_started(tid, d, wait)
         return None
@@ -958,7 +958,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     F106g: with `fallback` (the next model in [models] fallback, its provider having hit its cap), a new session
     on that model goes on with the work in the worktree instead, told to read it and the journal first.
     """
-    from agent_runner.fallback import FALLBACK, note_model, session_model
+    from agent_runner.fallback import FALLBACK, note_model, session_env, session_login, session_model
     from agent_runner import settings_live
     model = fallback or task_model(tid, model, branch, **({'kept': settings_live.KEPT[sid][0]} if sid in settings_live.KEPT else {}))  # F105: on its task's model, as at its start
     if not fallback and on_harness(model) != bool(HARNESS.find_transcript(sid)):
@@ -985,14 +985,14 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
         prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + prompt_for(tid, n, slots, d, branch, model) + stack.told(tid, branch) + told
         logfile, since = slot_header(n, f'{tid} session {sid} (fallback: {why})')
         note_model(sid, model)
-        if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
+        if not (pid := MUX.open(n, d, prompt, sid, model, idle, [*slot_env(n), *session_env(tid, sid, model)], logfile)):
             log(f'slot {n}: the session for {tid} on {model} did not start in {MUX.where(n)}')
             return None
         log(f'slot {n}: {tid} goes on with {model} ({why})', EV_STARTED, tid)
         return pid, sid, since
     logfile, since = slot_header(n, f'{tid} {"woken" if told else "resume"} {sid} ({why})')  # woken: no cut-off's resume
     if told and not move_transcript(sid, d) or not (pid := MUX.open(
-            n, d, told or RESUME.format(why=why, tid=tid), sid, model, idle, slot_env(n), logfile, resume=True)):
+            n, d, told or RESUME.format(why=why, tid=tid), sid, model, idle, [*slot_env(n), *session_env(tid, sid, model, login=session_login(sid))], logfile, resume=True)):
         log(f'slot {n}: the session for {tid} did not resume in {MUX.where(n)}')
         return None
     log(f'slot {n}: {tid} resumed ({why})')

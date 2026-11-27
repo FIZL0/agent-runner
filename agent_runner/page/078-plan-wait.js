@@ -19,13 +19,16 @@ function waitName(q){
 function waitDrawn(q,ids){
   if(waitSame(ids,waitNow(q)))return q;
   const all=waitKnown(), words=ids.map(t=>waitName(all.find(x=>x.id===t)||{id:t})).join(', ');
+  if(q.release){const r=q.release;  // B870: a release says it on its own line
+    return {...q,after:ids,release:{...r,waits:ids.map(t=>({id:t,title:(all.find(x=>x.id===t)||{}).title||t})),everything:false,note:'',
+      ...(ids.length?{state:'waits'}:{state:'next',words:'next'})}}}
   const free=['ready','after','tool'].includes(q.state);  // the other states come first, as in ui_model_queue.queue_state()
   return {...q,after:ids,after_title:words,...(free?{state:ids.length?'after':'ready'}:{})};
 }
 /* every open task the snapshot has */
 const waitKnown=()=>(S.snap.queue||[]).concat(S.snap.shelved||[]);
 /* what row q waits for now, of the tasks still open */
-const waitNow=q=>{const open=waitKnown().map(x=>x.id);return (q.after||[]).filter(t=>open.includes(t))};
+const waitNow=q=>{const open=waitKnown().map(x=>x.id), r=q.release;return (r&&!(q.after||[]).length?(r.waits||[]).map(w=>w.id):q.after||[]).filter(t=>open.includes(t))};  // B870: a release's waits
 const waitParts=(q,t)=>gripChild(q.id,t)||((q.split||{}).open||[]).some(p=>p.id===t);
 /* what row q, at place i of `rows`, cannot be done before, as plan_wait._edges() */
 function waitEdges(q,i,rows){
@@ -61,12 +64,24 @@ function waitHTML(qs){
     const none=PQ.err?card(`<div class="small v-bad">${esc(PQ.err)}</div><div class="btns"><button class="btn" data-planqload>Try again</button></div>`):emptyCard(g&&g.q===planWant()?'No open task matches.':'Loading…');
     return `${planField()}<div class="col">${sec('Open',open)}${sec('Parked',parked)}${open.length||parked.length?'':none}</div>`;
   }
-  return `${planField()}<div class="col">${newReleaseCard()}${sec('Queue',qs)}${sec('Parked',pk)}</div>`;
+  return `${planField()}<div class="col">${S.waitPad?`<div class="waitpad" style="height:${S.waitPad}px"></div>`:''}${newReleaseCard()}${sec('Queue',qs)}${sec('Parked',pk)}</div>`;
+}
+/* F476: the Work page's sections above the Queue go in the pick mode and come back after: the task's row stays where it stood */
+function workKeepRow(id,draw){
+  const at=()=>{const r=id&&document.querySelector(`[data-k="task:${id}"]`), b=$('body');if(!r||!b)return null;let y=0;for(let x=r;x&&x!==b&&b.contains(x);x=x.offsetParent)y+=x.offsetTop;return y-b.scrollTop+b.getBoundingClientRect().top};  // where it stands once its glide ends
+  const was=at();S.waitPad=0;draw();const b=$('body');let now=at();
+  if(was==null||now==null||!b||now===was)return;
+  b.scrollTop+=now-was;now=at();
+  if(S.planWait&&now<was){S.waitPad=was-now;draw()}  // what scrolling cannot make up, room above the list does
+  requestAnimationFrame(()=>{const n=at();if(n==null||Math.abs(n-was)<1)return;  // the bar over the list came after
+    const d=n-was, p=S.planWait?Math.max(0,(S.waitPad||0)-d):0, left=d-((S.waitPad||0)-p);
+    if(p!==(S.waitPad||0)){S.waitPad=p;draw()}
+    if(left)b.scrollTop+=left});
 }
 function waitStart(id){
   const q=waitRows(S.snap.queue||[]).find(x=>x.id===id);if(!q||!waitMay(q))return;
   S.planMenu='';S.planWait=id;S.waitPicks=waitNow(q);
-  render(true);menuFocus(`[data-waitme="${id}"]`);
+  workKeepRow(id,()=>render(true));menuFocus(`[data-waitme="${id}"]`);
 }
 function waitPick(id){
   if(!S.planWait||!waitKnown().some(q=>q.id===id))return;
@@ -77,12 +92,12 @@ function waitPick(id){
 }
 function waitEnd(){
   const id=S.planWait;S.planWait='';S.waitPicks=[];
-  render(true);if(id)menuFocus(`[data-planmenu="${id}"]`);
+  workKeepRow(id,()=>render(true));if(id)menuFocus(`[data-planmenu="${id}"]`);
 }
 function waitDone(){
   const id=S.planWait, q=waitRows(S.snap.queue||[]).find(x=>x.id===id);if(!q)return;
   const open=waitKnown().map(x=>x.id), ids=S.waitPicks.filter(t=>open.includes(t));  // one that landed meanwhile is waited for no more
-  const all=!ids.length&&/^all:/.test(q.after_title||'');  // after: all, with nothing above it to tick: cleared too
+  const all=!!(q.release||{}).everything||!ids.length&&/^all:/.test(q.after_title||'');  // B870: a release's all becomes the list ticked  // after: all, with nothing above it to tick: cleared too
   if(all||!waitSame(ids,waitNow(q))){
     S.planWait='';S.waitPicks=[];  // outbox() draws
     for(const x of S.ob.filter(x=>x.waitset===id&&x.state==='failed'))obChange(b=>obDrop(b,x.cid));  // a refused one this replaces

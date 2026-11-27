@@ -73,7 +73,7 @@ def section(text: str, head: str) -> str:
 def test_config():
     print('runner.toml: joinable holds CHANGELOG.md')
     cfg = tomllib.loads((ROOT / 'runner.toml').read_text(encoding='utf-8'))
-    eq(cfg['run'].get('joinable'), ['CHANGELOG.md'], 'joinable = ["CHANGELOG.md"]')
+    check('CHANGELOG.md' in cfg['run'].get('joinable', []), 'joinable holds "CHANGELOG.md"')
     check('CHANGELOG.md' in cfg['run'].get('join', {}), '[run.join] names the changelog joiner')
 
 

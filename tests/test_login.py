@@ -9,6 +9,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from contextlib import redirect_stdout
@@ -182,13 +183,67 @@ def test_needs_you(e: Env):
         check(not [a for a in P.asks(R.C.todo, all=True) if a[1] == tid], 'it is off Needs you again')
 
 
+def test_claude_logins(e: Env):
+    from agent_runner import claude_use as CU
+    f = e.tmp / 'logins.json'
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_LOGINS': str(f), 'PI_CODING_AGENT_DIR': str(e.pi)}):
+        eq(CU.login_env(), {}, 'with no logins added a session runs on Claude Code\'s own login, unchanged')
+        seen = []
+        ok, where = L.claude_add('work', lambda env: seen.append(env.get('CLAUDE_CONFIG_DIR')) or True)
+        check(ok and where.endswith('claude/work') and seen == [where], 'claude /login runs in its own folder', where)
+        L.claude_add('home', lambda env: True)
+        eq([r['name'] for r in CU.logins()], ['default', 'work', 'home'], "Claude Code's own login stays first")
+        eq(CU.login_env(), {}, 'a task runs on the default login')
+        eq(CU.login_env('work'), {'CLAUDE_CONFIG_DIR': where}, 'a named login has its own CLAUDE_CONFIG_DIR')
+        rc, out = run_login([], e)
+        has(out, r'claude --as default \(default\)', 'run login lists the default')
+        has(out, r'claude --as work: .*claude/work', 'and the other logins')
+        check(not L.claude_add('bad name', lambda env: True)[0], 'a name with a space is refused')
+        with mock.patch.object(L, 'claude_add', lambda n: (True, 'x')):
+            rc, out = run_login(['claude', '--as', 'x'], e)
+        has(out, 'separate real account', '--as says each login must be a real account of its own')
+
+
+def test_named_logins(e: Env):
+    """F506: two Codex logins, the default and one --as NAME, both kept in Pi's auth.json and listed."""
+    rc, out = run_login(['codex', '--as', 'work'], e, secret=lambda q='': 'k-work')
+    eq(rc, 0, f'codex --as work logs in: {out}')
+    rc, out = run_login(['codex', '--as', 'home'], e, secret=lambda q='': 'k-home')
+    eq(rc, 0, f'and codex --as home: {out}')
+    a = e.auth()
+    eq((a.get('openai-codex@work') or {}).get('key'), 'k-work', 'the named login is kept under <id>@NAME')
+    eq((a.get('openai-codex@home') or {}).get('key'), 'k-home', 'and a second one beside it')
+    check('openai-codex' not in a, 'a named login is not the default one')
+    eq(L.harness_names('codex', {}, a), ['work', 'home'], 'both are found')
+    e.c.models['kinds']['C'] = 'codex:gpt-5'
+    with mock.patch.dict(os.environ, env_vars(e)):
+        lines = '\n'.join(L.list_lines(e.c))
+    has(lines, r'codex --as work', 'run login lists the first')
+    has(lines, r'codex --as home', 'and the second')
+    eq(L.harness_env('work'), {'AGENT_RUNNER_LOGIN_AS': 'work'}, 'a session on a named login is told its name')
+    eq(L.harness_env(), {}, 'the default login needs nothing')
+    # the harness reads the login it is told: piCredentials, run alone in node
+    src = L.HARNESS_JS.read_text(encoding='utf-8')
+    start = src.index('function piCredentials')
+    fn = src[start:src.index('\n}\n', start) + 3]
+    js = ("import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os';\n" + fn +
+          "\nconsole.log(JSON.stringify((await piCredentials().read('openai-codex'))?.key ?? null));")
+    for name, want in (('work', 'k-work'), ('home', 'k-home'), ('', None)):
+        p = subprocess.run(['node', '--input-type=module', '-e', js], capture_output=True, text=True, timeout=60,
+                           env={**os.environ, 'PI_CODING_AGENT_DIR': str(e.pi), **L.harness_env(name)})
+        eq(json.loads(p.stdout or 'false'), want, f'a session on login {name or "default"} uses its own credential')
+    rc, _ = run_login(['codex', '--as', 'bad name'], e)
+    eq(rc, 2, 'a name with a space is refused')
+
+
 def main() -> int:
     here = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
         e = Env(Path(tmp))
         try:
             return report([lambda: test_list(e), lambda: test_copilot(e), lambda: test_keys(e),
-                           lambda: test_needs_you(e)])
+                           lambda: test_needs_you(e), lambda: test_claude_logins(e),
+                           lambda: test_named_logins(e)])
         finally:
             os.chdir(here)
 

@@ -15,7 +15,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> --until CHECK[,CHECK] WHY   the same, waiting on what this machine checks by itself (below)
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--needs TOOL] [--pri LEVEL] [--alone] [--last] [--force] [@ WHERE]
+    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--size simple|complex] [--needs TOOL] [--pri LEVEL] [--alone] [--last] [--force] [@ WHERE]
                                  new "- [ ] **<next free id>** TEXT | files: A, B | after: X, Y …"; prints
                                  the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
                                  same work: `plan note` it there, or --force when it is different work.
@@ -25,15 +25,19 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
                                  a slot running it is stopped, its branch deleted unmerged (B19). The last open
                                  part of a split task: that ticks if a part landed, else is one whole task again
-    ./run plan cancel <ID> [--yes]   stop the slot running it, keep its work on wip/<ID> and park it (as --pri later), so
-                                 no run starts it until `edit <ID> --pri normal`; says the minutes worked and stops
+                                 B772: tasks blocked (after ID) on it ask you "still wanted? [Keep / Drop]";
+                                 --duplicate-of X / --overtaken-by X (or a WHY that says so): they wait on X
+                                 instead while X is open, else go on. (after all) and releases go on either way
+    ./run plan cancel <ID> [--yes]   stop the slot running it, keep its work on wip/<ID> and hold it in its place, so
+                                 no run starts it until `unhold <ID>`; says the minutes worked and stops
                                  nothing without --yes; refused while it lands
     ./run plan restore <ID> [WHERE]   undo a mistaken tick or drop: back from DONE.md as open [ ], same id, text
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
                                  a dropped blocked task comes back blocked, with its ask file if this machine still has it
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
-    ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
-    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--needs TOOL] [--pri LEVEL] [--alone | --no-alone]
+    ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons); a
+                                 slot running it is told the note in its pane, as `tell` does
+    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--size simple|complex] [--needs TOOL] [--pri LEVEL] [--alone | --no-alone]
                                  rewrite the task in place: TEXT replaces its whole description, notes included;
                                  id, checkbox, BLOCKED, tags and fields kept, but each flag replaces its field,
                                  --pri retags it and moves it as `add` files that level, --alone/--no-alone sets
@@ -58,7 +62,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  plan edit; an error when no slot runs ID, with the question it asks the person and the
                                  command that answers it, or the `note` to run
     ./run plan shelve <ID>       later: stays blocked, off Needs you; `unshelve <ID>` brings it back
-    ./run plan hold <ID>         it keeps its place in the queue and no run starts it; `unhold <ID>` ends it
+    ./run plan hold <ID>         it keeps its place in the queue and no run starts it; `unhold <ID>` ends it; on a task
+                                 a slot of this run is on, it is cancelled first (as `cancel <ID> --yes`)
     ./run plan hold|unhold|move|drop|restore next-release …   the same for the Next release row ([run] auto_release),
                                  which is no task: `move` makes it a release that waits for the tasks above its place,
                                  `drop … WHY` skips that cut (the count starts from zero) and `restore` undoes it
@@ -111,7 +116,8 @@ The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name |
 headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
 off a line: `files:` keeps running tasks apart, `after:` holds a task until those ids are done, `test:`
 names the test it adds, `journal:` a journal dir its brief lists, `model:` the model its session runs on
-(`--model haiku`, over its kind's in [models.kinds]), `needs:` the shared tools it needs (`--needs iphone15`, a
+(`--model haiku`, over its kind's in [models.kinds]), `size:` simple or complex (`--size simple`, the
+model in [models] sizes when set, F470), `needs:` the shared tools it needs (`--needs iphone15`, a
 name in [run.tools]), without which no run starts it. Prose is never parsed for files or ids.
 
 **A task that goes last** (a release) is filed with `add … --last`: at the end of Next, with `after: all above`.
@@ -151,8 +157,8 @@ blocked on "P36 is not merged yet" stays blocked long after P36 lands, because n
 from the open task ids its WHY names, so a session that forgets `--after` still gets one.
 
 **A block that waits on something this machine can check** says which, as `block ID --until CHECK[,CHECK] WHY`
-(`done --blocked WHY --until CHECK`): `version:X.Y.Z`, `login:PROVIDER`, `tool:NAME` or `check:NAME`, and all must
-pass. It reads `BLOCKED: (until version:0.66.0) why`, needs no person, and no run starts it; `unblock` frees it at
+(`done --blocked WHY --until CHECK`): `version:X.Y.Z`, `login:PROVIDER`, `tool:NAME`, `check:NAME` or
+`date:YYYY-MM-DD` (that day has come), and all must pass. It reads `BLOCKED: (until version:0.66.0) why`, needs no person, and no run starts it; `unblock` frees it at
 any time. A check that is none of these, or names what is not here, is refused and nothing is blocked. With a
 CONFIRM or DECIDE the question comes back under Needs you once they pass; any other block reopens for an agent.
 It does not hold an `after: all` or `all above` task: a release must not wait for a task that waits for its version.
@@ -195,7 +201,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from agent_runner import plansync
-from agent_runner.config import cfg, claude_model, main_checkout
+from agent_runner.config import cfg, claude_model, main_checkout, SIZES
 from agent_runner.gitops import git
 
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
@@ -209,7 +215,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-KEYS = ('files', 'ahead', 'after', 'test', 'journal', 'model', 'needs', 'split-by', 'held', 'moved')  # F435: ahead, written by auto release alone (release_ahead); F429a: moved, written by `move` alone (release_moves); F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
+KEYS = ('files', 'ahead', 'after', 'test', 'journal', 'model', 'size', 'needs', 'split-by', 'held', 'moved')  # F435: ahead, written by auto release alone (release_ahead); F429a: moved, written by `move` alone (release_moves); F429: held, written by `hold` alone (row_hold); B196: split-by, written by `add` alone; F105: model, the task's own session model; F168: needs, shared tools
 # ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
 FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
@@ -498,7 +504,7 @@ def until_list(given: str, c=None) -> list[str]:
     out = list(dict.fromkeys(x.strip() for x in given.split(',')))
     if '' in out:  # none, or a space after a comma made the next check a word of the why
         raise SystemExit(f'{PROG}: --until takes checks, comma-separated with no space: version:X.Y.Z, login:PROVIDER, '
-                         'tool:NAME or check:NAME. Nothing blocked.')
+                         'tool:NAME, check:NAME or date:YYYY-MM-DD. Nothing blocked.')
     c = c or cfg()
     for t in out:
         if (why := until.problem(t, c)) and until.problem(t, cfg(main_checkout(c.root))):
@@ -549,8 +555,8 @@ def _above(ls: list[str], i: int) -> tuple[list[str], dict[str, list[str]]]:
     start = i
     while start and not _level(ls[start - 1]):
         start -= 1
-    return _split_skipped(ls, [j for j in range(start, i) if (m := ITEM.match(ls[j])) and not m.group(1)
-                               and m.group(2) != 'x'])
+    return _split_skipped(ls, _not_waiting_back(ls, i, [j for j in range(start, i) if (m := ITEM.match(ls[j]))
+                                                        and not m.group(1) and m.group(2) != 'x']))
 
 
 def _split_skipped(ls: list[str], at: list[int]) -> tuple[list[str], dict[str, list[str]]]:
@@ -675,7 +681,26 @@ def _before_all(ls: list[str], i: int) -> tuple[list[str], dict[str, list[str]]]
         if m and not m.group(1) and m.group(2) != 'x' and not section.startswith(SKIPPED) and \
                 release_ahead.counted(ls[i], m.group(3).rstrip('.')):  # F435
             at.append(j)
-    return _split_skipped(ls, at)
+    return _split_skipped(ls, _not_waiting_back(ls, i, at))
+
+
+def _not_waiting_back(ls: list[str], i: int, at: list[int]) -> list[int]:
+    """B868: the lines of `at` whose task does not wait, by name and down the chain, on the task at ls[i]: a task
+    that waits for a release is never one the release waits for, or neither could start."""
+    me, where = ITEM.match(ls[i]).group(3).rstrip('.'), _open_at(ls)
+
+    def back(j: int) -> bool:
+        seen, todo = {j}, _named_after(ls, j)
+        while todo:
+            t = todo.pop(0)
+            if t == me:
+                return True
+            k = where.get(t)
+            if k is not None and k not in seen:
+                seen.add(k)
+                todo += _named_after(ls, k)
+        return False
+    return [j for j in at if not back(j)]
 
 
 def resolve_after(ls: list[str], i: int, ids: list[str]) -> list[str]:
@@ -1156,6 +1181,8 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         no('@ needs a place (top, bottom, before ID, after ID, in SECTION)')
     if (m := vals.get('--model')) is not None and (not m.strip() or len(m.split()) > 1 or ',' in m):
         no(f'--model takes one model name (haiku, sonnet, opus), not {m!r}')
+    if (sz := vals.get('--size')) is not None and sz.strip() not in SIZES:  # F470
+        no(f'--size takes {" or ".join(SIZES)}, not {sz!r}')
     if m is not None and ':' in m:  # F125: another provider is refused here, not swapped for the kind's model later
         c = cfg()
         try:
@@ -1167,7 +1194,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
     keyed = ''
     for key in KEYS:  # `--files a,b` → ` | files: a, b`, in KEYS order
         if (v := vals.get(f'--{key}')) is not None:
-            keyed += f' | {key}: ' + (v if key in ('test', 'model') else ', '.join(
+            keyed += f' | {key}: ' + (v.strip() if key == 'size' else v if key in ('test', 'model') else ', '.join(
                 LAST if x == LAST else ', '.join(re.split(r'[,\s]+', x)) for x in re.split(r',\s*', v.strip(', '))))
     t, _, w = ' '.join(text).partition(' @ ')
     t, w, keyed = one_line(t), one_line(w), one_line(keyed)
@@ -2859,6 +2886,12 @@ def main(argv: list[str] | None = None) -> int:
         rc, argv = cancel.main(c, argv[1:])
         if rc:
             return rc
+    elif argv[:1] == ['hold'] and len(argv) > 1:  # F480: a slot of this run on it: cancelled first, then held
+        from agent_runner import cancel, row_hold
+        if row_hold.slot_on(c, argv[1]):
+            rc, argv = cancel.main(c, [argv[1], cancel.YES])
+            if rc:
+                return rc
     restart = False
     if argv[:1] == ['change'] and '--restart' in argv[2:]:
         restart, argv = True, [a for a in argv if a != '--restart']
@@ -2997,7 +3030,13 @@ def _p_drop(a, x):
     if a.id == release_moves.NEXT:
         print(release_moves.drop_next(x.todo, _text(a)))
         return 0
-    whole = drop(a.id, _text(a))
+    by = None
+    if a.rest and a.rest[0] in ('--duplicate-of', '--overtaken-by'):  # B772
+        if len(a.rest) < 3:
+            print(f'{PROG}: drop {a.id} {a.rest[0]} <ID> WHY: name the other task, then why', file=sys.stderr)
+            return 2
+        by, a.rest = a.rest[1], [a.rest[0][2:].replace('-', ' ') + ' ' + a.rest[1] + ':', *a.rest[2:]]
+    whole = drop(a.id, _text(a), by=by)
     skipped = release(a.id) and release_moves.removed(a.id)
     return x.say(f'dropped {a.id}' + (f': that cut is skipped, and the count starts from zero (`{PROG} restore {a.id}` '
                                       'undoes it)' if skipped else '') + ''.join(
@@ -3234,8 +3273,8 @@ def _p_unhold(a, x):
 
 def _p_cancel(a, x):
     from agent_runner import cancel
-    cancel.park(a.id, _text(a))
-    return x.say(f'cancelled {a.id}: parked, so no run starts it (`{PROG} edit {a.id} --pri normal` unparks it)')
+    cancel.hold(a.id, _text(a), x.todo)  # F480: held in its place, as `hold` does
+    return x.say(f'cancelled {a.id}: held, so it keeps its place and no run starts it (`{PROG} unhold {a.id}` ends it)')
 
 
 def _p_kinds(a, x):
@@ -3373,8 +3412,10 @@ def _p_add(a, x):
 
 
 def _p_note(a, x):
-    note(a.id, _text(a))
-    return x.say(f'noted {a.id}' + big_note(a.id, x))
+    text = _text(a)
+    note(a.id, text)
+    told, said = tell(x.c, a.id, text)  # F512: a slot running it reads the note too
+    return x.say(f'noted {a.id}' + (f'; {said}' if told is not False and said else '') + big_note(a.id, x))
 
 
 def _p_edit(a, x):
@@ -3423,6 +3464,11 @@ def _p_newid(a, x):
 def _p_brief(a, x):
     from agent_runner.plan_brief import brief  # C52: the module imports this one
     return x.say('\n'.join(brief(a.id)))
+
+
+def _p_lesson(a, x):  # F413
+    from agent_runner import lessons
+    return lessons.command(x.c, a.rest)
 
 
 def _p_archive(a, x):
@@ -3477,6 +3523,7 @@ SUBCOMMANDS = {
     'goal': ((), 0, _p_goal),
     'newid': (('kind',), None, _p_newid),
     'brief': (('id',), None, _p_brief),
+    'lesson': ((), 1, _p_lesson),
     'archive': ((), None, _p_archive),
     'claims': ((), None, _p_claims),
     'unclaim': (('id',), None, _p_unclaim),
@@ -3544,7 +3591,24 @@ def decide_question(text: str) -> str:
     `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none). B840: it is whole
     up to QUESTION_MAX, and `on_a_line`."""
     q = ' '.join(m[1].split()) if text.strip() and (m := DECIDE_LINE.match(text.strip().splitlines()[-1])) else ''
+    if not q and text.strip():
+        q = _wrapped_decide(text.strip().splitlines())
     return cut_question(on_a_line(q), QUESTION_MAX)
+
+
+def _wrapped_decide(lines: list) -> str:
+    """B871: a DECIDE line wrapped over several lines at the end of the last paragraph: the lines from the nearest
+    `DECIDE:` line down, joined. Only when that line leaves its bracket of options open (so the lines below carry it
+    on); a status that quotes a whole DECIDE and then says more is none."""
+    for i in range(len(lines) - 2, -1, -1):
+        if not lines[i].strip():
+            return ''
+        if m := DECIDE_LINE.match(lines[i]):
+            head = m[1]
+            if head.count('[') <= head.count(']'):
+                return ''
+            return ' '.join(' '.join([head] + lines[i + 1:]).split())
+    return ''
 
 
 QUESTION_MAX = 2000  # B840: a guard only; a view with little room cuts the question itself

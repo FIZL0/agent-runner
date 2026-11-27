@@ -2,7 +2,15 @@ let lastPlace=null;
 S.at={};S.pin=true;S.last={};S.keys=false;
 const chatShown=()=>!S.thread&&S.view==='talk';
 /* F189a: press: a press asked for it, so it glides; anything else is at once, but leaves a glide under way to reach the end */
-function toEnd(press){const b=$('body');seeRoom();if(press)scrollGlide(b,endOf);else if(!MO.scroll.has(b))b.scrollTop=b.scrollHeight;S.pin=true;seeBar()}
+function toEnd(press){const b=$('body');seeRoom();if(press)scrollGlide(b,endOf);else if(!MO.scroll.has(b)&&!(typeof handOn==='function'&&handOn()))b.scrollTop=b.scrollHeight;S.pin=true;seeBar()}
+/* B873: the person's own hand on the chat (a finger down, or a wheel in the last 250 ms): nothing else moves its scroll then */
+const HAND={down:false,wheel:0};
+const handOn=()=>HAND.down||Date.now()-HAND.wheel<250;
+document.addEventListener('touchstart',()=>{HAND.down=true},{capture:true,passive:true});
+for(const t of ['touchend','touchcancel'])document.addEventListener(t,e=>{if(!e.touches.length)HAND.down=false},{capture:true,passive:true});
+document.addEventListener('wheel',()=>{HAND.wheel=Date.now()},{capture:true,passive:true});
+/* B873: a glide under way on b that goes to its end (toEnd's), not to a place above it */
+const glidesEnd=b=>{const g=MO.scroll.get(b);return !!g&&g.to===endOf};
 /* F171: the room Talk's top bar (with a notice's row) and dock take from the chat behind them; and the top bar away or not */
 let SEE={top:0,size:'',run:0,away:false};
 function seeRoom(){
@@ -101,7 +109,7 @@ function render(force){
   lastPlace=place;
 }
 /* F83: Talk follows its newest words until the person scrolls up; it follows a box that grows or a keyboard too */
-$('body').addEventListener('scroll',()=>{if(chatShown()){S.pin=MO.scroll.has($('body'))||atEnd($('body'));seeBar()}},{passive:true});
+$('body').addEventListener('scroll',()=>{if(chatShown()){S.pin=typeof glidesEnd==='function'?glidesEnd($('body'))||!MO.scroll.has($('body'))&&atEnd($('body')):MO.scroll.has($('body'))||atEnd($('body'));seeBar()}},{passive:true});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
 /* B160, F126a: a notice's row comes or goes: the text stays where it was (a pinned chat by the line above) */
 let noticeH=0, noticeAt=null;

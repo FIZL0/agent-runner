@@ -70,7 +70,7 @@ def test_steps(tmp: Path) -> None:
     got = logic_js([['walkStep', i, up] for i in STEPS] + [['walkStep', i, down] for i in STEPS])
     eq([s['id'] for s in got], STEPS * 2, 'every step, with the run up and not')
     check(all(s['at'] and s['title'] and s['text'] for s in got), 'each has words and something to point at')
-    eq([s['view'] for s in got[:7]], ['plan', 'status', 'status', 'home', 'history', 'home', ''], 'where each thing is')
+    eq([s['view'] for s in got[:7]], ['plan', 'plan', 'plan', 'home', 'plan', 'home', ''], 'where each thing is (F476: Status and History are the Work page)')
     check('side by side' in got[0]['text'] and got[0]['many'] == 3, 'the queue: tasks side by side', got[0])
     off = got[8]
     check('your own Claude usage' in off['text'] and 'Nothing starts until you press it' in off['text'] and
@@ -152,7 +152,7 @@ def test_page(tmp: Path) -> None:
     if r.returncode:
         return
     o = json.loads(r.stdout)
-    eq((o['first'], o['next'], o['went'], o['kept']), ('queue', 'start', ['status'], 'start'), 'Next goes on, to its view; a reload is where they were')
+    eq((o['first'], o['next'], o['went'], o['kept']), ('queue', 'start', ['plan'], 'start'), 'Next goes on, to its view; a reload is where they were')
     eq((o['skip'], o['stays'], o['said']), ('', '', ['The walkthrough stays in the menu']), 'skipped, and still after a reload')
     eq((o['row'], o['again']), (True, 'start'), 'the menu shows it again, where it was')
     eq(o['others'], ['', '', '', ''], 'never in another project, nor its menu row')

@@ -21,6 +21,7 @@ const questionKey=(n,id)=>n+' '+id;
 /* F437c: is the reader away from the bottom? o: up (px the history is scrolled from its end), off (px the frame is pulled),
    jump (the terminal itself is scrolled). was: they were; it takes more to go than to stay, so the edge does not flicker */
 const QUESTION_EDGE=24, QUESTION_BACK=150;  // px; ms at the bottom before the card is back
+const QUESTION_GROW=2000;  // F511: ms still at the bottom, with no touch, before the Decide pill grows back into the card
 const questionFar=(was,o)=>!!o.jump||Math.max(o.up||0,o.off||0)>(was?1:QUESTION_EDGE);
 /* the agent CLI's own Jump to bottom pill, on a screen too low for feedFoot to find its prompt: by its place, the middle,
    and its ground (lit), which the same words in an answer do not have */
@@ -31,6 +32,6 @@ const questionLabel=o=>o.name+(o.rec?' (recommended)':'');
 function questionHTML(n,ask,held,sent,min){
   const st=questionState(ask,held,sent);if(!st)return '';
   if(st==='held')return `<div class="card qcard qheld" role="status" data-k="question:${esc(n)}" data-v="held"><div class="row"><span class="grow">Sending “${esc(held.name)}”</span><button type="button" class="btn" data-qundo="${esc(n)}">Undo</button></div></div>`;
-  if(min)return `<div class="card qcard qmin" role="group" aria-label="Question, minimized" data-k="question:${esc(n)}" data-v="min:${esc(ask.id)}"><div class="row"><span class="grow ell">${esc(ask.question)}</span><button type="button" class="icon" data-qshow="${esc(ask.id)}" aria-label="Show question" title="Show question">${questionIcon('M6 15l6-6 6 6')}</button></div></div>`;
-  return `<div class="card qcard" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(ask.id)}"><div class="row qtop"><span class="grow q">${esc(ask.question)}</span><button type="button" class="icon" data-qmin="${esc(ask.id)}" aria-label="Minimize question" title="Minimize question">${questionIcon('M5 12h14')}</button></div>${ask.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(ask.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(ask)}</div>`;
+  if(min)return `<div class="card qcard qmin" role="group" aria-label="Question, minimized" data-k="question:${esc(n)}" data-v="min:${esc(ask.id)}"><div class="row qrow" data-qrowshow="${esc(ask.id)}"><span class="grow ell">${esc(ask.question)}</span><button type="button" class="icon" data-qshow="${esc(ask.id)}" aria-label="Show question" title="Show question">${questionIcon('M6 15l6-6 6 6')}</button></div></div>`;
+  return `<div class="card qcard" role="group" aria-label="Question" data-k="question:${esc(n)}" data-v="${esc(ask.id)}"><div class="row qtop qrow" data-qrowmin="${esc(ask.id)}"><span class="grow q">${esc(ask.question)}</span><button type="button" class="icon" data-qmin="${esc(ask.id)}" aria-label="Minimize question" title="Minimize question">${questionIcon('M5 12h14')}</button></div>${ask.options.map((o,i)=>`<button type="button" class="btn${o.rec?' pri':''}" data-qpick="${i}" data-q="${esc(ask.id)}">${esc(questionLabel(o))}</button>`).join('')}${questionChatHTML(ask)}</div>`;
 }

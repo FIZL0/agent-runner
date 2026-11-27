@@ -101,6 +101,10 @@ def cmd_finish(argv: list[str]) -> int:
               'behind. Run `done <ID> "<msg>"` (or `--blocked "<why>"`) first, then finish.', file=sys.stderr)
         return 1
     _write_end('finish', task_here(), a.summary)
+    if tid := tid or task_here():  # F509: the write-up stays with the task, past log rotation
+        from agent_runner.config import cfg
+        from agent_runner.done import keep_writeup
+        keep_writeup(cfg(), tid, a.summary)
     print('finished: this session ends when you stop now. Say nothing more.')
     return 0
 

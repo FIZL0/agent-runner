@@ -4,8 +4,75 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: `[run] usage_limits = false` switches the usage caps off: the runner never reads account usage, never holds or falls back a task on `session_max` / `weekly_max`, and status hides them (F488).
+- Changed: a diff whose only change to `pyproject.toml`, `package.json` or `Cargo.toml` is its description line counts as docs only, so `done` and the merge skip the gate for it (F494).
+- Added: a model name can pin a Claude login, `claude@work:opus`, anywhere a model is named ([models] roles, kinds, sizes, fallback, `--model`); a session on it starts on that login, and when that login is capped it goes on with claude's next free login (F504).
+## 0.82.0 (2026-11-28)
+
+- Changed: `done.py` is split by area (`done_docs.py`, `done_refusals.py`, `done_writeup.py`), and its test is `tests/test_done_docs.py`; no behaviour change (C62).
+
+- Added: session_max / weekly_max read each Claude login's own usage (from its own config folder's login), so a new task passes over every login past its caps, not only the default one (F514).
+- Added: `status` names the Claude login each slot's session runs on, only when there is more than one login (F505).
+- Added: on the run page, drag a chat's row into Quiet and back out, or a bulk select of chats all at once; the run keeps where they are, and a finger drags after a short hold (F507).
+- Added: usage caps are kept per Claude login: a capped login goes on with the next free login, then `[models] fallback` (a local model normally last); session_max / weekly_max hold only the login they read; all capped and no local model waits for the earliest reset (F503).
+- Added: `run login codex|copilot|gemini --as NAME` adds another login, kept in Pi's auth.json as `<id>@NAME` beside the default; `run login` lists them, and a harness session runs on that login when its model is `<provider>@NAME:<model>` or it is given `AGENT_RUNNER_LOGIN_AS=NAME` (F506).
+- Fixed: on the run page, a chat message shows sent (no longer faded) as soon as the run takes it, not only once the chat's transcript has it (B878).
+
+## 0.81.0 (2026-11-28)
+
+- Changed: the settings area (types, checks, toml edits) moved from config.py to config_settings.py, no behaviour change (C61).
+- Changed: a merge is not tested again when the shared branch moved during its gate only by the runner's own gated merges on other files; a hand commit, a shared file or a `runner.toml` change still tests it again (F493).
+- Added: `run login claude --as NAME` adds another Claude login in its own CLAUDE_CONFIG_DIR, kept per machine; the first (Claude Code's own) stays the default login, and `run login` lists them. Each must be a separate real account (F502).
+- Changed: lazyrunner's key bar lists every key of the mode; Concepts' panel is framed like Work, Tools and Settings; moving the highlight onto a chat shows that chat on the right (F484b)
+- Changed: on the run page, a chat's question card shows whole when the question comes; a scroll up shrinks it to its small Decide pill, which stays at the bottom and grows back into the card on a tap or after 2 s still with no touch (F511).
+
+## 0.80.0 (2026-11-28)
+
+- Changed: the run page shows a person's own act (drop, cancel, rename…) at once, before the run answers, through one shared change in the page's act path; a refused act goes back; with no events stream the act's snapshot is fetched at once (F508)
+- Added: `[run] issues_trust` takes `"contributors"` (trust OWNER, MEMBER, COLLABORATOR and CONTRIBUTOR authors), `"members"` (OWNER, MEMBER, COLLABORATOR) or a list of GitHub logins; the rest are filed skeptical, and each issue's close or comment follows its own trust (F510).
+- Fixed: a page a chat published (publish-page from a chat) shows in the run page's Concepts for a week; it has no task, so it was left out (B875).
+- Added: `[run] slot_memory` (default true) turns Claude Code memories off for slot sessions; the audit offers moving them into lessons (C49)
+- Fixed: on the run page's Plan, a row dragged (mouse or finger) shows in its new place at once and glides only the last bit from where it was let go; before, the drag's shifts stayed on through the redraw and the rows jumped (B877).
+- Added: a chat's history on the run page (Copilot and Claude Code alike) shows a thin grey scrollbar you can drag (F474).
+- Added: a queue row in the snapshot carries the task's size (`size: simple`) beside its other fields (F485).
+- Added: slot worktrees are built faster: the missing ones are prepared at once when a run starts, a slot past the count is kept as a spare worktree (with room on the disk) and reused by the next new slot instead of being built again, and each slow step of building one is logged with its time (F500).
+## 0.79.0 (2026-11-27)
+
+- Fixed: a release card in the Plan queue has Wait for… too: tick the tasks it waits for, in the place of the tasks above it (B870).
+- Fixed: Home's Needs you lists a chat's DECIDE question at once, with its option buttons, an answer box and Chat, and counts it; before, it showed only once the run filed it, hours later, and never for a renamed chat (B832).
+- Changed: a Plan row's hold, to the top, remove and Undo show as saving while sent, with no toast on success; a refusal puts the row back with a toast (F478).
+- Added: a task's size, `plan add/edit --size simple|complex` (`size: simple` on its line); `[models] sizes` (empty, off, by default; e.g. `{ simple = "sonnet" }`) runs a size on its own model, over its kind's and under its own `--model`; a simple task that fails or blocks on it retries once on its kind's model; on the Settings page as Model for each size (F470).
+- Added: with lessons on, `run done` asks for a lesson (or none) only after a failed gate in the task or a person's change to it in the plan, once per trigger, checks first; a merge repair's session may file one. It never holds up done (F414).
+- Fixed: a release no longer waits on a task that waits for that release (directly or down its chain), so neither is stuck; the task runs after the release lands (B868).
+## 0.78.0 (2026-11-26)
+
+- Added: a pitch's Ask… on Needs you, beside Approve and Not this…: per change Ask about it (its answer shows under it, and on the Review page) and Ask for a better way (undone and its task reopened with what you want instead) (F444c).
+- Fixed: a release ready to start but for the merge under way now starts before the merges waiting behind it; they go on as before when the release is held for anything else or cannot start (run paused, usage caps, no free slot) (B849b).
+- Added: lessons, what a project's agents learned, one line per lesson in plan/LESSONS.md with the files it applies to; a brief shows those whose files meet the task's (most specific first, at most 8); `plan lesson add/list/drop`; a lesson whose files are all gone drops itself. `[plan] lessons`, off by default, on in this repo (F413).
+- Changed: the run page's Status, Plan and History are one page, Work: the run bar and usage on top, then Now (what the agents work on and what merges), Up next (the queue, without what Now shows), Landed and Releases, with Parked and the Run log folded at the bottom; one search; old Status and History links open Work (F476).
+- Added: the run page's UI settings (Settings → Look and layout): a theme (ryha, light, terminal, omarchy, from theme.py) or Standard, the Lazyrunner layout (from 760px: the sidebar as numbered panels Status, Sessions, Plans, Tools, Settings on the left, the view on the right, keys 1-5, j/k, Enter/l, h, i, Esc, a/d/p, c, ?) and a key bar; only a layout and keys over the page's own panels (F473).
+- Changed: Hold on a running task (`plan hold`) stops its slot as Cancel does and holds it in its place; Cancel (the page's and `plan cancel`) now holds the task too instead of parking it, so no run restarts it until Unhold. Still refused while it merges, waits to merge, is taken by hand, or is claimed by another machine's run, which it names (F480).
+## 0.77.0 (2026-11-26)
+
+- Changed: `agent_runner/guide.py` is split by area into `guide_text.py`, `guide_topics.py` and `guide_control.py` (still imported through `guide`), and its control test is `tests/test_guide_control.py`; no behaviour change (C59).
+
+- Added: when the usage caps hold new tasks, `status` says so first (which cap, its %, when it lifts) and the run page's Run card shows the same line; `force ID` lets just that task start past the caps (F468)
+- Changed: a task whose gone run's claim is taken over starts from the task/<ID> branch that run pushed, not from a fresh fork (F467).
+- Added: Settings has an "Ask about my settings" button at the top: it opens a new chat with a first message ready to edit (what settings fit how I use this project?); nothing is sent before Send, and the chat recommends each change in one line and makes only those you say yes to (F449).
+- Changed: dropping a task as not wanted no longer starts the tasks that waited on it as if it had landed: each is held under Needs you with one question, still wanted? (Keep / Drop); `plan drop ID --duplicate-of X` or `--overtaken-by X` (or a reason that says so) has them wait on X instead while it is open, else go on. Tasks waiting on all before them and releases go on as before (B772).
+- Added: Settings asks `[run] auto_audit` as a question (On / Off) while neither the project nor the device sets it; either answer is saved by the usual Save and the question goes (C55b).
+- Changed: Settings, the Project file group (commands, files and folders, patterns, rules) is edited on the page like the rest, saved through the Settings bar; a list or table is a text box as wide as the row; a risky key says what a change does, and one that cannot change now shows why. Every open row keeps "Ask a chat to change it" beside More… (F448b).
+- Fixed: auto release by count (`[run] auto_release` every) is queued at the landing that reaches the count, so merges back to back no longer hold it off (B849a).
+## 0.76.0 (2026-11-26)
+
+- Fixed: a concept card's framed options page no longer reloads, or loses its scroll place, when the Home view redraws (B860).
+- Changed: Settings has two tabs, Project (runner.toml) and This device (runner.local.toml); every row edits the file of the tab in view, a row this device overrides shows its value on Project, Changed counts per tab, and the Settings bar names both files (F462)
+- Changed: `home install` sets up Runner Home's Tailscale Serve https address without asking (or says why it stays http only), then asks once in a terminal whether devices on the tailnet may open Home without the key, default No (F461).
+- Fixed: a chat closed for being idle stays in Chats, grayed under Quiet, until chat_quiet passes, and a message to it reopens it; before, it vanished from the list. A chat closed from the TUI or the run page still goes at once (B859).
+- Added: a task taken by hand has Cancel on its queue row in the run page and the terminal UI (it keeps the work and parks the task), and no Priority or Do it here while taken (F455b).
 - Fixed: `home install` on a machine whose run page had a Tailscale Serve https address keeps it: the page leaving its port hands its Serve rule over to Runner Home instead of turning it off, so the printed https link works and `home status` lists it; a rule a person made is never touched (B847).
 - Changed: on the run page, a chat that a Needs you answer started goes straight to Quiet in Chats with a 'new' label until opened once; it moves to the top only when it asks you something (F465).
+- Changed: in Settings, Main branch is now Working branch, in Landing work instead of the read-only Project file: a pick of the local branches that says, before Save, what Save does and that it applies once the run restarts, and why a pick cannot be saved (F447a).
 
 ## 0.75.0 (2026-11-26)
 
@@ -13,6 +80,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## 0.74.0 (2026-11-26)
 
 
+- Added: with `[run] approve`, a pitch's page is now its Review page. Each change shows its diff (`[run] approve_diff_lines`) and the questions you asked with their answers. `agent-runner pitch ask pitch1 F1 "…"` asks about a change, and `pitch better pitch1 F1 --why "…"` asks for a better way: the change is undone and its task reopened (F444).
+- Added: a bug task whose files meet those of a task waiting for the person's check (CONFIRM under Needs you, not shelved) waits until that check is done; critical and high tasks pass, and the dry run says which check it waits for (F415).
 - Fixed: on a computer the words of a chat's live screen can be copied: a drag selects them and copies them at once, as Shift+drag did, Ctrl+C or Cmd+C copies a selection without interrupting, and a right click opens the browser's menu with Copy; before, Claude Code's full screen took the mouse, so a drag selected nothing and Ctrl+C interrupted (B845).
 - Changed: on the run page, a Plan queue row of a task no slot runs but which is under way no longer says only 'Being worked on'; it says 'Taken by the chat <its name>' (pressing the words opens that chat), 'Taken by a chat that has ended', 'Taken by hand' (taken from a terminal or unknown), 'Merging' or 'Waits to resume'; `take` now records the control session that ran it, in the git folder of its take worktree (B846).
 - Fixed: a run whose `web_port` is taken without Runner Home serves its page on every interface on the next free port (every second one, 8772, 8774, …, skipping Tailscale Serve's and recorded rules' ports), its run log saying which port it is on, instead of 127.0.0.1 only; the page-only process and a run that takes that page over keep the port (`web.fell`) (B844).

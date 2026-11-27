@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest import mock
@@ -492,6 +493,14 @@ def test_enterprise(tmp: Path):
     check('hello from corp' in p.stdout, "the session answers on the other session's token", p.stdout + p.stderr)
     eq(seen(), [f'{copilot}/chat/completions'], 'and does not refresh again')
     eq(auth.read_text(encoding='utf-8'), fresh, 'and the login is still there')
+    # F501 (issue #9): a Pi session is half way through writing auth.json as a resumed session reads it
+    auth.write_text(fresh[:len(fresh) // 2], encoding='utf-8')
+    timer = threading.Timer(1.0, lambda: auth.write_text(fresh, encoding='utf-8'))
+    timer.start()
+    p = session(model)
+    timer.join()
+    check('hello from corp' in p.stdout, 'a half-written login is read again, not taken for none', p.stdout + p.stderr)
+    seen()
     login('corp.ghe.com', GHE_PROXY='proxy.corp.ghe.com')
     check('api.corp.ghe.com/models' in seen(), "a token's own address on the domain is kept")
     p = session(other)
@@ -512,6 +521,29 @@ def test_tool_tally(env: Env):
     check('· bash' not in out and 'echo two' not in out, 'no line per call on screen', out)
     check(out.index('Ran 3') < out.index('all three ran'), 'the reply comes after the tally', out)
     check(any('echo three' in json.dumps(e) for e in env.entries(sid)), 'the transcript keeps the full calls')
+
+
+def test_tally_calls(env: Env):
+    """F489: the tally keeps each call (its tool, argument, ok and first output lines), and Ctrl+O lists them."""
+    src = (Path(R.__file__).parent / 'harness.mjs').read_text(encoding='utf-8')
+    start = src.index('const TALLY = ')
+    end = src.index('\n}\n', src.index('export function callLines')) + 3
+    js = src[start:end].replace('export ', '') + """
+const out = {s: '', write(x) { this.s += x; }}, t = new Tally(out, false);
+const k = t.add('read', {path: 'README.md'}); t.done(k, 'line 1\\nline 2', false);
+for (const c of ['echo one', 'echo two', 'false']) { const x = t.add('bash', {command: c}); t.done(x, c === 'false' ? 'exit code 1' : c.slice(5), c === 'false'); }
+t.end(); out.s = ''; t.expand();
+console.log(JSON.stringify({last: t.last, shown: out.s}));"""
+    r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+    got = json.loads(r.stdout or 'null') or {}
+    calls = got.get('last') or []
+    check(len(calls) == 4, 'a tally of 1 read and 3 bash calls keeps 4 entries', r.stderr)
+    eq([(c['tool'], c['arg'], c['ok']) for c in calls], [('read', 'README.md', True), ('bash', 'echo one', True),
+       ('bash', 'echo two', True), ('bash', 'false', False)], 'each with its tool, argument and ok or failed')
+    eq(calls[0]['out'], 'line 1\nline 2', 'and its first lines of output')
+    shown = got.get('shown', '')
+    check('Read(README.md)' in shown and 'Bash(echo two)' in shown and 'Bash(false) failed' in shown and '⎿  line 1' in shown,
+          'Ctrl+O lists the calls', shown)
 
 
 def test_chat_echo(env: Env):
@@ -535,7 +567,8 @@ def test_chat_echo(env: Env):
                 out += os.read(master, 4096)
             except OSError:
                 break
-        if sent == 0 and b'(waiting for you)' in out:
+        if sent == 0 and b'\x1b[?2004h' in out:
+            time.sleep(1)
             os.write(master, b'hello there\r')
             sent = 1
         elif sent == 1 and b'the answer' in out:
@@ -548,7 +581,9 @@ def test_chat_echo(env: Env):
     os.close(master)
     text = out.decode('utf-8', 'replace')
     check('the answer' in text, 'the chat answered', text)
-    eq(text.count('hello there'), 1, 'the sent message shows once')
+    check('(waiting for you)' not in text, 'no waiting line after a turn', text)
+    eq(text.count('❯ hello there'), 1, 'the sent message shows once, as saidLines')
+    check('\r\x1b[2K' in text, 'the raw echo is erased', text)
 
 
 def test_said_lines(env: Env):
@@ -565,6 +600,27 @@ def test_said_lines(env: Env):
     eq(len(rows[0]), len(rows[2]), 'rows are padded to one width')
 
 
+def test_reply_lines(env: Env):
+    """F483: the model's reply shows as Claude Code draws it: '● ', markdown rendered, wrapped with a hanging indent."""
+    src = (Path(R.__file__).parent / 'harness.mjs').read_text(encoding='utf-8')
+    start = src.index('const visible = ')
+    end = src.index('function redrawn')
+    js = src[start:end].replace('export ', '') + (
+        "console.log(JSON.stringify([replyLines('## Plan\\nSome **bold** and *it* and `code` ' + 'word '.repeat(12)"
+        " + '\\n- item ' + 'long '.repeat(10), 40), doneLine(65000, new Date(2026, 0, 1, 9, 5)), replyLines('`__init__` x', 40)]));")
+    run = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+    out, done, code = json.loads(run.stdout)
+    eq(code, '● \x1b[36m__init__\x1b[39m x', 'inline code is kept as written')
+    rows = out.split('\n')
+    eq(rows[0], '● \x1b[1mPlan\x1b[22m', 'a heading is bold, after the reply marker')
+    check('\x1b[1mbold\x1b[22m' in rows[1] and '\x1b[3mit\x1b[23m' in rows[1] and '\x1b[36mcode\x1b[39m' in rows[1], 'inline markdown is rendered', rows)
+    check(rows[2].startswith('  word'), 'a wrapped line hangs under the text', rows)
+    item = [i for i, r in enumerate(rows) if r.startswith('  - item')][0]
+    check(rows[item + 1].startswith('    long'), 'a list item wraps under its text', rows)
+    check(all(len(r.replace('\x1b[1m', '').replace('\x1b[22m', '').replace('\x1b[3m', '').replace('\x1b[23m', '').replace('\x1b[36m', '').replace('\x1b[39m', '')) <= 40 for r in rows), 'rows fit the width', rows)
+    eq(done, '\x1b[2m✻ Worked for 1m 5s · done 09:05\x1b[22m', 'the turn ends with a dim done line')
+
+
 def main() -> int:
     node = shutil.which('node')
     if not node:
@@ -577,7 +633,7 @@ def main() -> int:
             return report([lambda: test_routing(env), lambda: test_finish(env),
                            lambda: test_finish_refused(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_context_warn(env), lambda: test_resume(env),
-                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_tally(env), lambda: test_said_lines(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
+                           lambda: test_tell(env), lambda: test_chat_echo(env), lambda: test_tool_tally(env), lambda: test_tally_calls(env), lambda: test_said_lines(env), lambda: test_reply_lines(env), lambda: test_enterprise(Path(tmp)), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 

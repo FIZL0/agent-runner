@@ -285,6 +285,41 @@ def test_merge():
     check(H.is_held(got[i]) and '— n' in got[i], 'the hold and the note', got[i])
 
 
+def test_running():
+    print('F480: hold on a task a slot runs stops the slot and holds it; a claim from another machine refuses')
+    from test_cancel import HELD, Proj
+    from agent_runner import plansync
+    was = os.environ['AGENT_RUNNER_REPO']
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Proj(Path(tmp))
+        os.environ['AGENT_RUNNER_REPO'] = str(p.repo)
+        try:
+            p.start()
+            rc, out, err = p.cmd('hold', 'H1')
+            eq(rc, 0, f'it goes through ({err})')
+            has(out, r'cancelled H1; stopped s1', 'the slot is stopped')
+            check(p.agent.wait(10) is not None, 'its agent is ended')
+            eq((p.procs, p.running), ({}, {}), 'the slot runs nothing')
+            has(p.todo(), HELD, 'the line is held in its place')
+            p.tick()
+            h = sched.held({}, 'main')
+            eq(sched.holds(next(t for t in sched.tasks('main') if t[0] == 'H1'), p.tried, h), ('held', None),
+               'no run picks it up')
+            eq(p.cmd('unhold', 'H1')[0], 0, 'unhold')
+            h = sched.held({}, 'main')
+            eq(sched.holds(next(t for t in sched.tasks('main') if t[0] == 'H1'), p.tried, h), None, 'then it runs again')
+            fake = mock.Mock(who='ryha@omarchy-desktop')
+            with mock.patch.object(plansync, 'claims', lambda c: {'H2': fake}), \
+                    mock.patch.object(plansync, 'stale', lambda cl: False):
+                eq(H.under_way(R.C, 'H2'), "another machine's run has claimed it (ryha@omarchy-desktop)", 'said')
+                before = p.todo()
+                eq(P.main(['hold', 'H2']), 1, 'refused')
+                eq(p.todo(), before, 'nothing changed')
+        finally:
+            os.environ['AGENT_RUNNER_REPO'] = was
+            p.end()
+
+
 def main() -> int:
     tmp = Path(tempfile.mkdtemp())
     os.environ['AGENT_RUNNER_DEVICES'] = str(tmp / 'devices')
@@ -297,7 +332,7 @@ def main() -> int:
     git(repo, 'commit', '-qm', 'start')
     os.environ['AGENT_RUNNER_REPO'] = str(repo)
     R.init(repo)
-    return report([test_commands, test_under_way, test_pick, test_release, test_auto_release, test_shown, test_way, test_way_button, test_merge])
+    return report([test_commands, test_under_way, test_pick, test_release, test_auto_release, test_shown, test_way, test_way_button, test_merge, test_running])
 
 
 if __name__ == '__main__':

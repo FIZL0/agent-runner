@@ -1519,6 +1519,7 @@ def test_decide_options_f181d():
     git(d, 'add', '-A')
     git(d, 'commit', '-qm', 'start')
     R.init(d)
+    eq(K.ROOT, d.resolve(), 'B874: control files in the temp repo, never the checkout')
     todo, link, names = d / 'plan' / 'TODO.md', 'https://claude.ai/code/session_01AbC', ['Full', 'Small', 'No change']
     more = ' https://example.com/a'
     for n, (words, after) in enumerate((('Which look?', ''), ('Which look? ' + 'It is a long story. ' * 20, ''),
@@ -1637,6 +1638,35 @@ def test_settings_two_writers_b806():
     eq(left(), [], 'and its temp file is removed')
 
 
+def test_idle_close_stays_quiet_b859():
+    print('B859: a chat closed for being idle stays in the chat list, in Quiet; one closed from the TUI goes')
+    from agent_runner import ui_model as U
+    with held_world() as w:
+        now = T0 + 2000
+        for n, sid in ((5, 'idle5'), (6, 'idle6')):
+            w.rows[sid] = [said('hi', T0), answer('hello', T0 + 1)]
+            w.up(n, sid, 40 + n)
+            w.tick(T0 + 5)
+            K.C.notes(f'control{n}.title').write_text(f'{K.ROOT.name} · {n} · Pairing broken\n', encoding='utf-8')
+        with mock.patch.object(K, 'control_live_numbers', lambda: [5, 6]), \
+                mock.patch.object(K.plat, 'terminate', lambda p: None), \
+                mock.patch.object(K, 'control_cfg', lambda: {'idle': 600, 'ask_idle': 0, 'talked': 0, 'quick': 0,
+                                                             'open': []}):
+            eq(sorted(x[0] for x in K.close_controls(force=True, now=now)), [5, 6], 'both closed as idle')
+        w.live.clear()
+        with mock.patch.object(U, 'chat_quiet', lambda: 21600.0), \
+                mock.patch.object(K.time, 'time', lambda: now):
+            rows = [r for r in U.session_rows({}, [], {}, now) if r['name'].startswith('c')]
+            eq([(r['name'], r['state'], r['closed'], r['title']) for r in rows],
+               [('c5', 'closed', True, 'Pairing broken'), ('c6', 'closed', True, 'Pairing broken')],
+               'listed, closed, with their titles')
+            eq(K.close_from_tui(6)['ok'], True, 'the TUI closes c6')
+            eq([r['name'] for r in U.closed_rows()], ['c5'], 'c6 is gone at once, c5 stays')
+        with mock.patch.object(U, 'chat_quiet', lambda: 21600.0), \
+                mock.patch.object(K.time, 'time', lambda: T0 + 30000):
+            eq(U.closed_rows(), [], 'once chat_quiet passed, c5 goes too')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
@@ -1645,4 +1675,4 @@ if __name__ == '__main__':
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once, test_settled_repeats_b812,
                              test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing,
-                             test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c, test_settings_two_writers_b806]))
+                             test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c, test_settings_two_writers_b806, test_idle_close_stays_quiet_b859]))

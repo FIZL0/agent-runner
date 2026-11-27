@@ -33,7 +33,7 @@ def test_run_controls(tmp: Path) -> None:
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
                                                                              'argv': []})[1]]):
         for windows in (False, True):  # B163: no re-exec on Windows, so no restart there
-            want = {*RUN_CONTROL_ARGV, 'queue_take', 'queue_drop', 'queue_priority', 'queue_unpark',
+            want = {*RUN_CONTROL_ARGV, 'queue_take', 'queue_drop', 'queue_priority', 'queue_cancel', 'queue_unpark',
                     'menu_hold', 'menu_unhold', 'menu_top', 'menu_remove', 'menu_restore',  # F429b
                     'shelved_back', 'shelved_drop', 'release_wait', 'release_now', 'need_later', 'need_chat', 'need_drop', 'concept_chat',
                     'need_yes', 'need_no', *(f'need_answer{j}' for j in range(1, U.ANSWER_MAX + 1)),  # F180
@@ -159,5 +159,34 @@ def test_no_run_f402c1(tmp: Path) -> None:
         check('said' not in U.plan_add('T', 'Tidy'), 'nor with a run up')
 
 
+def test_taken_row_f455b(tmp: Path) -> None:
+    """F455b: a task taken by hand has Cancel on its queue row, with cancel's confirm, and no Priority or Do it here;
+    a merging one has no Cancel."""
+    taken = {'id': 'F1', 'state': 'ready', 'under_way': True, 'way': {'words': 'Taken by the chat Chat 3', 'chat': 'c3'}}
+    acts = U.row_acts('queue', taken)
+    eq(('queue_cancel' in acts, 'queue_priority' in acts, 'queue_take' in acts), (True, False, False), 'a taken row: Cancel, not Priority or Do it here')
+    eq(U.row_asks('queue', taken)['queue_cancel'], U.cancel.question('F1'), "its confirm is cancel's: it keeps the work and parks it")
+    merging = {**taken, 'way': {'words': 'Merging'}}
+    check('queue_cancel' not in U.row_acts('queue', merging), 'a merging row has no Cancel')
+    check('queue_cancel' not in U.row_acts('queue', {'id': 'F2', 'state': 'ready'}), 'nor a queued one')
+    ran = []
+    with mock.patch.object(U, 'row_of', lambda where, tid: taken), \
+            mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+        r = U.run_control('queue_cancel', tid='F1')
+        eq((r['ok'], r['confirm'], ran), (False, U.cancel.question('F1'), []), 'unconfirmed, it asks and runs nothing')
+        eq(U.run_control('queue_cancel', tid='F1', confirm=True)['ok'], True, 'confirmed, it runs')
+        eq(ran, [['plan', 'cancel', 'F1', '--yes']], 'plan cancel F1 --yes')
+
+
+def test_stopping_card_f472(tmp: Path) -> None:
+    card = U.controls_shown(True, {'stopping': True}, {})['card']
+    check('stop_now' in card and 'stop_undo' in card, 'a stopping run shows Stop now beside Take the stop back')
+    check('stop_now' not in U.controls_shown(True, {}, {})['card'], 'a running run does not')
+    on = {c['key']: c for c in U.controls()}
+    eq((on['slot_add']['card_label'], on['slot_remove']['card_label']), ('Slot', 'Slot'), 'the card says Slot by its icon')
+    eq((on['slot_add']['label'], on['slot_remove']['label']), ('Slot +1', 'Slot -1'), 'elsewhere the label is clear')
+    check(on['stop_now']['confirm'], 'Stop now asks first')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_no_run_f402c1)]))
+    raise SystemExit(report([in_tmp(test_run_controls), in_tmp(test_row_actions), in_tmp(test_no_run_f402c1), in_tmp(test_taken_row_f455b), in_tmp(test_stopping_card_f472)]))

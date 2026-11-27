@@ -335,7 +335,7 @@ move('every', 10, 'project', true); move('idle', true, 'project', true); move('e
 out.saved = saved; saved = [];
 row('{"idle":true}'); move('idle', false, 'project', false); const before = saved.length; saveSetting('run.auto_release', 'project');
 out.sheet = before ? ['saved early'] : saved;
-out.readonly = settingRow(k, {readonly: true});
+out.readonly = settingRow({...k, locked: 'a run is up'}, {});
 console.log(JSON.stringify(out));`);
 """
 
@@ -598,7 +598,7 @@ def test_settings_f97(tmp: Path) -> None:
         eq(o['saved'], [['project', '{"every":10}'], ['project', both], ['project', '{"idle":true}'], ['project', 'false']],
            'F202b: each change of one is the whole value, in the draft')
         eq(o['sheet'], [['project', 'false']], "More…'s own two controls change it only on its button")
-        check('setpart' not in o['readonly'], 'a read-only row has no control')
+        check('setpart' not in o['readonly'], 'F448b: a row that cannot change now has no control')
     # F166: a row's control, and which rows show
     rem = k(type='choice', choices=['auto', True, False], words={'auto': 'Auto', 'true': 'On', 'false': 'Off'})
     pct = k(type='number', default=90, unit='%', words={'90': '90%'})
@@ -623,7 +623,7 @@ const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g
 const set = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
 const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
 const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b));
-const S = {f: {}, ob: [], setOpen: {}, set, snap: {}}, esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const S = {f: {}, ob: [], setOpen: {}, set, snap: {}, setTab: 'device'}, esc = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');  // F462: the program is this device's
 const I = {chev: '', x: ''}, card = t => `<div>${t}</div>`, emptyCard = card, obCards = () => '', controlOf = () => null, foldIn = (k, t) => t, SHEETS = {};
 const document = {querySelector: () => null, querySelectorAll: () => []}, render = () => {}, toast = t => { throw new Error(t) };
 let saved = [];
@@ -639,7 +639,7 @@ const was = [k.has_device, k.device]; k.has_device = true; k.device = '/opt/wrap
 pick(AGENT_OTHER, 'device', true); resetSetting('run.agent', 'device'); out.reset = !('setother:device:run.agent' in S.f); saved = [];
 pick('claude', 'device', true); out.picked = saved; saved = []; S.f = {};
 pick('claude', 'project', false); out.sheet = saved.length; saveSetting('run.agent', 'project'); out.sheetSaved = saved; S.f = {};
-setModels(); out.models = [...settingsHTML().matchAll(/data-k="set:([a-z.]+)/g)].map(m => m[1]);
+S.setTab = 'project'; setModels(); out.models = [...settingsHTML().matchAll(/data-k="set:([a-z.]+)/g)].map(m => m[1]);
 console.log(JSON.stringify(out));`);
 """
 
@@ -801,6 +801,43 @@ const out = {};
 """
 
 
+BRANCH_DRIVER = AGENT_DRIVER.split('eval(')[0] + r"""
+eval(logic + slice('const settingId=', '/* the stepper:') + `
+const id = 'git.master_branch', row = () => settingRow(settingOf(id), {}), out = {row: row()};
+S.f[setField(id, setTab())] = 'dev'; out.dev = row();
+S.f[setField(id, setTab())] = 'gone'; out.gone = row();
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_working_branch_f447a(tmp: Path) -> None:
+    """F447a: the working branch is in Landing work under its own name, picked from the snapshot's branches, and the row
+    says what Save does, that it waits for a restart, and why a pick cannot be saved."""
+    from agent_runner import setting_words as SW
+    eq((SW.group('git', 'master_branch'), SW.name('git', 'master_branch')), ('landing', 'Working branch'), 'its group and name')
+    if not shutil.which('node'):
+        return
+    repo = fake_repo(tmp)
+    snap = CF.settings_snapshot(repo)
+    k = next(k for t in snap['tables'] if t['table'] == 'git' for k in t['keys'] if k['key'] == 'master_branch')
+    k.update(picks=[{'value': '', 'branch': 'main', 'auto': True, 'bad': ''}, {'value': 'main', 'branch': 'main', 'auto': False, 'bad': ''},
+                    {'value': 'dev', 'branch': 'dev', 'auto': False, 'bad': ''},
+                    {'value': 'gone', 'branch': 'gone', 'auto': False, 'bad': 'not a branch to pick'}], now='main')
+    (tmp / 'set.json').write_text(json.dumps(snap), encoding='utf-8')
+    (tmp / 'branch.js').write_text(BRANCH_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'branch.js'), str(W.PAGE), str(tmp / 'set.json')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the row', r.stderr[-1500:])
+    if r.returncode:
+        return
+    d = json.loads(r.stdout)
+    check('<select class="fld setpick"' in d['row'] and 'Found by itself (main)' in d['row'] and 'data-setagent' not in d['row'], 'a pick of the branches', d['row'])
+    check('Save:' not in d['row'] and 'v-bad' not in d['row'], 'nothing to say before a change', d['row'])
+    check('v-bad' in d['gone'], 'and in the refusal colour')
+    check('Save: finished work is applied to dev' in d['dev'], 'what Save does', d['dev'])
+    check('once the run restarts' in d['dev'], 'and that it waits for a restart')
+    check('It cannot be saved: not a branch to pick' in d['gone'], 'a bad pick says why', d['gone'])
+
+
 def test_provider_login_f406c(tmp: Path) -> None:
     """F406c: beside a [models] setting that names a provider with no login: Log in, in the login sheet; the provider
     list has it too; how it ended is said."""
@@ -875,5 +912,65 @@ def test_plan_share_f460a(tmp: Path) -> None:
     eq(got[2].get('err'), True, 'no answer')
 
 
+FILE_DRIVER = AGENT_DRIVER.split('eval(')[0] + r"""
+eval(logic + slice('const settingId=', '/* the stepper:') + `
+S.setTab = 'project'; S.setOpen = {'#advanced': true, '#file': true};
+const all = settingsAll(set), out = {page: settingsHTML(), rows: {}};
+for (const k of all) { S.setOpen[settingId(k)] = true; out.rows[settingId(k)] = settingRow(k, {}); }
+const t = all.find(k => settingId(k) === 'run.test'); t.locked = 'a task is running'; out.locked = settingRow(t, {});
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_project_file_f448b(tmp: Path) -> None:
+    """F448b: every group opens and every key shows a control or the reason it cannot change, with More… and Ask a chat;
+    the Project file group is no longer read only; a saved [run] test lands in runner.toml."""
+    repo = fake_repo(tmp)
+    toml = repo / 'runner.toml'
+    toml.write_text('[run]\nslots = 2\n', encoding='utf-8')
+    git(repo, 'add', 'runner.toml')
+    git(repo, 'commit', '-qm', 'settings')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    U.settings_start()
+    try:
+        r = post(f'{base}/act?t={token}', {'name': 'setting_project', 'args': {'table': 'run', 'key': 'test', 'value': 'python3 -V'}})[1]
+        check(r['ok'] is True, 'a [run] test save', r)
+        eq(CF.tomllib.loads(toml.read_text(encoding='utf-8'))['run'].get('test'), 'python3 -V', 'lands in runner.toml')
+    finally:
+        srv.shutdown()
+    if not shutil.which('node'):
+        return
+    (tmp / 'set.json').write_text(json.dumps(CF.settings_snapshot(repo)), encoding='utf-8')
+    (tmp / 'file.js').write_text(FILE_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'file.js'), str(W.PAGE), str(tmp / 'set.json')], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node draws the page', r.stderr[-1500:])
+    if r.returncode:
+        return
+    d = json.loads(r.stdout)
+    check('read only' not in d['page'] and 'Commands' in d['page'], 'Project file opens, not read only')
+    bare = [id_ for id_, h in d['rows'].items() if not re.search(r'data-f="set|data-setstep|data-setagent|data-setpart|setlock', h)]
+    eq(bare, [], 'every key has a control or a stated reason')
+    asks = [id_ for id_, h in d['rows'].items() if 'data-about="setting:' not in h or 'data-setmore=' not in h]
+    eq(asks, [], 'every open row has More… and Ask a chat to change it')
+    check('class="small setwarn">Every task and merge' in d['rows']['run.test'], "an open risky row says what a change does (F448a's warn)")
+    check('Cannot change here now: a task is running' in d['locked'] and 'data-f="set' not in d['locked'], 'a locked key says why, no control', d['locked'])
+
+
+def test_ask_settings_f449(tmp: Path) -> None:
+    """F449: Settings' top button opens a new chat with the first message in the box (nothing sent), sent as written."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('data-about="settings">Ask about my settings<' in page, 'the button at the top of Settings')
+    check("a==='settings'" in page and 'SETTINGS_ASK' in page, 'about() puts the message in the box')
+    from agent_runner import guide as G
+    check('Ask about my settings' in G.control_topic('settings'), 'guide settings has a part on it')
+    if not shutil.which('node'):
+        return
+    got = logic_js([['compose', {'kind': 'settings', 'label': 'x'}, 'What settings fit?', []],
+                    ['ctxKey', {'kind': 'settings'}]])
+    eq(got, ['What settings fit?', '+settings'], 'sent as written, one new chat key')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a)]))
+    raise SystemExit(report([in_tmp(test_ask_settings_f449), in_tmp(test_no_settings_f178), in_tmp(test_trusted_networks_f136), in_tmp(test_https_link_b130), in_tmp(test_tailnet_https_f96), in_tmp(test_manage_releases_f193), in_tmp(test_search_clear_f204a), in_tmp(test_settings_f97), in_tmp(test_agent_picker_f405), in_tmp(test_provider_login_f406c), in_tmp(test_plan_share_f460a), in_tmp(test_working_branch_f447a), in_tmp(test_project_file_f448b)]))

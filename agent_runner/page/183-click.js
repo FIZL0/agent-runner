@@ -116,9 +116,20 @@ document.addEventListener('click',async e=>{
     if(!x.hasAttribute('data-sure')){S.sure=`pitch:${n.id}:${how}:${tid}`;render(true);return}
     const why=x.closest('#sheet')?String(S.f[askField(n.id)]||'').trim():'';
     S.sure=null;outbox('pitch_no',{pid:n.id,how,tid,confirm:true,...(why?{why}:{})},{need:n.id,say:`${n.id} · Not this${tid?': '+tid:''}`});return}
+  if(x=q('[data-reviewopen]')){const n=S.snap.needs[+x.dataset.reviewopen];if(!n)return;  // F444c
+    S.reviewOpen={...(S.reviewOpen||{}),[n.id]:!(S.reviewOpen||{})[n.id]};S.sure=null;render(true);return}
+  if(x=q('[data-review]')){const n=S.snap.needs[+x.dataset.review];if(!n)return;
+    const tid=x.dataset.tid, k=`${n.id}:${tid}`, f=reviewField(n.id,tid), said=String(S.f[f]||'').trim();
+    if(!said)return toast(x.dataset.how==='ask'?'Type your question first':'Say what you want instead first',true);
+    if(x.dataset.how==='ask'){S.reviewAns={...(S.reviewAns||{}),[k]:{wait:said}};delete S.f[f];
+      outbox('pitch_ask',{pid:n.id,tid,q:said},{review:k,say:`${tid} · Ask about it`});return}
+    if(!x.hasAttribute('data-sure')){S.sure=`better:${k}`;render(true);return}
+    S.sure=null;delete S.f[f];outbox('pitch_better',{pid:n.id,tid,why:said,confirm:true},{need:n.id,say:`${tid} · Ask for a better way`});return}
+  if(x=q('[data-taskgo]')){e.preventDefault();taskGo(x.dataset.taskgo);return}  // F482: a task named in a chat
   if(x=q('[data-task]')){openTask(x.dataset.task,x.dataset.list);return}  // F85
   if(x=q('[data-setopen]')){const id=x.dataset.setopen;S.setOpen[id]=!S.setOpen[id];render(true);return}  // F97
   if(q('[data-setload]')){loadSettings();return}
+  if(x=q('[data-setask]')){answerAsk(x.dataset.id,x.dataset.setask);return}  // C55b
   if(x=q('[data-setsave]')){saveSetting(x.dataset.id,x.dataset.setsave);return}
   if(x=q('[data-setreset]')){resetSetting(x.dataset.id,x.dataset.setreset);return}
   if(x=q('[data-setstep]')){stepSetting(x.dataset.id,+x.dataset.setstep);return}
@@ -127,6 +138,7 @@ document.addEventListener('click',async e=>{
   if(q('[data-planqclear]')){setqClear('planq');return}  // F212
   if(q('[data-planqload]')){PQ.err='';planLoad();render(true);return}
   if(q('[data-setqclear]')){setqClear();return}
+  if(x=q('[data-settab]')){settingsTab(x.dataset.settab,x.dataset.id);return}  // F462
   if(q('[data-setchanged]')){S.setChanged=!S.setChanged;render(true);return}
   if(x=q('[data-thread]')){const n=x.dataset.thread;return viewGo(()=>{S.ctx=null;open(n)},n===S.thread?null:n)}
   if(q('[data-newtalk]')){newTalk();if(S.live)viewIn($('body'));return}  // F157

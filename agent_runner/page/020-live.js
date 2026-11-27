@@ -36,12 +36,14 @@ const tkey=t=>String(t||'').replace(/\s+/g,' ').trim().slice(0,120);
 function sentBubbles(n,shown){
   let h='';
   for(const p of (S.sent[n]&&S.sent[n].pending)||[]){const b=p.state==='failed', d=`data-n="${esc(n)}"`;
-    h+=`<div class="u pending${b?' failed':''}" data-k="s:${esc(p.id)}" data-t="${esc(tkey(shown(p.text)))}">${esc(shown(p.text))}${b?`<div class="small">Not delivered: it is not in ${esc(n)}'s chat</div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" ${d}>Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" ${d}>Discard</button></div>`:''}</div>`}
+    h+=`<div class="u pending ${b?'failed':'sent'}" data-k="s:${esc(p.id)}" data-t="${esc(tkey(shown(p.text)))}">${esc(shown(p.text))}${b?`<div class="small">Not delivered: it is not in ${esc(n)}'s chat</div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" ${d}>Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" ${d}>Discard</button></div>`:''}</div>`}
   return h;
 }
 /* take an action: drawn at once by the caller, kept in the outbox, sent behind */
 function outbox(name,args,more){
-  const it={cid:newCid(),name,args:args||{},by:OB.tab,state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
+  const {fx,...rest}=more||{};
+  const it={cid:newCid(),name,args:args||{},by:OB.tab,state:'sending',err:'',at:Date.now(),say:name,...rest};
+  if(typeof instAdd==='function')instAdd(it.cid,fx||instFx(name,it.args));  // F508 (a test that takes parts of the page may leave it out)
   const ck=String(it.ctl||''), w=ck.endsWith(':')&&ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n);  // B851a: a run control shows its result now
   if(w){const ks=Object.keys(w);S.held=(S.held||[]).filter(p=>!Object.keys(p.want).some(k=>ks.includes(k))).concat([{key:ck.slice(0,-1),cid:it.cid,n:(it.args||{}).n,at:it.at,want:w,say:it.say}]);S.heldErr='';setTimeout(()=>render(true),CTL_HOLD+50)}  // a later press on the same thing takes the place of the earlier
   obChange(b=>obAdd(b,it,OB.at));render(true);drain();return it;
@@ -61,6 +63,7 @@ async function drain(){
       if(j&&j.hold){obChange(b=>obHold(b,it.cid,j,Date.now()));if(S.ob.some(x=>x.cid===it.cid&&x.state==='failed'))obDone(it,j);render(true);continue}  // B158
       obChange(b=>obSettle(b,it.cid,j,S.snap.boot));
       obDone(it,j);render(true);
+      if(typeof ES!=='undefined'&&!ES)fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});  // F508: no stream: the act's snapshot now, not at the next poll
     }
     if(S.ob.some(x=>x.state==='sending'&&x.heldAt&&(!x.by||x.by===OB.tab)))OB.timer=setTimeout(drain,HOLD_STEP+100);  // B158
     else if(S.ob.some(x=>x.state==='sending'&&x.heldAt)||obNext(S.ob))OB.timer=setTimeout(drain,OB_DEAD);  // B161: another tab's: looked at again, should it go away
@@ -77,23 +80,34 @@ function obDone(it,j){
   if(j&&j.seen&&j.confirm&&it.ctl){  // F186: a release the last snapshot did not show is open: asked where New release stands
     obChange(b=>obDrop(b,it.cid));for(const c of controlsOf('release'))Object.assign(c,{confirm:j.confirm,seen:j.seen});
     S.sure=it.ctl.split(':')[0];toast(j.confirm,true);snapNow();return}
+  if(it.review){const a=j&&j.ok?{q:it.args.q,a:j.answer||j.out||''}:{err:plainOut(j,'No answer came: ask again')};S.reviewAns={...(S.reviewAns||{}),[it.review]:a};return}  // F444c: the answer shows under its change
   if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:it.ctl?ctlSaid(it.say,j,false):`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept||it.shelved)snapNow();return}
   if(it.name==='response_chat')S.responseGone=[...(S.responseGone||[]),it.args.rid];  // F425b
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){S.came=(S.came||[]).filter(x=>x.name!==j.name&&now-x.at<60000).concat([{name:j.name,was:'@'+it.cid,start:it.at,say:it.say,state:'sending',at:now}]);carrySent(j.name,j,it.ask);boxMove('@'+it.cid,j.name);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name,true)}
   else if(it.name==='chat_to')addSent(it.args.to,it.args.text,j.at,{});  // B154
-  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||(it.name==='run_control'&&(j.gone||it.args.text)))){toast(answerSaid(j,it.need,it.args.text));answerChatCame(j);if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.need&&(it.name==='answer'||it.name==='pitch_no'||it.name==='pitch_better'||(it.name==='run_control'&&(j.gone||it.args.text)))){toast(answerSaid(j,it.need,it.args.text));answerChatCame(j);if(S.f&&(it.args.note||it.args.why||(it.name==='answer'&&!it.args.button)))delete S.f['askre:'+it.need];S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.shelved){if(S.gone)delete S.gone[it.shelved];toast(j.said||`${it.say}: done`);snapNow()}  // F184: Needs you may show it at once
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
   else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!later){delete S.f[f];render(true)}});toast(String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
-    else{const ck=String(it.ctl), said=ctlSaid(it.say,j,ck.endsWith(':')&&!!ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n));if(said)toast(said)}}  // F124, B851c: plain words, none when the button shows it
+    else{const ck=String(it.ctl), said=ctlSaid(it.say,j,rowShows(ck)||ck.endsWith(':')&&!!ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n));if(said)toast(said)}}  // F124, B851c: plain words, none when the button shows it
   if(it.res&&FD.n===it.res)feedLoad();  // F114
   if(it.done)toast(it.done);
 }
+/* F508: the changes the person's own acts make, shown at once (instShow): S.inst; S.snapRaw, S.snapAt: the last
+   snapshot as the run sent it, and when, so a refused act's change goes back to it */
+S.inst=[];
+function instAdd(cid,fx){if(typeof fx!=='function')return;S.inst=S.inst.concat([{cid,fx}]);S.snap=instShow(S.snap,[{fx}])}
+function instNow(){
+  const k=instKeep(S.inst,S.ob,S.snapAt||0,Date.now());S.inst=k.keep;
+  if(k.failed.length&&S.snapRaw)S.snap={...S.snapRaw};  // the failure's toast comes from obDone
+  if(S.inst.length)S.snap=instShow(S.snap,S.inst);
+}
 /* the cards an item still sending stands in for stay off the lists */
 function obHide(){
+  if(typeof instNow==='function')instNow();
   const ns=obHidden(S.ob,'need'), cs=obHidden(S.ob,'concept'), sh=obHidden(S.ob,'shelved'), now=Date.now();
   S.snap.needs=(S.snap.needs||[]).filter(n=>!ns.includes(n.id));
   S.snap.shelved=(S.snap.shelved||[]).filter(x=>!sh.includes(x.id));  // F184

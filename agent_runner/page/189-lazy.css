@@ -1,0 +1,31 @@
+/* F473: lazyrunner (189-lazy.js): the sidebar stays on the left as five numbered panels, the view is the main pane on
+   the right, a key bar below. Only a layout of the page's own parts: it hides none of the sidebar's rows. A phone keeps
+   Standard (the container query). */
+.keybar{position:fixed;left:0;right:0;bottom:0;z-index:4;min-height:24px;padding:3px var(--s3) 0;border-top:1px solid var(--line);background:var(--side);color:var(--muted);font:var(--fs-s)/1.5 var(--mono);white-space:normal;overflow:hidden}
+/* F484b: the bar lists every key of the mode, so it may take more lines; the page keeps room for its height (--kbh) */
+.keybar span{white-space:nowrap;margin-right:var(--s2)}
+.keybar b{color:var(--fg);font-weight:600} .keybar .mode{background:var(--accent);color:var(--onaccent);padding:0 var(--s1);border-radius:var(--r-xs)} .keybar .mode.ins{background:var(--ok)}
+:root.lazybar .app{padding-bottom:var(--kbh,24px)}
+/* F484a: the terminal theme looks like a terminal: monospace, square corners */
+:root[data-ui="terminal"]{--sans:var(--mono);--serif:var(--mono);--r-xs:0;--r-s:0;--r-m:0;--r-l:0;--r-xl:0}
+@container (min-width:760px){
+  :root.lazy .shell{grid-template-columns:300px minmax(0,1fr)}
+  :root.lazy .side{position:relative;inset:auto;grid-row:1;grid-column:1;width:auto;max-width:none;transform:none;visibility:visible;box-shadow:none;transition:none}
+  :root.lazy .main{grid-row:1;grid-column:2}
+  :root.lazy #scrim,:root.lazy .top [data-menu]{display:none}
+  :root.lazy .sidein{font-family:var(--mono);font-size:var(--fs-m);gap:2px}
+  :root.lazy .sidein .nav{display:contents}
+  /* F484a: the numbered panels first, Sessions' rows below them */
+  :root.lazy .sidein>*{order:8} :root.lazy .sidein>:first-child{order:0} :root.lazy .sidein .ni{order:6} :root.lazy .sidein>.me{order:9}
+  :root.lazy .sidein .ni[data-view="home"]{order:1} :root.lazy .sidein .ni[data-view="plan"]{order:2}
+  :root.lazy .sidein .ni[data-view="tools"]{order:3} :root.lazy .sidein .ni[data-view="settings"]{order:4} :root.lazy .sidein .ni[data-view="concepts"]{order:5}
+  :root.lazy .sidein .ni[data-view="concepts"]::before{content:'[7]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .ni:focus::before,:root.lazy .sidein .ni.on::before{color:inherit}
+  :root.lazy .sidein .ni[data-view="home"]::before{content:'[1]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .shead.row>span:first-child::before{content:'[2] Sessions · ';color:var(--muted)}
+  :root.lazy .sidein .ni[data-view="plan"]::before{content:'[3]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .ni[data-view="tools"]::before{content:'[4]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .ni[data-view="settings"]::before{content:'[5]';color:var(--muted);margin-right:var(--s1)}
+  :root.lazy .sidein .ni[data-view="home"],:root.lazy .sidein .ni[data-view="plan"],:root.lazy .sidein .ni[data-view="tools"],:root.lazy .sidein .ni[data-view="settings"],:root.lazy .sidein .ni[data-view="concepts"]{border:1px solid var(--line)}
+  :root.lazy .sidein .ni.on{border-color:var(--accent)}
+}

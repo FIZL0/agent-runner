@@ -269,8 +269,20 @@ function feedShown(on){if(FD.shown!==on){FD.shown=on;if(!on){FD.slim=false;FD.of
 /* its socket is open: its screen is read at each draw, in the very frame it shows: one frame later, a row more or less is a jump (F206a) */
 function feedUp(){
   let t;try{t=FD.frame.contentWindow.term}catch(e){}
-  if(t&&!t.arSeen){t.arSeen=true;t.onRender(feedSee)}
+  if(t&&!t.arSeen){t.arSeen=true;t.onRender(feedSee);feedRedrawPin(t)}
   lookAgain();liveLoad();
+}
+/* B867: a harness chat draws its screen again for each viewer that comes (and at each resize) with a clear of the
+   scrollback (CSI 3J) and its last output; xterm's view then stays at the top of it. A view that was at its end stays
+   there: for a moment after the clear, each write parsed takes it to its end again, unless the reader scrolled up */
+const REDRAW_PIN_MS=800;
+function feedRedrawPin(t){
+  if(!t.parser||!t.parser.registerCsiHandler)return;
+  let until=0;
+  t.parser.registerCsiHandler({final:'J'},p=>{const b=t.buffer.active;if(p[0]===3&&b.viewportY>=b.baseY)until=Date.now()+REDRAW_PIN_MS;return false});
+  const pin=()=>{if(Date.now()<until)t.scrollToBottom();else until=0};
+  if(t.onWriteParsed)t.onWriteParsed(pin);else t.onLineFeed(pin);
+  t.onScroll(()=>{const b=t.buffer.active;if(until&&b.viewportY<b.baseY&&b.viewportY>0)until=0});
 }
 function feedLines(t){const b=t.buffer.active,l=[];for(let y=b.baseY;y<b.baseY+t.rows;y++){const x=b.getLine(y);l.push(x?x.translateToString(true):'')}return l}
 function feedSee(){
@@ -536,7 +548,7 @@ function homeChips(){
   const last=chatSort(chats(),[]).find(s=>s.at>0), c=controlOf(cardControls(S.snap).find(k=>k==='pause'||k==='go_on'));
   return `<div class="chips homechips">${last?`<button class="chip" data-thread="${esc(last.name)}" title="${esc(chatTitle(last))}">${I.back}Last chat</button>`:''}<button class="chip" data-about="new">${I.plus}Add a task</button>${c?`<button class="chip${ctlBusy(c.key)?' busy':''}" data-ctl="${esc(c.key)}">${I[CTL_ICON[c.key]]}${esc(c.label)}</button>`:''}<button class="chip" data-quick="since">${I.clock}Since my last look</button></div>${obCards(x=>/^(pause|go_on):/.test(x.ctl||''))}`;
 }
-const homeSums=()=>card([['status','Status',homeStatus(S.snap,working_())],['plan','Plan',homePlan(S.snap)]].map(([v,l,w])=>`<button class="fold sumrow" data-view="${v}" data-k="sum:${v}" data-v="${esc(w)}"><span class="grow ell">${esc(w)}</span><span class="small">${l}</span><span class="chev">${I.chev}</span></button>`).join(''),'sums','data-k="sums"');
+const homeSums=()=>card([['status','Now',homeStatus(S.snap,working_())],['plan','Queue',homePlan(S.snap)]].map(([v,l,w])=>`<button class="fold sumrow" data-view="${v}" data-k="sum:${v}" data-v="${esc(w)}"><span class="grow ell">${esc(w)}</span><span class="small">${l}</span><span class="chev">${I.chev}</span></button>`).join(''),'sums','data-k="sums"');
 function homeStatus(snap,ws){
   if(snap.up===false)return 'No run is up';
   const m=mergeRows(snap).length, n=ws.filter(s=>s.state!=='merging').length, st=runPill(snap).text;
@@ -549,7 +561,8 @@ function homePlan(snap){
 }
 /* B120: without ttyd, one line says a chat needs it to show its session, with this machine's install command */
 const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>A chat shows the real session with ttyd, which this machine lacks: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
-const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):emptyCard('Nothing needs you.')}`;
+const needsSec=()=>{const cs=chatNeedsShown();  // B832: a chat's question first
+  return `<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${cs.map(chatNeedCard).join('')}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):cs.length?'':emptyCard('Nothing needs you.')}`};
 /* F193: with releases off, only a New release sent before that, until it is settled */
 /* F186: New release: says which release is open already, and then asks before it queues another */
 function newReleaseCard(){

@@ -69,7 +69,7 @@ def test_snapshot(tmp: Path) -> None:
 def test_links() -> None:
     """History is the NAV row after Plan; its link opens it and every older link opens what it did."""
     page = W.PAGE.read_text(encoding='utf-8')
-    check("['plan','Plan'],['history','History']" in page, 'after Plan')
+    check("['plan','Work'],['concepts','Concepts']" in page and "'history'].includes(v)?'plan'" in page, 'F476: History is part of the Work page; its old link opens Work')
     for part in ('history:historyHTML', "history:'History'", "\n history:ic("):
         check(part in page, f'the page has {part}')
     if not shutil.which('node'):
@@ -78,9 +78,9 @@ def test_links() -> None:
     links = ['#history', '#talk', '#home', '#status', '#agents', '#activity', '#plan', '#concepts', '#tools', '#settings', '#nope']
     got = logic_js([['placeOf', '', h, False, []] for h in links])
     eq([(g['v'], g['link']) for g in got],
-       [('history', True), ('talk', True), ('home', True), ('status', True), ('status', True), ('status', True), ('plan', True),
-        ('concepts', True), ('tools', True), ('settings', True), ('home', False)], 'each link')
-    eq(logic_js([['placeOf', '{"v":"history"}', '', False, []]])[0]['v'], 'history', 'a reload stays there')
+       [('plan', True), ('talk', True), ('home', True), ('plan', True), ('plan', True), ('plan', True), ('plan', True),
+        ('concepts', True), ('tools', True), ('settings', True), ('home', False)], 'each link (F476: History, Status and their old names open Work)')
+    eq(logic_js([['placeOf', '{"v":"history"}', '', False, []]])[0]['v'], 'plan', 'a reload of History opens Work (F476)')
     ctx = {'kind': 'report', 'id': 'F1', 'title': 'One', 'label': 'x'}
     got = logic_js([['compose', ctx, 'it is blank', []], ['ctxKey', ctx], ['newPh', ctx]])
     check(got[0].startswith('A problem with F1 (One), which has landed: it is blank') and 'bug task' in got[0], 'the report', got[0])
@@ -100,6 +100,7 @@ const env = {S: {snap, f: {}, taskOpen: {}, tasks: {}}, I: new Proxy({}, {get: (
   open: k => opened.push(k), ctxKey: c => '+' + c.kind + ':' + c.id, newChat: (...a) => chats.push(a), kbFocus: () => {},
   document: {querySelector: () => null}, fetch: async u => { asked.push(u); return {json: async () => env.reply} }};
 env.taskIsOpen = (l, id) => env.S.taskOpen[l] === id;
+env.taskBodyHTML = new Function(grab('function taskBodyHTML') + ';return taskBodyHTML')();  // F509
 new Function('env', 'with(env){' + src + ';Object.assign(env,{historyHTML,histAct,histLoad})}')(env);
 (async () => {
   const out = {shut: env.historyHTML()};

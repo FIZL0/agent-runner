@@ -264,7 +264,7 @@ def test_page(env: Env) -> None:
                     ['keysLine', True], ['keysLine', False]])
     eq(got[0], [{'key': 'work', 'label': 'Working'}, {'key': 'model', 'label': WORDS}], 'Working and the model, no mode')
     eq(got[1], [{'key': 'model', 'label': WORDS}], 'idle: the model')
-    check('commands' not in got[2] and 'commands' in got[3], 'the box names no commands where there are none')
+    eq(got[2:], ['', ''], 'F484c: the box shows no keys line')
     page = W.page_html().decode()
     check('sessmodel(){' in page, 'the model chip has its sheet')
     check('i.why' in page, 'an ended chat says why it cannot come back')
@@ -277,11 +277,38 @@ console.log(JSON.stringify(['c2','c3','c8','c9','s1','@x','+plan:F1',''].map(mod
     eq(r.stdout.strip(), '["m","","new","","","new","new","new"]', 'each chat has its own, a new one what new chats run on', )
 
 
+def test_tally_open(env: Env) -> None:
+    """F489: on the run page a tally line opens to its calls on a tap and folds on the next."""
+    print('the tally line opens')
+    if not shutil.which('node'):
+        return
+    page = W.page_html().decode()
+    js = page.split('<script id="logic">', 1)[1].split('</script>', 1)[0]
+    entries = [{'kind': 'tool', 'name': 'Read', 'group': 'read', 'arg': 'README.md', 'call': 't1', 'state': 'ok'}] + [
+        {'kind': 'tool', 'name': 'Bash', 'arg': f'echo {w}', 'call': f't{i + 2}', 'state': 'ok'} for i, w in enumerate(('one', 'two', 'three'))]
+    test = f"""
+const open = new Set(), entries = {json.dumps(entries)};
+const lines = () => pastLines(entries, 60, open);
+const fold = lines().find(l => l.h.includes('data-fold'));
+const el = {{closest: s => s === '[data-fold]' ? {{getAttribute: () => /data-fold="([^"]*)"/.exec(fold.h)[1]}} : null}};
+const shut = lines().map(l => l.t), tap1 = pastFoldTap(open, el), opened = lines().map(l => l.t);
+pastFoldTap(open, el);
+console.log(JSON.stringify({{shut, tap1, opened, again: lines().map(l => l.t), other: pastFoldTap(open, {{closest: () => null}})}}));"""
+    r = subprocess.run(['node', '-'], input=js + test, capture_output=True, text=True, timeout=60)
+    o = json.loads(r.stdout or 'null') or {}
+    check(any('Read 1 file, ran 3 shell commands' in t for t in o.get('shut', [])), 'the folded line', o or r.stderr[-800:])
+    check(o.get('tap1') is True and len(o.get('opened', [])) > len(o['shut']), 'a tap opens the list', o)
+    opened = '\n'.join(o.get('opened', []))
+    check(all(w in opened for w in ('Read(README.md)', 'Bash(echo one)', 'Bash(echo three)')), 'each call with its argument', opened)
+    eq(o.get('again'), o.get('shut'), 'a tap again folds it')
+    eq(o.get('other'), False, 'a tap elsewhere is not one')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix='ar-web-harness-', ignore_cleanup_errors=True) as d:
         env = Env(Path(d).resolve())
         page = None
-        tests = [lambda: test_model_words(env), lambda: test_page(env)]
+        tests = [lambda: test_model_words(env), lambda: test_page(env), lambda: test_tally_open(env)]
         try:
             if shutil.which('node') and not plat.WINDOWS:
                 page = Page(env)

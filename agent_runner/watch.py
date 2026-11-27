@@ -486,24 +486,269 @@ START_TRIES = 3  # a task whose session will not start is tried this many times 
 
 
 _account = [-1e9, None]
+_account_login = ['']  # B848a: the login _account[1] was read for
+
+
+def usage_login() -> str:
+    """B848a: which Claude login the kept usage reading belongs to: the account's uuid from Claude Code's config
+    (a hash of it, never a token), '' when it cannot be told."""
+    import hashlib
+    cfg = Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home()) / '.claude.json'
+    try:
+        uid = json.loads(cfg.read_text(encoding='utf-8'))['oauthAccount']['accountUuid']
+    except (OSError, ValueError, KeyError, TypeError):
+        return ''
+    return hashlib.sha256(str(uid).encode()).hexdigest()[:16] if uid else ''
+
+
+def usage_file(login: str) -> Path:
+    """B848a: where this machine keeps the last good usage reading of one login, outside any project."""
+    base = Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local' / 'state')
+    return base / 'agent-runner' / f'usage-{login}.json'
+
+
+def _resets_passed(w, now: float) -> bool:
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(w['resets_at']).replace('Z', '+00:00')).timestamp() <= now
+    except (TypeError, KeyError, ValueError):
+        return False
+
+
+def kept_usage(now: float | None = None) -> dict | None:
+    """B848a: the last good usage reading kept for the current login, its windows whose resets_at has passed
+    dropped; None when there is none (or the login cannot be told)."""
+    login = usage_login()
+    if not login:
+        return None
+    try:
+        got = json.loads(usage_file(login).read_text(encoding='utf-8'))['usage']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(got, dict):
+        return None
+    return live_windows(got, now)
+
+
+def live_windows(got, now: float | None = None) -> dict | None:
+    """B848a: a reading without its windows whose resets_at has passed; None when nothing is left."""
+    if not isinstance(got, dict):
+        return None
+    now = time.time() if now is None else now
+    got = {k: v for k, v in got.items() if not (isinstance(v, dict) and _resets_passed(v, now))}
+    return got or None
+
+
+def keep_usage(got: dict) -> None:
+    """B848a: store a good reading for the current login, written atomically."""
+    login = usage_login()
+    if not login:
+        return
+    f = usage_file(login)
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f'{f.name}.{os.getpid()}.tmp')
+        tmp.write_text(json.dumps({'at': time.time(), 'usage': got}), encoding='utf-8')
+        os.replace(tmp, f)
+    except OSError:
+        pass
+
+
+def known_usage() -> dict | None:
+    """B848a: the usage the cap reads with no fetch: this process's last reading, else the kept one."""
+    if isinstance(_account[1], dict) and _account_login[0] == usage_login():
+        return live_windows(_account[1])
+    return kept_usage()
+
+
+USAGE_EVERY = 300  # s: at most one usage fetch per machine this often (B848b)
+USAGE_BACKOFF_MAX = 4 * 3600  # s: the longest wait after repeated 429s
+
+
+def usage_fetch_file() -> Path:
+    """B848b: the machine's usage fetch state (last attempt, next allowed, failures in a row), shared by all runs."""
+    return usage_file('x').with_name('usage-fetch.json')
+
+
+def usage_backoff(fails: int, retry_after: float | None) -> float:
+    """B848b: how long to wait after the `fails`-th 429 in a row; Retry-After 0 (or none) counts as none."""
+    wait = min(USAGE_EVERY * 2 ** max(fails - 1, 0), USAGE_BACKOFF_MAX)
+    return max(wait, retry_after or 0)
+
+
+def _fetch_usage() -> dict:
+    import urllib.request
+    tok = json.load(open(os.path.expanduser('~/.claude/.credentials.json')))['claudeAiOauth']['accessToken']
+    req = urllib.request.Request('https://api.anthropic.com/api/oauth/usage',
+                                 headers={'Authorization': f'Bearer {tok}', 'anthropic-beta': 'oauth-2025-04-20'})
+    got = json.load(urllib.request.urlopen(req, timeout=10))
+    if not isinstance(got, dict):
+        raise ValueError
+    return got
 
 
 def account_usage() -> dict | None:
     """The account's usage from the endpoint Claude Code's `/usage` reads (the local login's OAuth token; costs
-    no tokens), checked at most every 5 minutes. None when it cannot be read: "don't cap"."""
-    if time.time() - _account[0] < 300:
+    no tokens). B848b: one fetch per machine at most every USAGE_EVERY s, under a lock shared by all runs and
+    Runner Home, with backoff after 429s, the state kept on disk; others read the kept reading. A failed fetch
+    keeps the last good reading (B848a); None when there never was one: "don't cap"."""
+    if time.time() - _account[0] < USAGE_EVERY:
         return _account[1]
-    import urllib.request
+    import fcntl
+    import urllib.error
+    sf = usage_fetch_file()
     try:
-        tok = json.load(open(os.path.expanduser('~/.claude/.credentials.json')))['claudeAiOauth']['accessToken']
-        req = urllib.request.Request('https://api.anthropic.com/api/oauth/usage',
-                                     headers={'Authorization': f'Bearer {tok}',
-                                              'anthropic-beta': 'oauth-2025-04-20'})
-        _account[1] = json.load(urllib.request.urlopen(req, timeout=10))
-    except Exception:
-        _account[1] = None
+        sf.parent.mkdir(parents=True, exist_ok=True)
+        lock = open(sf.with_name('usage-fetch.lock'), 'a')
+    except OSError:
+        lock = None
+    try:
+        if lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            st = json.loads(sf.read_text(encoding='utf-8'))
+            st = st if isinstance(st, dict) else {}
+        except (OSError, ValueError):
+            st = {}
+        now = time.time()
+        if st.get('login') != usage_login():  # another login: its own fetch, not the old one's backoff
+            st = {'login': usage_login()}
+        if now < float(st.get('next') or 0):
+            _account[1], _account_login[0] = known_usage_disk(), usage_login()
+        else:
+            st['at'] = now
+            try:
+                got = _fetch_usage()
+                _account[1], _account_login[0] = got, usage_login()
+                keep_usage(got)
+                st['fails'], st['next'] = 0, now + USAGE_EVERY
+            except Exception as e:
+                if isinstance(e, urllib.error.HTTPError) and e.code == 429:
+                    st['fails'] = int(st.get('fails') or 0) + 1
+                    try:
+                        ra = float((e.headers or {}).get('Retry-After') or 0)
+                    except (TypeError, ValueError):
+                        ra = 0
+                    st['next'] = now + usage_backoff(st['fails'], ra)
+                else:
+                    st['next'] = now + USAGE_EVERY
+                _account[1] = known_usage()  # the last good reading: this process's, else the kept one
+                _account_login[0] = usage_login()
+            try:
+                tmp = sf.with_name(f'{sf.name}.{os.getpid()}.tmp')
+                tmp.write_text(json.dumps(st), encoding='utf-8')
+                os.replace(tmp, sf)
+            except OSError:
+                pass
+    finally:
+        if lock:
+            lock.close()
     _account[0] = time.time()
     return _account[1]
+
+
+_login_usage: dict[str, list] = {}  # F514: {config dir: [read at, reading]} of the other logins, in this process
+
+
+def config_login(cfg: str) -> str:
+    """F514: `usage_login` of the Claude login kept in config dir `cfg`, '' when it cannot be told (read from that
+    dir alone, the process's environment untouched)."""
+    import hashlib
+    try:
+        uid = json.loads((Path(cfg) / '.claude.json').read_text(encoding='utf-8'))['oauthAccount']['accountUuid']
+    except (OSError, ValueError, KeyError, TypeError):
+        return ''
+    return hashlib.sha256(str(uid).encode()).hexdigest()[:16] if uid else ''
+
+
+def _fetch_login_usage(cfg: str) -> dict:
+    import urllib.request
+    tok = json.loads((Path(cfg) / '.credentials.json').read_text(encoding='utf-8'))['claudeAiOauth']['accessToken']
+    req = urllib.request.Request('https://api.anthropic.com/api/oauth/usage',
+                                 headers={'Authorization': f'Bearer {tok}', 'anthropic-beta': 'oauth-2025-04-20'})
+    got = json.load(urllib.request.urlopen(req, timeout=10))
+    if not isinstance(got, dict):
+        raise ValueError
+    return got
+
+
+def login_usage(cfg: str) -> dict | None:
+    """F514: the usage of the Claude login whose credentials are in config dir `cfg` ('' the default login:
+    `account_usage`). As `account_usage`: one fetch per login per machine at most every USAGE_EVERY s, under a lock,
+    backoff after 429s, the last good reading kept on disk (`usage_file`); None when there never was one."""
+    if not cfg:
+        return account_usage()
+    login = config_login(cfg)
+    if not login:
+        return None
+    had = _login_usage.get(cfg)
+    if had and time.time() - had[0] < USAGE_EVERY:
+        return had[1]
+    import fcntl
+    import urllib.error
+    sf = usage_fetch_file().with_name(f'usage-fetch-{login}.json')
+    kept = usage_file(login)
+
+    def disk() -> dict | None:
+        try:
+            return live_windows(json.loads(kept.read_text(encoding='utf-8'))['usage'])
+        except (OSError, ValueError, KeyError, TypeError):
+            return live_windows(had[1]) if had else None
+    try:
+        sf.parent.mkdir(parents=True, exist_ok=True)
+        lock = open(sf.with_name(f'usage-fetch-{login}.lock'), 'a')
+    except OSError:
+        lock = None
+    got = None
+    try:
+        if lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            st = json.loads(sf.read_text(encoding='utf-8'))
+            st = st if isinstance(st, dict) else {}
+        except (OSError, ValueError):
+            st = {}
+        now = time.time()
+        if now < float(st.get('next') or 0):
+            got = disk()
+        else:
+            st['at'] = now
+            try:
+                got = _fetch_login_usage(cfg)
+                st['fails'], st['next'] = 0, now + USAGE_EVERY
+                try:
+                    tmp = kept.with_name(f'{kept.name}.{os.getpid()}.tmp')
+                    tmp.write_text(json.dumps({'at': now, 'usage': got}), encoding='utf-8')
+                    os.replace(tmp, kept)
+                except OSError:
+                    pass
+            except Exception as e:
+                if isinstance(e, urllib.error.HTTPError) and e.code == 429:
+                    st['fails'] = int(st.get('fails') or 0) + 1
+                    try:
+                        ra = float((e.headers or {}).get('Retry-After') or 0)
+                    except (TypeError, ValueError):
+                        ra = 0
+                    st['next'] = now + usage_backoff(st['fails'], ra)
+                else:
+                    st['next'] = now + USAGE_EVERY
+                got = disk()
+            try:
+                tmp = sf.with_name(f'{sf.name}.{os.getpid()}.tmp')
+                tmp.write_text(json.dumps(st), encoding='utf-8')
+                os.replace(tmp, sf)
+            except OSError:
+                pass
+    finally:
+        if lock:
+            lock.close()
+    _login_usage[cfg] = [time.time(), got]
+    return got
+
+
+def known_usage_disk() -> dict | None:
+    """B848b: the kept reading (another process may have fetched it), else this process's."""
+    return kept_usage() or known_usage()
 
 
 LOGIN_CMD = 'claude auth login'  # F126: what renews the Claude login

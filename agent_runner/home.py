@@ -998,39 +998,65 @@ def serve_https_argv(port: int) -> list[str]:
     return ['tailscale', 'serve', '--bg', f'--https={port + 1}', f'http://127.0.0.1:{port}']
 
 
-def offer_https(port: int, urls: list[str], call=None, out=print, ask=None, which=None) -> list[str]:
-    """F134: with no https link for Home (`urls` all http), offer to set up Tailscale Serve for it: `ask(question)`
-    (default: a y/n prompt when stdin is a terminal) says yes, the command runs and the links are read again;
-    otherwise say the command. Without tailscale, one line on what https needs. Returns the links to print."""
+def offer_https(port: int, urls: list[str], call=None, out=print, ask=None, which=None, status=None) -> list[str]:
+    """F134, F461: with no https link for Home (`urls` all http), set up Tailscale Serve for it without asking, as
+    runs do, when Tailscale is connected and Serve's port (port+1) is free; otherwise say why it stays http only.
+    `status()` gives `tailscale serve status --json` as a dict. `ask` is left for old callers. Returns the links."""
     if any(u.startswith('https://') for u in urls):
         return urls
     cmd = serve_https_argv(port)
     line = ' '.join(cmd)
     if not (which or shutil.which)('tailscale'):
-        out(f"No https link: Talk's mic needs one. With Tailscale installed, `{line}` gives Home one.")
+        out(f"http only (Tailscale is not here; Talk's mic needs https). With Tailscale installed, `{line}` gives Home one.")
         return urls
     from agent_runner import page_https
     if page_https.not_connected():  # B815a: a saved rule is left as it is
-        out("No https link while Tailscale is not connected: Talk's mic needs one.")
+        out("http only (Tailscale is not connected; Talk's mic needs https).")
         return urls
-    if ask is None and sys.stdin.isatty():
+    if status is None:
+        def status() -> dict:
+            ok, said = page_https.tailscale('serve', 'status', '--json')
+            return page_https.as_json(said) if ok else {}
+    if page_https.used(status(), port + 1):
+        out(f'http only (Tailscale Serve already uses port {port + 1} for something else; '
+            f'free it, then run: {line}).')
+        return urls
+    code, said = (call or sh)(cmd)
+    if code:
+        out(f'http only ({line} failed: {said}).')
+        return urls
+    got = home_urls(port)
+    if not any(u.startswith('https://') for u in got):
+        out(f'{line} ran, but tailscale serve status shows no https address for port {port} yet: '
+            f'`agent-runner home status` lists it once it does')
+    return got
+
+
+TAILNET_QUESTION = ('Let devices on your tailnet open Runner Home and run pages without the key? Anyone on the '
+                    'tailnet can then do everything the page does.')
+
+
+def ask_tailnet(out=print, ask=None, tty=None) -> bool:
+    """F461: ask once, in a terminal only, whether to trust the tailnet (`home trust add tailnet`); default No.
+    Skipped when it is trusted already or stdin is no terminal. True when it was added."""
+    if trust.TAILNET in load_registry()['trusted_networks'] or (asked := config_dir() / 'tailnet-asked').exists():
+        return False
+    if ask is None:
+        if not (sys.stdin.isatty() if tty is None else tty):
+            return False
+
         def ask(q: str) -> bool:
             try:
-                return input(q + ' [Y/n] ').strip().lower() in ('', 'y', 'yes')
+                return input(q + ' [y/N] ').strip().lower() in ('y', 'yes')
             except EOFError:
                 return False
-    if ask and ask(f"Home has no https link (Talk's mic needs one). Run `{line}`?"):
-        code, said = (call or sh)(cmd)
-        if code == 0:
-            got = home_urls(port)
-            if not any(u.startswith('https://') for u in got):
-                out(f'{line} ran, but tailscale serve status shows no https address for port {port} yet: '
-                    f'`agent-runner home status` lists it once it does')
-            return got
-        out(f'{line} failed: {said}')
-        return urls
-    out(f"For an https link (Talk's mic needs one), run: {line}")
-    return urls
+    asked.parent.mkdir(parents=True, exist_ok=True)
+    asked.write_text('asked\n', encoding='utf-8')  # once: a No is not asked again on the next install
+    if not ask(TAILNET_QUESTION):
+        return False
+    ok, said = trust_change('add', trust.TAILNET)
+    out(said)
+    return ok
 
 
 # --- the service ------------------------------------------------------------------------------------------------
@@ -1239,7 +1265,9 @@ def install(kind: str | None = None, call=sh, out=print, check=wait_serving, htt
     if not check(reg['port']):
         out(f'It does not answer on port {reg["port"]} yet: a run may hold that port (one on an older '
             f'version gives it up when it next starts; Home keeps trying meanwhile), or see {log}.')
-    urls = shown(offer_https(reg['port'], urls, call=call, out=out, ask=ask))
+    urls = offer_https(reg['port'], urls, call=call, out=out)
+    ask_tailnet(out=out, ask=ask)
+    urls = shown(urls)
     out('Open it on your phone (same network or Tailscale):\n  ' + '\n  '.join(urls))
     # F134: the QR code holds the https link when there is one (the mic needs it), else the LAN address
     if q := qr_text(urls[0] if urls[0].startswith('https://') else urls[-1]):

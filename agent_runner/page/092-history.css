@@ -9,7 +9,7 @@
 .hchunk{position:absolute;left:var(--hleft,14px);right:0;margin-top:var(--hpad,0)} .hchunk>div{height:var(--hcell);line-height:var(--hcell);white-space:pre;overflow:hidden}
 .feedpast.armed .hchunk *{-webkit-user-select:text;user-select:text}
 .hchunk b{display:inline-block;width:calc(var(--w)*var(--hw));font-weight:inherit;letter-spacing:0;overflow:visible}
-.hm{color:var(--hmuted)} .hb{font-weight:bold} .hi{font-style:italic} .hu{text-decoration:underline} .hx{text-decoration:line-through} .hd{opacity:.5}
+.hfold{cursor:pointer} .hm{color:var(--hmuted)} .hb{font-weight:bold} .hi{font-style:italic} .hu{text-decoration:underline} .hx{text-decoration:line-through} .hd{opacity:.5}
 .hc{color:var(--hcode)} .hl{color:var(--hlink)} .hr{color:var(--hbad)} .hk{color:var(--hok)} .hw{color:var(--hwarn)}
 .hy{background:var(--hminebg);color:var(--hmine)} .hy .hm{color:var(--hmmuted)}
 .hp{background:var(--haddbg);color:var(--hadd)} .hg{background:var(--hgonebg);color:var(--hgone)} .hpn{color:var(--haddn)} .hgn{color:var(--hgonen)}

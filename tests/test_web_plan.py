@@ -202,7 +202,7 @@ def test_row_actions(tmp: Path) -> None:
     cs = [c for c in U.controls() if c['where'] in ('queue', 'shelved', 'release', 'need', 'concept')]
     opts = [f'Option {j}' for j in range(1, U.ANSWER_MAX + 1)]
     text = lambda c: c['label'].replace('Answer', 'Option') if c['answer'] else ''  # noqa: E731
-    eq(len(cs), 15 + U.ANSWER_MAX, 'the row actions the page draws (C35: Needs you and Concepts too)')
+    eq(len(cs), 16 + U.ANSWER_MAX, 'the row actions the page draws (C35: Needs you and Concepts too)')
     if shutil.which('node'):
         reqs = logic_js([['controlReq', c, {'tid': 'F83', 'sure': True, 'text': text(c), 'note': ' '}] for c in cs])
     else:
@@ -224,7 +224,7 @@ def test_row_actions(tmp: Path) -> None:
                 ran.clear()
                 code, out = post(url, rq)
                 # the stand-in row is parked: priority does not fit; its answers are options: not Yes and No
-                fits = c['key'] not in ('queue_priority', 'need_yes', 'need_no')
+                fits = c['key'] not in ('queue_priority', 'need_yes', 'need_no', 'queue_cancel')  # F455b: not taken by hand
                 eq((code, out.get('ok')), (200, fits), f'{c["label"]} sent from the page: {"runs" if fits else "refused"}')
                 eq(bool(ran), fits, f'{c["label"]}: its command ran or not, as the row allows')
     finally:
@@ -362,7 +362,7 @@ def test_concepts_view(tmp: Path) -> None:
     opens a new chat (F183); the Plan view no longer lists concepts."""
     fake_repo(tmp)
     app = W.page_html().decode()
-    for part in ("['plan','Plan'],['history','History'],['concepts','Concepts']", 'count={home:needs,concepts:cn}',
+    for part in ("['plan','Work'],['concepts','Concepts']", 'count={home:needs,concepts:cn}',
                  'concepts:conceptsHTML', "concepts:'Concepts'", 'cs.map(conceptCard)'):
         check(part in app, f'the run app has {part}')
     for gone in ('data-kadd', 'kform', '[data-kin]', 'newConceptReq', 'growKin', 'S.kOpen', 'S.kText', 'S.kSaid', 'x.kq'):
@@ -612,7 +612,7 @@ def test_run_card_b763a(tmp: Path) -> None:
                        capture_output=True, text=True, encoding='utf-8', timeout=60)
     check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     cards, icons = json.loads(r.stdout)
-    icon = {'start': 'play', 'go_on': 'play', 'pause': 'pause', 'stop': 'stop', 'stop_undo': 'undo',
+    icon = {'start': 'play', 'go_on': 'play', 'pause': 'pause', 'stop': 'stop', 'stop_now': 'stop', 'stop_undo': 'undo',
             'slot_add': 'plus', 'slot_remove': 'minus'}
     for (s, _), html in zip(cases, cards):
         row = html.split('aria-label="Run controls">', 1)[1].split('</div>', 1)[0]

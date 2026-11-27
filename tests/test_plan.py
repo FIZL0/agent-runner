@@ -1302,6 +1302,13 @@ def test_edit():
               'and `plan edit --model nope:m` too, the task unchanged', r.stderr)
         run(root, 'plan', 'edit', 'R1', '--model', 'claude:opus')
         has(run(root, 'plan', 'R1').stdout, r'\| model: claude:opus$', 'claude:<model> is taken')
+        r = run(root, 'plan', 'add', 'D', 'Reword the README intro', '--files', 'r.md', '--size', 'simple')
+        has(run(root, 'plan', r.stdout.split()[1]).stdout, r'\| files: r\.md \| size: simple',
+            'F470: `plan add --size simple` stores the size on the task line')
+        run(root, 'plan', 'edit', 'R1', '--size', 'complex')
+        has(run(root, 'plan', 'R1').stdout, r'\| model: claude:opus \| size: complex$', 'and `plan edit --size` sets it')
+        r = run(root, 'plan', 'add', 'D', 'Huge thing', '--files', 'h.md', '--size', 'huge')
+        check(r.returncode == 2 and '--size takes simple or complex' in r.stderr, 'F470: another size is refused', r.stderr)
     with tempfile.TemporaryDirectory() as tmp:
         todo = Path(tmp) / 'TODO.md'
         todo.write_text('\n'.join(['# TODO', '', '### Next', '',
@@ -1522,6 +1529,16 @@ def test_slot_writes_own_plan():
         eq(run(other, 'plan', 'note', 'A1', 'a note', env=env).returncode, 0, 'outside a slot nothing is checked')
 
 
+def test_wrapped_decide():
+    print('plan: a DECIDE line wrapped over two lines is read whole (B871)')
+    msg = 'Here it is.\n\nDECIDE: Which layout for K26? [A: list / B: grid /\nC: tabs] (/concept/K26)'
+    q = plan.decide_question(msg)
+    assert q == 'Which layout for K26? [A: list / B: grid / C: tabs] (/concept/K26)', q
+    assert plan.decide_question('DECIDE: Pick one? [A / B]\nThen I went on with other work.') == ''
+    assert plan.decide_question('DECIDE: Pick one? [A /\n\nB]') == ''
+    assert plan.decide_question('x\nDECIDE: Pick one? [A / B]') == 'Pick one? [A / B]'
+
+
 def test_multi_line_text():
     print('plan: text of several lines stays on its task (B189)')
     with tempfile.TemporaryDirectory() as tmp:
@@ -1577,7 +1594,7 @@ def test_multi_line_text():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_plan_last, test_after_all, test_after_all_skips_stuck, test_after_all_skips_never_started, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, 
+    sys.exit(report([test_wrapped_decide, test_multi_line_text, test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_plan_last, test_after_all, test_after_all_skips_stuck, test_after_all_skips_never_started, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, 
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_add_refuses_the_same_text, test_concurrent_same_add, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_needs_you,
                      test_needs_own_project, test_needs_config, test_slot_writes_own_plan]))

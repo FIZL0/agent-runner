@@ -147,8 +147,10 @@ def test_picking(repo: Path):
     try:
         eq(R.pick({}, set(), 'main')[0], 'T5',
            "another runner's live claim on T1 holds its files, section and dependants here too")
-        R.plansync.claims = lambda c: {'T1': Claim('elsewhere:/x', time.time() - 4 * 3600, 'ian@desk')}
+        R.plansync.claims = lambda c: {'T1': Claim('elsewhere:/x', time.time() - 100 * 60, 'ian@desk')}
         eq(R.pick({}, set(), 'main')[0], 'T2', "a stale claim (a crashed run's) holds only its own task")
+        R.plansync.claims = lambda c: {'T1': Claim('elsewhere:/x', time.time() - 4 * 3600, 'ian@desk')}
+        eq(R.pick({}, set(), 'main')[0], 'T1', 'a claim past TAKEOVER holds nothing: its task is picked (B857)')
         R.plansync.claims = lambda c: {'S9': Claim('elsewhere:/x', time.time(), 'ian@desk', '0.14.0', 1.0,
                                                    frozenset({'a.py'}))}
         check(R.pick({}, set(), 'main')[0] not in ('T1', 'T3'),
@@ -1999,7 +2001,7 @@ def test_tell_running(repo: Path):
     R.init(repo)
     git(repo, 'checkout', '-q', 'main')
     todo = repo / 'plan/TODO.md'
-    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **G1** the told | files: tl1.py\n\n### Stretch'))
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **G1** the told | files: tl1.py\n- [ ] **G2** the quiet | files: tl2.py\n\n### Stretch'))
     git(repo, 'commit', '-qam', 'plan: G1')
     git(repo, 'push', '-q', 'origin', 'main')
     lock = R.plat.lock(R.C.notes('run.lock'))  # this test stands in for the run that is up
@@ -2060,6 +2062,23 @@ def test_tell_running(repo: Path):
         eq(out.strip(), 'told s1 (G1)', 'it prints told')
         has(calls[0][1] if calls else '', r'look at the gate log first$', 'the agent reads the note')
         eq(todo.read_text(encoding='utf-8'), before, 'the plan is not edited')
+
+        # --- F512: note on a running task also tells its slot ---
+        calls.clear()
+        p = plan_cmd('note', 'G1', 'the logs are in /tmp')
+        check(asked(tells, 'G1'), 'plan note leaves a tell request')
+        R.tells(procs, running)
+        out, err = p.communicate(timeout=60)
+        check(p.returncode == 0, 'plan note goes through', err)
+        eq(out.strip(), 'noted G1; told s1 (G1)', 'it prints noted and told')
+        has(calls[0][1] if calls else '', r'the logs are in /tmp$', 'the agent reads the note')
+        has(todo.read_text(encoding='utf-8'), r'— the logs are in /tmp', 'the note is in the plan')
+
+        # --- F512: note on a task no slot runs: no request ---
+        r = run(repo, 'plan', 'note', 'G2', 'hello')
+        check(r.returncode == 0, 'note on a task not running goes through', r.stderr)
+        eq(r.stdout.strip(), 'noted G2', 'it prints only noted')
+        eq(R.tell_requests(), {}, 'no request left for the run')
 
         # --- tell on a task no slot runs: an error, no request ---
         r = run(repo, 'plan', 'tell', 'G9', 'hello')
@@ -2724,6 +2743,15 @@ def test_prompt_and_hooks(repo: Path):
     check(f'`{R.C.command} done <ID> "<commit message>"`' in head, 'it says <ID> where the id goes')
     check(p2.rstrip().endswith(R.brief_for('T2', repo).rstrip()), 'the task\'s brief comes last')
     check(p2.index('Project policies:') < p2.index('The task\'s brief'), 'after its policies')
+    # B869: a worktree on a base older than the task (its plan has no line for it) still gets the full brief
+    old = repo.parent / f'{repo.name}-b869'
+    if not old.exists():
+        subprocess.run(['git', '-C', str(repo), 'worktree', 'add', '-q', '--detach', str(old)], check=True)
+    (old / 'plan').mkdir(parents=True, exist_ok=True)
+    (old / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
+    b = R.brief_for('T2', old)
+    check('produced nothing' not in b and b.strip() == R.brief_for('T2', repo).strip(),
+          'a session in a worktree whose plan lacks its task gets the main plan\'s brief', b[:300])
     cmd = R.agent_cmd('hi', 'sid', 'opus', 90, 'slot1')
     has(cmd, r'--stop-hook --idle 90', 'the agent command carries the idle Stop hook')
     big = 'x' * 40000  # a long brief

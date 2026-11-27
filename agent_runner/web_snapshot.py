@@ -45,6 +45,7 @@ def page_html(home: bool = False) -> bytes:
     UI's). F134: `home`
     is Runner Home's own page (HOME_PAGE): the All projects view and the project switcher, no run behind it."""
     page = PAGE_TEXT.replace('/*PAGE_PRINT*/', PAGE_PRINT, 1)
+    page = page.replace('/*UI_THEMES*/', ui_themes_css(), 1)  # F473
     if home:
         page = page.replace('/*HOME_PAGE*/false', 'true', 1).replace(
             '<title>agent-runner</title>', '<title>Runner Home</title>', 1)
@@ -136,13 +137,16 @@ def load_chat_order() -> dict:
     return d if isinstance(d, dict) else {}
 
 
-def save_chat_order(order=None, pins=None) -> dict:
+def save_chat_order(order=None, pins=None, quiet=None, up=None) -> dict:
     """F133: the `chat_order` action: keep the sidebar's pinned chats, in their order (`pins`, cN names), for every
     page. F201: the rest sort by last activity, so `order` (a page from before) only orders the pins."""
     def names(v):
         return list(dict.fromkeys(n for n in v if isinstance(n, str) and re.fullmatch(r'c\d+', n))) \
             if isinstance(v, list) else None
-    if (order is None and pins is None) or (order is not None and names(order) is None):
+    sections = {k: names(v) for k, v in (('quiet', quiet), ('up', up)) if v is not None}  # F507: dragged in or out of Quiet
+    if None in sections.values():
+        return {'ok': False, 'code': 2, 'out': 'chat_order: quiet and up are lists of chat names', 'argv': []}
+    if (order is None and pins is None and not sections) or (order is not None and names(order) is None):
         return {'ok': False, 'code': 2, 'out': 'chat_order: order and pins are lists of chat names', 'argv': []}
     saved = load_chat_order()
     old = [n for n in saved.get('pins') or [] if isinstance(n, str)]
@@ -155,7 +159,12 @@ def save_chat_order(order=None, pins=None) -> dict:
     if not p:
         return {'ok': False, 'code': 2, 'out': 'chat_order: no project here to keep it in', 'argv': []}
     from agent_runner.whole_write import write_whole
-    write_whole(p, json.dumps({'pins': pins}).encode('utf-8'))  # a snapshot never reads half a file
+    kept = {'pins': pins}
+    for k in ('quiet', 'up'):  # F507: kept as they were unless sent
+        v = sections[k] if k in sections else [n for n in saved.get(k) or [] if isinstance(n, str)]
+        if v:
+            kept[k] = v
+    write_whole(p, json.dumps(kept).encode('utf-8'))  # a snapshot never reads half a file
     return {'ok': True, 'code': 0, 'out': 'chat order kept', 'argv': []}
 
 
@@ -165,7 +174,10 @@ def with_chat_order(snap):
         return snap
     names = [s.get('name') for s in snap.get('sessions') or [] if isinstance(s, dict)
              and re.fullmatch(r'c\d+', str(s.get('name')))]
-    snap['chat_pins'] = pin_list(names, load_chat_order())
+    saved = load_chat_order()
+    snap['chat_pins'] = pin_list(names, saved)
+    for k in ('quiet', 'up'):  # F507: the chats the person dragged into Quiet, and out of it
+        snap[f'chat_put_{k}'] = [n for n in saved.get(k) or [] if n in names]
     return snap
 
 

@@ -191,5 +191,48 @@ def test_lately() -> None:
         eq(said, ['landed: Release: bump the version [V5]', 'landed: one [F1]'], "not another landing's release")
 
 
+def test_usage_held_f468() -> None:
+    from agent_runner import cap_hold as H, sched
+    with tempfile.TemporaryDirectory() as t:
+        repo(Path(t))
+        S.C.run['weekly_max'], S.C.run['session_max'] = 80, 90
+        st = {'state': 'running', 'usage': {'five_hour': 20.0, 'seven_day': 85.0},
+              'resets': {'seven_day': '2030-01-04T09:00:00+00:00'}}
+        out = R.status_text(True, st, [], {}, now=dt.datetime(2030, 1, 1).timestamp())
+        first = out.splitlines()[0]
+        check(first.startswith('HELD by usage caps: weekly usage 85% (cap 80%), lifts '), 'the held headline first', out)
+        check('5-hour' not in first, 'only the cap reached', first)
+        eq(R.cap_held_line({**st, 'forced': True}, 0), '', 'forced: no headline')
+        eq(R.cap_held_line({**st, 'usage': {'seven_day': 50.0}}, 0), '', 'under the caps: none')
+        check('HELD' not in R.status_text(False, st, [], {}, now=0), 'no run up: no headline', '')
+        # `force F2`: while the caps hold, the pick takes F2 and only F2
+        H.FORCE_IDS.clear()
+        eq(H.force_key('on'), '', 'on is the whole-run force, not a task')
+        check(H.force_key('F2'), 'force ID is taken', '')
+        skip = H.only_forced(sched.open_tasks('main'), H.FORCE_IDS)
+        eq(skip, {'F1'}, 'every other open task is passed over')
+        got = sched.pick({}, skip, 'main')
+        eq(got and got[0], 'F2', 'force F2 starts F2, not F1 ahead of it')
+        eq(sched.pick({}, skip | {'F2'}, 'main'), None, 'and nothing else')
+        H.FORCE_IDS.clear()
+
+
+def test_login_f505() -> None:
+    from agent_runner import fallback, slots
+    with tempfile.TemporaryDirectory() as t:
+        repo(Path(t))
+        st = {'state': 'running', 'running': {'1': 'F1'}}
+        with mock.patch.object(slots.MUX, 'panes', lambda: {'s1': ('m', 42)}), \
+                mock.patch.object(slots.MUX, 'session_id', lambda pid: 'sid1'), \
+                mock.patch.object(fallback, 'session_login', lambda sid: 'work'):
+            with mock.patch('agent_runner.claude_use.logins', lambda: [{'name': 'me'}]):
+                out = R.status_text(True, st, [], {'F1': 'one'}, now=0)
+                check('login' not in out, 'one login: not shown', out)
+            with mock.patch('agent_runner.claude_use.logins', lambda: [{'name': 'me'}, {'name': 'work'}]):
+                out = R.status_text(True, st, [], {'F1': 'one'}, now=0)
+                check('login work' in out, 'two logins: the slot names its login', out)
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_placeholder, test_releases, test_count_beside_f195c, test_released, test_plan_index, test_lately]))
+    raise SystemExit(report([test_placeholder, test_releases, test_count_beside_f195c, test_released, test_plan_index, test_lately,
+                             test_usage_held_f468, test_login_f505]))
