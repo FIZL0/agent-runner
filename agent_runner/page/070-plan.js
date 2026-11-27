@@ -276,7 +276,14 @@ function shelvedCard(q,list='parked'){  // F184: a shelved task: what it waits o
   return card(`${taskRow(q,q.title||q.id,'',list)}${q.ask?`<span class="askdo" data-k="askdo:${esc(q.id)}">${esc(q.ask)}</span>`:''}
     ${taskBtns(q)}`,'',`data-k="task:${esc(q.id)}"`);
 }
+/* F197b: a concept with a Needs you item draws as that item's Home card (same buttons, same posted actions), with its New/Updated badge */
+function conceptNeedCard(c){
+  const ns=S.snap.needs||[], j=ns.findIndex(n=>n.id===c.id);if(j<0)return '';
+  const b=c.news_words?`<span class="small cnews" data-k="cnews:${esc(c.id)}">${esc(c.news_words)}</span>`:'';
+  return card(b+needTap(ns[j],S.snap.kinds)+conceptFrame(ns[j])+needBtns(ns[j],j),'need',`data-k="concept:${esc(c.id)}"`);
+}
 function conceptCard(c,i){  // B219a: its one Chat is the new chat view; concept_chat, which starts a session at once, is the TUI's
+  const nc=conceptNeedCard(c);if(nc)return nc;
   const os=c.options||[], acts=(c.acts||[]).filter(k=>k!=='concept_chat'), view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
   const b=x=>x.pick!=null?`<button class="btn ${x.rec?'pri':''}" data-pick="${i}" data-o="${x.pick}">${esc(x.label)}</button>`
     :x.about?`<button class="btn" data-about="concept:${i}">Chat</button>`
