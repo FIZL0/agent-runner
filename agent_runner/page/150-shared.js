@@ -131,3 +131,8 @@ function pageColor(chat){
 /* B160: a phone's keyboard shrinks only the visual viewport (iOS does not shrink dvh) and pans the page, so while it is
    open .app takes the visual viewport's height and place. Not while pinch-zoomed: then the person pans. iOS sends its
    events in any order and late, so for KB_MS after a field is entered or left kbFit() also runs on every frame. */
+/* F516: Concepts' History: past concepts whose page is still there, newest first, in a fold closed at first; each row
+   grayed (.past), with View and Chat only (no Drop: a history row has no actions) */
+function conceptHistoryHTML(cs){  // cs: [concept, its index in S.snap.concepts]
+  return cs.length?`<details class="chist" data-k="chist"><summary class="sec">History (${cs.length})<span class="ln"></span></summary>${cs.map(([c,i])=>conceptCard({...c,acts:[]},i).replace('class="card ','class="card past ')).join('')}</details>`:'';
+}
