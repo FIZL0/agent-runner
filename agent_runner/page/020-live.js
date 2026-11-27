@@ -43,7 +43,7 @@ function sentBubbles(n,shown){
 function outbox(name,args,more){
   const {fx,...rest}=more||{};
   const it={cid:newCid(),name,args:args||{},by:OB.tab,state:'sending',err:'',at:Date.now(),say:name,...rest};
-  instAdd(it.cid,fx||instFx(name,it.args));
+  if(typeof instAdd==='function')instAdd(it.cid,fx||instFx(name,it.args));  // F508 (a test that takes parts of the page may leave it out)
   const ck=String(it.ctl||''), w=ck.endsWith(':')&&ctlWant(ck.slice(0,-1),S.snap,(it.args||{}).n);  // B851a: a run control shows its result now
   if(w){const ks=Object.keys(w);S.held=(S.held||[]).filter(p=>!Object.keys(p.want).some(k=>ks.includes(k))).concat([{key:ck.slice(0,-1),cid:it.cid,n:(it.args||{}).n,at:it.at,want:w,say:it.say}]);S.heldErr='';setTimeout(()=>render(true),CTL_HOLD+50)}  // a later press on the same thing takes the place of the earlier
   obChange(b=>obAdd(b,it,OB.at));render(true);drain();return it;
@@ -107,7 +107,7 @@ function instNow(){
 }
 /* the cards an item still sending stands in for stay off the lists */
 function obHide(){
-  instNow();
+  if(typeof instNow==='function')instNow();
   const ns=obHidden(S.ob,'need'), cs=obHidden(S.ob,'concept'), sh=obHidden(S.ob,'shelved'), now=Date.now();
   S.snap.needs=(S.snap.needs||[]).filter(n=>!ns.includes(n.id));
   S.snap.shelved=(S.snap.shelved||[]).filter(x=>!sh.includes(x.id));  // F184

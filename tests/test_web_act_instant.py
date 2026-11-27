@@ -89,7 +89,7 @@ def test_each_act_shows_at_once() -> None:
 def test_wired() -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     check('instAdd(it.cid,fx||instFx(name,it.args))' in page, 'every outbox act gives its change at once')
-    check('function obHide(){\n  instNow();' in page, 'each draw lays the standing changes over the snapshot')
+    check('function obHide(){\n  if(typeof instNow===\'function\')instNow();' in page, 'each draw lays the standing changes over the snapshot')
     check('S.snapRaw={...S.snap}' in page, 'the snapshot as sent is kept for a refused act')
 
 
