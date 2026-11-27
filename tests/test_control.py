@@ -1504,6 +1504,16 @@ def test_settled_rule_in_guide():
     check('Re-read an item right before' in ' '.join(G.CONTROL.split()), 'the brief says it')
 
 
+def test_shell_rule_b880():
+    print('B880: the control brief and the concepts guide say one plain command per bash call, files by the edit tools')
+    from agent_runner import guide as G
+    for name, text in (('brief', G.CONTROL), ('concepts', G.topic('concepts', 'run'))):
+        page = ' '.join(text.split())
+        for words in ('edit/write tools', 'never a python or sed heredoc', 'one plain command per bash call',
+                      'absolute paths', 'no shell variables', 'no `&&` chains', '`| tail`'):
+            check(words in page, f'{name}: {words}')
+
+
 def test_decide_options_f181d():
     print('F181d: a control session ends its DECIDE with the options, and filing keeps the bracket for the buttons')
     from agent_runner import guide as G, need_detail as N, plan as P, runner as R
@@ -1675,4 +1685,4 @@ if __name__ == '__main__':
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
                              test_held_app_session, test_held_app_ended, test_settled_told_once, test_settled_repeats_b812,
                              test_settled_verbs_and_openers, test_settled_concept_chat, test_settled_about_chat, test_settled_filed, test_settled_waits_and_skips, test_settled_landing,
-                             test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c, test_settings_two_writers_b806, test_idle_close_stays_quiet_b859]))
+                             test_settled_rule_in_guide, test_decide_options_f181d, test_wrong_agent_b764c, test_settings_two_writers_b806, test_idle_close_stays_quiet_b859, test_shell_rule_b880]))
