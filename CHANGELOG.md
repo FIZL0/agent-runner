@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: `run login code NAME "why"` asks for a Login's 2FA code under Needs you (a 6-digit field, kept 5 minutes, used once, never logged) and waits for it; a Login that does not exist gives a block line whose link opens the Login form with its name and purpose filled in (F466c).
 - Added: under Needs you, a DECIDE option with stored tasks says how many it queues, and its button queues them once and settles the item; stored tasks of a question no longer asked are dropped when an item is answered or asked again (F192d3).
 - Added: a Terminal on the Tools page, so a phone can run a command on this machine (in the project or home), only over https or on the machine; agents cannot open or read it, nothing typed is kept, and it ends on tab close, after 15 min idle or with End every terminal (F466d).
 - Changed: in the TUI, N on a Needs you item or concept with an open chat about it selects that chat instead of starting a new one (F209c2).

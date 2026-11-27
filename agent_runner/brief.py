@@ -243,7 +243,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         prompt = f'{prompt.rstrip()}\n\n' + RESEARCH_PROMPT.format(runner=C.command, tid=tid,
                                                                    findings=findings_where())
     prompt = f'{prompt.rstrip()}\n\n' + ASKS_PROMPT.format(path=C.notes('asks', f'{tid}.json'), shots=C.notes('asks', tid),
-                                                        env=C.notes('asks', f'{tid}.env'))  # F156, F175
+                                                        env=C.notes('asks', f'{tid}.env'), cmd=C.command)  # F156, F175, F466c
     if questionnaires_on() and not P.concept(tid):  # F18
         prompt = f'{prompt.rstrip()}\n\n' + SHEET_PROMPT.format(
             runner=C.command, tid=tid, path=C.notes('sheets', f'{tid}.json'))
@@ -366,7 +366,10 @@ a secret, a click in a third-party dashboard), write the steps, links, commands 
 file: a step is words or {{"text", "link", "cmd", "on"}}, and "inputs" lists what they give back (a secret is only \
 named there; the person's answer carries its value). Here a step may hold a link or a command. Write only steps you cannot do yourself, checked \
 and not guessed, and put no secret in the file. Never tell the person to run a script. When they answer, the \
-reopening note gives you their values, and a secret is in {env} as NAME='value'."""
+reopening note gives you their values, and a secret is in {env} as NAME='value'. A Login's 2FA code is no such \
+block: `{cmd} login code NAME "why"` asks for it under Needs you and waits, then prints it once. A Login you need that \
+does not exist: the same command prints the block line, whose link opens the Login form with its name and purpose \
+filled in; never send the person to the Tools page for a secret it has no field for."""
 
 
 REVIEW_PROMPT = """\

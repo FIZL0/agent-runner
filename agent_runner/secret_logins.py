@@ -203,7 +203,13 @@ def main(argv: list[str]) -> int:
     sh.add_argument('name')
     c = sub.add_parser('code', help='where its 2FA codes go')
     c.add_argument('name')
+    c.add_argument('why', nargs='?', default='', help='F466c: ask the person for the code under Needs you and wait')
+    c.add_argument('--task', default='', help='the task (default: this worktree\'s)')
+    c.add_argument('--wait', type=float, default=600, help='seconds to wait for the code')
     a = ap.parse_args(argv)
+    if a.op == 'code' and (a.why or a.name not in load()):
+        from agent_runner import login_code
+        return login_code.run(a.name, a.why, a.task, a.wait)
     try:
         if a.op == 'set':
             pw = ''
