@@ -647,6 +647,105 @@ def account_usage() -> dict | None:
     return _account[1]
 
 
+_login_usage: dict[str, list] = {}  # F514: {config dir: [read at, reading]} of the other logins, in this process
+
+
+def config_login(cfg: str) -> str:
+    """F514: `usage_login` of the Claude login kept in config dir `cfg`, '' when it cannot be told (read from that
+    dir alone, the process's environment untouched)."""
+    import hashlib
+    try:
+        uid = json.loads((Path(cfg) / '.claude.json').read_text(encoding='utf-8'))['oauthAccount']['accountUuid']
+    except (OSError, ValueError, KeyError, TypeError):
+        return ''
+    return hashlib.sha256(str(uid).encode()).hexdigest()[:16] if uid else ''
+
+
+def _fetch_login_usage(cfg: str) -> dict:
+    import urllib.request
+    tok = json.loads((Path(cfg) / '.credentials.json').read_text(encoding='utf-8'))['claudeAiOauth']['accessToken']
+    req = urllib.request.Request('https://api.anthropic.com/api/oauth/usage',
+                                 headers={'Authorization': f'Bearer {tok}', 'anthropic-beta': 'oauth-2025-04-20'})
+    got = json.load(urllib.request.urlopen(req, timeout=10))
+    if not isinstance(got, dict):
+        raise ValueError
+    return got
+
+
+def login_usage(cfg: str) -> dict | None:
+    """F514: the usage of the Claude login whose credentials are in config dir `cfg` ('' the default login:
+    `account_usage`). As `account_usage`: one fetch per login per machine at most every USAGE_EVERY s, under a lock,
+    backoff after 429s, the last good reading kept on disk (`usage_file`); None when there never was one."""
+    if not cfg:
+        return account_usage()
+    login = config_login(cfg)
+    if not login:
+        return None
+    had = _login_usage.get(cfg)
+    if had and time.time() - had[0] < USAGE_EVERY:
+        return had[1]
+    import fcntl
+    import urllib.error
+    sf = usage_fetch_file().with_name(f'usage-fetch-{login}.json')
+    kept = usage_file(login)
+
+    def disk() -> dict | None:
+        try:
+            return live_windows(json.loads(kept.read_text(encoding='utf-8'))['usage'])
+        except (OSError, ValueError, KeyError, TypeError):
+            return live_windows(had[1]) if had else None
+    try:
+        sf.parent.mkdir(parents=True, exist_ok=True)
+        lock = open(sf.with_name(f'usage-fetch-{login}.lock'), 'a')
+    except OSError:
+        lock = None
+    got = None
+    try:
+        if lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            st = json.loads(sf.read_text(encoding='utf-8'))
+            st = st if isinstance(st, dict) else {}
+        except (OSError, ValueError):
+            st = {}
+        now = time.time()
+        if now < float(st.get('next') or 0):
+            got = disk()
+        else:
+            st['at'] = now
+            try:
+                got = _fetch_login_usage(cfg)
+                st['fails'], st['next'] = 0, now + USAGE_EVERY
+                try:
+                    tmp = kept.with_name(f'{kept.name}.{os.getpid()}.tmp')
+                    tmp.write_text(json.dumps({'at': now, 'usage': got}), encoding='utf-8')
+                    os.replace(tmp, kept)
+                except OSError:
+                    pass
+            except Exception as e:
+                if isinstance(e, urllib.error.HTTPError) and e.code == 429:
+                    st['fails'] = int(st.get('fails') or 0) + 1
+                    try:
+                        ra = float((e.headers or {}).get('Retry-After') or 0)
+                    except (TypeError, ValueError):
+                        ra = 0
+                    st['next'] = now + usage_backoff(st['fails'], ra)
+                else:
+                    st['next'] = now + USAGE_EVERY
+                got = disk()
+            try:
+                tmp = sf.with_name(f'{sf.name}.{os.getpid()}.tmp')
+                tmp.write_text(json.dumps(st), encoding='utf-8')
+                os.replace(tmp, sf)
+            except OSError:
+                pass
+    finally:
+        if lock:
+            lock.close()
+    _login_usage[cfg] = [time.time(), got]
+    return got
+
+
 def known_usage_disk() -> dict | None:
     """B848b: the kept reading (another process may have fetched it), else this process's."""
     return kept_usage() or known_usage()

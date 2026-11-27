@@ -121,6 +121,43 @@ def test_one_login_unchanged():
     eq(FB.session_env('T1', 's1', 'opus'), [], 'the default login gets no CLAUDE_CONFIG_DIR')
 
 
+@patched
+def test_other_login_usage():
+    setup(['work', 'home', 'spare'], [])
+    state.C.run = {'session_max': 80, 'weekly_max': 90}
+    use = {str(TMP / 'home'): {'five_hour': {'utilization': 85}}, str(TMP / 'spare'): {'seven_day': {'utilization': 10}}}
+    with mock.patch('agent_runner.watch.login_usage', lambda d: use.get(d)):
+        eq(FB.usage_held_logins(), frozenset({'claude@home'}), 'a login past session_max by its own usage is held')
+        eq(FB.session_env('T1', 's1', 'opus', FB.USAGE_HELD), [f'CLAUDE_CONFIG_DIR={TMP / "spare"}'],
+           'default and home past their caps: it starts on the spare login')
+        use[str(TMP / 'spare')] = {'seven_day': {'utilization': 95}}
+        eq(FB.free_model('opus', FB.USAGE_HELD), None, 'every login past its caps: nothing free, it waits')
+        state.FORCED[0] = True
+        try:
+            eq(FB.usage_held_logins(), frozenset(), 'forced: the caps hold no login')
+        finally:
+            state.FORCED[0] = False
+
+
+@patched
+def test_login_usage_kept():
+    from agent_runner import watch as W
+    cfg = TMP / 'other'
+    cfg.mkdir(exist_ok=True)
+    (cfg / '.claude.json').write_text(json.dumps({'oauthAccount': {'accountUuid': 'u-other'}}), encoding='utf-8')
+    with mock.patch.dict(os.environ, {'XDG_STATE_HOME': str(TMP / 'xdg')}):
+        with mock.patch('agent_runner.watch._fetch_login_usage', lambda d: {'five_hour': {'utilization': 50}}):
+            eq(W.login_usage(str(cfg))['five_hour']['utilization'], 50, 'a login is read from its own config dir')
+        W._login_usage.clear()
+        (TMP / 'xdg' / 'agent-runner' / f'usage-fetch-{W.config_login(str(cfg))}.json').unlink()
+
+        def fail(d):
+            raise OSError
+        with mock.patch('agent_runner.watch._fetch_login_usage', fail):
+            eq(W.login_usage(str(cfg))['five_hour']['utilization'], 50, 'a failed fetch keeps the last good reading')
+    check(W.login_usage(str(TMP / 'none')) is None, 'a dir with no login reads nothing')
+
+
 if __name__ == '__main__':
     sys.exit(report([test_keys, test_same_provider_first, test_then_chain_local_last, test_new_task_free_login,
-                     test_all_capped_waits, test_one_login_unchanged]))
+                     test_all_capped_waits, test_one_login_unchanged, test_other_login_usage, test_login_usage_kept]))

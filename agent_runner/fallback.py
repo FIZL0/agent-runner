@@ -15,7 +15,7 @@ provider hits its cap (a Claude usage limit, a provider's quota error).
 * F503: capped.json is keyed by login ('claude' its default login, 'claude@<name>' another, `cap_key`): a capped
   login goes on with the same provider's next free login (`free_login`, the session's env `session_env`), then the
   chain; a provider is capped only when all its logins are. A local model (ollama, no login) is a chain entry
-  like any other, normally the last. `session_max` / `weekly_max` hold the login whose usage they read.
+  like any other, normally the last. `session_max` / `weekly_max` hold each login by its own usage (F514).
 * With no chain and one login, nothing here acts: a task waits for the reset as before.
 """
 from __future__ import annotations
@@ -178,8 +178,34 @@ USAGE_HELD = frozenset({'claude'})  # the providers `[run] session_max` / `weekl
 
 
 def with_held(held: frozenset) -> dict[str, float]:
-    """The providers a new task passes over: those capped now, and `held` (past the usage caps: USAGE_HELD)."""
-    return {**capped_now(), **dict.fromkeys(held, float('inf'))}
+    """The providers a new task passes over: those capped now, and `held` (past the usage caps: USAGE_HELD), and
+    F514: claude's other logins whose own usage is past `[run] session_max` / `weekly_max`."""
+    return {**capped_now(), **dict.fromkeys(held | usage_held_logins(), float('inf'))}
+
+
+def usage_held_logins() -> frozenset:
+    """F514: the cap keys of claude's logins other than the default whose own usage (read from their own config
+    dir's credentials) is at or past `[run] session_max` / `weekly_max`; none with one login or while forced. The
+    default login's usage is read by the loop (`capped`, USAGE_HELD)."""
+    if state.FORCED[0] or not multi():
+        return frozenset()
+    from agent_runner.claude_use import logins
+    from agent_runner.watch import login_usage
+    run = getattr(state.C, 'run', None) or {}
+    out = set()
+    for r in logins()[1:]:
+        if not r.get('dir'):
+            continue
+        got = login_usage(r['dir']) or {}
+        for name, key in (('five_hour', 'session_max'), ('seven_day', 'weekly_max')):
+            try:
+                w, cap = got[name]['utilization'], run.get(key)
+            except (TypeError, KeyError):
+                continue
+            if isinstance(w, (int, float)) and isinstance(cap, (int, float)) and w >= cap:
+                out.add(cap_key('claude', r['name']))
+                break
+    return frozenset(out)
 
 
 def start_model(model: str, held: frozenset = frozenset()) -> str:
