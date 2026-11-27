@@ -446,3 +446,39 @@ def outcome(tid: str) -> tuple[str, str]:
             return ('was shelved', '') if any(tid in (a[1], a[2]) for a in P.asks(state.C.todo, all=True)) else \
                 ('no longer waits on the person', '')
     return 'no longer waits on the person', ''
+
+
+def several_questions(rows: list, ask: dict | None) -> list[tuple[dict, str]]:
+    """F192b1b: (its `chat_question.asks_of` entry, its DECIDE question as written) of each question the answer that
+    holds open question `ask` ends on, when it ends on more than one; [] otherwise."""
+    from agent_runner import chat_question
+    from agent_runner.control import message_text
+    said = ask and next((d for d in reversed(rows) if isinstance(d, dict) and d.get('type') == 'assistant'
+                         and d.get('uuid') == ask['id']), None)
+    if not said:
+        return []
+    text = message_text(said)
+    qs, asks = chat_question.decide_questions(text), chat_question.asks_of(text, ask['id'], bare=True)
+    return list(zip(asks, qs)) if len(qs) > 1 and len(asks) == len(qs) else []
+
+
+def to_file(rows: list, sid: str, q: str) -> tuple[list[str], list[tuple[dict | None, str]]]:
+    """F192b1b: (the items that still ask them, the (ask, question) left to file) of the questions open in transcript
+    entries `rows` of session `sid`; `q` the question as `control_verdict` read it, for an answer with one."""
+    from agent_runner import chat_question
+    ask = chat_question.ask(rows)
+    asks = several_questions(rows, ask or chat_question.ask(rows, bare=True)) or [(ask, q)]
+    waits = chat_question.needs(sid) if any(a for a, _ in asks) else {}
+    have = [t for a, _ in asks if a and (t := waits.get(a['id']))]
+    return have, [(a, x) for a, x in asks if not (a and waits.get(a['id']))]
+
+
+def questions_filed(c, todo, new: list, sid: str, n: int, rows: list) -> None:
+    """F192b1b: the items `new` [(id, ask, question)] were committed: each knows its question (`filed_question`)."""
+    from agent_runner import control_ask, plan as P
+    waiting = {a[1]: a[3] for a in P.asks(todo, all=True)}
+    for tid, a, x in new:
+        control_ask.filed(tid, sid, x, rows, n)  # B809b: after the commit, as a block takes the ask file away
+        filed(c, [tid], {'n': n, 'sid': sid})  # F209a: reopened, it is about its question
+        if a and (what := waiting.get(tid, '')):
+            filed_question(c, sid, tid, a['id'], what)

@@ -971,12 +971,11 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
     after the bracket of options `q` may end with, so its options are buttons: F181d), committed
     as `watch_ci` commits its tasks (MERGE free, TODO.md clean). Its id, or '' when it could not be filed now.
     F192a3: the chat's question card knows its item (`control_settled.filed_question`); a question that still waits
-    there (the chat was resumed and left) is not filed again."""
-    from agent_runner import chat_question, control_ask
+    there (the chat was resumed and left) is not filed again. F192b1b: several questions, an item each, ids joined by ', '."""
     rows = list(entries(sid, skip_bad=True))
-    ask = chat_question.ask(rows)
-    if ask and (tid := chat_question.needs(sid).get(ask['id'])):
-        return tid
+    have, asks = control_settled.to_file(rows, sid, q)
+    if not asks:
+        return ', '.join(have)
     link = ask_link(n, sid, link)  # B874
     if not MERGE.acquire(blocking=False):
         return ''
@@ -990,18 +989,19 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
                                     git('branch', '--show-current').stdout.strip() != branch):
             return ''  # somebody mid-edit, or the main checkout on another branch: the next look files it
         where = link or f'resume it with `{control_harness.resume_hint(sid)}`'
-        tid = P.add(CONTROL_ASK_KIND, f'Control session {n} asked the person: "{q}" Carry on from their '
-                    f'answer (the session, closed while it waited: {where}). {control_other.ROUTE}', todo=ROOT / rel, pri='normal')
-        P.block(tid, f'DECIDE: {q} {link}'.strip(), todo=ROOT / rel, after=[])
-        if not commit_plan(f'Plan: {tid}, control {n} asked the person', rel):
+        new = []
+        for a, x in asks:
+            tid = P.add(CONTROL_ASK_KIND, f'Control session {n} asked the person: "{x}" Carry on from their '
+                        f'answer (the session, closed while it waited: {where}). {control_other.ROUTE}', todo=ROOT / rel, pri='normal')
+            P.block(tid, f'DECIDE: {x} {link}'.strip(), todo=ROOT / rel, after=[])
+            new.append((tid, a, x))
+        ids = [t for t, _, _ in new]
+        if not commit_plan(f'Plan: {", ".join(ids)}, control {n} asked the person', rel):
             if not C.plan_external:
                 git('checkout', '-q', '--', rel)
             return ''
-        control_ask.filed(tid, sid, q, rows, n)  # B809b: after the commit, as a block takes the ask file away
-        control_settled.filed(C, [tid], {'n': n, 'sid': sid})  # F209a: reopened, it is about its question
-        if what := ask and next((a[3] for a in P.asks(ROOT / rel, all=True) if a[1] == tid), ''):
-            control_settled.filed_question(C, sid, tid, ask['id'], what)
-        return tid
+        control_settled.questions_filed(C, ROOT / rel, new, sid, n, rows)
+        return ', '.join([*have, *ids])
     finally:
         hold.close()
         MERGE.release()
