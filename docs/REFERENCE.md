@@ -1390,7 +1390,7 @@ confirm = "Reset the app on the phone?"  # optional: a question asked first, 300
   not given. GET /tools gives `page`, `start` and `run` (its state). On the Tools page such a tool's card shows its address and state and has Start, Use and Stop as a device's does (### Devices), Use alone with no start command; a Needs you item whose task names it in `needs:` has Use LABEL, or Open LABEL in Tools while it is not running. Without `page` the card is unchanged.
 - **Buttons.** A tool's buttons are read fresh from the main checkout's runner.toml only, and each runs there, one at a time per tool, with a 30 s limit (then its process group is ended, and also when it prints over 16 MB). A press is POST /tools `{"op":"press","name","button":label,"source"(optional, as start/stop),"confirm","holder"}`, under the https, token and same-origin rule of the Tools page. It answers `{ok,out,exit,lines}` (exit null when stopped; `lines` is the last 20 output lines, stored secrets hidden, none shown if a secret cannot be read). `{ok:false,ask:question}` when the button has a `confirm` and the request's `confirm` is not that exact text; `{ok:false,busy:{holder,key}}` when someone has the tool (its check, run then, says busy, or a running task needs it). Sending `holder` = `key` runs it anyway, only for that same holder; a new holder asks again, so a check's first line should stay the same for one holder. A missing or unknown tool is not busy. GET /tools gives `buttons` (`[{label,cmd,confirm}]`) when there are some. The Tools page shows them on the tool's card, in a row of their own, and over plain http they are disabled: a button is busy while its command runs (the tool's others wait), a question is asked in its place, then Yes or No, and the result or failure with its last output lines stays at the foot of the card until that tool's next press (F428d).
 
-### Devices
+### Devices and logins
 
 A device is a machine or test rig agents reach over SSH or another way: a phone's address, a board on the LAN, a
 command on this machine. A person adds it on the run app's Tools page. Each project says which devices it uses
@@ -1461,6 +1461,25 @@ command on this machine. A person adds it on the run app's Tools page. Each proj
   by default, but it does not stop an agent that goes looking: it could read the secret file or keyring, or ask the
   ssh-agent while a connection is made. What would: run the agents as a separate OS user, with the secrets and a small
   service that signs in kept under the person's own user.
+- **Logins** (F466a). A login is a website or account login a project's agents may use, such as a free Apple ID for
+  signing builds. It has a name (letters, digits, - and _), what it is for, a username, a password, an optional note
+  of where 2FA codes go, and the projects that may use it (`*` for all). Its facts are in `logins.json` in the same
+  state folder (never in devices.json); its password is kept as a device's secret is: the OS keyring when an unattended
+  run can read it, else one 0600 file in `secrets/`, refused in a repo, a worktree or a synced folder. Beside the
+  provider logins (`run login <provider>`, unchanged):
+  - `run login set NAME [--purpose …] [--user …] [--twofa …] [--project P]…` asks the password hidden (or reads one
+    line from a pipe); `--keep-password` changes the facts only. A new login is for the current project unless
+    `--project` says otherwise.
+  - `run login use NAME [--askpass] -- CMD` runs CMD with the username in `$LOGIN_USER` and the password on its stdin,
+    or with `--askpass` through the askpass helper over the same 0700 socket ssh uses (`$LOGIN_ASKPASS`, also set as
+    SSH_ASKPASS, SUDO_ASKPASS and GIT_ASKPASS). Never on argv or in the environment. What CMD prints passes the same
+    redactor, so the password shows as `[secret hidden]`.
+  - `run login type NAME --field password|username` types it into the focused field (xdotool, wtype, or System
+    Events on macOS) for UI rigs, printing nothing.
+  - `run login list` and `run login show NAME` give the name, purpose, password set or not, and the username at most;
+    `run login code NAME` says where its 2FA codes go.
+  A project not on a login's list is refused. As with devices, this keeps secrets out of chats; it is no wall against an
+  agent running as the same OS user.
 
 ### Until checks
 
