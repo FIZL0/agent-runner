@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.83.0 (2026-11-28)
+
 - Changed: a new chat shows its first message's words in its row and header from the tap until it has its own title, never its bare number or New chat between (F196e).
 - Changed: an open run page or Runner Home moves to a new version by itself once nothing would be lost or interrupted, back to the same view, chat and scroll place; otherwise the Refresh popup stays until then (F207).
 - Added: a waiting change's Review page is written when it starts waiting, and linked from its pull request body and its done write-up (F515).
@@ -11,6 +13,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Added: `[run] usage_limits = false` switches the usage caps off: the runner never reads account usage, never holds or falls back a task on `session_max` / `weekly_max`, and status hides them (F488).
 - Changed: a diff whose only change to `pyproject.toml`, `package.json` or `Cargo.toml` is its description line counts as docs only, so `done` and the merge skip the gate for it (F494).
 - Added: a model name can pin a Claude login, `claude@work:opus`, anywhere a model is named ([models] roles, kinds, sizes, fallback, `--model`); a session on it starts on that login, and when that login is capped it goes on with claude's next free login (F504).
+
 ## 0.82.0 (2026-11-28)
 
 - Changed: `done.py` is split by area (`done_docs.py`, `done_refusals.py`, `done_writeup.py`), and its test is `tests/test_done_docs.py`; no behaviour change (C62).
