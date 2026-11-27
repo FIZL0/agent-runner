@@ -147,7 +147,7 @@ function popOut(pop){
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
 /* F201: the starting chats as rows: those in the outbox, then one that has its name but that no snapshot lists yet (S.came) */
 const standRows=()=>(S.came||[]).filter(x=>!sessionOf(x.name)&&Date.now()-x.at<60000).concat(S.ob.filter(x=>x.newchat).map(x=>({name:'@'+x.cid,say:x.say,state:x.state,start:x.at}))).map(x=>({...x,stand:true})).sort((a,b)=>(a.start||0)-(b.start||0));
-const standRow=x=>`<div class="crow" data-k="chat:${esc(x.name)}"><button class="thread ${S.thread===x.name?'on':''} ob ${x.state}" data-thread="${esc(x.name)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`;
+const standRow=x=>`<div class="crow" data-k="${esc(chatKey(x.name,S.rowKeys))}"><button class="thread ${S.thread===x.name?'on':''} ob ${x.state}" data-thread="${esc(x.name)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`;
 const sideRow=(x,quiet)=>x.stand?standRow(x):chatRow(x,quiet);
 function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}">${x.state==='failed'?'':'<span class="livedot"></span>'}<div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`,'',`data-k="ob:${esc(x.cid)}" data-v="${x.state}"`)).join('')}
 /* what waits for a chat that is still starting: its first message, then what was written since */
