@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 from _check import check, eq, report
-from _web import in_tmp
+from _web import in_tmp, logic_js
 from test_web_home import NEED_DRIVER, give_row
 
 from agent_runner import ui_model as U  # noqa: E402
@@ -178,5 +178,25 @@ def test_other_fields_stay_b222b(tmp: Path) -> None:
     eq(o['reach'], same, 'the command or address too')
 
 
+def test_run_sheet_lists_every_control_b763b(tmp: Path) -> None:
+    """B763b: every run control shown now is in the More… sheet once, with an icon (of a pair, the one that fits
+    the run's state, as on the Run card), and so is every one of the Run card's."""
+    C = U
+    ctl, fix = C.controls(), {'resume': [{'id': 'B1', 'label': 'B1'}], 'unclaim': [{'id': 'B2', 'label': 'B2'}]}
+    states = {'up': (True, {}), 'paused': (True, {'paused': True}), 'stopping': (True, {'stopping': True}),
+              'not up': (False, {})}
+    for name, (up, run) in states.items():
+        sh = C.controls_shown(up, run, fix)
+        snap = {'up': up, 'run': run, 'fixups': fix, 'controls': ctl, **sh}
+        gs = logic_js([['controlGroups', snap]])[0]
+        keys = [i['c']['key'] for g in gs for i in g['items']]
+        off = {'pause' if run.get('paused') else 'go_on', 'stop' if run.get('stopping') else 'stop_undo'} if up else set()
+        want = [k for k in sh['shown'] if k not in off]
+        eq(sorted(keys), sorted(want), f'{name}: the sheet holds every shown run control once')
+        check(set(sh['card']) <= set(keys), f'{name}: the Run card\'s controls are in the sheet', sh['card'])
+        check(all(i.get('icon') and i['icon'] != 'dot' for g in gs for i in g['items']), f'{name}: each row has an icon')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_need_field_stays_b222a), in_tmp(test_other_fields_stay_b222b)]))
+    raise SystemExit(report([in_tmp(test_need_field_stays_b222a), in_tmp(test_other_fields_stay_b222b),
+                           in_tmp(test_run_sheet_lists_every_control_b763b)]))

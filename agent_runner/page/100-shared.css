@@ -41,6 +41,7 @@
 .it{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:var(--tap);border:0;border-bottom:1px solid var(--line);background:none;padding:6px 2px;text-align:left;cursor:pointer;color:var(--fg);text-decoration:none}
 .it:hover{background:var(--bubble)} .it.bad{color:var(--bad)} .it .k{font:12px var(--mono);color:var(--muted);flex:none} .it:last-child{border-bottom:0}
 .it.setrow{cursor:default} .it.setrow:hover{background:none}
+.it .lab{display:flex;align-items:center;gap:10px;min-width:0} .it .ico{flex:none;width:20px;display:flex;color:var(--muted)} .it .ico svg{width:18px;height:18px}  /* B763b: the run sheet's icon column */
 .sheet pre.out{font:12.5px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
 /* F162: a Needs you item's popup: the sheet on a phone, a centred dialog on a wide screen; its answers stay on screen */
 .sheet.dlg{padding-bottom:0} .app.kb .sheet.dlg{padding-bottom:0}
