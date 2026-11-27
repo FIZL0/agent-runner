@@ -171,3 +171,9 @@ function slashTake(j){
   ta.value=slashPick(c);store.set(DRAFT_KEY(boxKey()),ta.value);slashClose();grow(ta);ta.focus({preventScroll:true});ta.setSelectionRange(ta.value.length,ta.value.length);
 }
 
+/* F196e: a new chat's name from the tap until the snapshot gives its title: its first message's words, never the bare cN or
+   'New chat'. n is the stand-in ('@cid') or the cN it was given; came: S.came, ob: S.ob */
+function bornSay(n,came,ob){
+  const c=(came||[]).find(x=>x.name===n||x.was===n);if(c&&c.say)return c.say;
+  const x=(ob||[]).find(y=>y.newchat&&'@'+y.cid===n);return x&&x.say||'';
+}
