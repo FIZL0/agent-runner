@@ -6,6 +6,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 - Changed: a new chat started from Home's message box goes the way one from + does, one row reading Starting the chat… until its name comes, now checked by a test (F196f).
 - Changed: on the run page, a new chat's row in the sidebar stays one row from the send to the first reply: the same place and key, so the list does not redraw or jump while the chat starts (F196d).
+- Changed: of several questions a chat ends on, an answer that names its question ("My answer to your question “…”: …") closes only that one, and an item answered under Needs you only its own; any other message closes all (F192b1c).
 ## 0.83.0 (2026-11-28)
 
 - Changed: a new chat shows its first message's words in its row and header from the tap until it has its own title, never its bare number or New chat between (F196e).
