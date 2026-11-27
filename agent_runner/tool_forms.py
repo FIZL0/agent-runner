@@ -97,7 +97,7 @@ def op_custom(a: dict, c) -> dict:
     got = devices.op_save({**a, 'kind': 'other'}, c)
     if not words:
         return got
-    tid = QUEUE(c, task_text(a.get('name', ''), words.replace('\n', ' ').replace('"', "'")))
+    tid = QUEUE(c, task_text(a.get('name', ''), words.replace('\n', ' ').replace('"', "'").replace('|', '/')))
     return {**got, 'task': tid, 'out': f'{got.get("out", "saved")}; task {tid} turns it into a tool entry, '
                                        f'for you to approve'}
 
