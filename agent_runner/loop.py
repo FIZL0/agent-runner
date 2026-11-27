@@ -35,6 +35,8 @@ from agent_runner.asks import block_asks, EV_FINISHED, no_slot, park_asked, unbl
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged, budget_mark, budgets, SPENT)
+from agent_runner import slot_prep  # noqa: E402  (F500)
+from agent_runner.slots import worktree  # noqa: E402  (F500)
 from agent_runner.teardown import close_page, end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, known_usage, api_down, auto_upgrade, code_start, context_over, cut_off, drop_session_tmp,
     end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded, resumes, RESUMES_MAX, stalled,
@@ -330,6 +332,11 @@ def drop_extra_slots(slots: int, busy) -> None:
                                     daemon=True).start()
     for t in SLOTS_DIR.glob('.removed-*'):  # what a run that was stopped mid-delete left
         rm(t)
+    if free_gb() < 2 * C.run['min_free_gb']:  # F500: spares give their room back when the disk runs short
+        for s in slot_prep.spares():
+            with slot_prep.REGISTER:
+                git('worktree', 'remove', '--force', str(s))
+            log(f'{s.name}: a spare slot worktree, removed for disk room')
     for d in SLOTS_DIR.glob('s*'):
         if not re.fullmatch(r's\d+', d.name) or int(d.name[1:]) <= slots or int(d.name[1:]) in busy:
             continue
@@ -337,6 +344,10 @@ def drop_extra_slots(slots: int, busy) -> None:
             log(f'slot {d.name[1:]}: past the {slots} slots, but it has uncommitted work (or is not a worktree): kept')
             continue
         size = du(d)
+        if free_gb() - size / GB >= 2 * C.run['min_free_gb'] and slot_prep.keep_spare(d):  # F500: built once, kept
+            log(f'slot {d.name[1:]}: past the {slots} slots and unused: kept as a spare for the next slot '
+                f'({size / GB:.1f} GB)')
+            continue
         trash = SLOTS_DIR / f'.removed-{d.name}-{int(time.time())}'
         d.rename(trash)
         git('worktree', 'prune')
@@ -852,6 +863,8 @@ class Run:
         foreign = self.foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
         sweep_tmp(force=True)
         drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
+        for t in slot_prep.prepare([n for n in range(1, slots + 1) if n not in procs], branch, worktree):  # F500
+            t.join(1800)  # built at once, and whole before anything reads them
         left = left_merging()
         finished = unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign])
         # the riders of a merge an earlier run gated wait from the start, so its turn finds them and reuses it

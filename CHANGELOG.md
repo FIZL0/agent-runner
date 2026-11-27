@@ -9,6 +9,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Fixed: on the run page's Plan, a row dragged (mouse or finger) shows in its new place at once and glides only the last bit from where it was let go; before, the drag's shifts stayed on through the redraw and the rows jumped (B877).
 - Added: a chat's history on the run page (Copilot and Claude Code alike) shows a thin grey scrollbar you can drag (F474).
 - Added: a queue row in the snapshot carries the task's size (`size: simple`) beside its other fields (F485).
+- Added: slot worktrees are built faster: the missing ones are prepared at once when a run starts, a slot past the count is kept as a spare worktree (with room on the disk) and reused by the next new slot instead of being built again, and each slow step of building one is logged with its time (F500).
 ## 0.79.0 (2026-11-27)
 
 - Fixed: a release card in the Plan queue has Wait for… too: tick the tasks it waits for, in the place of the tasks above it (B870).
