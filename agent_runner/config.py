@@ -549,6 +549,9 @@ def toplevel(cwd: Path | str | None = None) -> Path:
     env = os.environ.get('AGENT_RUNNER_REPO')
     if env and cwd is None:
         return Path(env).resolve()
+    key = str(Path(cwd or Path.cwd()).resolve())
+    if key in _TOPS and (_TOPS[key] / '.git').exists():  # a deleted checkout (a test's temp repo) is asked again
+        return _TOPS[key]
     r = subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=str(cwd or Path.cwd()),
                        capture_output=True, text=True)
     if r.returncode:
@@ -557,7 +560,19 @@ def toplevel(cwd: Path | str | None = None) -> Path:
         # B52: git prints an absolute directory; anything else (a pane id "%9" from a stubbed
         # subprocess.run) would become a folder made in the current directory
         raise SystemExit(f'agent-runner: git rev-parse --show-toplevel printed no directory: {r.stdout.strip()!r}')
-    return top.resolve()
+    _TOPS[key] = top.resolve()
+    return _TOPS[key]
+
+
+# B885: a checkout's top and main checkout never change, and each git rev-parse costs ~100 ms on Windows
+_TOPS: dict[str, Path] = {}
+_MAINS: dict[Path, Path] = {}
+
+
+def clear_git_cache() -> None:
+    """Forget the memoized toplevel()/main_checkout() answers (for tests that move or make repos)."""
+    _TOPS.clear()
+    _MAINS.clear()
 
 
 def git_path(out: str) -> Path | None:
@@ -569,10 +584,15 @@ def git_path(out: str) -> Path | None:
 def main_checkout(cwd: Path | str | None = None) -> Path:
     """The main checkout of the repo around `cwd`, even when `cwd` is one of its worktrees."""
     top = toplevel(cwd)
+    if top in _MAINS and (_MAINS[top] / '.git').exists():
+        return _MAINS[top]
     r = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=str(top),
                        capture_output=True, text=True)
     common = (not r.returncode and git_path(r.stdout)) or top / '.git'
-    return common.parent.resolve() if common.name == '.git' else top
+    main = common.parent.resolve() if common.name == '.git' else top
+    if not r.returncode:
+        _MAINS[top] = main
+    return main
 
 
 def config_file(root: Path) -> Path | None:
